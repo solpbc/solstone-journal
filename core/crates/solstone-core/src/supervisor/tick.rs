@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumEnvelope;
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_journal_io::day_path;
+use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, day_path, read_health_marker};
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
@@ -26,14 +26,18 @@ use solstone_core_system::provider_runtime::{
     ProviderRuntimeNow, ProviderRuntimeState, ReasonCode, ReconcileContext, RuntimePhase,
     RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
 };
-use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
+use solstone_core_system::request::{
+    BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, TaskArgv,
+};
 use solstone_core_system::schedule::{ScheduleNow, ScheduleStatus};
 use solstone_core_system::status_wire::{
     CrashedServiceCandidate, ProcessObservation as WireProcessObservation, ServiceCandidate,
     StaleHeartbeatWireInput, SupervisorStatusWireInput, project_supervisor_status,
 };
 use solstone_core_system::{
-    catchup::{CatchupError, eligible_catchup_days},
+    catchup::{
+        CatchupError, days_with_expired_retry, eligible_catchup_days, read_raw_input_fingerprint,
+    },
     queue::{SubmitOutcome, TaskQueue, TaskQueueStatusSnapshot},
 };
 
@@ -46,6 +50,7 @@ use super::runtime::{
 
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
+pub(crate) const RETRY_EXPIRY_INTERVAL: Duration = Duration::from_secs(60);
 
 struct AppProcessSample {
     service: AppService,
@@ -201,8 +206,8 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
             false,
             tick,
         );
-        if !state.no_daily
-            && let Err(error) = handle_daily_tasks(
+        if !state.no_daily {
+            let daily_drain = match handle_daily_tasks(
                 &state.journal,
                 &state.queue,
                 state.is_remote_mode,
@@ -210,9 +215,27 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 &mut state.flush,
                 wall.date_naive(),
                 wall_now,
-            )
-        {
-            eprintln!("supervisor: daily catchup drain failed: {error}");
+            ) {
+                Ok(did_drain) => did_drain,
+                Err(error) => {
+                    eprintln!("supervisor: daily catchup drain failed: {error}");
+                    false
+                }
+            };
+            if daily_drain {
+                // The rollover drain has just considered the same state; do
+                // not immediately replay it through the retry-expiry path.
+                state.last_retry_expiry_drain = tick;
+            } else if let Err(error) = handle_retry_expiry_drain(
+                &state.journal,
+                &state.queue,
+                &mut state.last_retry_expiry_drain,
+                wall.date_naive(),
+                tick,
+                wall_now,
+            ) {
+                eprintln!("supervisor: retry-expiry catchup drain failed: {error}");
+            }
         }
         if let Some(scheduler) = state.scheduler.as_mut() {
             let schedule_sink = SupervisorScheduleSink {
@@ -357,14 +380,14 @@ pub(crate) fn handle_daily_tasks(
     flush: &mut FlushState,
     today: chrono::NaiveDate,
     now: SystemTime,
-) -> Result<(), CatchupError> {
+) -> Result<bool, CatchupError> {
     if is_remote || daily.last_day == Some(today) {
-        return Ok(());
+        return Ok(false);
     }
     let Some(previous_day) = daily.last_day else {
         eprintln!("supervisor: daily state not initialized; skipping daily processing");
         daily.last_day = Some(today);
-        return Ok(());
+        return Ok(false);
     };
 
     daily.last_day = Some(today);
@@ -379,7 +402,28 @@ pub(crate) fn handle_daily_tasks(
         &BTreeSet::from([today.format("%Y%m%d").to_string()]),
         &[],
         now,
-    )
+    )?;
+    Ok(true)
+}
+
+fn handle_retry_expiry_drain(
+    journal: &Path,
+    queue: &TaskQueue,
+    last_drain: &mut Instant,
+    today: chrono::NaiveDate,
+    tick: Instant,
+    now: SystemTime,
+) -> Result<(), CatchupError> {
+    if tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL {
+        return Ok(());
+    }
+    *last_drain = tick;
+    let exclude = BTreeSet::from([today.format("%Y%m%d").to_string()]);
+    let force_days = days_with_expired_retry(journal, &exclude, now)?;
+    if !force_days.is_empty() {
+        run_catchup_drain(journal, queue, &exclude, &force_days, now)?;
+    }
+    Ok(())
 }
 
 /// Submit one daily think task for each selected, eligible catchup day.
@@ -394,14 +438,27 @@ pub(crate) fn run_catchup_drain(
         return Ok(());
     }
     for day in eligible_catchup_days(journal, force_days, exclude, now)? {
-        let _ = submit_think(
-            queue,
-            daily_think_argv(&day),
-            &day,
-            format!("supervisor-catchup-{day}"),
-        );
+        let reference = format!("supervisor-catchup-{day}");
+        let provenance = DailyCatchupProvenance {
+            day: day.clone(),
+            reference: reference.clone(),
+            admitted_generation: stream_marker_generation(journal, &day)?,
+            fingerprint: read_raw_input_fingerprint(journal, &day)?,
+        };
+        let _ = submit_catchup_think(queue, daily_think_argv(&day), &day, reference, provenance);
     }
     Ok(())
+}
+
+fn stream_marker_generation(journal: &Path, day: &str) -> Result<u64, CatchupError> {
+    Ok(
+        match read_health_marker(journal, day, HealthMarkerKind::Stream)? {
+            HealthMarkerState::Versioned { marker, .. } => marker.generation,
+            HealthMarkerState::Absent
+            | HealthMarkerState::LegacyEmpty { .. }
+            | HealthMarkerState::MalformedNonEmpty { .. } => 0,
+        },
+    )
 }
 
 fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<String> {
@@ -437,7 +494,17 @@ fn submit_think(
     day: &str,
     reference: String,
 ) -> solstone_core_system::queue::SubmitOutcome {
-    submit_task(queue, argv, reference, Some(day))
+    submit_task(queue, argv, reference, Some(day), None)
+}
+
+fn submit_catchup_think(
+    queue: &TaskQueue,
+    argv: Vec<String>,
+    day: &str,
+    reference: String,
+    provenance: DailyCatchupProvenance,
+) -> solstone_core_system::queue::SubmitOutcome {
+    submit_task(queue, argv, reference, Some(day), Some(provenance))
 }
 
 fn submit_task(
@@ -445,6 +512,7 @@ fn submit_task(
     argv: Vec<String>,
     reference: String,
     day: Option<&str>,
+    daily_catchup_provenance: Option<DailyCatchupProvenance>,
 ) -> solstone_core_system::queue::SubmitOutcome {
     let cmd = TaskArgv::from_wire(argv).expect("supervisor constructs a non-empty think argv");
     queue.submit(ExecutionRequest::Bus(BusTaskRequest {
@@ -453,6 +521,7 @@ fn submit_task(
         day: day.map(str::to_owned),
         scheduler_name: None,
         queue_if_active_cmd_differs: false,
+        daily_catchup_provenance,
     }))
 }
 
@@ -832,6 +901,7 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
             .and_then(Value::as_str)
             .map(str::to_owned),
         queue_if_active_cmd_differs: false,
+        daily_catchup_provenance: None,
     };
     if state.queue.submit(ExecutionRequest::Bus(request)) == SubmitOutcome::Rejected {
         eprintln!("supervisor: request rejected");
@@ -996,6 +1066,7 @@ fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvel
         ],
         format!("supervisor-activity-{id}"),
         Some(day),
+        None,
     );
 }
 
@@ -1020,6 +1091,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
         &state.queue,
         vec!["journal".to_owned(), "heartbeat".to_owned()],
         "supervisor-heartbeat".to_owned(),
+        None,
         None,
     );
 }
@@ -1584,6 +1656,76 @@ mod tests {
 
     fn date(day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 1, day).expect("fixture date")
+    }
+
+    #[test]
+    fn retry_expiry_drain_throttles_and_excludes_today() {
+        let bed = Bed::new("retry-expiry");
+        bed.enable_thinking();
+        for day in ["20260101", "20260103"] {
+            fs::create_dir_all(bed.root.join("chronicle").join(day)).expect("chronicle day");
+        }
+        fs::create_dir_all(bed.root.join("health")).expect("health directory");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260101:daily-catchup": {
+                        "day": "20260101",
+                        "command_kind": "daily-catchup",
+                        "active": null,
+                        "next_retry_at": 10.0,
+                    },
+                    "20260103:segment-repair": {
+                        "day": "20260103",
+                        "command_kind": "segment-repair",
+                        "active": null,
+                        "next_retry_at": 10.0,
+                    },
+                },
+            }))
+            .expect("retry state"),
+        )
+        .expect("write retry state");
+
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut last_drain = origin;
+        let now = UNIX_EPOCH + Duration::from_secs(10);
+
+        handle_retry_expiry_drain(
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(3),
+            origin + RETRY_EXPIRY_INTERVAL - Duration::from_secs(1),
+            now,
+        )
+        .expect("early retry tick");
+        assert_eq!(pending(&queue), 0);
+
+        handle_retry_expiry_drain(
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(3),
+            origin + RETRY_EXPIRY_INTERVAL,
+            now,
+        )
+        .expect("expired retry tick");
+        assert_eq!(pending(&queue), 1, "only the non-today retry is drained");
+
+        handle_retry_expiry_drain(
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(3),
+            origin + RETRY_EXPIRY_INTERVAL + Duration::from_secs(1),
+            now,
+        )
+        .expect("throttled retry tick");
+        assert_eq!(pending(&queue), 1, "the same window must not replay");
     }
 
     #[test]

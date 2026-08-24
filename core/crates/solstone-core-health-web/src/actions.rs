@@ -3,7 +3,7 @@
 
 use crate::brain;
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -137,37 +137,11 @@ pub fn response(day: &str, outcome: DayOutcome) -> axum::response::Response {
     match outcome {
         DayOutcome::Submitted(_) => Json(json!({"status":"queued","day":day})).into_response(),
         DayOutcome::AlreadyComplete => Json(json!({"status":"already_complete","day":day,"message":"this day's already done. want to redo it from scratch?","reason_code":"reprocess_already_complete"})).into_response(),
-        DayOutcome::Held(epoch) => Json(json!({"status":"held_by_backoff","day":day,"message":format!("this day isn't being retried until {}. to start it over right now, use redo from scratch.",format_retry_when(epoch)),"reason_code":"reprocess_held_by_backoff"})).into_response(),
         DayOutcome::PastOnly => error_envelope("reprocess_past_only","you can only reprocess past days — today and future days aren't ready yet.","",StatusCode::BAD_REQUEST).into_response(),
         DayOutcome::Unreachable => error_envelope("reprocess_unreachable","your journal's background service isn't running. start it, then try again.","",StatusCode::SERVICE_UNAVAILABLE).into_response(),
         DayOutcome::Failed(cause) => error_envelope("reprocess_failed",format!("reprocess failed: {cause}"),"",StatusCode::INTERNAL_SERVER_ERROR).into_response(),
         DayOutcome::Malformed | DayOutcome::NoData => error_envelope("invalid_day","I couldn't use that day.","",StatusCode::BAD_REQUEST).into_response(),
     }
-}
-
-pub fn format_retry_when(epoch: f64) -> String {
-    format_retry_when_at(epoch, Local::now())
-}
-pub fn format_retry_when_at(epoch: f64, now: DateTime<Local>) -> String {
-    let Some(then) = Local.timestamp_opt(epoch as i64, 0).single() else {
-        return "an unknown time".to_owned();
-    };
-    let days = then
-        .date_naive()
-        .signed_duration_since(now.date_naive())
-        .num_days();
-    let when = match days {
-        0 => "today".to_owned(),
-        1 => "tomorrow".to_owned(),
-        _ => then.format("%b %-d").to_string().to_ascii_lowercase(),
-    };
-    format!("{when} at {}", format_retry_clock(then))
-}
-pub fn format_retry_clock(then: DateTime<Local>) -> String {
-    then.format("%I:%M%p")
-        .to_string()
-        .trim_start_matches('0')
-        .to_ascii_lowercase()
 }
 
 fn local_zone() -> Tz {

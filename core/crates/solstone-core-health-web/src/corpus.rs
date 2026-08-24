@@ -6,7 +6,7 @@ use axum::{
     http::{Request, StatusCode},
     response::IntoResponse,
 };
-use chrono::{Local, TimeZone};
+use chrono::TimeZone;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -387,32 +387,6 @@ async fn ac18_background_uses_shell_catch_all() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 #[test]
-fn retry_clock_strips_the_zero() {
-    let then = Local.with_ymd_and_hms(2026, 8, 16, 9, 5, 0).unwrap();
-    assert_eq!(crate::actions::format_retry_clock(then), "9:05am");
-}
-
-#[test]
-fn ac14a_retry_when_covers_today_tomorrow_and_later() {
-    let now = Local.with_ymd_and_hms(2026, 8, 16, 12, 0, 0).unwrap();
-    let today = now + chrono::Duration::hours(1);
-    let tomorrow = now + chrono::Duration::days(1);
-    let later = now + chrono::Duration::days(3);
-    assert!(
-        crate::actions::format_retry_when_at(today.timestamp() as f64, now)
-            .starts_with("today at ")
-    );
-    assert!(
-        crate::actions::format_retry_when_at(tomorrow.timestamp() as f64, now)
-            .starts_with("tomorrow at ")
-    );
-    assert!(
-        crate::actions::format_retry_when_at(later.timestamp() as f64, now)
-            .starts_with(&later.format("%b %-d").to_string().to_ascii_lowercase())
-    );
-}
-
-#[test]
 fn ac8_errors_today_label_checks_both_count_and_scan_success() {
     assert_eq!(crate::errors_today_label(1, true), "error today");
     for count in [0, 2, 5] {
@@ -471,7 +445,7 @@ async fn ac10_and_ac11_log_reads_are_whole_and_safely_classified() {
 }
 
 #[tokio::test]
-async fn ac14_and_ac15_reprocess_handler_seam_submits_and_observes_holds() {
+async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
     let root = crate::test_support::root();
     let day = "20260101";
     let now = chrono::Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap();
@@ -534,14 +508,6 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_and_observes_holds() {
     );
     let body: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
-    assert_eq!(body["status"], "held_by_backoff");
-    assert_eq!(body["reason_code"], "reprocess_held_by_backoff");
-    assert_eq!(
-        body["message"],
-        format!(
-            "this day isn't being retried until {}. to start it over right now, use redo from scratch.",
-            crate::actions::format_retry_when(retry_at)
-        )
-    );
-    assert_eq!(calls.get(), 0);
+    assert_eq!(body, json!({"status":"queued","day":day}));
+    assert_eq!(calls.get(), 1);
 }

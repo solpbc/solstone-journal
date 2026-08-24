@@ -7,15 +7,11 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
-use solstone_core_system::catchup::{
-    KIND_DAILY_CATCHUP, KIND_SEGMENT_REPAIR, catchup_state_key, catchup_state_path,
-    normalized_catchup_entries, read_raw_input_fingerprint,
-};
 use solstone_core_system_health::{FilesystemSegmentSource, day_is_complete, scan_day};
 
 const UNREACHABLE_MESSAGE: &str = "supervisor not reachable - start it (journal start), then retry";
@@ -63,16 +59,8 @@ pub enum DayOutcome {
     NoData,
     Submitted(Flavor),
     AlreadyComplete,
-    Held(f64),
     Unreachable,
     Failed(String),
-}
-
-#[derive(Debug)]
-struct CatchupEntry {
-    active: Option<Value>,
-    next_retry_at: Option<Value>,
-    fingerprint: Option<String>,
 }
 
 /// Run with the real socket transport and the host's IANA local zone.
@@ -144,8 +132,6 @@ where
             zone,
             transport,
         ),
-        now,
-        zone,
     )
 }
 
@@ -278,9 +264,6 @@ where
         Ok(false) => {}
         Err(error) => return DayOutcome::Failed(error.to_string()),
     }
-    if let Some(retry_at) = read_drain_hold_retry_at(journal, day, now) {
-        return DayOutcome::Held(retry_at);
-    }
     if transport(&drain_envelope(day)) {
         DayOutcome::Submitted(flavor)
     } else {
@@ -288,7 +271,7 @@ where
     }
 }
 
-fn render_day_outcome(day: &str, outcome: DayOutcome, now: DateTime<Utc>, zone: Tz) -> CliRun {
+fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
     match outcome {
         DayOutcome::Malformed => failure("expected day in YYYYMMDD format"),
         DayOutcome::PastOnly => {
@@ -306,10 +289,6 @@ fn render_day_outcome(day: &str, outcome: DayOutcome, now: DateTime<Utc>, zone: 
         }
         DayOutcome::AlreadyComplete => success(format!(
             "day {day} already complete; use --from-scratch to force a full re-run\n"
-        )),
-        DayOutcome::Held(retry_at) => success(format!(
-            "day {day} is held until {}; use --from-scratch to start it over now\n",
-            format_retry_when(retry_at, now, zone)
         )),
         DayOutcome::Unreachable => failure(UNREACHABLE_MESSAGE),
         DayOutcome::Failed(error) => failure(&format!("reprocess failed: {error}")),
@@ -411,7 +390,7 @@ where
                     exit_code: 1,
                 };
             }
-            other => return render_day_outcome(&entry.day, other, now, zone),
+            other => return render_day_outcome(&entry.day, other),
         }
     }
     success(format!(
@@ -478,98 +457,6 @@ fn send_envelope(journal: &Path, envelope: &CallosumEnvelope) -> bool {
     )
     .send_line(&line)
     .is_ok()
-}
-
-fn read_drain_hold_retry_at(journal: &Path, day: &str, now: DateTime<Utc>) -> Option<f64> {
-    let entries = std::fs::read(catchup_state_path(journal))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .map(|value| normalized_catchup_entries(&value))
-        .unwrap_or_default();
-    let records = [KIND_DAILY_CATCHUP, KIND_SEGMENT_REPAIR]
-        .into_iter()
-        .filter_map(|kind| entries.get(&catchup_state_key(day, kind)))
-        .filter_map(catchup_entry)
-        .collect::<Vec<_>>();
-    // Python uses `record.get("active")`: null, false, 0, empty strings, and
-    // empty containers are inactive; other values are active.
-    if records
-        .iter()
-        .any(|record| record.active.as_ref().is_some_and(python_truthy))
-    {
-        return None;
-    }
-    let now_seconds = now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1e9;
-    let candidates = records
-        .iter()
-        .filter_map(|record| {
-            let retry_at = record.next_retry_at.as_ref()?.as_f64()?;
-            (now_seconds < retry_at).then_some((record, retry_at))
-        })
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        return None;
-    }
-    let fingerprint = read_raw_input_fingerprint(journal, day).ok()?;
-    candidates
-        .into_iter()
-        .filter_map(|(record, retry_at)| {
-            (record.fingerprint.as_deref() == Some(fingerprint.as_str())).then_some(retry_at)
-        })
-        .max_by(f64::total_cmp)
-}
-
-fn catchup_entry(value: &Value) -> Option<CatchupEntry> {
-    let object = value.as_object()?;
-    Some(CatchupEntry {
-        active: object.get("active").cloned(),
-        next_retry_at: object.get("next_retry_at").cloned(),
-        fingerprint: object
-            .get("fingerprint")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-    })
-}
-
-fn python_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_none_or(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-    }
-}
-
-fn format_retry_when(retry_at: f64, now: DateTime<Utc>, zone: Tz) -> String {
-    let retry = DateTime::from_timestamp(retry_at as i64, 0)
-        .unwrap_or(now)
-        .with_timezone(&zone);
-    let today = now.with_timezone(&zone).date_naive();
-    let retry_day = retry.date_naive();
-    let label = if retry_day == today {
-        "today".to_owned()
-    } else if today
-        .succ_opt()
-        .is_some_and(|tomorrow| retry_day == tomorrow)
-    {
-        "tomorrow".to_owned()
-    } else {
-        format!(
-            "{} {}",
-            retry.format("%b").to_string().to_lowercase(),
-            retry.day()
-        )
-    };
-    format!(
-        "{label} at {}",
-        retry
-            .format("%I:%M%p")
-            .to_string()
-            .trim_start_matches('0')
-            .to_lowercase()
-    )
 }
 
 fn reprocess_help() -> String {
@@ -711,12 +598,6 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(
-            read_drain_hold_retry_at(root.path(), day, Utc.timestamp_opt(0, 0).unwrap()),
-            Some(604.0)
-        );
-        // `read_backoff_summary` remains intentionally unasserted: only the
-        // out-of-scope daily `record_outcome` sets entered_backoff_at.
     }
 
     #[test]
@@ -1045,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn catchup_hold_observes_active_retry_fingerprint_and_both_kinds() {
+    fn process_now_submits_despite_matching_future_retry_for_both_kinds() {
         let root = TempDir::new().unwrap();
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
@@ -1055,125 +936,50 @@ mod tests {
         let health = root.path().join("chronicle").join(DAY).join("health");
         fs::create_dir_all(&health).unwrap();
         fs::write(health.join("stream.updated"), "").unwrap();
-        let fingerprint = read_raw_input_fingerprint(root.path(), DAY).unwrap();
+        let fingerprint =
+            solstone_core_system::catchup::read_raw_input_fingerprint(root.path(), DAY).unwrap();
         let state_path = root.path().join("health/catchup-state.json");
         fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-        let daily_key = format!("{DAY}:daily-catchup");
-        let segment_key = format!("{DAY}:segment-repair");
-        let early_retry = now().timestamp() as f64 + 3_600.0;
         let later_retry = now().timestamp() as f64 + 10_800.0;
 
-        let write_entries = |entries: Value| {
-            fs::write(
-                &state_path,
-                serde_json::to_vec(&json!({
-                    "version": 1,
-                    "entries": entries,
-                }))
-                .unwrap(),
-            )
-            .unwrap();
-        };
-        let held = |calls: &mut usize| {
-            run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
-                *calls += 1;
-                true
-            })
-        };
+        // This is the former Held shape: the dirty day's raw fingerprint and
+        // both catchup kinds are backoff-held until a future retry watermark.
+        // `process-now` deliberately ignores that automatic backoff.
+        fs::write(
+            state_path,
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    format!("{DAY}:daily-catchup"): {
+                        "active": null,
+                        "next_retry_at": later_retry,
+                        "fingerprint": fingerprint.clone(),
+                    },
+                    format!("{DAY}:segment-repair"): {
+                        "active": null,
+                        "next_retry_at": later_retry,
+                        "fingerprint": fingerprint,
+                    },
+                },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
 
-        write_entries(json!({
-            daily_key.clone(): {
-                "active": {"ref": "x"},
-                "next_retry_at": later_retry,
-                "fingerprint": fingerprint.clone(),
-            },
-            segment_key.clone(): {
-                "active": null,
-                "next_retry_at": later_retry,
-                "fingerprint": fingerprint.clone(),
-            },
-        }));
         let mut calls = 0;
+        let result = run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
+            calls += 1;
+            true
+        });
         assert_eq!(
-            held(&mut calls).stdout,
+            result.stdout,
             "reprocess (process-now) submitted for 20260101\n"
         );
-        assert_eq!(calls, 1);
-
-        write_entries(json!({
-            daily_key.clone(): {
-                "active": null,
-                "next_retry_at": early_retry,
-                "fingerprint": fingerprint.clone(),
-            },
-            segment_key.clone(): {
-                "active": null,
-                "next_retry_at": later_retry,
-                "fingerprint": fingerprint.clone(),
-            },
-        }));
-        calls = 0;
-        assert_eq!(
-            held(&mut calls).stdout,
-            "day 20260101 is held until today at 3:00pm; use --from-scratch to start it over now\n"
-        );
-        assert_eq!(calls, 0);
-
-        write_entries(json!({
-            daily_key.clone(): {
-                "active": null,
-                "next_retry_at": now().timestamp() as f64 - 1.0,
-                "fingerprint": fingerprint.clone(),
-            },
-        }));
-        calls = 0;
-        assert!(
-            held(&mut calls)
-                .stdout
-                .starts_with("reprocess (process-now) submitted")
-        );
-        assert_eq!(calls, 1);
-
-        write_entries(json!({
-            daily_key.clone(): {
-                "active": null,
-                "next_retry_at": later_retry,
-                "fingerprint": "stale",
-            },
-        }));
-        calls = 0;
-        assert_eq!(held(&mut calls).exit_code, 0);
-        assert_eq!(calls, 1);
-
-        write_entries(json!({
-            daily_key.clone(): {
-                "active": null,
-                "next_retry_at": "bad",
-                "fingerprint": fingerprint.clone(),
-            },
-        }));
-        calls = 0;
-        assert_eq!(held(&mut calls).exit_code, 0);
-        assert_eq!(calls, 1);
-
-        write_entries(json!({
-            daily_key: {
-                "active": null,
-                "next_retry_at": later_retry,
-            },
-        }));
-        calls = 0;
-        assert_eq!(held(&mut calls).exit_code, 0);
-        assert_eq!(calls, 1);
-
-        fs::write(&state_path, b"{").unwrap();
-        calls = 0;
-        assert_eq!(held(&mut calls).exit_code, 0);
         assert_eq!(calls, 1);
     }
 
     #[test]
-    fn catchup_garbage_record_does_not_discard_a_valid_hold() {
+    fn process_now_submits_despite_garbage_catchup_state() {
         let root = TempDir::new().unwrap();
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
@@ -1183,7 +989,6 @@ mod tests {
         let health = root.path().join("chronicle").join(DAY).join("health");
         fs::create_dir_all(&health).unwrap();
         fs::write(health.join("stream.updated"), "").unwrap();
-        let fingerprint = read_raw_input_fingerprint(root.path(), DAY).unwrap();
         let state_path = root.path().join("health/catchup-state.json");
         fs::create_dir_all(state_path.parent().unwrap()).unwrap();
         fs::write(
@@ -1195,7 +1000,7 @@ mod tests {
                     format!("{DAY}:daily-catchup"): {
                         "active": null,
                         "next_retry_at": now().timestamp() as f64 + 3_600.0,
-                        "fingerprint": fingerprint,
+                        "fingerprint": "matching-fingerprint",
                     },
                 },
             }))
@@ -1207,10 +1012,10 @@ mod tests {
             calls += 1;
             true
         });
-        assert_eq!(calls, 0);
+        assert_eq!(calls, 1);
         assert_eq!(
             result.stdout,
-            "day 20260101 is held until today at 1:00pm; use --from-scratch to start it over now\n"
+            "reprocess (process-now) submitted for 20260101\n"
         );
     }
 
@@ -1228,33 +1033,6 @@ mod tests {
             result.stderr,
             "reprocess is past-only (cannot reprocess today or a future day)\n"
         );
-    }
-
-    #[test]
-    fn retry_formatter_uses_zone_and_python_clock_style() {
-        let zone = chrono_tz::America::Denver;
-        let now = zone
-            .with_ymd_and_hms(2026, 1, 3, 0, 0, 0)
-            .unwrap()
-            .with_timezone(&Utc);
-        let today = zone
-            .with_ymd_and_hms(2026, 1, 3, 3, 15, 0)
-            .unwrap()
-            .timestamp() as f64;
-        let tomorrow = zone
-            .with_ymd_and_hms(2026, 1, 4, 12, 0, 0)
-            .unwrap()
-            .timestamp() as f64;
-        let later = zone
-            .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
-            .unwrap()
-            .timestamp() as f64;
-        assert_eq!(format_retry_when(today, now, zone), "today at 3:15am");
-        assert_eq!(
-            format_retry_when(tomorrow, now, zone),
-            "tomorrow at 12:00pm"
-        );
-        assert_eq!(format_retry_when(later, now, zone), "jan 5 at 12:00am");
     }
 
     #[test]

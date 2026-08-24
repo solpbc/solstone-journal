@@ -97,6 +97,9 @@ pub(crate) struct SupervisorState {
     pub parakeet: ParakeetProvider,
     pub flush: FlushState,
     pub daily: DailyState,
+    /// Last completed retry-expiry scan; kept per supervisor instance so a
+    /// restart cannot inherit another instance's throttle state.
+    pub last_retry_expiry_drain: Instant,
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
 }
@@ -943,6 +946,9 @@ pub(crate) async fn boot_and_tick(
         daily: DailyState {
             last_day: Some(chrono::Local::now().date_naive()),
         },
+        // The first supervise tick may immediately consider persisted retry
+        // watermarks. A subsequent catchup drain resets this watermark.
+        last_retry_expiry_drain: Instant::now() - tick::RETRY_EXPIRY_INTERVAL,
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
     };
