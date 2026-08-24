@@ -2249,6 +2249,19 @@ required_features = ["test-stubs"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-describe::detect_timeout"
+package = "solstone-core-describe"
+target = "detect_timeout"
+set = "native"
+areas = ["media"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-distribution::distribution_cleanroom_loopback"
 package = "solstone-core-distribution"
 target = "distribution_cleanroom_loopback"
