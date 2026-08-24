@@ -135,6 +135,21 @@ pub fn run_with_factory(
     if options.jobs == 0 {
         return Err(RunError::Internal("--jobs must be positive".to_owned()));
     }
+    let mut transform = ConveyFiducialMask;
+    let decoded = process_video_with_transform(options.video, &mut transform, options.config);
+    run_decoded(options, factory, decoded)
+}
+
+/// Run the describe pipeline after media decoding has completed.
+///
+/// Keeping this seam private lets pipeline tests use small, valid synthetic frame
+/// data while the CLI integration suite continues to prove the native decode,
+/// masking, child-session, detector, and command-line boundaries.
+fn run_decoded(
+    options: DescribeOptions<'_>,
+    factory: &dyn DescribeSessionFactory,
+    decoded: crate::DescribeResult,
+) -> Result<(), RunError> {
     let output = options.video.with_extension("jsonl");
     let mut previous_attempts = 0;
     let mut incremental_source = None;
@@ -153,8 +168,6 @@ pub fn run_with_factory(
     let input_size = fs::metadata(options.video)
         .map_err(|error| RunError::Internal(error.to_string()))?
         .len();
-    let mut transform = ConveyFiducialMask;
-    let decoded = process_video_with_transform(options.video, &mut transform, options.config);
     let mut rows = RowTemp::new(parent)?;
     let existing_artifact = incremental_source
         .as_deref()
@@ -910,3 +923,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "pipeline_tests.rs"]
+mod pipeline_tests;
