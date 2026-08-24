@@ -109,5 +109,11 @@
     "mentioned": "came up in conversation"
   },
   "ENT_CONN_HORIZON": "connections from time in the same place go back only to {day}. the {n} earlier days are still in your journal — those connections haven't been built.",
-  "ENT_CONN_HORIZON_ONE": "connections from time in the same place go back only to {day}. one earlier day is still in your journal — those connections haven't been built."
+  "ENT_CONN_HORIZON_ONE": "connections from time in the same place go back only to {day}. one earlier day is still in your journal — those connections haven't been built.",
+  "ENT_SCOPE_SHOWING": "showing",
+  "ENT_SCOPE_WHOLE_JOURNAL": "your whole journal",
+  "ENT_SCOPE_EMPTY_TITLE": "nothing in {facet} yet.",
+  "ENT_SCOPE_EMPTY_BODY": "entities show up here as your journal holds people, places and projects in this facet.",
+  "ENT_SCOPE_EMPTY_ACTION": "show your whole journal",
+  "ENT_SCOPE_FACET_MISSING": "that facet isn't in your journal any more, so this is your whole journal."
 }

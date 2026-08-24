@@ -47,6 +47,10 @@ path = "tests/thinking_runs_contracts.rs"
 name = "thinking_runs_dom"
 path = "tests/thinking_runs_dom.rs"
 
+[[test]]
+name = "entities_workspace_dom"
+path = "tests/entities_workspace_dom.rs"
+
 # Cargo auto-discovery is disabled; this custom node-driven harness exercises the embedded pairing asset.
 [[test]]
 name = "network_pairing_dom"

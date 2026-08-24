@@ -1083,6 +1083,20 @@ async fn state_has_copy_and_attendance() {
         json!(["attended-with", "co-present", "scheduled-with"])
     );
     assert_eq!(v["entities_copy"]["ENT_TRUST_MERGE_DONE"], "merged.");
+    for key in [
+        "ENT_SCOPE_SHOWING",
+        "ENT_SCOPE_WHOLE_JOURNAL",
+        "ENT_SCOPE_EMPTY_TITLE",
+        "ENT_SCOPE_EMPTY_BODY",
+        "ENT_SCOPE_EMPTY_ACTION",
+        "ENT_SCOPE_FACET_MISSING",
+    ] {
+        let value = v["entities_copy"][key].as_str();
+        assert!(
+            value.is_some_and(|value| !value.is_empty()),
+            "missing or empty scope copy key: {key}"
+        );
+    }
 }
 #[tokio::test]
 async fn types_are_exact() {

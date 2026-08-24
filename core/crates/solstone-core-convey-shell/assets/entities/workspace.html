@@ -1024,6 +1024,141 @@ tr:hover .entity-delete-btn {
   color: #666;
 }
 
+.entities-scope-anchor {
+  position: relative;
+}
+
+.entities-scope-control {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 1.25rem;
+}
+
+.entities-scope-trigger {
+  border: 0;
+  padding: 0;
+  color: #4b5563;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.entities-scope-trigger:hover,
+.entities-scope-trigger:focus-visible {
+  color: #111827;
+  text-decoration: underline;
+}
+
+.entities-scope-layer[hidden] {
+  display: none;
+}
+
+.entities-scope-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  min-width: 16rem;
+  max-height: min(24rem, 60vh);
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.16);
+}
+
+.entities-scope-option {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  color: #1f2937;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entities-scope-option:hover,
+.entities-scope-option:focus-visible,
+.entities-scope-option[aria-selected="true"] {
+  background: #f3f4f6;
+}
+
+.entities-scope-option-count {
+  color: #6b7280;
+  font-size: 0.875em;
+}
+
+.entities-scope-backdrop {
+  display: none;
+}
+
+.entities-scope-notice {
+  margin: 0 0 1.25rem;
+  color: #6b7280;
+}
+
+.entities-list-region {
+  border-top: 3px solid transparent;
+}
+
+.entities-list-region.is-facet-scoped {
+  border-top-color: var(--entities-facet-color, transparent);
+}
+
+.entities-scope-empty {
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.entities-scope-empty h2 {
+  margin: 0 0 0.75rem;
+  color: #374151;
+}
+
+.entities-scope-empty p {
+  max-width: 34rem;
+  margin: 0 auto 1.25rem;
+  color: #6b7280;
+}
+
+@media (max-width: 700px) {
+  .entities-scope-layer:not([hidden]) {
+    position: fixed;
+    z-index: 220;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+  }
+
+  .entities-scope-backdrop {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(17, 24, 39, 0.45);
+  }
+
+  .entities-scope-menu {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-height: 70vh;
+    margin: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 1rem 1rem 0 0;
+  }
+}
+
 .spinner {
   display: block;
   width: 40px;
@@ -1801,6 +1936,13 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <span class="surface-state-text" data-role="loading-status">loading entities...</span>
     </div>
   </div>
+  <div id="entities-scope-anchor" class="entities-scope-anchor"></div>
+
+  <section id="facet-entities-empty-view" class="entities-scope-empty" style="display: none;">
+    <h2 id="facet-entities-empty-title"></h2>
+    <p id="facet-entities-empty-body"></p>
+    <button type="button" class="btn btn-secondary" id="facet-entities-empty-action"></button>
+  </section>
 
   <!-- Journal-wide entities view (all-facet mode) -->
   <div id="journal-entities-view" style="display: none;">
@@ -1900,6 +2042,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
 
   <!-- Main list view (facet-specific mode) -->
   <div id="entities-list-view" style="display: none;">
+    <div id="entities-list-region" class="entities-list-region">
     <!-- Facet Entities Section (Cards) -->
     <div class="entities-section">
       <h3 id="facet-entities-heading">
@@ -1941,6 +2084,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         <div id="detected-pagination" class="detected-pagination"></div>
       </div>
     </div>
+    </div>
   </div>
 
   <!-- Entity detail view -->
@@ -1948,7 +2092,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
     <div class="entity-detail-header">
       <div class="entity-detail-link-row">
         <a class="entity-detail-back" href="#" onclick="event.preventDefault(); navigateToList()">← back to entities</a>
-        <a class="entity-detail-allfacets" href="#" onclick="event.preventDefault(); window.selectFacet(null);">edit <span id="detail-allfacets-name"></span> in all facets →</a>
+        <a class="entity-detail-allfacets" href="#" onclick="event.preventDefault(); selectEntityScope(null);">edit <span id="detail-allfacets-name"></span> in all facets →</a>
       </div>
       <div class="entity-detail-title">
         <h2 class="entity-detail-name" id="detail-name"></h2>
@@ -2079,10 +2223,15 @@ body.presentation-mode .entity-desc { color: #4b5563; }
 <script>
 let ENT_COPY = {};
 let ATTENDANCE_KINDS = new Set();
-let currentFacet = window.selectedFacet;
+let currentFacet = null;
 let entitiesData = null;
 let detectedPage = 1;
 let journalEntitiesData = null;  // For all-facet mode
+let facetRoster = [];
+let facetEntityCounts = {};
+let scopeMetadataDirty = true;
+let scopeNotice = '';
+let scopeOutsideClick = null;
 let currentDetailEntity = null;
 let detailObservationOpenToken = 0;
 let detailObservationState = {
@@ -3128,17 +3277,222 @@ function renderEvidenceFetchFailed(pane, retryFn, append) {
   pane.appendChild(state);
 }
 
-// Listen for facet changes
-window.addEventListener('facet.switch', (e) => {
-  currentFacet = e.detail.facet;
-  entitiesData = null;
-  journalEntitiesData = null;
-  // Don't clear hash when switching facets - allows viewing same entity in different contexts
-  loadEntities();
-});
+function currentFacetRecord() {
+  return facetRoster.find((facet) => facet.name === currentFacet) || null;
+}
 
-// Hash-based routing
-window.addEventListener('hashchange', handleHashChange);
+function facetCount(name) {
+  return facetEntityCounts[name] || 0;
+}
+
+function facetTitle(name) {
+  return facetRoster.find((facet) => facet.name === name)?.title || name;
+}
+
+function entityPathForFacet(facet, hash = location.hash) {
+  const params = new URLSearchParams(location.search);
+  if (facet) {
+    params.set('facet', facet);
+  } else {
+    params.delete('facet');
+  }
+  const query = params.toString();
+  return `${location.pathname}${query ? `?${query}` : ''}${hash}`;
+}
+
+function renderScopeNotice() {
+  const anchor = document.getElementById('entities-scope-anchor');
+  if (!anchor) return;
+  anchor.querySelector('#entities-scope-notice')?.remove();
+  if (!scopeNotice) return;
+  const notice = document.createElement('p');
+  notice.id = 'entities-scope-notice';
+  notice.className = 'entities-scope-notice';
+  notice.textContent = scopeNotice;
+  anchor.appendChild(notice);
+}
+
+function closeScopeMenu({restoreFocus = false} = {}) {
+  const control = document.getElementById('entities-scope-control');
+  const trigger = document.getElementById('entities-scope-trigger');
+  const layer = document.getElementById('entities-scope-layer');
+  if (!control || !trigger || !layer || layer.hidden) return;
+  layer.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
+  if (scopeOutsideClick) {
+    document.removeEventListener('pointerdown', scopeOutsideClick, true);
+    scopeOutsideClick = null;
+  }
+  if (restoreFocus) trigger.focus();
+}
+
+function focusScopeOption(listbox, direction) {
+  const options = Array.from(listbox.querySelectorAll('[role="option"]'));
+  if (!options.length) return;
+  const index = options.indexOf(document.activeElement);
+  const next = index < 0
+    ? 0
+    : (index + direction + options.length) % options.length;
+  options.forEach((option, optionIndex) => { option.tabIndex = optionIndex === next ? 0 : -1; });
+  options[next].focus();
+}
+
+function openScopeMenu() {
+  const control = document.getElementById('entities-scope-control');
+  const trigger = document.getElementById('entities-scope-trigger');
+  const layer = document.getElementById('entities-scope-layer');
+  const listbox = document.getElementById('entities-scope-menu');
+  if (!control || !trigger || !layer || !listbox || !layer.hidden) return;
+  layer.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+  scopeOutsideClick = (event) => {
+    if (!control.contains(event.target)) closeScopeMenu();
+  };
+  document.addEventListener('pointerdown', scopeOutsideClick, true);
+}
+
+function selectEntityScope(facet) {
+  const nextFacet = facet && facetRoster.some((item) => item.name === facet) ? facet : null;
+  closeScopeMenu();
+  if (nextFacet === currentFacet) return;
+  history.pushState(null, '', entityPathForFacet(nextFacet));
+  restoreEntityScopeFromLocation();
+  loadEntities();
+}
+
+function renderScopeControl() {
+  const anchor = document.getElementById('entities-scope-anchor');
+  if (!anchor) return;
+  closeScopeMenu();
+  anchor.querySelector('#entities-scope-control')?.remove();
+  renderScopeNotice();
+  if (facetRoster.length === 0) return;
+
+  const control = document.createElement('div');
+  control.id = 'entities-scope-control';
+  control.className = 'entities-scope-control';
+  const trigger = document.createElement('button');
+  trigger.id = 'entities-scope-trigger';
+  trigger.type = 'button';
+  trigger.className = 'entities-scope-trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-controls', 'entities-scope-menu');
+  const scope = currentFacetRecord()?.title || ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '';
+  trigger.textContent = `${ENT_COPY.ENT_SCOPE_SHOWING || ''} ${scope} ⌄`;
+
+  const layer = document.createElement('div');
+  layer.id = 'entities-scope-layer';
+  layer.className = 'entities-scope-layer';
+  layer.hidden = true;
+  const backdrop = document.createElement('button');
+  backdrop.type = 'button';
+  backdrop.className = 'entities-scope-backdrop';
+  backdrop.setAttribute('aria-label', ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '');
+  backdrop.addEventListener('click', () => closeScopeMenu({restoreFocus: true}));
+  const listbox = document.createElement('div');
+  listbox.id = 'entities-scope-menu';
+  listbox.className = 'entities-scope-menu';
+  listbox.setAttribute('role', 'listbox');
+
+  const addOption = (name, title, count) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'entities-scope-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', String(name === currentFacet));
+    option.tabIndex = name === currentFacet ? 0 : -1;
+    const label = document.createElement('span');
+    label.textContent = title;
+    option.appendChild(label);
+    if (count !== null) {
+      const countLabel = document.createElement('span');
+      countLabel.className = 'entities-scope-option-count';
+      countLabel.textContent = String(count);
+      option.appendChild(countLabel);
+    }
+    option.addEventListener('click', () => selectEntityScope(name));
+    option.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        focusScopeOption(listbox, 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusScopeOption(listbox, -1);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeScopeMenu({restoreFocus: true});
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectEntityScope(name);
+      }
+    });
+    listbox.appendChild(option);
+  };
+
+  addOption(null, ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '', null);
+  facetRoster.forEach((facet) => addOption(facet.name, facet.title || facet.name, facetCount(facet.name)));
+  trigger.addEventListener('click', () => {
+    if (layer.hidden) openScopeMenu();
+    else closeScopeMenu();
+  });
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      openScopeMenu();
+      focusScopeOption(listbox, 1);
+    } else if (event.key === 'Escape') {
+      closeScopeMenu({restoreFocus: true});
+    }
+  });
+  layer.append(backdrop, listbox);
+  control.append(trigger, layer);
+  anchor.appendChild(control);
+}
+
+function applyFacetScopeTint() {
+  const region = document.getElementById('entities-list-region');
+  if (!region) return;
+  const facet = currentFacetRecord();
+  if (facet?.color) {
+    region.classList.add('is-facet-scoped');
+    region.style.setProperty('--entities-facet-color', facet.color);
+  } else {
+    region.classList.remove('is-facet-scoped');
+    region.style.removeProperty('--entities-facet-color');
+  }
+}
+
+function restoreEntityScopeFromLocation() {
+  const requestedFacet = new URLSearchParams(location.search).get('facet') || '';
+  const selectedFacet = facetRoster.find((facet) => facet.name === requestedFacet);
+  if (requestedFacet && !selectedFacet) {
+    currentFacet = null;
+    scopeNotice = ENT_COPY.ENT_SCOPE_FACET_MISSING || '';
+    history.replaceState(null, '', entityPathForFacet(null));
+  } else {
+    currentFacet = selectedFacet?.name || null;
+    scopeNotice = '';
+  }
+  applyFacetScopeTint();
+  renderScopeControl();
+}
+
+function hasEmptySelectedFacet() {
+  return Boolean(currentFacet) && facetCount(currentFacet) === 0 && !location.hash;
+}
+
+function renderFacetEmptyView() {
+  const facet = currentFacetRecord();
+  const emptyView = document.getElementById('facet-entities-empty-view');
+  document.getElementById('facet-entities-empty-title').textContent = (ENT_COPY.ENT_SCOPE_EMPTY_TITLE || '')
+    .replace('{facet}', facet?.title || currentFacet || '');
+  document.getElementById('facet-entities-empty-body').textContent = ENT_COPY.ENT_SCOPE_EMPTY_BODY || '';
+  const action = document.getElementById('facet-entities-empty-action');
+  action.textContent = ENT_COPY.ENT_SCOPE_EMPTY_ACTION || '';
+  action.onclick = () => selectEntityScope(null);
+  emptyView.style.display = 'block';
+}
 
 function handleHashChange() {
   const hash = location.hash.slice(1);
@@ -3149,13 +3503,21 @@ function handleHashChange() {
   }
 }
 
+function syncEntityRoute() {
+  restoreEntityScopeFromLocation();
+  loadEntities();
+}
+
+window.addEventListener('hashchange', handleHashChange);
+window.addEventListener('popstate', syncEntityRoute);
+
 function navigateToEntity(entityId) {
-  history.pushState({facet: window.selectedFacet}, '', '#' + entityId);
+  history.pushState(null, '', `${location.pathname}${location.search}#${entityId}`);
   handleHashChange();
 }
 
 function navigateToList() {
-  history.pushState(null, '', location.pathname);
+  history.pushState(null, '', `${location.pathname}${location.search}`);
   showListView();
 }
 
@@ -3165,15 +3527,18 @@ function hideAllViews() {
   document.getElementById('journal-entity-detail-view').style.display = 'none';
   document.getElementById('entities-list-view').style.display = 'none';
   document.getElementById('entity-detail-view').style.display = 'none';
+  document.getElementById('facet-entities-empty-view').style.display = 'none';
 }
 
 function showListView() {
   hideAllViews();
   if (currentFacet) {
-    // Facet-specific mode
-    document.getElementById('entities-list-view').style.display = 'block';
+    if (hasEmptySelectedFacet()) {
+      renderFacetEmptyView();
+    } else {
+      document.getElementById('entities-list-view').style.display = 'block';
+    }
   } else {
-    // Journal-wide mode (all-facet)
     document.getElementById('journal-entities-view').style.display = 'block';
   }
   currentDetailEntity = null;
@@ -3413,15 +3778,15 @@ function renderJournalDetailView(entity) {
         // Navigable — now includes detached-but-not-blocked rows (re-attach lives in the facet detail).
         row.title = `Click to view in ${facet.title}`;
         row.onclick = () => {
-          // Select the facet, which will reload entities and show this entity in facet context
-          window.selectFacet(facet.name);
+          // Switch this page to the facet while preserving the entity detail hash.
+          selectEntityScope(facet.name);
         };
         row.setAttribute('role', 'button');
         row.setAttribute('tabindex', '0');
         row.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            window.selectFacet(facet.name);
+            selectEntityScope(facet.name);
           }
         });
       }
@@ -3732,7 +4097,7 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
     });
     pendingJournalMergeUndo = result.undo || null;
     location.hash = targetId;
-    await loadJournalEntities();
+    await loadJournalEntities({refresh: true});
   } catch (err) {
     if (!entityTrustRepairRequired(err)) button.disabled = false;
     showInlineError(
@@ -3769,7 +4134,7 @@ async function undoJournalEntityMerge(mergeId, button) {
     });
     pendingJournalMergeUndo = null;
     location.hash = result.source_id || result.target_id || '';
-    await loadJournalEntities();
+    await loadJournalEntities({refresh: true});
   } catch (err) {
     if (!entityTrustRepairRequired(err)) button.disabled = false;
     showInlineError(
@@ -3788,7 +4153,7 @@ async function restoreJournalEntityVersion(entityId, versionId, button) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({version_id: versionId})
     });
-    await loadJournalEntities();
+    await loadJournalEntities({refresh: true});
   } catch (err) {
     button.disabled = false;
     showInlineError(
@@ -3888,7 +4253,7 @@ function blockJournalEntity() {
     hideInlineError('block-action-error');
     // Navigate back to list and reload
     navigateToList();
-    loadEntities();
+    refreshEntitiesAfterMutation();
   })
   .catch(error => {
     console.error('Error blocking entity:', error);
@@ -3917,7 +4282,7 @@ function unblockJournalEntity() {
     hideInlineError('block-action-error');
     // Refresh the detail view
     showJournalDetailView(entityId);
-    loadEntities();  // Refresh list in background
+    refreshEntitiesAfterMutation();  // Refresh list in background
   })
   .catch(error => {
     console.error('Error unblocking entity:', error);
@@ -3970,9 +4335,10 @@ function confirmDeleteJournalEntity() {
       throw new Error(data.error);
     }
     hideInlineError('delete-modal-error');
-    journalEntitiesData = (journalEntitiesData || []).filter(entity => entity.id !== entityId);
+    setJournalEntities((journalEntitiesData || []).filter(entity => entity.id !== entityId));
     closeDeleteJournalEntityModal();
     navigateToList();
+    renderScopeControl();
     renderJournalEntities(document.getElementById('journal-entity-card-search')?.value.trim() || '');
 
     let pendingNotificationId = null;
@@ -4010,7 +4376,7 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
     }
 
     if (response.ok) {
-      await loadEntities();
+      await refreshEntitiesAfterMutation();
       window.AppServices.notifications.show({
         app: 'entities',
         icon: 'undo-2',
@@ -4314,10 +4680,10 @@ let pendingDetachEntity = null;
 
 function showDetachConfirmModal(entity) {
   pendingDetachEntity = entity;
-  const facetTitle = (window.facetsData || []).find(f => f.name === currentFacet)?.title || currentFacet;
+  const title = facetTitle(currentFacet);
   const message = (ENT_COPY.ENT_DETACH_CONFIRM || '')
     .replace('{name}', entity.name)
-    .replace('{facet}', facetTitle);
+    .replace('{facet}', title);
   document.getElementById('detachConfirmMessage').textContent = message;
   document.getElementById('detachConfirmModal').style.display = 'flex';
 }
@@ -4351,9 +4717,9 @@ function detachEntity(entity) {
       hideInlineError('detach-action-error');
       // Go back to list view and refresh
       navigateToList();
-      loadEntities();
+      refreshEntitiesAfterMutation();
       // Success-only feedback. This toast must NEVER fire on the failure path below.
-      const detachedFacetTitle = (window.facetsData || []).find(f => f.name === detachedFacet)?.title || detachedFacet;
+      const detachedFacetTitle = facetTitle(detachedFacet);
       const doneMessage = (ENT_COPY.ENT_DETACH_DONE || '')
         .replace('{facet}', detachedFacetTitle)
         .replace('{name}', entityName);
@@ -4372,7 +4738,7 @@ function detachEntity(entity) {
           {
             label: ENT_COPY.ENT_DETACH_FIND_ACTION || '',
             dismiss: true,
-            onClick: () => { window.selectFacet(null); navigateToEntity(entityId); }
+            onClick: () => { selectEntityScope(null); navigateToEntity(entityId); }
           }
         ]
       });
@@ -4408,7 +4774,7 @@ function reattachEntity(entity) {
       delete currentDetailEntity.detached;
       // Reload to get fresh observations
       showDetailView(entity.id);
-      loadEntities();  // Refresh list in background
+      refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
       throw new Error(data.error || 'Failed to re-attach');
     }
@@ -4444,7 +4810,7 @@ function attachEntityToFacet(entity, description) {
     if (ok) {
       // Reload detail view - entity is now attached
       showDetailView(entity.id);
-      loadEntities();  // Refresh list in background
+      refreshEntitiesAfterMutation();  // Refresh list in background
     } else {
       throw new Error(data.error || 'failed to attach');
     }
@@ -4488,20 +4854,69 @@ async function loadEntitiesState() {
   }
 }
 
+function deriveFacetEntityCounts(entities) {
+  const counts = Object.fromEntries(facetRoster.map((facet) => [facet.name, 0]));
+  (entities || []).forEach((entity) => {
+    if (entity.blocked) return;
+    const memberships = new Set();
+    (entity.facets || []).forEach((facet) => {
+      if (!facet.detached && Object.prototype.hasOwnProperty.call(counts, facet.name)) {
+        memberships.add(facet.name);
+      }
+    });
+    memberships.forEach((name) => { counts[name] += 1; });
+  });
+  return counts;
+}
+
+function setJournalEntities(entities) {
+  journalEntitiesData = entities || [];
+  facetEntityCounts = deriveFacetEntityCounts(journalEntitiesData);
+}
+
+async function loadEntityScopeMetadata() {
+  try {
+    const [facetPayload, journalPayload] = await Promise.all([
+      window.apiJson('/app/settings/api/facets'),
+      window.apiJson('/app/entities/api/journal'),
+    ]);
+    facetRoster = facetPayload.facets || [];
+    setJournalEntities(journalPayload.entities || []);
+    scopeMetadataDirty = false;
+    restoreEntityScopeFromLocation();
+    return true;
+  } catch (err) {
+    window.logError(err, { context: 'entities: scope metadata failed' });
+    window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
+      heading: "Couldn't load entities",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage,
+      detail: err,
+      retry: true,
+    }));
+    document
+      .querySelector('#entities-loading .surface-state-retry')
+      ?.addEventListener('click', initEntities);
+    return false;
+  }
+}
+
+function refreshEntitiesAfterMutation() {
+  scopeMetadataDirty = true;
+  return loadEntities();
+}
+
 // Edit form submission
 async function initEntities() {
   if (!await loadEntitiesState()) {
     return;
   }
+  if (!await loadEntityScopeMetadata()) {
+    return;
+  }
   loadEntityTypes();  // Load entity types first for UI elements
   loadEntities();
   setupCortexListener();
-
-  // Handle initial hash
-  if (location.hash) {
-    // Delay to allow entities to load first
-    setTimeout(() => handleHashChange(), 100);
-  }
 
   // Entity search
   const entitySearchInput = document.getElementById('entity-search');
@@ -4577,72 +4992,89 @@ if (document.readyState === 'loading') {
   initEntities();
 }
 
-function loadEntities() {
+async function loadEntities() {
   // Hide all views and show loading
   hideAllViews();
   document.getElementById('entities-loading').style.display = 'flex';
 
+  if (scopeMetadataDirty && !await loadEntityScopeMetadata()) {
+    return;
+  }
+
   if (!currentFacet) {
-    // All-facet mode: load journal entities
+    // All-facet mode renders the journal response cached for this page session.
     return loadJournalEntities();
   }
 
+  if (hasEmptySelectedFacet()) {
+    document.getElementById('entities-loading').style.display = 'none';
+    showListView();
+    return;
+  }
+
   // Facet-specific mode
-  return window.apiJson(`api/${encodeURIComponent(currentFacet)}`)
-    .then(data => {
-      entitiesData = {
-        attached: data.attached || [],
-        detected: data.detected || []
-      };
+  try {
+    const data = await window.apiJson(`api/${encodeURIComponent(currentFacet)}`);
+    entitiesData = {
+      attached: data.attached || [],
+      detected: data.detected || []
+    };
 
-      document.getElementById('entities-loading').style.display = 'none';
+    document.getElementById('entities-loading').style.display = 'none';
 
-      // Check if we should show detail view
-      if (location.hash) {
-        handleHashChange();
-      } else {
-        showListView();
-      }
+    // Check if we should show detail view
+    if (location.hash) {
+      handleHashChange();
+    } else {
+      showListView();
+    }
 
-      detectedPage = 1;
-      renderEntities();
-    })
-    .catch(err => {
-      window.logError(err, { context: 'entities: loadEntities failed' });
-      window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-        heading: "Couldn't load entities",
-        desc: window.CONVEY_COPY.RELOAD_HINT,
-        serverMessage: err?.serverMessage,
-        detail: err,
-      }));
-    });
+    detectedPage = 1;
+    renderEntities();
+  } catch (err) {
+    window.logError(err, { context: 'entities: loadEntities failed' });
+    window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
+      heading: "Couldn't load entities",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage,
+      detail: err,
+    }));
+  }
 }
 
-function loadJournalEntities() {
-  return window.apiJson('api/journal')
-    .then(data => {
-      journalEntitiesData = data.entities || [];
+function renderLoadedJournalEntities() {
+  document.getElementById('entities-loading').style.display = 'none';
+  renderScopeControl();
 
-      document.getElementById('entities-loading').style.display = 'none';
+  // Check if we should show detail view
+  if (location.hash) {
+    handleHashChange();
+  } else {
+    showListView();
+  }
 
-      // Check if we should show detail view
-      if (location.hash) {
-        handleHashChange();
-      } else {
-        showListView();
-      }
+  renderJournalEntities();
+}
 
-      renderJournalEntities();
-    })
-    .catch(err => {
-      window.logError(err, { context: 'entities: loadJournalEntities failed' });
-      window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
-        heading: "Couldn't load entities",
-        desc: window.CONVEY_COPY.RELOAD_HINT,
-        serverMessage: err?.serverMessage,
-        detail: err,
-      }));
-    });
+async function loadJournalEntities({refresh = false} = {}) {
+  if (!refresh && journalEntitiesData !== null) {
+    renderLoadedJournalEntities();
+    return;
+  }
+
+  try {
+    const data = await window.apiJson('api/journal');
+    setJournalEntities(data.entities || []);
+    renderLoadedJournalEntities();
+  } catch (err) {
+    window.logError(err, { context: 'entities: loadJournalEntities failed' });
+    window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
+      heading: "Couldn't load entities",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage,
+      detail: err,
+    }));
+  }
 }
 
 function renderEntities(searchTerm = '') {
@@ -4818,9 +5250,9 @@ function renderEntityCards(searchTerm = '') {
   // Update facet heading
   const facetHeading = document.getElementById('facet-entities-heading');
   if (facetHeading && currentFacet) {
-    const facetTitle = (window.facetsData || []).find(f => f.name === currentFacet)?.title || currentFacet;
+    const title = facetTitle(currentFacet);
     const headingSpan = facetHeading.querySelector('span');
-    if (headingSpan) headingSpan.textContent = `entities in ${facetTitle}`;
+    if (headingSpan) headingSpan.textContent = `entities in ${title}`;
   }
 
   const noEntities = document.getElementById('no-facet-entities');
@@ -5132,7 +5564,7 @@ function attachDetectedEntity(entity, button) {
     if (ok) {
       hideInlineError('detected-action-error');
       // Reload to get full entity data
-      loadEntities();
+      refreshEntitiesAfterMutation();
     } else {
       throw new Error(data.error || 'Failed to attach');
     }
