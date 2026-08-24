@@ -134,32 +134,195 @@
     document.head.appendChild(style);
   }
 
-  function renderMenu(shell, currentAppName) {
-    const menu = document.querySelector('.menu-bar .menu-items');
-    if (!menu) return;
-    const apps = shell.apps || [];
-    let lastStarredIndex = -1;
-    apps.forEach((app, index) => {
-      if (app.starred) lastStarredIndex = index;
-    });
-    menu.innerHTML = apps
-      .map((app, index) => {
+  function appsByRank(shell, groupField, rankField, group) {
+    return [...(shell.apps || [])]
+      .filter((app) => app[groupField] === group)
+      .sort((left, right) => left[rankField] - right[rankField]);
+  }
+
+  function appLink(app, currentAppName, className) {
+    const isCurrent = app.name === currentAppName;
+    const icon = app.icon_svg || escapeHtml(app.icon);
+    const label = escapeHtml(app.label);
+    return (
+      `<a class="${className}${isCurrent ? ' is-current' : ''}" href="${escapeHtml(app.workspace_url)}"` +
+      ` data-app-name="${escapeHtml(app.name)}"${isCurrent ? ' aria-current="page"' : ''}>` +
+      `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
+      `<span class="app-chrome-label">${label}</span>` +
+      '</a>'
+    );
+  }
+
+  function launcherToggle(currentApp, visibleApps) {
+    const isCurrent = !visibleApps.some((app) => app.name === currentApp.name);
+    const label = `journal apps, current: ${currentApp.label}`;
+    return (
+      `<button type="button" class="app-launcher-toggle${isCurrent ? ' is-current' : ''}"` +
+      ` data-app-launcher-toggle aria-expanded="false" aria-controls="app-launcher"` +
+      ` aria-haspopup="dialog" aria-label="${escapeHtml(label)}">` +
+      '<span aria-hidden="true">⌘</span>' +
+      '</button>'
+    );
+  }
+
+  function renderAppRail(shell, currentAppName) {
+    const rail = document.getElementById('app-rail');
+    const currentApp = findApp(shell, currentAppName);
+    if (!rail || !currentApp) return;
+    const primary = appsByRank(shell, 'rail_group', 'rail_rank', 'primary');
+    const management = appsByRank(shell, 'rail_group', 'rail_rank', 'management');
+    const railApps = [...primary, ...management];
+    rail.innerHTML = [
+      launcherToggle(currentApp, railApps),
+      ...primary.map((app) => appLink(app, currentAppName, 'app-rail-link')),
+      '<div class="app-rail-spacer" aria-hidden="true"></div>',
+      '<div class="app-rail-divider" aria-hidden="true"></div>',
+      ...management.map((app) => appLink(app, currentAppName, 'app-rail-link'))
+    ].join('');
+  }
+
+  function renderAppDock(shell, currentAppName) {
+    const dock = document.getElementById('app-dock');
+    const currentApp = findApp(shell, currentAppName);
+    if (!dock || !currentApp) return;
+    const dockApps = appsByRank(shell, 'rail_group', 'rail_rank', 'primary').slice(0, 3);
+    dock.innerHTML = [
+      ...dockApps.map((app) => appLink(app, currentAppName, 'app-dock-link')),
+      launcherToggle(currentApp, dockApps)
+    ].join('');
+  }
+
+  function renderAppLauncher(shell, currentAppName) {
+    const launcher = document.getElementById('app-launcher');
+    if (!launcher) return;
+    const groups = [
+      ['your_journal', 'your journal'],
+      ['understand', 'understand'],
+      ['manage', 'manage']
+    ];
+    const groupMarkup = groups.map(([group, label]) => {
+      const apps = appsByRank(shell, 'launcher_group', 'launcher_rank', group);
+      const rows = apps.map((app) => {
+        const labelText = escapeHtml(app.label);
         const isCurrent = app.name === currentAppName;
-        const isLastStarred = index === lastStarredIndex && lastStarredIndex >= 0;
-        const icon = app.icon_svg || escapeHtml(app.icon);
-        const label = escapeHtml(app.label);
         return (
-          `<li class="menu-item${isCurrent ? ' current' : ''}${isLastStarred ? ' last-starred' : ''}" data-app-name="${escapeHtml(app.name)}" data-starred="${app.starred ? 'true' : 'false'}">` +
-          `<a href="/app/${escapeHtml(app.name)}/" class="menu-item-link"${isCurrent ? ' aria-current="page"' : ''} tabindex="${isCurrent ? '0' : '-1'}">` +
-          `<span class="icon">${icon}</span>` +
-          `<span class="label">${label}</span>` +
-          '</a>' +
-          `<button class="star-toggle" type="button" tabindex="-1" data-app-name="${escapeHtml(app.name)}" aria-label="star ${label}" aria-pressed="${app.starred ? 'true' : 'false'}">${app.starred ? '★' : '☆'}</button>` +
-          `<button class="drag-handle" type="button" tabindex="-1" draggable="true" aria-label="reorder ${label}">⋮</button>` +
+          `<li class="app-launcher-app" data-launcher-app data-label="${labelText.toLowerCase()}">` +
+          `<a href="${escapeHtml(app.workspace_url)}"${isCurrent ? ' aria-current="page"' : ''}>${labelText}</a>` +
           '</li>'
         );
-      })
-      .join('');
+      }).join('');
+      return (
+        `<section class="app-launcher-group" data-launcher-group="${group}">` +
+        `<h2>${label}</h2><ul>${rows}</ul></section>`
+      );
+    }).join('');
+
+    launcher.innerHTML =
+      '<div class="app-launcher-panel">' +
+      '<header class="app-launcher-header">' +
+      '<h1>journal apps</h1>' +
+      '<button type="button" data-app-launcher-close aria-label="close">×</button>' +
+      '</header>' +
+      '<label for="app-launcher-filter">find a journal app</label>' +
+      '<input id="app-launcher-filter" type="search" placeholder="find a journal app">' +
+      `<div class="app-launcher-groups">${groupMarkup}</div>` +
+      '<p class="app-launcher-empty" hidden>no apps found</p>' +
+      '</div>';
+
+    const filter = document.getElementById('app-launcher-filter');
+    const rows = Array.from(launcher.querySelectorAll('[data-launcher-app]'));
+    const empty = launcher.querySelector('.app-launcher-empty');
+    filter?.addEventListener('input', () => {
+      const query = filter.value.trim().toLowerCase();
+      let visible = 0;
+      rows.forEach((row) => {
+        const matches = row.dataset.label.includes(query);
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      launcher.querySelectorAll('[data-launcher-group]').forEach((group) => {
+        group.hidden = !group.querySelector('[data-launcher-app]:not([hidden])');
+      });
+      empty.hidden = visible !== 0;
+    });
+  }
+
+  function renderFacetStrip(shell, app) {
+    const facetStrip = document.getElementById('facet-strip');
+    if (!facetStrip || !app.facets_enabled) return;
+    facetStrip.removeAttribute('hidden');
+  }
+
+  function renderStatusInstrument() {
+    const instrument = document.getElementById('status-instrument');
+    if (!instrument) return;
+    instrument.innerHTML =
+      '<button class="status-icon" type="button" aria-expanded="false" aria-controls="status-pane" aria-label="connecting">' +
+      '<img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
+      '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
+      '</button>' +
+      '<span id="status-live-region" role="status" class="visually-hidden"></span>';
+  }
+
+  function launcherIsOpen() {
+    const launcher = document.getElementById('app-launcher');
+    return Boolean(launcher && !launcher.hidden);
+  }
+
+  function setLauncherToggleExpanded(expanded) {
+    document.querySelectorAll('[data-app-launcher-toggle]').forEach((toggle) => {
+      toggle.setAttribute('aria-expanded', String(expanded));
+    });
+  }
+
+  function openLauncher() {
+    const launcher = document.getElementById('app-launcher');
+    if (!launcher || launcherIsOpen()) return;
+    launcher.inert = false;
+    launcher.removeAttribute('inert');
+    launcher.hidden = false;
+    setLauncherToggleExpanded(true);
+  }
+
+  function closeLauncher() {
+    const launcher = document.getElementById('app-launcher');
+    if (!launcher || !launcherIsOpen()) return;
+    launcher.hidden = true;
+    launcher.inert = true;
+    setLauncherToggleExpanded(false);
+  }
+
+  let launcherInteractionsInstalled = false;
+
+  function installLauncherInteractions() {
+    if (launcherInteractionsInstalled) return;
+    const launcher = document.getElementById('app-launcher');
+    if (!launcher) return;
+    launcherInteractionsInstalled = true;
+
+    document.querySelectorAll('[data-app-launcher-toggle]').forEach((toggle) => {
+      toggle.addEventListener('click', openLauncher);
+    });
+    launcher.querySelector('[data-app-launcher-close]')?.addEventListener('click', closeLauncher);
+    launcher.addEventListener('click', (event) => {
+      if (event.target === launcher) {
+        closeLauncher();
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-launcher-app] a')) {
+        closeLauncher();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !launcherIsOpen()) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeLauncher();
+    });
+    window.addEventListener('presentation-mode:change', (event) => {
+      if (event.detail?.on) closeLauncher();
+    });
   }
 
   function seedGlobals(shell, app) {
@@ -195,9 +358,14 @@
       if (!app) {
         throw new Error('Unknown app');
       }
-      applyBodyState(shell, app, context.day);
-      renderMenu(shell, app.name);
       seedGlobals(shell, app);
+      renderAppRail(shell, app.name);
+      renderAppDock(shell, app.name);
+      renderAppLauncher(shell, app.name);
+      renderFacetStrip(shell, app);
+      renderStatusInstrument();
+      installLauncherInteractions();
+      applyBodyState(shell, app, context.day);
       window.resolveSolShellReady(shell);
 
       for (const backgroundApp of shell.apps || []) {
