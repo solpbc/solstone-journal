@@ -747,8 +747,8 @@
         "why": "an app index: must be the shell, byte-identical"
       },
       {
-        "body_bytes": 138866,
-        "body_sha256": "c9a74888983a6417fb1b8dddf046ceac1c8159d9bf2ef39a726f949f81215cee",
+        "body_bytes": 142946,
+        "body_sha256": "f952a12ed59d5e92f999c9daab9cf857fec02bc799ac3180bee99d124b742240",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -940,8 +940,8 @@
         "why": "first data call from workspace.html"
       },
       {
-        "body_bytes": 856,
-        "body_sha256": "b0a74fd144cbc4f7acaf8205f49de7526d2504e94d1d52eed4930f88fc5d88e4",
+        "body_bytes": 890,
+        "body_sha256": "92728ed3803c371b11e330d15d4a8066bf477ce19ef966ee8ee8f06aded6f6f4",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -967,6 +967,7 @@
             "centroid_saved": false,
             "evidence_count": 0,
             "evidence_tier": null,
+            "manual_tag_lookup_error_count": 0,
             "refreshed_at": null,
             "status": "none"
           },

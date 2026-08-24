@@ -13,10 +13,12 @@ use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
-
-const DEFAULT_STREAM: &str = "_default";
+use crate::speakers_segment_catalog::{
+    CatalogBuildError, CatalogedSegment, catalog_day, catalog_days,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct SegmentsQuery {
@@ -31,20 +33,29 @@ pub(crate) struct Segment {
     pub(crate) payload: Value,
 }
 
+type DayCounts = BTreeMap<String, usize>;
+
 pub async fn index(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    Json(date_nav_index(&speaker_segment_counts(&root.0, None))).into_response()
+    match speaker_segment_counts(&root.0, None) {
+        Ok(counts) => Json(date_nav_index(&counts)).into_response(),
+        Err(error) => catalog_failure(error),
+    }
 }
 
 pub async fn grid(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let (days, activity) = speaker_grid_counts(&root.0);
-    let watermark = days.keys().next_back().cloned();
-    Json(day_grid_payload(
-        &days,
-        watermark.as_deref(),
-        coverage_from_counts(&activity),
-        &activity,
-    ))
-    .into_response()
+    match speaker_grid_counts(&root.0) {
+        Ok((days, activity)) => {
+            let watermark = days.keys().next_back().cloned();
+            Json(day_grid_payload(
+                &days,
+                watermark.as_deref(),
+                coverage_from_counts(&activity),
+                &activity,
+            ))
+            .into_response()
+        }
+        Err(error) => catalog_failure(error),
+    }
 }
 
 pub async fn stats(
@@ -58,7 +69,10 @@ pub async fn stats(
             "Invalid month format, expected YYYYMM",
         );
     }
-    Json(speaker_segment_counts(&root.0, Some(&month))).into_response()
+    match speaker_segment_counts(&root.0, Some(&month)) {
+        Ok(counts) => Json(counts).into_response(),
+        Err(error) => catalog_failure(error),
+    }
 }
 
 pub async fn segments(
@@ -108,7 +122,10 @@ pub async fn segments(
         None => None,
     };
 
-    let mut rows = scan_segment_embeddings(&root.0, &day);
+    let mut rows = match scan_segment_embeddings(&root.0, &day) {
+        Ok(rows) => rows,
+        Err(error) => return catalog_failure(error),
+    };
     rows.sort_by(|left, right| left.key.cmp(&right.key));
     if let Some(speaker) = speaker.as_deref() {
         rows.retain(|segment| segment_has_speaker(&segment.path, speaker));
@@ -135,6 +152,16 @@ fn refusal(reason_code: &str, message: &str, detail: &str) -> Response {
     error_envelope(reason_code, message, detail, StatusCode::BAD_REQUEST).into_response()
 }
 
+fn catalog_failure(error: CatalogBuildError) -> Response {
+    error_envelope(
+        "speaker_command_failed",
+        "I couldn't finish that speaker command.",
+        error.to_string(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .into_response()
+}
+
 pub(crate) fn is_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
@@ -154,27 +181,31 @@ fn parse_nonnegative(value: Option<&str>, default: usize) -> Option<usize> {
     Some(usize::try_from(parsed).unwrap_or(usize::MAX))
 }
 
-fn speaker_segment_counts(root: &Path, month: Option<&str>) -> BTreeMap<String, usize> {
-    day_dirs(root)
-        .into_iter()
-        .filter(|day| month.is_none_or(|month| day.starts_with(month)))
-        .filter_map(|day| {
-            let count = scan_segment_embeddings(root, &day).len();
-            (count > 0).then_some((day, count))
-        })
-        .collect()
+fn speaker_segment_counts(
+    root: &Path,
+    month: Option<&str>,
+) -> Result<BTreeMap<String, usize>, CatalogBuildError> {
+    let mut counts = BTreeMap::new();
+    for day in day_dirs(root)? {
+        if month.is_some_and(|month| !day.starts_with(month)) {
+            continue;
+        }
+        let count = scan_segment_embeddings(root, &day)?.len();
+        if count > 0 {
+            counts.insert(day, count);
+        }
+    }
+    Ok(counts)
 }
 
-fn speaker_grid_counts(root: &Path) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
+fn speaker_grid_counts(root: &Path) -> Result<(DayCounts, DayCounts), CatalogBuildError> {
     let mut days = BTreeMap::new();
     let mut activity = BTreeMap::new();
-    for day in day_dirs(root) {
+    for day in day_dirs(root)? {
         let mut activity_count = 0;
         let mut needs_review_count = 0;
-        for segment in iter_segments(root, &day) {
-            if parse_segment(&segment.key).is_none()
-                || audio_embedding_sources(&segment.path).is_empty()
-            {
+        for segment in iter_segments(root, &day)? {
+            if audio_embedding_sources(&segment.path).is_empty() {
                 continue;
             }
             activity_count += 1;
@@ -189,83 +220,83 @@ fn speaker_grid_counts(root: &Path) -> (BTreeMap<String, usize>, BTreeMap<String
             days.insert(day, needs_review_count);
         }
     }
-    (days, activity)
+    Ok((days, activity))
 }
 
-pub(crate) fn scan_segment_embeddings(root: &Path, day: &str) -> Vec<Segment> {
-    iter_segments(root, day)
-        .into_iter()
-        .filter_map(|segment| {
-            let (start, end, duration) = parse_segment(&segment.key)?;
-            let sources = audio_embedding_sources(&segment.path);
-            if sources.is_empty() {
-                return None;
-            }
-            let speakers = load_segment_speakers(&segment.path);
-            Some(Segment {
-                key: segment.key.clone(),
-                path: segment.path,
-                payload: json!({
-                    "key": segment.key,
-                    "stream": segment.stream,
-                    "start": start,
-                    "end": end,
-                    "duration": duration,
-                    "sources": sources,
-                    "speakers": speakers,
-                    "speaker_count": speakers.len(),
-                }),
-            })
-        })
-        .collect()
+pub(crate) fn scan_segment_embeddings(
+    root: &Path,
+    day: &str,
+) -> Result<Vec<Segment>, CatalogBuildError> {
+    let mut rows = Vec::new();
+    for segment in iter_segments(root, day)? {
+        let Some((start, end, duration)) = parse_segment(&segment.time_key) else {
+            continue;
+        };
+        let sources = audio_embedding_sources(&segment.path);
+        if sources.is_empty() {
+            continue;
+        }
+        let speakers = load_segment_speakers(&segment.path);
+        rows.push(Segment {
+            key: segment.key.clone(),
+            path: segment.path,
+            payload: json!({
+                "key": segment.key,
+                "stream": segment.stream,
+                "stream_layout": stream_layout_json(segment.layout),
+                "start": start,
+                "end": end,
+                "duration": duration,
+                "sources": sources,
+                "speakers": speakers,
+                "speaker_count": speakers.len(),
+            }),
+        });
+    }
+    Ok(rows)
+}
+
+fn stream_layout_json(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 
 pub(crate) struct SegmentDirectory {
     pub(crate) stream: String,
     pub(crate) key: String,
     pub(crate) path: PathBuf,
+    pub(crate) layout: SegmentLayout,
+    pub(crate) time_key: String,
 }
 
-pub(crate) fn day_dirs(root: &Path) -> Vec<String> {
-    let mut days = read_dirs(&root.join("chronicle"))
-        .into_iter()
-        .filter(|entry| is_day(&entry.file_name().to_string_lossy()))
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    days.sort();
-    days
-}
-
-pub(crate) fn iter_segments(root: &Path, day: &str) -> Vec<SegmentDirectory> {
-    let day_path = root.join("chronicle").join(day);
-    let mut segments = Vec::new();
-    for entry in read_dirs(&day_path) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let path = entry.path();
-        if parse_segment(&name).is_some() {
-            segments.push(SegmentDirectory {
-                stream: DEFAULT_STREAM.to_owned(),
-                key: name,
-                path,
-            });
-            continue;
-        }
-        if name == "health" {
-            continue;
-        }
-        for child in read_dirs(&path) {
-            let key = child.file_name().to_string_lossy().into_owned();
-            if parse_segment(&key).is_some() {
-                segments.push(SegmentDirectory {
-                    stream: name.clone(),
-                    key,
-                    path: child.path(),
-                });
-            }
+impl From<CatalogedSegment> for SegmentDirectory {
+    fn from(segment: CatalogedSegment) -> Self {
+        Self {
+            stream: segment.stream,
+            key: segment.name,
+            path: segment.path,
+            layout: segment.layout,
+            time_key: segment.key,
         }
     }
+}
+
+pub(crate) fn day_dirs(root: &Path) -> Result<Vec<String>, CatalogBuildError> {
+    catalog_days(root)
+}
+
+pub(crate) fn iter_segments(
+    root: &Path,
+    day: &str,
+) -> Result<Vec<SegmentDirectory>, CatalogBuildError> {
+    let mut segments: Vec<_> = catalog_day(root, day)?
+        .into_iter()
+        .map(SegmentDirectory::from)
+        .collect();
     segments.sort_by(|left, right| left.key.cmp(&right.key));
-    segments
+    Ok(segments)
 }
 
 fn read_dirs(path: &Path) -> Vec<fs::DirEntry> {
@@ -302,21 +333,6 @@ pub(crate) fn parse_segment(key: &str) -> Option<(String, String, u64)> {
         format!("{:02}:{:02}", end / 3_600, (end % 3_600) / 60),
         end - start,
     ))
-}
-
-/// Match the route-level `HHMMSS_LEN` shape without validating wall-clock time.
-pub(crate) fn is_segment_key(key: &str) -> bool {
-    let Some((time, suffix)) = key.split_once('_') else {
-        return false;
-    };
-    let digit_count = suffix.bytes().take_while(u8::is_ascii_digit).count();
-    time.len() == 6
-        && time.bytes().all(|byte| byte.is_ascii_digit())
-        && digit_count > 0
-        && suffix
-            .as_bytes()
-            .get(digit_count)
-            .is_none_or(|byte| *byte == b'_')
 }
 
 pub(crate) fn audio_embedding_sources(path: &Path) -> Vec<String> {

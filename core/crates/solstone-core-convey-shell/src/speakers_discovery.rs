@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
@@ -22,14 +23,47 @@ use crate::speakers_calendar::{
     value_truthy,
 };
 use crate::speakers_review::{audio_info, find_matching_entity};
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct ResolveStatementQuery {
     voice_day: Option<String>,
+    voice_stream_layout: Option<String>,
     voice_stream: Option<String>,
     voice_segment_key: Option<String>,
     voice_source: Option<String>,
     voice_sentence_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MemberLayout {
+    Direct,
+    Named,
+}
+
+impl MemberLayout {
+    fn from_layout(layout: SegmentLayout) -> Self {
+        match layout {
+            SegmentLayout::Direct => Self::Direct,
+            SegmentLayout::Named => Self::Named,
+        }
+    }
+
+    fn layout(self) -> SegmentLayout {
+        match self {
+            Self::Direct => SegmentLayout::Direct,
+            Self::Named => SegmentLayout::Named,
+        }
+    }
+
+    fn flag(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Named => "named",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -39,6 +73,7 @@ struct Member {
     segment_key: String,
     source: String,
     sentence_id: i64,
+    layout: MemberLayout,
 }
 
 #[derive(Default)]
@@ -50,7 +85,7 @@ struct EvidenceBuckets {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ConversationKey(String, String, String, String);
+struct ConversationKey(String, String, String, String, String);
 
 type Evidence = Vec<(String, Vec<String>)>;
 type EvidenceGaps = Vec<(String, String)>;
@@ -63,11 +98,16 @@ pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         .get("clusters")
         .and_then(Value::as_object)
         .expect("discovery cache was structurally validated");
-    Json(json!({
-        "status": "ok",
-        "clusters": serialize_clusters(&root.0, clusters),
-    }))
-    .into_response()
+    match serialize_clusters(&root.0, clusters) {
+        Ok(clusters) => Json(json!({"status": "ok", "clusters": clusters})).into_response(),
+        Err(detail) => error_envelope(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            detail,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
 }
 
 pub async fn presence(
@@ -88,16 +128,37 @@ pub async fn presence(
     let Some(cluster_id) = cluster_id else {
         return cluster_not_found(&raw_cluster_id);
     };
-    let Some(payload) = cluster_presence(&root.0, cluster_id) else {
-        return cluster_not_found(&cluster_id.to_string());
-    };
-    Json(payload).into_response()
+    match cluster_presence(&root.0, cluster_id) {
+        Ok(Some(payload)) => Json(payload).into_response(),
+        Ok(None) => cluster_not_found(&cluster_id.to_string()),
+        Err(detail) => error_envelope(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            detail,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
 }
 
 pub async fn resolve_statement(
     Extension(root): Extension<Arc<JournalRoot>>,
     Query(query): Query<ResolveStatementQuery>,
 ) -> Response {
+    let layout = match crate::speakers_segment_catalog::decode_stream_layout(
+        query.voice_stream_layout.as_deref(),
+    ) {
+        Ok(layout) => MemberLayout::from_layout(layout),
+        Err(error) => {
+            return error_envelope(
+                "invalid_request_value",
+                "I couldn't use one of those values.",
+                error.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+            .into_response();
+        }
+    };
     let values = [
         ("voice_day", query.voice_day),
         ("voice_stream", query.voice_stream),
@@ -159,6 +220,7 @@ pub async fn resolve_statement(
         &segment_key,
         &source,
         sentence_id,
+        layout,
     ))
     .into_response()
 }
@@ -186,6 +248,9 @@ fn normalize_member(member: &Value) -> Option<Member> {
         segment_key: string("segment_key")?,
         source: string("source")?,
         sentence_id: member_sentence_id(object.get("sentence_id")?)?,
+        layout: MemberLayout::from_layout(
+            decode_stream_layout_value(object.get("stream_layout")).ok()?,
+        ),
     })
 }
 
@@ -196,20 +261,27 @@ fn member_sentence_id(value: &Value) -> Option<i64> {
         .or_else(|| value.as_bool().map(i64::from))
 }
 
-fn serialize_clusters(root: &Path, clusters: &serde_json::Map<String, Value>) -> Vec<Value> {
-    let mut rows = clusters
-        .iter()
-        .filter_map(|(raw_id, members)| {
-            let cluster_id = raw_id.parse::<i64>().ok()?;
-            let members = members.as_array()?;
-            let members = members
-                .iter()
-                .filter_map(normalize_member)
-                .collect::<Vec<_>>();
-            (!members.is_empty() && !dismissal_suppressed(root, &members))
-                .then(|| serialize_cluster(root, cluster_id, &members))
-        })
-        .collect::<Vec<_>>();
+fn serialize_clusters(
+    root: &Path,
+    clusters: &serde_json::Map<String, Value>,
+) -> Result<Vec<Value>, String> {
+    let mut rows = Vec::new();
+    for (raw_id, members) in clusters {
+        let cluster_id = raw_id
+            .parse::<i64>()
+            .map_err(|_| format!("invalid discovery cluster id: {raw_id}"))?;
+        let members = members
+            .as_array()
+            .ok_or_else(|| format!("invalid discovery cluster members: {raw_id}"))?;
+        let members = members
+            .iter()
+            .map(normalize_member)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| format!("invalid discovery cluster member: {raw_id}"))?;
+        if !members.is_empty() && !dismissal_suppressed(root, &members)? {
+            rows.push(serialize_cluster(root, cluster_id, &members));
+        }
+    }
     rows.sort_by(|left, right| {
         right["size"]
             .as_u64()
@@ -220,7 +292,7 @@ fn serialize_clusters(root: &Path, clusters: &serde_json::Map<String, Value>) ->
                     .cmp(&right["cluster_id"].as_i64())
             })
     });
-    rows
+    Ok(rows)
 }
 
 fn serialize_cluster(root: &Path, cluster_id: i64, members: &[Member]) -> Value {
@@ -228,8 +300,9 @@ fn serialize_cluster(root: &Path, cluster_id: i64, members: &[Member]) -> Value 
     let mut samples = samples_by_segment(root, members);
     if samples.len() < 3 {
         for member in members {
-            let sample = cluster_sample(root, member, None);
-            if !samples.contains(&sample) {
+            if let Some(sample) = cluster_sample(root, member, None)
+                && !samples.contains(&sample)
+            {
                 samples.push(sample);
             }
             if samples.len() == 3 {
@@ -245,30 +318,84 @@ fn serialize_cluster(root: &Path, cluster_id: i64, members: &[Member]) -> Value 
     })
 }
 
-fn cluster_presence(root: &Path, cluster_id: i64) -> Option<Value> {
-    let cache = load_discovery_cache(root)?;
-    let raw_members = cache
-        .get("clusters")?
-        .get(cluster_id.to_string())?
-        .as_array()?;
+fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, String> {
+    let Some(cache) = load_discovery_cache(root) else {
+        return Ok(None);
+    };
+    let clusters = cache
+        .get("clusters")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "invalid discovery cache clusters".to_owned())?;
+    let cluster_key = cluster_id.to_string();
+    let Some(raw_members) = clusters.get(&cluster_key) else {
+        return Ok(None);
+    };
+    let raw_members = raw_members
+        .as_array()
+        .ok_or_else(|| format!("invalid discovery cluster members: {cluster_id}"))?;
     if raw_members.is_empty() {
-        return None;
+        return Ok(None);
     }
     let members = raw_members
         .iter()
-        .filter_map(normalize_member)
-        .collect::<Vec<_>>();
+        .map(normalize_member)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| format!("invalid discovery cluster member: {cluster_id}"))?;
     let context = conversation_context(root, &members);
     let all_entities = load_all_journal_entities(root);
     let principal_id = journal_principal_id(root);
     let mut buckets = BTreeMap::<String, EvidenceBuckets>::new();
     let mut evidence_gaps = Vec::new();
     for segment in &context.segment_order {
-        let segment_dir = segment_path(root, &segment.0, &segment.1, &segment.2);
+        let segment_dir = match lookup_segment(
+            root,
+            &segment.0,
+            &segment.1,
+            &segment.2,
+            Ok(layout_from_flag(segment.3)),
+            DirectSupport::Allow,
+        ) {
+            SegmentLookup::Present(path) => path,
+            SegmentLookup::Absent => {
+                evidence_gaps.push(json!({
+                    "day": segment.0,
+                    "stream_layout": segment.3,
+                    "stream": segment.1,
+                    "segment_key": segment.2,
+                    "source": Value::Null,
+                    "reason": "segment_missing",
+                }));
+                continue;
+            }
+            SegmentLookup::MalformedLayout => {
+                evidence_gaps.push(json!({
+                    "day": segment.0,
+                    "stream_layout": segment.3,
+                    "stream": segment.1,
+                    "segment_key": segment.2,
+                    "source": Value::Null,
+                    "reason": "segment_identity_invalid",
+                }));
+                continue;
+            }
+            SegmentLookup::Failed(error) => {
+                evidence_gaps.push(json!({
+                    "day": segment.0,
+                    "stream_layout": segment.3,
+                    "stream": segment.1,
+                    "segment_key": segment.2,
+                    "source": Value::Null,
+                    "reason": format!("segment_lookup_failed: {error}"),
+                }));
+                continue;
+            }
+            SegmentLookup::UnsupportedLayout => unreachable!("discovery reads allow Direct"),
+        };
         let (evidence, gaps) = segment_evidence(&segment_dir, &all_entities);
         for gap in gaps {
             evidence_gaps.push(json!({
                 "day": segment.0,
+                "stream_layout": segment.3,
                 "stream": segment.1,
                 "segment_key": segment.2,
                 "source": gap.0,
@@ -344,14 +471,14 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Option<Value> {
     let days = context
         .first_members
         .keys()
-        .map(|(day, _, _)| day.clone())
+        .map(|(day, _, _, _)| day.clone())
         .collect::<BTreeSet<_>>();
     let streams = context
         .first_members
         .keys()
-        .map(|(_, stream, _)| stream.clone())
+        .map(|(_, stream, _, _)| stream.clone())
         .collect::<BTreeSet<_>>();
-    Some(json!({
+    Ok(Some(json!({
         "cluster_id": cluster_id,
         "facts": {
             "statement_count": raw_members.len(),
@@ -363,7 +490,7 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Option<Value> {
                 .segment_order
                 .iter()
                 .take(3)
-                .map(|segment| {
+                .filter_map(|segment| {
                     cluster_sample(
                         root,
                         context
@@ -384,14 +511,14 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Option<Value> {
         "evidence_complete": evidence_gaps.is_empty(),
         "evidence_gaps": evidence_gaps,
         "candidates": {"co_presence": co_presence, "mention": mention},
-    }))
+    })))
 }
 
 struct ConversationContext {
-    segment_order: Vec<(String, String, String)>,
-    first_members: BTreeMap<(String, String, String), Member>,
-    conversation_keys: BTreeMap<(String, String, String), ConversationKey>,
-    settings: BTreeMap<(String, String, String), Option<String>>,
+    segment_order: Vec<(String, String, String, &'static str)>,
+    first_members: BTreeMap<(String, String, String, &'static str), Member>,
+    conversation_keys: BTreeMap<(String, String, String, &'static str), ConversationKey>,
+    settings: BTreeMap<(String, String, String, &'static str), Option<String>>,
 }
 
 fn conversation_context(root: &Path, members: &[Member]) -> ConversationContext {
@@ -407,16 +534,25 @@ fn conversation_context(root: &Path, members: &[Member]) -> ConversationContext 
     let mut settings = BTreeMap::new();
     let mut conversation_keys = BTreeMap::new();
     for segment in first_members.keys() {
-        let setting = setting_field(&segment_path(root, &segment.0, &segment.1, &segment.2));
+        let setting = resolved_segment_dir(
+            root,
+            &segment.0,
+            &segment.1,
+            &segment.2,
+            layout_from_flag(segment.3),
+        )
+        .and_then(|path| setting_field(&path));
         let key = match &setting {
             Some(setting) if !setting.is_empty() => ConversationKey(
                 segment.0.clone(),
+                segment.3.to_owned(),
                 segment.1.clone(),
                 setting.clone(),
                 String::new(),
             ),
             _ => ConversationKey(
                 segment.0.clone(),
+                segment.3.to_owned(),
                 segment.1.clone(),
                 "__segment__".to_owned(),
                 segment.2.clone(),
@@ -437,8 +573,10 @@ fn samples_by_segment(root: &Path, members: &[Member]) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let mut samples = Vec::new();
     for member in members {
-        if seen.insert(member.segment()) {
-            samples.push(cluster_sample(root, member, None));
+        if seen.insert(member.segment())
+            && let Some(sample) = cluster_sample(root, member, None)
+        {
+            samples.push(sample);
         }
         if samples.len() == 3 {
             break;
@@ -447,17 +585,25 @@ fn samples_by_segment(root: &Path, members: &[Member]) -> Vec<Value> {
     samples
 }
 
-fn cluster_sample(root: &Path, member: &Member, setting: Option<Option<String>>) -> Value {
-    let segment_dir = segment_path(root, &member.day, &member.stream, &member.segment_key);
+fn cluster_sample(root: &Path, member: &Member, setting: Option<Option<String>>) -> Option<Value> {
+    let segment_dir = resolved_segment_dir(
+        root,
+        &member.day,
+        &member.stream,
+        &member.segment_key,
+        member.layout.layout(),
+    )?;
     let (audio_url, _) = audio_info(
         &segment_dir,
         &member.day,
         &member.stream,
         &member.segment_key,
         &member.source,
+        member.layout.layout(),
     );
     let mut sample = json!({
         "day": member.day,
+        "stream_layout": member.layout.flag(),
         "stream": member.stream,
         "segment_key": member.segment_key,
         "source": member.source,
@@ -470,7 +616,7 @@ fn cluster_sample(root: &Path, member: &Member, setting: Option<Option<String>>)
     {
         object.insert("setting".to_owned(), json!(setting));
     }
-    sample
+    Some(sample)
 }
 
 fn sentence_text(segment_dir: &Path, source: &str, sentence_id: i64) -> Option<String> {
@@ -612,24 +758,37 @@ fn resolve_statement_cluster(
     segment_key: &str,
     source: &str,
     sentence_id: i64,
+    layout: MemberLayout,
 ) -> Value {
     let Some(cache) = load_discovery_cache(root) else {
         return json!({"status": "cache_unavailable", "cluster_id": null});
     };
-    let mut clusters = cache["clusters"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter_map(|(raw_id, members)| Some((raw_id.parse::<i64>().ok()?, members.as_array()?)))
-        .collect::<Vec<_>>();
+    let mut clusters = Vec::new();
+    for (raw_id, members) in cache["clusters"].as_object().into_iter().flatten() {
+        let Some(cluster_id) = raw_id.parse::<i64>().ok() else {
+            return json!({"status": "cache_incomplete", "cluster_id": null});
+        };
+        let Some(members) = members.as_array() else {
+            return json!({"status": "cache_incomplete", "cluster_id": null});
+        };
+        let Some(members) = members
+            .iter()
+            .map(normalize_member)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return json!({"status": "cache_incomplete", "cluster_id": null});
+        };
+        clusters.push((cluster_id, members));
+    }
     clusters.sort_by_key(|(cluster_id, _)| *cluster_id);
     for (cluster_id, members) in clusters {
-        for member in members.iter().filter_map(normalize_member) {
+        for member in members {
             if member.day == day
                 && member.stream == stream
                 && member.segment_key == segment_key
                 && member.source == source
                 && member.sentence_id == sentence_id
+                && member.layout == layout
             {
                 return json!({"status": "hit", "cluster_id": cluster_id});
             }
@@ -648,42 +807,71 @@ fn cluster_not_found(cluster_id: &str) -> Response {
     .into_response()
 }
 
-fn dismissal_suppressed(root: &Path, members: &[Member]) -> bool {
+fn dismissal_suppressed(root: &Path, members: &[Member]) -> Result<bool, String> {
     let candidate = members.iter().cloned().collect::<BTreeSet<_>>();
     if candidate.is_empty() {
-        return false;
+        return Ok(false);
     }
-    fs::read_to_string(root.join("speakers/cluster-dismissals.jsonl"))
-        .ok()
-        .into_iter()
-        .flat_map(|contents| contents.lines().map(str::to_owned).collect::<Vec<_>>())
-        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-        .filter_map(|event| event.get("members").and_then(Value::as_array).cloned())
-        .map(|members| {
-            members
-                .iter()
-                .filter_map(normalize_member)
-                .collect::<BTreeSet<_>>()
-        })
-        .any(|dismissed| {
-            !dismissed.is_empty()
-                && candidate.intersection(&dismissed).count() * 2 >= candidate.len()
-        })
+    let path = root.join("speakers/cluster-dismissals.jsonl");
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("failed to read {}: {error}", path.display())),
+    };
+    let mut dismissals = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        let event: Value = serde_json::from_str(line)
+            .map_err(|error| format!("invalid dismissal line {}: {error}", index + 1))?;
+        let members = event
+            .get("members")
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("invalid dismissal members on line {}", index + 1))?;
+        let dismissed = members
+            .iter()
+            .map(normalize_member)
+            .collect::<Option<BTreeSet<_>>>()
+            .ok_or_else(|| format!("invalid dismissal member on line {}", index + 1))?;
+        dismissals.push(dismissed);
+    }
+    Ok(dismissals.into_iter().any(|dismissed| {
+        !dismissed.is_empty() && candidate.intersection(&dismissed).count() * 2 >= candidate.len()
+    }))
 }
 
 impl Member {
-    fn segment(&self) -> (String, String, String) {
+    fn segment(&self) -> (String, String, String, &'static str) {
         (
             self.day.clone(),
             self.stream.clone(),
             self.segment_key.clone(),
+            self.layout.flag(),
         )
     }
 }
 
-fn segment_path(root: &Path, day: &str, stream: &str, segment_key: &str) -> PathBuf {
-    root.join("chronicle")
-        .join(day)
-        .join(stream)
-        .join(segment_key)
+fn layout_from_flag(flag: &str) -> SegmentLayout {
+    match flag {
+        "direct" => SegmentLayout::Direct,
+        _ => SegmentLayout::Named,
+    }
+}
+
+fn resolved_segment_dir(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    layout: SegmentLayout,
+) -> Option<PathBuf> {
+    match lookup_segment(
+        root,
+        day,
+        stream,
+        segment_key,
+        Ok(layout),
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => Some(path),
+        _ => None,
+    }
 }

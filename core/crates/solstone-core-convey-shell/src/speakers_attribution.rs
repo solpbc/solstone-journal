@@ -16,12 +16,17 @@ use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity::{EncoderIdentity, normalize_embedding, read_journal_principal};
+use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 use solstone_core_speaker_resolve::owner_contamination_screen::{
     ContaminationProbe, ContaminationScreen, screen_owner_contamination,
 };
 use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
 
 use crate::JournalRoot;
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
+    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
+};
 
 const OWNER_TOO_CLOSE: (&str, &str, StatusCode) = (
     "speaker_owner_voice_too_close",
@@ -48,11 +53,14 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         Ok(fields) => fields,
         Err(response) => return response,
     };
+    let segment = match lookup_mutation_segment(&root.0, &fields) {
+        Ok(path) => path,
+        Err(response) => return response,
+    };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
         Err(error) => return write_error(error.to_string(), true),
     };
-    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
     let labels = match labels(&segment) {
         Some(value) => value,
         None => return review_unavailable(),
@@ -123,7 +131,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     if let Err(error) = action(
         &root.0,
         "attribution_assign",
-        json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"speaker":fields.speaker}),
+        json!({"day":fields.day,"stream_layout":layout_name(fields.layout),"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"speaker":fields.speaker}),
     ) {
         return write_error(error, true);
     }
@@ -150,11 +158,14 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         Ok(fields) => fields,
         Err(response) => return response,
     };
+    let segment = match lookup_mutation_segment(&root.0, &fields) {
+        Ok(path) => path,
+        Err(response) => return response,
+    };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
         Err(error) => return write_error(error.to_string(), true),
     };
-    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
     let labels = match labels(&segment) {
         Some(value) => value,
         None => return review_unavailable(),
@@ -223,7 +234,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     if let Err(error) = action(
         &root.0,
         "attribution_confirm",
-        json!({"day":target.day,"stream":target.stream,"segment_key":target.segment_key,"source":target.source,"sentence_id":target.sentence_id,"speaker":target.speaker}),
+        json!({"day":target.day,"stream_layout":layout_name(target.layout),"stream":target.stream,"segment_key":target.segment_key,"source":target.source,"sentence_id":target.sentence_id,"speaker":target.speaker}),
     ) {
         return write_error(error, true);
     }
@@ -240,14 +251,17 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         Ok(fields) => fields,
         Err(response) => return response,
     };
+    let segment = match lookup_mutation_segment(&root.0, &fields) {
+        Ok(path) => path,
+        Err(response) => return response,
+    };
     let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
         Ok(lock) => lock,
         Err(error) => return write_error(error.to_string(), true),
     };
     if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
         return response;
-    }
-    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
+    };
     let labels = match labels(&segment) {
         Some(value) => value,
         None => return review_unavailable(),
@@ -321,7 +335,7 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     if let Err(error) = action(
         &root.0,
         "attribution_correct",
-        json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal}),
+        json!({"day":fields.day,"stream_layout":layout_name(fields.layout),"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal}),
     ) {
         return write_error(error, true);
     }
@@ -460,7 +474,15 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let result = match propagate_speaker_correction(&root.0, old_speaker, new_speaker, commit) {
         Ok(result) => result,
-        Err(error) => return write_error(error, true),
+        Err(PropagationError::UnsupportedLayout) => {
+            return err(
+                UNSUPPORTED_LAYOUT_REASON,
+                UNSUPPORTED_LAYOUT_MESSAGE,
+                UNSUPPORTED_LAYOUT_DETAIL,
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        Err(PropagationError::Failed(error)) => return write_error(error, true),
     };
     let statement_count = result["statement_count"].as_u64().unwrap_or(0);
     if commit
@@ -476,110 +498,167 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     Json(result).into_response()
 }
 
+enum PropagationError {
+    UnsupportedLayout,
+    Failed(String),
+}
+
 fn propagate_speaker_correction(
     root: &std::path::Path,
     old_speaker: &str,
     new_speaker: &str,
     commit: bool,
-) -> Result<Value, String> {
+) -> Result<Value, PropagationError> {
+    struct PreflightTarget {
+        segment: crate::speakers_segment_catalog::CatalogedSegment,
+        current: Vec<Value>,
+    }
+
+    struct Target {
+        segment: crate::speakers_segment_catalog::CatalogedSegment,
+        current: Vec<Value>,
+        outcome: solstone_core_speaker_resolve::resolve::ResolveOutcome,
+    }
+
+    let catalog =
+        catalog_journal(root).map_err(|error| PropagationError::Failed(error.to_string()))?;
+    let mut preflight_targets = Vec::new();
+    for segment in catalog {
+        let labels_path = segment.path.join("talents/speaker_labels.json");
+        let bytes = match fs::read(&labels_path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(PropagationError::Failed(format!(
+                    "failed to read {}: {error}",
+                    labels_path.display()
+                )));
+            }
+        };
+        let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
+            PropagationError::Failed(format!("invalid labels {}: {error}", labels_path.display()))
+        })?;
+        let current = value
+            .get("labels")
+            .and_then(Value::as_array)
+            .cloned()
+            .ok_or_else(|| {
+                PropagationError::Failed(format!(
+                    "invalid labels {}: labels must be an array",
+                    labels_path.display()
+                ))
+            })?;
+        if !current.iter().any(|label| {
+            label.get("speaker").and_then(Value::as_str) == Some(old_speaker)
+                || label.get("speaker").and_then(Value::as_str) == Some(new_speaker)
+        }) {
+            continue;
+        }
+        if segment.layout == SegmentLayout::Direct {
+            return Err(PropagationError::UnsupportedLayout);
+        }
+        preflight_targets.push(PreflightTarget { segment, current });
+    }
+
+    let mut targets = Vec::with_capacity(preflight_targets.len());
+    for PreflightTarget { segment, current } in preflight_targets {
+        let outcome = solstone_core_speaker_resolve::resolve::resolve(
+            root,
+            &segment.day,
+            &segment.stream,
+            &segment.name,
+            true,
+            Utc::now().timestamp_millis(),
+        )
+        .map_err(|error| PropagationError::Failed(error.to_string()))?;
+        if commit
+            && matches!(
+                outcome,
+                solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing
+                    | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
+            )
+        {
+            return Err(PropagationError::Failed(
+                "speaker propagation preflight was incomplete".to_owned(),
+            ));
+        }
+        targets.push(Target {
+            segment,
+            current,
+            outcome,
+        });
+    }
+
     let mut results = Vec::new();
     let mut changes = Vec::new();
     let mut errors = Vec::new();
-    let chronicle = root.join("chronicle");
-    for day in fs::read_dir(&chronicle).into_iter().flatten().flatten() {
-        let day_name = day.file_name().to_string_lossy().into_owned();
-        for stream in fs::read_dir(day.path()).into_iter().flatten().flatten() {
-            let stream_name = stream.file_name().to_string_lossy().into_owned();
-            for entry in fs::read_dir(stream.path()).into_iter().flatten().flatten() {
-                let segment_key = entry.file_name().to_string_lossy().into_owned();
-                let labels_path = entry.path().join("talents/speaker_labels.json");
-                let current = fs::read(&labels_path)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                    .and_then(|value| value.get("labels").and_then(Value::as_array).cloned());
-                let Some(current) = current else {
-                    continue;
-                };
-                if !current.iter().any(|label| {
-                    label.get("speaker").and_then(Value::as_str) == Some(old_speaker)
-                        || label.get("speaker").and_then(Value::as_str) == Some(new_speaker)
-                }) {
-                    continue;
-                }
-                let outcome = solstone_core_speaker_resolve::resolve::resolve(
-                    root,
-                    &day_name,
-                    &stream_name,
-                    &segment_key,
-                    !commit,
-                    Utc::now().timestamp_millis(),
+    for Target {
+        segment,
+        current,
+        outcome,
+    } in targets
+    {
+        match outcome {
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) => {
+                let updated = crate::speakers_cli_maintenance::labels(&output);
+                let segment_changes = propagation_changes(
+                    &current,
+                    &updated,
+                    &segment.day,
+                    segment.layout,
+                    &segment.stream,
+                    &segment.name,
+                    output.source.as_deref(),
                 );
-                match outcome {
-                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(
-                        output,
-                    )) => {
-                        let updated = crate::speakers_cli_maintenance::labels(&output);
-                        let segment_changes = propagation_changes(
-                            &current,
-                            &updated,
-                            &day_name,
-                            &stream_name,
-                            &segment_key,
-                            output.source.as_deref(),
-                        );
-                        let accumulated = if commit && !segment_changes.is_empty() {
-                            let metadata = crate::speakers_cli_maintenance::metadata(&output);
-                            solstone_core_speaker_id::labels::write_full_labels(
-                                &entry.path(),
-                                updated,
-                                &metadata,
-                            )
-                            .map_err(|error| error.to_string())?;
-                            crate::speakers_cli_maintenance::accumulate(
-                                root,
-                                &day_name,
-                                &stream_name,
-                                &segment_key,
-                                &output,
-                                Utc::now().timestamp_millis(),
-                            )
-                            .map_err(|error| error.to_string())?
-                        } else {
-                            json!({})
-                        };
-                        let changed_count = segment_changes.len();
-                        changes.extend(segment_changes.clone());
-                        results.push(json!({
-                            "status": if changed_count > 0 { "changed" } else { "unchanged" },
-                            "day":day_name,
-                            "stream":stream_name,
-                            "segment_key":segment_key,
-                            "source":output.source,
-                            "changes":segment_changes,
-                            "changed_count":changed_count,
-                            "accumulated":accumulated,
-                            "error":Value::Null,
-                        }));
-                    }
-                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing) => {
-                        results.push(json!({"status":"skipped","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"segment_missing"}));
-                    }
-                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty {
-                        source,
-                    }) => {
-                        results.push(json!({"status":"skipped","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
-                    }
-                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid) => {
-                        let error = "owner centroid unavailable".to_owned();
-                        errors.push(format!("{day_name}/{stream_name}/{segment_key}: {error}"));
-                        results.push(json!({"status":"error","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
-                    }
-                    Err(error) => {
-                        let error = error.to_string();
-                        errors.push(format!("{day_name}/{stream_name}/{segment_key}: {error}"));
-                        results.push(json!({"status":"error","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
-                    }
-                }
+                let accumulated = if commit && !segment_changes.is_empty() {
+                    let metadata = crate::speakers_cli_maintenance::metadata(&output);
+                    solstone_core_speaker_id::labels::write_full_labels(
+                        &segment.path,
+                        updated,
+                        &metadata,
+                    )
+                    .map_err(|error| PropagationError::Failed(error.to_string()))?;
+                    crate::speakers_cli_maintenance::accumulate(
+                        root,
+                        &segment.path,
+                        &segment.day,
+                        &segment.stream,
+                        &segment.name,
+                        &output,
+                        Utc::now().timestamp_millis(),
+                    )
+                    .map_err(|error| PropagationError::Failed(error.to_string()))?
+                } else {
+                    json!({})
+                };
+                let changed_count = segment_changes.len();
+                changes.extend(segment_changes.clone());
+                results.push(json!({
+                    "status": if changed_count > 0 { "changed" } else { "unchanged" },
+                    "day":segment.day,
+                    "stream_layout":"named",
+                    "stream":segment.stream,
+                    "segment_key":segment.name,
+                    "source":output.source,
+                    "changes":segment_changes,
+                    "changed_count":changed_count,
+                    "accumulated":accumulated,
+                    "error":Value::Null,
+                }));
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing => {
+                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"segment_missing"}));
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { source } => {
+                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
+                let error = "owner centroid unavailable".to_owned();
+                errors.push(format!(
+                    "{}/{}/{}: {error}",
+                    segment.day, segment.stream, segment.name
+                ));
+                results.push(json!({"status":"error","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
             }
         }
     }
@@ -589,6 +668,7 @@ fn propagate_speaker_correction(
         .filter_map(|change| {
             Some((
                 change.get("day")?.as_str()?,
+                change.get("stream_layout")?.as_str()?,
                 change.get("stream")?.as_str()?,
                 change.get("segment_key")?.as_str()?,
             ))
@@ -614,6 +694,7 @@ fn propagation_changes(
     current: &[Value],
     updated: &[Value],
     day: &str,
+    layout: SegmentLayout,
     stream: &str,
     segment_key: &str,
     source: Option<&str>,
@@ -635,6 +716,7 @@ fn propagation_changes(
                 .then(|| {
                     json!({
                         "day":day,
+                        "stream_layout":if layout == SegmentLayout::Direct { "direct" } else { "named" },
                         "stream":stream,
                         "segment_key":segment_key,
                         "source":source,
@@ -676,6 +758,7 @@ fn label_fields(label: Option<&Value>) -> (Option<&str>, Option<&str>, Option<&s
 #[derive(Clone)]
 struct Fields {
     day: String,
+    layout: SegmentLayout,
     stream: String,
     segment_key: String,
     source: String,
@@ -736,13 +819,17 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
             "Use a valid day, stream, and segment, then pick a sentence.",
         ));
     }
-    if !valid_segment(segment_key) || !valid_stream(stream) {
+    if stream != DEFAULT_STREAM && !valid_stream(stream) {
         return Err(invalid_segment_or_stream(
             "Use a valid day, stream, and segment, then pick a sentence.",
         ));
     }
+    let layout = decode_stream_layout_value(object.get("stream_layout")).map_err(|_| {
+        invalid_segment_or_stream("Use a valid day, stream, and segment, then pick a sentence.")
+    })?;
     Ok(Fields {
         day: day.to_owned(),
+        layout,
         stream: stream.to_owned(),
         segment_key: segment_key.to_owned(),
         source: source.to_owned(),
@@ -791,12 +878,11 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
     if !valid_day(day) {
         return Err(invalid_day("Invalid day format"));
     }
-    if !valid_segment(segment_key) {
-        return Err(invalid_segment_or_stream("Invalid segment key"));
-    }
-    if !valid_stream(stream) {
+    if stream != DEFAULT_STREAM && !valid_stream(stream) {
         return Err(invalid_segment_or_stream("Invalid stream"));
     }
+    let layout = decode_stream_layout_value(object.get("stream_layout"))
+        .map_err(|_| invalid_segment_or_stream("Invalid stream layout"))?;
     let speaker = if correction {
         object
             .get("new_speaker")
@@ -809,6 +895,7 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
     };
     Ok(Fields {
         day: day.to_owned(),
+        layout,
         stream: stream.to_owned(),
         segment_key: segment_key.to_owned(),
         source: source.to_owned(),
@@ -900,7 +987,7 @@ fn write_voiceprint(
     fields: &Fields,
     embedding: Vec<f32>,
 ) -> Result<(), String> {
-    solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(root, &fields.speaker, embedding, json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id}), &encoder()).map_err(|error| error.to_string())
+    solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(root, &fields.speaker, embedding, json!({"day":fields.day,"stream_layout":layout_name(fields.layout),"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id}), &encoder()).map_err(|error| error.to_string())
 }
 fn patch(
     segment: &std::path::Path,
@@ -987,21 +1074,41 @@ fn sentence_embedding(
     })
     .filter(|embedding| normalize_embedding(embedding).is_some())
 }
-fn segment(root: &std::path::Path, day: &str, stream: &str, key: &str) -> std::path::PathBuf {
-    root.join("chronicle").join(day).join(stream).join(key)
+#[allow(clippy::result_large_err)]
+fn lookup_mutation_segment(
+    root: &std::path::Path,
+    fields: &Fields,
+) -> Result<std::path::PathBuf, Response> {
+    match lookup_segment(
+        root,
+        &fields.day,
+        &fields.stream,
+        &fields.segment_key,
+        Ok(fields.layout),
+        DirectSupport::Refuse,
+    ) {
+        SegmentLookup::Present(path) => Ok(path),
+        SegmentLookup::UnsupportedLayout => Err(err(
+            UNSUPPORTED_LAYOUT_REASON,
+            UNSUPPORTED_LAYOUT_MESSAGE,
+            UNSUPPORTED_LAYOUT_DETAIL,
+            StatusCode::BAD_REQUEST,
+        )),
+        SegmentLookup::MalformedLayout => {
+            Err(invalid_segment_or_stream("Invalid segment key or stream"))
+        }
+        SegmentLookup::Absent => Err(review_unavailable()),
+        SegmentLookup::Failed(error) => Err(write_error(error.to_string(), true)),
+    }
+}
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 fn valid_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
-}
-fn valid_segment(value: &str) -> bool {
-    let mut pieces = value.split('_');
-    pieces
-        .next()
-        .is_some_and(|piece| !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit()))
-        && pieces.next().is_some_and(|piece| {
-            !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit())
-        })
-        && pieces.next().is_none()
 }
 fn valid_stream(value: &str) -> bool {
     let mut bytes = value.bytes();

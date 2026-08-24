@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{Value, json};
+use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
-use crate::speakers_calendar::{audio_embedding_sources, day_dirs, journal_principal_id};
+use crate::speakers_calendar::{audio_embedding_sources, journal_principal_id};
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_npz::{load_voiceprints, npz_row_count, owner_centroid_summary};
 use crate::speakers_quality::{
     ManualOwnerTagStats, awareness_voiceprint, manual_owner_tag_stats, segment_overlap_fraction,
 };
+use crate::speakers_segment_catalog::{CatalogBuildError, catalog_journal};
 
 const OWNER_BOOTSTRAP_MIN_STATEMENTS: usize = 30;
 const OWNER_REJECTION_COOLDOWN_DAYS: i64 = 14;
@@ -26,10 +28,19 @@ const OWNER_REJECTION_COOLDOWN_GUIDANCE: &str = "Wait for the owner voice reject
 or run solstone call speakers detect --force to look now.";
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    Json(owner_status(&root.0)).into_response()
+    match owner_status(&root.0) {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => error_envelope(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
 }
 
-fn owner_status(root: &Path) -> Value {
+fn owner_status(root: &Path) -> Result<Value, CatalogBuildError> {
     let voiceprint = awareness_voiceprint(root);
     let status = match voiceprint.get("status") {
         Some(Value::String(status)) => status.as_str(),
@@ -41,9 +52,9 @@ fn owner_status(root: &Path) -> Value {
         .as_deref()
         .map(|principal_id| manual_owner_tag_stats(root, principal_id))
         .unwrap_or_else(empty_manual_tag_stats);
-    let diagnostics = diagnostics(root, &manual_stats);
+    let diagnostics = diagnostics(root, &manual_stats)?;
 
-    match status {
+    Ok(match status {
         "confirmed" => confirmed_status(root, principal_id.as_deref(), &manual_stats),
         "candidate" => json!({
             "status": "candidate",
@@ -87,7 +98,7 @@ fn owner_status(root: &Path) -> Value {
         }
         "none" | "rejected" => {
             if let Some(cooldown) = rejection_cooldown(&voiceprint) {
-                return json!({
+                return Ok(json!({
                     "status": "none",
                     "manual_tags_count": diagnostics.manual_tags_count,
                     "segments_available": diagnostics.segments_available,
@@ -99,10 +110,10 @@ fn owner_status(root: &Path) -> Value {
                     "days_remaining": cooldown,
                     "next_step": "wait_for_cooldown",
                     "guidance": OWNER_REJECTION_COOLDOWN_GUIDANCE,
-                });
+                }));
             }
             if diagnostics.segments_available > 0 {
-                return json!({
+                return Ok(json!({
                     "status": "needs_detection",
                     "manual_tags_count": diagnostics.manual_tags_count,
                     "segments_available": diagnostics.segments_available,
@@ -112,12 +123,12 @@ fn owner_status(root: &Path) -> Value {
                     "segments_with_embeddings": diagnostics.segments_with_embeddings,
                     "next_step": "detect_candidate",
                     "guidance": OWNER_DETECT_CANDIDATE_GUIDANCE,
-                });
+                }));
             }
             manual_fallback(&diagnostics, &manual_stats)
         }
         _ => manual_fallback(&diagnostics, &manual_stats),
-    }
+    })
 }
 
 fn confirmed_status(
@@ -186,16 +197,19 @@ struct Diagnostics {
     segments_with_embeddings: usize,
 }
 
-fn diagnostics(root: &Path, manual_stats: &ManualOwnerTagStats) -> Diagnostics {
-    let (segments_available, embeddings_available) = owner_embedding_inventory(root);
-    Diagnostics {
+fn diagnostics(
+    root: &Path,
+    manual_stats: &ManualOwnerTagStats,
+) -> Result<Diagnostics, CatalogBuildError> {
+    let (segments_available, embeddings_available) = owner_embedding_inventory(root)?;
+    Ok(Diagnostics {
         manual_tags_count: manual_stats.manual_tags_count,
         segments_available,
         embeddings_available,
         streams_represented: manual_stats.streams_represented,
         can_build_from_tags: manual_stats.manual_tags_count >= OWNER_BOOTSTRAP_MIN_STATEMENTS,
         segments_with_embeddings: segments_available,
-    }
+    })
 }
 
 struct ManualGuidance {
@@ -241,6 +255,7 @@ fn empty_manual_tag_stats() -> ManualOwnerTagStats {
     ManualOwnerTagStats {
         manual_tags_count: 0,
         streams_represented: 0,
+        lookup_error_count: 0,
     }
 }
 
@@ -270,67 +285,23 @@ fn parse_rejection_time(value: &str) -> Option<i64> {
     Some(elapsed)
 }
 
-fn owner_embedding_inventory(root: &Path) -> (usize, usize) {
+fn owner_embedding_inventory(root: &Path) -> Result<(usize, usize), CatalogBuildError> {
     let mut segments_available = 0;
     let mut embeddings_available = 0;
-    for day in day_dirs(root) {
-        for stream in sorted_directories(&root.join("chronicle").join(day)) {
-            for segment in sorted_directories(&stream) {
-                let segment_key = segment
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or_default();
-                if !is_segment_key(segment_key) {
-                    continue;
-                }
-                let sources = audio_embedding_sources(&segment);
-                if sources.is_empty() {
-                    continue;
-                }
-                segments_available += 1;
-                for source in sources {
-                    if segment_overlap_fraction(&segment.join(format!("{source}.jsonl"))) > 0.10 {
-                        continue;
-                    }
-                    embeddings_available +=
-                        npz_row_count(&segment.join(format!("{source}.npz")), "embeddings")
-                            .unwrap_or_default();
-                }
+    for segment in catalog_journal(root)? {
+        let sources = audio_embedding_sources(&segment.path);
+        if sources.is_empty() {
+            continue;
+        }
+        segments_available += 1;
+        for source in sources {
+            if segment_overlap_fraction(&segment.path.join(format!("{source}.jsonl"))) > 0.10 {
+                continue;
             }
+            embeddings_available +=
+                npz_row_count(&segment.path.join(format!("{source}.npz")), "embeddings")
+                    .unwrap_or_default();
         }
     }
-    (segments_available, embeddings_available)
-}
-
-fn sorted_directories(path: &Path) -> Vec<std::path::PathBuf> {
-    let mut directories = fs::read_dir(path)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect::<Vec<_>>();
-    directories.sort();
-    directories
-}
-
-fn is_segment_key(key: &str) -> bool {
-    let Some((time, length)) = key.split_once('_') else {
-        return false;
-    };
-    if time.len() != 6
-        || !time.bytes().all(|byte| byte.is_ascii_digit())
-        || length.is_empty()
-        || !length.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return false;
-    }
-    let hour = time[0..2].parse::<u8>().ok();
-    let minute = time[2..4].parse::<u8>().ok();
-    let second = time[4..6].parse::<u8>().ok();
-    matches!(
-        (hour, minute, second),
-        (Some(0..=23), Some(0..=59), Some(0..=59))
-    )
+    Ok((segments_available, embeddings_available))
 }

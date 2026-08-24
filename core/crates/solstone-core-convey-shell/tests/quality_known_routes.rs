@@ -74,6 +74,21 @@ fn established_shell_case(path: &str) -> Value {
         .clone()
 }
 
+#[tokio::test]
+async fn quality_route_stays_reachable_with_a_direct_segment() {
+    let journal = EmptyEstablishedJournal::new();
+    std::fs::create_dir_all(journal.0.join("chronicle/20260731/080000_300")).expect("direct");
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::get("/app/speakers/api/quality")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status().as_u16(), 200);
+}
+
 async fn assert_case(app: axum::Router, path: &str, expected: Value) {
     let (status, content_type, actual) = request_json(app, path).await;
     assert_eq!(status, expected["status"], "{path}");

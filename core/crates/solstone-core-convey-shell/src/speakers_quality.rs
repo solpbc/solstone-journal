@@ -6,37 +6,52 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::Serialize;
 use serde_json::Value;
+use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
     audio_embedding_sources, day_dirs, iter_segments, journal_principal_id,
 };
 use crate::speakers_npz::{load_voiceprints, owner_centroid_summary};
+use crate::speakers_segment_catalog::{
+    CatalogBuildError, DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+};
 
 const QUALITY_WINDOW_DAYS: usize = 30;
 
 pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    Json(quality_status(&root.0)).into_response()
+    match quality_status(&root.0) {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => error_envelope(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
 }
 
-fn quality_status(root: &Path) -> QualityStatus {
-    let mut window_days = day_dirs(root);
+fn quality_status(root: &Path) -> Result<QualityStatus, CatalogBuildError> {
+    let mut window_days = day_dirs(root)?;
     window_days.sort_by(|left, right| right.cmp(left));
     window_days.truncate(QUALITY_WINDOW_DAYS);
     let mut counters = Counters::default();
     for day in &window_days {
-        for segment in iter_segments(root, day) {
+        for segment in iter_segments(root, day)? {
             if audio_embedding_sources(&segment.path).is_empty() {
                 continue;
             }
             count_segment_quality(&segment.path, &mut counters);
         }
     }
-    QualityStatus {
+    Ok(QualityStatus {
         quality_window_days: QUALITY_WINDOW_DAYS,
         quality_window_count: window_days.len(),
         quality_window_error_count: counters.unreadable_files.total_window_count,
@@ -46,7 +61,7 @@ fn quality_status(root: &Path) -> QualityStatus {
         unreadable_files: counters.unreadable_files,
         empty_labels_without_skipped_segments: counters.empty_labels_without_skipped_segments,
         owner_voice: owner_voice_state(root),
-    }
+    })
 }
 
 #[derive(Default)]
@@ -109,6 +124,7 @@ struct OwnerVoice {
     centroid_saved: bool,
     evidence_tier: Option<String>,
     evidence_count: i32,
+    manual_tag_lookup_error_count: usize,
     built_at: Option<String>,
     refreshed_at: Option<String>,
 }
@@ -241,6 +257,10 @@ fn owner_voice_state(root: &Path) -> OwnerVoice {
         .map(str::to_owned)
         .unwrap_or_else(|| "none".to_owned());
     let principal_id = journal_principal_id(root);
+    let manual_stats = principal_id
+        .as_deref()
+        .map(|id| manual_owner_tag_stats(root, id))
+        .unwrap_or_default();
     if let Some(principal_id) = principal_id.as_deref()
         && let Some(centroid) = owner_centroid_summary(
             &root
@@ -255,14 +275,11 @@ fn owner_voice_state(root: &Path) -> OwnerVoice {
             centroid_saved: true,
             evidence_tier: Some(centroid.evidence_tier),
             evidence_count: centroid.cluster_size,
+            manual_tag_lookup_error_count: manual_stats.lookup_error_count,
             built_at: centroid.created_at,
             refreshed_at: Some(centroid.last_refreshed_at),
         };
     }
-    let manual_tags_count = principal_id
-        .as_deref()
-        .map(|id| count_manual_owner_tags(root, id))
-        .unwrap_or_default();
     OwnerVoice {
         bootstrap_state: "pre_bootstrap",
         status,
@@ -271,7 +288,8 @@ fn owner_voice_state(root: &Path) -> OwnerVoice {
             .get("evidence_tier")
             .and_then(Value::as_str)
             .map(str::to_owned),
-        evidence_count: i32::try_from(manual_tags_count).unwrap_or(i32::MAX),
+        evidence_count: i32::try_from(manual_stats.manual_tags_count).unwrap_or(i32::MAX),
+        manual_tag_lookup_error_count: manual_stats.lookup_error_count,
         built_at: None,
         refreshed_at: None,
     }
@@ -293,9 +311,11 @@ pub(crate) fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
+#[derive(Default)]
 pub(crate) struct ManualOwnerTagStats {
     pub(crate) manual_tags_count: usize,
     pub(crate) streams_represented: usize,
+    pub(crate) lookup_error_count: usize,
 }
 
 pub(crate) fn count_manual_owner_tags(root: &Path, principal_id: &str) -> usize {
@@ -312,9 +332,12 @@ pub(crate) fn manual_owner_tag_stats(root: &Path, principal_id: &str) -> ManualO
         return ManualOwnerTagStats {
             manual_tags_count: 0,
             streams_represented: 0,
+            lookup_error_count: 0,
         };
     };
-    let mut latest = BTreeMap::<(String, String, String, i64), (i64, usize, Value)>::new();
+    let mut latest =
+        BTreeMap::<(String, String, String, String, String, i64), (i64, usize, Value)>::new();
+    let mut invalid_layout_count = 0;
     for (index, row) in voiceprints.metadata.into_iter().enumerate() {
         let Some(day) = row.get("day").and_then(Value::as_str) else {
             continue;
@@ -328,9 +351,22 @@ pub(crate) fn manual_owner_tag_stats(root: &Path, principal_id: &str) -> ManualO
         let Some(sentence_id) = value_as_i64(row.get("sentence_id")) else {
             continue;
         };
+        let layout = match decode_stream_layout_value(row.get("stream_layout")) {
+            Ok(SegmentLayout::Direct) => "direct",
+            Ok(SegmentLayout::Named) => "named",
+            Err(_) => {
+                invalid_layout_count += 1;
+                continue;
+            }
+        };
         let added_at = value_as_i64(row.get("added_at")).unwrap_or(-1);
         let key = (
             day.to_owned(),
+            layout.to_owned(),
+            row.get("stream")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
             segment_key.to_owned(),
             source.to_owned(),
             sentence_id,
@@ -342,21 +378,25 @@ pub(crate) fn manual_owner_tag_stats(root: &Path, principal_id: &str) -> ManualO
             latest.insert(key, (added_at, index, row));
         }
     }
-    let (manual_tags_count, streams) = latest
-        .into_values()
-        .filter_map(|(_, _, row)| manual_owner_tag_stream(root, principal_id, &row))
-        .fold(
-            (0, std::collections::BTreeSet::new()),
-            |(count, mut streams), stream| {
+    let mut manual_tags_count = 0;
+    let mut lookup_error_count = invalid_layout_count;
+    let mut streams = std::collections::BTreeSet::new();
+    for (_, _, row) in latest.into_values() {
+        match manual_owner_tag_stream(root, principal_id, &row) {
+            ManualOwnerTagResolution::Tagged(stream) => {
+                manual_tags_count += 1;
                 if !stream.is_empty() {
                     streams.insert(stream);
                 }
-                (count + 1, streams)
-            },
-        );
+            }
+            ManualOwnerTagResolution::LookupError => lookup_error_count += 1,
+            ManualOwnerTagResolution::NotTagged => {}
+        }
+    }
     ManualOwnerTagStats {
         manual_tags_count,
         streams_represented: streams.len(),
+        lookup_error_count,
     }
 }
 
@@ -366,61 +406,81 @@ fn value_as_i64(value: Option<&Value>) -> Option<i64> {
         .or_else(|| value.and_then(Value::as_str)?.parse().ok())
 }
 
-fn manual_owner_tag_stream(root: &Path, principal_id: &str, row: &Value) -> Option<String> {
-    let day = row.get("day").and_then(Value::as_str)?;
-    let segment_key = row.get("segment_key").and_then(Value::as_str)?;
-    let source = row.get("source").and_then(Value::as_str)?;
-    let sentence_id = value_as_i64(row.get("sentence_id"))?;
-    let segment = match row
-        .get("stream")
-        .and_then(Value::as_str)
-        .filter(|stream| !stream.is_empty())
-    {
-        Some(stream) => (
-            root.join("chronicle")
-                .join(day)
-                .join(stream)
-                .join(segment_key),
-            stream.to_owned(),
-        ),
-        None => {
-            let matches = fs::read_dir(root.join("chronicle").join(day))
-                .ok()
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .map(|entry| entry.path().join(segment_key))
-                .filter(|path| path.is_dir())
-                .collect::<Vec<_>>();
-            if matches.len() != 1 {
-                return None;
-            }
-            let segment = matches.into_iter().next()?;
-            let stream = segment
-                .parent()?
-                .file_name()?
-                .to_string_lossy()
-                .into_owned();
-            (segment, stream)
-        }
+enum ManualOwnerTagResolution {
+    Tagged(String),
+    NotTagged,
+    LookupError,
+}
+
+fn manual_owner_tag_stream(
+    root: &Path,
+    principal_id: &str,
+    row: &Value,
+) -> ManualOwnerTagResolution {
+    let Some(day) = row.get("day").and_then(Value::as_str) else {
+        return ManualOwnerTagResolution::NotTagged;
     };
-    let labels = read_json_object(&segment.0.join("talents/speaker_labels.json"))
-        .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())?;
+    let Some(segment_key) = row.get("segment_key").and_then(Value::as_str) else {
+        return ManualOwnerTagResolution::NotTagged;
+    };
+    let Some(source) = row.get("source").and_then(Value::as_str) else {
+        return ManualOwnerTagResolution::NotTagged;
+    };
+    let Some(sentence_id) = value_as_i64(row.get("sentence_id")) else {
+        return ManualOwnerTagResolution::NotTagged;
+    };
+    let Ok(layout) = decode_stream_layout_value(row.get("stream_layout")) else {
+        return ManualOwnerTagResolution::LookupError;
+    };
+    let stream = match (
+        layout,
+        row.get("stream")
+            .and_then(Value::as_str)
+            .filter(|stream| !stream.is_empty()),
+    ) {
+        (SegmentLayout::Direct, _) => DEFAULT_STREAM,
+        (SegmentLayout::Named, Some(stream)) => stream,
+        (SegmentLayout::Named, None) => return ManualOwnerTagResolution::LookupError,
+    };
+    let segment = match lookup_segment(
+        root,
+        day,
+        stream,
+        segment_key,
+        Ok(layout),
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => path,
+        SegmentLookup::Absent
+        | SegmentLookup::UnsupportedLayout
+        | SegmentLookup::MalformedLayout
+        | SegmentLookup::Failed(_) => return ManualOwnerTagResolution::LookupError,
+    };
+    let Some(labels) = read_json_object(&segment.join("talents/speaker_labels.json"))
+        .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())
+    else {
+        return ManualOwnerTagResolution::NotTagged;
+    };
     let label = labels
         .into_iter()
         .find(|label| value_as_i64(label.get("sentence_id")) == Some(sentence_id));
-    let label = label?;
+    let Some(label) = label else {
+        return ManualOwnerTagResolution::NotTagged;
+    };
     if label.get("speaker").and_then(Value::as_str) != Some(principal_id) {
-        return None;
+        return ManualOwnerTagResolution::NotTagged;
     }
     if !matches!(
         label.get("method").and_then(Value::as_str),
         Some("user_assigned" | "user_corrected" | "user_confirmed")
     ) {
-        return None;
+        return ManualOwnerTagResolution::NotTagged;
     }
-    (segment_overlap_fraction(&segment.0.join(format!("{source}.jsonl"))) <= 0.10)
-        .then_some(segment.1)
+    if segment_overlap_fraction(&segment.join(format!("{source}.jsonl"))) <= 0.10 {
+        ManualOwnerTagResolution::Tagged(stream.to_owned())
+    } else {
+        ManualOwnerTagResolution::NotTagged
+    }
 }
 
 pub(crate) fn segment_overlap_fraction(path: &Path) -> f64 {
@@ -443,7 +503,8 @@ mod tests {
         let root = std::env::temp_dir().join("solstone-quality-empty-test");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("chronicle")).expect("chronicle creates");
-        let status = serde_json::to_value(quality_status(&root)).expect("quality serializes");
+        let status = serde_json::to_value(quality_status(&root).expect("quality builds"))
+            .expect("quality serializes");
         assert_eq!(status["quality_window_count"], 0);
         assert_eq!(status["owner_voice"]["bootstrap_state"], "pre_bootstrap");
         let _ = std::fs::remove_dir_all(root);
@@ -452,5 +513,37 @@ mod tests {
     #[test]
     fn missing_centroid_is_not_loaded() {
         assert!(owner_centroid_summary(Path::new("missing-owner-centroid.npz")).is_none());
+    }
+
+    #[test]
+    fn manual_owner_tag_stream_reads_direct_layout() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("journal");
+        let segment = root.path().join("chronicle/20260731/080000_300");
+        std::fs::create_dir_all(segment.join("talents")).expect("direct");
+        std::fs::write(
+            segment.join("talents/speaker_labels.json"),
+            r#"{"labels":[{"sentence_id":1,"speaker":"ada_lovelace","method":"user_assigned"}]}"#,
+        )
+        .expect("labels");
+        std::fs::write(
+            segment.join("mic_audio.jsonl"),
+            "{\"overlap_fraction\":0}\n",
+        )
+        .expect("jsonl");
+        let stream = super::manual_owner_tag_stream(
+            root.path(),
+            "ada_lovelace",
+            &serde_json::json!({
+                "day": "20260731",
+                "segment_key": "080000_300",
+                "source": "mic_audio",
+                "sentence_id": 1,
+                "stream_layout": "direct"
+            }),
+        );
+        assert!(matches!(
+            stream,
+            super::ManualOwnerTagResolution::Tagged(ref value) if value == "_default"
+        ));
     }
 }

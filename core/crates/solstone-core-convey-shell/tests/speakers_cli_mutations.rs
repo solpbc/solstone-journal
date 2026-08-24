@@ -300,3 +300,163 @@ async fn link_import_rejects_ambiguous_alias_conflict() {
     assert_eq!(status, StatusCode::CONFLICT, "{value}");
     assert_eq!(value["reason_code"], "entity_alias_conflict");
 }
+
+fn direct_dir(journal: &Journal, day: &str, segment: &str) {
+    fs::create_dir_all(journal.0.join("chronicle").join(day).join(segment)).expect("direct");
+}
+
+fn assert_direct_refused(status: StatusCode, body: &Value) {
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["reason_code"], "speaker_segment_layout_unsupported");
+    assert_eq!(
+        body["error"],
+        "This command can't change that speaker review."
+    );
+    assert_eq!(
+        body["detail"],
+        "This segment uses the direct journal layout, which this command doesn't support."
+    );
+}
+
+#[tokio::test]
+async fn tag_cli_refuses_direct_layout_without_writes() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    direct_dir(&journal, "20260808", "120000_1");
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_1",
+            "sentence_id": 1,
+            "speaker": "owner",
+            "source": "audio",
+            "stream_layout": "direct",
+        }),
+    )
+    .await;
+    assert_direct_refused(status, &refused);
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+}
+
+#[tokio::test]
+async fn attribute_segment_refuses_direct_layout_without_writes() {
+    let journal = Journal::new();
+    direct_dir(&journal, "20260808", "120000_1");
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/attribute-segment",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_1",
+            "stream_layout": "direct",
+        }),
+    )
+    .await;
+    assert_direct_refused(status, &refused);
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+}
+
+#[tokio::test]
+async fn review_cli_reads_a_direct_segment() {
+    let journal = Journal::new();
+    let segment = journal.0.join("chronicle/20260808/120000_1");
+    fs::create_dir_all(&segment).expect("direct");
+    fs::write(
+        segment.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"text\":\"hello\"}\n",
+    )
+    .expect("transcript");
+    let response = router(journal.0.clone())
+        .oneshot(
+            axum::http::Request::get(
+                "/app/speakers/api/review-cli/20260808/_default/120000_1/audio?stream_layout=direct",
+            )
+            .body(axum::body::Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+    )
+    .expect("json");
+    assert_eq!(body["success"], true, "{body}");
+    assert_eq!(
+        body["sentences"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn tag_cli_malformed_stream_layout_is_not_named() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({
+            "day": "20260808",
+            "stream": "main",
+            "segment": "120000_1",
+            "sentence_id": 1,
+            "speaker": "owner",
+            "source": "audio",
+            "stream_layout": "Direct",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert_eq!(refused["reason_code"], "invalid_segment_or_stream");
+}
+
+#[tokio::test]
+async fn backfill_last_seen_reads_direct_labels_and_preflights_all_labels_before_writes() {
+    let journal = Journal::new();
+    journal.entity("owner", false);
+    journal.voiceprint("owner");
+    let direct = journal.0.join("chronicle/20260808/120000_1/talents");
+    fs::create_dir_all(&direct).expect("direct talents create");
+    fs::write(
+        direct.join("speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1,"speaker":"owner"}]}).to_string(),
+    )
+    .expect("direct labels write");
+
+    let (status, result) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/backfill-last-seen",
+        json!({"commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["labels_read"], 1, "{result}");
+    assert_eq!(result["rows_written"], 1, "{result}");
+    let rows = solstone_core_entity::load_entity_voiceprints_file(&journal.0, "owner")
+        .expect("voiceprints remain readable");
+    let metadata: Value = serde_json::from_str(&rows.metadata[0]).expect("metadata parses");
+    assert!(metadata["last_seen_ts"].as_i64().unwrap_or_default() > 0);
+
+    let invalid = journal.0.join("chronicle/20260809/main/120000_1/talents");
+    fs::create_dir_all(&invalid).expect("invalid segment creates");
+    fs::write(invalid.join("speaker_labels.json"), b"not json").expect("invalid labels write");
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/backfill-last-seen",
+        json!({"commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_command_failed");
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+}

@@ -14,6 +14,10 @@ use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
+use crate::speakers_discovery_write::{IdentifyPreflightError, preflight_identify_cluster};
+use crate::speakers_segment_catalog::{
+    UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE, UNSUPPORTED_LAYOUT_REASON,
+};
 
 pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = match request_json(request).await {
@@ -30,6 +34,25 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         .map(str::to_owned);
     if name.as_deref().is_none_or(str::is_empty) && entity_id.as_deref().is_none_or(str::is_empty) {
         return bad("missing_required_field", "name or entity_id is required");
+    }
+    match preflight_identify_cluster(&root.0, cluster_id) {
+        Ok(()) => {}
+        Err(IdentifyPreflightError::UnsupportedLayout) => {
+            return err(
+                UNSUPPORTED_LAYOUT_REASON,
+                UNSUPPORTED_LAYOUT_MESSAGE,
+                UNSUPPORTED_LAYOUT_DETAIL,
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        Err(IdentifyPreflightError::Failed(detail)) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &detail,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
     }
     let request_id = body
         .get("request_id")

@@ -109,6 +109,54 @@ async fn assert_case(app: axum::Router, path: &str, expected: Value) -> Value {
 }
 
 #[tokio::test]
+async fn discovery_presence_reads_a_direct_segment_member() {
+    let journal = EmptyEstablishedJournal::new();
+    let segment = journal.0.join("chronicle/20260731/080000_300");
+    fs::create_dir_all(segment.join("talents")).expect("direct");
+    fs::write(
+        segment.join("mic_audio.jsonl"),
+        "{\"raw\":\"mic_audio.flac\"}\n{\"id\":1,\"text\":\"hello\"}\n",
+    )
+    .expect("transcript");
+    fs::write(segment.join("talents/speakers.json"), "[\"Ada\"]").expect("speakers");
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
+    fs::write(
+        journal.0.join("awareness/discovery_clusters.json"),
+        serde_json::json!({
+            "clusters": {
+                "1": [{
+                    "day": "20260731",
+                    "stream": "_default",
+                    "segment_key": "080000_300",
+                    "source": "mic_audio",
+                    "sentence_id": 1,
+                    "stream_layout": "direct"
+                }]
+            }
+        })
+        .to_string(),
+    )
+    .expect("cache");
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::get("/app/speakers/api/discovery/cluster/1/presence")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status().as_u16(), 200);
+    let body: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+    )
+    .expect("json");
+    assert_eq!(body["cluster_id"], 1, "{body}");
+    assert_eq!(body["facts"]["segment_count"], 1, "{body}");
+}
+
+#[tokio::test]
 async fn discovery_cache_matches_populated_and_empty_corpora() {
     let journal = support::build_populated_journal();
     assert_case(
@@ -160,4 +208,102 @@ async fn resolve_statement_finds_a_cached_member_without_an_oracle() {
     )
     .expect("response JSON parses");
     assert_eq!(actual, expected);
+}
+
+#[tokio::test]
+async fn resolve_statement_distinguishes_direct_and_named_default_twins() {
+    let journal = EmptyEstablishedJournal::new();
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness creates");
+    let member = serde_json::json!({
+        "day": "20260731",
+        "stream": "_default",
+        "segment_key": "080000_300",
+        "source": "mic_audio",
+        "sentence_id": 1,
+    });
+    let mut direct = member.clone();
+    direct["stream_layout"] = Value::String("direct".to_owned());
+    let mut named = member;
+    named["stream_layout"] = Value::String("named".to_owned());
+    fs::write(
+        journal.0.join("awareness/discovery_clusters.json"),
+        serde_json::json!({"clusters": {"1": [named], "2": [direct]}}).to_string(),
+    )
+    .expect("cache writes");
+    let base = "/app/speakers/api/discovery/resolve-statement?voice_day=20260731&voice_stream=_default&voice_segment_key=080000_300&voice_source=mic_audio&voice_sentence_id=1";
+    for (query, expected_cluster) in [
+        (base.to_owned(), 1),
+        (format!("{base}&voice_stream_layout=direct"), 2),
+    ] {
+        let response = router(journal.0.clone())
+            .oneshot(
+                Request::get(query)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(response.status().as_u16(), 200);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body reads"),
+        )
+        .expect("response JSON parses");
+        assert_eq!(
+            body,
+            serde_json::json!({"status": "hit", "cluster_id": expected_cluster})
+        );
+    }
+}
+
+#[tokio::test]
+async fn mixed_invalid_discovery_members_are_never_reported_as_a_complete_subset() {
+    let journal = EmptyEstablishedJournal::new();
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness creates");
+    let valid = serde_json::json!({
+        "day": "20260731",
+        "stream": "field",
+        "segment_key": "090000_300",
+        "source": "mic_audio",
+        "sentence_id": 1,
+        "stream_layout": "named",
+    });
+    let mut invalid = valid.clone();
+    invalid["stream_layout"] = Value::String("Named".to_owned());
+    fs::write(
+        journal.0.join("awareness/discovery_clusters.json"),
+        serde_json::json!({"clusters": {"1": [valid, invalid]}}).to_string(),
+    )
+    .expect("cache writes");
+
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::get("/app/speakers/api/discovery/cluster/1/presence")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status().as_u16(), 500);
+
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::get("/app/speakers/api/discovery/resolve-statement?voice_day=20260731&voice_stream=field&voice_segment_key=090000_300&voice_source=mic_audio&voice_sentence_id=1")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status().as_u16(), 200);
+    let body: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body reads"),
+    )
+    .expect("response JSON parses");
+    assert_eq!(
+        body,
+        serde_json::json!({"status": "cache_incomplete", "cluster_id": null})
+    );
 }

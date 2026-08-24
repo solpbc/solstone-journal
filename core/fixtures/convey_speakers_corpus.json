@@ -243,11 +243,11 @@
       "why": "the date_nav contract -- coverage + months"
     },
     {
-      "body_bytes": 857,
-      "body_sha256": "267a6ca6af96643e3cd07ad089488639d3e52f36addb7d8304eb91908a2a41c5",
+      "body_bytes": 891,
+      "body_sha256": "8de1b95a28912c66f49767b30f4d4f459a330bdbf4ee03a119cd0c6c198f6381",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "857",
+        "Content-Length": "891",
         "Content-Type": "application/json"
       },
       "json": {
@@ -273,6 +273,7 @@
           "centroid_saved": false,
           "evidence_count": 0,
           "evidence_tier": null,
+          "manual_tag_lookup_error_count": 0,
           "refreshed_at": null,
           "status": "none"
         },
@@ -617,11 +618,11 @@
       "why": "owner voiceprint state machine"
     },
     {
-      "body_bytes": 761,
-      "body_sha256": "87d3ecfda190260c7db11e46459327b76391c5adcda1b2ab4860e4b10cabc3f7",
+      "body_bytes": 833,
+      "body_sha256": "4e449af970751df23b18e9182807b78b47a7e1638dafbd1f91fb7021e8b73c5e",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "761",
+        "Content-Length": "833",
         "Content-Type": "application/json"
       },
       "json": {
@@ -636,6 +637,7 @@
                 "sentence_id": 1,
                 "source": "mic_audio",
                 "stream": "field",
+                "stream_layout": "named",
                 "text": "Good morning."
               },
               {
@@ -645,6 +647,7 @@
                 "sentence_id": 3,
                 "source": "mic_audio",
                 "stream": "field",
+                "stream_layout": "named",
                 "text": "We should ship it."
               }
             ],
@@ -661,6 +664,7 @@
                 "sentence_id": 1,
                 "source": "sys_audio",
                 "stream": "desk",
+                "stream_layout": "named",
                 "text": "First."
               }
             ],
@@ -678,11 +682,11 @@
       "why": "cached clusters, no scan"
     },
     {
-      "body_bytes": 767,
-      "body_sha256": "368ce3ba228b64b4596c02e5c2d7b819a1bf12c82c14a6046841d6fdef209805",
+      "body_bytes": 791,
+      "body_sha256": "a92cb2acae5356d2e892ee3317d0554150d4beb9297d2a03e29f95fc3275bb30",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "767",
+        "Content-Length": "791",
         "Content-Type": "application/json"
       },
       "json": {
@@ -724,6 +728,7 @@
               "setting": null,
               "source": "mic_audio",
               "stream": "field",
+              "stream_layout": "named",
               "text": "Good morning."
             }
           ],
@@ -968,7 +973,8 @@
               "Alan Turing"
             ],
             "start": "09:00",
-            "stream": "field"
+            "stream": "field",
+            "stream_layout": "named"
           },
           {
             "attribution_needs_review": 0,
@@ -984,7 +990,8 @@
             "speaker_count": 0,
             "speakers": [],
             "start": "14:00",
-            "stream": "desk"
+            "stream": "desk",
+            "stream_layout": "named"
           }
         ],
         "total": 2
@@ -1023,7 +1030,8 @@
               "Alan Turing"
             ],
             "start": "09:00",
-            "stream": "field"
+            "stream": "field",
+            "stream_layout": "named"
           }
         ],
         "total": 2
@@ -1059,7 +1067,8 @@
             "speaker_count": 0,
             "speakers": [],
             "start": "14:00",
-            "stream": "desk"
+            "stream": "desk",
+            "stream_layout": "named"
           }
         ],
         "total": 2
@@ -1180,11 +1189,11 @@
       "why": "labels file is corrupt"
     },
     {
-      "body_bytes": 1992,
-      "body_sha256": "87ba4ea0479a4e8bc3f9a8336e8327024f6496afff3efcadd91ba8c38ca45d4a",
+      "body_bytes": 2057,
+      "body_sha256": "ce60db76d59f732487fa44afbb61ba4d3d2b9e517c0518a8fbfc2bb3238a4b65",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "1992",
+        "Content-Length": "2057",
         "Content-Type": "application/json"
       },
       "json": {
@@ -1246,7 +1255,10 @@
         "segment": {
           "end": "09:05",
           "key": "090000_300",
-          "start": "09:00"
+          "start": "09:00",
+          "stream": "field",
+          "stream_layout": "named",
+          "time_key": "090000_300"
         },
         "sentences": [
           {
@@ -1313,11 +1325,11 @@
       "why": "the largest handler, fully populated"
     },
     {
-      "body_bytes": 1061,
-      "body_sha256": "93593b8ce41bd84d74029c6d9f99a8e5007e0744d8b35014313c2d2882177999",
+      "body_bytes": 1126,
+      "body_sha256": "4eeb752af6c0f1695fa7b4c280696338817ec1cadc26727711fe201ec6793f55",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "1061",
+        "Content-Length": "1126",
         "Content-Type": "application/json"
       },
       "json": {
@@ -1379,7 +1391,10 @@
         "segment": {
           "end": "10:17",
           "key": "101500_120",
-          "start": "10:15"
+          "start": "10:15",
+          "stream": "field",
+          "stream_layout": "named",
+          "time_key": "101500_120"
         },
         "sentences": [],
         "source": "mic_audio",
@@ -1397,11 +1412,11 @@
       "why": "\ud83d\udd34 transcript present, .npz ABSENT -- blank screen, no signal"
     },
     {
-      "body_bytes": 1616,
-      "body_sha256": "e856287693a53da3451a71a2453d214fa7d771bdd6475524e49c28e8c3e71831",
+      "body_bytes": 1681,
+      "body_sha256": "acf05b2def4364754b0813f8e58f227035bcbdb85a32657823a7090dcc60bc23",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "1616",
+        "Content-Length": "1681",
         "Content-Type": "application/json"
       },
       "json": {
@@ -1463,7 +1478,10 @@
         "segment": {
           "end": "17:34",
           "key": "173000_240",
-          "start": "17:30"
+          "start": "17:30",
+          "stream": "field",
+          "stream_layout": "named",
+          "time_key": "173000_240"
         },
         "sentences": [
           {
@@ -1514,11 +1532,11 @@
       "why": "labels {} -- has_labels true, needs_review false"
     },
     {
-      "body_bytes": 1897,
-      "body_sha256": "2e15b05a9518f2e43f4217a119e9b5659afe4e3bc361e400ea4f053225b74c41",
+      "body_bytes": 1955,
+      "body_sha256": "4e5e711e0988d6681fa3d03da29b163cfdd94ef9ab17b89c81e06559c9f539e0",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "1897",
+        "Content-Length": "1955",
         "Content-Type": "application/json"
       },
       "json": {
@@ -1580,7 +1598,10 @@
         "segment": {
           "end": "14:10",
           "key": "140000_600",
-          "start": "14:00"
+          "start": "14:00",
+          "stream": "desk",
+          "stream_layout": "named",
+          "time_key": "140000_600"
         },
         "sentences": [
           {

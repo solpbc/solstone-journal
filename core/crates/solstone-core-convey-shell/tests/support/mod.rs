@@ -13,6 +13,33 @@ use solstone_core_npy::{parse_npy, write_npy};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+/// Byte-for-byte file snapshot of a journal tree, used to prove mutation
+/// refusals write nothing.
+pub fn snapshot_files(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    let mut files = BTreeMap::new();
+    snapshot_walk(root, root, &mut files);
+    files
+}
+
+fn snapshot_walk(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            snapshot_walk(root, &path, files);
+        } else if path.is_file() {
+            let rel = path
+                .strip_prefix(root)
+                .expect("snapshot path is under root")
+                .to_string_lossy()
+                .into_owned();
+            files.insert(rel, fs::read(&path).unwrap_or_default());
+        }
+    }
+}
+
 const DAYS: [&str; 31] = [
     "20260701", "20260702", "20260703", "20260704", "20260705", "20260706", "20260707", "20260708",
     "20260709", "20260710", "20260711", "20260712", "20260713", "20260714", "20260715", "20260716",

@@ -175,3 +175,61 @@ async fn stats_and_segments_match_the_empty_shell_corpus() {
     assert_shell_corpus_case(app.clone(), "/app/speakers/api/stats/202601").await;
     assert_shell_corpus_case(app, "/app/speakers/api/segments/20260101").await;
 }
+
+#[tokio::test]
+async fn segments_keep_direct_and_named_default_twins_distinct() {
+    let journal = EmptyEstablishedJournal::new();
+    let direct = journal.0.join("chronicle/20260101/080000_60");
+    let named = journal.0.join("chronicle/20260101/_default/080000_60");
+    fs::create_dir_all(&direct).expect("direct segment creates");
+    fs::create_dir_all(&named).expect("named segment creates");
+    fs::write(direct.join("audio.npz"), []).expect("direct evidence writes");
+    fs::write(named.join("audio.npz"), []).expect("named evidence writes");
+
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::get("/app/speakers/api/segments/20260101")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status().as_u16(), 200);
+    let body: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body reads"),
+    )
+    .expect("response JSON parses");
+    let rows = body["segments"].as_array().expect("segments are an array");
+    assert_eq!(rows.len(), 2, "{body}");
+    assert!(rows.iter().any(|row| {
+        row["key"] == "080000_60" && row["stream"] == "_default" && row["stream_layout"] == "direct"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["key"] == "080000_60" && row["stream"] == "_default" && row["stream_layout"] == "named"
+    }));
+}
+
+#[test]
+fn workspace_uses_full_collision_safe_segment_identity_and_fallible_loading() {
+    let source = include_str!("../assets/speakers/workspace.html");
+    for required in [
+        "encodeURIComponent(JSON.stringify([",
+        "segmentLayout(seg)",
+        "data-segment-identity",
+        "legacyMatches.length === 1",
+        "legacyKey = decodeURIComponent(rawHash)",
+        "const nextSegments = validatedSegments(data.segments)",
+        "window.apiJson(segmentsApiUrl",
+        "stream_layout: segmentLayout(selectedSegment)",
+        "throw new Error('invalid segment layout')",
+    ] {
+        assert!(
+            source.contains(required),
+            "missing workspace contract: {required}"
+        );
+    }
+    assert!(!source.contains("fetch(segmentsApiUrl"));
+    assert!(!source.contains("data-key="));
+}

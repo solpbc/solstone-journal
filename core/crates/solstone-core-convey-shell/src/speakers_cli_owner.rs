@@ -13,8 +13,13 @@ use axum::{Extension, Json};
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
+    UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
+};
 
 pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = match body(request).await {
@@ -39,12 +44,42 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return required("source");
     };
-    let segment = root
-        .0
-        .join("chronicle")
-        .join(day)
-        .join(stream)
-        .join(segment_key);
+    let layout = decode_stream_layout_value(body.get("stream_layout"));
+    let segment = match lookup_segment(
+        &root.0,
+        day,
+        stream,
+        segment_key,
+        layout,
+        DirectSupport::Refuse,
+    ) {
+        SegmentLookup::Present(path) => path,
+        SegmentLookup::UnsupportedLayout => {
+            return err(
+                UNSUPPORTED_LAYOUT_REASON,
+                UNSUPPORTED_LAYOUT_MESSAGE,
+                UNSUPPORTED_LAYOUT_DETAIL,
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        SegmentLookup::MalformedLayout => {
+            return err(
+                "invalid_segment_or_stream",
+                "I couldn't use that segment or stream.",
+                "Invalid segment key or stream",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        SegmentLookup::Absent => {
+            return err(
+                "speaker_review_unavailable",
+                "I couldn't load that speaker review.",
+                "No speaker labels found",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        SegmentLookup::Failed(error) => return speaker_write_error(error.to_string(), true),
+    };
     let labels = match std::fs::read(segment.join("talents/speaker_labels.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
@@ -111,7 +146,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
             StatusCode::NOT_FOUND,
         );
     };
-    let metadata = json!({"day":day,"segment_key":segment_key,"source":source,"sentence_id":sentence_id,"stream":stream});
+    let metadata = json!({"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"segment_key":segment_key,"source":source,"sentence_id":sentence_id,"stream":stream});
     if let Err(error) = solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
         &root.0,
         speaker,
@@ -151,6 +186,13 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         return speaker_write_error(error.to_string(), true);
     }
     Json(json!({"success":true,"status":"assigned","speaker":speaker})).into_response()
+}
+
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 
 fn encoder() -> solstone_core_entity::EncoderIdentity {

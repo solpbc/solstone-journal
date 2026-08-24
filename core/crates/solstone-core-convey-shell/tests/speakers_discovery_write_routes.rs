@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -105,6 +106,12 @@ impl Journal {
         )
         .expect("labels");
         write_embeddings(&directory.join("audio.npz"), embeddings);
+    }
+
+    fn direct_segment(&self, key: &str) {
+        let directory = self.0.join("chronicle").join(DAY).join(key);
+        fs::create_dir_all(directory.join("talents")).expect("direct talents");
+        fs::write(directory.join("marker"), "unchanged").expect("direct marker");
     }
 }
 impl Drop for Journal {
@@ -218,6 +225,32 @@ fn add_candidates(journal: &Journal, count: usize) {
     }
 }
 
+fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(root: &Path, path: &Path, output: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        let mut entries = fs::read_dir(path)
+            .expect("snapshot directory")
+            .map(|entry| entry.expect("snapshot entry"))
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, output);
+            } else {
+                output.insert(
+                    path.strip_prefix(root)
+                        .expect("relative snapshot")
+                        .to_path_buf(),
+                    fs::read(&path).expect("snapshot file"),
+                );
+            }
+        }
+    }
+    let mut output = BTreeMap::new();
+    walk(root, root, &mut output);
+    output
+}
+
 fn install_discovery_helper() {
     DISCOVERY_HELPER.call_once(|| {
         let path = std::env::current_exe()
@@ -301,6 +334,8 @@ async fn dismiss_validates_and_requires_a_cached_cluster() {
 #[tokio::test]
 async fn identify_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lock() {
     let journal = Journal::new();
+    journal.candidate_segment(1, json!({"labels":[]}), &[unit(0.0, 1.0)]);
+    journal.cache(candidate_members(1));
     let _held = solstone_core_entity::hold_entity_trust_lock_raw_for_test(&journal.0)
         .expect("hold trust lock outside the route coordinator");
 
@@ -316,6 +351,99 @@ async fn identify_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lo
     assert_eq!(
         body["error"],
         "I couldn't update that voice because another update is running."
+    );
+}
+
+#[tokio::test]
+async fn web_and_cli_identify_refuse_direct_members_before_any_write() {
+    for route in [
+        "/app/speakers/api/discovery/identify",
+        "/app/speakers/api/discovery/identify-cli",
+    ] {
+        let journal = Journal::new();
+        journal.direct_segment("120000_1");
+        journal.cache(json!([{
+            "day": DAY,
+            "stream_layout": "direct",
+            "stream": "_default",
+            "segment_key": "120000_1",
+            "source": SOURCE,
+            "sentence_id": 1,
+        }]));
+        let before = snapshot(&journal.0);
+
+        let (status, body) = call(
+            &journal.0,
+            route,
+            json!({"cluster_id":7,"name":"target","create_new":true}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {body}");
+        assert_eq!(
+            body["reason_code"], "speaker_segment_layout_unsupported",
+            "{route}: {body}"
+        );
+        assert_eq!(
+            body["error"],
+            "This command can't change that speaker review."
+        );
+        assert_eq!(
+            body["detail"],
+            "This segment uses the direct journal layout, which this command doesn't support."
+        );
+        assert_eq!(snapshot(&journal.0), before, "{route} mutated the journal");
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn scan_catalog_failure_preserves_both_cache_files() {
+    use std::os::unix::fs::symlink;
+
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.owner_centroid();
+    journal.cache_markers();
+    let real = journal.0.join("outside-segment");
+    fs::create_dir_all(&real).expect("real segment");
+    let stream = journal.0.join("chronicle").join(DAY).join(STREAM);
+    fs::create_dir_all(&stream).expect("stream");
+    symlink(&real, stream.join("120000_1")).expect("segment symlink");
+    let before = snapshot(&journal.0);
+
+    let (status, body) = call(&journal.0, "/app/speakers/api/discovery/scan", json!({})).await;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert_eq!(body["reason_code"], "speaker_command_failed");
+    assert_eq!(
+        snapshot(&journal.0),
+        before,
+        "failed scan changed the cache"
+    );
+}
+
+#[tokio::test]
+async fn scan_invalid_attributed_evidence_preserves_both_cache_files() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.owner_centroid();
+    journal.candidate_segment(
+        1,
+        json!({"labels":[{"speaker":"someone"}]}),
+        &[unit(0.0, 1.0)],
+    );
+    journal.cache_markers();
+    let before = snapshot(&journal.0);
+
+    let (status, body) = call(&journal.0, "/app/speakers/api/discovery/scan", json!({})).await;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert_eq!(body["reason_code"], "speaker_command_failed");
+    assert_eq!(
+        snapshot(&journal.0),
+        before,
+        "invalid evidence changed the cache"
     );
 }
 

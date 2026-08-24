@@ -15,8 +15,13 @@ use axum::{Extension, Json};
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
+    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
+};
 
 pub async fn bootstrap(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     bootstrap_call(root, request, false).await
@@ -121,6 +126,43 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         Ok(fields) => fields,
         Err(response) => return response,
     };
+    let layout = decode_stream_layout_value(body.get("stream_layout"));
+    let directory =
+        match lookup_segment(&root.0, day, stream, segment, layout, DirectSupport::Refuse) {
+            SegmentLookup::Present(path) => path,
+            SegmentLookup::UnsupportedLayout => {
+                return err(
+                    UNSUPPORTED_LAYOUT_REASON,
+                    UNSUPPORTED_LAYOUT_MESSAGE,
+                    UNSUPPORTED_LAYOUT_DETAIL,
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            SegmentLookup::MalformedLayout => {
+                return err(
+                    "invalid_segment_or_stream",
+                    "I couldn't use that segment or stream.",
+                    "Invalid segment key or stream",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            SegmentLookup::Absent => {
+                return err(
+                    "speaker_review_unavailable",
+                    "I couldn't load that speaker review.",
+                    "No transcript found",
+                    StatusCode::NOT_FOUND,
+                );
+            }
+            SegmentLookup::Failed(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "I couldn't finish that speaker command.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
     let now = Utc::now().timestamp_millis();
     let outcome = match solstone_core_speaker_resolve::resolve::resolve(
         &root.0, day, stream, segment, true, now,
@@ -154,12 +196,6 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         && save
         && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
     {
-        let directory = root
-            .0
-            .join("chronicle")
-            .join(day)
-            .join(stream)
-            .join(segment);
         let metadata = metadata(output);
         if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
             &directory,
@@ -183,14 +219,14 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
         && output.source.is_some()
     {
-        match accumulate(&root.0, day, stream, segment, output, now) {
+        match accumulate(&root.0, &directory, day, stream, segment, output, now) {
             Ok(value) => value,
             Err(error) => return accumulation_error(error),
         }
     } else {
         Value::Null
     };
-    Json(json!({"result":result,"written_path":written_path,"accumulated":accumulated}))
+    Json(json!({"result":result,"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"stream":stream,"segment_key":segment,"written_path":written_path,"accumulated":accumulated}))
         .into_response()
 }
 
@@ -242,6 +278,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
                     if output.source.is_some()
                         && let Err(error) = accumulate(
                             &root.0,
+                            &segment.path,
                             &segment.day,
                             &segment.stream,
                             &segment.segment_key,
@@ -268,8 +305,19 @@ pub async fn backfill_last_seen(
 ) -> Response {
     let body = json_body(request).await.unwrap_or_else(|_| json!({}));
     let dry_run = !body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let (entity_max_ts, labels_read) = match last_seen_sources(&root.0) {
+        Ok(sources) => sources,
+        Err(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let encoder = encoder();
-    let (entity_max_ts, labels_read, mut errors) = last_seen_sources(&root.0);
+    let mut errors = Vec::new();
     let mut rows_written = 0usize;
     let mut rows_scanned = 0usize;
     let mut rows_pending = 0usize;
@@ -334,6 +382,7 @@ pub async fn backfill_last_seen(
 
 pub(crate) fn accumulate(
     root: &std::path::Path,
+    segment_dir: &std::path::Path,
     day: &str,
     stream: &str,
     segment_key: &str,
@@ -343,12 +392,7 @@ pub(crate) fn accumulate(
     let Some(source) = output.source.as_ref() else {
         return Ok(json!({}));
     };
-    let path = root
-        .join("chronicle")
-        .join(day)
-        .join(stream)
-        .join(segment_key)
-        .join(format!("{source}.npz"));
+    let path = segment_dir.join(format!("{source}.npz"));
     let Some(embeddings) = solstone_core_speaker_id::embeddings::load_embeddings_file(&path)
         .map_err(|error| {
             solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationError::Invalid(
@@ -423,61 +467,40 @@ fn accumulation_error(
     )
 }
 
-fn last_seen_sources(root: &std::path::Path) -> (BTreeMap<String, i64>, usize, Vec<String>) {
-    let mut entity_max_ts = BTreeMap::new();
+fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, usize), String> {
+    let mut entity_max_ts = BTreeMap::<String, i64>::new();
     let mut labels_read = 0;
-    let mut errors = Vec::new();
-    let chronicle = root.join("chronicle");
-    let Ok(days) = fs::read_dir(chronicle) else {
-        return (entity_max_ts, labels_read, errors);
-    };
-    for day in days.flatten() {
-        let Some(day_name) = day.file_name().to_str().map(str::to_owned) else {
-            continue;
+    for segment in catalog_journal(root).map_err(|error| error.to_string())? {
+        let labels = segment.path.join("talents/speaker_labels.json");
+        let bytes = match fs::read(&labels) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("failed to read {}: {error}", labels.display())),
         };
-        let Ok(streams) = fs::read_dir(day.path()) else {
-            continue;
-        };
-        for stream in streams.flatten() {
-            let Ok(segments) = fs::read_dir(stream.path()) else {
-                continue;
-            };
-            for segment in segments.flatten() {
-                let labels = segment.path().join("talents/speaker_labels.json");
-                if !labels.exists() {
-                    continue;
-                }
-                labels_read += 1;
-                let key = segment.file_name().to_string_lossy().into_owned();
-                let ts = match segment_timestamp(&day_name, &key) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        errors.push(format!("{day_name}/{key}: {error}"));
-                        continue;
-                    }
-                };
-                let Ok(value) = fs::read(&labels).and_then(|bytes| {
-                    serde_json::from_slice::<Value>(&bytes).map_err(std::io::Error::other)
-                }) else {
-                    continue;
-                };
-                for speaker in value
-                    .get("labels")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|row| row.get("speaker").and_then(Value::as_str))
-                    .filter(|value| !value.is_empty())
-                {
-                    entity_max_ts
-                        .entry(speaker.to_owned())
-                        .and_modify(|current| *current = (*current).max(ts))
-                        .or_insert(ts);
-                }
-            }
+        labels_read += 1;
+        let value: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("invalid labels {}: {error}", labels.display()))?;
+        let ts = segment_timestamp(&segment.day, &segment.key).map_err(|error| {
+            format!(
+                "{}/{}/{}: {error}",
+                segment.day, segment.stream, segment.name
+            )
+        })?;
+        for speaker in value
+            .get("labels")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| row.get("speaker").and_then(Value::as_str))
+            .filter(|value| !value.is_empty())
+        {
+            entity_max_ts
+                .entry(speaker.to_owned())
+                .and_modify(|current| *current = (*current).max(ts))
+                .or_insert(ts);
         }
     }
-    (entity_max_ts, labels_read, errors)
+    Ok((entity_max_ts, labels_read))
 }
 
 fn segment_timestamp(day: &str, segment: &str) -> Result<i64, String> {
@@ -572,6 +595,13 @@ pub(crate) fn metadata(
     );
     value.insert("candidate_evidence".to_owned(), Value::Array(Vec::new()));
     value
+}
+
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 fn resolve_value(outcome: &solstone_core_speaker_resolve::resolve::ResolveOutcome) -> Value {
     match outcome {

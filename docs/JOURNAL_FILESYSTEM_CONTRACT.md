@@ -10,13 +10,13 @@ today is Unix: both crates target-gate `nix` (archive also target-gates
 
 `solstone-core-journal-io` owns:
 
-- **`JournalRoot`** — one admitted journal directory, retained by descriptor.
-- **`ObjectIdentity`** — opaque `(device, inode)` pair. No public constructor,
+- **`JournalRoot`:** one admitted journal directory, retained by descriptor.
+- **`ObjectIdentity`:** opaque `(device, inode)` pair. No public constructor,
   no accessors for the raw pair, no serde.
-- **`JournalEntryKind`** — exhaustive no-follow kind: `RegularFile`,
+- **`JournalEntryKind`:** exhaustive no-follow kind: `RegularFile`,
   `Directory`, `Symlink`, `Fifo`, `Socket`, `CharacterDevice`, `BlockDevice`,
   `Other`.
-- **`JournalRootError`** — `Invalid`, `Unsupported`, `Io`, `Changed`.
+- **`JournalRootError`:** `Invalid`, `Unsupported`, `Io`, `Changed`.
 
 `JournalRoot` is not `Clone`: a cloned descriptor would be a second capability,
 and a cloned path would be reacquisition. It is not serializable.
@@ -87,7 +87,8 @@ A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid
 `Clone` and serialization; treat any stored path as metadata. No public
 filesystem trait, no `Box<dyn>`, no path-only fake backend. Windows policy,
-Win32, and `windows-sys` are out of scope; the current Lane 1 exclusion stands.
+Win32, and `windows-sys` are out of scope. The current build continues to
+exclude these Unix-only crates from Windows cross-checks.
 
 ## Bound publication
 
@@ -132,7 +133,36 @@ root-bound caller cutover. They are not Windows support.
 refused. `SegmentLocatorIdentity` / `locator_identity()` is lossless: it always
 carries an explicit `SegmentLayout` alongside the stream spelling, so Direct
 and Named-`_default` are never conflated. Disk occupancy alone cannot recover
-which layout produced an already-written `_default`-stream record — that
-record has no retained layout tag — so callers of
+which layout produced an already-written `_default`-stream record. That
+record has no retained layout tag, so callers of
 `resolve_segment_locator_exact` must supply `SegmentLayout` rather than have
 it inferred.
+
+## Convey Shell segment identity
+
+Convey Shell builds one private, fallible catalog from journal I/O
+`day_dirs`, `iter_segments`, `Segment::locator_identity`, and
+`resolve_segment_locator_exact`. A catalog row carries the day, explicit
+layout, exact UTF-8 stream, exact segment-directory basename, parsed time key,
+and the validated discovered path. A traversal, identity, or exact-resolution
+failure fails the catalog instead of producing a partial inventory.
+
+At historical Shell request and durable-record boundaries, a missing
+`stream_layout` means Named. New Shell responses and records emit either
+`direct` or `named`; an unknown or malformed tag is never treated as Named.
+`segment_key` remains the exact directory basename. Parsed time metadata is a
+separate value, so a basename such as `093000_300_summary` is never rebuilt as
+`093000_300` for lookup.
+
+Read surfaces admit both layouts through the explicit resolver. Shell-owned
+speaker mutations whose downstream implementation is still layout-blind
+refuse Direct before any mutation. The bundled speaker workspace keys a row by
+the JSON-encoded tuple `(day, stream_layout, stream, exact basename)`, and only
+accepts a legacy basename-only deep link when that basename is unique among
+the loaded rows.
+
+This does not complete the speaker-resolve migration. That crate still has
+layout-blind bootstrap, backfill, identify, resolve, owner, and voiceprint
+paths built on the legacy `segment_path` contract or records without an
+explicit layout. Direct segments remain unsupported whenever a Shell command
+hands control to one of those Named-only mutation paths.

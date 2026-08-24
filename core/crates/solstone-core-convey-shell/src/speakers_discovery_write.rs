@@ -17,10 +17,14 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_journal_io::{LockOptions, hold_lock};
+use solstone_core_journal_io::{LockOptions, SegmentLayout, hold_lock};
 
 use crate::JournalRoot;
 use crate::speakers_attribution::action;
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
+    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
+};
 
 const DISCOVERY_UNIT_NORM_TOLERANCE: f32 = 1.0e-3;
 const MIN_CLUSTER_SIZE: usize = 5;
@@ -33,11 +37,12 @@ const INVALID_EMBEDDINGS_MESSAGE: &str =
     "i skipped some voice samples because they were not usable.";
 static DISCOVERY_CACHE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-type DiscoveryMember = (String, String, String, String, i64);
+type DiscoveryMember = (String, String, String, String, String, i64);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DiscoveryCandidate {
     pub(crate) day: String,
+    pub(crate) stream_layout: SegmentLayout,
     pub(crate) stream: String,
     pub(crate) segment_key: String,
     pub(crate) source: String,
@@ -53,107 +58,195 @@ pub(crate) enum DiscoveryCandidates {
     },
 }
 
-pub(crate) fn discovery_candidates(root: &std::path::Path) -> DiscoveryCandidates {
-    let Some(principal) = crate::speakers_calendar::journal_principal_id(root) else {
-        return DiscoveryCandidates::NoConfirmedOwner;
-    };
-    let Some(owner) =
-        solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(root, &principal)
-            .ok()
-            .flatten()
-    else {
-        return DiscoveryCandidates::NoConfirmedOwner;
-    };
-    let mut rows = Vec::new();
-    let mut dropped = 0;
-    let chronicle = root.join("chronicle");
-    let Ok(days) = std::fs::read_dir(chronicle) else {
-        return DiscoveryCandidates::Candidates {
-            rows,
-            dropped_invalid: dropped,
-        };
-    };
-    for day in days.flatten() {
-        let day_name = day.file_name().to_string_lossy().into_owned();
-        let Ok(streams) = std::fs::read_dir(day.path()) else {
-            continue;
-        };
-        for stream in streams.flatten() {
-            let stream_name = stream.file_name().to_string_lossy().into_owned();
-            let Ok(segments) = std::fs::read_dir(stream.path()) else {
-                continue;
-            };
-            for segment in segments.flatten() {
-                let key = segment.file_name().to_string_lossy().into_owned();
-                let labels = std::fs::read(segment.path().join("talents/speaker_labels.json"))
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-                let attributed = labels
-                    .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|row| row.get("speaker").is_some_and(|value| !value.is_null()))
-                    .filter_map(|row| row.get("sentence_id").and_then(Value::as_i64))
-                    .collect::<std::collections::BTreeSet<_>>();
-                let Ok(entries) = std::fs::read_dir(segment.path()) else {
-                    continue;
-                };
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let Some(source) = path.file_stem().and_then(|name| name.to_str()) else {
-                        continue;
-                    };
-                    if path.extension().and_then(|ext| ext.to_str()) != Some("npz") {
-                        continue;
-                    }
-                    let Some(file) =
-                        solstone_core_speaker_id::embeddings::load_embeddings_file(&path)
-                            .ok()
-                            .flatten()
-                    else {
-                        continue;
-                    };
-                    for (sentence_id, embedding) in file.statements {
-                        if attributed.contains(&sentence_id) {
-                            continue;
-                        }
-                        let norm = embedding
-                            .iter()
-                            .map(|value| value * value)
-                            .sum::<f32>()
-                            .sqrt();
-                        if !norm.is_finite()
-                            || embedding.iter().any(|value| !value.is_finite())
-                            || (norm - 1.0).abs() > DISCOVERY_UNIT_NORM_TOLERANCE
-                        {
-                            dropped += 1;
-                            continue;
-                        }
-                        let score: f32 = embedding
-                            .iter()
-                            .zip(&owner.centroid)
-                            .map(|(left, right)| left * right)
-                            .sum();
-                        if score >= owner.threshold {
-                            continue;
-                        }
-                        rows.push(DiscoveryCandidate {
-                            day: day_name.clone(),
-                            stream: stream_name.clone(),
-                            segment_key: key.clone(),
-                            source: source.to_owned(),
-                            sentence_id,
-                            embedding,
-                        });
-                    }
-                }
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum IdentifyPreflightError {
+    UnsupportedLayout,
+    Failed(String),
+}
+
+/// Resolve every cached identify target before the speaker-resolve mutator runs.
+///
+/// The cache remains backward compatible: absent `stream_layout` means Named.
+/// Direct is represented losslessly by discovery, but identify is still a
+/// Named-only mutation until speaker-resolve accepts explicit locators.
+pub(crate) fn preflight_identify_cluster(
+    root: &Path,
+    cluster_id: i64,
+) -> Result<(), IdentifyPreflightError> {
+    let cache_path = root.join("awareness/discovery_clusters.json");
+    let bytes = fs::read(&cache_path).map_err(|error| {
+        IdentifyPreflightError::Failed(format!(
+            "failed to read discovery cache {}: {error}",
+            cache_path.display()
+        ))
+    })?;
+    let cache = serde_json::from_slice::<Value>(&bytes).map_err(|error| {
+        IdentifyPreflightError::Failed(format!(
+            "failed to parse discovery cache {}: {error}",
+            cache_path.display()
+        ))
+    })?;
+    let members = cache
+        .get("clusters")
+        .and_then(|clusters| clusters.get(cluster_id.to_string()))
+        .and_then(Value::as_array)
+        .filter(|members| !members.is_empty())
+        .ok_or_else(|| {
+            IdentifyPreflightError::Failed(format!(
+                "Cluster {cluster_id} was not found. Run a discovery scan first."
+            ))
+        })?;
+    let members = canonical_members(members).map_err(IdentifyPreflightError::Failed)?;
+    for member in &members {
+        let layout = decode_stream_layout_value(member.get("stream_layout")).map_err(|error| {
+            IdentifyPreflightError::Failed(format!("invalid discovery member layout: {error}"))
+        })?;
+        if layout == SegmentLayout::Direct {
+            return Err(IdentifyPreflightError::UnsupportedLayout);
+        }
+        let day = member["day"].as_str().expect("canonical day");
+        let stream = member["stream"].as_str().expect("canonical stream");
+        let segment = member["segment_key"]
+            .as_str()
+            .expect("canonical segment key");
+        match lookup_segment(
+            root,
+            day,
+            stream,
+            segment,
+            Ok(layout),
+            DirectSupport::Refuse,
+        ) {
+            SegmentLookup::Present(_) => {}
+            SegmentLookup::UnsupportedLayout => {
+                return Err(IdentifyPreflightError::UnsupportedLayout);
+            }
+            SegmentLookup::Absent => {
+                return Err(IdentifyPreflightError::Failed(format!(
+                    "discovery segment was not found: {day}/{stream}/{segment}"
+                )));
+            }
+            SegmentLookup::MalformedLayout => {
+                return Err(IdentifyPreflightError::Failed(format!(
+                    "invalid discovery segment identity: {day}/{stream}/{segment}"
+                )));
+            }
+            SegmentLookup::Failed(error) => {
+                return Err(IdentifyPreflightError::Failed(error.to_string()));
             }
         }
     }
-    DiscoveryCandidates::Candidates {
+    Ok(())
+}
+
+pub(crate) fn discovery_candidates(root: &std::path::Path) -> Result<DiscoveryCandidates, String> {
+    let Some(principal) = crate::speakers_calendar::journal_principal_id(root) else {
+        return Ok(DiscoveryCandidates::NoConfirmedOwner);
+    };
+    let owner =
+        solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(root, &principal)
+            .map_err(|error| error.to_string())?;
+    let Some(owner) = owner else {
+        return Ok(DiscoveryCandidates::NoConfirmedOwner);
+    };
+    let mut rows = Vec::new();
+    let mut dropped = 0;
+    for segment in catalog_journal(root).map_err(|error| error.to_string())? {
+        let labels_path = segment.path.join("talents/speaker_labels.json");
+        let attributed = match fs::read(&labels_path) {
+            Ok(bytes) => {
+                let value = serde_json::from_slice::<Value>(&bytes).map_err(|error| {
+                    format!("failed to parse {}: {error}", labels_path.display())
+                })?;
+                let labels = value
+                    .get("labels")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| {
+                        format!("invalid speaker labels at {}", labels_path.display())
+                    })?;
+                let mut attributed = BTreeSet::new();
+                for row in labels {
+                    if row.get("speaker").is_some_and(|value| !value.is_null()) {
+                        let sentence_id = row
+                            .get("sentence_id")
+                            .and_then(Value::as_i64)
+                            .ok_or_else(|| {
+                                format!(
+                                    "invalid attributed sentence id at {}",
+                                    labels_path.display()
+                                )
+                            })?;
+                        attributed.insert(sentence_id);
+                    }
+                }
+                attributed
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+            Err(error) => {
+                return Err(format!("failed to read {}: {error}", labels_path.display()));
+            }
+        };
+        let entries = fs::read_dir(&segment.path)
+            .map_err(|error| format!("failed to read {}: {error}", segment.path.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "failed to read entry in {}: {error}",
+                    segment.path.display()
+                )
+            })?;
+            let path = entry.path();
+            let Some(source) = path.file_stem().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if path.extension().and_then(|ext| ext.to_str()) != Some("npz") {
+                continue;
+            }
+            let Some(file) = solstone_core_speaker_id::embeddings::load_embeddings_file(&path)
+                .map_err(|error| format!("failed to load {}: {error}", path.display()))?
+            else {
+                continue;
+            };
+            for (sentence_id, embedding) in file.statements {
+                if attributed.contains(&sentence_id) {
+                    continue;
+                }
+                let norm = embedding
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f32>()
+                    .sqrt();
+                if !norm.is_finite()
+                    || embedding.iter().any(|value| !value.is_finite())
+                    || (norm - 1.0).abs() > DISCOVERY_UNIT_NORM_TOLERANCE
+                {
+                    dropped += 1;
+                    continue;
+                }
+                let score: f32 = embedding
+                    .iter()
+                    .zip(&owner.centroid)
+                    .map(|(left, right)| left * right)
+                    .sum();
+                if score >= owner.threshold {
+                    continue;
+                }
+                rows.push(DiscoveryCandidate {
+                    day: segment.day.clone(),
+                    stream_layout: segment.layout,
+                    stream: segment.stream.clone(),
+                    segment_key: segment.name.clone(),
+                    source: source.to_owned(),
+                    sentence_id,
+                    embedding,
+                });
+            }
+        }
+    }
+    Ok(DiscoveryCandidates::Candidates {
         rows,
         dropped_invalid: dropped,
-    }
+    })
 }
 
 pub(crate) fn retain_discovery_clusters(
@@ -175,7 +268,14 @@ pub(crate) fn retain_discovery_clusters(
             .collect::<Vec<_>>();
         if selected
             .iter()
-            .map(|row| (&row.day, &row.stream, &row.segment_key))
+            .map(|row| {
+                (
+                    &row.day,
+                    layout_name(row.stream_layout),
+                    &row.stream,
+                    &row.segment_key,
+                )
+            })
             .collect::<std::collections::BTreeSet<_>>()
             .len()
             < 3
@@ -206,7 +306,7 @@ pub(crate) fn retain_discovery_clusters(
             };
             score(right).total_cmp(&score(left))
         });
-        output.insert(label.to_string(),selected.into_iter().map(|row|json!({"day":row.day,"stream":row.stream,"segment_key":row.segment_key,"source":row.source,"sentence_id":row.sentence_id})).collect());
+        output.insert(label.to_string(),selected.into_iter().map(|row|json!({"day":row.day,"stream_layout":layout_name(row.stream_layout),"stream":row.stream,"segment_key":row.segment_key,"source":row.source,"sentence_id":row.sentence_id})).collect());
     }
     output
 }
@@ -229,6 +329,9 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         .filter(|value| !value.is_empty());
     if name.is_none() && entity_id.is_none() {
         return bad("missing_required_field", "entity_id or name is required");
+    }
+    if let Err(error) = preflight_identify_cluster(&root.0, cluster_id) {
+        return preflight_error(error);
     }
     let request = solstone_core_speaker_resolve::identify_cluster::IdentifyClusterRequest {
         journal_root: root.0.clone(),
@@ -392,7 +495,7 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 /// Run a native discovery scan and publish its derived cache on successful clustering.
 pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     let (rows, issues) = match discovery_candidates(&root.0) {
-        DiscoveryCandidates::NoConfirmedOwner => {
+        Ok(DiscoveryCandidates::NoConfirmedOwner) => {
             return Json(json!({
                 "status": "degraded",
                 "clusters": [],
@@ -400,10 +503,10 @@ pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             }))
             .into_response();
         }
-        DiscoveryCandidates::Candidates {
+        Ok(DiscoveryCandidates::Candidates {
             rows,
             dropped_invalid,
-        } => {
+        }) => {
             let issues = (dropped_invalid != 0)
                 .then(|| {
                     issue(
@@ -416,6 +519,7 @@ pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                 .collect();
             (rows, issues)
         }
+        Err(error) => return command(error, StatusCode::INTERNAL_SERVER_ERROR),
     };
 
     if rows.len() < MIN_CLUSTER_SIZE {
@@ -626,34 +730,28 @@ fn serialize_scan_clusters(
     clusters: &std::collections::BTreeMap<String, Vec<Value>>,
 ) -> Result<Vec<Value>, String> {
     let dismissals = folded_dismissal_members(root)?;
-    let mut output = clusters
-        .iter()
-        .filter_map(|(raw_id, members)| {
-            let cluster_id = raw_id.parse::<i64>().ok()?;
-            let member_set = member_set(members).ok()?;
-            if dismissal_suppressed(&member_set, &dismissals) {
-                return None;
-            }
-            let segments = members
-                .iter()
-                .filter_map(|member| {
-                    Some((
-                        member.get("day")?.as_str()?,
-                        member.get("stream")?.as_str()?,
-                        member.get("segment_key")?.as_str()?,
-                    ))
-                })
-                .collect::<BTreeSet<_>>();
-            Some(json!({
-                "cluster_id": cluster_id,
-                "size": members.len(),
-                "segment_count": segments.len(),
-                // The cache provenance is complete; audio and transcript enrichment remains
-                // the read-cache route's responsibility for this initial scan wiring.
-                "samples": members.iter().take(3).cloned().collect::<Vec<_>>(),
-            }))
-        })
-        .collect::<Vec<_>>();
+    let mut output = Vec::new();
+    for (raw_id, members) in clusters {
+        let cluster_id = raw_id
+            .parse::<i64>()
+            .map_err(|_| format!("invalid discovery cluster id: {raw_id}"))?;
+        let member_set = member_set(members)?;
+        if dismissal_suppressed(&member_set, &dismissals) {
+            continue;
+        }
+        let segments = member_set
+            .iter()
+            .map(|member| (&member.0, &member.1, &member.2, &member.3))
+            .collect::<BTreeSet<_>>();
+        output.push(json!({
+            "cluster_id": cluster_id,
+            "size": members.len(),
+            "segment_count": segments.len(),
+            // The cache provenance is complete; audio and transcript enrichment remains
+            // the read-cache route's responsibility for this initial scan wiring.
+            "samples": members.iter().take(3).cloned().collect::<Vec<_>>(),
+        }));
+    }
     output.sort_by(|left, right| {
         right["size"]
             .as_u64()
@@ -751,6 +849,10 @@ fn member_set(members: &[Value]) -> Result<BTreeSet<DiscoveryMember>, String> {
             .map(|member| {
                 (
                     member["day"].as_str().expect("canonical day").to_owned(),
+                    member["stream_layout"]
+                        .as_str()
+                        .expect("canonical stream layout")
+                        .to_owned(),
                     member["stream"]
                         .as_str()
                         .expect("canonical stream")
@@ -789,15 +891,45 @@ fn canonical_members(members: &[Value]) -> Result<Vec<Value>, String> {
             .get("sentence_id")
             .and_then(Value::as_i64)
             .ok_or_else(|| "invalid cluster member provenance".to_owned())?;
+        let stream_layout = object
+            .get("stream_layout")
+            .map(|_| field("stream_layout"))
+            .transpose()?
+            .unwrap_or_else(|| "named".to_owned());
+        if !matches!(stream_layout.as_str(), "direct" | "named") {
+            return Err("invalid cluster member provenance".to_owned());
+        }
         tuples.insert((
             field("day")?,
+            stream_layout,
             field("stream")?,
             field("segment_key")?,
             field("source")?,
             sentence_id,
         ));
     }
-    Ok(tuples.into_iter().map(|(day, stream, segment_key, source, sentence_id)| json!({"day":day,"stream":stream,"segment_key":segment_key,"source":source,"sentence_id":sentence_id})).collect())
+    Ok(tuples.into_iter().map(|(day, stream_layout, stream, segment_key, source, sentence_id)| json!({"day":day,"stream_layout":stream_layout,"stream":stream,"segment_key":segment_key,"source":source,"sentence_id":sentence_id})).collect())
+}
+
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
+}
+
+fn preflight_error(failure: IdentifyPreflightError) -> Response {
+    match failure {
+        IdentifyPreflightError::UnsupportedLayout => error(
+            UNSUPPORTED_LAYOUT_REASON,
+            UNSUPPORTED_LAYOUT_MESSAGE,
+            UNSUPPORTED_LAYOUT_DETAIL,
+            StatusCode::BAD_REQUEST,
+        ),
+        IdentifyPreflightError::Failed(detail) => {
+            command(detail, StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 fn encoder() -> solstone_core_entity::EncoderIdentity {
     solstone_core_entity::EncoderIdentity {
@@ -909,6 +1041,7 @@ mod tests {
     use axum::response::IntoResponse;
     use serde_json::json;
     use sha2::{Digest, Sha256};
+    use solstone_core_journal_io::SegmentLayout;
 
     #[test]
     fn canonical_members_are_tuple_sorted_and_deduplicated() {
@@ -953,6 +1086,7 @@ mod tests {
     ) -> DiscoveryCandidate {
         DiscoveryCandidate {
             day: day.to_owned(),
+            stream_layout: SegmentLayout::Named,
             stream: stream.to_owned(),
             segment_key: key.to_owned(),
             source: "audio".to_owned(),

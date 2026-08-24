@@ -98,3 +98,109 @@ async fn malformed_transcript_preserves_sentence_id_gaps() {
         .collect::<Vec<_>>();
     assert_eq!(ids, [1, 3, 4]);
 }
+
+#[tokio::test]
+async fn review_and_speakers_read_a_direct_segment() {
+    let journal = support::build_populated_journal();
+    let segment = journal.root().join("chronicle/20260731/080000_300");
+    std::fs::create_dir_all(segment.join("talents")).expect("direct");
+    std::fs::write(
+        segment.join("mic_audio.jsonl"),
+        "{\"raw\":\"mic_audio.flac\"}\n{\"start\":\"08:00:00\",\"text\":\"hello\"}\n",
+    )
+    .expect("transcript");
+    std::fs::write(segment.join("mic_audio.flac"), []).expect("direct audio");
+    std::fs::write(segment.join("talents/speakers.json"), "[\"Ada Lovelace\"]").expect("speakers");
+    let app = router(journal.root().to_path_buf());
+    let (status, _, speakers) = request_json(
+        app.clone(),
+        "/app/speakers/api/speakers/20260731/_default/080000_300?stream_layout=direct",
+    )
+    .await;
+    assert_eq!(status, 200, "{speakers}");
+    assert_eq!(
+        speakers["matched"].as_array().map(Vec::len),
+        Some(1),
+        "{speakers}"
+    );
+
+    let (status, _, review) = request_json(
+        app,
+        "/app/speakers/api/review/20260731/_default/080000_300/mic_audio?stream_layout=direct",
+    )
+    .await;
+    assert_eq!(status, 200, "{review}");
+    assert_eq!(review["source"], "mic_audio");
+    assert_eq!(
+        review["audio_file"],
+        "/app/speakers/api/serve_audio/20260731/080000_300/mic_audio.flac"
+    );
+}
+
+#[tokio::test]
+async fn review_keeps_an_exact_suffixed_basename_and_uses_its_parsed_time_key() {
+    let journal = support::build_populated_journal();
+    let segment = journal
+        .root()
+        .join("chronicle/20260731/field/093000_300_summary");
+    std::fs::create_dir_all(&segment).expect("suffixed segment creates");
+    std::fs::write(
+        segment.join("mic_audio.jsonl"),
+        "{\"raw\":\"mic_audio.flac\"}\n{\"start\":\"09:30:00\",\"text\":\"hello\"}\n",
+    )
+    .expect("transcript writes");
+    std::fs::write(segment.join("mic_audio.flac"), []).expect("named audio writes");
+
+    let (status, _, review) = request_json(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/review/20260731/field/093000_300_summary/mic_audio?stream_layout=named",
+    )
+    .await;
+    assert_eq!(status, 200, "{review}");
+    assert_eq!(review["segment"]["key"], "093000_300_summary");
+    assert_eq!(review["segment"]["time_key"], "093000_300");
+    assert_eq!(review["segment"]["start"], "09:30");
+    assert_eq!(
+        review["audio_file"],
+        "/app/speakers/api/serve_audio/20260731/field/093000_300_summary/mic_audio.flac"
+    );
+}
+
+#[tokio::test]
+async fn review_percent_encodes_each_exact_legacy_component_in_audio_urls() {
+    let journal = support::build_populated_journal();
+    let segment = journal
+        .root()
+        .join("chronicle/20260731/old:stream/093000_300_legacy:name");
+    std::fs::create_dir_all(&segment).expect("legacy segment creates");
+    std::fs::write(
+        segment.join("mic:audio.jsonl"),
+        "{\"raw\":\"mic:audio.flac\"}\n{\"start\":\"09:30:00\",\"text\":\"hello\"}\n",
+    )
+    .expect("legacy transcript writes");
+    std::fs::write(segment.join("mic:audio.flac"), []).expect("legacy audio writes");
+
+    let (status, _, review) = request_json(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/review/20260731/old%3Astream/093000_300_legacy%3Aname/mic%3Aaudio?stream_layout=named",
+    )
+    .await;
+    assert_eq!(status, 200, "{review}");
+    assert_eq!(review["segment"]["key"], "093000_300_legacy:name");
+    assert_eq!(
+        review["audio_file"],
+        "/app/speakers/api/serve_audio/20260731/old%3Astream/093000_300_legacy%3Aname/mic%3Aaudio.flac"
+    );
+}
+
+#[tokio::test]
+async fn review_malformed_stream_layout_is_not_named() {
+    let journal = support::build_populated_journal();
+    let (status, _, body) = request_json(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/review/20260731/field/090000_300/mic_audio?stream_layout=Direct",
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["reason_code"], "invalid_segment_or_stream");
+}

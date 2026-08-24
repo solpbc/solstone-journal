@@ -1328,6 +1328,9 @@
     voiceClusterId: searchParams.get('voice_cluster_id') || '',
     statementHandoff: {
       day: searchParams.get('voice_day') || '',
+      streamLayout: searchParams.has('voice_stream_layout')
+        ? searchParams.get('voice_stream_layout')
+        : 'named',
       stream: searchParams.get('voice_stream') || '',
       segmentKey: searchParams.get('voice_segment_key') || '',
       source: searchParams.get('voice_source') || '',
@@ -1412,6 +1415,7 @@
 
   let segments = [];
   let segmentTotal = 0;
+  let segmentsComplete = false;
   let selectedSegment = null;
   let selectedSource = null;
   let audioPlayer = null;
@@ -1446,6 +1450,72 @@
   const OWNER_TEACH_HASH = 'owner-teach';
   const OWNER_TEACH_REVIEW_CONCURRENCY = 4;
 
+  function decodeSegmentLayout(value, allowMissing = false) {
+    if (value === 'direct' || value === 'named') {
+      return value;
+    }
+    if (allowMissing && (value === undefined || value === null)) {
+      return 'named';
+    }
+    throw new Error('invalid segment layout');
+  }
+
+  function segmentLayout(seg) {
+    return decodeSegmentLayout(seg?.stream_layout);
+  }
+
+  function segmentIdentity(seg, segmentDay = day) {
+    return encodeURIComponent(JSON.stringify([
+      segmentDay || '',
+      segmentLayout(seg),
+      seg?.stream || '',
+      seg?.key || seg?.segment_key || '',
+    ]));
+  }
+
+  function sameSegment(left, right) {
+    return Boolean(left && right && segmentIdentity(left) === segmentIdentity(right));
+  }
+
+  function segmentForHash(rawHash) {
+    try {
+      const identity = JSON.parse(decodeURIComponent(rawHash));
+      if (Array.isArray(identity) && identity.length === 4) {
+        const [identityDay, layout, stream, key] = identity;
+        return segments.find(seg => (
+          identityDay === day
+          && layout === segmentLayout(seg)
+          && stream === seg.stream
+          && key === seg.key
+        )) || null;
+      }
+    } catch (_) {
+      // Legacy hashes are exact basenames; admit one only when unambiguous.
+    }
+    let legacyKey = rawHash;
+    try {
+      legacyKey = decodeURIComponent(rawHash);
+    } catch (_) {
+      // Preserve an old malformed hash literally; it still must be unique.
+    }
+    const legacyMatches = segments.filter(seg => seg.key === legacyKey);
+    return legacyMatches.length === 1 ? legacyMatches[0] : null;
+  }
+
+  function validatedSegments(value) {
+    const rows = Array.isArray(value) ? value : [];
+    rows.forEach(segmentLayout);
+    return rows;
+  }
+
+  function segmentRequestUrl(prefix, seg, suffix = '') {
+    const components = [day, seg.stream, seg.key, suffix]
+      .filter((value, index) => index < 3 || value !== '')
+      .map(value => encodeURIComponent(value));
+    const params = new URLSearchParams({ stream_layout: segmentLayout(seg) });
+    return `${prefix}/${components.join('/')}?${params}`;
+  }
+
   function focusOwnerBanner() {
     ownerBanner.focus();
     ownerBanner.scrollIntoView({ block: 'nearest' });
@@ -1473,7 +1543,7 @@
         return;
       }
       ownerTeachHandoffGeneration = 0;
-      if (hash && !selectSegmentByKey(hash) && segments.length < segmentTotal) {
+      if (hash && !selectSegmentByHash(hash) && segments.length < segmentTotal) {
         loadUntilFound(hash);
       }
     });
@@ -1556,9 +1626,9 @@
       if (items.length) moveFocus(items[items.length - 1]);
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      const seg = segments.find(s => s.key === item.dataset.key);
+      const seg = segments.find(s => segmentIdentity(s) === item.dataset.segmentIdentity);
       if (seg) {
-        window.location.hash = seg.key;
+        window.location.hash = segmentIdentity(seg);
         selectSegment(seg);
       }
     }
@@ -1851,22 +1921,25 @@
   }
 
   function ownerTeachStatementKey(item) {
-    return [
+    return JSON.stringify([
       item.day || '',
+      decodeSegmentLayout(item.stream_layout, true),
       item.stream || '',
       item.segment_key || '',
       item.source || '',
       item.id,
-    ].join('/');
+    ]);
   }
 
   function ownerTeachEligibleStatements(reviewPayload, declinedKeys) {
     const declined = declinedKeys || new Set();
     const sentences = Array.isArray(reviewPayload?.sentences) ? reviewPayload.sentences : [];
+    const reviewLayout = reviewPayload?.stream_layout ?? reviewPayload?.segment?.stream_layout;
     return sentences.reduce((items, sentence) => {
       const item = {
         ...sentence,
         day: reviewPayload.day || '',
+        stream_layout: decodeSegmentLayout(reviewLayout, true),
         stream: reviewPayload.stream || '',
         segment_key: reviewPayload.segment?.key || reviewPayload.segment_key || '',
         segment_start: reviewPayload.segment?.start || '',
@@ -2215,12 +2288,13 @@
         const request = requests[nextIndex];
         nextIndex += 1;
         try {
-          const data = await window.apiJson(`/app/speakers/api/review/${day}/${request.seg.stream}/${request.seg.key}/${request.source}`);
+          const data = await window.apiJson(segmentRequestUrl('/app/speakers/api/review', request.seg, request.source));
           const principal = (data.all_entities || []).find(entity => entity.is_principal);
           if (principal) ownerTeachPrincipalId = principal.entity_id;
           const payload = {
             ...data,
             day,
+            stream_layout: segmentLayout(request.seg),
             stream: request.seg.stream,
             segment_key: request.seg.key,
           };
@@ -2284,6 +2358,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           day: current.day,
+          stream_layout: decodeSegmentLayout(current.stream_layout, true),
           stream: current.stream,
           segment_key: current.segment_key,
           source: current.source,
@@ -2556,26 +2631,40 @@
     segmentsRequestSeq = requestSeq;
     updateSpeakerFilterIndicator();
     const fetchLimit = Math.max(segments.length, 20);
-    return fetch(segmentsApiUrl(fetchLimit, 0))
-      .then(r => r.json())
+    return window.apiJson(segmentsApiUrl(fetchLimit, 0))
       .then(data => {
         if (requestSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
-        segments = data.segments || [];
+        const nextSegments = validatedSegments(data.segments);
+        segments = nextSegments;
         segmentTotal = data.total || 0;
+        segmentsComplete = segments.length >= segmentTotal;
         renderSegmentList();
         updateLoadMore();
 	        if (window.location.hash && window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
 	          const hashKey = window.location.hash.slice(1);
-	          if (!selectSegmentByKey(hashKey) && segments.length < segmentTotal) {
+	          const found = selectSegmentByHash(hashKey);
+	          if (!found && segments.length < segmentTotal) {
 	            loadUntilFound(hashKey, requestSeq);
+	          } else if (!found && segmentsComplete) {
+	            setSegmentsStatus("I couldn't load that speaker review.");
 	          }
 	        }
         return true;
       })
       .catch((err) => {
         if (requestSeq !== segmentsRequestSeq) return false;
-        segmentList.innerHTML = '<li class="spk-empty">Failed to load segments</li>';
+        segmentsComplete = false;
+        if (segments.length === 0) {
+          segmentList.innerHTML = `<li>${window.SurfaceState.error({
+            heading: "couldn't load segments",
+            desc: window.CONVEY_COPY.RELOAD_HINT,
+            serverMessage: err.serverMessage,
+            detail: err,
+          })}</li>`;
+        } else {
+          setSegmentsStatus("couldn't reload segments. showing the last loaded segments.", err.serverMessage);
+        }
         if (throwOnError) throw err;
         return false;
       });
@@ -2586,20 +2675,23 @@
     segmentsRequestSeq = requestSeq;
     const btn = document.getElementById('spkLoadMoreBtn');
     if (btn) btn.disabled = true;
-    return fetch(segmentsApiUrl(20, segments.length))
-      .then(r => r.json())
+    return window.apiJson(segmentsApiUrl(20, segments.length))
       .then(data => {
         if (requestSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
-        const newSegments = data.segments || [];
+        const newSegments = validatedSegments(data.segments);
         segments = segments.concat(newSegments);
         segmentTotal = data.total || 0;
+        segmentsComplete = segments.length >= segmentTotal;
         renderSegmentList();
         updateLoadMore();
         return true;
       })
-      .catch(() => {
+      .catch((err) => {
         if (requestSeq !== segmentsRequestSeq) return false;
+        segmentsComplete = false;
+        setSegmentsStatus("Couldn't load more segments", err.serverMessage);
+        window.logError(err, { context: 'speakers: loadMoreSegments failed' });
         if (btn) btn.disabled = false;
         return false;
       });
@@ -2612,19 +2704,25 @@
       .then(data => {
         if (activeSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
-        const newSegments = data.segments || [];
-        if (newSegments.length === 0) return false;
+        const newSegments = validatedSegments(data.segments);
         segments = segments.concat(newSegments);
         segmentTotal = data.total || 0;
+        segmentsComplete = segments.length >= segmentTotal;
         renderSegmentList();
         updateLoadMore();
-        if (!selectSegmentByKey(key) && segments.length < segmentTotal) {
+        const found = selectSegmentByHash(key);
+        if (!found && newSegments.length > 0 && segments.length < segmentTotal) {
           return loadUntilFound(key, activeSeq);
         }
-        return true;
+        if (!found && segmentsComplete) {
+          setSegmentsStatus("I couldn't load that speaker review.");
+          return false;
+        }
+        return found;
       })
       .catch((err) => {
         if (activeSeq !== segmentsRequestSeq) return false;
+        segmentsComplete = false;
         setSegmentsStatus("Couldn't load more segments", err.serverMessage);
         window.logError(err, { context: 'speakers: loadUntilFound failed' });
         return false;
@@ -2675,19 +2773,19 @@
       return a.key.localeCompare(b.key);
     });
 
-    const focusKey = (selectedSegment && sorted.some(s => s.key === selectedSegment.key))
-      ? selectedSegment.key
-      : sorted[0].key;
+    const focusIdentity = (selectedSegment && sorted.some(s => sameSegment(s, selectedSegment)))
+      ? segmentIdentity(selectedSegment)
+      : segmentIdentity(sorted[0]);
 
     const hadFocus = segmentList.contains(document.activeElement);
-    const focusedKey = hadFocus ? document.activeElement.dataset?.key : null;
+    const focusedIdentity = hadFocus ? document.activeElement.dataset?.segmentIdentity : null;
 
     segmentList.innerHTML = sorted.map(seg => `
-      <li class="spk-segment${selectedSegment?.key === seg.key ? ' active' : ''}"
-          data-key="${seg.key}"
+      <li class="spk-segment${sameSegment(selectedSegment, seg) ? ' active' : ''}"
+          data-segment-identity="${segmentIdentity(seg)}"
           role="option"
-          tabindex="${seg.key === focusKey ? '0' : '-1'}"
-          aria-selected="${selectedSegment?.key === seg.key}"
+          tabindex="${segmentIdentity(seg) === focusIdentity ? '0' : '-1'}"
+          aria-selected="${sameSegment(selectedSegment, seg)}"
           aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + ' to review' : ''}">
         <div class="spk-segment-time">
           ${seg.start} - ${seg.end}
@@ -2703,17 +2801,18 @@
 
     segmentList.querySelectorAll('.spk-segment').forEach(el => {
       el.addEventListener('click', () => {
-        const seg = segments.find(s => s.key === el.dataset.key);
+        const seg = segments.find(s => segmentIdentity(s) === el.dataset.segmentIdentity);
         if (seg) {
-          window.location.hash = seg.key;
+          window.location.hash = segmentIdentity(seg);
           selectSegment(seg);
         }
       });
     });
 
     if (hadFocus) {
-      const restoreKey = focusedKey || focusKey;
-      const target = segmentList.querySelector(`.spk-segment[data-key="${restoreKey}"]`)
+      const restoreIdentity = focusedIdentity || focusIdentity;
+      const target = [...segmentList.querySelectorAll('.spk-segment')]
+        .find(item => item.dataset.segmentIdentity === restoreIdentity)
         || segmentList.querySelector('.spk-segment');
       if (target) target.focus();
     }
@@ -2728,14 +2827,14 @@
     }
   }
 
-  function selectSegmentByKey(key) {
-    const seg = segments.find(s => s.key === key);
+  function selectSegmentByHash(hash) {
+    const seg = segmentForHash(hash);
     if (seg) selectSegment(seg);
     return !!seg;
   }
 
   function selectSegment(seg) {
-    const switchingSegment = !selectedSegment || selectedSegment.key !== seg.key;
+    const switchingSegment = !sameSegment(selectedSegment, seg);
     selectedSegment = seg;
     selectedSource = seg.sources[0] || null;
     currentFilter = 'all';
@@ -2829,13 +2928,12 @@
     const container = document.getElementById('spkSpeakers');
     if (!container) return Promise.resolve(false);
 
-    return fetch(`/app/speakers/api/speakers/${day}/${seg.stream}/${seg.key}`)
-      .then(r => r.json())
+    return window.apiJson(segmentRequestUrl('/app/speakers/api/speakers', seg))
       .then(data => {
         if (requestSeq !== segmentSpeakersRequestSeq) return false;
         if (
           selectedSegment
-          && (selectedSegment.key !== seg.key || selectedSegment.stream !== seg.stream)
+          && !sameSegment(selectedSegment, seg)
         ) {
           return false;
         }
@@ -2915,14 +3013,13 @@
     }
 
     setReviewStatus();
-    return window.apiJson(`/app/speakers/api/review/${day}/${seg.stream}/${seg.key}/${source}`)
+    return window.apiJson(segmentRequestUrl('/app/speakers/api/review', seg, source))
       .then(data => {
         if (requestSeq !== reviewRequestSeq) return false;
         if (
           selectedSegment
           && (
-            selectedSegment.key !== seg.key
-            || selectedSegment.stream !== seg.stream
+            !sameSegment(selectedSegment, seg)
             || selectedSource !== source
           )
         ) {
@@ -3212,6 +3309,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           day,
+          stream_layout: segmentLayout(selectedSegment),
           stream: selectedSegment.stream,
           segment_key: selectedSegment.key,
           source: selectedSource,
@@ -3246,6 +3344,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           day,
+          stream_layout: segmentLayout(selectedSegment),
           stream: selectedSegment.stream,
           segment_key: selectedSegment.key,
           source: selectedSource,
@@ -3294,6 +3393,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           day,
+          stream_layout: segmentLayout(selectedSegment),
           stream: selectedSegment.stream,
           segment_key: selectedSegment.key,
           source: selectedSource,
@@ -4337,6 +4437,7 @@
   function resolveStatementHandoff(handoff) {
     const params = new URLSearchParams({
       voice_day: handoff.day,
+      voice_stream_layout: decodeSegmentLayout(handoff.streamLayout, true),
       voice_stream: handoff.stream,
       voice_segment_key: handoff.segmentKey,
       voice_source: handoff.source,

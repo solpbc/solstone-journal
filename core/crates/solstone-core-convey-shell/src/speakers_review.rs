@@ -9,21 +9,63 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Extension, Path as RoutePath};
+use axum::extract::{Extension, Path as RoutePath, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity_matching::{
     EntityNameCandidate, entity_slug, find_matching_entity as match_entity_name,
 };
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
-    is_day, is_segment_key, journal_principal_id, load_all_journal_entities, load_segment_speakers,
+    is_day, journal_principal_id, load_all_journal_entities, load_segment_speakers,
     load_speaker_labels, parse_segment, speaker_sentence_needs_review, value_truthy,
 };
 use crate::speakers_npz::{SegmentEmbeddings, load_segment_embeddings};
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, decode_stream_layout, lookup_segment,
+};
+
+const PATH_COMPONENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'!')
+    .add(b'"')
+    .add(b'#')
+    .add(b'$')
+    .add(b'%')
+    .add(b'&')
+    .add(b'\'')
+    .add(b'(')
+    .add(b')')
+    .add(b'*')
+    .add(b'+')
+    .add(b',')
+    .add(b'/')
+    .add(b':')
+    .add(b';')
+    .add(b'<')
+    .add(b'=')
+    .add(b'>')
+    .add(b'?')
+    .add(b'@')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
+
+#[derive(Debug, Default, Deserialize)]
+pub struct StreamLayoutQuery {
+    stream_layout: Option<String>,
+}
 
 const AUDIO_FORMATS: [(&str, &str); 6] = [
     (".flac", "audio/flac"),
@@ -37,6 +79,7 @@ const AUDIO_FORMATS: [(&str, &str); 6] = [
 pub async fn segment_speakers(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key)): RoutePath<(String, String, String)>,
+    Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
     if !is_day(&day) {
         return bad_request(
@@ -45,15 +88,21 @@ pub async fn segment_speakers(
             "Invalid day format",
         );
     }
-    if !is_segment_key(&segment_key) {
-        return bad_request(
-            "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
-            "Invalid segment key",
-        );
-    }
+    let segment_dir = match lookup_read_segment(
+        &root.0,
+        &day,
+        &stream,
+        &segment_key,
+        query.stream_layout.as_deref(),
+    ) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return Json(json!({"matched": [], "unmatched": []})).into_response();
+        }
+        Err(response) => return response,
+    };
 
-    let speakers = load_segment_speakers(&segment_path(&root.0, &day, &stream, &segment_key));
+    let speakers = load_segment_speakers(&segment_dir);
     if speakers.is_empty() {
         return Json(json!({"matched": [], "unmatched": []})).into_response();
     }
@@ -81,6 +130,7 @@ pub async fn segment_speakers(
 pub async fn review(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key, source)): RoutePath<(String, String, String, String)>,
+    Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
     if !is_day(&day) {
         return bad_request(
@@ -89,16 +139,28 @@ pub async fn review(
             "Invalid day format",
         );
     }
-    if !is_segment_key(&segment_key) {
-        return bad_request(
-            "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
-            "Invalid segment key",
-        );
-    }
-
-    let segment_dir = segment_path(&root.0, &day, &stream, &segment_key);
-    let (sentences, embeddings) = load_sentences(&segment_dir, &segment_key, &source);
+    let layout = decode_stream_layout(query.stream_layout.as_deref());
+    let segment_dir = match lookup_read_segment(
+        &root.0,
+        &day,
+        &stream,
+        &segment_key,
+        query.stream_layout.as_deref(),
+    ) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return error_envelope(
+                "speaker_review_unavailable",
+                "I couldn't load that speaker review.",
+                "No transcript found",
+                StatusCode::NOT_FOUND,
+            )
+            .into_response();
+        }
+        Err(response) => return response,
+    };
+    let time_key = parsed_time_key(&segment_key).unwrap_or_else(|| segment_key.clone());
+    let (sentences, embeddings) = load_sentences(&segment_dir, &time_key, &source);
     if sentences.is_empty() {
         return error_envelope(
             "speaker_review_unavailable",
@@ -204,13 +266,19 @@ pub async fn review(
             ))
     });
 
-    let (audio_file, audio_mimetype) =
-        audio_info(&segment_dir, &day, &stream, &segment_key, &source);
-    let (start, end) = parse_segment(&segment_key)
+    let (audio_file, audio_mimetype) = audio_info(
+        &segment_dir,
+        &day,
+        &stream,
+        &segment_key,
+        &source,
+        layout.unwrap_or(SegmentLayout::Named),
+    );
+    let (start, end) = parse_segment(&time_key)
         .map(|(start, end, _)| (start, end))
         .unwrap_or_default();
     Json(json!({
-        "segment": {"key": segment_key, "start": start, "end": end},
+        "segment": {"key": segment_key, "time_key": time_key, "stream": stream, "stream_layout": layout_name(layout.unwrap_or(SegmentLayout::Named)), "start": start, "end": end},
         "source": source,
         "sentences": review_sentences,
         "all_entities": all_entities,
@@ -230,11 +298,44 @@ fn bad_request(reason_code: &str, message: &str, detail: &str) -> Response {
     error_envelope(reason_code, message, detail, StatusCode::BAD_REQUEST).into_response()
 }
 
-fn segment_path(root: &Path, day: &str, stream: &str, segment_key: &str) -> PathBuf {
-    root.join("chronicle")
-        .join(day)
-        .join(stream)
-        .join(segment_key)
+#[allow(clippy::result_large_err)]
+fn lookup_read_segment(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    stream_layout: Option<&str>,
+) -> Result<Option<PathBuf>, Response> {
+    match lookup_segment(
+        root,
+        day,
+        stream,
+        segment_key,
+        decode_stream_layout(stream_layout),
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => Ok(Some(path)),
+        SegmentLookup::Absent => Ok(None),
+        SegmentLookup::MalformedLayout => Err(bad_request(
+            "invalid_segment_or_stream",
+            "I couldn't use that segment or stream.",
+            "Invalid segment key",
+        )),
+        SegmentLookup::Failed(error) => Err(error_envelope(
+            "speaker_review_unavailable",
+            "I couldn't load that speaker review.",
+            error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response()),
+        SegmentLookup::UnsupportedLayout => Err(error_envelope(
+            "speaker_review_unavailable",
+            "I couldn't load that speaker review.",
+            "segment layout is not readable",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response()),
+    }
 }
 
 fn load_sentences(
@@ -404,19 +505,31 @@ pub(crate) fn audio_info(
     stream: &str,
     segment_key: &str,
     source: &str,
+    layout: SegmentLayout,
 ) -> (Option<String>, Option<String>) {
     for (extension, mimetype) in AUDIO_FORMATS {
         let filename = format!("{source}{extension}");
         if segment_dir.join(&filename).is_file() {
-            return (
-                Some(format!(
-                    "/app/speakers/api/serve_audio/{day}/{stream}/{segment_key}/{filename}"
-                )),
-                Some(mimetype.to_owned()),
-            );
+            let day = path_component(day);
+            let stream = path_component(stream);
+            let segment_key = path_component(segment_key);
+            let filename = path_component(&filename);
+            let url = match layout {
+                SegmentLayout::Direct => {
+                    format!("/app/speakers/api/serve_audio/{day}/{segment_key}/{filename}")
+                }
+                SegmentLayout::Named => {
+                    format!("/app/speakers/api/serve_audio/{day}/{stream}/{segment_key}/{filename}")
+                }
+            };
+            return (Some(url), Some(mimetype.to_owned()));
         }
     }
     (None, None)
+}
+
+fn path_component(value: &str) -> String {
+    utf8_percent_encode(value, PATH_COMPONENT).to_string()
 }
 
 fn configured_principal_identity(root: &Path) -> Option<(String, String)> {
@@ -462,6 +575,23 @@ fn segment_start_seconds(key: &str) -> Option<i64> {
             + time[2..4].parse::<i64>().ok()? * 60
             + time[4..6].parse::<i64>().ok()?,
     )
+}
+
+fn parsed_time_key(name: &str) -> Option<String> {
+    let (time, rest) = name.split_once('_')?;
+    let duration = rest.split('_').next()?;
+    (time.len() == 6
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && !duration.is_empty()
+        && duration.bytes().all(|byte| byte.is_ascii_digit()))
+    .then(|| format!("{time}_{duration}"))
+}
+
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 
 fn time_to_seconds(time: &str) -> Option<i64> {

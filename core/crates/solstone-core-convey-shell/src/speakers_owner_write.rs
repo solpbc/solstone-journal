@@ -16,7 +16,9 @@ use axum::{Extension, Json};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
+use solstone_core_journal_io::{
+    JsonWriteOptions, LockOptions, SegmentLayout, hold_lock, write_json,
+};
 use solstone_core_speaker_resolve::candidate_tracker::{
     CandidateProfile, CandidateTracker, trim_solo_cluster_rows,
 };
@@ -31,6 +33,9 @@ use crate::JournalRoot;
 use crate::speakers_attribution::action;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_quality::awareness_voiceprint;
+use crate::speakers_segment_catalog::{
+    DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+};
 
 const MIN_STATEMENTS: usize = 30;
 const STRONG_STATEMENTS: usize = 100;
@@ -185,27 +190,48 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             StatusCode::BAD_REQUEST,
         );
     }
-    if !valid_segment(segment_key) {
-        return err(
-            "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
-            "Invalid segment key",
-            StatusCode::BAD_REQUEST,
-        );
-    }
+    let segment = match lookup_segment(
+        &root.0,
+        day,
+        stream,
+        segment_key,
+        decode_stream_layout_value(body.get("stream_layout")),
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => path,
+        SegmentLookup::Absent => return Json(json!({"sentences":[]})).into_response(),
+        SegmentLookup::MalformedLayout => {
+            return err(
+                "invalid_segment_or_stream",
+                "I couldn't use that segment or stream.",
+                "Invalid segment key",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        SegmentLookup::Failed(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        SegmentLookup::UnsupportedLayout => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                "segment layout is not readable",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let Some(principal) = principal_id(&root.0) else {
         return Json(json!({"sentences":[]})).into_response();
     };
     let Some(centroid) = load_owner_centroid(&root.0, &principal).ok().flatten() else {
         return Json(json!({"sentences":[]})).into_response();
     };
-    let path = root
-        .0
-        .join("chronicle")
-        .join(day)
-        .join(stream)
-        .join(segment_key)
-        .join(format!("{source}.npz"));
+    let path = segment.join(format!("{source}.npz"));
     let sentences = solstone_core_speaker_id::embeddings::load_embeddings_file(&path).ok().flatten().map(|file| file.statements.into_iter().filter_map(|(id, row)| {
         let norm = solstone_core_entity::normalize_embedding(&row)?;
         let score: f32 = norm.iter().zip(&centroid.centroid).map(|(a,b)| a*b).sum();
@@ -395,7 +421,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
             },
         );
     }
-    let expansion = expand_candidate(root, &candidate);
+    let expansion = expand_candidate(root, &candidate)?;
     if expansion.rows.is_empty() {
         return no_cluster(
             root,
@@ -515,23 +541,32 @@ struct CandidateRow {
     source: String,
     sentence_id: i64,
     jsonl_path: std::path::PathBuf,
+    layout: SegmentLayout,
 }
 struct CandidateExpansion {
     rows: Vec<CandidateRow>,
     checked: usize,
     available: usize,
 }
-fn expand_candidate(root: &Path, candidate: &CandidateProfile) -> CandidateExpansion {
-    let mut groups = BTreeMap::<String, Vec<&Value>>::new();
+fn expand_candidate(
+    root: &Path,
+    candidate: &CandidateProfile,
+) -> Result<CandidateExpansion, String> {
+    let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     for source in &candidate.source_segments {
         groups
-            .entry(
+            .entry((
+                source
+                    .get("stream_layout")
+                    .and_then(Value::as_str)
+                    .unwrap_or("named")
+                    .to_owned(),
                 source
                     .get("stream")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned(),
-            )
+            ))
             .or_default()
             .push(source);
     }
@@ -550,29 +585,59 @@ fn expand_candidate(root: &Path, candidate: &CandidateProfile) -> CandidateExpan
                 value.get("source").and_then(Value::as_str),
                 value.get("cluster_label").and_then(Value::as_i64),
             ) else {
-                continue;
+                return Err("invalid candidate source segment".to_owned());
             };
-            checked.insert((day.to_owned(), stream.to_owned(), segment_key.to_owned()));
-            let segment = root
-                .join("chronicle")
-                .join(day)
-                .join(stream)
-                .join(segment_key);
+            let layout = decode_stream_layout_value(value.get("stream_layout"));
+            let layout = match layout {
+                Ok(layout) => layout,
+                Err(_) => {
+                    return Err("invalid stream_layout on candidate source segment".to_owned());
+                }
+            };
+            checked.insert((
+                day.to_owned(),
+                layout_flag(layout),
+                stream.to_owned(),
+                segment_key.to_owned(),
+            ));
+            let segment = match lookup_segment(
+                root,
+                day,
+                stream,
+                segment_key,
+                Ok(layout),
+                DirectSupport::Allow,
+            ) {
+                SegmentLookup::Present(path) => path,
+                SegmentLookup::Absent => continue,
+                SegmentLookup::MalformedLayout => {
+                    return Err("invalid stream_layout on candidate source segment".to_owned());
+                }
+                SegmentLookup::Failed(error) => return Err(error.to_string()),
+                SegmentLookup::UnsupportedLayout => {
+                    return Err("segment layout is not readable".to_owned());
+                }
+            };
             let jsonl = segment.join(format!("{source}.jsonl"));
             if !segment.is_dir() || crate::speakers_quality::segment_overlap_fraction(&jsonl) > 0.10
             {
                 continue;
             }
-            let Some(file) = solstone_core_speaker_id::embeddings::load_embeddings_file(
-                &segment.join(format!("{source}.npz")),
-            )
-            .ok()
-            .flatten() else {
-                continue;
+            let embeddings_path = segment.join(format!("{source}.npz"));
+            let file = match solstone_core_speaker_id::embeddings::load_embeddings_file(
+                &embeddings_path,
+            ) {
+                Ok(Some(file)) => file,
+                Ok(None) => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "failed to load {}: {error}",
+                        embeddings_path.display()
+                    ));
+                }
             };
-            let Some(ids) = source_sentence_ids(value) else {
-                continue;
-            };
+            let ids = source_sentence_ids(value)
+                .ok_or_else(|| "invalid candidate sentence ids".to_owned())?;
             let mut selected = ids
                 .into_iter()
                 .filter_map(|id| {
@@ -589,6 +654,7 @@ fn expand_candidate(root: &Path, candidate: &CandidateProfile) -> CandidateExpan
                                     source: source.to_owned(),
                                     sentence_id: id,
                                     jsonl_path: jsonl.clone(),
+                                    layout,
                                 }
                             })
                         })
@@ -610,11 +676,11 @@ fn expand_candidate(root: &Path, candidate: &CandidateProfile) -> CandidateExpan
             }
         }
     }
-    CandidateExpansion {
+    Ok(CandidateExpansion {
         rows,
         checked: checked.len(),
         available: candidate.n_segments,
-    }
+    })
 }
 fn source_sentence_ids(value: &Value) -> Option<Vec<i64>> {
     let mut ids = value
@@ -678,13 +744,95 @@ fn candidate_quality(rows: &[CandidateRow]) -> Quality {
         bound,
     }
 }
-fn candidate_samples(root: &Path, rows: &[CandidateRow], centroid: &[f32]) -> Vec<Value> {
+fn candidate_samples(_root: &Path, rows: &[CandidateRow], centroid: &[f32]) -> Vec<Value> {
     let mut ordered = rows.iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
         dot(&right.embedding, centroid).total_cmp(&dot(&left.embedding, centroid))
     });
     let mut seen = BTreeSet::new();
-    ordered.into_iter().filter(|row|seen.insert((&row.day,&row.stream,&row.segment_key))).take(3).map(|row|{let segment=root.join("chronicle").join(&row.day).join(&row.stream).join(&row.segment_key);let url=["flac","wav","m4a","mp3","ogg"].iter().map(|ext|segment.join(format!("{}.{}",row.source,ext))).find(|path|path.is_file()).map(|path|format!("/app/speakers/api/serve_audio/{}/{}/{}/{}",row.day,row.stream,row.segment_key,path.file_name().expect("name").to_string_lossy()));json!({"day":row.day,"stream":row.stream,"segment_key":row.segment_key,"source":row.source,"sentence_id":row.sentence_id,"duration_s":fallback_duration(&row.jsonl_path,row.sentence_id),"audio_url":url})}).collect()
+    ordered
+        .into_iter()
+        .filter(|row| {
+            seen.insert((
+                row.day.as_str(),
+                layout_flag(row.layout),
+                row.stream.as_str(),
+                row.segment_key.as_str(),
+            ))
+        })
+        .take(3)
+        .map(|row| {
+            let segment = row
+                .jsonl_path
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .to_path_buf();
+            let url = ["flac", "wav", "m4a", "mp3", "ogg"]
+                .iter()
+                .map(|ext| segment.join(format!("{}.{}", row.source, ext)))
+                .find(|path| path.is_file())
+                .map(|path| {
+                    serve_audio_url(
+                        &row.day,
+                        &row.stream,
+                        &row.segment_key,
+                        &path.file_name().expect("name").to_string_lossy(),
+                        row.layout,
+                    )
+                });
+            json!({
+                "day": row.day,
+                "stream_layout": layout_flag(row.layout),
+                "stream": row.stream,
+                "segment_key": row.segment_key,
+                "source": row.source,
+                "sentence_id": row.sentence_id,
+                "duration_s": fallback_duration(&row.jsonl_path, row.sentence_id),
+                "audio_url": url
+            })
+        })
+        .collect()
+}
+
+fn layout_flag(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
+}
+
+fn encode_path_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(char::from(byte));
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn serve_audio_url(
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    filename: &str,
+    layout: SegmentLayout,
+) -> String {
+    let day = encode_path_component(day);
+    let stream = encode_path_component(stream);
+    let segment_key = encode_path_component(segment_key);
+    let filename = encode_path_component(filename);
+    match layout {
+        SegmentLayout::Direct => {
+            format!("/app/speakers/api/serve_audio/{day}/{segment_key}/{filename}")
+        }
+        SegmentLayout::Named => {
+            format!("/app/speakers/api/serve_audio/{day}/{stream}/{segment_key}/{filename}")
+        }
+    }
 }
 fn fallback_duration(path: &Path, sentence_id: i64) -> Option<f64> {
     let starts = fs::read_to_string(path)
@@ -956,16 +1104,6 @@ async fn required_json(request: Request) -> Result<Value, Response> {
 }
 fn valid_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
-}
-fn valid_segment(value: &str) -> bool {
-    let mut pieces = value.split('_');
-    pieces
-        .next()
-        .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-        && pieces
-            .next()
-            .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-        && pieces.next().is_none()
 }
 fn missing_fields() -> Response {
     err(

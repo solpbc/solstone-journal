@@ -154,6 +154,7 @@ mod speakers_owner;
 mod speakers_owner_write;
 mod speakers_quality;
 mod speakers_review;
+mod speakers_segment_catalog;
 mod sse;
 mod system;
 #[cfg(feature = "host")]

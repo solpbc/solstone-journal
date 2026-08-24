@@ -15,13 +15,23 @@ use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
-use crate::speakers_calendar::{is_day, scan_segment_embeddings};
+use crate::speakers_calendar::{audio_embedding_sources, is_day, scan_segment_embeddings};
+use crate::speakers_segment_catalog::{
+    CatalogedSegment, DirectSupport, SegmentLookup, catalog_journal, decode_stream_layout,
+    lookup_segment,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct LimitQuery {
     limit: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct StreamLayoutQuery {
+    stream_layout: Option<String>,
 }
 
 pub async fn segments(
@@ -54,7 +64,17 @@ pub async fn segments(
             );
         }
     };
-    let mut segments = scan_segment_embeddings(&root.0, &day);
+    let mut segments = match scan_segment_embeddings(&root.0, &day) {
+        Ok(segments) => segments,
+        Err(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     segments.sort_by(|left, right| left.key.cmp(&right.key));
     let total = segments.len();
     let values = segments
@@ -68,6 +88,7 @@ pub async fn segments(
 pub async fn review(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key, source)): RoutePath<(String, String, String, String)>,
+    Query(query): Query<StreamLayoutQuery>,
 ) -> Response {
     if !is_day(&day) {
         return err(
@@ -77,20 +98,49 @@ pub async fn review(
             StatusCode::BAD_REQUEST,
         );
     }
-    if !valid_segment(&segment_key) || stream.trim().is_empty() {
-        return err(
-            "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
-            "Invalid segment key or stream",
-            StatusCode::BAD_REQUEST,
-        );
-    }
-    let segment = root
-        .0
-        .join("chronicle")
-        .join(&day)
-        .join(&stream)
-        .join(&segment_key);
+    let layout = decode_stream_layout(query.stream_layout.as_deref());
+    let segment = match lookup_segment(
+        &root.0,
+        &day,
+        &stream,
+        &segment_key,
+        layout,
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => path,
+        SegmentLookup::Absent => {
+            return err(
+                "speaker_review_unavailable",
+                "I couldn't load that speaker review.",
+                "No transcript found",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        SegmentLookup::MalformedLayout => {
+            return err(
+                "invalid_segment_or_stream",
+                "I couldn't use that segment or stream.",
+                "Invalid segment key or stream",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        SegmentLookup::Failed(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        SegmentLookup::UnsupportedLayout => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                "segment layout is not readable",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let transcript = segment.join(format!("{source}.jsonl"));
     let Ok(raw) = fs::read_to_string(transcript) else {
         return err(
@@ -134,16 +184,26 @@ pub async fn review(
             }))
         })
         .collect::<Vec<_>>();
-    Json(json!({"success":true,"day":day,"stream":stream,"segment_key":segment_key,"source":source,"sentences":sentences})).into_response()
+    Json(json!({"success":true,"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"stream":stream,"segment_key":segment_key,"source":source,"sentences":sentences})).into_response()
 }
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     let entities = journal_entities(&root.0);
     let voiceprint = awareness_voiceprint(&root.0);
-    let segments = segment_paths(&root.0);
+    let segments = match catalog_journal(&root.0) {
+        Ok(segments) => segments,
+        Err(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let owner = owner_section(&root.0, &entities, &voiceprint);
     Json(json!({
-        "embeddings": embeddings_section(&root.0),
+        "embeddings": embeddings_section(&segments),
         "owner": owner,
         "speakers": speakers_section(&root.0, &entities),
         "pool": pool_section(&root.0),
@@ -176,10 +236,21 @@ pub async fn suggest(
             );
         }
     };
+    let segments = match catalog_journal(&root.0) {
+        Ok(segments) => segments,
+        Err(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let mut suggestions = Vec::new();
-    suggestions.extend(import_linkable(&root.0));
+    suggestions.extend(import_linkable(&root.0, &segments));
     suggestions.extend(candidate_pair_suggestions(&root.0));
-    suggestions.extend(low_confidence_suggestions(&root.0));
+    suggestions.extend(low_confidence_suggestions(&segments));
     suggestions.sort_by_key(suggestion_sort_key);
     let items = suggestions.into_iter().take(limit).collect::<Vec<_>>();
     Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(&items)}))
@@ -201,13 +272,6 @@ pub async fn dismissals(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
 
 fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
     error_envelope(code, message, detail, status).into_response()
-}
-
-fn valid_segment(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 fn labels_by_sentence(segment: &Path) -> BTreeMap<i64, Value> {
@@ -277,54 +341,17 @@ fn owner_centroid_exists(root: &Path, entities: &BTreeMap<String, Value>) -> boo
     })
 }
 
-fn segment_paths(root: &Path) -> Vec<(String, String, String, std::path::PathBuf)> {
-    let mut segments = Vec::new();
-    let Ok(days) = fs::read_dir(root.join("chronicle")) else {
-        return segments;
-    };
-    for day in days.flatten() {
-        let day_name = day.file_name().to_string_lossy().into_owned();
-        let Ok(streams) = fs::read_dir(day.path()) else {
-            continue;
-        };
-        for stream in streams.flatten() {
-            let stream_name = stream.file_name().to_string_lossy().into_owned();
-            let Ok(entries) = fs::read_dir(stream.path()) else {
-                continue;
-            };
-            for segment in entries.flatten().filter(|entry| entry.path().is_dir()) {
-                segments.push((
-                    day_name.clone(),
-                    stream_name.clone(),
-                    segment.file_name().to_string_lossy().into_owned(),
-                    segment.path(),
-                ));
-            }
-        }
-    }
-    segments.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then(left.1.cmp(&right.1))
-            .then(left.2.cmp(&right.2))
-    });
-    segments
-}
-
-fn embeddings_section(root: &Path) -> Value {
+fn embeddings_section(segments: &[CatalogedSegment]) -> Value {
     let mut streams = BTreeMap::<String, usize>::new();
     let mut days = BTreeSet::new();
     let mut total = 0usize;
-    for (day, stream, key, _) in segment_paths(root) {
-        if !scan_segment_embeddings(root, &day).iter().any(|segment| {
-            segment.key == key
-                && segment.payload.get("stream").and_then(Value::as_str) == Some(stream.as_str())
-        }) {
+    for segment in segments {
+        if audio_embedding_sources(&segment.path).is_empty() {
             continue;
         }
         total += 1;
-        days.insert(day);
-        *streams.entry(stream).or_default() += 1;
+        days.insert(segment.day.clone());
+        *streams.entry(segment.stream.clone()).or_default() += 1;
     }
     let range = days
         .first()
@@ -480,17 +507,17 @@ fn clusters_section(root: &Path) -> Value {
     json!({"cached_at":data.get("version").cloned().unwrap_or(Value::Null),"count":clusters.len(),"clusters":clusters})
 }
 
-fn imports_section(segments: &[(String, String, String, std::path::PathBuf)]) -> Value {
-    json!({"meetings_files":segments.iter().filter(|(_,_,_,path)| path.join("meetings.md").exists()).count(),"screen_files":segments.iter().filter(|(_,_,_,path)| path.join("talents/screen.json").exists()).count()})
+fn imports_section(segments: &[CatalogedSegment]) -> Value {
+    json!({"meetings_files":segments.iter().filter(|segment| segment.path.join("meetings.md").exists()).count(),"screen_files":segments.iter().filter(|segment| segment.path.join("talents/screen.json").exists()).count()})
 }
 
-fn attribution_section(segments: &[(String, String, String, std::path::PathBuf)]) -> Value {
+fn attribution_section(segments: &[CatalogedSegment]) -> Value {
     let mut files = 0usize;
     let mut labels = 0usize;
     let mut confidence = BTreeMap::<String, usize>::new();
     let mut method = BTreeMap::<String, usize>::new();
-    for (_, _, _, path) in segments {
-        let Some(rows) = read_json(&path.join("talents/speaker_labels.json"))
+    for segment in segments {
+        let Some(rows) = read_json(&segment.path.join("talents/speaker_labels.json"))
             .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
         else {
             continue;
@@ -521,15 +548,15 @@ fn attribution_section(segments: &[(String, String, String, std::path::PathBuf)]
 
 fn quality_section(
     root: &Path,
-    segments: &[(String, String, String, std::path::PathBuf)],
+    segments: &[CatalogedSegment],
     voiceprint: &BTreeMap<String, Value>,
 ) -> Value {
     let mut tier = json!({"high_statements":0,"medium_statements":0,"margin_declined_statements":0,"unlabeled_sentence_statements":0,"skipped_stub_segments":0,"no_labels_file_segments":0});
     let mut unreadable = json!({"speaker_labels_window_count":0,"speaker_corrections_window_count":0,"total_window_count":0});
     let mut corrections = 0usize;
     let mut empty = 0usize;
-    for (_, _, _, path) in segments.iter().rev().take(30) {
-        if !fs::read_dir(path)
+    for segment in segments.iter().rev().take(30) {
+        if !fs::read_dir(&segment.path)
             .ok()
             .into_iter()
             .flatten()
@@ -542,7 +569,7 @@ fn quality_section(
         {
             continue;
         }
-        match read_json(&path.join("talents/speaker_labels.json")) {
+        match read_json(&segment.path.join("talents/speaker_labels.json")) {
             None => {
                 tier["no_labels_file_segments"] =
                     json!(tier["no_labels_file_segments"].as_u64().unwrap_or(0) + 1)
@@ -582,7 +609,7 @@ fn quality_section(
                 }
             },
         }
-        if let Some(payload) = read_json(&path.join("talents/speaker_corrections.json")) {
+        if let Some(payload) = read_json(&segment.path.join("talents/speaker_corrections.json")) {
             if let Some(rows) = payload.get("corrections").and_then(Value::as_array) {
                 corrections += rows.len();
             } else {
@@ -598,13 +625,13 @@ fn quality_section(
         }
     }
     let centroid = owner_centroid_exists(root, &journal_entities(root));
-    json!({"quality_window_days":30,"quality_window_count":segments.iter().map(|(day,_,_,_)| day).collect::<BTreeSet<_>>().len().min(30),"quality_window_error_count":unreadable["total_window_count"],"tier_histogram":tier,"demotions_by_class":{"owner_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0},"acoustic_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0}},"corrections_window_count":corrections,"unreadable_files":unreadable,"empty_labels_without_skipped_segments":empty,"owner_voice":{"bootstrap_state":if centroid { "bootstrapped" } else { "pre_bootstrap" },"status":voiceprint.get("status").cloned().unwrap_or_else(|| json!("none")),"centroid_saved":centroid,"evidence_tier":voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),"evidence_count":0,"built_at":Value::Null,"refreshed_at":Value::Null}})
+    json!({"quality_window_days":30,"quality_window_count":segments.iter().map(|segment| &segment.day).collect::<BTreeSet<_>>().len().min(30),"quality_window_error_count":unreadable["total_window_count"],"tier_histogram":tier,"demotions_by_class":{"owner_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0},"acoustic_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0}},"corrections_window_count":corrections,"unreadable_files":unreadable,"empty_labels_without_skipped_segments":empty,"owner_voice":{"bootstrap_state":if centroid { "bootstrapped" } else { "pre_bootstrap" },"status":voiceprint.get("status").cloned().unwrap_or_else(|| json!("none")),"centroid_saved":centroid,"evidence_tier":voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),"evidence_count":0,"built_at":Value::Null,"refreshed_at":Value::Null}})
 }
 
-fn import_linkable(root: &Path) -> Vec<Value> {
+fn import_linkable(root: &Path, segments: &[CatalogedSegment]) -> Vec<Value> {
     let mut participants = BTreeMap::<String, (usize, BTreeSet<String>)>::new();
-    for (day, _, _, path) in segment_paths(root) {
-        let Ok(text) = fs::read_to_string(path.join("meetings.md")) else {
+    for segment in segments {
+        let Ok(text) = fs::read_to_string(segment.path.join("meetings.md")) else {
             continue;
         };
         for line in text.lines() {
@@ -615,7 +642,7 @@ fn import_linkable(root: &Path) -> Vec<Value> {
             {
                 let entry = participants.entry(name.to_ascii_lowercase()).or_default();
                 entry.0 += 1;
-                entry.1.insert(day.clone());
+                entry.1.insert(segment.day.clone());
             }
         }
     }
@@ -679,10 +706,10 @@ fn candidate_pair_suggestions(root: &Path) -> Vec<Value> {
     values
 }
 
-fn low_confidence_suggestions(root: &Path) -> Vec<Value> {
+fn low_confidence_suggestions(segments: &[CatalogedSegment]) -> Vec<Value> {
     let mut values = Vec::new();
-    for (day, stream, key, path) in segment_paths(root) {
-        let Some(rows) = read_json(&path.join("talents/speaker_labels.json"))
+    for segment in segments {
+        let Some(rows) = read_json(&segment.path.join("talents/speaker_labels.json"))
             .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
         else {
             continue;
@@ -703,7 +730,7 @@ fn low_confidence_suggestions(root: &Path) -> Vec<Value> {
                     .is_none_or(str::is_empty)
             })
             .count();
-        values.push(json!({"type":"low_confidence_review","day":day,"segment_key":key,"stream":stream,"medium_or_null_count":medium,"total_labels":total,"has_speakers":path.join("talents/speakers.json").is_file(),"null_proportion": if total == 0 { 0.0 } else { missing as f64 / total as f64 }}));
+        values.push(json!({"type":"low_confidence_review","day":segment.day,"segment_key":segment.name,"stream":segment.stream,"stream_layout":layout_name(segment.layout),"medium_or_null_count":medium,"total_labels":total,"has_speakers":segment.path.join("talents/speakers.json").is_file(),"null_proportion": if total == 0 { 0.0 } else { missing as f64 / total as f64 }}));
     }
     values.sort_by(|left, right| {
         left.get("has_speakers")
@@ -718,6 +745,13 @@ fn low_confidence_suggestions(root: &Path) -> Vec<Value> {
             })
     });
     values
+}
+
+fn layout_name(layout: SegmentLayout) -> &'static str {
+    match layout {
+        SegmentLayout::Direct => "direct",
+        SegmentLayout::Named => "named",
+    }
 }
 
 fn suggestion_sort_key(value: &Value) -> String {

@@ -61,6 +61,26 @@ impl Journal {
         self.segment_at(SEGMENT, labels, unit(1.0, 0.0));
     }
 
+    fn direct_segment(&self, labels: Value) {
+        self.direct_segment_at(DAY, SEGMENT, labels);
+    }
+
+    fn direct_segment_at(&self, day: &str, segment_key: &str, labels: Value) {
+        let directory = self.0.join("chronicle").join(day).join(segment_key);
+        fs::create_dir_all(directory.join("talents")).expect("talents");
+        fs::write(
+            directory.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n{\"id\":1,\"text\":\"test\"}\n",
+        )
+        .expect("sentences");
+        fs::write(
+            directory.join("talents/speaker_labels.json"),
+            labels.to_string(),
+        )
+        .expect("labels");
+        write_embeddings(&directory.join("audio.npz"), &[unit(1.0, 0.0)]);
+    }
+
     fn segment_at(&self, segment_key: &str, labels: Value, embedding: Vec<f32>) {
         let directory = self
             .0
@@ -700,6 +720,7 @@ async fn correct_reports_a_real_nonzero_propagation_preview() {
 #[tokio::test]
 async fn attribution_trust_lock_timeout_is_the_python_compatible_labels_busy_refusal() {
     let journal = Journal::new();
+    journal.segment(json!({"labels":[{"sentence_id":1}]}));
     let _held = solstone_core_entity::hold_entity_trust_lock_raw_for_test(&journal.0)
         .expect("hold trust lock outside the route coordinator");
     let mut body = request();
@@ -757,4 +778,156 @@ async fn indeterminate_owner_screen_refuses_assign_confirm_and_correct_without_w
         assert_ne!(refused["reason_code"], "speaker_owner_voice_too_close");
         assert!(!journal.0.join("entities/target/voiceprints.npz").exists());
     }
+}
+
+fn direct_request() -> Value {
+    let mut body = request();
+    body["stream"] = json!("_default");
+    body["stream_layout"] = json!("direct");
+    body
+}
+
+fn assert_direct_refused(status: StatusCode, body: &Value) {
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["reason_code"], "speaker_segment_layout_unsupported");
+    assert_eq!(
+        body["error"],
+        "This command can't change that speaker review."
+    );
+    assert_eq!(
+        body["detail"],
+        "This segment uses the direct journal layout, which this command doesn't support."
+    );
+}
+
+#[tokio::test]
+async fn assign_confirm_and_correct_refuse_direct_layout_without_writes() {
+    for (path, labels, body) in [
+        (
+            "/app/speakers/api/assign-attribution",
+            json!({"labels":[{"sentence_id":1}]}),
+            {
+                let mut body = direct_request();
+                body["speaker"] = json!("owner");
+                body
+            },
+        ),
+        (
+            "/app/speakers/api/confirm-attribution",
+            json!({"labels":[{"sentence_id":1,"speaker":"owner","confidence":"medium","method":"acoustic"}]}),
+            direct_request(),
+        ),
+        (
+            "/app/speakers/api/correct-attribution",
+            json!({"labels":[{"sentence_id":1,"speaker":"other","confidence":"medium","method":"acoustic"}]}),
+            {
+                let mut body = direct_request();
+                body["new_speaker"] = json!("owner");
+                body
+            },
+        ),
+    ] {
+        let journal = Journal::new();
+        journal.entity("owner", true);
+        journal.entity("other", false);
+        journal.direct_segment(labels);
+        let before = crate::support::snapshot_files(&journal.0);
+        let (status, refused) = call(router(journal.0.clone()), path, body).await;
+        assert_direct_refused(status, &refused);
+        assert_eq!(
+            crate::support::snapshot_files(&journal.0),
+            before,
+            "{path} wrote the journal"
+        );
+    }
+}
+
+#[tokio::test]
+async fn propagation_preflights_direct_and_mixed_targets_before_resolver_or_writes() {
+    for mixed in [false, true] {
+        let journal = Journal::new();
+        journal.entity("old", false);
+        journal.entity("new", false);
+        if mixed {
+            journal.segment(json!({"labels":[{"sentence_id":1,"speaker":"old"}]}));
+            fs::write(
+                journal
+                    .0
+                    .join("chronicle")
+                    .join(DAY)
+                    .join(STREAM)
+                    .join(SEGMENT)
+                    .join("audio.npz"),
+                b"not an npz archive",
+            )
+            .expect("invalid named evidence writes");
+        }
+        journal.direct_segment_at(
+            "20260809",
+            "120000_1",
+            json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
+        );
+        let before = crate::support::snapshot_files(&journal.0);
+        let (status, refused) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/propagate-correction",
+            json!({"old_speaker":"old","new_speaker":"new","commit":true}),
+        )
+        .await;
+        assert_direct_refused(status, &refused);
+        assert_eq!(
+            crate::support::snapshot_files(&journal.0),
+            before,
+            "mixed={mixed} wrote the journal"
+        );
+    }
+}
+
+#[tokio::test]
+async fn attribution_malformed_stream_layout_is_not_named() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.segment(json!({"labels":[{"sentence_id":1}]}));
+    for layout in [json!("Direct"), json!(""), json!(true), json!(1)] {
+        let mut body = request();
+        body["speaker"] = json!("owner");
+        body["stream_layout"] = layout.clone();
+        let (status, refused) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/assign-attribution",
+            body,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{layout}: {refused}");
+        assert_eq!(
+            refused["reason_code"], "invalid_segment_or_stream",
+            "{layout}: {refused}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn classify_reads_a_direct_segment() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.owner_centroid();
+    journal.direct_segment(json!({"labels":[{"sentence_id":1}]}));
+    let (status, body) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/classify",
+        json!({
+            "day": DAY,
+            "stream": "_default",
+            "segment_key": SEGMENT,
+            "source": SOURCE,
+            "stream_layout": "direct",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["sentences"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
 }
