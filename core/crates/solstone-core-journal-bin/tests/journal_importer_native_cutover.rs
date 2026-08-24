@@ -10,13 +10,23 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use zip::write::SimpleFileOptions;
 
 const POISON_INTERPRETER: &str = "#!/bin/sh\nprintf '%s\\n' \"$0\" > \"$POISON_MARKER\"\nexit 97\n";
+static SOLSTONE_CORE_BINARY: OnceLock<PathBuf> = OnceLock::new();
+static HARNESS_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-fn locate_solstone_core_binary() -> PathBuf {
+/// Build and record the helper once for this test-binary run. Each harness
+/// still copies it into a unique private bin directory before launching.
+fn locate_solstone_core_binary() -> &'static PathBuf {
+    SOLSTONE_CORE_BINARY.get_or_init(build_solstone_core_binary)
+}
+
+fn build_solstone_core_binary() -> PathBuf {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crates")
@@ -70,9 +80,10 @@ impl Harness {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
+        let sequence = HARNESS_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let root = env::temp_dir().join(format!(
-            "solstone-importer-cutover-{}-{stamp}",
-            std::process::id()
+            "solstone-importer-cutover-{}-{sequence}-{stamp}",
+            std::process::id(),
         ));
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("bin");
@@ -287,11 +298,8 @@ fn assert_case(harness: &Harness, mode: &str, case: &Case) {
     assert!(!harness.poison.exists(), "{mode}: importer reached Python");
 }
 
-#[test]
-fn importer_modes_run_natively_through_the_journal_dispatcher() {
-    let harness = Harness::new();
-    let inputs = Inputs::create(&harness.journal);
-    let modes = [
+fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 9] {
+    [
         (
             "generic media",
             vec![
@@ -547,12 +555,23 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
             ],
         ),
-    ];
+    ]
+}
 
-    for (mode, cases) in modes {
+fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: bool) {
+    let harness = Harness::new();
+    let inputs = Inputs::create(&harness.journal);
+
+    for (mode, cases) in importer_modes(&inputs) {
+        if !modes_to_run.contains(&mode) {
+            continue;
+        }
         for case in cases {
             assert_case(&harness, mode, &case);
         }
+    }
+    if !include_preview_refusals {
+        return;
     }
     for (source, input) in [
         ("ics", &inputs.ics),
@@ -579,44 +598,80 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
 }
 
 #[test]
+fn importer_modes_run_natively_through_the_journal_dispatcher() {
+    // These shards have no shared journal, process, or fixture paths. Keep the
+    // stateful journal-source workflow inside one shard, while running at most
+    // three independently prepared dispatch matrices at once.
+    std::thread::scope(|scope| {
+        scope.spawn(|| run_importer_mode_partition(&["generic media"], false));
+        scope.spawn(|| {
+            run_importer_mode_partition(
+                &[
+                    "structured sources",
+                    "apple native return",
+                    "oura file refusal",
+                ],
+                true,
+            )
+        });
+        scope.spawn(|| {
+            run_importer_mode_partition(
+                &[
+                    "importer listing",
+                    "backends",
+                    "sync",
+                    "connect",
+                    "journal-source",
+                ],
+                false,
+            )
+        });
+    });
+}
+
+#[test]
 fn writing_sources_use_pristine_journals() {
-    for (source, expected_file, completion) in [
-        (
-            "image",
-            "image_transcript.md",
-            "image import complete: entries_written=1",
-        ),
-        (
-            "journal_archive",
-            "value",
-            "journal_archive import complete: segments_copied=1",
-        ),
-    ] {
-        let harness = Harness::new();
-        let inputs = Inputs::create(&harness.journal);
-        let input = match source {
-            "image" => &inputs.image,
-            "journal_archive" => &inputs.archive,
-            _ => unreachable!("writing source table is exhaustive"),
-        };
-        let case = Case {
-            args: vec![
-                "--source".to_owned(),
-                source.to_owned(),
-                "--timestamp".to_owned(),
-                "20260311_120000".to_owned(),
-                path(input),
-            ],
-            exit: 0,
-            stream: Stream::Stdout,
-            contains: completion,
-        };
-        assert_case(&harness, "pristine writing source", &case);
-        assert!(contains_named_file(
-            &harness.journal.join("chronicle"),
-            expected_file
-        ));
-    }
+    std::thread::scope(|scope| {
+        for (source, expected_file, completion) in [
+            (
+                "image",
+                "image_transcript.md",
+                "image import complete: entries_written=1",
+            ),
+            (
+                "journal_archive",
+                "value",
+                "journal_archive import complete: segments_copied=1",
+            ),
+        ] {
+            scope.spawn(move || {
+                let harness = Harness::new();
+                let inputs = Inputs::create(&harness.journal);
+                let input = match source {
+                    "image" => &inputs.image,
+                    "journal_archive" => &inputs.archive,
+                    _ => unreachable!("writing source table is exhaustive"),
+                };
+                let case = Case {
+                    args: vec![
+                        "--source".to_owned(),
+                        source.to_owned(),
+                        "--timestamp".to_owned(),
+                        "20260311_120000".to_owned(),
+                        path(input),
+                    ],
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    contains: completion,
+                };
+                assert_case(&harness, "pristine writing source", &case);
+                assert!(contains_named_file(
+                    &harness.journal.join("chronicle"),
+                    expected_file
+                ));
+            });
+        }
+    });
 }
 
 fn contains_named_file(root: &Path, name: &str) -> bool {
