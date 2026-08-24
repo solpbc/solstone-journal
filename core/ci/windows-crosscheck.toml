@@ -21,13 +21,13 @@ exclusive_diagnostic = "solstone-core-journal-archive requires a Unix target: ar
 package = "solstone-core-journal-convergence"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns the journal-bound convergence record store; Lane 1 may not replace the Unix implementation with a no-op."
-expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+expected_stderr = ["solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend", "could not compile `solstone-core-journal-io`"]
 
 [[exclusions]]
 package = "solstone-core-journal-convergence-harness"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns the journal-bound convergence store consumer; Lane 1 may not replace the Unix implementation with a no-op."
-expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+expected_stderr = ["solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend", "could not compile `solstone-core-journal-io`"]
 
 [[exclusions]]
 package = "solstone-core-system"
