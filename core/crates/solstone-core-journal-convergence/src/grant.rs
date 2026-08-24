@@ -2188,20 +2188,84 @@ mod tests {
                 .join("health/convergence/registry/grants/barriers/1.active.json")
                 .is_file()
         );
+        let outbox = std::fs::read(
+            temporary
+                .journal_path()
+                .join("health/convergence/registry/grants/barriers/1.active.json"),
+        )
+        .unwrap();
         drop(held);
 
         // Delivery acquires the day set, so it runs after the lease drops. The
-        // exact committed terminal is not durable, so nothing is handed out.
+        // exact committed terminal is not durable, so neither initial delivery
+        // nor reissue may hand out bytes.
         let before = snapshot_tree(&temporary.journal_path());
-        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
-        assert_eq!(
-            delivery.denied_reason(),
-            Some(DeniedReason::NotCommitted),
-            "{delivery:?}"
-        );
-        assert!(delivery.tokens().is_empty());
-        // Delivery never writes, on any path.
+        for _ in 0..2 {
+            let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
+            assert_eq!(
+                delivery.denied_reason(),
+                Some(DeniedReason::NotCommitted),
+                "{delivery:?}"
+            );
+            assert!(delivery.tokens().is_empty());
+        }
+        let lease = admitted.grant_lease().unwrap();
+        let day = DayKey::parse("20260823").unwrap();
+        assert!(matches!(
+            lease.authorize(
+                &operation,
+                &selector,
+                &"00".repeat(32),
+                &day,
+                WriterFamily::Think,
+                TargetScope::Chronicle,
+            ),
+            Ok(Authorization::Denied {
+                reason: DeniedReason::NotCommitted
+            })
+        ));
+        drop(lease);
+        // Delivery and authorization never write the half-prepared outbox.
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
+        let entry = match crate::claim::classify(admitted.store(), &dirs).unwrap() {
+            ClaimView::Headed(body) => body
+                .table
+                .get("20260823")
+                .cloned()
+                .expect("the prepared outbox retains its claim"),
+            _ => panic!("expected headed prepared outbox claim"),
+        };
+        let mut resumed = admitted.resume_pending_owner(owner, entry).unwrap();
+        assert_eq!(
+            resumed.proceed().unwrap().commit().unwrap().outcome,
+            TerminalOutcome::Committed
+        );
+        drop(resumed);
+        assert_eq!(
+            outbox,
+            std::fs::read(
+                temporary
+                    .journal_path()
+                    .join("health/convergence/registry/grants/barriers/1.active.json"),
+            )
+            .unwrap(),
+            "terminal publication must not replace the prepared outbox"
+        );
+        assert!(
+            admitted
+                .deliver_grants(&operation, &selector)
+                .unwrap()
+                .is_ready()
+        );
     }
 
     #[test]

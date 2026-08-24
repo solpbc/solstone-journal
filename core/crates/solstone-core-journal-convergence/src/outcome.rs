@@ -598,6 +598,14 @@ mod tests {
         ClearanceMemberUnlinked,
         ClearanceMemberReplaced,
         ClearanceMemberDigestMismatched,
+        OwnerIntentLinkUnlinked,
+        DecisionUnlinked,
+        ResolverArtifactPresent,
+        GrantMemberUnlinked,
+        GrantBarrierUnlinked,
+        GrantTombstoneUnlinked,
+        GrantSetTombstoneBindingMismatched,
+        ReconcileNoTokenEvidenceContradicted,
     }
 
     impl MemberCondition {
@@ -610,17 +618,113 @@ mod tests {
                 Self::ClearanceMemberDigestMismatched => {
                     "clearance-barrier-member-digest-mismatched"
                 }
+                Self::OwnerIntentLinkUnlinked => "owner-intent-link-unlinked",
+                Self::DecisionUnlinked => "resolver-decision-unlinked",
+                Self::ResolverArtifactPresent => "resolver-artifact-present-where-absence-required",
+                Self::GrantMemberUnlinked => "historical-grant-member-unlinked",
+                Self::GrantBarrierUnlinked => "historical-grant-barrier-unlinked",
+                Self::GrantTombstoneUnlinked => "authorized-grant-tombstone-unlinked",
+                Self::GrantSetTombstoneBindingMismatched => {
+                    "grant-set-tombstone-binding-mismatched"
+                }
+                Self::ReconcileNoTokenEvidenceContradicted => {
+                    "decisioned-no-token-evidence-contradicted"
+                }
             }
         }
 
-        fn expected_role(self) -> Option<DurableRole> {
+        fn expected_role(self, matrix: Matrix) -> Option<DurableRole> {
             match self {
                 Self::ExactPresent => None,
                 Self::ClearanceBarrierAbsent => Some(DurableRole::ClearanceBarrier),
                 Self::ClearanceMemberUnlinked
                 | Self::ClearanceMemberReplaced
                 | Self::ClearanceMemberDigestMismatched => Some(DurableRole::ClearanceMember),
+                Self::OwnerIntentLinkUnlinked => Some(DurableRole::OwnerIntentLink),
+                Self::DecisionUnlinked => Some(match matrix {
+                    Matrix::NonemptyCommitted => DurableRole::GrantActiveBarrier,
+                    Matrix::Aborted => DurableRole::ClearanceBarrier,
+                    Matrix::DecisionedSuperseded => DurableRole::GrantSupersededBarrier,
+                    Matrix::EmptySetCommitted | Matrix::PassiveSuperseded => {
+                        unreachable!("inapplicable matrix condition is skipped")
+                    }
+                }),
+                Self::ResolverArtifactPresent => Some(DurableRole::GrantMember),
+                Self::GrantMemberUnlinked | Self::GrantTombstoneUnlinked => {
+                    Some(DurableRole::GrantTombstone)
+                }
+                Self::GrantBarrierUnlinked => Some(match matrix {
+                    Matrix::NonemptyCommitted => DurableRole::GrantActiveBarrier,
+                    Matrix::DecisionedSuperseded => DurableRole::GrantSupersededBarrier,
+                    Matrix::Aborted | Matrix::EmptySetCommitted | Matrix::PassiveSuperseded => {
+                        unreachable!("inapplicable matrix condition is skipped")
+                    }
+                }),
+                Self::GrantSetTombstoneBindingMismatched => Some(DurableRole::GrantSetTombstone),
+                Self::ReconcileNoTokenEvidenceContradicted => Some(DurableRole::GrantReconcile),
             }
+        }
+
+        fn skip_reason(self, matrix: Matrix) -> Option<&'static str> {
+            match self {
+                Self::ExactPresent
+                | Self::ClearanceBarrierAbsent
+                | Self::ClearanceMemberUnlinked
+                | Self::ClearanceMemberReplaced
+                | Self::ClearanceMemberDigestMismatched
+                | Self::OwnerIntentLinkUnlinked => None,
+                Self::DecisionUnlinked
+                    if matches!(
+                        matrix,
+                        Matrix::NonemptyCommitted | Matrix::Aborted | Matrix::DecisionedSuperseded
+                    ) =>
+                {
+                    None
+                }
+                Self::ResolverArtifactPresent
+                    if matches!(matrix, Matrix::Aborted | Matrix::EmptySetCommitted) =>
+                {
+                    None
+                }
+                Self::GrantMemberUnlinked | Self::GrantBarrierUnlinked
+                    if matches!(
+                        matrix,
+                        Matrix::NonemptyCommitted | Matrix::DecisionedSuperseded
+                    ) =>
+                {
+                    None
+                }
+                Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched
+                    if matches!(matrix, Matrix::NonemptyCommitted) =>
+                {
+                    None
+                }
+                Self::ReconcileNoTokenEvidenceContradicted
+                    if matches!(matrix, Matrix::DecisionedSuperseded) =>
+                {
+                    None
+                }
+                Self::DecisionUnlinked => Some("this matrix requires no resolver decision"),
+                Self::ResolverArtifactPresent => {
+                    Some("this matrix requires resolver history rather than resolver absence")
+                }
+                Self::GrantMemberUnlinked | Self::GrantBarrierUnlinked => {
+                    Some("this matrix has no historical grant-member fold")
+                }
+                Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched => {
+                    Some("only the nonempty-committed matrix permits authorized grant tombstones")
+                }
+                Self::ReconcileNoTokenEvidenceContradicted => {
+                    Some("only decisioned supersession has a reconciliation no-token proof")
+                }
+            }
+        }
+
+        fn needs_tombstone_fold(self) -> bool {
+            matches!(
+                self,
+                Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched
+            )
         }
     }
 
@@ -629,6 +733,7 @@ mod tests {
         matrix: Matrix,
         stage: SuccessorStage,
         condition: MemberCondition,
+        skip_reason: Option<&'static str>,
     }
 
     fn matrix_rows() -> Vec<MatrixRow> {
@@ -645,17 +750,25 @@ mod tests {
             SuccessorStage::IntentBeforeConsumption,
             SuccessorStage::ConsumptionWitness,
         ];
-        const CONDITIONS: [MemberCondition; 5] = [
+        const CONDITIONS: [MemberCondition; 13] = [
             MemberCondition::ExactPresent,
             MemberCondition::ClearanceBarrierAbsent,
             MemberCondition::ClearanceMemberUnlinked,
             MemberCondition::ClearanceMemberReplaced,
             MemberCondition::ClearanceMemberDigestMismatched,
+            MemberCondition::OwnerIntentLinkUnlinked,
+            MemberCondition::DecisionUnlinked,
+            MemberCondition::ResolverArtifactPresent,
+            MemberCondition::GrantMemberUnlinked,
+            MemberCondition::GrantBarrierUnlinked,
+            MemberCondition::GrantTombstoneUnlinked,
+            MemberCondition::GrantSetTombstoneBindingMismatched,
+            MemberCondition::ReconcileNoTokenEvidenceContradicted,
         ];
 
-        // Every historical matrix includes the exact base clearance barrier
-        // and the exact clearance-vector member for each admitted day. Thus
-        // all 100 Cartesian rows are applicable: no row is silently skipped.
+        // This is the full matrix/artifact Cartesian product. A named
+        // artifact a particular historical matrix does not own remains visible
+        // as a skip-with-reason instead of disappearing from coverage.
         MATRICES
             .into_iter()
             .flat_map(|matrix| {
@@ -664,6 +777,7 @@ mod tests {
                         matrix,
                         stage,
                         condition,
+                        skip_reason: condition.skip_reason(matrix),
                     })
                 })
             })
@@ -862,7 +976,71 @@ mod tests {
             .join("health/convergence/days/20260823.clear.json")
     }
 
-    fn mutate_named_clearance_member(temporary: &TempDir, serial: u64, condition: MemberCondition) {
+    fn grant_member_path(temporary: &TempDir, serial: u64) -> std::path::PathBuf {
+        temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/members/{serial}/20260823.think.chronicle.json"
+        ))
+    }
+
+    fn owner_link_path(temporary: &TempDir, operation: &OperationId) -> std::path::PathBuf {
+        let owner: crate::schema::PreparedOwner = serde_json::from_slice(
+            &std::fs::read(temporary.journal_path().join(format!(
+                "health/convergence/registry/owners/{}.json",
+                operation.as_hex()
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        temporary
+            .journal_path()
+            .join("health/convergence/registry/links")
+            .join(crate::layout::link_name(
+                &owner.owner_binding_digest,
+                &owner.selector_digest,
+            ))
+    }
+
+    fn grant_tombstone_path(temporary: &TempDir, serial: u64) -> std::path::PathBuf {
+        temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/tombstones/member.{serial}.20260823.think.chronicle.json"
+        ))
+    }
+
+    fn prepare_authorized_tombstone_fold(
+        temporary: &TempDir,
+        admitted: &Admitted,
+        operation: &OperationId,
+        selector: &GrantRequestSelector,
+        serial: u64,
+    ) {
+        publish_same_generation_completion(admitted);
+        let day = crate::layout::DayKey::parse("20260823").unwrap();
+        assert_eq!(
+            admitted
+                .revoke_grant(
+                    operation,
+                    selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap(),
+            crate::GrantRevoke::Revoked
+        );
+        std::fs::remove_file(grant_member_path(temporary, serial)).unwrap();
+        assert_eq!(
+            admitted.grant_state(operation, selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
+    }
+
+    fn mutate_named_matrix_member(
+        temporary: &TempDir,
+        operation: &OperationId,
+        serial: u64,
+        matrix: Matrix,
+        condition: MemberCondition,
+    ) {
         let member_path = clearance_member_path(temporary);
         match condition {
             MemberCondition::ExactPresent => {}
@@ -895,6 +1073,60 @@ mod tests {
                 let mut bytes = crate::digest::canonical_json_bytes(&barrier).unwrap();
                 bytes.push(b'\n');
                 std::fs::write(path, bytes).unwrap();
+            }
+            MemberCondition::OwnerIntentLinkUnlinked => {
+                std::fs::remove_file(owner_link_path(temporary, operation)).unwrap();
+            }
+            MemberCondition::DecisionUnlinked => {
+                std::fs::remove_file(temporary.journal_path().join(format!(
+                    "health/convergence/registry/decisions/{serial}.json"
+                )))
+                .unwrap();
+            }
+            MemberCondition::ResolverArtifactPresent => {
+                std::fs::create_dir_all(temporary.journal_path().join(format!(
+                    "health/convergence/registry/grants/members/{serial}"
+                )))
+                .unwrap();
+            }
+            MemberCondition::GrantMemberUnlinked => {
+                std::fs::remove_file(grant_member_path(temporary, serial)).unwrap();
+            }
+            MemberCondition::GrantBarrierUnlinked => {
+                let suffix = match matrix {
+                    Matrix::DecisionedSuperseded => crate::layout::SUPERSEDED_BARRIER_SUFFIX,
+                    _ => ACTIVE_BARRIER_SUFFIX,
+                };
+                std::fs::remove_file(temporary.journal_path().join(format!(
+                    "health/convergence/registry/grants/barriers/{serial}.{suffix}.json"
+                )))
+                .unwrap();
+            }
+            MemberCondition::GrantTombstoneUnlinked => {
+                std::fs::remove_file(grant_tombstone_path(temporary, serial)).unwrap();
+            }
+            MemberCondition::GrantSetTombstoneBindingMismatched => {
+                let path = temporary.journal_path().join(format!(
+                    "health/convergence/registry/grants/tombstones/set.{serial}.json"
+                ));
+                let mut set: crate::schema::GrantSetTombstone =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                set.barrier_digest = "00".repeat(32);
+                write_canonical(&path, &set);
+            }
+            MemberCondition::ReconcileNoTokenEvidenceContradicted => {
+                let path = temporary.journal_path().join(format!(
+                    "health/convergence/registry/grants/reconciliations/{serial}.json"
+                ));
+                let mut reconcile: crate::schema::GrantReconcile =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                reconcile.no_token_delivered = false;
+                reconcile.reconcile_digest =
+                    crate::digest::digest_value_excluding(&reconcile, "reconcile_digest")
+                        .unwrap()
+                        .as_hex()
+                        .to_owned();
+                write_canonical(&path, &reconcile);
             }
         }
     }
@@ -1219,8 +1451,13 @@ mod tests {
         let rows = matrix_rows();
         assert_eq!(
             rows.len(),
-            100,
-            "five matrices × four stages × five conditions"
+            260,
+            "five matrices × four stages × thirteen named evidence conditions"
+        );
+        let skipped = rows.iter().filter(|row| row.skip_reason.is_some()).count();
+        assert_eq!(
+            skipped, 92,
+            "every inapplicable matrix/artifact pair remains an explicit skip"
         );
         // The rows use isolated journals and the fault injection is
         // thread-local, so exercise the Cartesian table under the same
@@ -1239,9 +1476,22 @@ mod tests {
     }
 
     fn run_matrix_row(row: MatrixRow) {
+        if let Some(reason) = row.skip_reason {
+            assert!(
+                !reason.is_empty(),
+                "{} / {} / {} must state why the matrix does not own this artifact",
+                row.matrix.name(),
+                row.stage.name(),
+                row.condition.name()
+            );
+            return;
+        }
         let (temporary, admitted, operation, selector, serial) = matrix_history(row.matrix);
+        if row.condition.needs_tombstone_fold() {
+            prepare_authorized_tombstone_fold(&temporary, &admitted, &operation, &selector, serial);
+        }
         leave_successor_prefix(&admitted, row.stage);
-        mutate_named_clearance_member(&temporary, serial, row.condition);
+        mutate_named_matrix_member(&temporary, &operation, serial, row.matrix, row.condition);
         let before = snapshot_tree(&temporary.journal_path());
         let state = admitted.grant_state(&operation, &selector);
         assert_eq!(
@@ -1252,7 +1502,7 @@ mod tests {
             row.stage.name(),
             row.condition.name()
         );
-        match row.condition.expected_role() {
+        match row.condition.expected_role(row.matrix) {
             None => assert_eq!(
                 state.unwrap(),
                 GrantState::Outcome(row.matrix.outcome()),
@@ -1263,7 +1513,7 @@ mod tests {
             ),
             Some(role) => assert!(
                 matches!(state, Err(ConvergenceError::Unknown { role: actual }) if actual == role),
-                "{} / {} / {} must name the changed matrix member: {state:?}",
+                "{} / {} / {} must return Unknown with expected role {role:?}: {state:?}",
                 row.matrix.name(),
                 row.stage.name(),
                 row.condition.name()
