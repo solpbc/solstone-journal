@@ -19,6 +19,18 @@ Framework-level shell changes live in [CONVEY.md](CONVEY.md).
 
 `solstone call <app> <verb>` authority lives under `core/native-sol/apps/<app>/`.
 
+## Shell chrome metadata
+
+`/api/shell` exposes each registry row as a 13-field `ShellApp`: `app_bar`,
+`background_url`, `date_nav`, `facets_enabled`, `icon`, `icon_svg`, `label`,
+`launcher_group`, `launcher_rank`, `name`, `rail_group`, `rail_rank`, and
+`workspace_url`. There is no starred-app state.
+
+The launcher renders every app once by `launcher_group` and `launcher_rank`.
+Apps with a non-null `rail_group` render in the pinned rail by `rail_rank`;
+the `primary` and `management` rail groups are independent of launcher
+grouping.
+
 ## Journal storage
 
 A running journal still has `solstone/apps/<name>/` for per-app state. That

@@ -18,6 +18,17 @@ The client-side architecture (static shell + per-app workspace fragments, the
 loading/error-state rules) is specified in [`CONVEY-FRONTEND.md`](CONVEY-FRONTEND.md).
 Read it before touching any workspace, shell chrome, or shared client helper.
 
+### Shell chrome
+
+The canonical static shell has dedicated rail, dock, launcher, status
+instrument, and facet-strip slots. `shell_boot.js` renders the rail, dock, and
+grouped launcher from `/api/shell`; it relocates the status instrument and
+only unhides the in-flow facet strip for apps with `facets_enabled`. The
+launcher is a body-level modal dialog so the shared modal-layer focus and
+inert behavior applies. The rail uses non-null `rail_group`/`rail_rank`; the
+launcher uses `launcher_group`/`launcher_rank` and contains every registered
+app exactly once.
+
 ### HTTP API conventions
 
 These conventions apply to every native app router. The browser client
