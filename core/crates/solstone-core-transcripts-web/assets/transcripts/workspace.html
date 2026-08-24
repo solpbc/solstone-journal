@@ -12,7 +12,7 @@
 }
 
 .tr-card {
-  min-height: calc(100vh - var(--facet-bar-height) - 48px);
+  min-height: calc(100vh - 48px);
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -28,11 +28,11 @@
 .tr-timeline {
   --tr-legend-h: 30px;
   position: sticky;
-  top: calc(var(--facet-bar-height) + 16px);
+  top: 16px;
   align-self: start;
   border-right: 1px solid #d1d5db;
   user-select: none;
-  height: calc(100vh - var(--facet-bar-height) - 32px);
+  height: calc(100vh - 32px);
   overflow: hidden;
   touch-action: pan-y;
   cursor: crosshair;
@@ -751,7 +751,7 @@
 
 .tr-body-panel {
   position: fixed;
-  top: calc(var(--facet-bar-height) + 20px);
+  top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap));
   right: 20px;
   bottom: 20px;
   z-index: 45;
@@ -1036,11 +1036,11 @@
 /* Middle zoom timeline (segment selector) */
 .tr-zoom {
   position: sticky;
-  top: calc(var(--facet-bar-height) + 16px);
+  top: 16px;
   align-self: start;
   border-right: 1px solid #e5e7eb;
   user-select: none;
-  height: calc(100vh - var(--facet-bar-height) - 32px);
+  height: calc(100vh - 32px);
   overflow: hidden;
   padding: 12px 0;
   box-sizing: border-box;

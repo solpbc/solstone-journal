@@ -514,13 +514,8 @@
 @media (max-width: 768px) {
   .backup-shell,
   [data-backup-root] {
-    padding-left: calc(var(--menu-bar-width-minimal) + 1rem);
+    padding-left: calc(var(--app-rail-width) + 1rem);
     padding-bottom: 3rem;
-  }
-
-  body.menu-full .backup-shell,
-  body.menu-full [data-backup-root] {
-    padding-left: calc(var(--menu-bar-width-full) + 1rem);
   }
 
   .backup-recovery-grid {
