@@ -53,7 +53,7 @@ use solstone_core_local::install::ced_readiness::{
 };
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
-    install_parakeet_with_lease, lease, pins, rerank_install, rfdetr_install, status,
+    install_parakeet_with_lease, lease, pins, rfdetr_install, status,
 };
 use solstone_core_transcribe::resolve_model_asset;
 
@@ -90,8 +90,6 @@ enum InstallerAction {
     Install { force: bool },
 }
 
-type RerankInstaller<'a> =
-    dyn FnMut(&Path, InstallerAction) -> Result<(), rerank_install::RerankInstallError> + 'a;
 type CedInstaller<'a> = dyn FnMut(
         &Path,
         &str,
@@ -114,7 +112,6 @@ type CoremlInstaller<'a> = dyn FnMut(
     + 'a;
 
 struct ProviderInstallers<'a> {
-    rerank: Box<RerankInstaller<'a>>,
     ced: Box<CedInstaller<'a>>,
     rfdetr: Box<RfdetrInstaller<'a>>,
     coreml: Box<CoremlInstaller<'a>>,
@@ -245,12 +242,6 @@ where
             None,
         ),
         ProviderInstallers {
-            rerank: Box::new(|journal, action| match action {
-                InstallerAction::Check => rerank_install::check_rerank_model(journal),
-                InstallerAction::Install { force } => {
-                    rerank_install::install_rerank_model(journal, force)
-                }
-            }),
             ced: Box::new(|journal, os_name, arch, action| match action {
                 InstallerAction::Check => ced_install::check_ced_assets(journal, os_name, arch),
                 InstallerAction::Install { force } => {
@@ -331,20 +322,6 @@ where
         }
     };
     let mut provider_stdout = Vec::new();
-    if host.os_name == "windows"
-        && let Err(error) = (providers.rerank)(
-            &journal,
-            if options.check {
-                InstallerAction::Check
-            } else {
-                InstallerAction::Install {
-                    force: options.force,
-                }
-            },
-        )
-    {
-        return InstallModelsOutcome::failure(variant, error.exit_code, error.to_string());
-    }
     match (hooks.ced_verdict)(&journal, &host.os_name, &host.arch) {
         CedReadiness::Unsupported { os, arch } => {
             provider_stdout.push(format!(
@@ -877,7 +854,6 @@ mod tests {
             $journal:expr,
             $asset_gate:expr,
             $report:expr,
-            $rerank:expr,
             $ced:expr,
             $rfdetr:expr,
             $coreml:expr,
@@ -895,7 +871,6 @@ mod tests {
                     hooks
                 },
                 ProviderInstallers {
-                    rerank: Box::new($rerank),
                     ced: Box::new($ced),
                     rfdetr: Box::new($rfdetr),
                     coreml: Box::new($coreml),
@@ -928,13 +903,6 @@ mod tests {
             solstone_core_local::install::ced_fixture::write_ready_ced_install(journal, key),
             "C compiler required for CED ready fixture"
         );
-    }
-
-    fn posix_must_not_rerank(
-        _: &Path,
-        _: InstallerAction,
-    ) -> Result<(), rerank_install::RerankInstallError> {
-        panic!("posix must not call rerank")
     }
 
     fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedReadiness {
@@ -1014,7 +982,6 @@ mod tests {
             || Err(()),
             |_| panic!("asset gate must not run"),
             None,
-            |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| panic!("rf-detr installer must not run"),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1037,7 +1004,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, _| panic!("rf-detr installer must not run on an unmapped host"),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1065,7 +1031,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, action| match action {
                 InstallerAction::Check => {
@@ -1106,7 +1071,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, action| {
                 assert_eq!(action, InstallerAction::Check);
                 Ok(None)
@@ -1137,7 +1101,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, action| {
                 actions.push(action);
@@ -1165,7 +1128,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, action| match action {
                 InstallerAction::Check => Err(rfdetr_install::RfdetrInstallError::new(
@@ -1201,7 +1163,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |journal, os, arch, action| {
                 assert!(matches!(action, InstallerAction::Install { force: true }));
                 seed_ready_ced(journal, os, arch);
@@ -1230,7 +1191,6 @@ mod tests {
     #[test]
     fn windows_skips_rfdetr_between_ced_and_parakeet() {
         let journal = tempfile::tempdir().unwrap();
-        let mut rerank_called = false;
         let outcome = run_inner_with_test!(
             host("windows", "x86_64", None),
             || panic!("probe must not run"),
@@ -1238,17 +1198,11 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, action| {
-                rerank_called = true;
-                assert_eq!(action, InstallerAction::Install { force: false });
-                Ok(())
-            },
             |_, _, _, _| panic!("windows must skip ced"),
             |_, _, _, _| panic!("windows must skip rf-detr"),
             |_, _, _| panic!("windows must skip coreml"),
             |_, _, _| panic!("windows must skip parakeet"),
         );
-        assert!(rerank_called);
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
             outcome.stdout,
@@ -1271,7 +1225,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, os_name, arch, action| {
                 called = true;
                 assert_eq!(
@@ -1313,7 +1266,6 @@ mod tests {
             || Ok(raw_journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| panic!("raw platform must skip ced"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1329,47 +1281,6 @@ mod tests {
     }
 
     #[test]
-    fn rerank_failure_stops_the_other_provider_installers_and_parakeet() {
-        let journal = tempfile::tempdir().unwrap();
-        let mut ced_called = false;
-        let mut rfdetr_called = false;
-        let mut parakeet_called = false;
-        let outcome = run_inner_with_test!(
-            host("windows", "x86_64", None),
-            || false,
-            options(InstallModelsVariant::Auto),
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, _| {
-                Err(rerank_install::RerankInstallError::new(
-                    "download_failed",
-                    "rerank failed",
-                    EXIT_IOERR,
-                ))
-            },
-            |_, _, _, _| {
-                ced_called = true;
-                Ok(None)
-            },
-            |_, _, _, _| {
-                rfdetr_called = true;
-                Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
-            },
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| {
-                parakeet_called = true;
-                panic!("parakeet must not run")
-            },
-        );
-        assert_eq!(outcome.exit_code, EXIT_IOERR);
-        assert_eq!(outcome.stderr, ["rerank failed"]);
-        assert!(!ced_called);
-        assert!(!rfdetr_called);
-        assert!(!parakeet_called);
-    }
-
-    #[test]
     fn darwin_resolves_coreml_after_the_asset_gate_without_probing_nvidia() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "darwin", "arm64");
@@ -1380,7 +1291,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, action| {
@@ -1415,7 +1325,6 @@ mod tests {
                 }
             },
             None,
-            posix_must_not_rerank,
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1452,7 +1361,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            posix_must_not_rerank,
             |journal, os, arch, action| {
                 assert!(matches!(action, InstallerAction::Install { force: true }));
                 seed_ready_ced(journal, os, arch);
@@ -1494,7 +1402,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            posix_must_not_rerank,
             |journal, os, arch, action| {
                 assert!(matches!(action, InstallerAction::Install { force: true }));
                 seed_ready_ced(journal, os, arch);
@@ -1558,7 +1465,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            posix_must_not_rerank,
             |journal, os, arch, action| {
                 assert!(matches!(action, InstallerAction::Install { force: true }));
                 seed_ready_ced(journal, os, arch);
@@ -1593,7 +1499,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::Installed),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1627,7 +1532,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, action| {
                 assert_eq!(action, InstallerAction::Check);
@@ -1662,7 +1566,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| panic!("ready CED must not install"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::Installed),
             |_, _, action| {
@@ -1674,34 +1577,6 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
         assert!(coreml_called);
-    }
-
-    #[test]
-    fn windows_check_still_calls_rerank() {
-        let journal = tempfile::tempdir().unwrap();
-        let mut rerank_called = false;
-        let outcome = run_inner_with_test!(
-            host("windows", "x86_64", None),
-            || panic!("probe must not run"),
-            InstallModelsOptions {
-                check: true,
-                ..options(InstallModelsVariant::Auto)
-            },
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            None,
-            |_, action| {
-                rerank_called = true;
-                assert_eq!(action, InstallerAction::Check);
-                Ok(())
-            },
-            |_, _, _, _| panic!("windows must skip ced"),
-            |_, _, _, _| panic!("windows must skip rf-detr"),
-            |_, _, _| panic!("windows must skip coreml"),
-            |_, _, _| panic!("windows must skip parakeet"),
-        );
-        assert!(rerank_called);
-        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
     }
 
     #[test]
@@ -1717,7 +1592,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, _| panic!("--check must not install CED"),
             |_, _, _, _| panic!("degraded CED must short-circuit rf-detr"),
             |_, _, _| panic!("coreml installer must not run"),
@@ -1737,7 +1611,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |_, _, _, action| {
                 assert!(matches!(action, InstallerAction::Install { .. }));
                 Err(ced_install::CedInstallError::new(
@@ -1769,7 +1642,6 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            posix_must_not_rerank,
             |journal, os, arch, action| {
                 assert!(matches!(action, InstallerAction::Install { .. }));
                 seed_ready_ced(journal, os, arch);
