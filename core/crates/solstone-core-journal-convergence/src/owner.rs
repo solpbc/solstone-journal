@@ -27,12 +27,12 @@
 //! that mints the one-shot proof. This base publishes no reciprocal
 //! owner-operation file beyond that record and exposes no resume issuer.
 
+use crate::access::{RegistrySection, with_registry_only};
 use crate::digest::{RecordDigest, digest_value};
 use crate::error::{ConvergenceError, DurableRole, Refusal, random_hex};
 use crate::layout::{DayKey, OWNERS, prepared_owner_name};
 use crate::mac::hmac_hex;
 use crate::preflight::Admitted;
-use crate::registry::{RegistrySection, enter_registry};
 use crate::schema::{
     MAC_OWNER_BINDING, OwnerBindingCanon, PreparedOwner, PreparedOwnerState, ROLE_OWNER_BINDING,
     ROLE_PREPARED_OWNER, SCHEMA_VERSION, canonical_owner_binding_bytes, now_rfc3339, read_json,
@@ -80,6 +80,7 @@ pub struct OwnerBinding {
     object_identity: ObjectIdentity,
     owner_id: String,
     operation_id: String,
+    transaction_class: TransactionClass,
     selector_digest: String,
     /// The live selector this binding was prepared with. Its digest must equal
     /// the durable record's, so the requests cannot drift from what was bound.
@@ -118,11 +119,10 @@ impl OwnerBinding {
         }
         let dirs = crate::init::open_store_dirs(store.root())?
             .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        let record = {
-            let section = enter_registry(&dirs)?;
+        let record = with_registry_only(&dirs, |section| {
             let secret = match load_journal_secret(section.registry())? {
                 Some(secret) => secret,
-                None => create_journal_secret(&section, store.journal_id(), store.root_id())?,
+                None => create_journal_secret(section, store.journal_id(), store.root_id())?,
             };
             let request = OwnerRequest::build(
                 store.journal_id(),
@@ -133,8 +133,8 @@ impl OwnerBinding {
                 admitted.days(),
                 &secret.key_hex,
             )?;
-            prepare_owner_record(&section, &request)?
-        };
+            prepare_owner_record(section, &request)
+        })?;
         sealed::OwnerIssuer::issue(
             &RegistryOwner,
             &record,
@@ -177,6 +177,10 @@ impl OwnerBinding {
 
     pub(crate) fn operation_id(&self) -> &str {
         &self.operation_id
+    }
+
+    pub(crate) fn transaction_class(&self) -> TransactionClass {
+        self.transaction_class
     }
 
     pub(crate) fn selector_digest(&self) -> &str {
@@ -232,6 +236,7 @@ impl OwnerBinding {
             object_identity,
             owner_id: record.owner_id.clone(),
             operation_id: record.operation_id.clone(),
+            transaction_class: record.transaction_class,
             selector_digest: record.selector_digest.clone(),
             selector,
             digest,
@@ -252,6 +257,51 @@ pub(crate) fn load_prepared_owner(
         &prepared_owner_name(operation_id),
         DurableRole::PreparedOwner,
     )
+}
+
+/// Reauthenticate a prepared owner while the complete selected day set is
+/// held.  Durable disagreement is uninterpretable; caller-selected scope
+/// disagreement remains an explicit refusal in the prepare path.
+pub(crate) fn reauthenticate_owner(
+    section: &RegistrySection<'_>,
+    store: &crate::store::ConvergenceStore,
+    owner: &OwnerBinding,
+    class: TransactionClass,
+    days: &[DayKey],
+) -> Result<PreparedOwner, ConvergenceError> {
+    let record =
+        load_prepared_owner(section, owner.operation_id())?.ok_or(ConvergenceError::Unknown {
+            role: DurableRole::PreparedOwner,
+        })?;
+    let secret = load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::JournalSecret,
+    })?;
+    if secret.role != crate::schema::ROLE_JOURNAL_SECRET
+        || secret.schema_version != SCHEMA_VERSION
+        || secret.journal_id != store.journal_id()
+        || secret.root_id != store.root_id()
+        || record.role != ROLE_PREPARED_OWNER
+        || record.schema_version != SCHEMA_VERSION
+        || record.journal_id != store.journal_id()
+        || record.root_id != store.root_id()
+        || record.operation_id != owner.operation_id()
+        || record.transaction_class != class
+        || record.day_set
+            != days
+                .iter()
+                .map(|day| day.as_str().to_owned())
+                .collect::<Vec<_>>()
+        || record.day_set_subdigest != crate::schema::day_set_subdigest(days)?.as_hex()
+        || record.selector_digest != owner.selector_digest()
+        || record.owner_binding_digest != owner.digest_hex()
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::PreparedOwner,
+        });
+    }
+    verify_owner_mac(&record, &secret.key_hex)?;
+    require_active(&record)?;
+    Ok(record)
 }
 
 /// Everything the registry needs to create or re-accept one prepared owner
@@ -389,6 +439,39 @@ fn accept_existing_owner(
     verify_owner_mac(&record, request.key_hex)?;
     require_active(&record)?;
     Ok(record)
+}
+
+/// Read-only: rebuild a live binding from the durable record for `operation`,
+/// or `None` if there is none. Creates nothing. The record's state is returned
+/// alongside so the caller can classify revocation rather than have it refused
+/// here, but lineage, selector, and keyed authentication are all enforced.
+pub(crate) fn load_owner_binding(
+    section: &RegistrySection<'_>,
+    operation: &OperationId,
+    selector: &GrantRequestSelector,
+    identity: ObjectIdentity,
+    journal_id: &str,
+    root_id: &str,
+    key_hex: &str,
+) -> Result<Option<(OwnerBinding, PreparedOwnerState)>, ConvergenceError> {
+    let Some(record) = load_prepared_owner(section, operation.as_hex())? else {
+        return Ok(None);
+    };
+    if record.role != ROLE_PREPARED_OWNER || record.schema_version != SCHEMA_VERSION {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::PreparedOwner,
+        });
+    }
+    if record.journal_id != journal_id || record.root_id != root_id {
+        return Err(ConvergenceError::Refused(Refusal::WrongLineage));
+    }
+    if record.operation_id != operation.as_hex() {
+        return Err(ConvergenceError::Refused(Refusal::WrongOperation));
+    }
+    verify_owner_mac(&record, key_hex)?;
+    let state = record.state;
+    let binding = OwnerBinding::from_record(&record, identity, selector.clone())?;
+    Ok(Some((binding, state)))
 }
 
 /// Keyed authentication of the record's own owner-binding digest.
@@ -581,6 +664,177 @@ mod tests {
         )
     }
 
+    fn assert_reauthentication_unknown(mutate: impl FnOnce(&mut PreparedOwner)) {
+        let (temporary, admitted) = admit_days("reauth-unknown", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let mut record = read_record(&temporary, &operation);
+        mutate(&mut record);
+        write_record(&temporary, &operation, &record);
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                reauthenticate_owner(
+                    section,
+                    admitted.store(),
+                    &owner,
+                    TransactionClass::AdvanceDirty,
+                    admitted.days(),
+                ),
+                Err(ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner
+                })
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn reauthenticate_accepts_the_exact_active_record() {
+        let (_temporary, admitted) = admit_days("reauth-exact", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert_eq!(
+                reauthenticate_owner(
+                    section,
+                    admitted.store(),
+                    &owner,
+                    TransactionClass::AdvanceDirty,
+                    admitted.days(),
+                )?
+                .owner_binding_digest,
+                owner.digest_hex(),
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_role_as_unknown() {
+        assert_reauthentication_unknown(|record| record.role = "wrong".to_owned());
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_version_as_unknown() {
+        assert_reauthentication_unknown(|record| record.schema_version += 1);
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_journal_as_unknown() {
+        assert_reauthentication_unknown(|record| record.journal_id = "other".to_owned());
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_root_as_unknown() {
+        assert_reauthentication_unknown(|record| record.root_id = "other".to_owned());
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_operation_as_unknown() {
+        assert_reauthentication_unknown(|record| record.operation_id = "00".repeat(32));
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_transaction_class_as_unknown() {
+        let (temporary, admitted) = admit_days("reauth-class", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let path = owner_path(&temporary, &operation);
+        let text = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
+        std::fs::write(path, text.replace("advance_dirty", "other")).unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                reauthenticate_owner(
+                    section,
+                    admitted.store(),
+                    &owner,
+                    TransactionClass::AdvanceDirty,
+                    admitted.days(),
+                ),
+                Err(ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner
+                })
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_day_set_as_unknown() {
+        assert_reauthentication_unknown(|record| record.day_set = vec!["20260824".to_owned()]);
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_day_set_subdigest_as_unknown() {
+        assert_reauthentication_unknown(|record| record.day_set_subdigest = "00".repeat(32));
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_selector_as_unknown() {
+        assert_reauthentication_unknown(|record| record.selector_digest = "00".repeat(32));
+    }
+
+    #[test]
+    fn reauthenticate_rejects_wrong_owner_digest_as_unknown() {
+        assert_reauthentication_unknown(|record| record.owner_binding_digest = "00".repeat(32));
+    }
+
+    #[test]
+    fn reauthenticate_rejects_bad_hmac_as_unknown() {
+        assert_reauthentication_unknown(|record| record.owner_binding_mac = "00".repeat(32));
+    }
+
+    fn assert_reauthentication_refused_state(state: PreparedOwnerState) {
+        let (temporary, admitted) = admit_days("reauth-state", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let mut record = read_record(&temporary, &operation);
+        record.state = state;
+        write_record(&temporary, &operation, &record);
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            let error = reauthenticate_owner(
+                section,
+                admitted.store(),
+                &owner,
+                TransactionClass::AdvanceDirty,
+                admitted.days(),
+            )
+            .unwrap_err();
+            assert!(matches!(error, ConvergenceError::Refused(_)));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn reauthenticate_rejects_pending_revocation() {
+        assert_reauthentication_refused_state(PreparedOwnerState::RevocationPending);
+    }
+
+    #[test]
+    fn reauthenticate_rejects_revoked_owner() {
+        assert_reauthentication_refused_state(PreparedOwnerState::Revoked);
+    }
+
     #[test]
     fn prepare_creates_secret_and_record_then_binds() {
         let (temporary, admitted) = admit_days("prepare", &["20260823"]);
@@ -608,7 +862,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let section =
-            crate::registry::enter_registry_with_timeout(&dirs, Duration::from_millis(80)).unwrap();
+            crate::access::hold_registry_for_test(&dirs, Duration::from_millis(80)).unwrap();
         drop(section);
     }
 
@@ -904,17 +1158,39 @@ mod tests {
     }
 
     #[test]
-    fn admit_classifies_an_existing_link_as_recovery() {
-        let (temporary, admitted) = admit_days("admit-link", &["20260823"]);
+    fn an_empty_link_directory_is_absence_not_recovery() {
+        let (temporary, admitted) = admit_days("admit-empty-dir", &["20260823"]);
         let owner = prepared_owner(&admitted).unwrap();
         let operation = OperationId::parse(owner.operation_id()).unwrap();
         let held = admitted.begin(owner).unwrap();
+        // A crash between creating the per-operation directory and creating the
+        // link leaves an empty directory. That is the intent-without-link half,
+        // which resumes by creating the link, so admission must read it as
+        // absence rather than as an already-linked transaction.
         std::fs::create_dir_all(
             registry_dir(&temporary)
                 .join("links")
                 .join(operation.as_hex()),
         )
         .unwrap();
+        let outcome = ClaimAdmission::admit(&held, held.owner()).unwrap();
+        assert!(!outcome.is_existing_link());
+    }
+
+    #[test]
+    fn a_durable_link_classifies_admission_as_recovery() {
+        let (temporary, admitted) = admit_days("admit-link", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+
+        // A fresh admission of the same operation now sees its durable link.
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let held = admitted.begin(owner).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
         let outcome = ClaimAdmission::admit(&held, held.owner()).unwrap();
         assert!(outcome.is_existing_link());

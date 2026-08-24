@@ -142,12 +142,23 @@ pub(crate) fn barrier_file_name(serial: u64, suffix: &str) -> OsString {
     OsString::from(format!("{serial}.{suffix}.json"))
 }
 
-pub(crate) fn link_name(serial: u64) -> OsString {
-    OsString::from(format!("{serial}.json"))
+/// The initial owner-intent link is directly addressed before an intent serial
+/// exists.  Both inputs are canonical fixed-width digests, so this name is a
+/// bounded descriptor-relative lookup rather than a namespace traversal.
+pub(crate) fn link_name(owner_binding_digest: &str, selector_digest: &str) -> OsString {
+    OsString::from(format!("{owner_binding_digest}.{selector_digest}.json"))
 }
 
-pub(crate) fn operation_links_dir(operation_id: &str) -> String {
-    operation_id.to_owned()
+/// A later-dirty successor keeps the initial link immutable and is addressed
+/// by that same stable identity plus its known serial.
+pub(crate) fn successor_link_name(
+    owner_binding_digest: &str,
+    selector_digest: &str,
+    serial: u64,
+) -> OsString {
+    OsString::from(format!(
+        "{owner_binding_digest}.{selector_digest}.{serial}.json"
+    ))
 }
 
 pub(crate) fn consumption_witness_name(day: &DayKey, serial: u64) -> OsString {

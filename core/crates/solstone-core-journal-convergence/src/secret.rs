@@ -5,9 +5,9 @@
 
 use std::ffi::OsStr;
 
+use crate::access::RegistrySection;
 use crate::error::{ConvergenceError, DurableRole, random_hex};
 use crate::layout::SECRET;
-use crate::registry::RegistrySection;
 use crate::schema::{
     JournalSecret, ROLE_JOURNAL_SECRET, SCHEMA_VERSION, now_rfc3339, read_json,
     write_json_exclusive,
@@ -65,9 +65,9 @@ pub(crate) fn load_journal_secret(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
+    use crate::access::hold_registry_for_test;
     use crate::init::open_store_dirs;
     use crate::layout::SECRET;
-    use crate::registry::{enter_registry, enter_registry_with_timeout};
     use crate::test_support::initialized_store;
     use std::time::Duration;
 
@@ -84,10 +84,10 @@ mod tests {
         let journal_b = journal_id.clone();
         let root_b_id = root_id.clone();
         let first = std::thread::spawn(move || {
-            let section = enter_registry(&dirs_a).unwrap();
+            let section = hold_registry_for_test(&dirs_a, Duration::from_secs(2)).unwrap();
             create_journal_secret(&section, &journal_b, &root_b_id)
         });
-        let section_b = enter_registry(&dirs_b).unwrap();
+        let section_b = hold_registry_for_test(&dirs_b, Duration::from_secs(2)).unwrap();
         let second = create_journal_secret(&section_b, &journal_id, &root_id).unwrap();
         drop(section_b);
         let first = first.join().expect("thread").unwrap();
@@ -115,7 +115,7 @@ mod tests {
     fn load_does_not_create() {
         let (temporary, store) = initialized_store();
         let dirs = open_store_dirs(store.root()).unwrap().unwrap();
-        let section = enter_registry_with_timeout(&dirs, Duration::from_secs(2)).unwrap();
+        let section = hold_registry_for_test(&dirs, Duration::from_secs(2)).unwrap();
         assert!(load_journal_secret(section.registry()).unwrap().is_none());
         drop(section);
         assert!(

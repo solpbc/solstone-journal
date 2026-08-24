@@ -17,12 +17,14 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod access;
 mod allocate;
 mod claim;
 mod clearance;
 mod decision;
 mod digest;
 mod error;
+mod grant;
 mod init;
 mod intent;
 mod layout;
@@ -48,6 +50,9 @@ mod walk;
 
 pub use digest::RecordDigest;
 pub use error::{ChangedWhat, ConvergenceError, DurableRole, Refusal};
+pub use grant::{
+    Authorization, Delivery, DeniedReason, GrantAuthority, GrantToken, LiveGrantLease,
+};
 pub use init::check_initialized;
 pub use layout::DayKey;
 pub use owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
@@ -57,6 +62,7 @@ pub use recover::{
     AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
     StoreVerdict,
 };
+pub use schema::PendingStage;
 pub use selector::{
     GrantRequestSelector, OperationId, TargetScope, TransactionClass, WriterFamily,
 };
@@ -67,6 +73,38 @@ pub use transaction::HeldDays;
 // Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod architecture {
+    const MODULE_SOURCES: &[(&str, &str)] = &[
+        ("allocate.rs", include_str!("allocate.rs")),
+        ("access.rs", include_str!("access.rs")),
+        ("claim.rs", include_str!("claim.rs")),
+        ("clearance.rs", include_str!("clearance.rs")),
+        ("decision.rs", include_str!("decision.rs")),
+        ("digest.rs", include_str!("digest.rs")),
+        ("error.rs", include_str!("error.rs")),
+        ("grant.rs", include_str!("grant.rs")),
+        ("init.rs", include_str!("init.rs")),
+        ("intent.rs", include_str!("intent.rs")),
+        ("layout.rs", include_str!("layout.rs")),
+        ("lib.rs", include_str!("lib.rs")),
+        ("link.rs", include_str!("link.rs")),
+        ("lock.rs", include_str!("lock.rs")),
+        ("mac.rs", include_str!("mac.rs")),
+        ("owner.rs", include_str!("owner.rs")),
+        ("permit.rs", include_str!("permit.rs")),
+        ("preflight.rs", include_str!("preflight.rs")),
+        ("projection.rs", include_str!("projection.rs")),
+        ("publish.rs", include_str!("publish.rs")),
+        ("recover.rs", include_str!("recover.rs")),
+        ("registry.rs", include_str!("registry.rs")),
+        ("schema.rs", include_str!("schema.rs")),
+        ("secret.rs", include_str!("secret.rs")),
+        ("selector.rs", include_str!("selector.rs")),
+        ("store.rs", include_str!("store.rs")),
+        ("terminal.rs", include_str!("terminal.rs")),
+        ("transaction.rs", include_str!("transaction.rs")),
+        ("walk.rs", include_str!("walk.rs")),
+    ];
+
     fn production_source(source: &str) -> String {
         let mut output = String::new();
         let mut skip_depth: i32 = 0;
@@ -108,39 +146,24 @@ mod architecture {
 
     #[test]
     fn canonical_path_not_used_to_open() {
-        for source in [
-            include_str!("allocate.rs"),
-            include_str!("claim.rs"),
-            include_str!("clearance.rs"),
-            include_str!("decision.rs"),
-            include_str!("digest.rs"),
-            include_str!("error.rs"),
-            include_str!("init.rs"),
-            include_str!("intent.rs"),
-            include_str!("layout.rs"),
-            include_str!("lib.rs"),
-            include_str!("link.rs"),
-            include_str!("lock.rs"),
-            include_str!("mac.rs"),
-            include_str!("owner.rs"),
-            include_str!("permit.rs"),
-            include_str!("preflight.rs"),
-            include_str!("projection.rs"),
-            include_str!("publish.rs"),
-            include_str!("recover.rs"),
-            include_str!("registry.rs"),
-            include_str!("schema.rs"),
-            include_str!("secret.rs"),
-            include_str!("selector.rs"),
-            include_str!("store.rs"),
-            include_str!("terminal.rs"),
-            include_str!("transaction.rs"),
-            include_str!("walk.rs"),
-        ] {
+        for (_, source) in MODULE_SOURCES {
             let production = production_source(source);
             assert!(!production.contains("canonical_path"));
             assert!(!production.contains("JournalRoot::open"));
         }
+    }
+
+    #[test]
+    fn registry_entry_is_owned_only_by_access() {
+        let users: Vec<&str> = MODULE_SOURCES
+            .iter()
+            .filter_map(|(name, source)| {
+                production_source(source)
+                    .contains("hold_registry_with_timeout")
+                    .then_some(*name)
+            })
+            .collect();
+        assert_eq!(users, ["access.rs", "lock.rs"]);
     }
 
     #[test]

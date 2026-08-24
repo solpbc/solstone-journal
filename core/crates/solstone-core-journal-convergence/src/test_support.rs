@@ -95,8 +95,6 @@ pub(crate) enum PublishFault {
     AfterConsumeUnlink,
     AfterConsumeSync,
     AfterPreparedOwner,
-    AfterOwnerIntentLink,
-    AfterOwnerIntentLinkSync,
     AfterDecision,
     AfterGrantMember { index: u8 },
     AfterAllActiveBarrier,

@@ -18,6 +18,8 @@ const LOCK_POLL: Duration = Duration::from_millis(20);
 
 pub(crate) struct TopologyGuard {
     _lock: BoundParentLock,
+    #[cfg(test)]
+    _observer: crate::access::LockObserverToken,
 }
 
 #[allow(dead_code)]
@@ -36,14 +38,20 @@ pub(crate) fn hold_topology_with_timeout(
         LOCK_POLL,
     )
     .map_err(|error| map_lock_error("acquire topology lock", DurableRole::TopologyLock, error))?;
-    Ok(TopologyGuard { _lock: guard })
+    Ok(TopologyGuard {
+        _lock: guard,
+        #[cfg(test)]
+        _observer: crate::access::LockObserverToken::new(crate::access::ObservedLock::Topology),
+    })
 }
 
 pub(crate) struct RegistryGuard {
     _lock: BoundParentLock,
+    #[cfg(test)]
+    _observer: crate::access::LockObserverToken,
 }
 
-pub(crate) fn hold_registry_with_timeout(
+pub(super) fn hold_registry_with_timeout(
     dirs: &StoreDirs,
     timeout: Duration,
 ) -> Result<RegistryGuard, ConvergenceError> {
@@ -54,7 +62,11 @@ pub(crate) fn hold_registry_with_timeout(
         LOCK_POLL,
     )
     .map_err(|error| map_lock_error("acquire registry lock", DurableRole::RegistryLock, error))?;
-    Ok(RegistryGuard { _lock: guard })
+    Ok(RegistryGuard {
+        _lock: guard,
+        #[cfg(test)]
+        _observer: crate::access::LockObserverToken::new(crate::access::ObservedLock::Registry),
+    })
 }
 
 fn map_lock_error(
@@ -83,6 +95,8 @@ pub struct DayLockSet {
     root_id: String,
     object_identity: ObjectIdentity,
     instance: String,
+    #[cfg(test)]
+    _observer: crate::access::LockObserverToken,
 }
 
 impl DayLockSet {
@@ -157,6 +171,8 @@ pub(crate) fn acquire_days_with_timeout(
     let mut ordered = days.to_vec();
     ordered.sort();
     let mut locks = Vec::with_capacity(ordered.len());
+    #[cfg(test)]
+    let observer = crate::access::LockObserverToken::new(crate::access::ObservedLock::Day);
     for day in &ordered {
         let name = day_lock_name(day);
         let guard = acquire_existing_parent_lock_bound(&dirs.days, &name, timeout, LOCK_POLL)
@@ -170,6 +186,8 @@ pub(crate) fn acquire_days_with_timeout(
         root_id: root_id.to_owned(),
         object_identity,
         instance: random_hex()?,
+        #[cfg(test)]
+        _observer: observer,
     })
 }
 
@@ -293,9 +311,9 @@ mod tests {
         let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
         let dirs_a = open_store_dirs(store_a.root()).unwrap().unwrap();
         let dirs_b = open_store_dirs(store_b.root()).unwrap().unwrap();
-        let held = super::hold_registry_with_timeout(&dirs_a, Duration::from_secs(2)).unwrap();
+        let held = crate::access::hold_registry_for_test(&dirs_a, Duration::from_secs(2)).unwrap();
         let started = Instant::now();
-        let result = super::hold_registry_with_timeout(&dirs_b, Duration::from_millis(80));
+        let result = crate::access::hold_registry_for_test(&dirs_b, Duration::from_millis(80));
         assert!(matches!(
             result,
             Err(ConvergenceError::Refused(Refusal::Busy))
@@ -312,7 +330,7 @@ mod tests {
         let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
         let dirs_a = open_store_dirs(store_a.root()).unwrap().unwrap();
         let day = DayKey::parse("20260823").unwrap();
-        let held = super::hold_registry_with_timeout(&dirs_a, Duration::from_secs(2)).unwrap();
+        let held = crate::access::hold_registry_for_test(&dirs_a, Duration::from_secs(2)).unwrap();
         let started = Instant::now();
         let other = thread::spawn(move || store_b.acquire_days(&[day]));
         let got = other.join().expect("thread");
@@ -332,7 +350,7 @@ mod tests {
         let held = store_a.acquire_days(std::slice::from_ref(&day)).unwrap();
         let started = Instant::now();
         let other = thread::spawn(move || {
-            super::hold_registry_with_timeout(&dirs_b, Duration::from_millis(80))
+            crate::access::hold_registry_for_test(&dirs_b, Duration::from_millis(80)).map(|_| ())
         });
         let got = other.join().expect("thread");
         assert!(got.is_ok());

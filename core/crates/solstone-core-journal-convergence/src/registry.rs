@@ -11,42 +11,13 @@
 
 use std::ffi::OsStr;
 use std::os::fd::OwnedFd;
-use std::time::Duration;
 
 use solstone_core_journal_io::{create_directory_bound, sync_dir_bound};
 
+use crate::access::RegistrySection;
 use crate::error::{ConvergenceError, DurableRole};
-use crate::init::StoreDirs;
 use crate::layout::OWNERS;
-use crate::lock::{LOCK_TIMEOUT, RegistryGuard, hold_registry_with_timeout};
 use crate::walk::open_dir;
-
-/// Live registry section. Dropping it releases `registry.lock`.
-pub(crate) struct RegistrySection<'a> {
-    _guard: RegistryGuard,
-    dirs: &'a StoreDirs,
-}
-
-pub(crate) fn enter_registry(dirs: &StoreDirs) -> Result<RegistrySection<'_>, ConvergenceError> {
-    enter_registry_with_timeout(dirs, LOCK_TIMEOUT)
-}
-
-pub(crate) fn enter_registry_with_timeout(
-    dirs: &StoreDirs,
-    timeout: Duration,
-) -> Result<RegistrySection<'_>, ConvergenceError> {
-    let guard = hold_registry_with_timeout(dirs, timeout)?;
-    Ok(RegistrySection {
-        _guard: guard,
-        dirs,
-    })
-}
-
-impl<'a> RegistrySection<'a> {
-    pub(crate) fn registry(&self) -> &'a OwnedFd {
-        &self.dirs.registry
-    }
-}
 
 pub(crate) fn ensure_owners_dir(
     section: &RegistrySection<'_>,

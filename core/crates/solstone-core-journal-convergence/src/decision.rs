@@ -28,6 +28,7 @@ use std::os::fd::OwnedFd;
 
 use solstone_core_journal_io::{create_directory_bound, sync_dir_bound};
 
+use crate::access::RegistrySection;
 use crate::digest::{digest_value, digest_value_excluding};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::layout::{
@@ -35,11 +36,10 @@ use crate::layout::{
     member_file_name, serial_dir,
 };
 use crate::owner::OwnerBinding;
-use crate::registry::RegistrySection;
 use crate::schema::{
-    DecisionKind, GrantBarrier, GrantDecision, GrantMember, GrantTuple, Intent, MemberState,
-    ROLE_GRANT_ALL_ACTIVE, ROLE_GRANT_ALL_SUPERSEDED, ROLE_GRANT_DECISION, ROLE_GRANT_MEMBER,
-    SCHEMA_VERSION, read_json, write_json_exclusive,
+    DecisionKind, DescendantDiscriminator, GrantBarrier, GrantDecision, GrantMember, GrantTuple,
+    Intent, MemberState, ROLE_GRANT_ALL_ACTIVE, ROLE_GRANT_ALL_SUPERSEDED, ROLE_GRANT_DECISION,
+    ROLE_GRANT_MEMBER, SCHEMA_VERSION, read_json, write_json_exclusive,
 };
 use crate::selector::GrantRequestSelector;
 use crate::store::DaySnapshot;
@@ -210,7 +210,8 @@ pub(crate) fn publish_decision(
 pub(crate) fn accept_decision(
     decision: GrantDecision,
     owner: &OwnerBinding,
-    intent: &Intent,
+    serial: u64,
+    intent_digest: &str,
     wanted: DecisionKind,
 ) -> Result<GrantDecision, ConvergenceError> {
     if decision.role != ROLE_GRANT_DECISION || decision.schema_version != SCHEMA_VERSION {
@@ -227,7 +228,7 @@ pub(crate) fn accept_decision(
     if decision.selector_digest != owner.selector_digest() {
         return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
     }
-    if decision.serial != intent.serial || decision.intent_digest != intent.intent_digest {
+    if decision.serial != serial || decision.intent_digest != intent_digest {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::Decision,
         });
@@ -435,14 +436,68 @@ pub(crate) fn load_barrier(
     read_json(&barriers, &barrier_file_name(serial, suffix), role)
 }
 
+/// Validate a barrier at the token boundary against the exact accepted
+/// decision and complete accepted member set. A barrier is not merely a
+/// readiness marker: every identity and digest field is authenticated here.
+pub(crate) fn accept_barrier(
+    barrier: GrantBarrier,
+    owner: &OwnerBinding,
+    decision: &GrantDecision,
+    members: &[GrantMember],
+    suffix: &str,
+) -> Result<GrantBarrier, ConvergenceError> {
+    let expected_role = if suffix == ACTIVE_BARRIER_SUFFIX {
+        ROLE_GRANT_ALL_ACTIVE
+    } else {
+        ROLE_GRANT_ALL_SUPERSEDED
+    };
+    let durable_role = if suffix == ACTIVE_BARRIER_SUFFIX {
+        DurableRole::GrantActiveBarrier
+    } else {
+        DurableRole::GrantSupersededBarrier
+    };
+    if barrier.role != expected_role
+        || barrier.schema_version != SCHEMA_VERSION
+        || barrier.journal_id != owner.journal_id()
+        || barrier.root_id != owner.root_id()
+        || barrier.serial != decision.serial
+        || barrier.operation_id != owner.operation_id()
+        || barrier.owner_binding_digest != owner.digest_hex()
+        || barrier.selector_digest != owner.selector_digest()
+        || barrier.decision_digest != decision.decision_digest
+        || barrier.intent_digest != decision.intent_digest
+        || barrier.day_set != decision.day_set
+        || (suffix == ACTIVE_BARRIER_SUFFIX && barrier.descendant_discriminator.is_some())
+    {
+        return Err(ConvergenceError::Unknown { role: durable_role });
+    }
+    let expected_members = members
+        .iter()
+        .map(|member| (member_key(&member.tuple), member.member_digest.clone()))
+        .collect();
+    if barrier.member_digests != expected_members {
+        return Err(ConvergenceError::Unknown { role: durable_role });
+    }
+    let recomputed = digest_value_excluding(&barrier, "barrier_digest")?
+        .as_hex()
+        .to_owned();
+    if barrier.barrier_digest != recomputed {
+        return Err(ConvergenceError::Unknown { role: durable_role });
+    }
+    Ok(barrier)
+}
+
 /// Write: publish one barrier over the complete member set. Create-only and
 /// exact-idempotent; a disagreeing barrier at the same serial is unknown.
 pub(crate) struct BarrierSpec<'b> {
     pub serial: u64,
+    pub owner_binding_digest: &'b str,
+    pub decision_digest: &'b str,
+    pub intent_digest: &'b str,
     pub day_set: &'b [String],
     pub members: &'b [GrantMember],
     pub suffix: &'b str,
-    pub descendant_discriminator: Option<BTreeMap<String, String>>,
+    pub descendant_discriminator: Option<DescendantDiscriminator>,
     pub prior_all_active_digest: Option<String>,
 }
 
@@ -453,6 +508,9 @@ pub(crate) fn publish_barrier(
 ) -> Result<GrantBarrier, ConvergenceError> {
     let BarrierSpec {
         serial,
+        owner_binding_digest,
+        decision_digest,
+        intent_digest,
         day_set,
         members,
         suffix,
@@ -480,7 +538,10 @@ pub(crate) fn publish_barrier(
         root_id: owner.root_id().to_owned(),
         serial,
         operation_id: owner.operation_id().to_owned(),
+        owner_binding_digest: owner_binding_digest.to_owned(),
         selector_digest: owner.selector_digest().to_owned(),
+        decision_digest: decision_digest.to_owned(),
+        intent_digest: intent_digest.to_owned(),
         day_set: day_set.to_vec(),
         member_digests,
         descendant_discriminator,
@@ -529,11 +590,13 @@ pub(crate) fn member_key(tuple: &GrantTuple) -> String {
 /// digest per day at the moment supersession was decided.
 pub(crate) fn descendant_discriminator(
     snapshots: &BTreeMap<String, DaySnapshot>,
-) -> BTreeMap<String, String> {
-    snapshots
-        .iter()
-        .map(|(day, snapshot)| (day.clone(), snapshot.digest.as_hex().to_owned()))
-        .collect()
+) -> DescendantDiscriminator {
+    DescendantDiscriminator {
+        record_digests: snapshots
+            .iter()
+            .map(|(day, snapshot)| (day.clone(), snapshot.digest.as_hex().to_owned()))
+            .collect(),
+    }
 }
 
 /// Digest of a barrier as stored, for the retained-history reference.
@@ -584,56 +647,58 @@ pub(crate) fn commit_with_grants(
     // its tuples are *not* re-derived, because a descendant may have advanced
     // the day records since it was fixed. Re-deriving would silently mint a
     // different decision for one transition.
-    let decision = {
-        let section = crate::registry::enter_registry(&dirs)?;
-        match load_decision(&section, serial)? {
-            Some(existing) => {
-                accept_decision(existing, held.owner(), &intent, DecisionKind::Commit)?
-            }
+    let decision = crate::access::with_registry(&dirs, held.timeout(), |section| {
+        match load_decision(section, serial)? {
+            Some(existing) => Ok(accept_decision(
+                existing,
+                held.owner(),
+                intent.serial,
+                &intent.intent_digest,
+                DecisionKind::Commit,
+            )?),
             None => {
                 let tuples = derive_tuples(held.owner().selector(), &snapshots)?;
-                publish_decision(
-                    &section,
+                Ok(publish_decision(
+                    section,
                     held.owner(),
                     &intent,
                     DecisionKind::Commit,
                     tuples,
-                )?
+                )?)
             }
         }
-    };
+    })?;
     let tuples = decision.tuples.clone();
 
     if !commit_permitted {
-        return reconcile_superseded(held, &dirs, serial, &intent, &tuples, &snapshots);
+        return reconcile_superseded(held, &dirs, serial, &intent, &decision, &tuples, &snapshots);
     }
 
     let mut members = Vec::new();
     for (index, tuple) in tuples.iter().enumerate() {
-        let section = crate::registry::enter_registry(&dirs)?;
-        members.push(activate_member(
-            &section,
-            held.owner(),
-            serial,
-            tuple,
-            index,
+        members.push(crate::access::with_registry(
+            &dirs,
+            held.timeout(),
+            |section| activate_member(section, held.owner(), serial, tuple, index),
         )?);
     }
-    {
-        let section = crate::registry::enter_registry(&dirs)?;
+    crate::access::with_registry(&dirs, held.timeout(), |section| {
         publish_barrier(
-            &section,
+            section,
             held.owner(),
             BarrierSpec {
                 serial,
+                owner_binding_digest: held.owner().digest_hex(),
+                decision_digest: &decision.decision_digest,
+                intent_digest: &decision.intent_digest,
                 day_set: &intent.day_set,
                 members: &members,
                 suffix: ACTIVE_BARRIER_SUFFIX,
                 descendant_discriminator: None,
                 prior_all_active_digest: None,
             },
-        )?;
-    }
+        )
+    })?;
     crate::terminal::publish_from_permit(held, crate::permit::TerminalOutcome::Committed)
 }
 
@@ -689,47 +754,46 @@ fn reconcile_superseded(
     dirs: &crate::init::StoreDirs,
     serial: u64,
     intent: &Intent,
+    decision: &GrantDecision,
     tuples: &[GrantTuple],
     snapshots: &BTreeMap<String, DaySnapshot>,
 ) -> Result<crate::permit::TerminalReceipt, ConvergenceError> {
     let mut superseded = Vec::new();
-    let prior_all_active = {
-        let section = crate::registry::enter_registry(dirs)?;
-        load_barrier(&section, serial, crate::layout::ACTIVE_BARRIER_SUFFIX)?
-    };
+    let prior_all_active = crate::access::with_registry(dirs, held.timeout(), |section| {
+        load_barrier(section, serial, crate::layout::ACTIVE_BARRIER_SUFFIX)
+    })?;
     for (index, tuple) in tuples.iter().enumerate() {
-        let section = crate::registry::enter_registry(dirs)?;
-        // Activation prefixes, including a complete all-active barrier, all
-        // convert to superseded membership. Nothing is delivered from here.
-        if load_member(&section, serial, tuple)?.is_none() {
-            let _ = activate_member(&section, held.owner(), serial, tuple, index);
-        }
-        superseded.push(set_member_state(
-            &section,
-            serial,
-            tuple,
-            MemberState::Superseded,
-        )?);
+        let member = crate::access::with_registry(dirs, held.timeout(), |section| {
+            // Activation prefixes, including a complete all-active barrier,
+            // all convert to superseded membership.
+            if load_member(section, serial, tuple)?.is_none() {
+                let _ = activate_member(section, held.owner(), serial, tuple, index);
+            }
+            set_member_state(section, serial, tuple, MemberState::Superseded)
+        })?;
+        superseded.push(member);
     }
     let prior_digest = match prior_all_active.as_ref() {
         Some(barrier) => Some(barrier_digest(barrier)?),
         None => None,
     };
-    {
-        let section = crate::registry::enter_registry(dirs)?;
+    crate::access::with_registry(dirs, held.timeout(), |section| {
         publish_barrier(
-            &section,
+            section,
             held.owner(),
             BarrierSpec {
                 serial,
+                owner_binding_digest: held.owner().digest_hex(),
+                decision_digest: &decision.decision_digest,
+                intent_digest: &decision.intent_digest,
                 day_set: &intent.day_set,
                 members: &superseded,
                 suffix: crate::layout::SUPERSEDED_BARRIER_SUFFIX,
                 descendant_discriminator: Some(descendant_discriminator(snapshots)),
                 prior_all_active_digest: prior_digest,
             },
-        )?;
-    }
+        )
+    })?;
     // The base publishes the superseded terminal from owner-free no-permit
     // recovery, never from a live permit, so the reconciliation stops here and
     // the caller routes into that recovery.
@@ -751,17 +815,22 @@ pub(crate) fn abort_with_decision(
     let intent = crate::intent::read_intent(&dirs, serial)?.ok_or(ConvergenceError::Unknown {
         role: DurableRole::Intent,
     })?;
-    {
-        let section = crate::registry::enter_registry(&dirs)?;
-        match load_decision(&section, serial)? {
+    crate::access::with_registry(&dirs, held.timeout(), |section| {
+        match load_decision(section, serial)? {
             // A fixed commit decision can never be turned into an abort by an
             // owner choosing the opposite terminal.
             Some(existing) => {
-                accept_decision(existing, held.owner(), &intent, DecisionKind::AbortNoOpen)?;
+                accept_decision(
+                    existing,
+                    held.owner(),
+                    intent.serial,
+                    &intent.intent_digest,
+                    DecisionKind::AbortNoOpen,
+                )?;
             }
             None => {
                 publish_decision(
-                    &section,
+                    section,
                     held.owner(),
                     &intent,
                     DecisionKind::AbortNoOpen,
@@ -769,7 +838,8 @@ pub(crate) fn abort_with_decision(
                 )?;
             }
         }
-    }
+        Ok(())
+    })?;
     crate::terminal::publish_from_permit(held, crate::permit::TerminalOutcome::Aborted)
 }
 
@@ -779,6 +849,7 @@ pub(crate) fn abort_with_decision(
 mod tests {
     use super::*;
     use crate::layout::{DayKey, SUPERSEDED_BARRIER_SUFFIX};
+    use crate::owner::OwnerBinding;
     use crate::permit::TerminalOutcome;
     use crate::publish::{
         PreparedCompletionAuthority, PreparedLaterDirtyAuthority, publish_kind_for_test,
@@ -857,6 +928,127 @@ mod tests {
         )
         .unwrap();
         serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap()
+    }
+
+    fn exact_barrier() -> (
+        TempDir,
+        OwnerBinding,
+        GrantDecision,
+        Vec<GrantMember>,
+        GrantBarrier,
+    ) {
+        let (temporary, admitted) = admit_days("barrier-accept", &["20260823"]);
+        let operation = crate::selector::OperationId::generate().unwrap();
+        let selector = GrantRequestSelector::try_new(admitted.days(), two()).unwrap();
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let serial = held.serial.unwrap();
+        held.proceed().unwrap().commit().unwrap();
+        drop(held);
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let decision = read_decision(&temporary, serial);
+        let members = member_files(&temporary, serial)
+            .iter()
+            .map(|name| read_member_file(&temporary, serial, name))
+            .collect();
+        let barrier = read_barrier_file(&temporary, serial, ACTIVE_BARRIER_SUFFIX);
+        (temporary, owner, decision, members, barrier)
+    }
+
+    fn assert_barrier_unknown(mutate: impl FnOnce(&mut GrantBarrier)) {
+        let (_temporary, owner, decision, members, mut barrier) = exact_barrier();
+        mutate(&mut barrier);
+        assert!(matches!(
+            accept_barrier(barrier, &owner, &decision, &members, ACTIVE_BARRIER_SUFFIX),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantActiveBarrier
+            })
+        ));
+    }
+
+    #[test]
+    fn accept_barrier_accepts_exact_complete_set() {
+        let (_temporary, owner, decision, members, barrier) = exact_barrier();
+        assert_eq!(
+            accept_barrier(
+                barrier.clone(),
+                &owner,
+                &decision,
+                &members,
+                ACTIVE_BARRIER_SUFFIX,
+            )
+            .unwrap(),
+            barrier,
+        );
+    }
+
+    #[test]
+    fn accept_barrier_rejects_wrong_role() {
+        assert_barrier_unknown(|barrier| barrier.role = "wrong".to_owned());
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_version() {
+        assert_barrier_unknown(|barrier| barrier.schema_version += 1);
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_lineage() {
+        assert_barrier_unknown(|barrier| barrier.journal_id = "wrong".to_owned());
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_serial() {
+        assert_barrier_unknown(|barrier| barrier.serial += 1);
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_operation() {
+        assert_barrier_unknown(|barrier| barrier.operation_id = "00".repeat(32));
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_selector() {
+        assert_barrier_unknown(|barrier| barrier.selector_digest = "00".repeat(32));
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_owner_binding() {
+        assert_barrier_unknown(|barrier| barrier.owner_binding_digest = "00".repeat(32));
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_decision_digest() {
+        assert_barrier_unknown(|barrier| barrier.decision_digest = "00".repeat(32));
+    }
+    #[test]
+    fn accept_barrier_rejects_wrong_intent_digest() {
+        assert_barrier_unknown(|barrier| barrier.intent_digest = "00".repeat(32));
+    }
+    #[test]
+    fn accept_barrier_rejects_member_map_mismatch() {
+        assert_barrier_unknown(|barrier| {
+            barrier.member_digests.clear();
+        });
+    }
+    #[test]
+    fn accept_barrier_rejects_active_descendant_discriminator() {
+        assert_barrier_unknown(|barrier| {
+            barrier.descendant_discriminator = Some(DescendantDiscriminator {
+                record_digests: BTreeMap::new(),
+            });
+        });
+    }
+    #[test]
+    fn accept_barrier_rejects_digest_mismatch() {
+        assert_barrier_unknown(|barrier| barrier.barrier_digest = "00".repeat(32));
     }
 
     #[test]
@@ -1192,17 +1384,19 @@ mod tests {
             dirty_generation: snapshot.dirty_generation,
             dirty_by_transition_serial: snapshot.dirty_by_transition_serial,
         };
-        let section = crate::registry::enter_registry(&dirs).unwrap();
-        activate_member(&section, held.owner(), serial, &tuple, 0).unwrap();
-        set_member_state(&section, serial, &tuple, MemberState::Revoked).unwrap();
-        // Activation over revoked membership reports the revocation instead of
-        // silently reviving it.
-        let error = activate_member(&section, held.owner(), serial, &tuple, 0).unwrap_err();
-        drop(section);
-        assert!(matches!(
-            error,
-            ConvergenceError::Refused(Refusal::GrantMemberRevoked)
-        ));
+        crate::access::with_registry(&dirs, held.timeout(), |section| {
+            activate_member(section, held.owner(), serial, &tuple, 0)?;
+            set_member_state(section, serial, &tuple, MemberState::Revoked)?;
+            // Activation over revoked membership reports the revocation instead
+            // of silently reviving it.
+            let error = activate_member(section, held.owner(), serial, &tuple, 0).unwrap_err();
+            assert!(matches!(
+                error,
+                ConvergenceError::Refused(Refusal::GrantMemberRevoked)
+            ));
+            Ok(())
+        })
+        .unwrap();
         assert_eq!(
             read_member_file(&temporary, serial, "20260823.think.chronicle.json").state,
             MemberState::Revoked

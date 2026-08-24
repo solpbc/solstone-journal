@@ -9,7 +9,7 @@ use std::os::fd::OwnedFd;
 use solstone_core_journal_io::{create_directory_bound, sync_dir_bound};
 
 use crate::allocate::load_adoption;
-use crate::digest::{RecordDigest, digest_value};
+use crate::digest::{RecordDigest, digest_value, digest_value_excluding};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::init::{StoreDirs, open_store_dirs};
 use crate::intent::read_intent;
@@ -359,7 +359,7 @@ fn write_and_cleanup(
         })?;
         adoption_ids.insert(day.as_str().to_owned(), adoption.adoption_id);
     }
-    let terminal = Terminal {
+    let mut terminal = Terminal {
         role: ROLE_TERMINAL.to_owned(),
         schema_version: SCHEMA_VERSION,
         journal_id: store.journal_id().to_owned(),
@@ -374,7 +374,11 @@ fn write_and_cleanup(
             store, dirs, intent, days,
         )?,
         resolved,
+        terminal_digest: String::new(),
     };
+    terminal.terminal_digest = digest_value_excluding(&terminal, "terminal_digest")?
+        .as_hex()
+        .to_owned();
     let digest = publish_terminal(dirs, &terminal)?;
     continue_cleanup(store, dirs, intent, days, &terminal, &digest)?;
     Ok(TerminalReceipt {
@@ -643,6 +647,29 @@ fn release_after_evict(
     Ok(())
 }
 
+/// Read: the retained per-day clearance member, or `None`. Never creates.
+pub(crate) fn read_clearance_member(
+    dirs: &StoreDirs,
+    day: &DayKey,
+) -> Result<Option<ClearanceMember>, ConvergenceError> {
+    read_json(&dirs.days, &member_name(day), DurableRole::ClearanceMember)
+}
+
+/// Read: the retained clearance barrier for `serial`, or `None`. Never creates.
+pub(crate) fn read_clearance_barrier(
+    dirs: &StoreDirs,
+    serial: u64,
+) -> Result<Option<ClearanceBarrier>, ConvergenceError> {
+    let Some(parent) = crate::walk::open_dir(&dirs.convergence, CLEARANCE)? else {
+        return Ok(None);
+    };
+    read_json(
+        &parent,
+        &barrier_name(serial),
+        DurableRole::ClearanceBarrier,
+    )
+}
+
 fn write_member(
     dirs: &StoreDirs,
     day: &DayKey,
@@ -731,4 +758,174 @@ pub(crate) fn read_terminal(
         return Ok(None);
     };
     read_json(&parent, &terminal_name(serial), DurableRole::Terminal)
+}
+
+/// Accept only the exact terminal rooted in an immutable owner-intent link.
+/// Parsing alone is not authority: all identity, membership, and digest
+/// fields are revalidated at delivery/authorization boundaries.
+pub(crate) fn accept_terminal(
+    terminal: Terminal,
+    link: &crate::schema::OwnerIntentLink,
+) -> Result<(Terminal, RecordDigest), ConvergenceError> {
+    let expected_days = &link.day_set;
+    if terminal.role != ROLE_TERMINAL
+        || terminal.schema_version != SCHEMA_VERSION
+        || terminal.journal_id != link.journal_id
+        || terminal.root_id != link.root_id
+        || terminal.serial != link.serial
+        || terminal.owner_binding_digest != link.owner_binding_digest
+        || terminal.intent_digest != link.intent_digest
+        || terminal.day_set != *expected_days
+        || terminal.resolved.len() != expected_days.len()
+        || terminal.adoption_ids.len() != expected_days.len()
+        || expected_days
+            .iter()
+            .any(|day| !terminal.resolved.contains_key(day))
+        || expected_days
+            .iter()
+            .any(|day| !terminal.adoption_ids.contains_key(day))
+        || terminal.resolved.values().any(|resolved| {
+            resolved.record_revision == 0
+                || resolved.head_digest.is_empty()
+                || resolved.witness_digest.is_empty()
+                || resolved.record_digest.is_empty()
+        })
+        || terminal.adoption_ids.values().any(String::is_empty)
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::Terminal,
+        });
+    }
+    let expected = digest_value_excluding(&terminal, "terminal_digest")?
+        .as_hex()
+        .to_owned();
+    if terminal.terminal_digest != expected {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::Terminal,
+        });
+    }
+    let digest = digest_value(&terminal)?;
+    Ok((terminal, digest))
+}
+
+#[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+mod tests {
+    use super::*;
+    use crate::digest::digest_value_excluding;
+    use crate::schema::{OwnerIntentLink, ROLE_OWNER_INTENT_LINK};
+    use crate::test_support::{TempDir, admit_days, continue_ok};
+
+    fn exact_terminal() -> (TempDir, Terminal, OwnerIntentLink) {
+        let (temporary, admitted) = admit_days("terminal-accept", &["20260823"]);
+        let held = continue_ok(&admitted);
+        let serial = held.serial.unwrap();
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
+        let intent = read_intent(&dirs, serial).unwrap().unwrap();
+        let link = OwnerIntentLink {
+            role: ROLE_OWNER_INTENT_LINK.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: held.owner().journal_id().to_owned(),
+            root_id: held.owner().root_id().to_owned(),
+            operation_id: held.owner().operation_id().to_owned(),
+            owner_binding_digest: held.owner().digest_hex().to_owned(),
+            serial,
+            intent_digest: intent.intent_digest,
+            day_set: intent.day_set,
+            day_set_subdigest: intent.day_set_subdigest,
+            selector_digest: held.owner().selector_digest().to_owned(),
+        };
+        let mut resolved = BTreeMap::new();
+        resolved.insert(
+            "20260823".to_owned(),
+            ResolvedDay {
+                record_revision: 1,
+                head_digest: "11".repeat(32),
+                witness_digest: "22".repeat(32),
+                record_digest: "33".repeat(32),
+            },
+        );
+        let mut adoption_ids = BTreeMap::new();
+        adoption_ids.insert("20260823".to_owned(), "adoption".to_owned());
+        let mut terminal = Terminal {
+            role: ROLE_TERMINAL.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: link.journal_id.clone(),
+            root_id: link.root_id.clone(),
+            serial,
+            owner_binding_digest: link.owner_binding_digest.clone(),
+            intent_digest: link.intent_digest.clone(),
+            day_set: link.day_set.clone(),
+            adoption_ids,
+            outcome: outcome_name(TerminalOutcome::Committed).to_owned(),
+            predecessors: BTreeMap::new(),
+            resolved,
+            terminal_digest: String::new(),
+        };
+        terminal.terminal_digest = digest_value_excluding(&terminal, "terminal_digest")
+            .unwrap()
+            .as_hex()
+            .to_owned();
+        (temporary, terminal, link)
+    }
+
+    fn assert_terminal_unknown(mutate: impl FnOnce(&mut Terminal)) {
+        let (_temporary, mut terminal, link) = exact_terminal();
+        mutate(&mut terminal);
+        assert!(matches!(
+            accept_terminal(terminal, &link),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::Terminal
+            })
+        ));
+    }
+
+    #[test]
+    fn accept_terminal_accepts_exact_record() {
+        let (_temporary, terminal, link) = exact_terminal();
+        assert_eq!(
+            accept_terminal(terminal.clone(), &link).unwrap().0,
+            terminal
+        );
+    }
+
+    #[test]
+    fn accept_terminal_rejects_wrong_role() {
+        assert_terminal_unknown(|terminal| terminal.role = "wrong".to_owned());
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_version() {
+        assert_terminal_unknown(|terminal| terminal.schema_version += 1);
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_journal() {
+        assert_terminal_unknown(|terminal| terminal.journal_id = "wrong".to_owned());
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_root() {
+        assert_terminal_unknown(|terminal| terminal.root_id = "wrong".to_owned());
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_serial() {
+        assert_terminal_unknown(|terminal| terminal.serial += 1);
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_intent() {
+        assert_terminal_unknown(|terminal| terminal.intent_digest = "00".repeat(32));
+    }
+    #[test]
+    fn accept_terminal_rejects_wrong_day_set() {
+        assert_terminal_unknown(|terminal| terminal.day_set = vec!["20260824".to_owned()]);
+    }
+    #[test]
+    fn accept_terminal_rejects_missing_resolved_member() {
+        assert_terminal_unknown(|terminal| {
+            terminal.resolved.clear();
+        });
+    }
+    #[test]
+    fn accept_terminal_rejects_digest_mismatch() {
+        assert_terminal_unknown(|terminal| terminal.terminal_digest = "00".repeat(32));
+    }
 }

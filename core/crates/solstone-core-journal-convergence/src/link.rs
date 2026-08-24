@@ -1,101 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Immutable owner-intent links.
+//! Immutable directly-addressed owner-intent links.
 //!
-//! A link is create-only and never overwritten. Links are keyed by exact
-//! intent serial inside a per-operation directory, so a later-dirty successor
-//! records its own link without rewriting the link of the transition it
-//! follows.
-//!
-//! Admission absence therefore means the operation's link set is exactly
-//! empty, which is the condition that holds on a fresh `begin` before any
-//! allocation. The per-operation directory is created by linkage itself, so
-//! its **existence** is the durable evidence that the operation has entered
-//! linkage: it cannot appear before an intent exists, and a crash between
-//! creating the directory and creating the link is exactly the
-//! intent-without-link state that resumes by creating the link at the live
-//! serial. Presence is deliberately a directory probe and not a listing, so
-//! admission performs no scan.
-//!
-//! A link that exists but disagrees is **unknown**, not refused: it is
-//! evidence that two different intents claim the same serial for one
-//! operation, which no decision, resume, or grant may be built on. Nothing
-//! overwrites it.
+//! The initial link name is derived from the prepared owner binding and the
+//! exact request-selector digest, both known before allocation. Therefore an
+//! admission needs one bounded open, never a registry directory listing.
 
 use std::ffi::OsStr;
 use std::os::fd::OwnedFd;
 
 use solstone_core_journal_io::{create_directory_bound, sync_dir_bound};
 
+use crate::access::RegistrySection;
 use crate::error::{ConvergenceError, DurableRole};
-use crate::layout::{LINKS, link_name, operation_links_dir};
+use crate::layout::{LINKS, link_name, successor_link_name};
 use crate::owner::OwnerBinding;
-use crate::registry::RegistrySection;
 use crate::schema::{
     Intent, OwnerIntentLink, ROLE_OWNER_INTENT_LINK, SCHEMA_VERSION, read_json,
     write_json_exclusive,
 };
 use crate::walk::open_dir;
 
-/// Read: whether the operation has entered linkage. Never creates.
-pub(crate) fn operation_link_present(
-    section: &RegistrySection<'_>,
-    operation_id: &str,
-) -> Result<bool, ConvergenceError> {
-    let Some(links) = open_dir(section.registry(), LINKS)? else {
-        return Ok(false);
-    };
-    Ok(open_dir(&links, &operation_links_dir(operation_id))?.is_some())
+/// The only admission classification for one addressed link.
+pub(crate) enum LinkResolution {
+    Absent,
+    Exact(Box<OwnerIntentLink>),
+    Unknown,
 }
 
-/// Read: the operation's link at `serial`, or `None`. Never creates.
-pub(crate) fn load_owner_intent_link(
-    section: &RegistrySection<'_>,
-    operation_id: &str,
-    serial: u64,
-) -> Result<Option<OwnerIntentLink>, ConvergenceError> {
-    let Some(links) = open_dir(section.registry(), LINKS)? else {
-        return Ok(None);
-    };
-    let Some(directory) = open_dir(&links, &operation_links_dir(operation_id))? else {
-        return Ok(None);
-    };
-    read_json(&directory, &link_name(serial), DurableRole::OwnerIntentLink)
+fn links_dir(section: &RegistrySection<'_>) -> Result<Option<OwnedFd>, ConvergenceError> {
+    open_dir(section.registry(), LINKS)
 }
 
-fn ensure_operation_links_dir(
-    section: &RegistrySection<'_>,
-    operation_id: &str,
-) -> Result<OwnedFd, ConvergenceError> {
-    create_directory_bound(section.registry(), OsStr::new(LINKS), 0o700).map_err(map_dir)?;
-    let links = open_dir(section.registry(), LINKS)?.ok_or(ConvergenceError::Unknown {
-        role: DurableRole::Directory,
+fn ensure_links_dir(section: &RegistrySection<'_>) -> Result<OwnedFd, ConvergenceError> {
+    create_directory_bound(section.registry(), OsStr::new(LINKS), 0o700).map_err(|error| {
+        ConvergenceError::Io {
+            operation: "create links directory",
+            role: DurableRole::Directory,
+            source: std::io::Error::other(error.to_string()),
+        }
     })?;
-    let name = operation_links_dir(operation_id);
-    create_directory_bound(&links, OsStr::new(&name), 0o700).map_err(map_dir)?;
-    open_dir(&links, &name)?.ok_or(ConvergenceError::Unknown {
+    links_dir(section)?.ok_or(ConvergenceError::Unknown {
         role: DurableRole::Directory,
     })
 }
 
-fn map_dir(error: solstone_core_journal_io::PathError) -> ConvergenceError {
-    ConvergenceError::Io {
-        operation: "create links directory",
-        role: DurableRole::Directory,
-        source: std::io::Error::other(error.to_string()),
-    }
-}
-
-/// Write: create-only owner-intent link, then file and parent sync, then an
-/// exact re-read. Re-running on an exact existing link is idempotent and
-/// resyncs; a disagreeing link is unknown and is never overwritten.
-pub(crate) fn create_owner_intent_link(
-    section: &RegistrySection<'_>,
-    owner: &OwnerBinding,
-    intent: &Intent,
-) -> Result<OwnerIntentLink, ConvergenceError> {
-    let link = OwnerIntentLink {
+fn expected_link(owner: &OwnerBinding, intent: &Intent) -> OwnerIntentLink {
+    OwnerIntentLink {
         role: ROLE_OWNER_INTENT_LINK.to_owned(),
         schema_version: SCHEMA_VERSION,
         journal_id: owner.journal_id().to_owned(),
@@ -107,48 +59,122 @@ pub(crate) fn create_owner_intent_link(
         day_set: intent.day_set.clone(),
         day_set_subdigest: intent.day_set_subdigest.clone(),
         selector_digest: owner.selector_digest().to_owned(),
+    }
+}
+
+fn link_matches_owner(link: &OwnerIntentLink, owner: &OwnerBinding) -> bool {
+    let expected_days: Vec<String> = owner
+        .selector()
+        .days()
+        .iter()
+        .map(|day| day.as_str().to_owned())
+        .collect();
+    let expected_subdigest = match crate::schema::day_set_subdigest(owner.selector().days()) {
+        Ok(digest) => digest.as_hex().to_owned(),
+        Err(_) => return false,
     };
-    let directory = ensure_operation_links_dir(section, owner.operation_id())?;
-    match write_json_exclusive(
-        &directory,
-        &link_name(intent.serial),
-        &link,
-        DurableRole::OwnerIntentLink,
-    ) {
+    link.role == ROLE_OWNER_INTENT_LINK
+        && link.schema_version == SCHEMA_VERSION
+        && link.journal_id == owner.journal_id()
+        && link.root_id == owner.root_id()
+        && link.operation_id == owner.operation_id()
+        && link.owner_binding_digest == owner.digest_hex()
+        && link.day_set == expected_days
+        && link.day_set_subdigest == expected_subdigest
+        && link.selector_digest == owner.selector_digest()
+}
+
+/// One bounded descriptor-relative open of the initial link name.
+pub(crate) fn resolve_owner_intent_link(
+    section: &RegistrySection<'_>,
+    owner: &OwnerBinding,
+) -> Result<LinkResolution, ConvergenceError> {
+    let Some(links) = links_dir(section)? else {
+        return Ok(LinkResolution::Absent);
+    };
+    let name = link_name(owner.digest_hex(), owner.selector_digest());
+    match read_json::<OwnerIntentLink>(&links, &name, DurableRole::OwnerIntentLink) {
+        Ok(None) => Ok(LinkResolution::Absent),
+        Ok(Some(link)) if link_matches_owner(&link, owner) => {
+            Ok(LinkResolution::Exact(Box::new(link)))
+        }
+        Ok(Some(_)) | Err(_) => Ok(LinkResolution::Unknown),
+    }
+}
+
+/// Read the initial link or an exactly addressed successor. The caller knows
+/// the serial from the linked intent, so this still never lists a directory.
+pub(crate) fn load_owner_intent_link(
+    section: &RegistrySection<'_>,
+    owner: &OwnerBinding,
+    serial: u64,
+) -> Result<Option<OwnerIntentLink>, ConvergenceError> {
+    match resolve_owner_intent_link(section, owner)? {
+        LinkResolution::Exact(link) if link.serial == serial => Ok(Some(*link)),
+        LinkResolution::Exact(_) => {
+            let Some(links) = links_dir(section)? else {
+                return Ok(None);
+            };
+            let name = successor_link_name(owner.digest_hex(), owner.selector_digest(), serial);
+            match read_json::<OwnerIntentLink>(&links, &name, DurableRole::OwnerIntentLink) {
+                Ok(Some(link)) if link_matches_owner(&link, owner) && link.serial == serial => {
+                    Ok(Some(link))
+                }
+                Ok(None) => Ok(None),
+                Ok(Some(_)) | Err(_) => Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                }),
+            }
+        }
+        LinkResolution::Absent => Ok(None),
+        LinkResolution::Unknown => Err(ConvergenceError::Unknown {
+            role: DurableRole::OwnerIntentLink,
+        }),
+    }
+}
+
+/// Create the direct initial link, or a direct successor link. The one
+/// addressed initial read decides which name is lawful: re-running its serial
+/// is idempotent, while a different serial is a successor. No caller-supplied
+/// stage flag chooses the durable shape.
+pub(crate) fn create_owner_intent_link(
+    section: &RegistrySection<'_>,
+    owner: &OwnerBinding,
+    intent: &Intent,
+) -> Result<OwnerIntentLink, ConvergenceError> {
+    let link = expected_link(owner, intent);
+    let name = match resolve_owner_intent_link(section, owner)? {
+        LinkResolution::Absent => link_name(owner.digest_hex(), owner.selector_digest()),
+        LinkResolution::Exact(link) if link.serial == intent.serial => {
+            link_name(owner.digest_hex(), owner.selector_digest())
+        }
+        LinkResolution::Exact(_) => {
+            successor_link_name(owner.digest_hex(), owner.selector_digest(), intent.serial)
+        }
+        LinkResolution::Unknown => {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerIntentLink,
+            });
+        }
+    };
+    let links = ensure_links_dir(section)?;
+    match write_json_exclusive(&links, &name, &link, DurableRole::OwnerIntentLink) {
         Ok(_) => {}
         Err(ConvergenceError::PreservedPrior { .. }) => {}
         Err(error) => return Err(error),
     }
-    #[cfg(test)]
-    if crate::test_support::take_publish_fault(
-        crate::test_support::PublishFault::AfterOwnerIntentLink,
-    ) {
-        return Err(ConvergenceError::Io {
-            operation: "inject after owner intent link",
-            role: DurableRole::OwnerIntentLink,
-            source: std::io::Error::other("injected"),
-        });
-    }
-    sync_dir_bound(&directory).map_err(|source| ConvergenceError::Io {
+    sync_dir_bound(&links).map_err(|source| ConvergenceError::Io {
         operation: "sync links directory",
         role: DurableRole::OwnerIntentLink,
         source,
     })?;
-    #[cfg(test)]
-    if crate::test_support::take_publish_fault(
-        crate::test_support::PublishFault::AfterOwnerIntentLinkSync,
-    ) {
-        return Err(ConvergenceError::Io {
-            operation: "inject after owner intent link sync",
+    let durable = read_json::<OwnerIntentLink>(&links, &name, DurableRole::OwnerIntentLink)
+        .map_err(|_| ConvergenceError::Unknown {
             role: DurableRole::OwnerIntentLink,
-            source: std::io::Error::other("injected"),
-        });
-    }
-    let durable = load_owner_intent_link(section, owner.operation_id(), intent.serial)?.ok_or(
-        ConvergenceError::Unknown {
+        })?
+        .ok_or(ConvergenceError::Unknown {
             role: DurableRole::OwnerIntentLink,
-        },
-    )?;
+        })?;
     if durable != link {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::OwnerIntentLink,
@@ -162,292 +188,259 @@ pub(crate) fn create_owner_intent_link(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::error::Refusal;
-    use crate::preflight::{Admitted, Preflight, preflight};
-    use crate::selector::{GrantRequestSelector, OperationId, TransactionClass};
-    use crate::test_support::{
-        PublishFault, TempDir, admit_days, admit_proof, continue_ok, fail_after, prepared_owner,
-        snapshot_tree,
-    };
-    use std::path::PathBuf;
+    use crate::test_support::{admit_days, continue_ok, prepared_owner};
 
-    fn links_root(temporary: &TempDir) -> PathBuf {
+    fn link_path(
+        temporary: &crate::test_support::TempDir,
+        owner: &OwnerBinding,
+    ) -> std::path::PathBuf {
         temporary
             .journal_path()
             .join("health/convergence/registry/links")
+            .join(link_name(owner.digest_hex(), owner.selector_digest()))
     }
 
-    fn link_path(temporary: &TempDir, operation: &str, serial: u64) -> PathBuf {
-        links_root(temporary)
-            .join(operation)
-            .join(format!("{serial}.json"))
-    }
-
-    fn read_link(temporary: &TempDir, operation: &str, serial: u64) -> OwnerIntentLink {
-        let bytes = std::fs::read(link_path(temporary, operation, serial)).unwrap();
-        serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap()
-    }
-
-    fn write_link(temporary: &TempDir, operation: &str, serial: u64, link: &OwnerIntentLink) {
-        let mut bytes = crate::digest::canonical_json_bytes(link).unwrap();
+    fn rewrite_link(
+        temporary: &crate::test_support::TempDir,
+        owner: &OwnerBinding,
+        mutate: impl FnOnce(&mut OwnerIntentLink),
+    ) {
+        let path = link_path(temporary, owner);
+        let bytes = std::fs::read(&path).unwrap();
+        let mut link: OwnerIntentLink =
+            serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap();
+        mutate(&mut link);
+        let mut bytes = crate::digest::canonical_json_bytes(&link).unwrap();
         bytes.push(b'\n');
-        std::fs::write(link_path(temporary, operation, serial), bytes).unwrap();
+        std::fs::write(path, bytes).unwrap();
     }
 
-    /// Re-open the same journal so a later `Admitted` can retry the same
-    /// external operation from a fresh process-equivalent state.
-    fn reopen(temporary: &TempDir, days: &[&str]) -> Admitted {
-        let root = solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
-        match preflight(days.iter().copied()).unwrap() {
-            Preflight::Ready(set) => set.admit(root).unwrap(),
-            Preflight::Empty => panic!("days"),
-        }
-    }
-
-    fn prepare_for(admitted: &Admitted, operation: &OperationId) -> crate::owner::OwnerBinding {
-        let selector = GrantRequestSelector::empty(admitted.days()).unwrap();
-        crate::owner::OwnerBinding::prepare(
-            admitted,
-            operation,
-            TransactionClass::AdvanceDirty,
-            &selector,
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn continue_with_creates_the_exact_link() {
-        let (temporary, admitted) = admit_days("link-create", &["20260823"]);
+    fn assert_untrusted_link(mutate: impl FnOnce(&mut OwnerIntentLink)) {
+        let (temporary, admitted) = admit_days("link-untrusted", &["20260823"]);
         let held = continue_ok(&admitted);
-        let operation = held.owner().operation_id().to_owned();
         let serial = held.serial.unwrap();
-        let link = read_link(&temporary, &operation, serial);
-        assert_eq!(link.role, ROLE_OWNER_INTENT_LINK);
-        assert_eq!(link.schema_version, SCHEMA_VERSION);
-        assert_eq!(link.operation_id, operation);
-        assert_eq!(link.serial, serial);
-        assert_eq!(link.owner_binding_digest, held.owner().digest().as_hex());
-        assert_eq!(link.day_set, vec!["20260823".to_owned()]);
-        drop(held);
-    }
-
-    #[test]
-    fn exact_link_is_idempotent_and_resyncs() {
-        let (temporary, admitted) = admit_days("link-idem", &["20260823"]);
-        let held = continue_ok(&admitted);
-        let operation = held.owner().operation_id().to_owned();
-        let serial = held.serial.unwrap();
-        let intent = crate::intent::read_intent(
-            &crate::init::open_store_dirs(admitted.store().root())
-                .unwrap()
-                .unwrap(),
-            serial,
-        )
-        .unwrap()
-        .unwrap();
-        let before = snapshot_tree(&temporary.journal_path());
+        rewrite_link(&temporary, held.owner(), mutate);
         let dirs = crate::init::open_store_dirs(admitted.store().root())
             .unwrap()
             .unwrap();
-        let section = crate::registry::enter_registry(&dirs).unwrap();
-        let again = create_owner_intent_link(&section, held.owner(), &intent).unwrap();
-        drop(section);
-        assert_eq!(again.serial, serial);
-        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
-        assert_eq!(operation, again.operation_id);
-        drop(held);
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            let error = load_owner_intent_link(section, held.owner(), serial).unwrap_err();
+            assert!(matches!(
+                error,
+                ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink
+                }
+            ));
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
-    fn conflicting_link_is_unknown_and_never_overwritten() {
-        let (temporary, admitted) = admit_days("link-conflict", &["20260823"]);
+    fn first_link_is_directly_addressed() {
+        let (_temporary, admitted) = admit_days("link-direct", &["20260823"]);
         let held = continue_ok(&admitted);
-        let operation = held.owner().operation_id().to_owned();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                resolve_owner_intent_link(section, held.owner())?,
+                LinkResolution::Exact(_)
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn unrelated_owner_is_absent() {
+        let (_temporary, admitted) = admit_days("link-absent", &["20260823"]);
+        let _held = continue_ok(&admitted);
+        let other = prepared_owner(&admitted).unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                resolve_owner_intent_link(section, &other)?,
+                LinkResolution::Absent
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn later_dirty_uses_direct_successor_name() {
+        let (_temporary, admitted) = admit_days("link-successor", &["20260823"]);
+        let mut held = continue_ok(&admitted);
+        crate::test_support::advance_dirty_ok(&mut held);
+        let serial = held.serial.unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(load_owner_intent_link(section, held.owner(), serial)?.is_some());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn malformed_direct_link_is_unknown() {
+        let (temporary, admitted) = admit_days("link-malformed", &["20260823"]);
+        let held = continue_ok(&admitted);
+        let path = temporary
+            .journal_path()
+            .join("health/convergence/registry/links")
+            .join(link_name(
+                held.owner().digest_hex(),
+                held.owner().selector_digest(),
+            ));
+        std::fs::write(path, b"{bad").unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                resolve_owner_intent_link(section, held.owner())?,
+                LinkResolution::Unknown
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn exact_link_is_recovery_evidence() {
+        let (_temporary, admitted) = admit_days("link-recovery", &["20260823"]);
+        let held = continue_ok(&admitted);
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                resolve_owner_intent_link(section, held.owner())?,
+                LinkResolution::Exact(_)
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn selector_mismatch_is_unknown() {
+        assert_untrusted_link(|link| link.selector_digest = "00".repeat(32));
+    }
+
+    #[test]
+    fn wrong_journal_is_unknown() {
+        assert_untrusted_link(|link| link.journal_id = "other-journal".to_owned());
+    }
+
+    #[test]
+    fn wrong_root_is_unknown() {
+        assert_untrusted_link(|link| link.root_id = "other-root".to_owned());
+    }
+
+    #[test]
+    fn wrong_operation_is_unknown() {
+        assert_untrusted_link(|link| link.operation_id = "00".repeat(32));
+    }
+
+    #[test]
+    fn wrong_owner_binding_is_unknown() {
+        assert_untrusted_link(|link| link.owner_binding_digest = "00".repeat(32));
+    }
+
+    #[test]
+    fn day_set_mismatch_is_unknown() {
+        assert_untrusted_link(|link| link.day_set = vec!["20260824".to_owned()]);
+    }
+
+    #[test]
+    fn day_set_subdigest_mismatch_is_unknown() {
+        assert_untrusted_link(|link| link.day_set_subdigest = "00".repeat(32));
+    }
+
+    #[test]
+    fn wrong_role_is_unknown() {
+        assert_untrusted_link(|link| link.role = "wrong-role".to_owned());
+    }
+
+    #[test]
+    fn wrong_version_is_unknown() {
+        assert_untrusted_link(|link| link.schema_version += 1);
+    }
+
+    #[test]
+    fn unexpected_link_field_is_unknown() {
+        let (temporary, admitted) = admit_days("link-unexpected", &["20260823"]);
+        let held = continue_ok(&admitted);
+        let serial = held.serial.unwrap();
+        let path = link_path(&temporary, held.owner());
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+        std::fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                load_owner_intent_link(section, held.owner(), serial),
+                Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink
+                })
+            ));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn exact_link_create_is_idempotent_after_crash_half() {
+        let (_temporary, admitted) = admit_days("link-idempotent", &["20260823"]);
+        let held = continue_ok(&admitted);
         let serial = held.serial.unwrap();
         let dirs = crate::init::open_store_dirs(admitted.store().root())
             .unwrap()
             .unwrap();
         let intent = crate::intent::read_intent(&dirs, serial).unwrap().unwrap();
-        let mut planted = read_link(&temporary, &operation, serial);
-        planted.intent_digest = "22".repeat(32);
-        write_link(&temporary, &operation, serial, &planted);
-        let before = snapshot_tree(&temporary.journal_path());
-        let section = crate::registry::enter_registry(&dirs).unwrap();
-        let error = create_owner_intent_link(&section, held.owner(), &intent).unwrap_err();
-        drop(section);
-        assert!(matches!(
-            error,
-            ConvergenceError::Unknown {
-                role: DurableRole::OwnerIntentLink
-            }
-        ));
-        // No overwrite: the disagreeing bytes survive untouched.
-        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
-        assert_eq!(
-            read_link(&temporary, &operation, serial).intent_digest,
-            planted.intent_digest
-        );
-        drop(held);
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            let first = create_owner_intent_link(section, held.owner(), &intent)?;
+            let second = create_owner_intent_link(section, held.owner(), &intent)?;
+            assert_eq!(first, second);
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
-    fn malformed_link_is_refused_on_read() {
-        let (temporary, admitted) = admit_days("link-malformed", &["20260823"]);
+    fn conflicting_link_blocks_recovery() {
+        let (temporary, admitted) = admit_days("link-conflict", &["20260823"]);
         let held = continue_ok(&admitted);
-        let operation = held.owner().operation_id().to_owned();
         let serial = held.serial.unwrap();
-        let path = link_path(&temporary, &operation, serial);
-        let bytes = std::fs::read(&path).unwrap();
-        let mut value: serde_json::Value =
-            serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap();
-        value
-            .as_object_mut()
-            .unwrap()
-            .insert("surprise".to_owned(), serde_json::Value::Bool(true));
-        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        rewrite_link(&temporary, held.owner(), |link| {
+            link.intent_digest = "00".repeat(32)
+        });
         let dirs = crate::init::open_store_dirs(admitted.store().root())
             .unwrap()
             .unwrap();
-        let section = crate::registry::enter_registry(&dirs).unwrap();
-        let error = load_owner_intent_link(&section, &operation, serial).unwrap_err();
-        drop(section);
-        assert!(matches!(
-            error,
-            ConvergenceError::Refused(Refusal::UnknownField { .. })
-        ));
-        drop(held);
-    }
-
-    #[test]
-    fn crash_before_link_sync_leaves_a_durable_link() {
-        let (temporary, admitted) = admit_days("link-crash", &["20260823"]);
-        let operation = OperationId::generate().unwrap();
-        let owner = prepare_for(&admitted, &operation);
-        let mut held = admitted.begin(owner).unwrap();
-        let proof = admit_proof(&held, held.owner()).unwrap();
-        let guard = fail_after(PublishFault::AfterOwnerIntentLink);
-        let error = held.continue_with(proof).unwrap_err();
-        drop(guard);
-        assert!(matches!(
-            error,
-            ConvergenceError::Io {
-                role: DurableRole::OwnerIntentLink,
-                ..
-            }
-        ));
-        let serial = held.serial.unwrap();
-        assert!(link_path(&temporary, operation.as_hex(), serial).is_file());
-        drop(held);
-        // A fresh admission of the same operation now classifies as recovery.
-        let resumed = reopen(&temporary, &["20260823"]);
-        let owner = prepare_for(&resumed, &operation);
-        let held = resumed.begin(owner).unwrap();
-        let outcome = crate::owner::ClaimAdmission::admit(&held, held.owner()).unwrap();
-        assert!(outcome.is_existing_link());
-    }
-
-    #[test]
-    fn crash_after_link_sync_leaves_a_durable_link() {
-        let (temporary, admitted) = admit_days("link-crash-sync", &["20260823"]);
-        let operation = OperationId::generate().unwrap();
-        let owner = prepare_for(&admitted, &operation);
-        let mut held = admitted.begin(owner).unwrap();
-        let proof = admit_proof(&held, held.owner()).unwrap();
-        let guard = fail_after(PublishFault::AfterOwnerIntentLinkSync);
-        let error = held.continue_with(proof).unwrap_err();
-        drop(guard);
-        assert!(matches!(
-            error,
-            ConvergenceError::Io {
-                role: DurableRole::OwnerIntentLink,
-                ..
-            }
-        ));
-        assert!(link_path(&temporary, operation.as_hex(), held.serial.unwrap()).is_file());
-        drop(held);
-    }
-
-    #[test]
-    fn intent_without_link_resumes_at_the_same_serial() {
-        let (temporary, admitted) = admit_days("link-resume", &["20260823"]);
-        let operation = OperationId::generate().unwrap();
-        let owner = prepare_for(&admitted, &operation);
-        let mut held = admitted.begin(owner).unwrap();
-        let proof = admit_proof(&held, held.owner()).unwrap();
-        held.continue_with(proof).unwrap();
-        let serial = held.serial.unwrap();
-        drop(held);
-        // Simulate the intent-without-link half: the intent is durable, the
-        // link never landed.
-        std::fs::remove_dir_all(links_root(&temporary).join(operation.as_hex())).unwrap();
-        let claim_before = std::fs::read(
-            temporary
-                .journal_path()
-                .join("health/convergence/claim/head.json"),
-        )
+        let intent = crate::intent::read_intent(&dirs, serial).unwrap().unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            assert!(matches!(
+                create_owner_intent_link(section, held.owner(), &intent),
+                Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink
+                })
+            ));
+            Ok(())
+        })
         .unwrap();
-        let resumed = reopen(&temporary, &["20260823"]);
-        let owner = prepare_for(&resumed, &operation);
-        let mut held = resumed.begin(owner).unwrap();
-        // Absence again, so this is a resume rather than a recovery.
-        let proof = admit_proof(&held, held.owner()).unwrap();
-        held.continue_with(proof).unwrap();
-        assert_eq!(
-            held.serial.unwrap(),
-            serial,
-            "resume must not take a new serial"
-        );
-        assert!(link_path(&temporary, operation.as_hex(), serial).is_file());
-        assert_eq!(
-            claim_before,
-            std::fs::read(
-                temporary
-                    .journal_path()
-                    .join("health/convergence/claim/head.json")
-            )
-            .unwrap(),
-            "resume must introduce no new claim"
-        );
-        drop(held);
-    }
-
-    #[test]
-    fn later_dirty_links_its_own_serial_and_keeps_the_first() {
-        let (temporary, admitted) = admit_days("link-later", &["20260823"]);
-        let mut held = continue_ok(&admitted);
-        let operation = held.owner().operation_id().to_owned();
-        let first = held.serial.unwrap();
-        // Later-dirty is a successor on the still-live claim, before terminal.
-        crate::test_support::advance_dirty_ok(&mut held);
-        let second = held.serial.unwrap();
-        assert_ne!(first, second);
-        // Both links exist; the predecessor's link is not rewritten.
-        let first_link = read_link(&temporary, &operation, first);
-        let second_link = read_link(&temporary, &operation, second);
-        assert_eq!(first_link.serial, first);
-        assert_eq!(second_link.serial, second);
-        assert_ne!(first_link.intent_digest, second_link.intent_digest);
-        drop(held);
-    }
-
-    #[test]
-    fn another_operation_has_its_own_empty_link_set() {
-        let (temporary, admitted) = admit_days("link-foreign", &["20260823"]);
-        let held = continue_ok(&admitted);
-        let linked_operation = held.owner().operation_id().to_owned();
-        let linked_serial = held.serial.unwrap();
-        drop(held);
-        // A different operation is a first admission even though the journal
-        // already holds a link for another one: the absence rule is scoped to
-        // the operation, not to the registry.
-        let other = prepared_owner(&admitted).unwrap();
-        let other_operation = other.operation_id().to_owned();
-        assert_ne!(other_operation, linked_operation);
-        let held = admitted.begin(other).unwrap();
-        let outcome = crate::owner::ClaimAdmission::admit(&held, held.owner()).unwrap();
-        assert!(!outcome.is_existing_link());
-        assert!(!links_root(&temporary).join(&other_operation).exists());
-        assert!(link_path(&temporary, &linked_operation, linked_serial).is_file());
-        drop(held);
     }
 }

@@ -19,14 +19,11 @@ use crate::intent::{
 };
 use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
-use crate::owner::{
-    AdmitOutcome, ClaimAdmission, OwnerBinding, load_prepared_owner, require_active,
-};
+use crate::owner::{AdmitOutcome, ClaimAdmission, OwnerBinding, reauthenticate_owner};
 use crate::permit::Permit;
 use crate::preflight::Admitted;
 use crate::projection::{project_day, refuse_mutated_projection};
 use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
-use crate::registry::enter_registry;
 use crate::schema::{
     Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, now_rfc3339,
 };
@@ -125,27 +122,28 @@ impl ClaimAdmission {
         )?;
         let dirs = open_store_dirs(held.admitted.store.root())?
             .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        {
-            let section = enter_registry(&dirs)?;
-            let record = load_prepared_owner(&section, owner.operation_id())?.ok_or(
-                ConvergenceError::Unknown {
-                    role: DurableRole::PreparedOwner,
-                },
+        let resolution = crate::access::with_registry(&dirs, held.timeout, |section| {
+            reauthenticate_owner(
+                section,
+                &held.admitted.store,
+                owner,
+                owner.transaction_class(),
+                &held.days,
             )?;
-            if record.owner_binding_digest != owner.digest_hex() {
-                return Err(ConvergenceError::Refused(Refusal::WrongLineage));
-            }
-            if record.selector_digest != owner.selector_digest() {
-                return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
-            }
-            require_active(&record)?;
             // Absence is required only for the operation's first admission. A
             // lease that has already allocated is asking for a later-dirty
             // successor, and its predecessor link is legitimately present.
-            if !held.had_allocation()
-                && crate::link::operation_link_present(&section, owner.operation_id())?
-            {
-                return Ok(AdmitOutcome::ExistingLink);
+            crate::link::resolve_owner_intent_link(section, owner)
+        })?;
+        if !held.had_allocation() {
+            match resolution {
+                crate::link::LinkResolution::Absent => {}
+                crate::link::LinkResolution::Exact(_) => return Ok(AdmitOutcome::ExistingLink),
+                crate::link::LinkResolution::Unknown => {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::OwnerIntentLink,
+                    });
+                }
             }
         }
         Ok(AdmitOutcome::Proof(Self::from_parts(
@@ -167,6 +165,10 @@ impl<'a> HeldDays<'a> {
 
     pub(crate) fn had_allocation(&self) -> bool {
         self.had_allocation
+    }
+
+    pub(crate) fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     pub fn continue_with(
@@ -515,10 +517,9 @@ impl<'a> HeldDays<'a> {
         // this is the only brief days-to-registry section of the allocation.
         // It runs before any day-artifact consumption so no scan happens while
         // the registry guard is held.
-        {
-            let section = enter_registry(&dirs)?;
-            crate::link::create_owner_intent_link(&section, &self.owner, &intent)?;
-        }
+        crate::access::with_registry(&dirs, self.timeout, |section| {
+            crate::link::create_owner_intent_link(section, &self.owner, &intent).map(|_| ())
+        })?;
         self.had_allocation = true;
 
         ancestry_preserves(

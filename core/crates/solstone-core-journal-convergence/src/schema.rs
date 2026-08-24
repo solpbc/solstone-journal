@@ -39,6 +39,9 @@ pub(crate) const ROLE_GRANT_ALL_ACTIVE: &str = "solstone.convergence.grant-all-a
 pub(crate) const ROLE_GRANT_ALL_SUPERSEDED: &str = "solstone.convergence.grant-all-superseded.v1";
 /// Domain-separation prefix for the secret-authenticated owner-binding digest.
 pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
+/// Domain-separation prefix for the sealed grant capability.
+pub(crate) const MAC_GRANT_TOKEN: &[u8] = b"solstone.convergence.grant-token.v1\0";
+pub(crate) const ROLE_GRANT_TOKEN: &str = "solstone.convergence.grant-token.v1";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -298,6 +301,7 @@ pub(crate) struct Terminal {
     pub outcome: String,
     pub predecessors: BTreeMap<String, Predecessor>,
     pub resolved: BTreeMap<String, ResolvedDay>,
+    pub terminal_digest: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -438,6 +442,15 @@ pub(crate) struct GrantMember {
     pub member_digest: String,
 }
 
+/// Canonical, typed evidence for the descendant selected by supersession.
+/// Keeping this a record rather than an untyped map prevents a caller from
+/// smuggling an alternative discriminator through a JSON value.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DescendantDiscriminator {
+    pub record_digests: BTreeMap<String, String>,
+}
+
 /// Historical barrier over a complete member set. `role` distinguishes the
 /// all-active barrier from the all-members-superseded barrier; both may be
 /// present, because supersession retains the prior all-active as history.
@@ -450,10 +463,13 @@ pub(crate) struct GrantBarrier {
     pub root_id: String,
     pub serial: u64,
     pub operation_id: String,
+    pub owner_binding_digest: String,
     pub selector_digest: String,
+    pub decision_digest: String,
+    pub intent_digest: String,
     pub day_set: Vec<String>,
     pub member_digests: BTreeMap<String, String>,
-    pub descendant_discriminator: Option<BTreeMap<String, String>>,
+    pub descendant_discriminator: Option<DescendantDiscriminator>,
     pub prior_all_active_digest: Option<String>,
     pub barrier_digest: String,
 }
@@ -600,6 +616,63 @@ fn encode_disk<T: Serialize>(value: &T) -> Result<(RecordDigest, Vec<u8>), Conve
     let mut disk = canonical;
     disk.push(b'\n');
     Ok((digest, disk))
+}
+
+/// Which unique contiguous publication is in flight. These are the only two
+/// shapes that are `Pending`; everything else that fails to interpret is
+/// `Unknown`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PendingStage {
+    /// An exact owner claim introduction is durable but has not published its
+    /// claim head.  Only claim-head recovery owns this prefix.
+    ClaimHead,
+    WitnessAheadOfHead,
+    HeadAheadOfRecord,
+}
+
+/// Canonical preimage of a sealed grant capability. Never stored.
+#[derive(Clone, Debug, Serialize)]
+struct GrantTokenCanon<'a> {
+    role: &'a str,
+    journal_id: &'a str,
+    root_id: &'a str,
+    operation_id: &'a str,
+    owner_binding_digest: &'a str,
+    selector_digest: &'a str,
+    serial: u64,
+    intent_digest: &'a str,
+    tuple: &'a GrantTuple,
+    member_digest: &'a str,
+    all_active_barrier_digest: &'a str,
+}
+
+/// Canonical bytes the grant seal is computed over.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn grant_token_preimage_bytes(
+    journal_id: &str,
+    root_id: &str,
+    operation_id: &str,
+    owner_binding_digest: &str,
+    selector_digest: &str,
+    serial: u64,
+    intent_digest: &str,
+    tuple: &GrantTuple,
+    member_digest: &str,
+    all_active_barrier_digest: &str,
+) -> Result<Vec<u8>, ConvergenceError> {
+    canonical_json_bytes(&GrantTokenCanon {
+        role: ROLE_GRANT_TOKEN,
+        journal_id,
+        root_id,
+        operation_id,
+        owner_binding_digest,
+        selector_digest,
+        serial,
+        intent_digest,
+        tuple,
+        member_digest,
+        all_active_barrier_digest,
+    })
 }
 
 /// Canonical bytes of the owner-binding preimage, for keyed authentication.
