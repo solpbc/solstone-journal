@@ -337,13 +337,34 @@ pub(crate) fn activate_member(
     accept_member(durable, owner, serial, tuple)
 }
 
-/// Read-only classification of a durable member against the expected identity.
-fn accept_member(
-    member: GrantMember,
+fn active_member_digest(
     owner: &OwnerBinding,
     serial: u64,
     tuple: &GrantTuple,
-) -> Result<GrantMember, ConvergenceError> {
+) -> Result<String, ConvergenceError> {
+    member_digest_of(&GrantMember {
+        role: ROLE_GRANT_MEMBER.to_owned(),
+        schema_version: SCHEMA_VERSION,
+        journal_id: owner.journal_id().to_owned(),
+        root_id: owner.root_id().to_owned(),
+        serial,
+        operation_id: owner.operation_id().to_owned(),
+        owner_binding_digest: owner.digest_hex().to_owned(),
+        selector_digest: owner.selector_digest().to_owned(),
+        tuple: tuple.clone(),
+        state: MemberState::Active,
+        member_digest: String::new(),
+    })
+}
+
+/// Read-only identity and digest validation for a durable member in any
+/// immutable lifecycle state.
+pub(crate) fn validate_member_record(
+    member: &GrantMember,
+    owner: &OwnerBinding,
+    serial: u64,
+    tuple: &GrantTuple,
+) -> Result<(), ConvergenceError> {
     if member.role != ROLE_GRANT_MEMBER || member.schema_version != SCHEMA_VERSION {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::GrantMember,
@@ -363,11 +384,23 @@ fn accept_member(
             role: DurableRole::GrantMember,
         });
     }
-    if member.member_digest != member_digest_of(&member)? {
+    if member.member_digest != member_digest_of(member)? {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::GrantMember,
         });
     }
+    Ok(())
+}
+
+/// Read-only classification of a durable active member against the expected
+/// identity.
+fn accept_member(
+    member: GrantMember,
+    owner: &OwnerBinding,
+    serial: u64,
+    tuple: &GrantTuple,
+) -> Result<GrantMember, ConvergenceError> {
+    validate_member_record(&member, owner, serial, tuple)?;
     match member.state {
         MemberState::Active => Ok(member),
         MemberState::RevocationPending | MemberState::Revoked => {
@@ -422,7 +455,7 @@ fn reconciliations_dir(section: &RegistrySection<'_>) -> Result<OwnedFd, Converg
     ensure_child(&grants, RECONCILIATIONS)
 }
 
-fn load_reconcile(
+pub(crate) fn load_reconcile(
     section: &RegistrySection<'_>,
     serial: u64,
 ) -> Result<Option<GrantReconcile>, ConvergenceError> {
@@ -445,7 +478,8 @@ fn reconcile_digest_of(reconcile: &GrantReconcile) -> Result<String, Convergence
         .to_owned())
 }
 
-fn accept_reconcile(
+pub(crate) fn accept_reconcile(
+    section: &RegistrySection<'_>,
     reconcile: GrantReconcile,
     owner: &OwnerBinding,
     decision: &GrantDecision,
@@ -463,20 +497,72 @@ fn accept_reconcile(
         || reconcile.intent_digest != decision.intent_digest
         || reconcile.day_set != decision.day_set
         || reconcile.tuples != decision.tuples
+        || !reconcile.no_token_delivered
         || reconcile.reconcile_digest != reconcile_digest_of(&reconcile)?
     {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::GrantReconcile,
         });
     }
-    for (day, digest) in &reconcile.descendant_discriminator.record_digests {
+    let expected_days = decision
+        .day_set
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>();
+    let digest_days = reconcile
+        .descendant_discriminator
+        .record_digests
+        .keys()
+        .collect::<std::collections::BTreeSet<_>>();
+    let revision_days = reconcile
+        .descendant_discriminator
+        .record_revisions
+        .keys()
+        .collect::<std::collections::BTreeSet<_>>();
+    if digest_days != expected_days || revision_days != expected_days {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::GrantReconcile,
+        });
+    }
+    let tuple_keys = decision
+        .tuples
+        .iter()
+        .map(member_key)
+        .collect::<std::collections::BTreeSet<_>>();
+    if reconcile
+        .activated_member_digests
+        .keys()
+        .any(|key| !tuple_keys.contains(key))
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::GrantReconcile,
+        });
+    }
+    for tuple in &decision.tuples {
+        let key = member_key(tuple);
+        if let Some(digest) = reconcile.activated_member_digests.get(&key) {
+            if active_member_digest(owner, decision.serial, tuple)? != *digest {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::GrantReconcile,
+                });
+            }
+            let member =
+                load_member(section, decision.serial, tuple)?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::GrantReconcile,
+                })?;
+            validate_member_record(&member, owner, decision.serial, tuple)?;
+        }
+    }
+    for day in &decision.day_set {
+        let digest = reconcile
+            .descendant_discriminator
+            .record_digests
+            .get(day)
+            .expect("complete discriminator");
         let revision = reconcile
             .descendant_discriminator
             .record_revisions
             .get(day)
-            .ok_or(ConvergenceError::Unknown {
-                role: DurableRole::GrantReconcile,
-            })?;
+            .expect("complete discriminator");
         let snapshot = snapshots.get(day).ok_or(ConvergenceError::Unknown {
             role: DurableRole::GrantReconcile,
         })?;
@@ -498,7 +584,7 @@ fn publish_reconcile(
     snapshots: &BTreeMap<String, DaySnapshot>,
 ) -> Result<GrantReconcile, ConvergenceError> {
     if let Some(existing) = load_reconcile(section, decision.serial)? {
-        return accept_reconcile(existing, owner, decision, snapshots);
+        return accept_reconcile(section, existing, owner, decision, snapshots);
     }
     let mut activated_member_digests = BTreeMap::new();
     for tuple in &decision.tuples {
@@ -525,6 +611,7 @@ fn publish_reconcile(
         activated_member_digests,
         prior_all_active_digest,
         descendant_discriminator: descendant_discriminator(snapshots),
+        no_token_delivered: true,
         reconcile_digest: String::new(),
     };
     reconcile.reconcile_digest = reconcile_digest_of(&reconcile)?;
@@ -547,7 +634,7 @@ fn publish_reconcile(
     let durable = load_reconcile(section, decision.serial)?.ok_or(ConvergenceError::Unknown {
         role: DurableRole::GrantReconcile,
     })?;
-    accept_reconcile(durable, owner, decision, snapshots)
+    accept_reconcile(section, durable, owner, decision, snapshots)
 }
 
 /// Read: a barrier by suffix, or `None`. Never creates.
@@ -579,6 +666,7 @@ pub(crate) fn accept_barrier(
     decision: &GrantDecision,
     members: &[GrantMember],
     suffix: &str,
+    reconcile: Option<&GrantReconcile>,
 ) -> Result<GrantBarrier, ConvergenceError> {
     let expected_role = if suffix == ACTIVE_BARRIER_SUFFIX {
         ROLE_GRANT_ALL_ACTIVE
@@ -601,9 +689,16 @@ pub(crate) fn accept_barrier(
         || barrier.decision_digest != decision.decision_digest
         || barrier.intent_digest != decision.intent_digest
         || barrier.day_set != decision.day_set
-        || (suffix == ACTIVE_BARRIER_SUFFIX && barrier.descendant_discriminator.is_some())
     {
         return Err(ConvergenceError::Unknown { role: durable_role });
+    }
+    match (suffix == ACTIVE_BARRIER_SUFFIX, reconcile) {
+        (true, None) if barrier.descendant_discriminator.is_none() => {}
+        (false, Some(reconcile))
+            if barrier.descendant_discriminator.as_ref()
+                == Some(&reconcile.descendant_discriminator)
+                && reconcile.no_token_delivered => {}
+        _ => return Err(ConvergenceError::Unknown { role: durable_role }),
     }
     let expected_members = members
         .iter()
@@ -786,6 +881,8 @@ pub(crate) fn commit_with_grants(
     // the day records since it was fixed. Re-deriving would silently mint a
     // different decision for one transition.
     let decision = crate::access::with_registry(&dirs, held.timeout(), |section| {
+        let revocation =
+            crate::revocation::owner_revocation_state(section, held.owner(), &held.days)?;
         match load_decision(section, serial)? {
             Some(existing) => Ok(accept_decision(
                 existing,
@@ -795,6 +892,9 @@ pub(crate) fn commit_with_grants(
                 DecisionKind::Commit,
             )?),
             None => {
+                if revocation.is_some() {
+                    return Err(ConvergenceError::Refused(Refusal::PendingOwnerRevocation));
+                }
                 let tuples = derive_tuples(held.owner().selector(), &snapshots)?;
                 Ok(publish_decision(
                     section,
@@ -1128,7 +1228,14 @@ mod tests {
         let (_temporary, owner, decision, members, mut barrier) = exact_barrier();
         mutate(&mut barrier);
         assert!(matches!(
-            accept_barrier(barrier, &owner, &decision, &members, ACTIVE_BARRIER_SUFFIX),
+            accept_barrier(
+                barrier,
+                &owner,
+                &decision,
+                &members,
+                ACTIVE_BARRIER_SUFFIX,
+                None,
+            ),
             Err(ConvergenceError::Unknown {
                 role: DurableRole::GrantActiveBarrier
             })
@@ -1145,6 +1252,7 @@ mod tests {
                 &decision,
                 &members,
                 ACTIVE_BARRIER_SUFFIX,
+                None,
             )
             .unwrap(),
             barrier,
@@ -1530,8 +1638,13 @@ mod tests {
         );
         assert_eq!(read_decision(&temporary, serial).kind, DecisionKind::Commit);
         drop(held);
+        let before = crate::test_support::snapshot_tree(&temporary.journal_path());
         let report = admitted.inspect().unwrap();
-        assert_eq!(report.terminal_outcome(), Some(TerminalOutcome::Superseded));
+        assert!(report.terminal_outcome().is_none());
+        assert_eq!(
+            before,
+            crate::test_support::snapshot_tree(&temporary.journal_path())
+        );
         // Supersession never emitted a token and never became an abort.
         assert!(!barrier_exists(&temporary, serial, ACTIVE_BARRIER_SUFFIX));
         assert_eq!(read_decision(&temporary, serial).kind, DecisionKind::Commit);

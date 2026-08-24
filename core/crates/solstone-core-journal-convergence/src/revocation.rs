@@ -27,7 +27,7 @@ use crate::preflight::Admitted;
 use crate::schema::{
     GrantMember, GrantRevocation, GrantSetTombstone, GrantTombstone, OwnerRevocation,
     PreparedOwnerState, ROLE_GRANT_REVOCATION, ROLE_GRANT_SET_TOMBSTONE, ROLE_GRANT_TOMBSTONE,
-    ROLE_OWNER_REVOCATION, RevocationState, SCHEMA_VERSION, read_json, replace_json,
+    ROLE_OWNER_REVOCATION, RevocationState, SCHEMA_VERSION, TableEntry, read_json, replace_json,
     write_json_exclusive,
 };
 use crate::secret::load_journal_secret;
@@ -369,7 +369,7 @@ impl Admitted {
         }
         let access = ResolverAccess::acquire(self)?;
         let claim = access.finalize_claim_head()?;
-        access.with_registry(|section| {
+        let outcome = access.with_registry(|section| {
             let secret =
                 load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
                     role: DurableRole::JournalSecret,
@@ -430,7 +430,13 @@ impl Admitted {
                     Ok(OwnerRevoke::Revoked)
                 }
             }
-        })
+        })?;
+        drop(access);
+        if outcome == OwnerRevoke::Pending {
+            self.settle_pending_owner_revocation(operation, selector)
+        } else {
+            Ok(outcome)
+        }
     }
 
     /// Revoke one exact delivered grant tuple.  Before the transition becomes
@@ -512,11 +518,12 @@ impl Admitted {
         };
         if existing != Some(RevocationState::Revoked) {
             match establish_committed(
+                self.store(),
+                access.locks(),
                 access.dirs(),
                 link.serial,
                 &link,
                 released,
-                access.locks().days(),
             )? {
                 Committed::Yes => {}
                 Committed::No { .. } => return Ok(GrantRevoke::Pending),
@@ -549,17 +556,166 @@ impl Admitted {
     }
 }
 
-fn grant_tombstone_present(
+impl Admitted {
+    /// Continue a pending owner revocation after its durable pending fold has
+    /// denied generic authority. A pre-intent claim remains pending for its
+    /// exact owner; once the intent exists this resolver may only publish the
+    /// abort-no-open cleanup or finish the already-fixed commit branch.
+    fn settle_pending_owner_revocation(
+        &self,
+        operation: &OperationId,
+        selector: &GrantRequestSelector,
+    ) -> Result<OwnerRevoke, ConvergenceError> {
+        let access = ResolverAccess::acquire(self)?;
+        let claim = access.finalize_claim_head()?;
+        let pending = access.with_registry(|section| {
+            let secret =
+                load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::JournalSecret,
+                })?;
+            let Some((owner, state)) = load_owner_binding(
+                section,
+                operation,
+                selector,
+                self.store().object_identity(),
+                self.store().journal_id(),
+                self.store().root_id(),
+                &secret.key_hex,
+            )?
+            else {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner,
+                });
+            };
+            if state == PreparedOwnerState::Revoked {
+                return Ok(None);
+            }
+            if owner_revocation_state(section, &owner, self.days())?
+                != Some(RevocationState::Pending)
+            {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerRevocation,
+                });
+            }
+            Ok(owner_claim_entry(&claim, self.days(), owner.digest_hex())
+                .map(|entry| (owner, entry)))
+        })?;
+        drop(access);
+
+        let Some((owner, entry)) = pending else {
+            return Ok(OwnerRevoke::Revoked);
+        };
+        let dirs = crate::init::open_store_dirs(self.store().root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        if crate::intent::read_intent(&dirs, entry.serial)?.is_none() {
+            return Ok(OwnerRevoke::Pending);
+        }
+
+        let mut held = self.resume_pending_owner(owner, entry)?;
+        let decision = crate::access::with_registry(&dirs, held.timeout(), |section| {
+            crate::decision::load_decision(section, held.serial.expect("resumed serial"))
+        })?;
+        let result = match decision.map(|decision| decision.kind) {
+            Some(crate::schema::DecisionKind::Commit) => {
+                crate::decision::commit_with_grants(&mut held)
+            }
+            Some(crate::schema::DecisionKind::AbortNoOpen) | None => {
+                crate::decision::abort_with_decision(&mut held)
+            }
+        };
+        drop(held);
+        match result {
+            Ok(_) | Err(ConvergenceError::Refused(Refusal::Superseded)) => {
+                self.finalize_pending_owner_revocation(operation, selector)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn finalize_pending_owner_revocation(
+        &self,
+        operation: &OperationId,
+        selector: &GrantRequestSelector,
+    ) -> Result<OwnerRevoke, ConvergenceError> {
+        let access = ResolverAccess::acquire(self)?;
+        let claim = access.finalize_claim_head()?;
+        let result = access.with_registry(|section| {
+            let secret =
+                load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::JournalSecret,
+                })?;
+            let Some((owner, state)) = load_owner_binding(
+                section,
+                operation,
+                selector,
+                self.store().object_identity(),
+                self.store().journal_id(),
+                self.store().root_id(),
+                &secret.key_hex,
+            )?
+            else {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner,
+                });
+            };
+            if state == PreparedOwnerState::Revoked {
+                return Ok(OwnerRevoke::Revoked);
+            }
+            if owner_revocation_state(section, &owner, self.days())?
+                != Some(RevocationState::Pending)
+            {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerRevocation,
+                });
+            }
+            if owner_claim_live(&claim, self.days(), owner.digest_hex()) {
+                return Ok(OwnerRevoke::Pending);
+            }
+            let final_record = expected_owner_revocation(
+                self,
+                operation,
+                selector,
+                owner.digest_hex(),
+                RevocationState::Revoked,
+            );
+            put_owner_revocation(section, &final_record)?;
+            set_owner_state(
+                section,
+                operation,
+                owner.digest_hex(),
+                PreparedOwnerState::Revoked,
+            )?;
+            Ok(OwnerRevoke::Revoked)
+        });
+        drop(access);
+        result
+    }
+}
+
+fn owner_claim_entry(
+    view: &ClaimView,
+    days: &[crate::layout::DayKey],
+    owner_digest: &str,
+) -> Option<TableEntry> {
+    match view {
+        ClaimView::Empty => None,
+        ClaimView::Headed(body) | ClaimView::Unheaded(body) => {
+            same_owner_claim(&body.table, days, owner_digest)
+        }
+    }
+}
+
+pub(crate) fn load_authorized_grant_tombstone(
     section: &RegistrySection<'_>,
     owner: &crate::owner::OwnerBinding,
     serial: u64,
     tuple: &crate::schema::GrantTuple,
-) -> Result<bool, ConvergenceError> {
+) -> Result<Option<GrantTombstone>, ConvergenceError> {
     let Some(grants) = open_dir(section.registry(), GRANTS)? else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(tombstones) = open_dir(&grants, TOMBSTONES)? else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(tombstone) = read_json::<GrantTombstone>(
         &tombstones,
@@ -567,7 +723,7 @@ fn grant_tombstone_present(
         DurableRole::GrantTombstone,
     )?
     else {
-        return Ok(false);
+        return Ok(None);
     };
     if tombstone.role != ROLE_GRANT_TOMBSTONE
         || tombstone.schema_version != SCHEMA_VERSION
@@ -585,7 +741,55 @@ fn grant_tombstone_present(
             role: DurableRole::GrantTombstone,
         });
     }
-    Ok(true)
+    Ok(Some(tombstone))
+}
+
+pub(crate) fn grant_tombstone_present(
+    section: &RegistrySection<'_>,
+    owner: &crate::owner::OwnerBinding,
+    serial: u64,
+    tuple: &crate::schema::GrantTuple,
+) -> Result<bool, ConvergenceError> {
+    Ok(load_authorized_grant_tombstone(section, owner, serial, tuple)?.is_some())
+}
+
+/// Validate the retained set proof once every requested member has become an
+/// authorized tombstone.  The set record binds the immutable decision, its
+/// historical all-active barrier, and every per-member tombstone digest.
+pub(crate) fn validate_grant_set_tombstone(
+    section: &RegistrySection<'_>,
+    decision: &crate::schema::GrantDecision,
+    active_barrier: &crate::schema::GrantBarrier,
+    member_tombstones: &BTreeMap<String, String>,
+) -> Result<(), ConvergenceError> {
+    let grants = open_dir(section.registry(), GRANTS)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::GrantSetTombstone,
+    })?;
+    let tombstones = open_dir(&grants, TOMBSTONES)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::GrantSetTombstone,
+    })?;
+    let record = read_json::<GrantSetTombstone>(
+        &tombstones,
+        &grant_set_tombstone_name(decision.serial),
+        DurableRole::GrantSetTombstone,
+    )?
+    .ok_or(ConvergenceError::Unknown {
+        role: DurableRole::GrantSetTombstone,
+    })?;
+    if record.role != ROLE_GRANT_SET_TOMBSTONE
+        || record.schema_version != SCHEMA_VERSION
+        || record.journal_id != decision.journal_id
+        || record.root_id != decision.root_id
+        || record.serial != decision.serial
+        || record.decision_digest != decision.decision_digest
+        || record.barrier_digest != active_barrier.barrier_digest
+        || record.member_tombstones != *member_tombstones
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::GrantSetTombstone,
+        });
+    }
+    Ok(())
 }
 
 fn put_grant_revocation(
@@ -834,7 +1038,7 @@ mod tests {
     }
 
     #[test]
-    fn own_live_claim_is_headed_then_owner_revoke_is_pending() {
+    fn post_intent_owner_revoke_aborts_then_finalizes() {
         let (temporary, admitted) = admit_days("owner-revoke-live", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted);
         let mut held = admitted.begin(owner).unwrap();
@@ -844,12 +1048,12 @@ mod tests {
 
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),
-            OwnerRevoke::Pending
+            OwnerRevoke::Revoked
         );
         assert!(
             temporary
                 .journal_path()
-                .join("health/convergence/claim/head.json")
+                .join("health/convergence/days/20260823.clear.json")
                 .exists()
         );
     }
@@ -1123,7 +1327,7 @@ mod tests {
     }
 
     #[test]
-    fn later_intent_makes_owner_revoke_pending() {
+    fn later_intent_owner_revoke_finishes_the_bound_commit() {
         let (_temporary, admitted) = admit_days("owner-revoke-later", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted);
         let mut held = admitted.begin(owner).unwrap();
@@ -1137,7 +1341,7 @@ mod tests {
         drop(held);
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),
-            OwnerRevoke::Pending
+            OwnerRevoke::Revoked
         );
     }
 
@@ -1279,7 +1483,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_owner_revoke_prevents_a_generic_permit_before_a_decision() {
+    fn pending_owner_revoke_aborts_without_a_generic_permit() {
         let (_temporary, admitted) = admit_days("owner-revoke-no-generic", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted);
         let mut held = admitted.begin(owner).unwrap();
@@ -1288,7 +1492,7 @@ mod tests {
         drop(held);
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),
-            OwnerRevoke::Pending
+            OwnerRevoke::Revoked
         );
         assert!(matches!(
             OwnerBinding::prepare(
@@ -1297,19 +1501,19 @@ mod tests {
                 TransactionClass::AdvanceDirty,
                 &selector,
             ),
-            Err(ConvergenceError::Refused(Refusal::PendingOwnerRevocation))
+            Err(ConvergenceError::Refused(Refusal::OwnerRevoked))
         ));
     }
 
     #[test]
-    fn pending_owner_revoke_blocks_delivery_at_all_active_prefix() {
+    fn pending_owner_revoke_finishes_commit_before_final_revocation() {
         let (_temporary, admitted, operation, selector) = preterminal_prefix(
             "owner-revoke-preterminal",
             PublishFault::AfterAllActiveBarrier,
         );
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),
-            OwnerRevoke::Pending
+            OwnerRevoke::Revoked
         );
         let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
         assert!(delivery.tokens().is_empty());
@@ -1317,12 +1521,12 @@ mod tests {
     }
 
     #[test]
-    fn pending_owner_revoke_blocks_delivery_with_a_visible_terminal() {
+    fn pending_owner_revoke_finalizes_after_a_visible_terminal() {
         let (_temporary, admitted, operation, selector) =
             preterminal_prefix("owner-revoke-terminal", PublishFault::AfterTerminal);
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),
-            OwnerRevoke::Pending
+            OwnerRevoke::Revoked
         );
         assert!(matches!(
             admitted.deliver_grants(&operation, &selector).unwrap(),

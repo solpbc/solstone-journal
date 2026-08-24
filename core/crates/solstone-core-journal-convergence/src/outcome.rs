@@ -10,17 +10,20 @@
 
 use crate::access::ResolverAccess;
 use crate::claim::ClaimView;
-use crate::decision::{accept_barrier, load_barrier, load_decision, load_member};
+use crate::decision::{
+    accept_barrier, accept_reconcile, load_barrier, load_decision, load_member, load_reconcile,
+    member_key, validate_member_record,
+};
 use crate::digest::{digest_value, digest_value_excluding};
 use crate::error::{ConvergenceError, DurableRole};
-use crate::layout::{ACTIVE_BARRIER_SUFFIX, GRANTS, TOMBSTONES, grant_tombstone_name};
+use crate::layout::{ACTIVE_BARRIER_SUFFIX, GRANTS};
 use crate::link::{LinkResolution, resolve_owner_intent_link};
 use crate::owner::load_owner_binding;
 use crate::permit::{TerminalOutcome, parse_outcome};
 use crate::preflight::Admitted;
 use crate::schema::{
-    DecisionKind, GrantDecision, GrantMember, GrantTombstone, ROLE_CLEARANCE_BARRIER,
-    ROLE_CLEARANCE_MEMBER, ROLE_GRANT_TOMBSTONE, SCHEMA_VERSION, read_json,
+    DecisionKind, GrantBarrier, GrantDecision, GrantMember, ROLE_CLEARANCE_BARRIER,
+    ROLE_CLEARANCE_MEMBER, SCHEMA_VERSION,
 };
 use crate::secret::load_journal_secret;
 use crate::selector::{GrantRequestSelector, OperationId};
@@ -65,7 +68,7 @@ impl Admitted {
                 load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
                     role: DurableRole::JournalSecret,
                 })?;
-            let Some((owner, _state)) = load_owner_binding(
+            let Some((owner, state)) = load_owner_binding(
                 section,
                 operation,
                 selector,
@@ -84,16 +87,31 @@ impl Admitted {
                     role: DurableRole::OwnerIntentLink,
                 });
             };
+            let revocation =
+                crate::revocation::owner_revocation_state(section, &owner, self.days())?;
+            match (state, revocation) {
+                (crate::schema::PreparedOwnerState::Active, None)
+                | (
+                    crate::schema::PreparedOwnerState::Revoked,
+                    Some(crate::schema::RevocationState::Revoked),
+                ) => {}
+                _ => {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::OwnerRevocation,
+                    });
+                }
+            }
             let decision = load_decision(section, link.serial)?;
+            let reconcile = load_reconcile(section, link.serial)?;
             let active = load_barrier(section, link.serial, ACTIVE_BARRIER_SUFFIX)?;
             let superseded = load_barrier(
                 section,
                 link.serial,
                 crate::layout::SUPERSEDED_BARRIER_SUFFIX,
             )?;
-            Ok((owner, *link, decision, active, superseded))
+            Ok((owner, *link, decision, reconcile, active, superseded))
         })?;
-        let (owner, link, decision, active, superseded) = linked;
+        let (owner, link, decision, reconcile, active, superseded) = linked;
         if claim_still_names(&claim, self.days(), link.serial) {
             return Ok(GrantState::Pending {
                 recovery: "terminal and clearance cleanup",
@@ -126,22 +144,38 @@ impl Admitted {
                     role: DurableRole::GrantActiveBarrier,
                 })?;
                 require_absent(superseded, DurableRole::GrantSupersededBarrier)?;
-                let members = historical_members(&access, &owner, &decision, false)?;
-                accept_barrier(active, &owner, &decision, &members, ACTIVE_BARRIER_SUFFIX)?;
+                let members = historical_members(&access, &owner, &decision, false, Some(&active))?;
+                accept_barrier(
+                    active,
+                    &owner,
+                    &decision,
+                    &members,
+                    ACTIVE_BARRIER_SUFFIX,
+                    None,
+                )?;
                 Ok(GrantState::Outcome(GrantOutcome::NonemptyCommitted))
             }
             (TerminalOutcome::Superseded, Some(decision)) => {
                 let decision = require_commit_decision(decision, &owner, &link)?;
+                let snapshots = reconcile_snapshots(&access, &decision.day_set)?;
+                let reconcile = access.with_registry(|section| {
+                    let reconcile = reconcile.ok_or(ConvergenceError::Unknown {
+                        role: DurableRole::GrantReconcile,
+                    })?;
+                    accept_reconcile(section, reconcile, &owner, &decision, &snapshots)
+                })?;
                 let barrier = superseded.ok_or(ConvergenceError::Unknown {
                     role: DurableRole::GrantSupersededBarrier,
                 })?;
-                let members = historical_members(&access, &owner, &decision, true)?;
+                let members =
+                    historical_members(&access, &owner, &decision, true, active.as_ref())?;
                 accept_barrier(
                     barrier.clone(),
                     &owner,
                     &decision,
                     &members,
                     crate::layout::SUPERSEDED_BARRIER_SUFFIX,
+                    Some(&reconcile),
                 )?;
                 match (barrier.prior_all_active_digest.as_deref(), active) {
                     (Some(_), Some(prior_active)) => {
@@ -161,6 +195,27 @@ impl Admitted {
             }),
         }
     }
+}
+
+fn reconcile_snapshots(
+    access: &ResolverAccess<'_>,
+    days: &[String],
+) -> Result<std::collections::BTreeMap<String, crate::store::DaySnapshot>, ConvergenceError> {
+    let mut snapshots = std::collections::BTreeMap::new();
+    for value in days {
+        let day = crate::layout::DayKey::parse(value)?;
+        match access.load_day(&day)? {
+            crate::store::LoadDay::Published(snapshot) => {
+                snapshots.insert(value.clone(), snapshot);
+            }
+            _ => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::GrantReconcile,
+                });
+            }
+        }
+    }
+    Ok(snapshots)
 }
 
 fn claim_still_names(view: &ClaimView, days: &[crate::layout::DayKey], serial: u64) -> bool {
@@ -361,20 +416,14 @@ fn historical_members(
     owner: &crate::owner::OwnerBinding,
     decision: &GrantDecision,
     superseded: bool,
+    active_barrier: Option<&GrantBarrier>,
 ) -> Result<Vec<GrantMember>, ConvergenceError> {
     access.with_registry(|section| {
         let mut members = Vec::new();
+        let mut tombstones = std::collections::BTreeMap::new();
         for tuple in &decision.tuples {
             if let Some(member) = load_member(section, decision.serial, tuple)? {
-                if member.role != crate::schema::ROLE_GRANT_MEMBER
-                    || member.schema_version != SCHEMA_VERSION
-                    || member.journal_id != owner.journal_id()
-                    || member.root_id != owner.root_id()
-                    || member.serial != decision.serial
-                    || member.operation_id != owner.operation_id()
-                    || member.owner_binding_digest != owner.digest_hex()
-                    || member.selector_digest != owner.selector_digest()
-                    || member.tuple != *tuple
+                if validate_member_record(&member, owner, decision.serial, tuple).is_err()
                     || (superseded && member.state != crate::schema::MemberState::Superseded)
                 {
                     return Err(ConvergenceError::Unknown {
@@ -384,16 +433,16 @@ fn historical_members(
                 members.push(member);
                 continue;
             }
-            let tombstone = read_tombstone(section, decision.serial, tuple)?;
-            if tombstone.journal_id != owner.journal_id()
-                || tombstone.root_id != owner.root_id()
-                || tombstone.serial != decision.serial
-                || tombstone.tuple != *tuple
-            {
-                return Err(ConvergenceError::Unknown {
-                    role: DurableRole::GrantTombstone,
-                });
-            }
+            let tombstone = crate::revocation::load_authorized_grant_tombstone(
+                section,
+                owner,
+                decision.serial,
+                tuple,
+            )?
+            .ok_or(ConvergenceError::Unknown {
+                role: DurableRole::GrantTombstone,
+            })?;
+            tombstones.insert(member_key(tuple), tombstone.member_digest.clone());
             // Tombstones preserve the member digest but do not recreate a
             // member record.  A barrier that still needs it is historical;
             // outcome reporting accepts the tombstone as the exact fold.
@@ -415,35 +464,19 @@ fn historical_members(
                 member_digest: tombstone.member_digest,
             });
         }
+        if tombstones.len() == decision.tuples.len() {
+            let barrier = active_barrier.ok_or(ConvergenceError::Unknown {
+                role: DurableRole::GrantSetTombstone,
+            })?;
+            crate::revocation::validate_grant_set_tombstone(
+                section,
+                decision,
+                barrier,
+                &tombstones,
+            )?;
+        }
         Ok(members)
     })
-}
-
-fn read_tombstone(
-    section: &crate::access::RegistrySection<'_>,
-    serial: u64,
-    tuple: &crate::schema::GrantTuple,
-) -> Result<GrantTombstone, ConvergenceError> {
-    let grants = open_dir(section.registry(), GRANTS)?.ok_or(ConvergenceError::Unknown {
-        role: DurableRole::GrantTombstone,
-    })?;
-    let tombstones = open_dir(&grants, TOMBSTONES)?.ok_or(ConvergenceError::Unknown {
-        role: DurableRole::GrantTombstone,
-    })?;
-    let tombstone = read_json::<GrantTombstone>(
-        &tombstones,
-        &grant_tombstone_name(serial, tuple),
-        DurableRole::GrantTombstone,
-    )?
-    .ok_or(ConvergenceError::Unknown {
-        role: DurableRole::GrantTombstone,
-    })?;
-    if tombstone.role != ROLE_GRANT_TOMBSTONE || tombstone.schema_version != SCHEMA_VERSION {
-        return Err(ConvergenceError::Unknown {
-            role: DurableRole::GrantTombstone,
-        });
-    }
-    Ok(tombstone)
 }
 
 #[cfg(test)]
@@ -457,6 +490,7 @@ mod tests {
     use crate::publish::{
         PreparedCompletionAuthority, PreparedLaterDirtyAuthority, publish_kind_for_test,
     };
+    use crate::schema::GrantTombstone;
     use crate::schema::{ClearanceBarrier, ClearanceMember, GrantBarrier};
     use crate::selector::{TargetScope, TransactionClass, WriterFamily};
     use crate::test_support::{
@@ -689,7 +723,7 @@ mod tests {
                     Err(ConvergenceError::Refused(crate::Refusal::Superseded))
                 ));
                 drop(held);
-                admitted.inspect().unwrap();
+                admitted.publish_owner_free_superseded().unwrap();
                 (temporary, admitted, operation, selector, serial)
             }
             Matrix::DecisionedSuperseded => {
@@ -847,6 +881,49 @@ mod tests {
     }
 
     #[test]
+    fn outcome_requires_the_exact_causal_owner_revocation_record() {
+        let (temporary, admitted, operation, selector) =
+            committed("outcome-owner-revocation-proof");
+        assert_eq!(
+            admitted.revoke_owner(&operation, &selector).unwrap(),
+            crate::OwnerRevoke::Revoked
+        );
+        let owner_path = temporary.journal_path().join(format!(
+            "health/convergence/registry/owners/{}.json",
+            operation.as_hex()
+        ));
+        let owner: crate::schema::PreparedOwner =
+            serde_json::from_slice(&std::fs::read(owner_path).unwrap()).unwrap();
+        let revocation = temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/revocations/owner.{}.json",
+            owner.owner_binding_digest
+        ));
+        let exact = std::fs::read(&revocation).unwrap();
+
+        std::fs::remove_file(&revocation).unwrap();
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerRevocation
+            })
+        ));
+
+        std::fs::write(&revocation, exact).unwrap();
+        let mut unrelated: crate::schema::OwnerRevocation =
+            serde_json::from_slice(&std::fs::read(&revocation).unwrap()).unwrap();
+        unrelated.operation_id = "00".repeat(32);
+        let mut bytes = crate::digest::canonical_json_bytes(&unrelated).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(revocation, bytes).unwrap();
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerRevocation
+            })
+        ));
+    }
+
+    #[test]
     fn reports_abort_no_open_from_retained_history() {
         let (temporary, admitted) = admit_days("outcome-abort", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted, false);
@@ -949,7 +1026,7 @@ mod tests {
             Err(ConvergenceError::Refused(crate::Refusal::Superseded))
         ));
         drop(held);
-        admitted.inspect().unwrap();
+        admitted.publish_owner_free_superseded().unwrap();
 
         let barrier_dir = temporary
             .journal_path()
@@ -1001,7 +1078,7 @@ mod tests {
             Err(ConvergenceError::Refused(crate::Refusal::Superseded))
         ));
         drop(held);
-        admitted.inspect().unwrap();
+        admitted.publish_owner_free_superseded().unwrap();
         assert_eq!(
             admitted.grant_state(&operation, &selector).unwrap(),
             GrantState::Outcome(GrantOutcome::PassiveSuperseded)
@@ -1154,6 +1231,59 @@ mod tests {
             resumed.grant_state(&operation, &selector),
             Err(ConvergenceError::Unknown {
                 role: DurableRole::GrantTombstone
+            })
+        ));
+    }
+
+    #[test]
+    fn complete_tombstone_fold_requires_its_exact_set_binding() {
+        let (temporary, admitted, operation, selector) = committed("outcome-set-tombstone");
+        publish_same_generation_completion(&admitted);
+        let day = crate::layout::DayKey::parse("20260823").unwrap();
+        assert_eq!(
+            admitted
+                .revoke_grant(
+                    &operation,
+                    &selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap(),
+            crate::GrantRevoke::Revoked
+        );
+        let member_dir = temporary
+            .journal_path()
+            .join("health/convergence/registry/grants/members/1");
+        std::fs::remove_file(member_dir.join("20260823.think.chronicle.json")).unwrap();
+        let set = temporary
+            .journal_path()
+            .join("health/convergence/registry/grants/tombstones/set.1.json");
+        let exact_set = std::fs::read(&set).unwrap();
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
+
+        std::fs::remove_file(&set).unwrap();
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantSetTombstone
+            })
+        ));
+
+        std::fs::write(&set, exact_set).unwrap();
+        let mut swapped: crate::schema::GrantSetTombstone =
+            serde_json::from_slice(&std::fs::read(&set).unwrap()).unwrap();
+        swapped.barrier_digest = "00".repeat(32);
+        let mut bytes = crate::digest::canonical_json_bytes(&swapped).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(&set, bytes).unwrap();
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantSetTombstone
             })
         ));
     }

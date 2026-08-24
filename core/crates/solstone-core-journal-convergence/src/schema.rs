@@ -591,6 +591,7 @@ pub(crate) struct GrantReconcile {
     pub activated_member_digests: BTreeMap<String, String>,
     pub prior_all_active_digest: Option<String>,
     pub descendant_discriminator: DescendantDiscriminator,
+    pub no_token_delivered: bool,
     pub reconcile_digest: String,
 }
 

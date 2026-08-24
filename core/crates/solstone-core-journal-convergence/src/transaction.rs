@@ -25,7 +25,7 @@ use crate::preflight::Admitted;
 use crate::projection::{project_day, refuse_mutated_projection};
 use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
 use crate::schema::{
-    Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, now_rfc3339,
+    Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, TableEntry, now_rfc3339,
 };
 use crate::store::{DaySnapshot, LoadDay};
 
@@ -87,6 +87,45 @@ impl Admitted {
             serial: None,
             claim_revision: None,
             intent_digest: None,
+        })
+    }
+
+    /// Rebuild the exact already-admitted claim under a pending owner
+    /// revocation.  This is crate-private so only the revocation resolver can
+    /// drive the constrained abort-or-fixed-commit continuation; it never
+    /// returns a caller-controlled admission proof.
+    pub(crate) fn resume_pending_owner(
+        &self,
+        owner: OwnerBinding,
+        entry: TableEntry,
+    ) -> Result<HeldDays<'_>, ConvergenceError> {
+        self.store.revalidate()?;
+        owner.matches(
+            self.store.journal_id(),
+            self.store.root_id(),
+            self.store.object_identity(),
+        )?;
+        let dirs = open_store_dirs(self.store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        let locks = acquire_days_with_timeout(
+            &dirs,
+            self.days(),
+            self.store.journal_id(),
+            self.store.root_id(),
+            self.store.object_identity(),
+            self.lock_timeout(),
+        )?;
+        Ok(HeldDays {
+            admitted: self,
+            locks,
+            owner,
+            days: self.days().to_vec(),
+            timeout: self.lock_timeout(),
+            proof_consumed: true,
+            had_allocation: true,
+            serial: Some(entry.serial),
+            claim_revision: Some(entry.introduced_revision),
+            intent_digest: Some(entry.intent_digest),
         })
     }
 }
