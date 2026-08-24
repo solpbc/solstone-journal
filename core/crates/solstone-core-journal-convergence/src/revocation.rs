@@ -286,6 +286,76 @@ fn owner_claim_live(view: &ClaimView, days: &[crate::layout::DayKey], owner_dige
 }
 
 impl Admitted {
+    /// Report whether one exact grant tuple has reached its authorized
+    /// tombstone. This is read-only and carries no token or mutation
+    /// authority; callers use it to distinguish an issued revocation from a
+    /// revocation whose member is eligible for historical pruning.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grant_pruned(
+        &self,
+        operation: &OperationId,
+        selector: &GrantRequestSelector,
+        day: &crate::layout::DayKey,
+        writer_family: WriterFamily,
+        target_scope: TargetScope,
+    ) -> Result<bool, ConvergenceError> {
+        if selector.days() != self.days() || !self.days().contains(day) {
+            return Err(ConvergenceError::Refused(Refusal::DaySetChanged));
+        }
+        let access = ResolverAccess::acquire(self)?;
+        access.with_registry(|section| {
+            let secret =
+                load_journal_secret(section.registry())?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::JournalSecret,
+                })?;
+            let Some((owner, _)) = load_owner_binding(
+                section,
+                operation,
+                selector,
+                self.store().object_identity(),
+                self.store().journal_id(),
+                self.store().root_id(),
+                &secret.key_hex,
+            )?
+            else {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner,
+                });
+            };
+            let link = match resolve_owner_intent_link(section, &owner)? {
+                LinkResolution::Exact(link) => link,
+                LinkResolution::Absent | LinkResolution::Unknown => {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::OwnerIntentLink,
+                    });
+                }
+            };
+            let decision =
+                load_decision(section, link.serial)?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::Decision,
+                })?;
+            let decision = accept_decision(
+                decision,
+                &owner,
+                link.serial,
+                &link.intent_digest,
+                crate::schema::DecisionKind::Commit,
+            )?;
+            let tuple = decision
+                .tuples
+                .iter()
+                .find(|tuple| {
+                    tuple.day == day.as_str()
+                        && tuple.writer_family == writer_family
+                        && tuple.target_scope == target_scope
+                })
+                .ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::GrantMember,
+                })?;
+            grant_tombstone_present(section, &owner, decision.serial, tuple)
+        })
+    }
+
     /// Revoke a prepared owner.  A unique outstanding claim is mechanically
     /// headed before the registry is entered, then the pending record is made
     /// durable before the prepared owner becomes non-active.
@@ -427,9 +497,10 @@ impl Admitted {
             let Some(member) = load_member(section, link.serial, tuple)? else {
                 return Ok(None);
             };
-            Ok(Some((owner, *link, decision, member)))
+            let existing = member_revocation_state(section, &member)?;
+            Ok(Some((owner, *link, decision, member, existing)))
         })?;
-        let Some((owner, link, decision, member)) = prepared else {
+        let Some((owner, link, decision, member, existing)) = prepared else {
             return Ok(GrantRevoke::Pending);
         };
         let released = match &claim {
@@ -439,16 +510,18 @@ impl Admitted {
                 .iter()
                 .all(|day| !body.table.contains_key(day.as_str())),
         };
-        match establish_committed(
-            access.dirs(),
-            link.serial,
-            &link,
-            released,
-            access.locks().days(),
-        )? {
-            Committed::Yes => {}
-            Committed::No { .. } => return Ok(GrantRevoke::Pending),
-            Committed::Unknown { role } => return Err(ConvergenceError::Unknown { role }),
+        if existing != Some(RevocationState::Revoked) {
+            match establish_committed(
+                access.dirs(),
+                link.serial,
+                &link,
+                released,
+                access.locks().days(),
+            )? {
+                Committed::Yes => {}
+                Committed::No { .. } => return Ok(GrantRevoke::Pending),
+                Committed::Unknown { role } => return Err(ConvergenceError::Unknown { role }),
+            }
         }
         access.with_registry(|section| {
             // A terminal-visible revocation does not mutate immutable member
@@ -474,6 +547,45 @@ impl Admitted {
             Ok(GrantRevoke::Revoked)
         })
     }
+}
+
+fn grant_tombstone_present(
+    section: &RegistrySection<'_>,
+    owner: &crate::owner::OwnerBinding,
+    serial: u64,
+    tuple: &crate::schema::GrantTuple,
+) -> Result<bool, ConvergenceError> {
+    let Some(grants) = open_dir(section.registry(), GRANTS)? else {
+        return Ok(false);
+    };
+    let Some(tombstones) = open_dir(&grants, TOMBSTONES)? else {
+        return Ok(false);
+    };
+    let Some(tombstone) = read_json::<GrantTombstone>(
+        &tombstones,
+        &grant_tombstone_name(serial, tuple),
+        DurableRole::GrantTombstone,
+    )?
+    else {
+        return Ok(false);
+    };
+    if tombstone.role != ROLE_GRANT_TOMBSTONE
+        || tombstone.schema_version != SCHEMA_VERSION
+        || tombstone.journal_id != owner.journal_id()
+        || tombstone.root_id != owner.root_id()
+        || tombstone.serial != serial
+        || tombstone.tuple != *tuple
+        || tombstone.member_digest.is_empty()
+        || !matches!(
+            tombstone.reason.as_str(),
+            "same_generation_completion" | "later_dirty_descendant"
+        )
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::GrantTombstone,
+        });
+    }
+    Ok(true)
 }
 
 fn put_grant_revocation(

@@ -99,7 +99,7 @@ impl Admitted {
                 recovery: "terminal and clearance cleanup",
             });
         }
-        let base = clearance_outcome(access.dirs(), link.serial, self.days(), &owner)?;
+        let base = clearance_outcome(&access, link.serial, self.days(), &owner)?;
         match (base, decision) {
             (TerminalOutcome::Committed, None) => {
                 require_absent(active, DurableRole::GrantActiveBarrier)?;
@@ -175,12 +175,12 @@ fn claim_still_names(view: &ClaimView, days: &[crate::layout::DayKey], serial: u
 }
 
 fn clearance_outcome(
-    dirs: &crate::init::StoreDirs,
+    access: &ResolverAccess<'_>,
     serial: u64,
     days: &[crate::layout::DayKey],
     owner: &crate::owner::OwnerBinding,
 ) -> Result<TerminalOutcome, ConvergenceError> {
-    let barrier = crate::terminal::read_clearance_barrier(dirs, serial)?.ok_or(
+    let barrier = crate::terminal::read_clearance_barrier(access.dirs(), serial)?.ok_or(
         ConvergenceError::Unknown {
             role: DurableRole::ClearanceBarrier,
         },
@@ -204,7 +204,7 @@ fn clearance_outcome(
     }
     let mut outcome = None;
     for day in days {
-        let member = crate::terminal::read_clearance_member(dirs, day)?.ok_or(
+        let member = crate::terminal::read_clearance_member(access.dirs(), day)?.ok_or(
             ConvergenceError::Unknown {
                 role: DurableRole::ClearanceMember,
             },
@@ -223,6 +223,18 @@ fn clearance_outcome(
             return Err(ConvergenceError::Unknown {
                 role: DurableRole::ClearanceMember,
             });
+        }
+        match access.load_day(day)? {
+            crate::store::LoadDay::Published(snapshot)
+                if snapshot.record_revision > member.resolved.record_revision => {}
+            crate::store::LoadDay::Published(snapshot)
+                if snapshot.record_revision == member.resolved.record_revision
+                    && snapshot.digest.as_hex() == member.resolved.record_digest => {}
+            _ => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::ClearanceMember,
+                });
+            }
         }
         let parsed = parse_outcome(&member.outcome).ok_or(ConvergenceError::Unknown {
             role: DurableRole::ClearanceMember,
@@ -445,7 +457,7 @@ mod tests {
     use crate::publish::{
         PreparedCompletionAuthority, PreparedLaterDirtyAuthority, publish_kind_for_test,
     };
-    use crate::schema::{ClearanceBarrier, ClearanceMember};
+    use crate::schema::{ClearanceBarrier, ClearanceMember, GrantBarrier};
     use crate::selector::{TargetScope, TransactionClass, WriterFamily};
     use crate::test_support::{PublishFault, TempDir, admit_days, admit_proof, fail_after};
     use solstone_core_journal_io::JournalRoot;
@@ -759,13 +771,50 @@ mod tests {
     }
 
     #[test]
+    fn causal_owner_revocation_leaves_only_the_read_only_outcome() {
+        let (_temporary, admitted, operation, selector) = committed("outcome-owner-revoked");
+        assert_eq!(
+            admitted.revoke_owner(&operation, &selector).unwrap(),
+            crate::OwnerRevoke::Revoked
+        );
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            crate::grant::Delivery::Denied { .. }
+        ));
+        assert!(matches!(
+            OwnerBinding::prepare(
+                &admitted,
+                &operation,
+                TransactionClass::AdvanceDirty,
+                &selector,
+            ),
+            Err(ConvergenceError::Refused(crate::Refusal::OwnerRevoked))
+        ));
+    }
+
+    #[test]
     fn reports_abort_no_open_from_retained_history() {
-        let (_temporary, admitted) = admit_days("outcome-abort", &["20260823"]);
+        let (temporary, admitted) = admit_days("outcome-abort", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted, false);
         let mut held = admitted.begin(owner).unwrap();
         let proof = admit_proof(&held, held.owner()).unwrap();
-        held.continue_with(proof).unwrap().abort().unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let serial = permit.held.serial.unwrap();
+        permit.abort().unwrap();
         drop(held);
+        assert_grant_artifacts_absent(&temporary, serial);
+        assert!(
+            temporary
+                .journal_path()
+                .join(format!(
+                    "health/convergence/registry/decisions/{serial}.json"
+                ))
+                .is_file()
+        );
         assert_eq!(
             admitted.grant_state(&operation, &selector).unwrap(),
             GrantState::Outcome(GrantOutcome::Aborted)
@@ -774,12 +823,15 @@ mod tests {
 
     #[test]
     fn reports_empty_set_commit_without_resolver_artifacts() {
-        let (_temporary, admitted) = admit_days("outcome-empty", &["20260823"]);
+        let (temporary, admitted) = admit_days("outcome-empty", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted, true);
         let mut held = admitted.begin(owner).unwrap();
         let proof = admit_proof(&held, held.owner()).unwrap();
-        held.continue_with(proof).unwrap().commit().unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let serial = permit.held.serial.unwrap();
+        permit.commit().unwrap();
         drop(held);
+        assert_resolver_artifacts_absent(&temporary, serial);
         assert_eq!(
             admitted.grant_state(&operation, &selector).unwrap(),
             GrantState::Outcome(GrantOutcome::EmptySetCommitted)
@@ -812,6 +864,75 @@ mod tests {
     }
 
     #[test]
+    fn decisioned_history_retains_the_active_barrier_and_never_delivers() {
+        let (temporary, admitted) = admit_days("outcome-retained-active", &["20260823"]);
+        let (operation, selector, owner) = prepared(&admitted, false);
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let serial = permit.held.serial.unwrap();
+        let guard = fail_after(PublishFault::AfterAllActiveBarrier);
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Io {
+                role: DurableRole::GrantActiveBarrier,
+                ..
+            })
+        ));
+        drop(guard);
+        assert!(
+            !temporary
+                .journal_path()
+                .join(format!("health/convergence/terminals/{serial}.json"))
+                .exists()
+        );
+        let permit = held.proceed().unwrap();
+        publish_kind_for_test(
+            &permit.held.admitted.store,
+            &permit.held.locks,
+            &crate::layout::DayKey::parse("20260823").unwrap(),
+            PreparedLaterDirtyAuthority,
+        )
+        .unwrap();
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Refused(crate::Refusal::Superseded))
+        ));
+        drop(held);
+        admitted.inspect().unwrap();
+
+        let barrier_dir = temporary
+            .journal_path()
+            .join("health/convergence/registry/grants/barriers");
+        let prior: GrantBarrier = serde_json::from_slice(
+            &std::fs::read(barrier_dir.join(format!("{serial}.{ACTIVE_BARRIER_SUFFIX}.json")))
+                .unwrap(),
+        )
+        .unwrap();
+        let superseded: GrantBarrier = serde_json::from_slice(
+            &std::fs::read(barrier_dir.join(format!(
+                "{serial}.{}.json",
+                crate::layout::SUPERSEDED_BARRIER_SUFFIX
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        let prior_digest = crate::decision::barrier_digest(&prior).unwrap();
+        assert_eq!(
+            superseded.prior_all_active_digest.as_deref(),
+            Some(prior_digest.as_str())
+        );
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::DecisionedSuperseded)
+        );
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            crate::grant::Delivery::Denied { .. }
+        ));
+    }
+
+    #[test]
     fn reports_passive_superseded_without_resolver_artifacts() {
         let (_temporary, admitted) = admit_days("outcome-passive", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted, true);
@@ -835,6 +956,43 @@ mod tests {
             admitted.grant_state(&operation, &selector).unwrap(),
             GrantState::Outcome(GrantOutcome::PassiveSuperseded)
         );
+    }
+
+    #[test]
+    fn passive_supersession_requires_the_current_safe_descendant() {
+        let (temporary, admitted, operation, selector, serial) =
+            matrix_history(Matrix::PassiveSuperseded);
+        let member_path = clearance_member_path(&temporary);
+        let mut member: ClearanceMember =
+            serde_json::from_slice(&std::fs::read(&member_path).unwrap()).unwrap();
+        member.resolved.record_digest = "00".repeat(32);
+        let member_digest = digest_value(&member).unwrap().as_hex().to_owned();
+
+        let barrier_path = temporary.journal_path().join(format!(
+            "health/convergence/clearance/{serial}.barrier.json"
+        ));
+        let mut barrier: ClearanceBarrier =
+            serde_json::from_slice(&std::fs::read(&barrier_path).unwrap()).unwrap();
+        barrier
+            .resolved
+            .insert("20260823".to_owned(), member.resolved.clone());
+        barrier
+            .member_digests
+            .insert("20260823".to_owned(), member_digest);
+
+        let mut member_bytes = crate::digest::canonical_json_bytes(&member).unwrap();
+        member_bytes.push(b'\n');
+        std::fs::write(member_path, member_bytes).unwrap();
+        let mut barrier_bytes = crate::digest::canonical_json_bytes(&barrier).unwrap();
+        barrier_bytes.push(b'\n');
+        std::fs::write(barrier_path, barrier_bytes).unwrap();
+
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::ClearanceMember
+            })
+        ));
     }
 
     #[test]
@@ -942,5 +1100,37 @@ mod tests {
                 role: DurableRole::GrantTombstone
             })
         ));
+    }
+
+    fn assert_grant_artifacts_absent(temporary: &TempDir, serial: u64) {
+        let registry = temporary.journal_path().join("health/convergence/registry");
+        assert!(!registry.join(format!("grants/members/{serial}")).exists());
+        assert!(
+            !registry
+                .join(format!(
+                    "grants/barriers/{serial}.{ACTIVE_BARRIER_SUFFIX}.json"
+                ))
+                .exists()
+        );
+        assert!(
+            !registry
+                .join(format!(
+                    "grants/barriers/{serial}.{}.json",
+                    crate::layout::SUPERSEDED_BARRIER_SUFFIX
+                ))
+                .exists()
+        );
+    }
+
+    fn assert_resolver_artifacts_absent(temporary: &TempDir, serial: u64) {
+        assert_grant_artifacts_absent(temporary, serial);
+        assert!(
+            !temporary
+                .journal_path()
+                .join(format!(
+                    "health/convergence/registry/decisions/{serial}.json"
+                ))
+                .exists()
+        );
     }
 }

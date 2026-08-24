@@ -17,9 +17,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use solstone_core_journal_convergence::{
-        AdmitOutcome, ClaimAdmission, ConvergenceError, DayKey, GrantRequestSelector, OperationId,
-        OwnerBinding, Preflight, Refusal, StoreVerdict, TerminalOutcome, TransactionClass,
-        check_initialized, preflight,
+        AdmitOutcome, Authorization, ClaimAdmission, ConvergenceError, DayKey, Delivery,
+        GrantOutcome, GrantRequestSelector, GrantState, OperationId, OwnerBinding, OwnerRevoke,
+        Preflight, Refusal, StoreVerdict, TargetScope, TerminalOutcome, TransactionClass,
+        WriterFamily, check_initialized, preflight,
     };
     use solstone_core_journal_io::JournalRoot;
 
@@ -95,6 +96,56 @@ mod tests {
 
     fn sample_day() -> DayKey {
         DayKey::parse("20260823").unwrap()
+    }
+
+    fn one_request() -> [(&'static str, WriterFamily, TargetScope); 1] {
+        [("20260823", WriterFamily::Think, TargetScope::Chronicle)]
+    }
+
+    fn two_requests() -> [(&'static str, WriterFamily, TargetScope); 2] {
+        [
+            ("20260823", WriterFamily::Think, TargetScope::Chronicle),
+            ("20260823", WriterFamily::Observe, TargetScope::Entities),
+        ]
+    }
+
+    fn commit_selector(
+        admitted: &solstone_core_journal_convergence::Admitted,
+        selector: GrantRequestSelector,
+    ) -> (OperationId, GrantRequestSelector) {
+        let operation = OperationId::generate().unwrap();
+        let owner = OwnerBinding::prepare(
+            admitted,
+            &operation,
+            TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        let receipt = held.continue_with(proof).unwrap().commit().unwrap();
+        assert_eq!(receipt.outcome, TerminalOutcome::Committed);
+        drop(held);
+        (operation, selector)
+    }
+
+    fn commit_nonempty(
+        admitted: &solstone_core_journal_convergence::Admitted,
+    ) -> (OperationId, GrantRequestSelector) {
+        let selector = GrantRequestSelector::try_new(admitted.days(), one_request()).unwrap();
+        commit_selector(admitted, selector)
+    }
+
+    fn reopen_admitted(
+        temporary: &TempDir,
+        days: &[&str],
+    ) -> solstone_core_journal_convergence::Admitted {
+        let root = JournalRoot::open(&temporary.journal_path()).unwrap();
+        let set = match preflight(days.iter().copied()).unwrap() {
+            Preflight::Ready(set) => set,
+            Preflight::Empty => panic!("expected days"),
+        };
+        set.admit(root).unwrap()
     }
 
     fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
@@ -336,5 +387,264 @@ mod tests {
         let snapshot = held.snapshot(&sample_day()).unwrap();
         assert_eq!(snapshot.record_revision, 2);
         assert_eq!(snapshot.dirty_generation, 2);
+    }
+
+    #[test]
+    fn ac9_external_activation_reports_nonempty_committed() {
+        let (_temporary, admitted) = open_admitted("ac9-activation", &["20260823"]);
+        let (operation, selector) = commit_nonempty(&admitted);
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Ready(tokens) if tokens.len() == 1
+        ));
+    }
+
+    #[test]
+    fn ac9_external_redelivery_matches_after_restart() {
+        let (temporary, admitted) = open_admitted("ac9-redelivery", &["20260823"]);
+        let (operation, selector) = commit_nonempty(&admitted);
+        let first = admitted.deliver_grants(&operation, &selector).unwrap();
+        let first_hex = first.tokens()[0].as_hex().to_owned();
+        drop(first);
+        drop(admitted);
+
+        let resumed = reopen_admitted(&temporary, &["20260823"]);
+        let second = resumed.deliver_grants(&operation, &selector).unwrap();
+        let token = &second.tokens()[0];
+        assert_eq!(token.as_hex(), first_hex);
+        let day = DayKey::parse(token.day()).unwrap();
+        let lease = resumed.grant_lease().unwrap();
+        assert!(matches!(
+            lease
+                .authorize(
+                    &operation,
+                    &selector,
+                    token.as_hex(),
+                    &day,
+                    token.writer_family(),
+                    token.target_scope(),
+                )
+                .unwrap(),
+            Authorization::Granted(_)
+        ));
+    }
+
+    #[test]
+    fn ac9_external_lease_authorization_rejects_forged_and_wrong_target_bytes() {
+        let (_temporary, admitted) = open_admitted("ac9-lease", &["20260823"]);
+        let (operation, selector) = commit_nonempty(&admitted);
+        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
+        let token = &delivery.tokens()[0];
+        let token_hex = token.as_hex().to_owned();
+        let day = DayKey::parse(token.day()).unwrap();
+        let family = token.writer_family();
+        let scope = token.target_scope();
+        drop(delivery);
+        let lease = admitted.grant_lease().unwrap();
+        assert!(matches!(
+            lease
+                .authorize(&operation, &selector, &token_hex, &day, family, scope)
+                .unwrap(),
+            Authorization::Granted(_)
+        ));
+        assert!(matches!(
+            lease
+                .authorize(&operation, &selector, &"00".repeat(32), &day, family, scope)
+                .unwrap(),
+            Authorization::Denied { .. }
+        ));
+        assert!(matches!(
+            lease
+                .authorize(
+                    &operation,
+                    &selector,
+                    &token_hex,
+                    &day,
+                    family,
+                    TargetScope::Entities,
+                )
+                .unwrap(),
+            Authorization::Denied { .. }
+        ));
+    }
+
+    #[test]
+    fn ac9_external_owner_revocation_is_independent_for_disjoint_days() {
+        let (temporary, admitted_a) = open_admitted("ac9-owner-revoke", &["20260823"]);
+        let admitted_b = reopen_admitted(&temporary, &["20260824"]);
+        let (operation_a, selector_a) = commit_nonempty(&admitted_a);
+        let selector_b = GrantRequestSelector::try_new(
+            admitted_b.days(),
+            [("20260824", WriterFamily::Think, TargetScope::Chronicle)],
+        )
+        .unwrap();
+        let (operation_b, selector_b) = commit_selector(&admitted_b, selector_b);
+
+        assert_eq!(
+            admitted_a.revoke_owner(&operation_a, &selector_a).unwrap(),
+            OwnerRevoke::Revoked
+        );
+        assert!(matches!(
+            admitted_a
+                .deliver_grants(&operation_a, &selector_a)
+                .unwrap(),
+            Delivery::Denied { .. }
+        ));
+        assert!(matches!(
+            admitted_b
+                .deliver_grants(&operation_b, &selector_b)
+                .unwrap(),
+            Delivery::Ready(_)
+        ));
+    }
+
+    #[test]
+    fn ac9_external_member_revocation_leaves_sibling_authorized() {
+        let (_temporary, admitted) = open_admitted("ac9-member-revoke", &["20260823"]);
+        let selector = GrantRequestSelector::try_new(admitted.days(), two_requests()).unwrap();
+        let (operation, selector) = commit_selector(&admitted, selector);
+        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
+        let sibling = delivery
+            .tokens()
+            .iter()
+            .find(|token| token.writer_family() == WriterFamily::Observe)
+            .unwrap();
+        let sibling_hex = sibling.as_hex().to_owned();
+        let sibling_day = DayKey::parse(sibling.day()).unwrap();
+        let sibling_family = sibling.writer_family();
+        let sibling_scope = sibling.target_scope();
+        drop(delivery);
+
+        assert_eq!(
+            admitted
+                .revoke_grant(
+                    &operation,
+                    &selector,
+                    &sample_day(),
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap(),
+            solstone_core_journal_convergence::GrantRevoke::Revoked
+        );
+        let lease = admitted.grant_lease().unwrap();
+        assert!(matches!(
+            lease
+                .authorize(
+                    &operation,
+                    &selector,
+                    &sibling_hex,
+                    &sibling_day,
+                    sibling_family,
+                    sibling_scope,
+                )
+                .unwrap(),
+            Authorization::Granted(_)
+        ));
+    }
+
+    #[test]
+    fn ac9_external_pruning_requires_the_member_own_later_dirty_generation() {
+        let (_temporary, admitted) = open_admitted("ac9-prune", &["20260823"]);
+        let (operation, selector) = commit_nonempty(&admitted);
+        let day = sample_day();
+        assert!(
+            !admitted
+                .grant_pruned(
+                    &operation,
+                    &selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap()
+        );
+        admitted
+            .revoke_grant(
+                &operation,
+                &selector,
+                &day,
+                WriterFamily::Think,
+                TargetScope::Chronicle,
+            )
+            .unwrap();
+        assert!(
+            !admitted
+                .grant_pruned(
+                    &operation,
+                    &selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap()
+        );
+
+        let successor = GrantRequestSelector::empty(admitted.days()).unwrap();
+        let _ = commit_selector(&admitted, successor);
+        admitted
+            .revoke_grant(
+                &operation,
+                &selector,
+                &day,
+                WriterFamily::Think,
+                TargetScope::Chronicle,
+            )
+            .unwrap();
+        assert!(
+            admitted
+                .grant_pruned(
+                    &operation,
+                    &selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn ac9_external_restart_pending_reports_its_only_recovery() {
+        let (temporary, admitted) = open_admitted("ac9-pending-restart", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = GrantRequestSelector::try_new(admitted.days(), one_request()).unwrap();
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+        drop(admitted);
+
+        let resumed = reopen_admitted(&temporary, &["20260823"]);
+        let report = resumed.inspect().unwrap();
+        let awaiting = report.awaiting().expect("named recovery");
+        assert_eq!(
+            awaiting.stage(),
+            solstone_core_journal_convergence::AwaitingStage::AfterProjection
+        );
+        assert!(report.terminal_outcome().is_none());
+        let same_owner = OwnerBinding::prepare(
+            &resumed,
+            &operation,
+            TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let held = resumed.begin(same_owner).unwrap();
+        assert!(matches!(
+            ClaimAdmission::admit(&held, held.owner()).unwrap(),
+            AdmitOutcome::ExistingLink
+        ));
     }
 }
