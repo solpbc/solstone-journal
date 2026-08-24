@@ -6,6 +6,7 @@
 
 #![allow(clippy::result_large_err)] // Route handlers return the exact HTTP refusal envelope on the Err path.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,8 +29,9 @@ use solstone_core_backup_runtime::hosted_runtime::fetch_hosted_credentials;
 use solstone_core_backup_runtime::repo::RepoError;
 use solstone_core_backup_runtime::{
     BackupServices, Clock, HttpTransport, JournalMaintenance, NativeJournalMaintenance,
-    SystemToolRunner, ToolInstallDirs, ToolRunner, UreqHttpTransport, init_repository,
-    operated_destination, reason_for_returncode, resolve_operational_tools, restore_journal,
+    NativeRestoreRecorder, RestoreDraft, RestoreOutcome, RestoreRecorder, SystemToolRunner,
+    ToolInstallDirs, ToolRunner, UreqHttpTransport, init_repository, operated_destination,
+    publish_restore_outcome, reason_for_returncode, resolve_operational_tools, restore_journal,
     rotate_recovery_key, teardown_backup, validate_destination,
 };
 use solstone_core_offload::{restore_all_offload, restore_offload_day};
@@ -58,6 +60,7 @@ pub struct BackupWebDeps {
     pub downloader: Arc<dyn ByteDownload + Send + Sync>,
     pub clock: Arc<dyn Clock + Send + Sync>,
     pub journal_maintenance: Arc<dyn JournalMaintenance + Send + Sync>,
+    pub restore_recorder: Arc<dyn RestoreRecorder + Send + Sync>,
     pub restic_install_dir: Option<PathBuf>,
     pub rclone_install_dir: Option<PathBuf>,
     pub portal_base: String,
@@ -91,6 +94,7 @@ impl BackupWebDeps {
             downloader: Arc::new(UreqByteDownload),
             clock: Arc::new(ProductionClock),
             journal_maintenance: Arc::new(NativeJournalMaintenance),
+            restore_recorder: Arc::new(NativeRestoreRecorder),
             restic_install_dir: None,
             rclone_install_dir: None,
             portal_base: "https://services.solstone.app".into(),
@@ -552,41 +556,38 @@ fn services<'a>(
     }
 }
 
-fn map_restore(result: solstone_core_backup_runtime::RestoreResult) -> Terminal {
+fn map_restore(result: RestoreOutcome) -> Terminal {
     match result.status.as_str() {
-        "ok" => Terminal {
-            phase: "done".into(),
-            reason_code: None,
-        },
-        "degraded" => Terminal {
-            phase: "degraded".into(),
-            reason_code: result.reason_code,
-        },
-        _ => Terminal {
-            phase: "error".into(),
-            reason_code: result.reason_code.or_else(|| Some("failed".into())),
-        },
+        "ok" => Terminal::restore("done", None, result.recording_failure),
+        "degraded" => Terminal::restore("degraded", result.reason_code, result.recording_failure),
+        _ => Terminal::restore("error", result.reason_code, result.recording_failure),
     }
+}
+
+fn publish_restore_error(deps: &BackupWebDeps, reason_code: &str) -> Terminal {
+    map_restore(publish_restore_outcome(
+        &deps.journal_root,
+        deps.clock.as_ref(),
+        deps.restore_recorder.as_ref(),
+        RestoreDraft {
+            status: "error".into(),
+            reason_code: Some(reason_code.into()),
+            integrity_ok: false,
+            resumable: false,
+            files_expected: None,
+            files_restored: None,
+            bytes_expected: None,
+            bytes_restored: None,
+        },
+    ))
 }
 
 fn map_offload_restore(result: solstone_core_offload::RestoreResult) -> Terminal {
     match result.status.as_str() {
-        "ok" | "no_op" => Terminal {
-            phase: "done".into(),
-            reason_code: result.reason,
-        },
-        "refused" => Terminal {
-            phase: "refused".into(),
-            reason_code: result.reason,
-        },
-        "degraded" => Terminal {
-            phase: "degraded".into(),
-            reason_code: result.reason,
-        },
-        _ => Terminal {
-            phase: "error".into(),
-            reason_code: result.reason.or_else(|| Some("failed".into())),
-        },
+        "ok" | "no_op" => Terminal::phase("done", result.reason),
+        "refused" => Terminal::phase("refused", result.reason),
+        "degraded" => Terminal::phase("degraded", result.reason),
+        _ => Terminal::phase("error", result.reason.or_else(|| Some("failed".into()))),
     }
 }
 
@@ -603,30 +604,15 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
     operation::spawn_worker(deps.operations.clone(), generation, move || {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(reason),
-                };
-            }
+            Err(reason) => return Terminal::error(reason),
         };
         let destination = match get_destination(&worker.journal_root) {
             Ok(Some(destination)) => destination,
-            _ => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some("invalid_operation_for_state".into()),
-                };
-            }
+            _ => return Terminal::error("invalid_operation_for_state"),
         };
         let keys = match get_keys(&worker.journal_root) {
             Ok(Some(keys)) => keys,
-            _ => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some("invalid_operation_for_state".into()),
-                };
-            }
+            _ => return Terminal::error("invalid_operation_for_state"),
         };
         if let Err(reason) = init_and_enable(
             worker.runner.as_ref(),
@@ -635,21 +621,12 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
             &keys.recovery_key,
             &tools.restic_path,
         ) {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some(reason),
-            };
+            return Terminal::error(reason);
         }
         if set_enabled(&worker.journal_root, true).is_err() {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some("failed".into()),
-            };
+            return Terminal::error("failed");
         }
-        Terminal {
-            phase: "done".into(),
-            reason_code: None,
-        }
+        Terminal::done()
     });
     status_response(&deps)
 }
@@ -808,27 +785,16 @@ async fn rotate_key(deps: BackupWebDeps) -> axum::response::Response {
     operation::spawn_worker(deps.operations.clone(), started.generation, move || {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(reason),
-                };
-            }
+            Err(reason) => return Terminal::error(reason),
         };
         let result = rotate_recovery_key(&worker.journal_root, &services(&worker, &tools));
         match result.status.as_str() {
-            "ok" => Terminal {
-                phase: "done".into(),
-                reason_code: None,
-            },
-            "skipped" => Terminal {
-                phase: "error".into(),
-                reason_code: Some("invalid_operation_for_state".into()),
-            },
-            _ => Terminal {
-                phase: "error".into(),
-                reason_code: result.reason_code.or_else(|| Some("failed".into())),
-            },
+            "ok" => Terminal::done(),
+            "skipped" => Terminal::error("invalid_operation_for_state"),
+            _ => Terminal::phase(
+                "error",
+                result.reason_code.or_else(|| Some("failed".into())),
+            ),
         }
     });
     status_response(&deps)
@@ -843,23 +809,15 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
     operation::spawn_worker(deps.operations.clone(), started.generation, move || {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(reason),
-                };
-            }
+            Err(reason) => return Terminal::error(reason),
         };
         let result = teardown_backup(&worker.journal_root, &services(&worker, &tools));
         match result.status.as_str() {
-            "ok" | "skipped" => Terminal {
-                phase: "done".into(),
-                reason_code: None,
-            },
-            _ => Terminal {
-                phase: "error".into(),
-                reason_code: result.reason_code.or_else(|| Some("failed".into())),
-            },
+            "ok" | "skipped" => Terminal::done(),
+            _ => Terminal::phase(
+                "error",
+                result.reason_code.or_else(|| Some("failed".into())),
+            ),
         }
     });
     status_response(&deps)
@@ -884,21 +842,26 @@ async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     };
     let worker = deps.clone();
     operation::spawn_worker(deps.operations.clone(), started.generation, move || {
-        let tools = match resolve_tools(&worker) {
-            Ok(tools) => tools,
-            Err(reason) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(reason),
-                };
-            }
-        };
-        map_restore(restore_journal(
-            &worker.journal_root,
-            &services(&worker, &tools),
-            destination,
-            &recovery_key,
-        ))
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            let tools = match resolve_tools(&worker) {
+                Ok(tools) => tools,
+                Err(reason) => return publish_restore_error(&worker, &reason),
+            };
+            map_restore(restore_journal(
+                &worker.journal_root,
+                &services(&worker, &tools),
+                worker.restore_recorder.as_ref(),
+                destination,
+                &recovery_key,
+            ))
+        }))
+        // Restore owns this boundary so spawn_worker's generic fallback is unreachable here.
+        .unwrap_or_else(|_| {
+            publish_restore_error(
+                &worker,
+                solstone_core_backup_runtime::restore::RESTORE_REASON_RESTORE_FAILED,
+            )
+        })
     });
     status_response(&deps)
 }
@@ -952,29 +915,37 @@ fn bound_restore_hosted(
     binding: HostedBinding,
     recovery_key: &str,
 ) -> Terminal {
+    panic::catch_unwind(AssertUnwindSafe(|| {
+        bound_restore_hosted_inner(deps, binding, recovery_key)
+    }))
+    // Restore owns this boundary so spawn_worker's generic fallback is unreachable here.
+    .unwrap_or_else(|_| {
+        publish_restore_error(
+            deps,
+            solstone_core_backup_runtime::restore::RESTORE_REASON_RESTORE_FAILED,
+        )
+    })
+}
+
+fn bound_restore_hosted_inner(
+    deps: &BackupWebDeps,
+    binding: HostedBinding,
+    recovery_key: &str,
+) -> Terminal {
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
-        Err(reason) => {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some(reason),
-            };
-        }
+        Err(reason) => return publish_restore_error(deps, &reason),
     };
     let credentials =
         match fetch_hosted_credentials(deps.http.as_ref(), &binding, "maintenance", deps.version) {
             Ok(credentials) => credentials,
-            Err(error) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(error.reason_code.to_owned()),
-                };
-            }
+            Err(error) => return publish_restore_error(deps, error.reason_code),
         };
     let destination = operated_destination(&binding, &credentials);
     map_restore(restore_journal(
         &deps.journal_root,
         &services(deps, &tools),
+        deps.restore_recorder.as_ref(),
         destination,
         recovery_key,
     ))
@@ -1001,12 +972,7 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
     operation::spawn_worker(deps.operations.clone(), started.generation, move || {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
-            Err(reason) => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some(reason),
-                };
-            }
+            Err(reason) => return Terminal::error(reason),
         };
         let result = if all {
             restore_all_offload(&worker.journal_root, &services(&worker, &tools))
@@ -1056,7 +1022,13 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     let generation = operation::generation_of(&deps.operations).unwrap_or(0);
     if payload.get("needs_subscription") == Some(&Value::Bool(true)) {
         if let Err(error) = validate_needs_subscription(&payload, &deps.portal_base) {
-            operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+            operation::finish(
+                &deps.operations,
+                generation,
+                "error",
+                Some("failed".into()),
+                None,
+            );
             return error;
         }
         operation::mark_needs_subscription(&deps.operations, generation);
@@ -1065,7 +1037,13 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     let binding = match hosted_binding_from_payload(&payload, &deps.portal_base) {
         Ok(binding) => binding,
         Err(error) => {
-            operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+            operation::finish(
+                &deps.operations,
+                generation,
+                "error",
+                Some("failed".into()),
+                None,
+            );
             return error;
         }
     };
@@ -1126,7 +1104,13 @@ pub(crate) fn persist_and_consume_hosted(
     restore_key: Option<String>,
 ) -> Result<(), ()> {
     if save_hosted_binding(&deps.journal_root, &binding).is_err() {
-        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        operation::finish(
+            &deps.operations,
+            generation,
+            "error",
+            Some("failed".into()),
+            None,
+        );
         return Err(());
     }
     let worker = deps.clone();
@@ -1144,12 +1128,7 @@ pub(crate) fn consume_hosted(
 ) -> Terminal {
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
-        Err(reason) => {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some(reason),
-            };
-        }
+        Err(reason) => return Terminal::error(reason),
     };
     let credentials = match fetch_hosted_credentials(
         deps.http.as_ref(),
@@ -1162,23 +1141,13 @@ pub(crate) fn consume_hosted(
         deps.version,
     ) {
         Ok(credentials) => credentials,
-        Err(error) => {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some(error.reason_code.to_owned()),
-            };
-        }
+        Err(error) => return Terminal::error(error.reason_code),
     };
     let destination = operated_destination(&binding, &credentials);
     if kind == "enable_hosted" {
         let keys = match get_keys(&deps.journal_root) {
             Ok(Some(keys)) => keys,
-            _ => {
-                return Terminal {
-                    phase: "error".into(),
-                    reason_code: Some("invalid_operation_for_state".into()),
-                };
-            }
+            _ => return Terminal::error("invalid_operation_for_state"),
         };
         if let Err(reason) = init_and_enable(
             deps.runner.as_ref(),
@@ -1187,33 +1156,22 @@ pub(crate) fn consume_hosted(
             &keys.recovery_key,
             &tools.restic_path,
         ) {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some(reason),
-            };
+            return Terminal::error(reason);
         }
         if set_mode(&deps.journal_root, "operated").is_err()
             || set_enabled(&deps.journal_root, true).is_err()
         {
-            return Terminal {
-                phase: "error".into(),
-                reason_code: Some("failed".into()),
-            };
+            return Terminal::error("failed");
         }
-        return Terminal {
-            phase: "done".into(),
-            reason_code: None,
-        };
+        return Terminal::done();
     }
     let Some(recovery_key) = restore_key else {
-        return Terminal {
-            phase: "error".into(),
-            reason_code: Some("invalid_operation_for_state".into()),
-        };
+        return Terminal::error("invalid_operation_for_state");
     };
     let terminal = map_restore(restore_journal(
         &deps.journal_root,
         &services(deps, &tools),
+        deps.restore_recorder.as_ref(),
         destination,
         &recovery_key,
     ));

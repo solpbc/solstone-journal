@@ -11,7 +11,7 @@ use solstone_core_artifact_download::{ByteDownload, ByteDownloadError};
 use solstone_core_backup_runtime::hosted_runtime::HttpError;
 use solstone_core_backup_runtime::{
     Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance, JournalMaintenanceError,
-    RESTIC_VERSION, ToolOutput, ToolRequest, ToolRunner,
+    NativeRestoreRecorder, RESTIC_VERSION, ToolOutput, ToolRequest, ToolRunner,
 };
 use std::collections::VecDeque;
 use std::fs;
@@ -396,8 +396,8 @@ async fn engine_routes_are_no_longer_native_refusals() {
             output(0, ""),
             output(0, "[{\"id\":\"snap\"}]"),
             output(0, ""),
-            output(0, "[{\"paths\":[\"/original\"]}]"),
-            output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":1}]"),
+            output(0, journal_catalog()),
+            output(0, restore_summary()),
             output(0, ""),
         ]);
         let deps = engine_deps(
@@ -692,6 +692,17 @@ impl ToolRunner for ScriptRunner {
     }
 }
 
+struct PanicAfterVersionRunner(AtomicUsize);
+
+impl ToolRunner for PanicAfterVersionRunner {
+    fn run(&self, _: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if self.0.fetch_add(1, Ordering::AcqRel) == 0 {
+            return Ok(version_output());
+        }
+        panic!("restore fixture panic")
+    }
+}
+
 #[derive(Default)]
 struct HttpScript {
     responses: Mutex<VecDeque<Result<HttpResponse, HttpError>>>,
@@ -871,6 +882,7 @@ fn engine_deps(
         downloader: Arc::new(PanicDownload),
         clock: Arc::new(TestClock),
         journal_maintenance: Arc::new(OkMaintenance),
+        restore_recorder: Arc::new(NativeRestoreRecorder),
         restic_install_dir,
         rclone_install_dir: None,
         portal_base: crate::test_support::PORTAL_BASE.into(),
@@ -952,6 +964,17 @@ fn restore_body() -> Value {
     })
 }
 
+const JOURNAL_SNAPSHOT_ID: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn journal_catalog() -> &'static str {
+    "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/original\"]}]"
+}
+
+fn restore_summary() -> &'static str {
+    "[{\"message_type\":\"summary\",\"total_files\":4,\"files_restored\":4,\"total_bytes\":12,\"bytes_restored\":12}]"
+}
+
 fn init_outputs() -> Vec<ToolOutput> {
     vec![
         version_output(),
@@ -965,8 +988,8 @@ fn init_outputs() -> Vec<ToolOutput> {
 fn restore_outputs() -> Vec<ToolOutput> {
     vec![
         version_output(),
-        output(0, "[{\"paths\":[\"/original\"]}]"),
-        output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
+        output(0, journal_catalog()),
+        output(0, restore_summary()),
         output(0, ""),
     ]
 }
@@ -1090,14 +1113,13 @@ async fn enable_init_failure_leaves_disabled_and_errors() {
 #[tokio::test]
 async fn restore_success_records_snapshots_then_restore() {
     let root = crate::test_support::root("healthy");
-    let before = fs::read(root.path().join("config/journal.json")).unwrap();
-    let runner = ScriptRunner::with_outputs(vec![
-        version_output(),
-        output(0, "[{\"paths\":[\"/original\"]}]"),
-        output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
-        output(0, ""),
-    ]);
-    let runner = Arc::new(runner);
+    let runner = Arc::new(
+        solstone_core_backup_runtime::test_support::ArgvResticFixture::new(
+            journal_catalog(),
+            output(0, restore_summary()),
+            output(0, ""),
+        ),
+    );
     let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
     let (status, body) = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
     assert_eq!(status, 200);
@@ -1105,28 +1127,82 @@ async fn restore_success_records_snapshots_then_restore() {
     assert_eq!(body["operation"]["phase"], "restoring");
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
-    let heads = runner.argv_heads();
-    assert!(heads.iter().any(|head| head == "snapshots"));
-    assert!(heads.iter().any(|head| head == "restore"));
-    assert_ne!(
-        fs::read(root.path().join("config/journal.json")).unwrap(),
-        before
+    assert_eq!(
+        runner.calls(),
+        vec![
+            vec!["version".into()],
+            vec!["snapshots".into(), "--json".into()],
+            vec![
+                "restore".into(),
+                format!("{JOURNAL_SNAPSHOT_ID}:/original"),
+                "--target".into(),
+                root.path().display().to_string(),
+                "--json".into(),
+            ],
+            vec!["check".into()],
+        ]
     );
+    assert!(runner.refusals().is_empty());
+    assert_eq!(done["last_restore"]["status"], "ok");
+    assert_eq!(done["last_restore"]["scope"], "journal");
+    assert_eq!(done["last_restore"]["files_restored"], 4);
 }
 
 #[tokio::test]
-async fn restore_empty_snapshots_errors_without_publishing_destination() {
+async fn restore_empty_snapshots_records_journal_snapshot_not_found() {
     let root = crate::test_support::root("healthy");
-    let before = fs::read(root.path().join("config/journal.json")).unwrap();
     let runner = ScriptRunner::with_outputs(vec![version_output(), output(0, "[]")]);
     let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
     let _ = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "error");
     assert_eq!(
-        fs::read(root.path().join("config/journal.json")).unwrap(),
-        before
+        done["operation"]["reason_code"],
+        "journal_snapshot_not_found"
     );
+    assert_eq!(done["last_restore"]["status"], "error");
+    assert_eq!(done["last_restore"]["reason"], "journal_snapshot_not_found");
+    assert_eq!(done["last_restore"]["scope"], "journal");
+}
+
+#[tokio::test]
+async fn restore_adapter_records_invalid_key_once_after_tool_resolution() {
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+    let (mut deps, _restic) = prepared(root.path().to_path_buf(), runner);
+    let recorder = Arc::new(solstone_core_backup_runtime::test_support::RestoreRecorderSpy::new());
+    deps.restore_recorder = recorder.clone();
+    let mut body = restore_body();
+    body["recovery_key"] = Value::String("not a valid recovery key".into());
+
+    let (status, _) = post_json(&deps, "/app/backup/restore", Some(body)).await;
+    assert_eq!(status, 200);
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["reason_code"], "invalid_key");
+    assert_eq!(recorder.calls().len(), 1);
+}
+
+#[tokio::test]
+async fn restore_worker_panic_is_restore_failed_and_records_once() {
+    let root = crate::test_support::root("healthy");
+    let restic = tempfile::tempdir().expect("restic");
+    crate::test_support::write_ready_restic(restic.path());
+    let runner = Arc::new(PanicAfterVersionRunner(AtomicUsize::new(0)));
+    let mut deps = engine_deps(
+        root.path().to_path_buf(),
+        runner,
+        Arc::new(HttpScript::default()),
+        Some(restic.path().to_path_buf()),
+    );
+    let recorder = Arc::new(solstone_core_backup_runtime::test_support::RestoreRecorderSpy::new());
+    deps.restore_recorder = recorder.clone();
+
+    let (status, _) = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
+    assert_eq!(status, 200);
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(done["operation"]["reason_code"], "restore_failed");
+    assert_eq!(recorder.calls().len(), 1);
 }
 
 #[tokio::test]
@@ -1134,8 +1210,8 @@ async fn restore_check_failure_is_degraded() {
     let root = crate::test_support::root("healthy");
     let runner = ScriptRunner::with_outputs(vec![
         version_output(),
-        output(0, "[{\"paths\":[\"/original\"]}]"),
-        output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
+        output(0, journal_catalog()),
+        output(0, restore_summary()),
         output(11, ""),
     ]);
     let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
@@ -2891,9 +2967,8 @@ async fn hosted_poll_restore_uses_slot_recovery_key() {
 }
 
 #[tokio::test]
-async fn hosted_poll_restore_failure_publishes_no_destination_or_recovery_state() {
+async fn hosted_poll_restore_failure_records_without_publishing_destination_or_recovery_state() {
     let root = crate::test_support::root("fresh");
-    let before = fs::read(root.path().join("config/journal.json")).unwrap();
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
     let http = Arc::new(
@@ -2904,7 +2979,7 @@ async fn hosted_poll_restore_failure_publishes_no_destination_or_recovery_state(
         root.path().to_path_buf(),
         Arc::new(ScriptRunner::with_outputs(vec![
             version_output(),
-            output(0, "[{\"paths\":[\"/original\"]}]"),
+            output(0, journal_catalog()),
             output(1, ""),
         ])),
         http,
@@ -2919,10 +2994,9 @@ async fn hosted_poll_restore_failure_publishes_no_destination_or_recovery_state(
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "error");
     assert_ne!(done["operation"]["phase"], "degraded");
-    assert_eq!(
-        fs::read(root.path().join("config/journal.json")).unwrap(),
-        before
-    );
+    assert_eq!(done["last_restore"]["reason"], "restore_failed");
+    assert_eq!(done["destination"]["repository"], Value::Null);
+    assert_eq!(done["recovery_key_confirmed"], false);
     assert_ne!(done["mode"], "operated");
 }
 
@@ -3826,12 +3900,11 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
         usize,
     ) {
         let root = crate::test_support::root("fresh");
-        let before = fs::read(root.path().join("config/journal.json")).unwrap();
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
         let runner = Arc::new(ScriptRunner::with_outputs(vec![
             version_output(),
-            output(0, "[{\"paths\":[\"/original\"]}]"),
+            output(0, journal_catalog()),
             output(1, ""),
         ]));
         let mut script = HttpScript::with_responses(vec![Ok(credentials_response())]);
@@ -3864,18 +3937,16 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
         }
         let done = wait_terminal(&deps).await;
         assert!(!crate::operation::is_busy(&deps.operations));
-        assert_eq!(
-            fs::read(root.path().join("config/journal.json")).unwrap(),
-            before
-        );
+        assert_eq!(done["last_restore"]["status"], "error");
+        assert_eq!(done["last_restore"]["reason"], "restore_failed");
         assert_runner_argv(
             &runner,
             &[
                 vec!["version".into()],
-                vec!["snapshots".into(), "latest".into(), "--json".into()],
+                vec!["snapshots".into(), "--json".into()],
                 vec![
                     "restore".into(),
-                    "latest:/original".into(),
+                    format!("{JOURNAL_SNAPSHOT_ID}:/original"),
                     "--target".into(),
                     root.path().display().to_string(),
                     "--json".into(),
@@ -3899,7 +3970,10 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
         ("local", &local, local_binding, local_creds, local_restic),
     ] {
         assert_eq!(body["operation"]["phase"], "error", "{label}");
-        assert_eq!(body["operation"]["reason_code"], "failed", "{label}");
+        assert_eq!(
+            body["operation"]["reason_code"], "restore_failed",
+            "{label}"
+        );
         assert_ne!(body["operation"]["phase"], "degraded", "{label}");
         assert_eq!(
             binding,
