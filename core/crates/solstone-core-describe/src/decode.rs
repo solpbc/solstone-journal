@@ -94,10 +94,40 @@ pub fn process_video(path: &Path) -> DescribeResult {
     process_video_with_transform(path, &mut transform, WinnowConfig::default())
 }
 
+/// Decode and winnow a video without materializing PNG payloads.
+///
+/// The returned frame metadata is complete, but every [`QualifiedFrame::png`]
+/// is empty. Use this when the caller does not cross the generate boundary.
+pub fn process_video_metadata(path: &Path) -> DescribeResult {
+    let mut transform = IdentityTransform;
+    process_video_with_transform_metadata(path, &mut transform, WinnowConfig::default())
+}
+
 pub fn process_video_with_transform<T: PreHashTransform>(
     path: &Path,
     transform: &mut T,
     config: WinnowConfig,
+) -> DescribeResult {
+    process_video_with_transform_inner(path, transform, config, true)
+}
+
+/// Decode and winnow a video without materializing PNG payloads.
+///
+/// The returned frame metadata is complete, but every [`QualifiedFrame::png`]
+/// is empty. Use this when the caller does not cross the generate boundary.
+pub fn process_video_with_transform_metadata<T: PreHashTransform>(
+    path: &Path,
+    transform: &mut T,
+    config: WinnowConfig,
+) -> DescribeResult {
+    process_video_with_transform_inner(path, transform, config, false)
+}
+
+fn process_video_with_transform_inner<T: PreHashTransform>(
+    path: &Path,
+    transform: &mut T,
+    config: WinnowConfig,
+    encode_payloads: bool,
 ) -> DescribeResult {
     let mut result = DescribeResult::default();
     if ffmpeg::init().is_err() {
@@ -152,6 +182,7 @@ pub fn process_video_with_transform<T: PreHashTransform>(
                         &mut scaler,
                         time_base,
                         transform,
+                        encode_payloads,
                         &mut frame_id,
                         &mut raw,
                         &mut mask_skipped,
@@ -174,6 +205,7 @@ pub fn process_video_with_transform<T: PreHashTransform>(
             &mut scaler,
             time_base,
             transform,
+            encode_payloads,
             &mut frame_id,
             &mut raw,
             &mut mask_skipped,
@@ -221,6 +253,7 @@ fn receive_frames<T: PreHashTransform>(
     scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
     time_base: ffmpeg::Rational,
     transform: &mut T,
+    encode_payloads: bool,
     frame_id: &mut u64,
     raw: &mut usize,
     mask_skipped: &mut usize,
@@ -260,7 +293,11 @@ fn receive_frames<T: PreHashTransform>(
                         frame_id: *frame_id,
                         timestamp,
                         aruco,
-                        png: encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?,
+                        png: if encode_payloads {
+                            encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?
+                        } else {
+                            Vec::new()
+                        },
                     });
                 }
             }
