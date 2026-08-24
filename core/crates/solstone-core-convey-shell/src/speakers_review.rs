@@ -625,11 +625,11 @@ pub(crate) fn find_matching_entity<'a>(
     detected_name: &str,
     entities: &'a [(String, Value)],
 ) -> Option<&'a Value> {
-    let entities = entities
+    let admitted_entities = entities
         .iter()
         .filter(|(_, entity)| is_admissible_speaker_entity(entity))
         .collect::<Vec<_>>();
-    let candidates = entities
+    let candidates = admitted_entities
         .iter()
         .map(|(_, entity)| EntityNameCandidate {
             id: entity
@@ -647,9 +647,28 @@ pub(crate) fn find_matching_entity<'a>(
         })
         .collect::<Vec<_>>();
     let matched = match_entity_name(detected_name, &candidates, 90.0)?;
-    entities
-        .get(matched.candidate_index)
-        .map(|entity| &entity.1)
+    let (matched_directory_id, matched_entity) = *admitted_entities.get(matched.candidate_index)?;
+    let emitted_id = effective_entity_id(matched_directory_id, matched_entity);
+    let requires_independent_resolution = matched_directory_id.as_str() != emitted_id;
+    let mut resolved_entities = entities.iter().filter(|(directory_id, entity)| {
+        effective_entity_id(directory_id, entity) == emitted_id
+            && (!requires_independent_resolution || directory_id != matched_directory_id)
+    });
+    let (_, resolved_entity) = resolved_entities.next()?;
+    if !is_admissible_speaker_entity(resolved_entity)
+        || resolved_entities.any(|(_, entity)| !is_admissible_speaker_entity(entity))
+    {
+        return None;
+    }
+    Some(matched_entity)
+}
+
+fn effective_entity_id<'a>(directory_id: &'a str, entity: &'a Value) -> &'a str {
+    entity
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(directory_id)
 }
 
 /// Raw entity JSON admission for speaker read surfaces.
@@ -702,6 +721,39 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("person")
         );
+    }
+
+    #[test]
+    fn matching_revalidates_mismatched_entity_ids() {
+        let mismatched = vec![(
+            "mismatched".to_owned(),
+            json!({"id":"other","name":"Ada Lovelace","type":"Person"}),
+        )];
+        assert!(find_matching_entity("Ada Lovelace", &mismatched).is_none());
+
+        let mismatched_with_tool_target = vec![
+            (
+                "mismatched".to_owned(),
+                json!({"id":"other","name":"Ada Lovelace","type":"Person"}),
+            ),
+            (
+                "other".to_owned(),
+                json!({"id":"other","name":"Deploy Bot","type":"Tool"}),
+            ),
+        ];
+        assert!(find_matching_entity("Ada Lovelace", &mismatched_with_tool_target).is_none());
+
+        let matching_id = vec![(
+            "person".to_owned(),
+            json!({"id":"person","name":"Ada Lovelace","type":"Person"}),
+        )];
+        assert!(find_matching_entity("Ada Lovelace", &matching_id).is_some());
+
+        let directory_id_fallback = vec![(
+            "person".to_owned(),
+            json!({"name":"Ada Lovelace","type":"Person"}),
+        )];
+        assert!(find_matching_entity("Ada Lovelace", &directory_id_fallback).is_some());
     }
 
     #[test]
