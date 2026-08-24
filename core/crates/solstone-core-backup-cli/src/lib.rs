@@ -13,6 +13,10 @@ use solstone_core_backup::{
     generate_and_store_keys, generate_daily_key, get_backup_config, get_destination, get_keys,
     save_hosted_binding, set_destination, set_enabled, set_recovery_key_confirmed, status_view,
 };
+use solstone_core_backup_runtime::restore::{
+    RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
+    RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
+};
 use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance,
     NativeRestoreRecorder, PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome,
@@ -718,13 +722,15 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
         )),
         "degraded" => {
             let detail = match reason {
-                Some("integrity_unverified") => {
+                Some(RESTORE_REASON_INTEGRITY_UNVERIFIED) => {
                     "integrity verification could not run (the repository was busy or timed out)"
                 }
-                Some("integrity_failed") => {
+                Some(RESTORE_REASON_INTEGRITY_FAILED) => {
                     "integrity verification failed — the backup copy may be damaged"
                 }
-                Some("restore_summary_missing") => "restore summary was missing or malformed",
+                Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING) => {
+                    "restore summary was missing or malformed"
+                }
                 _ => "restore completed with degraded evidence",
             };
             runtime_error(format!(
@@ -732,8 +738,9 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
                 reason.unwrap_or("unknown"),
             ))
         }
-        _ if reason == Some("restore_record_failed")
-            && result.recording_failure.as_deref() == Some("restore_record_failed") =>
+        _ if reason == Some(RESTORE_REASON_RESTORE_RECORD_FAILED)
+            && result.recording_failure.as_deref()
+                == Some(RESTORE_REASON_RESTORE_RECORD_FAILED) =>
         {
             runtime_error(format!(
                 "Restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."

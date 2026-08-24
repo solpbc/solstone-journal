@@ -6,7 +6,6 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 fn command(journal: &tempfile::TempDir, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
@@ -46,75 +45,21 @@ fn write_config(journal: &tempfile::TempDir, bytes: &[u8]) -> std::path::PathBuf
 }
 
 #[cfg(unix)]
-fn write_scripted_restic(home: &std::path::Path, log: &std::path::Path) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-
-    let directory = home.join(".cache/solstone/restic");
-    fs::create_dir_all(&directory).expect("restic directory");
-    let binary = directory.join("restic");
-    let script = concat!(
-            "#!/bin/sh\n",
-            "printf '%s ' \"$@\" >> 'RESTIC_FIXTURE_LOG_PATH'\n",
-            "printf '\\n' >> 'RESTIC_FIXTURE_LOG_PATH'\n",
-            "case \"$1\" in\n",
-            "version) echo 'restic 0.19.0' ;;\n",
-            "snapshots) echo '[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/journal\"]}]' ;;\n",
-            "restore) echo '[{\"message_type\":\"summary\",\"total_files\":4,\"files_restored\":4,\"total_bytes\":12,\"bytes_restored\":12}]' ;;\n",
-            "check) exit 0 ;;\n",
-            "*) exit 98 ;;\n",
-            "esac\n",
-        )
-    .replace("RESTIC_FIXTURE_LOG_PATH", &log.display().to_string());
-    fs::write(&binary, script).expect("restic script");
-    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).expect("restic executable");
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(fs::read(&binary).expect("restic bytes"))
-    );
-    let os = match std::env::consts::OS {
-        "macos" => "darwin",
-        "linux" => "linux",
-        other => panic!("unsupported restic fixture OS: {other}"),
-    };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" | "amd64" => "amd64",
-        "aarch64" | "arm64" => "arm64",
-        other => panic!("unsupported restic fixture architecture: {other}"),
-    };
-    fs::write(
-        directory.join(".install-complete"),
-        serde_json::to_vec(&json!({
-            "schema_version": 1,
-            "tool": "restic",
-            "version": "0.19.0",
-            "sha256": digest,
-            "platform": {"os": os, "arch": arch},
-            "binary_path": binary,
-        }))
-        .expect("restic sentinel"),
-    )
-    .expect("write restic sentinel");
-    binary
-}
-
-#[cfg(unix)]
 #[test]
-fn restore_process_uses_a_full_snapshot_id_and_json_has_null_unknowns() {
+fn restore_process_reports_tool_resolution_failure_without_pinning_restic_version() {
     let journal = tempfile::tempdir().expect("journal");
     let home = tempfile::tempdir().expect("home");
-    let log = home.path().join("restic-argv.log");
-    write_scripted_restic(home.path(), &log);
+    let missing_bundle = home.path().join("missing-restic.bz2");
     let input = r#"{"recovery_key":"0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ","repository":"s3:unreachable.example.invalid/journal","backend":"s3","credentials":{"access_key_id":"access","secret_access_key":"secret"}}"#;
-
-    let human = command(&journal, &["restore"])
-        .env("HOME", home.path())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("restore starts");
-    let human = {
-        let mut child = human;
+    let restore = |args: &[&str]| {
+        let mut child = command(&journal, args)
+            .env("HOME", home.path())
+            .env("SOLSTONE_RESTIC_BUNDLE", &missing_bundle)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("restore starts");
         child
             .stdin
             .take()
@@ -123,53 +68,33 @@ fn restore_process_uses_a_full_snapshot_id_and_json_has_null_unknowns() {
             .expect("restore input");
         child.wait_with_output().expect("restore completes")
     };
-    assert_eq!(human.status.code(), Some(0));
-    assert!(human.stderr.is_empty());
-    assert!(
-        String::from_utf8(human.stdout)
-            .expect("human output")
-            .contains("Restore complete: files_expected=4")
+
+    let human = restore(&["restore"]);
+    assert_eq!(human.status.code(), Some(1));
+    assert!(human.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(human.stderr).expect("human error"),
+        "Error: Restore failed: restic_unavailable; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
     );
 
-    fs::write(&log, "").expect("clear argv log");
-    let json = {
-        let mut child = command(&journal, &["restore", "--json"])
-            .env("HOME", home.path())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("json restore starts");
-        child
-            .stdin
-            .take()
-            .expect("json restore stdin")
-            .write_all(input.as_bytes())
-            .expect("json restore input");
-        child.wait_with_output().expect("json restore completes")
-    };
-    assert_eq!(json.status.code(), Some(0));
+    let json = restore(&["restore", "--json"]);
+    assert_eq!(json.status.code(), Some(1));
     assert!(json.stderr.is_empty());
     let rendered: Value = serde_json::from_slice(&json.stdout).expect("restore JSON");
-    assert_eq!(rendered["status"], "ok");
-    assert_eq!(rendered["reason_code"], Value::Null);
-    assert_eq!(rendered["recording_failure"], Value::Null);
-    assert_eq!(rendered["files_expected"], 4);
-    assert_eq!(rendered["bytes_restored"], 12);
-    let argv = fs::read_to_string(&log).expect("argv log");
     assert_eq!(
-        argv.lines().map(str::to_owned).collect::<Vec<_>>(),
-        vec![
-            "version ".to_owned(),
-            "snapshots --json ".to_owned(),
-            format!(
-                "restore 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:/journal --target {} --json ",
-                journal.path().display()
-            ),
-            "check ".to_owned(),
-        ]
+        rendered,
+        json!({
+            "bytes_expected": null,
+            "bytes_restored": null,
+            "files_expected": null,
+            "files_restored": null,
+            "integrity_ok": false,
+            "reason_code": "restic_unavailable",
+            "recording_failure": null,
+            "resumable": false,
+            "status": "error",
+        })
     );
-    assert!(!argv.contains("latest"));
 }
 
 #[test]
