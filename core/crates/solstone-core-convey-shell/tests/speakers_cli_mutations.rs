@@ -3,8 +3,9 @@
 
 //! Focused mutation-route contracts for the speakers CLI surface.
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,6 +15,11 @@ use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use tower::ServiceExt;
+
+use super::support::{
+    PERSON_ADMISSION_DAY, PERSON_ADMISSION_SEGMENT, PERSON_ADMISSION_SOURCE,
+    PERSON_ADMISSION_STREAM, build_person_admission_journal,
+};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -107,6 +113,29 @@ async fn call(app: axum::Router, uri: &str, body: Value) -> (StatusCode, Value) 
     )
     .expect("json");
     (status, value)
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("journal-relative path")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 #[tokio::test]
@@ -213,6 +242,120 @@ async fn confirm_declares_skipped_awareness_state_after_native_mutation() {
         "speaker_awareness_state_not_native"
     );
     assert!(!journal.0.join("awareness/owner_candidate.npz").exists());
+}
+
+#[tokio::test]
+async fn tag_cli_requires_admitted_person_before_idempotency_or_writes() {
+    for (speaker, labels, status, reason) in [
+        (
+            "tool",
+            json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_assigned"}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "project",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "company",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "blocked_person",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "entity_blocked",
+        ),
+        (
+            "malformed",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::NOT_FOUND,
+            "speaker_not_found",
+        ),
+        (
+            "missing",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::NOT_FOUND,
+            "speaker_not_found",
+        ),
+    ] {
+        let journal = build_person_admission_journal();
+        fs::write(
+            journal.segment().join("talents/speaker_labels.json"),
+            labels.to_string(),
+        )
+        .expect("labels write");
+        let before = content_snapshot(journal.root());
+        let (actual_status, response) = call(
+            router(journal.root().to_path_buf()),
+            "/app/speakers/api/owner/tag-cli",
+            json!({"day":"20260808","stream":"main","segment":"120000_1","source":"audio","sentence_id":1,"speaker":speaker}),
+        )
+        .await;
+        assert_eq!(actual_status, status, "{speaker}: {response}");
+        assert_eq!(response["reason_code"], reason, "{speaker}: {response}");
+        assert_eq!(content_snapshot(journal.root()), before, "{speaker}");
+    }
+
+    let journal = build_person_admission_journal();
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({"day":"20260808","stream":"main","segment":"120000_1","source":"audio","sentence_id":1,"speaker":"person"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "assigned");
+}
+
+#[tokio::test]
+async fn backfill_last_seen_skips_ineligible_speaker_voiceprints() {
+    let journal = build_person_admission_journal();
+    let encoder = solstone_core_entity::EncoderIdentity {
+        id: "test".to_owned(),
+        sha256: "0".repeat(64),
+        width: 256,
+    };
+    for entity_id in ["person", "tool"] {
+        solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+            journal.root(),
+            entity_id,
+            vec![1.0; 256],
+            json!({"day":PERSON_ADMISSION_DAY,"stream":PERSON_ADMISSION_STREAM,"segment_key":PERSON_ADMISSION_SEGMENT,"source":PERSON_ADMISSION_SOURCE,"sentence_id":1}),
+            &encoder,
+        )
+        .expect("voiceprint writes");
+    }
+    fs::write(
+        journal.segment().join("talents/speaker_labels.json"),
+        json!({"labels":[
+            {"sentence_id":1,"speaker":"person"},
+            {"sentence_id":2,"speaker":"tool"}
+        ]})
+        .to_string(),
+    )
+    .expect("labels write");
+    let tool_voiceprints =
+        fs::read(journal.root().join("entities/tool/voiceprints.npz")).expect("tool voiceprints");
+
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/backfill-last-seen",
+        json!({"commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["skipped_ineligible_count"], 1);
+    assert_eq!(response["skipped_ineligible"], json!(["tool"]));
+    assert_eq!(
+        fs::read(journal.root().join("entities/tool/voiceprints.npz")).expect("tool voiceprints"),
+        tool_voiceprints
+    );
 }
 
 #[tokio::test]

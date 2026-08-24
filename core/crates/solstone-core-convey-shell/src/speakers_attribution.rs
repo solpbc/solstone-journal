@@ -66,6 +66,9 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         None => return review_unavailable(),
     };
     let current = label(&labels, fields.sentence_id);
+    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
+        return response;
+    }
     if current.is_some_and(|row| {
         row.get("speaker").and_then(Value::as_str) == Some(fields.speaker.as_str())
             && row.get("method").and_then(Value::as_str) == Some("user_assigned")
@@ -93,9 +96,6 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     }
     if !sentence_exists(&segment, &fields.source, fields.sentence_id) {
         return sentence_missing("Pick a different sentence with an embedding.");
-    }
-    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
-        return response;
     }
     let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
         Some(value) => value,
@@ -1013,7 +1013,7 @@ fn correction(
     solstone_core_speaker_id::corrections::append_correction(segment, json!({"sentence_id":sentence_id,"original_speaker":original_speaker,"corrected_speaker":corrected_speaker,"original_method":original_method,"timestamp":Utc::now().timestamp_millis()}).as_object().expect("correction is object").clone()).map_err(|error| error.to_string())
 }
 #[allow(clippy::result_large_err)]
-fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response> {
+pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response> {
     let entity = solstone_core_entity::load_all_journal_entities(root)
         .ok()
         .into_iter()
@@ -1024,6 +1024,12 @@ fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response>
             "entity_blocked",
             "I couldn't use that speaker because it's blocked.",
             &format!("Entity '{speaker}' is blocked"),
+            StatusCode::BAD_REQUEST,
+        )),
+        Some(entity) if !solstone_core_entity::is_admissible_person(&entity) => Err(err(
+            "speaker_not_person",
+            "I couldn't use that speaker because it isn't a Person.",
+            &format!("Entity '{speaker}' is not a Person. Select an existing, unblocked Person."),
             StatusCode::BAD_REQUEST,
         )),
         Some(_) => Ok(()),

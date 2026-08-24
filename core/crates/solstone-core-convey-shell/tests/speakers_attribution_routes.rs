@@ -3,6 +3,7 @@
 
 //! Mutation-route coverage for native speaker attribution and owner screening.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -18,6 +19,8 @@ use solstone_core_npy::write_npy;
 use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
+
+use super::support::build_person_admission_journal;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const DAY: &str = "20260808";
@@ -223,6 +226,44 @@ fn write_embeddings(path: &Path, rows: &[Vec<f32>]) {
         ]),
     )
     .expect("embeddings");
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.strip_prefix(root).expect("journal-relative path") == Path::new("health") {
+                continue;
+            }
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("journal-relative path")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
+}
+
+fn set_labels(root: &Path, labels: Value) {
+    fs::write(
+        root.join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join(SEGMENT)
+            .join("talents/speaker_labels.json"),
+        labels.to_string(),
+    )
+    .expect("labels write");
 }
 
 #[tokio::test]
@@ -930,4 +971,160 @@ async fn classify_reads_a_direct_segment() {
         Some(1),
         "{body}"
     );
+}
+
+#[tokio::test]
+async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unchanged() {
+    for (speaker, labels, status, reason) in [
+        (
+            "tool",
+            json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_assigned"}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "project",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "company",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "speaker_not_person",
+        ),
+        (
+            "blocked_person",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::BAD_REQUEST,
+            "entity_blocked",
+        ),
+        (
+            "malformed",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::NOT_FOUND,
+            "speaker_not_found",
+        ),
+        (
+            "missing",
+            json!({"labels":[{"sentence_id":1}]}),
+            StatusCode::NOT_FOUND,
+            "speaker_not_found",
+        ),
+    ] {
+        let journal = build_person_admission_journal();
+        set_labels(journal.root(), labels);
+        let before = content_snapshot(journal.root());
+        let mut body = request();
+        body["speaker"] = json!(speaker);
+        let (actual_status, response) = call(
+            router(journal.root().to_path_buf()),
+            "/app/speakers/api/assign-attribution",
+            body,
+        )
+        .await;
+        assert_eq!(actual_status, status, "{speaker}: {response}");
+        assert_eq!(response["reason_code"], reason, "{speaker}: {response}");
+        assert_eq!(content_snapshot(journal.root()), before, "{speaker}");
+    }
+
+    let journal = build_person_admission_journal();
+    set_labels(
+        journal.root(),
+        json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_confirmed"}]}),
+    );
+    let before = content_snapshot(journal.root());
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/confirm-attribution",
+        request(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
+    assert_eq!(response["reason_code"], "speaker_not_person");
+    assert_eq!(content_snapshot(journal.root()), before);
+
+    let journal = build_person_admission_journal();
+    let before = content_snapshot(journal.root());
+    let mut body = request();
+    body["new_speaker"] = json!("project");
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/correct-attribution",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
+    assert_eq!(response["reason_code"], "speaker_not_person");
+    assert_eq!(content_snapshot(journal.root()), before);
+
+    let journal = build_person_admission_journal();
+    let mut body = request();
+    body["speaker"] = json!("person");
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/assign-attribution",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "assigned");
+}
+
+#[tokio::test]
+async fn correct_repairs_legacy_invalid_old_speakers_into_an_admitted_person() {
+    for old_speaker in ["tool", "blocked_person", "malformed", "deleted"] {
+        let journal = build_person_admission_journal();
+        if old_speaker == "tool" {
+            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+                journal.root(),
+                old_speaker,
+                unit(0.0, 1.0),
+                json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1}),
+                &solstone_core_entity::EncoderIdentity {
+                    id: "unresolved".to_owned(),
+                    sha256: "0".repeat(64),
+                    width: 256,
+                },
+            )
+            .expect("legacy tool voiceprint writes");
+        }
+        set_labels(
+            journal.root(),
+            json!({"labels":[{"sentence_id":1,"speaker":old_speaker,"confidence":"medium","method":"acoustic"}]}),
+        );
+        let mut body = request();
+        body["new_speaker"] = json!("person");
+        let (status, response) = call(
+            router(journal.root().to_path_buf()),
+            "/app/speakers/api/correct-attribution",
+            body,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{old_speaker}: {response}");
+        assert_eq!(response["status"], "corrected");
+        assert_eq!(response["old_speaker"], old_speaker);
+        assert_eq!(response["new_speaker"], "person");
+
+        let corrections: Value = serde_json::from_slice(
+            &fs::read(journal.segment().join("talents/speaker_corrections.json"))
+                .expect("corrections read"),
+        )
+        .expect("corrections parse");
+        assert_eq!(
+            corrections["corrections"][0]["original_speaker"],
+            old_speaker
+        );
+        if old_speaker == "tool" {
+            assert!(
+                !journal
+                    .root()
+                    .join("entities/tool/voiceprints.npz")
+                    .exists()
+            );
+        } else {
+            assert_eq!(response["voiceprint_removal"]["outcome"], "not_found");
+        }
+    }
 }

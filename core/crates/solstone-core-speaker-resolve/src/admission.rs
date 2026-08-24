@@ -7,11 +7,10 @@ use std::path::Path;
 
 use serde_json::Value;
 use solstone_core_entity::{
-    EntityResolutionEntity, EntityStoreError, JournalEntity, load_resolved_ambiguity_choice,
+    EntityResolutionEntity, EntityStoreError, JournalEntity, is_admissible_person,
+    load_resolved_ambiguity_choice,
 };
 use solstone_core_entity_matching::normalize_resolution_query;
-
-use crate::person_guard::is_admissible_person;
 
 /// Filter an already-unblocked entity slice to speaker-admissible Persons.
 pub fn admissible_person_pool<'a>(
@@ -20,7 +19,7 @@ pub fn admissible_person_pool<'a>(
     unblocked_entities
         .iter()
         .copied()
-        .filter(|entity| is_admissible_person(entity.entity_type()))
+        .filter(|entity| is_admissible_person(entity))
         .collect()
 }
 
@@ -61,10 +60,7 @@ pub fn saved_choice_excluded_by_admission(
     else {
         return Ok(false);
     };
-    if entity.is_blocked() {
-        return Ok(true);
-    }
-    Ok(!is_admissible_person(entity.entity_type()))
+    Ok(!is_admissible_person(entity))
 }
 
 #[cfg(test)]

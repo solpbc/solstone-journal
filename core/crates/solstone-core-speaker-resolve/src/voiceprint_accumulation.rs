@@ -14,8 +14,9 @@ use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
-    normalize_embedding, read_journal_principal, save_voiceprints_batch,
+    EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
+    load_entity_voiceprints_file, normalize_embedding, read_journal_principal,
+    save_voiceprints_batch,
 };
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::segment_path;
@@ -24,7 +25,6 @@ use solstone_core_speaker_id::calibration::{
 };
 
 use crate::owner_centroid::load_owner_centroid;
-use crate::person_guard::is_admissible_person;
 
 const METHODS: [&str; 4] = [
     "structural_single_speaker",
@@ -329,7 +329,7 @@ pub fn accumulate_voiceprints(
             skip_entity(report, &mut skipped, AccumulationSkipReason::UnknownEntity);
             continue;
         };
-        if !is_admissible_person(entity.entity_type()) {
+        if !is_admissible_person(entity) {
             skip_entity(report, &mut skipped, AccumulationSkipReason::UnknownEntity);
             continue;
         }

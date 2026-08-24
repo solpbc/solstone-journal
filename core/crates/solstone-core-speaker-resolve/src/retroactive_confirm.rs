@@ -8,8 +8,8 @@ use std::path::Path;
 
 use serde_json::Value;
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
-    read_journal_principal, save_voiceprints_batch,
+    EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
+    load_entity_voiceprints_file, read_journal_principal, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::calibration::{
@@ -21,7 +21,6 @@ use crate::candidate_tracker::{
     CandidateProfile, CandidateTracker, MERGE_THRESHOLD, retroactive_voiceprint_metadata,
 };
 use crate::owner_centroid::load_owner_centroid;
-use crate::person_guard::is_admissible_person;
 use crate::voiceprint_accumulation::read_overlap_fraction;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -152,11 +151,8 @@ pub fn apply_retroactive_confirm_plan(
         return Ok(0);
     }
     let entities = load_all_journal_entities(journal)?;
-    let kind = entities
-        .iter()
-        .find(|e| e.id == plan.entity_id)
-        .and_then(|e| e.entity_type());
-    if !is_admissible_person(kind) {
+    let entity = entities.iter().find(|entity| entity.id == plan.entity_id);
+    if !entity.is_some_and(is_admissible_person) {
         return Err(RetroactiveConfirmError::NonPerson);
     }
     let existing = voiceprint_snapshot(journal, &plan.entity_id).0;

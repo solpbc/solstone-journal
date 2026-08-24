@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 use solstone_core_entity::{
     EntityResolutionError, EntityResolutionOutcome, EntityTrustLockError, JournalEntity,
-    entity_identity_destination_occupied, hold_entity_trust_lock, is_valid_entity_type,
-    load_all_journal_entities, load_entity_voiceprints_file, read_entity_identity,
-    read_identity_map, record_entity_resolution_from_name_evidence,
+    entity_identity_destination_occupied, hold_entity_trust_lock, is_admissible_person,
+    is_valid_entity_type, load_all_journal_entities, load_entity_voiceprints_file,
+    read_entity_identity, read_identity_map, record_entity_resolution_from_name_evidence,
 };
 use solstone_core_entity_matching::{MatchTier, entity_slug, token_sort};
 use thiserror::Error;
@@ -19,7 +19,6 @@ use crate::eligibility::{
     EligibilityError, current_principal_id, eligible_speaker_attach_entities,
     principal_name_collision, speaker_attach_rejection_reason,
 };
-use crate::person_guard::is_admissible_person;
 
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
 
@@ -190,7 +189,7 @@ pub fn resolve_identify_target(
         });
     }
     // AC3 create-new admission: syntax validation alone accepts e.g. "Tool".
-    if !is_admissible_person(Some(&request.entity_type)) {
+    if request.entity_type != "Person" {
         return Ok(IdentifyTargetOutcome::NonPersonCreateType {
             entity_type: request.entity_type.clone(),
         });
@@ -230,7 +229,7 @@ fn resolve_entity_id_target(
         value: snapshot.value().clone(),
     };
     // AC3 direct-id admission: Python previously lacked this Person guard.
-    if !is_admissible_person(entity.entity_type()) {
+    if !is_admissible_person(&entity) {
         return Ok(IdentifyTargetOutcome::NonPersonEntity {
             entity_id: entity.id.clone(),
             entity_type: entity.entity_type().map(str::to_owned),

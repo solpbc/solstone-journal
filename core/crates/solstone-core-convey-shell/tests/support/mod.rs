@@ -48,6 +48,11 @@ const DAYS: [&str; 31] = [
 ];
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+pub const PERSON_ADMISSION_DAY: &str = "20260808";
+pub const PERSON_ADMISSION_STREAM: &str = "main";
+pub const PERSON_ADMISSION_SEGMENT: &str = "120000_1";
+pub const PERSON_ADMISSION_SOURCE: &str = "audio";
+
 /// Temporary populated journal used by the frozen speakers read-surface corpus.
 pub struct PopulatedJournal {
     root: PathBuf,
@@ -64,6 +69,102 @@ impl Drop for PopulatedJournal {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+/// Small isolated journal for speaker Person-admission mutation tests.
+pub struct PersonAdmissionJournal {
+    root: PathBuf,
+}
+
+impl PersonAdmissionJournal {
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn segment(&self) -> PathBuf {
+        self.root
+            .join("chronicle")
+            .join(PERSON_ADMISSION_DAY)
+            .join(PERSON_ADMISSION_STREAM)
+            .join(PERSON_ADMISSION_SEGMENT)
+    }
+}
+
+impl Drop for PersonAdmissionJournal {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+/// Build a minimal journal with admitted and refused speaker targets.
+pub fn build_person_admission_journal() -> PersonAdmissionJournal {
+    let root = temporary_journal_root();
+    write_json(
+        &root.join("config/journal.json"),
+        &json!({"setup":{"completed_at":1}}),
+    );
+    for (id, entity) in [
+        (
+            "owner",
+            json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+        ),
+        (
+            "person",
+            json!({"id":"person","name":"Person","type":"Person"}),
+        ),
+        ("tool", json!({"id":"tool","name":"Tool","type":"Tool"})),
+        (
+            "project",
+            json!({"id":"project","name":"Project","type":"Project"}),
+        ),
+        (
+            "company",
+            json!({"id":"company","name":"Company","type":"Company"}),
+        ),
+        (
+            "blocked_person",
+            json!({"id":"blocked_person","name":"Blocked Person","type":"Person","blocked":true}),
+        ),
+    ] {
+        write_json(&root.join(format!("entities/{id}/entity.json")), &entity);
+    }
+    solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+        &root,
+        "owner",
+        &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+            centroid: unit_vector(1),
+            cluster_size: 5,
+            timestamp: "2026-08-08T00:00:00Z".to_owned(),
+            evidence_tier: "standard".to_owned(),
+        },
+    )
+    .expect("owner centroid writes");
+    fs::create_dir_all(root.join("entities/malformed")).expect("malformed entity directory");
+    fs::write(root.join("entities/malformed/entity.json"), "{not json")
+        .expect("malformed entity writes");
+
+    let segment = segment_dir(
+        &root,
+        PERSON_ADMISSION_DAY,
+        PERSON_ADMISSION_STREAM,
+        PERSON_ADMISSION_SEGMENT,
+    );
+    fs::write(
+        segment.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"id\":1,\"text\":\"test\"}\n",
+    )
+    .expect("transcript writes");
+    write_embeddings_npz(&segment.join("audio.npz"), 1, false, 0);
+    write_json(
+        &segment.join("talents/speaker_labels.json"),
+        &json!({"labels":[{"sentence_id":1}]}),
+    );
+    write_json(
+        &segment.join("talents/speaker_corrections.json"),
+        &json!({"corrections":[]}),
+    );
+
+    PersonAdmissionJournal { root }
 }
 
 /// Build the deterministic journal state captured by convey_speakers_corpus.json.

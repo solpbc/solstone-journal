@@ -51,6 +51,11 @@ impl JournalEntity {
     }
 }
 
+/// Return whether this entity may be used as an active speaker identity.
+pub fn is_admissible_person(entity: &JournalEntity) -> bool {
+    entity.entity_type() == Some("Person") && !entity.is_blocked()
+}
+
 /// Load all directly enumerable journal entities in deterministic ID order.
 ///
 /// Individual missing, malformed, or unreadable identities are skipped, matching
@@ -99,4 +104,27 @@ fn string_list_field(value: &Value, field: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{JournalEntity, is_admissible_person};
+
+    #[test]
+    fn admissible_person_requires_an_unblocked_exact_person_type() {
+        let entity = |value| JournalEntity {
+            id: "entity".to_owned(),
+            value,
+        };
+
+        assert!(is_admissible_person(&entity(json!({"type":"Person"}))));
+        assert!(!is_admissible_person(&entity(json!({"type":"Tool"}))));
+        assert!(!is_admissible_person(&entity(json!({"type":"person"}))));
+        assert!(!is_admissible_person(&entity(
+            json!({"type":"Person","blocked":true})
+        )));
+        assert!(!is_admissible_person(&entity(json!({}))));
+    }
 }

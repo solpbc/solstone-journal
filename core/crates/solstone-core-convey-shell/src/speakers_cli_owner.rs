@@ -16,6 +16,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::speakers_attribution::entity_allowed;
 use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
     UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
@@ -98,6 +99,9 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let current = labels
         .iter()
         .find(|label| label.get("sentence_id").and_then(Value::as_i64) == Some(sentence_id));
+    if let Err(response) = entity_allowed(&root.0, speaker) {
+        return response;
+    }
     if current.is_some_and(|label| {
         label.get("speaker").and_then(Value::as_str) == Some(speaker)
             && label.get("method").and_then(Value::as_str) == Some("user_assigned")
@@ -113,19 +117,6 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
             "I couldn't change that speaker attribution.",
             "Pick a sentence without a speaker.",
             StatusCode::CONFLICT,
-        );
-    }
-    if !solstone_core_entity::load_all_journal_entities(&root.0)
-        .ok()
-        .into_iter()
-        .flatten()
-        .any(|entity| entity.id == speaker && !entity.is_blocked())
-    {
-        return err(
-            "speaker_not_found",
-            "I couldn't find that speaker.",
-            &format!("Entity '{speaker}' not found"),
-            StatusCode::NOT_FOUND,
         );
     }
     let embedding_path = segment.join(format!("{source}.npz"));

@@ -6,10 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
-use solstone_core_entity::{JournalEntity, normalize_embedding};
+use solstone_core_entity::{JournalEntity, is_admissible_person, normalize_embedding};
 
 use crate::layer1::Label;
-use crate::person_guard::is_admissible_person;
 use crate::voiceprint_centroid::{VoiceprintCentroidCache, VoiceprintLoadGap};
 use solstone_core_speaker_id::calibration::{
     ACOUSTIC_HIGH, ACOUSTIC_MARGIN_MIN, ACOUSTIC_MEDIUM, CC_CONFIDENCE_GATE, CC_COVERAGE_GATE,
@@ -64,7 +63,7 @@ pub fn apply_acoustic_matching(
         inputs
             .entities
             .iter()
-            .filter(|entity| !entity.is_principal() && is_admissible_person(entity.entity_type()))
+            .filter(|entity| !entity.is_principal() && is_admissible_person(entity))
             .map(|entity| entity.id.clone())
             .collect::<BTreeSet<_>>()
     } else {

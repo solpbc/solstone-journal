@@ -41,7 +41,7 @@ pub use history::{
     guard_visible_event_collision, read_prepared_history, read_visible_history,
 };
 pub use identity::{IdentitySnapshot, entity_identity_destination_occupied, read_entity_identity};
-pub use journal_entities::{JournalEntity, load_all_journal_entities};
+pub use journal_entities::{JournalEntity, is_admissible_person, load_all_journal_entities};
 pub use lifecycle::{
     EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,
     restore_journal_entity_version, unblock_journal_entity,

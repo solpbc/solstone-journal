@@ -37,5 +37,3 @@ pub mod speaker_review_candidates;
 pub mod voiceprint_accumulation;
 pub mod voiceprint_centroid;
 pub mod voiceprint_metadata;
-
-mod person_guard;
