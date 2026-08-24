@@ -699,9 +699,10 @@ fn run_case(
 }
 
 #[test]
-fn every_mode_has_its_promised_observable() {
+fn every_mode_has_its_promised_observable_and_reaches_dispatch() {
     let journal = TempDir::new().expect("journal");
     let inputs = Inputs::create(&journal);
+    let mut top_level_failures = Vec::new();
     for case in MODE_CASES {
         for (expected, output) in run_case(case, &journal, &inputs) {
             assert_eq!(output.status.code(), Some(expected.exit), "{}", case.name);
@@ -719,8 +720,24 @@ fn every_mode_has_its_promised_observable() {
                 Stream::Stderr => &output.stdout,
             };
             assert!(quiet.is_empty(), "{} wrote to both streams", case.name);
+            if output.status.code() == Some(64)
+                || String::from_utf8_lossy(&output.stderr).contains(TOP_LEVEL_USAGE)
+            {
+                top_level_failures.push(format!(
+                    "=== {} ===\nexit={:?}\nstdout:\n{}stderr:\n{}",
+                    case.name,
+                    output.status.code(),
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr),
+                ));
+            }
         }
     }
+    assert!(
+        top_level_failures.is_empty(),
+        "{}",
+        top_level_failures.join("\n")
+    );
 }
 
 fn swallow_rescans(journal: &Path) -> thread::JoinHandle<()> {
@@ -881,29 +898,6 @@ fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
             None
         }
     })
-}
-
-#[test]
-fn every_mode_is_reachable_past_the_top_level_dispatch() {
-    let journal = TempDir::new().expect("journal");
-    let inputs = Inputs::create(&journal);
-    let mut failures = Vec::new();
-    for case in MODE_CASES {
-        let outputs = run_case(case, &journal, &inputs);
-        if let Some((_, output)) = outputs.iter().find(|(_, output)| {
-            output.status.code() == Some(64)
-                || String::from_utf8_lossy(&output.stderr).contains(TOP_LEVEL_USAGE)
-        }) {
-            failures.push(format!(
-                "=== {} ===\nexit={:?}\nstdout:\n{}stderr:\n{}",
-                case.name,
-                output.status.code(),
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            ));
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

@@ -162,10 +162,16 @@ impl Drop for TempDir {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
+    use std::io::Read;
+    #[cfg(unix)]
+    use std::process::{Command, Stdio};
+    #[cfg(unix)]
+    use std::time::Duration;
 
     use super::{
         RfdetrInstallError, RfdetrInstallRecord, binary_path, detections_block, model_path,
-        paths_from_install_check, screen_gate,
+        paths_from_install_check, screen_gate, wait_for_child,
     };
     use serde_json::json;
 
@@ -190,6 +196,30 @@ mod tests {
         )
         .expect("block");
         assert_eq!(result["objects"][0]["score"], 0.1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detector_timeout_cancels_a_child_that_reported_ready() {
+        let mut child = Command::new("sh")
+            .args(["-c", "printf ready; exec sleep 120"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start ready child");
+        let mut ready = [0; 5];
+        child
+            .stdout
+            .as_mut()
+            .expect("child stdout")
+            .read_exact(&mut ready)
+            .expect("ready event");
+        assert_eq!(&ready, b"ready");
+
+        let error = wait_for_child(&mut child, Duration::from_millis(100))
+            .expect_err("ready child must be cancelled at the failure ceiling");
+        assert_eq!(error, "rfdetr-cli detect timed out after 100ms");
+        assert!(child.try_wait().expect("reaped child").is_some());
     }
 
     #[test]

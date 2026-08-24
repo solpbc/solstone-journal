@@ -9,6 +9,9 @@ logs/
 *.mp3
 *.flac
 !core/fixtures/convey_records_journal/**/*.flac
+!core/fixtures/audio_decode_corpus/**/*.flac
+!core/fixtures/audio_decode_corpus/**/*.mp3
+!core/fixtures/audio_decode_corpus/**/*.ogg
 .coverage*
 tests/fixtures/journal/agents/*/*.jsonl
 tests/fixtures/journal/tokens/*.json

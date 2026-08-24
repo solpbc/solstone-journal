@@ -11,7 +11,7 @@ use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -673,13 +673,18 @@ impl Drop for TempDir {
     }
 }
 
-/// Records that cargo produced this artifact during THIS test run, which is
-/// what makes the probe below evidence about the current tree rather than
-/// about whatever was last left in `target/`.
+/// Records that cargo produced this artifact during this test-binary run,
+/// which is what makes the probe below evidence about the current tree rather
+/// than about whatever was last left in `target/`.
+#[derive(Clone)]
 struct Artifact {
-    #[allow(dead_code)]
     path: PathBuf,
 }
+
+/// The three sibling helpers are built once for this integration-test binary.
+/// Every harness still copies those verified artifacts into its own private
+/// directory, so the probe's filesystem and PATH isolation remain per-test.
+static WORKSPACE_BINARY_ARTIFACTS: OnceLock<BTreeMap<&'static str, Artifact>> = OnceLock::new();
 
 struct Harness {
     _temp: TempDir,
@@ -712,16 +717,12 @@ impl Harness {
         fs::create_dir(&sibling_dir).expect("create binary directory");
 
         let dispatcher_source = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-journal"));
-        let core_source = locate_workspace_binary("solstone-core", "solstone-core");
-        let depict_source = locate_workspace_binary("solstone-core-depict", "solstone-core-depict");
-        let describe_source =
-            locate_workspace_binary("solstone-core-describe", "solstone-core-describe");
+        let sibling_artifacts = workspace_binary_artifacts().clone();
+        let core_source = &sibling_artifacts["solstone-core"].path;
+        let depict_source = &sibling_artifacts["solstone-core-depict"].path;
+        let describe_source = &sibling_artifacts["solstone-core-describe"].path;
 
         let dispatcher_artifact = artifact(&dispatcher_source);
-        let mut sibling_artifacts = BTreeMap::new();
-        sibling_artifacts.insert("solstone-core", artifact(&core_source));
-        sibling_artifacts.insert("solstone-core-depict", artifact(&depict_source));
-        sibling_artifacts.insert("solstone-core-describe", artifact(&describe_source));
 
         let dispatcher = sibling_dir.join("solstone-core-journal");
         copy_executable(&dispatcher_source, &dispatcher);
@@ -778,6 +779,27 @@ fn artifact(path: &Path) -> Artifact {
     Artifact {
         path: path.to_path_buf(),
     }
+}
+
+fn workspace_binary_artifacts() -> &'static BTreeMap<&'static str, Artifact> {
+    WORKSPACE_BINARY_ARTIFACTS.get_or_init(|| {
+        [
+            ("solstone-core", "solstone-core", "solstone-core"),
+            (
+                "solstone-core-depict",
+                "solstone-core-depict",
+                "solstone-core-depict",
+            ),
+            (
+                "solstone-core-describe",
+                "solstone-core-describe",
+                "solstone-core-describe",
+            ),
+        ]
+        .into_iter()
+        .map(|(name, package, binary)| (name, artifact(&locate_workspace_binary(package, binary))))
+        .collect()
+    })
 }
 
 fn copy_executable(source: &Path, destination: &Path) {

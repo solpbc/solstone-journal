@@ -8,7 +8,8 @@ use ffmpeg_next as ffmpeg;
 use serde::Deserialize;
 use solstone_core_describe::{
     ConveyFiducialMask, IdentityTransform, PreHashOutcome, PreHashRejectReason, PreHashTransform,
-    RgbFrame, WinnowConfig, dhash, format_dhash, process_video, process_video_with_transform,
+    RgbFrame, WinnowConfig, dhash, format_dhash, process_video_metadata,
+    process_video_with_transform_metadata,
 };
 
 #[derive(Deserialize)]
@@ -143,7 +144,7 @@ fn delayed_video_probe_has_unset_format_until_decoded() {
 
 #[test]
 fn delayed_video_probe_decodes_to_the_content_oracle() {
-    let result = process_video(&delayed_video_probe_path());
+    let result = process_video_metadata(&delayed_video_probe_path());
     assert!(!result.decode_failed);
     assert_eq!(result.width, Some(1280));
     assert_eq!(result.height, Some(720));
@@ -168,7 +169,7 @@ fn decodable_corpus_cases_match_the_frozen_oracle() {
         .into_iter()
         .filter(|case| !case.decode_failed)
     {
-        let result = process_video(&corpus_path(&case.file));
+        let result = process_video_metadata(&corpus_path(&case.file));
         assert!(!result.decode_failed, "{} unexpectedly failed", case.file);
         assert_eq!(
             result.qualified_count, case.qualified_count,
@@ -209,6 +210,14 @@ fn decodable_corpus_cases_match_the_frozen_oracle() {
                 actual.timestamp
             );
         }
+        assert!(
+            result
+                .qualified_frames
+                .iter()
+                .all(|frame| frame.png.is_empty()),
+            "{} metadata decode must not encode PNG payloads",
+            case.file
+        );
         let metrics = result.winnow.expect("successful decode has metrics");
         for (name, expected) in case.winnow {
             let actual = match name.as_str() {
@@ -232,7 +241,7 @@ fn decode_failure_cases_preserve_only_already_qualified_frames() {
         .into_iter()
         .filter(|case| case.decode_failed)
     {
-        let result = process_video(&corpus_path(&case.file));
+        let result = process_video_metadata(&corpus_path(&case.file));
         assert!(result.decode_failed, "{} should fail", case.file);
         assert_eq!(
             result.qualified_count,
@@ -271,8 +280,8 @@ fn paired_codecs_have_matching_qualified_results() {
             "stride_floor_h264_screen.mov",
         ),
     ] {
-        let vp8_result = process_video(&corpus_path(vp8));
-        let h264_result = process_video(&corpus_path(h264));
+        let vp8_result = process_video_metadata(&corpus_path(vp8));
+        let h264_result = process_video_metadata(&corpus_path(h264));
         assert_eq!(
             vp8_result
                 .qualified_frames
@@ -303,7 +312,7 @@ fn paired_codecs_have_matching_qualified_results() {
 fn winnow_config_overrides_change_qualified_frames() {
     let mixed_path = corpus_path("mixed_vp8_screen.webm");
     assert_eq!(
-        process_video(&mixed_path)
+        process_video_metadata(&mixed_path)
             .qualified_frames
             .iter()
             .map(|frame| frame.frame_id)
@@ -317,7 +326,7 @@ fn winnow_config_overrides_change_qualified_frames() {
     };
     let mut identity = IdentityTransform;
     assert_eq!(
-        process_video_with_transform(&mixed_path, &mut identity, min_stride_config)
+        process_video_with_transform_metadata(&mixed_path, &mut identity, min_stride_config)
             .qualified_frames
             .iter()
             .map(|frame| frame.frame_id)
@@ -327,7 +336,7 @@ fn winnow_config_overrides_change_qualified_frames() {
 
     let stride_floor_path = corpus_path("stride_floor_vp8_screen.webm");
     assert_eq!(
-        process_video(&stride_floor_path)
+        process_video_metadata(&stride_floor_path)
             .qualified_frames
             .iter()
             .map(|frame| frame.frame_id)
@@ -341,7 +350,7 @@ fn winnow_config_overrides_change_qualified_frames() {
     };
     let mut identity = IdentityTransform;
     assert_eq!(
-        process_video_with_transform(&stride_floor_path, &mut identity, scene_cut_config)
+        process_video_with_transform_metadata(&stride_floor_path, &mut identity, scene_cut_config)
             .qualified_frames
             .iter()
             .map(|frame| frame.frame_id)
@@ -378,14 +387,19 @@ impl PreHashTransform for RejectFirst {
 fn pre_hash_transform_can_blackout_or_reject_frames() {
     let path = corpus_path("mixed_vp8_screen.webm");
     let mut blackout = Blackout;
-    let blacked_out = process_video_with_transform(&path, &mut blackout, WinnowConfig::default());
+    let blacked_out =
+        process_video_with_transform_metadata(&path, &mut blackout, WinnowConfig::default());
     assert_eq!(blacked_out.first_hash, Some(0));
-    assert_ne!(blacked_out.first_hash, process_video(&path).first_hash);
+    assert_ne!(
+        blacked_out.first_hash,
+        process_video_metadata(&path).first_hash
+    );
 
     let mut reject_first = RejectFirst {
         first_applied_hash: None,
     };
-    let rejected = process_video_with_transform(&path, &mut reject_first, WinnowConfig::default());
+    let rejected =
+        process_video_with_transform_metadata(&path, &mut reject_first, WinnowConfig::default());
     assert_eq!(
         rejected
             .qualified_frames
@@ -401,7 +415,7 @@ fn pre_hash_transform_can_blackout_or_reject_frames() {
 fn fiducial_masked_screencasts_match_the_oracle() {
     for case in masked_fixture().cases {
         let mut transform = ConveyFiducialMask;
-        let result = process_video_with_transform(
+        let result = process_video_with_transform_metadata(
             &masked_path(&case.file),
             &mut transform,
             WinnowConfig::default(),
@@ -467,6 +481,11 @@ fn fiducial_masked_screencasts_match_the_oracle() {
             case.file
         );
         for frame in &result.qualified_frames {
+            assert!(
+                frame.png.is_empty(),
+                "{} must not encode PNG payloads",
+                case.file
+            );
             let aruco = frame
                 .aruco
                 .as_ref()
@@ -500,7 +519,7 @@ impl PreHashTransform for RejectFirstMask {
 #[test]
 fn mask_skip_consumes_frame_id_without_entering_winnow() {
     let mut transform = RejectFirstMask;
-    let result = process_video_with_transform(
+    let result = process_video_with_transform_metadata(
         &corpus_path("mixed_vp8_screen.webm"),
         &mut transform,
         WinnowConfig::default(),

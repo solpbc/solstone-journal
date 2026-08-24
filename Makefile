@@ -760,7 +760,7 @@ check-rust-test:
 check-rust-describe-cli-stubs:
 	@$(REQUIRE_CARGO)
 	@set -eu; \
-		if output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; then \
+		if output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --lib --test cli --locked -- --test-threads=1 2>&1)"; then \
 			cargo_status=0; \
 		else \
 			cargo_status=$$?; \
@@ -775,46 +775,22 @@ check-rust-describe-cli-stubs:
 		fi; \
 		printf '%s\n' "$$output" | grep -F '0 filtered out' >/dev/null; \
 		for test_name in \
-			blocked_reentry_does_not_touch_the_existing_artifact \
 			blocking_and_session_abort_notifications_have_distinct_flat_shapes \
 			blocking_or_unknown_refusals_abort_without_an_artifact \
 			describe_runs_one_session_and_promotes_an_analyzed_artifact \
 			describe_uses_convey_mask_for_live_handler_decode \
-			detection_failure_and_timeout_latch_after_one_attempt \
+			detection_failures_latch_after_one_attempt \
 			detection_runs_for_unselected_media_and_preserves_unfiltered_objects \
 			detection_secondary_gate_uses_secondary_label \
-			extraction_exhaustion_fails_and_blocking_refusal_aborts \
-			extraction_markdown_stop_unknown_and_empty_are_clean_without_retry \
-			extraction_secondary_and_retry_paths_are_independent \
-			extraction_unparseable_json_retries_to_its_own_ceiling \
-			extraction_uses_per_category_contracts_and_redaction \
-			failed_reentries_converge_attempts_and_keep_clean_rows_raw \
-			fresh_all_failed_promotes_then_returns_an_error \
-			fresh_emits_completion_order_while_incremental_emits_frame_id_order \
-			incremental_all_failures_complete_while_zero_qualified_reentry_discards_rows \
-			incremental_all_failures_complete_with_zero_reusable_rows \
-			journal_request_records_match_phase_one_and_category_shapes \
-			multi_frame_rows_have_exact_reference_keys_and_never_leak_pending \
-			no_engine_and_session_child_failures_abort_without_artifacts \
-			observer_and_completion_event_follow_reentry_rules \
-			processing_record_is_complete_and_decode_failure_has_no_thinking \
-			redact_config_is_appended_in_order \
-			reentry_merges_gaps_and_preserves_reusable_raw_bytes \
-			reentry_skips_clean_artifacts_and_redo_starts_a_new_attempt \
-			retry_uses_a_fresh_id_and_attempt_index \
-			retryable_refusals_stop_after_five_attempts \
-			schema_invalid_classification_is_a_row_failure_independent_of_selection \
-			schema_valid_classification_keeps_an_extractable_analyzed_row \
-			segment_meta_is_merged_before_describe_owned_values \
-			selected_unknown_category_emits_an_unenhanced_clean_row \
-			selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract \
-			selection_blocking_and_unknown_refusals_abort_after_one_selection_request \
-			selection_excludes_failed_categorization_frames \
-			selection_nonblocking_or_unparseable_response_uses_fallback \
 			session_submits_a_later_request_before_the_first_response \
 			tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward \
-			unknown_finish_reason_is_clean_and_request_uses_phase_one_contract \
-			unwritable_output_parent_is_an_internal_non_boundary_error; do \
+			frames_only_matches_the_frozen_oracle \
+			explicit_empty_journal_uses_defaults \
+			frames_only_owner_debug_and_verbose_flags_are_noops \
+			malformed_invocation_is_a_usage_error \
+			version_names_libavcodec \
+			decode_failures_use_exit_code_two \
+			launch_failure_is_blocked_not_empty; do \
 			printf '%s\n' "$$output" | grep -F "test $$test_name ... ok" >/dev/null; \
 		done
 
