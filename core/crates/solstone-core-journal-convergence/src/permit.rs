@@ -549,6 +549,7 @@ mod tests {
             ConvergenceError::Refused(Refusal::Superseded)
         ));
         drop(held);
+        admitted.publish_owner_free_superseded().unwrap();
         let report = admitted.inspect().unwrap();
         assert_eq!(report.terminal_outcome(), Some(TerminalOutcome::Superseded));
         assert!(report.awaiting().is_none());
@@ -600,6 +601,7 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
+        admitted.publish_owner_free_superseded().unwrap();
         let report = admitted.inspect().unwrap();
         assert_eq!(report.terminal_outcome(), Some(TerminalOutcome::Superseded));
         drop(admitted);

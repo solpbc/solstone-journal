@@ -35,15 +35,17 @@
 //! scan happens inside a registry section.
 
 use crate::access::ResolverAccess;
-use crate::claim::{ClaimView, classify as classify_claim};
+use crate::claim::ClaimView;
 use crate::decision::{accept_barrier, accept_decision, load_barrier, load_decision, load_member};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
-use crate::init::{StoreDirs, open_store_dirs};
+use crate::init::StoreDirs;
+#[cfg(test)]
+use crate::init::open_store_dirs;
 use crate::layout::{ACTIVE_BARRIER_SUFFIX, DayKey};
 use crate::link::{LinkResolution, load_owner_intent_link, resolve_owner_intent_link};
-use crate::lock::{
-    DayLockSet, LOCK_TIMEOUT, acquire_days_with_timeout, hold_topology_with_timeout,
-};
+use crate::lock::DayLockSet;
+#[cfg(test)]
+use crate::lock::{LOCK_TIMEOUT, acquire_days_with_timeout, hold_topology_with_timeout};
 use crate::mac::hmac_hex;
 use crate::owner::{load_owner_binding, reauthenticate_owner};
 use crate::permit::TerminalOutcome;
@@ -302,29 +304,19 @@ impl Admitted {
         if selector.days() != self.days() {
             return Err(ConvergenceError::Refused(Refusal::DaySetChanged));
         }
-        let dirs = open_store_dirs(store.root())?
-            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        let locks = acquire_days_with_timeout(
-            &dirs,
-            self.days(),
-            store.journal_id(),
-            store.root_id(),
-            store.object_identity(),
-            self.lock_timeout(),
-        )?;
+        let access = ResolverAccess::acquire(self)?;
+        let dirs = access.dirs();
+        let locks = access.locks();
 
         // Brief global, released before the registry is touched. An unheaded
         // introduction remains live for fencing; its owner gets the named
         // claim-head recovery rather than an implicit mutation during token
         // delivery.
-        let claim = {
-            let _topology = hold_topology_with_timeout(&dirs, LOCK_TIMEOUT)?;
-            classify_claim(store, &dirs)?
-        };
+        let claim = access.read_claim()?;
 
         // The operation's own link names the transition, which is the only
         // anchor that survives claim release.
-        let linked = crate::access::with_registry(&dirs, self.lock_timeout(), |section| {
+        let linked = access.with_registry(|section| {
             let Some(secret) = load_journal_secret(section.registry())? else {
                 return Ok(LinkLookup::MissingOwner);
             };
@@ -387,7 +379,7 @@ impl Admitted {
             });
         }
         if overlapping {
-            if crate::terminal::read_terminal(&dirs, serial)?.is_some() {
+            if crate::terminal::read_terminal(dirs, serial)?.is_some() {
                 return Ok(Delivery::Unknown {
                     role: DurableRole::ClaimRevision,
                 });
@@ -406,7 +398,7 @@ impl Admitted {
         // The intent is unlinked during cleanup, so post-eviction the link is
         // the surviving anchor. While the intent is still present it must agree
         // exactly.
-        if let Some(intent) = crate::intent::read_intent(&dirs, serial)?
+        if let Some(intent) = crate::intent::read_intent(dirs, serial)?
             && intent.intent_digest != link.intent_digest
         {
             return Ok(Delivery::Unknown {
@@ -418,14 +410,14 @@ impl Admitted {
         // either by the exact visible terminal during the cleanup window or, once
         // the terminal is evicted and the claim released, by the base committed
         // successor-clearance vector.
-        match establish_committed(&dirs, serial, &link, claim_released, locks.days())? {
+        match establish_committed(store, locks, dirs, serial, &link, claim_released)? {
             Committed::Yes => {}
             Committed::No { reason } => return Ok(Delivery::Denied { reason }),
             Committed::Unknown { role } => return Ok(Delivery::Unknown { role }),
         }
         // Brief registry: re-read owner, link, decision, members, barrier and
         // mint the already-classified authority. No day scan happens here.
-        let prepared = match crate::access::with_registry(&dirs, self.lock_timeout(), |section| {
+        let prepared = match access.with_registry(|section| {
             let Some(secret) = load_journal_secret(section.registry())? else {
                 return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
                     role: DurableRole::JournalSecret,
@@ -514,8 +506,14 @@ impl Admitted {
                 }
                 members.push(member);
             }
-            let barrier =
-                accept_barrier(barrier, &owner, &decision, &members, ACTIVE_BARRIER_SUFFIX)?;
+            let barrier = accept_barrier(
+                barrier,
+                &owner,
+                &decision,
+                &members,
+                ACTIVE_BARRIER_SUFFIX,
+                None,
+            )?;
             Ok(RegistryPrepared::Prepared(Prepared {
                 authority: ParentAuthority {
                     journal_id: store.journal_id().to_owned(),
@@ -542,7 +540,7 @@ impl Admitted {
 
         // Registry released. The canonical revalidation immediately before
         // returning bytes runs under the day leases only.
-        revalidate_then_seal(store, &locks, &prepared)
+        revalidate_then_seal(store, locks, &prepared)
     }
 }
 
@@ -569,12 +567,7 @@ impl<'admitted> LiveGrantLease<'admitted> {
 
         // The only global section is a bounded claim read; it is dropped
         // before the subsequent registry section.
-        let claim = {
-            let topology = hold_topology_with_timeout(self.access.dirs(), LOCK_TIMEOUT)?;
-            let recovered = classify_claim(self.access.store(), self.access.dirs())?;
-            drop(topology);
-            recovered
-        };
+        let claim = self.access.read_claim()?;
         let prepared = self.access.with_registry(|section| {
             let Some(secret) = load_journal_secret(section.registry())? else {
                 return Err(ConvergenceError::Unknown {
@@ -661,8 +654,14 @@ impl<'admitted> LiveGrantLease<'admitted> {
                     role: DurableRole::GrantActiveBarrier,
                 });
             }
-            let barrier =
-                accept_barrier(barrier, &owner, &decision, &members, ACTIVE_BARRIER_SUFFIX)?;
+            let barrier = accept_barrier(
+                barrier,
+                &owner,
+                &decision,
+                &members,
+                ACTIVE_BARRIER_SUFFIX,
+                None,
+            )?;
             let authority = ParentAuthority {
                 journal_id: self.access.store().journal_id().to_owned(),
                 root_id: self.access.store().root_id().to_owned(),
@@ -734,11 +733,12 @@ impl<'admitted> LiveGrantLease<'admitted> {
                 .all(|candidate| !table.contains_key(candidate.as_str()))
         });
         match establish_committed(
+            self.access.store(),
+            self.access.locks(),
             self.access.dirs(),
             authority.serial,
             &link,
             claim_released,
-            self.access.locks().days(),
         )? {
             Committed::Yes => {}
             Committed::No { reason } => return Ok(Authorization::Denied { reason }),
@@ -883,14 +883,26 @@ pub(crate) enum Committed {
 /// The exact visible terminal during the cleanup window, or the post-eviction
 /// nonempty-committed clearance vector once the claim is released.
 pub(crate) fn establish_committed(
+    store: &ConvergenceStore,
+    locks: &DayLockSet,
     dirs: &StoreDirs,
     serial: u64,
     link: &crate::schema::OwnerIntentLink,
     claim_released: bool,
-    days: &std::collections::BTreeSet<DayKey>,
 ) -> Result<Committed, ConvergenceError> {
     if let Some(terminal) = crate::terminal::read_terminal(dirs, serial)? {
-        let terminal = match crate::terminal::accept_terminal(terminal, link) {
+        let (expected_resolved, expected_adoption_ids) =
+            match crate::terminal::expected_terminal_values(store, locks, dirs, locks.days()) {
+                Ok(values) => values,
+                Err(ConvergenceError::Unknown { role }) => return Ok(Committed::Unknown { role }),
+                Err(error) => return Err(error),
+            };
+        let terminal = match crate::terminal::accept_terminal(
+            terminal,
+            link,
+            &expected_resolved,
+            &expected_adoption_ids,
+        ) {
             Ok((terminal, _digest)) => terminal,
             Err(ConvergenceError::Unknown { role }) => return Ok(Committed::Unknown { role }),
             Err(error) => return Err(error),
@@ -925,7 +937,7 @@ pub(crate) fn establish_committed(
             role: DurableRole::ClearanceBarrier,
         });
     }
-    for day in days {
+    for day in locks.days() {
         let Some(member) = crate::terminal::read_clearance_member(dirs, day)? else {
             return Ok(Committed::Unknown {
                 role: DurableRole::ClearanceMember,

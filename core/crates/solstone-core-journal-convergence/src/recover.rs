@@ -168,7 +168,7 @@ impl Admitted {
                 verdict,
             });
         }
-        let (awaiting, terminal_outcome) = classify_terminal_polarity(self, &dirs, &locks);
+        let (awaiting, terminal_outcome) = classify_terminal_polarity(self, &dirs);
         drop(locks);
         Ok(RecoveryReport {
             days,
@@ -298,12 +298,55 @@ impl Admitted {
         }
         Ok(CleanupOutcome { released_serials })
     }
+
+    /// Publish an owner-free superseded terminal when a non-decisioned intent
+    /// has an exact descendant vector. This is deliberately separate from
+    /// [`Self::inspect`]: recovery publication, eviction, and claim release
+    /// are durable writes.
+    pub fn publish_owner_free_superseded(
+        &self,
+    ) -> Result<Option<crate::permit::TerminalReceipt>, ConvergenceError> {
+        self.store.revalidate()?;
+        let dirs = open_store_dirs(self.store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        let locks = acquire_days_with_timeout(
+            &dirs,
+            self.days(),
+            self.store.journal_id(),
+            self.store.root_id(),
+            self.store.object_identity(),
+            self.lock_timeout(),
+        )?;
+        let table = crate::claim::current_table(&self.store, &dirs)?;
+        let Some(serial) = crate::claim::shared_serial(&table, self.days()) else {
+            drop(locks);
+            return Ok(None);
+        };
+        let intent = read_intent(&dirs, serial)?.ok_or(ConvergenceError::Unknown {
+            role: DurableRole::Intent,
+        })?;
+        let has_decision = crate::access::with_registry(&dirs, self.lock_timeout(), |section| {
+            Ok(crate::decision::load_decision(section, serial)?.is_some())
+        })?;
+        if has_decision {
+            drop(locks);
+            return Err(ConvergenceError::Refused(Refusal::Superseded));
+        }
+        let result = crate::terminal::publish_no_permit_superseded(
+            &self.store,
+            &locks,
+            &dirs,
+            &intent,
+            self.days(),
+        );
+        drop(locks);
+        result
+    }
 }
 
 fn classify_terminal_polarity(
     admitted: &Admitted,
     dirs: &crate::init::StoreDirs,
-    locks: &crate::lock::DayLockSet,
 ) -> (Option<AwaitingOwnerDecision>, Option<TerminalOutcome>) {
     let Ok(table) = crate::claim::current_table(&admitted.store, dirs) else {
         return (None, None);
@@ -317,29 +360,15 @@ fn classify_terminal_polarity(
     if let Ok(Some(terminal)) = crate::terminal::read_terminal(dirs, serial) {
         return (None, crate::permit::parse_outcome(&terminal.outcome));
     }
-    let days = admitted.days();
-    match crate::terminal::publish_no_permit_superseded(&admitted.store, locks, dirs, &intent, days)
-    {
-        Ok(Some(receipt)) => (None, Some(receipt.outcome)),
-        Ok(None) => (
-            Some(AwaitingOwnerDecision {
-                serial,
-                intent_digest: intent.intent_digest,
-                days: days.to_vec(),
-                stage: AwaitingStage::AfterProjection,
-            }),
-            None,
-        ),
-        Err(_) => (
-            Some(AwaitingOwnerDecision {
-                serial,
-                intent_digest: intent.intent_digest,
-                days: days.to_vec(),
-                stage: AwaitingStage::AfterProjection,
-            }),
-            None,
-        ),
-    }
+    (
+        Some(AwaitingOwnerDecision {
+            serial,
+            intent_digest: intent.intent_digest,
+            days: admitted.days().to_vec(),
+            stage: AwaitingStage::AfterProjection,
+        }),
+        None,
+    )
 }
 
 fn historical_clearance_outcome(
@@ -1378,12 +1407,17 @@ mod tests {
 
     #[test]
     fn recovery_report_is_read_only_and_releases_locks() {
-        let (_temporary, admitted) = admit_days("report", &["20260823"]);
+        let (temporary, admitted) = admit_days("report", &["20260823"]);
         let held = continue_ok(&admitted);
         drop(held);
+        let before = crate::test_support::snapshot_tree(&temporary.journal_path());
         let report = admitted.inspect().unwrap();
         let cloned = report.clone();
         assert_eq!(report, cloned);
+        assert_eq!(
+            before,
+            crate::test_support::snapshot_tree(&temporary.journal_path())
+        );
         let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let _held = admitted.begin(owner).unwrap();
     }

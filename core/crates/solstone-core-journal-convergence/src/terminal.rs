@@ -39,6 +39,10 @@ pub(crate) enum DayClass {
     Unresolved,
 }
 
+/// The exact base record/head/witness and adoption identities an in-flight
+/// terminal must carry under a live day lease.
+pub(crate) type TerminalValues = (BTreeMap<String, ResolvedDay>, BTreeMap<String, String>);
+
 pub(crate) fn classify_day(
     store: &ConvergenceStore,
     locks: &DayLockSet,
@@ -137,6 +141,39 @@ fn load_resolved_day(
         witness_digest: digest_value(&witness)?.as_hex().to_owned(),
         record_digest: snapshot.digest.as_hex().to_owned(),
     })
+}
+
+/// Recompute the base-owned values an exact visible terminal must bind. The
+/// terminal is authoritative only when its resolved record/head/witness and
+/// adoption identities agree with the still-held day lease.
+pub(crate) fn expected_terminal_values(
+    store: &ConvergenceStore,
+    locks: &DayLockSet,
+    dirs: &StoreDirs,
+    days: &std::collections::BTreeSet<DayKey>,
+) -> Result<TerminalValues, ConvergenceError> {
+    let mut resolved = BTreeMap::new();
+    let mut adoption_ids = BTreeMap::new();
+    for day in days {
+        resolved.insert(
+            day.as_str().to_owned(),
+            load_resolved_day(store, locks, day)?,
+        );
+        let adoption = load_adoption(dirs, day)?.ok_or(ConvergenceError::Unknown {
+            role: DurableRole::Adoption,
+        })?;
+        if adoption.journal_id != store.journal_id()
+            || adoption.root_id != store.root_id()
+            || adoption.day != day.as_str()
+            || adoption.adoption_id.is_empty()
+        {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::Adoption,
+            });
+        }
+        adoption_ids.insert(day.as_str().to_owned(), adoption.adoption_id);
+    }
+    Ok((resolved, adoption_ids))
 }
 
 pub(crate) fn publish_from_permit(
@@ -814,6 +851,8 @@ pub(crate) fn read_terminal(
 pub(crate) fn accept_terminal(
     terminal: Terminal,
     link: &crate::schema::OwnerIntentLink,
+    expected_resolved: &BTreeMap<String, ResolvedDay>,
+    expected_adoption_ids: &BTreeMap<String, String>,
 ) -> Result<(Terminal, RecordDigest), ConvergenceError> {
     let expected_days = &link.day_set;
     if terminal.role != ROLE_TERMINAL
@@ -824,21 +863,8 @@ pub(crate) fn accept_terminal(
         || terminal.owner_binding_digest != link.owner_binding_digest
         || terminal.intent_digest != link.intent_digest
         || terminal.day_set != *expected_days
-        || terminal.resolved.len() != expected_days.len()
-        || terminal.adoption_ids.len() != expected_days.len()
-        || expected_days
-            .iter()
-            .any(|day| !terminal.resolved.contains_key(day))
-        || expected_days
-            .iter()
-            .any(|day| !terminal.adoption_ids.contains_key(day))
-        || terminal.resolved.values().any(|resolved| {
-            resolved.record_revision == 0
-                || resolved.head_digest.is_empty()
-                || resolved.witness_digest.is_empty()
-                || resolved.record_digest.is_empty()
-        })
-        || terminal.adoption_ids.values().any(String::is_empty)
+        || terminal.resolved != *expected_resolved
+        || terminal.adoption_ids != *expected_adoption_ids
     {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::Terminal,
@@ -920,9 +946,11 @@ mod tests {
 
     fn assert_terminal_unknown(mutate: impl FnOnce(&mut Terminal)) {
         let (_temporary, mut terminal, link) = exact_terminal();
+        let expected_resolved = terminal.resolved.clone();
+        let expected_adoption_ids = terminal.adoption_ids.clone();
         mutate(&mut terminal);
         assert!(matches!(
-            accept_terminal(terminal, &link),
+            accept_terminal(terminal, &link, &expected_resolved, &expected_adoption_ids),
             Err(ConvergenceError::Unknown {
                 role: DurableRole::Terminal
             })
@@ -933,7 +961,14 @@ mod tests {
     fn accept_terminal_accepts_exact_record() {
         let (_temporary, terminal, link) = exact_terminal();
         assert_eq!(
-            accept_terminal(terminal.clone(), &link).unwrap().0,
+            accept_terminal(
+                terminal.clone(),
+                &link,
+                &terminal.resolved,
+                &terminal.adoption_ids,
+            )
+            .unwrap()
+            .0,
             terminal
         );
     }
@@ -975,5 +1010,23 @@ mod tests {
     #[test]
     fn accept_terminal_rejects_digest_mismatch() {
         assert_terminal_unknown(|terminal| terminal.terminal_digest = "00".repeat(32));
+    }
+
+    #[test]
+    fn accept_terminal_rejects_substituted_self_consistent_resolved_map() {
+        let (_temporary, mut terminal, link) = exact_terminal();
+        let expected_resolved = terminal.resolved.clone();
+        let expected_adoption_ids = terminal.adoption_ids.clone();
+        terminal.resolved.get_mut("20260823").unwrap().record_digest = "44".repeat(32);
+        terminal.terminal_digest = digest_value_excluding(&terminal, "terminal_digest")
+            .unwrap()
+            .as_hex()
+            .to_owned();
+        assert!(matches!(
+            accept_terminal(terminal, &link, &expected_resolved, &expected_adoption_ids),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::Terminal
+            })
+        ));
     }
 }

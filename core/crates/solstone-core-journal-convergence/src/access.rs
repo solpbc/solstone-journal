@@ -273,19 +273,13 @@ pub(crate) fn lock_trace() -> Vec<&'static str> {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::claim::mechanical_finalize;
     use crate::lock::{acquire_days_with_timeout, hold_topology_with_timeout};
     use crate::test_support::{admit_days, continue_ok};
 
-    fn trace_claim_path(admitted: &Admitted) {
+    fn trace_claim_read_path(admitted: &Admitted) {
         initialize_lock_trace();
         let access = ResolverAccess::acquire(admitted).unwrap();
-        {
-            let topology =
-                hold_topology_with_timeout(access.dirs(), admitted.lock_timeout()).unwrap();
-            let _view = mechanical_finalize(access.store(), access.dirs()).unwrap();
-            drop(topology);
-        }
+        let _view = access.read_claim().unwrap();
         access.with_registry(|_| Ok(())).unwrap();
         assert_eq!(lock_trace(), vec!["day", "topology", "registry"]);
     }
@@ -316,7 +310,7 @@ mod tests {
     #[test]
     fn claim_read_path_releases_global_before_registry() {
         let (_temporary, admitted) = admit_days("access-claim-read", &["20260823"]);
-        trace_claim_path(&admitted);
+        trace_claim_read_path(&admitted);
     }
 
     #[test]
@@ -324,7 +318,11 @@ mod tests {
         let (_temporary, admitted) = admit_days("access-claim-head", &["20260823"]);
         let held = continue_ok(&admitted);
         drop(held);
-        trace_claim_path(&admitted);
+        initialize_lock_trace();
+        let access = ResolverAccess::acquire(&admitted).unwrap();
+        let _view = access.finalize_claim_head().unwrap();
+        access.with_registry(|_| Ok(())).unwrap();
+        assert_eq!(lock_trace(), vec!["day", "topology", "registry"]);
     }
 
     #[test]
