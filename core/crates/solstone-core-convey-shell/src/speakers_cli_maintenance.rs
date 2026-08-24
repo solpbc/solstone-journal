@@ -269,7 +269,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             }
         };
     let mut processed = 0usize;
-    let mut errors = Vec::new();
+    let mut error_segments = Vec::new();
     let mut speakers = BTreeSet::new();
     for segment in &plan.to_process {
         match solstone_core_speaker_resolve::backfill::resolve_backfill_segment(
@@ -277,44 +277,71 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             segment,
             Utc::now().timestamp_millis(),
         ) {
-            Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output)) => {
-                for label in &output.labels {
-                    if let Some(speaker) = &label.speaker {
-                        speakers.insert(speaker.clone());
+            Ok(outcome) => {
+                let (checkpoint_outcome, error_detail) =
+                    solstone_core_speaker_resolve::backfill::classify_backfill_outcome(&outcome);
+                match checkpoint_outcome {
+                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Processed => {
+                        let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = outcome else {
+                            unreachable!("processed backfill outcome is resolved");
+                        };
+                        for label in &output.labels {
+                            if let Some(speaker) = &label.speaker {
+                                speakers.insert(speaker.clone());
+                            }
+                        }
+                        let metadata = metadata(&output);
+                        if commit {
+                            if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
+                                &segment.path,
+                                labels(&output),
+                                &metadata,
+                            ) {
+                                error_segments.push(backfill_error_segment(segment, error.to_string()));
+                                continue;
+                            }
+                            if output.source.is_some()
+                                && let Err(error) = accumulate(
+                                    &root.0,
+                                    &segment.path,
+                                    &segment.day,
+                                    &segment.stream,
+                                    &segment.segment_key,
+                                    &output,
+                                    Utc::now().timestamp_millis(),
+                                )
+                            {
+                                error_segments.push(backfill_error_segment(segment, error.to_string()));
+                                continue;
+                            }
+                        }
+                        processed += 1;
+                    }
+                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Skipped => processed += 1,
+                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Error => {
+                        error_segments.push(backfill_error_segment(
+                            segment,
+                            error_detail.expect("error checkpoint retains a detail"),
+                        ));
                     }
                 }
-                let metadata = metadata(&output);
-                if commit {
-                    if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
-                        &segment.path,
-                        labels(&output),
-                        &metadata,
-                    ) {
-                        errors.push(format!("{}: {error}", segment.segment_key));
-                        continue;
-                    }
-                    if output.source.is_some()
-                        && let Err(error) = accumulate(
-                            &root.0,
-                            &segment.path,
-                            &segment.day,
-                            &segment.stream,
-                            &segment.segment_key,
-                            &output,
-                            Utc::now().timestamp_millis(),
-                        )
-                    {
-                        errors.push(format!("{}: {error}", segment.segment_key));
-                        continue;
-                    }
-                }
-                processed += 1;
             }
-            Ok(_) => processed += 1,
-            Err(error) => errors.push(format!("{}: {error}", segment.segment_key)),
+            Err(error) => error_segments.push(backfill_error_segment(segment, error.to_string())),
         }
     }
-    Json(json!({"total_segments":plan.total_segments,"total_eligible":plan.total_eligible,"already_labeled":plan.already_labeled,"processed":processed,"skipped_no_embed":plan.skipped_no_embed,"errors":errors,"speakers_seen":speakers})).into_response()
+    Json(json!({"total_segments":plan.total_segments,"total_eligible":plan.total_eligible,"already_labeled":plan.already_labeled,"processed":processed,"skipped_no_embed":plan.skipped_no_embed,"error_segments":error_segments,"speakers_seen":speakers})).into_response()
+}
+
+fn backfill_error_segment(
+    segment: &solstone_core_speaker_resolve::backfill::BackfillSegment,
+    detail: String,
+) -> Value {
+    json!({
+        "day": segment.day,
+        "stream": segment.stream,
+        "segment_key": segment.segment_key,
+        "detail": detail,
+    })
 }
 
 pub async fn backfill_last_seen(

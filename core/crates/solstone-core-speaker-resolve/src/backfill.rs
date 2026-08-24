@@ -18,6 +18,7 @@ use crate::backfill_operations::{
     fold_backfill_operation, load_backfill_operations,
 };
 use crate::bootstrap::scan_segments;
+use crate::owner_admission::OWNER_IDENTITY_INVALID_REASON;
 use crate::resolve::{ResolveError, ResolveOutcome, resolve};
 
 /// Classification used by default backfill selection for an existing label payload.
@@ -163,6 +164,23 @@ pub fn resolve_backfill_segment(
     )?)
 }
 
+/// Classify a native resolution outcome for backfill checkpointing.
+#[must_use]
+pub fn classify_backfill_outcome(
+    outcome: &ResolveOutcome,
+) -> (BackfillCheckpointOutcome, Option<String>) {
+    match outcome {
+        ResolveOutcome::Resolved(_) => (BackfillCheckpointOutcome::Processed, None),
+        ResolveOutcome::IdentityInvalid => (
+            BackfillCheckpointOutcome::Error,
+            Some(OWNER_IDENTITY_INVALID_REASON.to_owned()),
+        ),
+        ResolveOutcome::NoOwnerCentroid
+        | ResolveOutcome::SegmentMissing
+        | ResolveOutcome::Empty { .. } => (BackfillCheckpointOutcome::Skipped, None),
+    }
+}
+
 /// Execute or resume one durable backfill operation without rewriting its snapshot.
 pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, BackfillError> {
     let _trust = hold_entity_trust_lock(&request.journal_root)?;
@@ -222,11 +240,13 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
         };
         let (outcome, error_detail) =
             match resolve_backfill_segment(&request.journal_root, &segment, request.now_ms) {
-                Ok(ResolveOutcome::Resolved(output)) => {
-                    write_resolved_backfill_labels(&segment.path, &output)?;
-                    (BackfillCheckpointOutcome::Processed, None)
+                Ok(resolved) => {
+                    let classification = classify_backfill_outcome(&resolved);
+                    if let ResolveOutcome::Resolved(output) = resolved {
+                        write_resolved_backfill_labels(&segment.path, &output)?;
+                    }
+                    classification
                 }
-                Ok(_) => (BackfillCheckpointOutcome::Skipped, None),
                 Err(error) => (BackfillCheckpointOutcome::Error, Some(error.to_string())),
             };
         append_backfill_event(

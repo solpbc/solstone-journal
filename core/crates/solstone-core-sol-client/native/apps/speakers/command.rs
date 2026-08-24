@@ -1696,7 +1696,7 @@ fn render_backfill(out: &mut String, stats: &Value, elapsed: f64) {
             );
         }
     }
-    render_errors_limited(out, stats.get("errors"), 10);
+    render_backfill_errors(out, stats.get("error_segments"), 10);
 }
 
 fn render_backfill_last_seen(out: &mut String, stats: &Value) {
@@ -2097,12 +2097,21 @@ fn render_errors(out: &mut String, value: Option<&Value>) {
     }
 }
 
-fn render_errors_limited(out: &mut String, value: Option<&Value>, limit: usize) {
+fn render_backfill_errors(out: &mut String, value: Option<&Value>, limit: usize) {
     let errors = value.and_then(Value::as_array).cloned().unwrap_or_default();
     if !errors.is_empty() {
         emit(out, format!("\nErrors ({}):", errors.len()));
         for error in errors.iter().take(limit) {
-            emit(out, format!("  {}", value_to_string(Some(error))));
+            emit(
+                out,
+                format!(
+                    "  {}/{}/{}: {}",
+                    value_to_string(error.get("day")),
+                    value_to_string(error.get("stream")),
+                    value_to_string(error.get("segment_key")),
+                    value_to_string(error.get("detail")),
+                ),
+            );
         }
         if errors.len() > limit {
             emit(out, format!("  ... and {} more", errors.len() - limit));

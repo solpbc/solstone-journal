@@ -14,11 +14,12 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
+use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
 use tower::ServiceExt;
 
 use super::support::{
     PERSON_ADMISSION_DAY, PERSON_ADMISSION_SEGMENT, PERSON_ADMISSION_SOURCE,
-    PERSON_ADMISSION_STREAM, PersonAdmissionMode, build_person_admission_journal,
+    PERSON_ADMISSION_STREAM, PersonAdmissionMode, build_person_admission_journal, snapshot_files,
 };
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -290,6 +291,33 @@ async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_wr
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(response["status"], "assigned");
     assert_eq!(response["speaker"], "owner");
+}
+
+#[tokio::test]
+async fn backfill_reports_invalid_owner_as_a_structured_error_without_writes() {
+    let journal = build_person_admission_journal(PersonAdmissionMode::MissingTypePrincipal);
+    let before = snapshot_files(journal.root());
+
+    let (status, response) = call(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/backfill",
+        json!({"commit":true,"reattribute":true}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["processed"], 0, "{response}");
+    assert_eq!(response["skipped_no_embed"], 0, "{response}");
+    assert_eq!(
+        response["error_segments"],
+        json!([{
+            "day": PERSON_ADMISSION_DAY,
+            "stream": PERSON_ADMISSION_STREAM,
+            "segment_key": PERSON_ADMISSION_SEGMENT,
+            "detail": OWNER_IDENTITY_INVALID_REASON,
+        }])
+    );
+    assert_eq!(snapshot_files(journal.root()), before);
 }
 
 #[tokio::test]

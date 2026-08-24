@@ -38,3 +38,5 @@ pub mod speaker_review_candidates;
 pub mod voiceprint_accumulation;
 pub mod voiceprint_centroid;
 pub mod voiceprint_metadata;
+
+pub use owner_admission::OWNER_IDENTITY_INVALID_REASON;

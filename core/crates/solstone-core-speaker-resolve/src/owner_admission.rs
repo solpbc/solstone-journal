@@ -10,6 +10,9 @@ use solstone_core_entity::{
     JournalEntity, is_admissible_person, read_entity_identity, read_identity_map,
 };
 
+/// Machine-readable reason for an inadmissible configured owner identity.
+pub const OWNER_IDENTITY_INVALID_REASON: &str = "speaker_owner_identity_invalid";
+
 /// The one configured owner identity that is safe to use for speaker artifacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnerAdmission {
