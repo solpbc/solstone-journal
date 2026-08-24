@@ -857,6 +857,44 @@ fn dismissal_suppressed(root: &Path, members: &[Member]) -> Result<bool, String>
     }))
 }
 
+impl Member {
+    fn segment(&self) -> (String, String, String, &'static str) {
+        (
+            self.day.clone(),
+            self.stream.clone(),
+            self.segment_key.clone(),
+            self.layout.flag(),
+        )
+    }
+}
+
+fn layout_from_flag(flag: &str) -> SegmentLayout {
+    match flag {
+        "direct" => SegmentLayout::Direct,
+        _ => SegmentLayout::Named,
+    }
+}
+
+fn resolved_segment_dir(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    layout: SegmentLayout,
+) -> Option<PathBuf> {
+    match lookup_segment(
+        root,
+        day,
+        stream,
+        segment_key,
+        Ok(layout),
+        DirectSupport::Allow,
+    ) {
+        SegmentLookup::Present(path) => Some(path),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -955,43 +993,5 @@ mod tests {
             vec![("person".to_owned(), vec!["speakers".to_owned()])]
         );
         assert!(gaps.is_empty());
-    }
-}
-
-impl Member {
-    fn segment(&self) -> (String, String, String, &'static str) {
-        (
-            self.day.clone(),
-            self.stream.clone(),
-            self.segment_key.clone(),
-            self.layout.flag(),
-        )
-    }
-}
-
-fn layout_from_flag(flag: &str) -> SegmentLayout {
-    match flag {
-        "direct" => SegmentLayout::Direct,
-        _ => SegmentLayout::Named,
-    }
-}
-
-fn resolved_segment_dir(
-    root: &Path,
-    day: &str,
-    stream: &str,
-    segment_key: &str,
-    layout: SegmentLayout,
-) -> Option<PathBuf> {
-    match lookup_segment(
-        root,
-        day,
-        stream,
-        segment_key,
-        Ok(layout),
-        DirectSupport::Allow,
-    ) {
-        SegmentLookup::Present(path) => Some(path),
-        _ => None,
     }
 }
