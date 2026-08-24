@@ -642,8 +642,8 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 88232,
-        "body_sha256": "52b2cacb71bfff1f0e9ac622f9a0a7534d67de7e76de5b5afd39bd0a7b048221",
+        "body_bytes": 85568,
+        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -663,8 +663,8 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 19649,
-        "body_sha256": "d66fdda8df4676a00100c0ad9a534193f3cc489de61e3ffa8d574af7025568f2",
+        "body_bytes": 19583,
+        "body_sha256": "9032b091ba7998aeb9baeff7ac390d805f408daa07a76f09421d30287ab7e677",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -1277,8 +1277,8 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 88232,
-        "body_sha256": "52b2cacb71bfff1f0e9ac622f9a0a7534d67de7e76de5b5afd39bd0a7b048221",
+        "body_bytes": 85568,
+        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1298,8 +1298,8 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 19649,
-        "body_sha256": "d66fdda8df4676a00100c0ad9a534193f3cc489de61e3ffa8d574af7025568f2",
+        "body_bytes": 19583,
+        "body_sha256": "9032b091ba7998aeb9baeff7ac390d805f408daa07a76f09421d30287ab7e677",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",

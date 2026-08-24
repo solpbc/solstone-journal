@@ -17,7 +17,6 @@ params = [
   { name = "media", kind = "argument", type = "text", required = false, nargs = 1, multiple = false, options = ["media"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "extra", kind = "argument", type = "text", required = false, nargs = -1, multiple = false, options = ["extra"], secondary = [], hidden = true, is_flag = false, count = false },
   { name = "timestamp", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--timestamp"], secondary = [], hidden = false, is_flag = false, count = false },
-  { name = "facet", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--facet"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "setting", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--setting"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "source", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--source"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "force", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--force"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },

@@ -23,7 +23,6 @@
     uploaded_at: 'uploaded at',
     detected_time: 'detected time',
     import_time: 'import time',
-    facet: 'facet',
     facets: 'facets',
     setting: 'setting',
     status: 'status',
@@ -329,7 +328,6 @@
       kvRow(strings.uploaded_at, formatDateTime(importJson.upload_datetime)),
       kvRow(strings.detected_time, formatTimestamp(importJson.detected_timestamp)),
       kvRow(strings.import_time, formatTimestamp(importJson.user_timestamp)),
-      kvRow(strings.facet, importJson.facet),
       kvRow(strings.setting, importJson.setting)
     ]);
   }
