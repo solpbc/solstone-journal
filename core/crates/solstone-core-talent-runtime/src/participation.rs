@@ -112,10 +112,21 @@ pub fn apply_result(
             }
         }
     }
+    let admitted_entity_ids = solstone_core_entity::load_all_journal_entities(journal)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(solstone_core_entity::is_admissible_person)
+        .map(|entity| entity.id)
+        .collect::<BTreeSet<_>>();
     let mut attributed = BTreeSet::new();
     let mut named_speakers = Vec::new();
     for segment in segments {
-        attributed.extend(attributed_entity_ids(journal, day, segment));
+        attributed.extend(attributed_entity_ids(
+            journal,
+            day,
+            segment,
+            &admitted_entity_ids,
+        ));
         named_speakers.extend(named_speakers_for_segment(journal, day, segment));
     }
     for entry in &mut resolved {
@@ -128,10 +139,6 @@ pub fn apply_result(
             continue;
         }
         let entity_id = entry.get("entity_id").and_then(Value::as_str);
-        let entry_name = entry
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
         let corroborated = entity_id.is_some_and(|id| attributed.contains(id))
             || name_resolves_to(
                 &SpeakerEvidence {
@@ -141,9 +148,9 @@ pub fn apply_result(
                     day,
                     record_id,
                     names: &named_speakers,
+                    admitted_entity_ids: &admitted_entity_ids,
                 },
                 entity_id,
-                entry_name,
             )?;
         if !corroborated {
             entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
@@ -191,12 +198,12 @@ struct SpeakerEvidence<'a> {
     day: &'a str,
     record_id: &'a str,
     names: &'a [String],
+    admitted_entity_ids: &'a BTreeSet<String>,
 }
 
 fn name_resolves_to(
     evidence: &SpeakerEvidence<'_>,
     entity_id: Option<&str>,
-    entry_name: &str,
 ) -> Result<bool, String> {
     for name in evidence.names {
         let result = solstone_core_entity::record_entity_resolution(
@@ -212,13 +219,11 @@ fn name_resolves_to(
         if result.outcome == solstone_core_entity::EntityResolutionOutcome::Ambiguous {
             continue;
         }
-        if entity_id.is_some_and(|id| resolved_id(&result, evidence.entities).as_str() == Some(id))
-        {
-            return Ok(true);
-        }
-        if result.outcome == solstone_core_entity::EntityResolutionOutcome::NoMatch
-            && !entry_name.is_empty()
-            && name.to_lowercase() == entry_name.to_lowercase()
+        let resolved_id = resolved_id(&result, evidence.entities);
+        if entity_id.is_some_and(|id| resolved_id.as_str() == Some(id))
+            && resolved_id
+                .as_str()
+                .is_some_and(|id| evidence.admitted_entity_ids.contains(id))
         {
             return Ok(true);
         }
@@ -232,13 +237,19 @@ fn meeting_detected(journal: &std::path::Path, day: &str, segment: &str) -> bool
         .unwrap_or(false)
 }
 
-fn attributed_entity_ids(journal: &std::path::Path, day: &str, segment: &str) -> BTreeSet<String> {
+fn attributed_entity_ids(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    admitted_entity_ids: &BTreeSet<String>,
+) -> BTreeSet<String> {
     segment_talent_json(journal, day, segment, "speaker_labels.json")
         .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
         .unwrap_or_default()
         .iter()
         .filter_map(|label| label.get("speaker").and_then(Value::as_str))
         .filter(|speaker| !speaker.is_empty())
+        .filter(|speaker| admitted_entity_ids.contains(*speaker))
         .map(str::to_owned)
         .collect()
 }
@@ -267,7 +278,89 @@ fn segment_talent_json(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use serde_json::json;
+
     use super::*;
+
+    const DAY: &str = "20260101";
+    const FACET: &str = "work";
+    const SEGMENT: &str = "090000_60";
+
+    fn activity() -> Map<String, Value> {
+        json!({"id":"activity","segments":[SEGMENT]})
+            .as_object()
+            .expect("activity is an object")
+            .clone()
+    }
+
+    fn write_json(path: &Path, value: Value) {
+        fs::create_dir_all(path.parent().expect("fixture path has a parent"))
+            .expect("fixture parent");
+        fs::write(path, value.to_string()).expect("fixture JSON");
+    }
+
+    fn write_entity(root: &Path, id: &str, name: &str, entity_type: &str) {
+        write_json(
+            &root.join(format!("entities/{id}/entity.json")),
+            json!({"id":id,"name":name,"type":entity_type}),
+        );
+    }
+
+    fn write_participation_fixture(root: &Path, labels: Value, speakers: Value) {
+        write_entity(root, "person", "Ada Lovelace", "Person");
+        write_entity(root, "tool", "Deploy Bot", "Tool");
+        write_entity(root, "project", "Atlas", "Project");
+        let detected = [
+            json!({"id":"person","name":"Ada Lovelace","type":"Person"}),
+            json!({"id":"tool","name":"Deploy Bot","type":"Tool"}),
+            json!({"id":"project","name":"Atlas","type":"Project"}),
+        ]
+        .into_iter()
+        .map(|entry| entry.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let detected_path = root.join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
+        fs::create_dir_all(detected_path.parent().expect("detected parent"))
+            .expect("detected directory");
+        fs::write(detected_path, format!("{detected}\n")).expect("detected entities");
+        let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        fs::create_dir_all(activity_path.parent().expect("activity parent"))
+            .expect("activity directory");
+        let activity_line = json!({"id":"activity","segments":[SEGMENT]}).to_string();
+        fs::write(activity_path, format!("{activity_line}\n")).expect("activity");
+        let talents = root.join(format!("chronicle/{DAY}/{SEGMENT}/talents"));
+        fs::create_dir_all(&talents).expect("talents directory");
+        write_json(
+            talents.join("sense.json").as_path(),
+            json!({"meeting_detected":true}),
+        );
+        write_json(talents.join("speaker_labels.json").as_path(), labels);
+        write_json(talents.join("speakers.json").as_path(), speakers);
+    }
+
+    fn apply(root: &Path, entry: Value) -> Value {
+        apply_result(
+            root,
+            &json!({"participation":[entry]}).to_string(),
+            FACET,
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(activity_path)
+                .expect("activity reads")
+                .lines()
+                .next()
+                .expect("activity row"),
+        )
+        .expect("activity parses");
+        activity["participation"][0].clone()
+    }
 
     #[test]
     fn missing_segment_resolution_is_non_creating() {
@@ -276,5 +369,69 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert!(find_segment_dir(root.path(), "20260101", "090000_60", None).is_none());
         assert!(!root.path().join("chronicle/20260101").exists());
+    }
+
+    #[test]
+    fn speaker_labeled_tool_demotes_to_mentioned() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(
+            root.path(),
+            json!({"labels":[{"speaker":"tool"}]}),
+            json!([]),
+        );
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Deploy Bot","role":"attendee","source":"speaker_label"}),
+        );
+
+        assert_eq!(entry["entity_id"], "tool");
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn raw_named_project_demotes_to_mentioned() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!(["Atlas"]));
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Atlas","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], "project");
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn speaker_labeled_person_remains_corroborated() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(
+            root.path(),
+            json!({"labels":[{"speaker":"person"}]}),
+            json!([]),
+        );
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"speaker_label"}),
+        );
+
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["role"], "attendee");
+    }
+
+    #[test]
+    fn non_speaker_tool_reference_keeps_generic_resolution() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Deploy Bot","role":"attendee","source":"manual"}),
+        );
+
+        assert_eq!(entry["entity_id"], "tool");
+        assert_eq!(entry["role"], "attendee");
     }
 }
