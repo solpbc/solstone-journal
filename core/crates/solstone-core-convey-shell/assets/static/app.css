@@ -1,6 +1,6 @@
 /**
  * App System Styles
- * Styles for the app.html template system (facet bar, menu bar, etc.)
+ * Styles for the app.html template system (facet bar and shared chrome)
  */
 
 /* ========================================
@@ -16,8 +16,8 @@
   view-transition-name: facet-bar;
 }
 
-.menu-bar {
-  view-transition-name: menu-bar;
+#app-rail {
+  view-transition-name: app-rail;
 }
 
 .workspace {
@@ -47,8 +47,8 @@
 /* Keep structural elements stable (no animation) */
 ::view-transition-old(facet-bar),
 ::view-transition-new(facet-bar),
-::view-transition-old(menu-bar),
-::view-transition-new(menu-bar),
+::view-transition-old(app-rail),
+::view-transition-new(app-rail),
 ::view-transition-old(corner-tags),
 ::view-transition-new(corner-tags),
 ::view-transition-old(notification-center),
@@ -81,12 +81,15 @@ html {
 
   /* Layout dimensions */
   --facet-bar-height: 64px;
-  --menu-bar-width-minimal: 60px;
-  --menu-bar-width-full: 200px;
+  --app-rail-width: 72px;
+  --app-dock-height: 64px;
+  --status-instrument-inset: 20px;
+  --status-instrument-size: 44px;
+  --chrome-gap: 12px;
   --status-pane-width: 280px;
 
   /* Z-index hierarchy (increasing order) */
-  --z-bars: 100;          /* Facet bar, menu bar */
+  --z-bars: 100;          /* Facet bar, rail, dock */
   --z-modals: 200;        /* Modal overlays */
   --z-notifications: 300; /* Notifications, status pane, error log */
   --z-tags: 400;          /* Corner tags - topmost layer */
@@ -106,9 +109,8 @@ body {
 }
 
 .workspace {
-  margin-top: var(--facet-bar-height);
   padding-top: 8px;
-  margin-left: var(--menu-bar-width-minimal);
+  margin-left: var(--app-rail-width);
 }
 
 body.has-managed-dialog .workspace {
@@ -119,10 +121,6 @@ body.has-managed-dialog .workspace {
 [data-convey-active-dialog-host] {
   /* App workspace <style> blocks load after app.css at equal specificity. */
   z-index: var(--z-active-dialog) !important;
-}
-
-body.menu-full .workspace {
-  margin-left: var(--menu-bar-width-full);
 }
 
 /* Standard workspace containers */
@@ -149,47 +147,13 @@ body.menu-full .workspace {
   }
 }
 
-@media (max-width: 768px) {
-  .menu-bar {
-    width: 0;
-    overflow: hidden;
-  }
-
-  body.menu-full .menu-bar {
-    width: var(--menu-bar-width-full);
-    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.2);
-    z-index: calc(var(--z-bars) + 2);
-  }
-
-  .workspace {
-    margin-left: 0 !important;
-  }
-
-  .menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: calc(var(--z-bars) + 1);
-    background: rgba(0, 0, 0, 0.3);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
-
-  .menu-backdrop.visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
-/* Facet Bar (top) */
+/* In-flow facet strip */
 .facet-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  margin-left: var(--app-rail-width);
   background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
   z-index: var(--z-bars);
-  height: var(--facet-bar-height);
+  min-height: var(--facet-bar-height);
   padding: 14px 16px 12px 16px;
   overflow: visible;
   white-space: nowrap;
@@ -203,17 +167,12 @@ body.menu-full .workspace {
   content: '';
   position: absolute;
   bottom: 0;
-  left: var(--menu-bar-width-minimal);
+  left: 0;
   right: 0;
   height: 1px;
   background: var(--facet-border, #e5e0db);
-  transition: left 0.3s ease, background-color 0.3s ease;  /* right is instant */
+  transition: background-color 0.3s ease;
   pointer-events: none;
-}
-
-/* When sidebar open, border only where workspace is visible */
-body.menu-full .facet-bar::after {
-  left: var(--menu-bar-width-full);
 }
 
 /* When status pane open, stop border before it */
@@ -240,11 +199,19 @@ body:has(.status-pane.visible) .facet-bar::after {
   background: rgba(0, 0, 0, 0.10);
 }
 
-.facet-bar .status-icon {
+#status-instrument {
+  position: fixed;
+  top: var(--status-instrument-inset);
+  right: var(--status-instrument-inset);
+  width: var(--status-instrument-size);
+  height: var(--status-instrument-size);
+  z-index: var(--z-notifications);
+}
+
+#status-instrument .status-icon {
   font-size: 20px;
-  padding: 8px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 100%;
+  height: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -252,23 +219,22 @@ body:has(.status-pane.visible) .facet-bar::after {
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.2s;
-  margin-left: auto;
   position: relative;
 }
 
-.facet-bar .status-icon:hover {
+#status-instrument .status-icon:hover {
   background: rgba(0,0,0,0.05);
 }
 
-.facet-bar .status-icon:active {
+#status-instrument .status-icon:active {
   background: rgba(0, 0, 0, 0.10);
 }
 
-.facet-bar .status-icon[aria-expanded="true"] {
+#status-instrument .status-icon[aria-expanded="true"] {
   background: rgba(0, 0, 0, 0.08);
 }
 
-.facet-bar .status-icon.error {
+#status-instrument .status-icon.error {
   box-shadow: 0 0 4px 2px red;
   border-radius: 4px;
 }
@@ -278,23 +244,23 @@ body:has(.status-pane.visible) .facet-bar::after {
   display: block;
 }
 
-.facet-bar .status-icon .status-indicator {
+#status-instrument .status-icon .status-indicator {
   width: 22px;
   height: 22px;
 }
 
-/* Status Pane - slides down from facet bar on right (mirrors menu bar on left) */
+/* Status pane opens below the top-right instrument. */
 .status-pane {
   position: fixed;
-  top: var(--facet-bar-height);
-  right: 0;
+  top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap));
+  right: var(--status-instrument-inset);
   width: var(--status-pane-width);
   background: white;
   border-left: 1px solid var(--facet-border, #e5e0db);
   border-bottom: 1px solid var(--facet-border, #e5e0db);
-  border-radius: 0 0 0 12px;  /* Only bottom-left rounded */
+  border-radius: 12px;
   /* Shadow only on left and bottom - offset down to avoid top bleed */
-  box-shadow: -4px 4px 8px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.1);
   z-index: var(--z-notifications);
   overflow: hidden;  /* Clip content during animation */
 
@@ -315,7 +281,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   position: absolute;
   inset: 0;
   background: var(--facet-bg, transparent);
-  border-radius: 0 0 0 12px;
+  border-radius: 12px;
   pointer-events: none;
   z-index: -1;
 }
@@ -353,16 +319,16 @@ body:has(.status-pane.visible) .facet-bar::after {
   background: rgba(0, 0, 0, 0.08);
 }
 
-/* Diagnostic console opens on the left so it can coexist with the right-side status pane. */
-.diagnostic-console {
+/* Diagnostic console opens inside the wide-layout content rectangle. */
+#diagnostic-console {
   position: fixed;
-  top: var(--facet-bar-height);
-  left: 0;
+  top: var(--status-instrument-inset);
+  left: calc(var(--app-rail-width) + var(--chrome-gap));
   width: min(520px, calc(100vw - 24px));
   background: white;
   border-right: 1px solid var(--facet-border, #e5e0db);
   border-bottom: 1px solid var(--facet-border, #e5e0db);
-  border-radius: 0 0 12px 0;
+  border-radius: 12px;
   box-shadow: 4px 4px 8px -2px rgba(0, 0, 0, 0.1);
   z-index: var(--z-notifications);
   overflow: hidden;
@@ -371,14 +337,14 @@ body:has(.status-pane.visible) .facet-bar::after {
   transition: max-height 0.25s ease, opacity 0.25s ease;
 }
 
-.diagnostic-console.visible {
-  max-height: calc(100vh - var(--facet-bar-height) - 16px);
+#diagnostic-console.visible {
+  max-height: calc(100vh - var(--status-instrument-inset) - 16px);
   opacity: 1;
 }
 
 .diagnostic-console-content {
   padding: 16px;
-  max-height: calc(100vh - var(--facet-bar-height) - 48px);
+  max-height: calc(100vh - var(--status-instrument-inset) - 48px);
   overflow-y: auto;
 }
 
@@ -709,357 +675,205 @@ body:has(.status-pane.visible) .facet-bar::after {
   }
 }
 
-/* Menu Bar (left sidebar) */
-.menu-bar {
+/* App rail, dock, and launcher */
+#app-rail {
   position: fixed;
-  top: var(--facet-bar-height);
-  left: 0;
-  width: var(--menu-bar-width-minimal);
-  max-height: calc(100vh - var(--facet-bar-height));
-  background: var(--paper);
-  border-right: 1px solid var(--facet-border, #e5e0db); /* Container carries the border, not individual items */
-  z-index: calc(var(--z-bars) + 1);  /* Above facet bar */
-  transition: width 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, border-radius 0.3s ease;
-  overflow: hidden; /* Clip all content to rounded corner */
-  border-bottom-right-radius: 8px;
+  inset: 0 auto 0 0;
+  width: var(--app-rail-width);
+  padding: 12px 8px;
+  background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
+  border-right: 1px solid var(--facet-border, #e5e0db);
   box-shadow: 1px 0 3px rgba(0, 0, 0, 0.04);
+  z-index: calc(var(--z-bars) + 1);
   display: flex;
   flex-direction: column;
-}
-
-/* Scrollable container for menu items */
-.menu-bar .menu-items {
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;  /* Firefox */
-}
-
-ul.menu-items {
-  list-style: none;
-  margin: 0;
-  padding: 8px 0 4px;
-}
-
-.menu-bar .menu-items::-webkit-scrollbar {
-  display: none;  /* Chrome, Safari, Edge */
-}
-
-/* Scroll overflow shadows on .menu-items */
-.menu-bar .menu-items::before,
-.menu-bar .menu-items::after {
-  content: '';
-  display: block;
-  position: sticky;
-  left: 0;
-  right: 0;
-  height: 16px;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.menu-bar .menu-items::before {
-  top: 0;
-  margin-bottom: -16px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.06), transparent);
-}
-
-.menu-bar .menu-items::after {
-  bottom: 0;
-  margin-top: -16px;
-  background: linear-gradient(to top, rgba(0,0,0,0.06), transparent);
-}
-
-.menu-bar .menu-items.scroll-shadow-top::before {
-  opacity: 1;
-}
-
-.menu-bar .menu-items.scroll-shadow-bottom::after {
-  opacity: 1;
-}
-
-body.menu-full .menu-bar {
-  width: var(--menu-bar-width-full);
-  background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), white;
-  border-right: 1px solid var(--facet-border, #e5e0db);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
-  border-bottom-right-radius: 0; /* Remove rounded corner when expanded */
-}
-
-.menu-bar .menu-item {
-  padding: 8px 0;
-  display: flex;
   align-items: center;
-  cursor: pointer;
-  transition: background 0.2s, transform 0.3s ease, max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, border-radius 0.3s ease;
-  border-bottom: none;
-  border-left: 3px solid transparent;
-  border-right: none;
-  margin-top: 2px;
-  margin-left: 4px;
-  margin-right: 4px;
+  gap: 8px;
+}
+
+.app-launcher-toggle,
+.app-rail-link,
+.app-dock-link {
+  appearance: none;
+  width: var(--status-instrument-size);
+  min-width: var(--status-instrument-size);
+  height: var(--status-instrument-size);
+  min-height: var(--status-instrument-size);
+  border: 0;
   border-radius: 8px;
+  background: transparent;
   color: inherit;
-  white-space: nowrap;
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;  /* Don't compress - let container scroll instead */
-}
-
-.menu-bar .menu-item-link {
-  display: flex;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   text-decoration: none;
-  color: inherit;
-  flex: 1;
-  min-width: 0;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-
-/* Hide unstarred apps in menu-minimal state */
-.menu-bar .menu-item[data-starred="false"] {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-top: 0;
-  pointer-events: none;
-}
-
-/* Always show current app, even if unstarred in menu-minimal state */
-.menu-bar .menu-item[data-starred="false"].current {
-  max-height: 50px;
-  opacity: 1;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  margin-top: 2px;
-  pointer-events: auto;
-}
-
-/* Show all apps when menu-full */
-body.menu-full .menu-bar .menu-item[data-starred="false"] {
-  max-height: 50px;
-  opacity: 1;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  margin-top: 2px;
-  pointer-events: auto;
-}
-
-body.menu-full .menu-bar .menu-item.dragging {
-  opacity: 0.5;
-  cursor: grabbing;
-}
-
-.menu-bar .menu-item.drag-over {
-  border-top: 2px solid var(--facet-color);
-}
-
-/* Keyboard reorder visual feedback */
-body.menu-full .menu-bar .menu-item.reordering {
-  outline: 2px dashed var(--facet-color, #b06a1a);
-  outline-offset: -2px;
-  background: color-mix(in srgb, var(--facet-color, #b06a1a) 8%, transparent);
-}
-
-@keyframes boundary-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-3px); }
-  75% { transform: translateX(3px); }
-}
-
-body.menu-full .menu-bar .menu-item.boundary-hit {
-  animation: boundary-shake 0.2s ease;
-}
-
-/* Apply facet background to menu items in menu-minimal state */
-body:not(.menu-full) .menu-bar .menu-item {
-  background: var(--facet-bg, white);
-}
-
-/* Hover state for menu items */
-.menu-bar .menu-item:hover {
+.app-launcher-toggle:hover,
+.app-rail-link:hover,
+.app-dock-link:hover {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.menu-bar .menu-item:active {
-  background: rgba(0, 0, 0, 0.14);
-}
-
-/* Active app state - stronger background + accent bar */
-.menu-bar .menu-item.current {
+.app-launcher-toggle:active,
+.app-rail-link:active,
+.app-dock-link:active {
   background: rgba(0, 0, 0, 0.10);
-  border-left-color: var(--facet-color);
 }
 
-/* In menu-minimal state, layer hover tint over facet background */
-body:not(.menu-full) .menu-bar .menu-item:hover {
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.05)),
-    var(--facet-bg, white);
+.app-launcher-toggle.is-current,
+.app-rail-link.is-current,
+.app-dock-link.is-current {
+  background: color-mix(in srgb, var(--facet-color) 18%, transparent);
+  color: var(--facet-color);
 }
 
-body:not(.menu-full) .menu-bar .menu-item:active {
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)),
-    var(--facet-bg, white);
-}
-
-/* In menu-minimal state, active app with stronger tint + accent bar */
-body:not(.menu-full) .menu-bar .menu-item.current {
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)),
-    var(--facet-bg, white);
-  border-left-color: var(--facet-color);
-}
-
-.menu-bar .menu-item .icon {
-  font-size: 22px;
-  width: calc(var(--menu-bar-width-minimal) - 8px);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-body.menu-full .menu-bar .menu-item .icon { width: 36px; }
-body.menu-full .menu-bar .menu-item .star-toggle,
-body.menu-full .menu-bar .menu-item .drag-handle { min-width: 28px; }
-
-.menu-bar .menu-item .icon svg,
-.facet-pill .emoji svg {
-  display: block;
-  color: inherit;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  flex-shrink: 0;
-}
-
-.menu-bar .menu-item .icon svg *,
-.facet-pill .emoji svg * {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-}
-
-.menu-bar .menu-item .icon svg {
+.app-chrome-icon {
   width: 22px;
   height: 22px;
-}
-
-.menu-bar .menu-item .label {
-  font-size: 14px;
-  font-weight: 500;
-  padding-right: 12px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu-bar .menu-item .star-toggle {
-  display: none;
-  background: none;
-  border: none;
-  font: inherit;
-  font-size: 18px;
-  min-width: 44px;
-  min-height: 44px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.app-chrome-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.app-chrome-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app-rail-spacer {
+  flex: 1;
+}
+
+.app-rail-divider {
+  align-self: stretch;
+  height: 1px;
+  background: var(--facet-border, #e5e0db);
+  margin: 4px 0;
+}
+
+#app-dock {
+  display: none;
+}
+
+#app-launcher {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-active-dialog);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+#app-launcher[hidden] {
+  display: none;
+}
+
+.app-launcher-panel {
+  width: min(560px, 100%);
+  max-height: min(720px, 100%);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+}
+
+.app-launcher-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-launcher-header h1,
+.app-launcher-group h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.app-launcher-header button {
+  appearance: none;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: inherit;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s, transform 0.1s ease, color 0.15s ease;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-body.menu-full .menu-bar .menu-item .star-toggle {
-  display: inline-flex;
-}
-
-/* Show star on hover or when starred */
-body.menu-full .menu-bar .menu-item:hover .star-toggle,
-.menu-bar .menu-item[data-starred="true"] .star-toggle {
-  opacity: 1;
-}
-
-.menu-bar .menu-item .star-toggle:focus-visible {
-  opacity: 1;
-}
-
-.menu-bar .menu-item .star-toggle:hover {
-  opacity: 1;
-  color: #f59e0b;
-}
-
-.menu-bar .menu-item .star-toggle:active {
-  transform: scale(0.9);
-}
-
-.menu-bar .menu-item[data-starred="true"] .star-toggle {
-  color: #f59e0b;
-}
-
-.menu-bar .menu-item[data-starred="true"] .star-toggle:hover {
-  color: #d97706;
-}
-
-/* Drag handle */
-.menu-bar .menu-item .drag-handle {
-  display: none;
-  background: none;
-  border: none;
   font: inherit;
-  font-size: 16px;
-  min-width: 44px;
+  font-size: 24px;
+}
+
+.app-launcher-panel > label {
+  display: block;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+#app-launcher-filter {
+  width: 100%;
   min-height: 44px;
-  align-items: center;
-  justify-content: center;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 6px;
+  background: white;
+  color: inherit;
+  font: inherit;
+}
+
+.app-launcher-groups {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.app-launcher-group ul {
+  list-style: none;
+  display: grid;
+  gap: 4px;
   padding: 0;
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-  user-select: none;
-  color: #bbb;
+  margin: 8px 0 0;
 }
 
-body.menu-full .menu-bar .menu-item .drag-handle {
-  display: inline-flex;
-  opacity: 0.4;
+.app-launcher-app a {
+  display: block;
+  min-height: 40px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
 }
 
-body.menu-full .menu-bar .menu-item:hover .drag-handle {
-  opacity: 1;
+.app-launcher-app a:hover,
+.app-launcher-app a[aria-current="page"] {
+  background: color-mix(in srgb, var(--facet-color) 12%, transparent);
 }
 
-.menu-bar .menu-item .drag-handle:hover {
-  opacity: 1;
-  color: #666;
-}
-
-body.menu-full .menu-bar .menu-item .drag-handle:active {
-  background: rgba(0, 0, 0, 0.08);
-  border-radius: 4px;
-  cursor: grabbing;
-}
-
-/* Visual separator after last starred app */
-.menu-bar .menu-item.last-starred {
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-}
-
-/* Menu bar icon badges */
-.menu-bar .menu-item .icon {
-  position: relative;
+.app-launcher-empty {
+  margin: 20px 0 0;
+  color: var(--ink-faint);
 }
 
 @keyframes badge-pop {
@@ -1067,110 +881,49 @@ body.menu-full .menu-bar .menu-item .drag-handle:active {
   to { transform: scale(1); }
 }
 
-.menu-badge {
-  animation: badge-pop 0.2s ease;
-  position: absolute;
-  top: -2px;
-  right: 2px;
-  min-width: 18px;
-  height: 18px;
-  font-size: 11px;
-  font-weight: 600;
-  background: #ef4444;
-  color: white;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-  box-shadow: 0 0 0 2px white;
-  line-height: 1;
-}
-
-/* Menu expander (down arrow below last visible app icon) */
-.menu-bar .menu-expander {
-  min-width: 44px;
-  width: 44px;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: inherit;
-  font-size: 22px;
-  cursor: pointer;
-  color: inherit;
-  border: none;
-  border-right: none;
-  background: var(--facet-bg, white);
-  transition: background 0.2s;
-  user-select: none;
-  position: relative;
-  border-radius: 8px;
-  flex-shrink: 0;  /* Never shrink - always visible at bottom */
-  margin-top: auto;
-  margin-bottom: 12px;
-  align-self: center;
-}
-
-
-.menu-bar .menu-expander:hover {
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.05)),
-    var(--facet-bg, white);
-}
-
-.menu-bar .menu-expander:active {
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)),
-    var(--facet-bg, white);
-}
-
-/* Hide only when sidebar is menu-full (keep visible during menu-all) */
-body.menu-full .menu-bar .menu-expander {
-  display: none;
-}
-
-/* Show all apps in menu-all state (icons only, narrow width) */
-body.menu-all .menu-bar .menu-item[data-starred="false"] {
-  max-height: 50px;
-  opacity: 1;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  margin-top: 2px;
-  pointer-events: auto;
-}
-
-/* Keep sidebar narrow in menu-all state (icons only) */
-body.menu-all .menu-bar {
-  width: var(--menu-bar-width-minimal);
-  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.04);
-}
-
-/* Mobile: the menu rail collapses off-canvas. The base .menu-bar widths
-   above re-expand it by source order, so re-assert the collapse here, below
-   them, for every non-overlay state. menu-full stays the 200px overlay
-   handled in the mobile block near the top of this file. */
-@media (max-width: 768px) {
-  body:not(.menu-full) .menu-bar {
-    width: 0;
-    border-right: 0;
-    overflow: hidden;
-    box-shadow: none;
-    pointer-events: none;
-    visibility: hidden;
-  }
-
-  .facet-bar::after {
-    left: 0;
-  }
-
-  body.menu-full .facet-bar::after {
-    left: 0;
-  }
-
-  body:not(.menu-full) .menu-bar .menu-items,
-  body:not(.menu-full) .menu-bar .menu-expander {
+@media (max-width: 700px) {
+  #app-rail {
     display: none;
+  }
+
+  #app-dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: var(--app-dock-height);
+    padding: 8px;
+    background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
+    border-top: 1px solid var(--facet-border, #e5e0db);
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
+    z-index: calc(var(--z-bars) + 1);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    place-items: center;
+  }
+
+  .app-dock-link,
+  #app-dock .app-launcher-toggle {
+    width: 100%;
+  }
+
+  .facet-bar,
+  .workspace {
+    margin-left: 0;
+  }
+
+  .workspace {
+    padding-bottom: calc(var(--app-dock-height) + 8px);
+  }
+
+  #diagnostic-console {
+    top: auto;
+    bottom: calc(var(--app-dock-height) + var(--chrome-gap));
+    left: var(--chrome-gap);
+  }
+
+  #app-launcher {
+    padding: var(--chrome-gap);
   }
 }
 
@@ -1307,8 +1060,20 @@ body.menu-all .menu-bar {
 }
 
 .facet-pill .emoji svg {
+  display: block;
+  color: inherit;
   width: 24px;
   height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  flex-shrink: 0;
+}
+
+.facet-pill .emoji svg * {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 
 .facet-pill .facet-badge {
@@ -1385,25 +1150,14 @@ body.menu-all .menu-bar {
 /* Notification Center */
 .notification-center {
   position: fixed;
-  top: calc(var(--facet-bar-height) + 8px);
-  right: 20px;
+  top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap));
+  right: var(--status-instrument-inset);
   width: 280px;
   z-index: var(--z-notifications);
   pointer-events: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: right 0.25s ease;
-}
-
-body:has(.status-pane.visible) .notification-center {
-  right: calc(var(--status-pane-width) + 12px);
-}
-
-@media (max-width: 768px) {
-  body:has(.status-pane.visible) .notification-center {
-    right: 8px;
-  }
 }
 
 /* Notification Card */
@@ -1610,10 +1364,10 @@ a.notification-card:active {
 /* Responsive */
 @media (max-width: 768px) {
   .notification-center {
-    top: calc(var(--facet-bar-height) + 8px);
-    right: 8px;
-    left: 8px;
-    width: auto;
+    top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap));
+    right: var(--status-instrument-inset);
+    left: auto;
+    width: min(280px, calc(100vw - (2 * var(--status-instrument-inset))));
   }
 
   .notification-card {
@@ -1972,10 +1726,6 @@ button.close {
     transform: none;
   }
 
-  .menu-bar .menu-item .star-toggle:active {
-    transform: none;
-  }
-
   .facet-add-pill:active {
     transform: none;
   }
@@ -1994,14 +1744,12 @@ button.close {
 }
 
 /* Focus-visible states for keyboard navigation */
-.menu-bar .menu-item-link:focus-visible,
 .facet-pill:focus-visible,
 .facet-add-pill:focus-visible,
 #hamburger:focus-visible,
-.facet-bar .status-icon:focus-visible,
+#status-instrument .status-icon:focus-visible,
 .facet-create-submit:focus-visible,
 .facet-create-cancel:focus-visible,
-.menu-bar .menu-expander:focus-visible,
 .notification-card:focus-visible,
 button:focus-visible,
 a:focus-visible {
@@ -2234,18 +1982,6 @@ a:focus-visible {
   font-size: 13px;
 }
 
-.menu-item-bg-failing::after {
-  content: '';
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-warning, #f59e0b);
-  border: 2px solid var(--facet-bg-primary, #fff);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .surface-state-spinner {
     animation: none;
@@ -2314,6 +2050,18 @@ body.presentation-mode::after {
 
 /* Shared chrome boosts — keep these conservative. The big polish lives
    in the app workspaces (graph, entities, transcripts). */
+body.presentation-mode {
+  --app-rail-width: 0px;
+  --app-dock-height: 0px;
+}
+
+body.presentation-mode #app-rail,
+body.presentation-mode #app-dock,
+body.presentation-mode #status-instrument,
+body.presentation-mode .status-pane {
+  display: none;
+}
+
 body.presentation-mode .facet-bar {
   font-size: 1.05rem;
 }
