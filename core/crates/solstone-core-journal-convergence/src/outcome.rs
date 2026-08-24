@@ -750,6 +750,90 @@ mod tests {
         }
     }
 
+    fn write_canonical(path: &std::path::Path, value: &impl serde::Serialize) {
+        let mut bytes = crate::digest::canonical_json_bytes(value).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn assert_reconcile_binding_unknown(mutate: impl FnOnce(&mut crate::schema::GrantReconcile)) {
+        let (temporary, admitted, operation, selector, serial) =
+            matrix_history(Matrix::DecisionedSuperseded);
+        let path = temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/reconciliations/{serial}.json"
+        ));
+        let mut reconcile: crate::schema::GrantReconcile =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        mutate(&mut reconcile);
+        reconcile.reconcile_digest =
+            crate::digest::digest_value_excluding(&reconcile, "reconcile_digest")
+                .unwrap()
+                .as_hex()
+                .to_owned();
+        write_canonical(&path, &reconcile);
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantReconcile
+            })
+        ));
+    }
+
+    #[test]
+    fn decisioned_history_requires_a_complete_reconcile_day_map() {
+        assert_reconcile_binding_unknown(|reconcile| {
+            reconcile
+                .descendant_discriminator
+                .record_digests
+                .remove("20260823");
+        });
+    }
+
+    #[test]
+    fn decisioned_history_requires_the_recorded_activation_prefix() {
+        assert_reconcile_binding_unknown(|reconcile| {
+            reconcile
+                .activated_member_digests
+                .insert("20260823.think.chronicle".to_owned(), "00".repeat(32));
+        });
+    }
+
+    #[test]
+    fn decisioned_history_requires_no_delivered_token_evidence() {
+        assert_reconcile_binding_unknown(|reconcile| {
+            reconcile.no_token_delivered = false;
+        });
+    }
+
+    #[test]
+    fn decisioned_history_requires_barrier_discriminator_to_match_reconcile() {
+        let (temporary, admitted, operation, selector, serial) =
+            matrix_history(Matrix::DecisionedSuperseded);
+        let path = temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/barriers/{serial}.{}.json",
+            crate::layout::SUPERSEDED_BARRIER_SUFFIX
+        ));
+        let mut barrier: GrantBarrier =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        barrier
+            .descendant_discriminator
+            .as_mut()
+            .unwrap()
+            .record_digests
+            .insert("20260823".to_owned(), "00".repeat(32));
+        barrier.barrier_digest = crate::digest::digest_value_excluding(&barrier, "barrier_digest")
+            .unwrap()
+            .as_hex()
+            .to_owned();
+        write_canonical(&path, &barrier);
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantSupersededBarrier
+            })
+        ));
+    }
+
     fn leave_successor_prefix(admitted: &Admitted, stage: SuccessorStage) {
         let operation = OperationId::generate().unwrap();
         let selector = GrantRequestSelector::empty(admitted.days()).unwrap();
@@ -914,7 +998,15 @@ mod tests {
         unrelated.operation_id = "00".repeat(32);
         let mut bytes = crate::digest::canonical_json_bytes(&unrelated).unwrap();
         bytes.push(b'\n');
-        std::fs::write(revocation, bytes).unwrap();
+        std::fs::write(&revocation, bytes).unwrap();
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerRevocation
+            })
+        ));
+
+        std::fs::write(&revocation, b"{malformed").unwrap();
         assert!(matches!(
             admitted.grant_state(&operation, &selector),
             Err(ConvergenceError::Unknown {

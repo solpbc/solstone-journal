@@ -1537,6 +1537,143 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_owner_revocations_release_only_their_bound_claim_and_infer_no_result() {
+        let (temporary, admitted) = admit_days("owner-revoke-concurrent", &["20260823"]);
+        let (operation_a, selector_a, owner_a) = prepared(&admitted);
+        let (operation_b, selector_b, _owner_b) = prepared(&admitted);
+        let mut held_a = admitted.begin(owner_a).unwrap();
+        let proof = admit_proof(&held_a, held_a.owner()).unwrap();
+        held_a.continue_with(proof).unwrap();
+        drop(held_a);
+
+        let journal = temporary.journal_path();
+        let (a, b) = std::thread::scope(|scope| {
+            let operation_a = operation_a.clone();
+            let selector_a = selector_a.clone();
+            let operation_b = operation_b.clone();
+            let selector_b = selector_b.clone();
+            let journal_a = journal.clone();
+            let journal_b = journal.clone();
+            let a = scope.spawn(move || {
+                let root = solstone_core_journal_io::JournalRoot::open(&journal_a).unwrap();
+                let admitted = match crate::preflight::preflight(["20260823"]).unwrap() {
+                    crate::preflight::Preflight::Ready(set) => set.admit(root).unwrap(),
+                    crate::preflight::Preflight::Empty => panic!("days"),
+                };
+                crate::access::initialize_lock_trace();
+                let result = admitted.revoke_owner(&operation_a, &selector_a);
+                (result, crate::access::lock_trace())
+            });
+            let b = scope.spawn(move || {
+                let root = solstone_core_journal_io::JournalRoot::open(&journal_b).unwrap();
+                let admitted = match crate::preflight::preflight(["20260823"]).unwrap() {
+                    crate::preflight::Preflight::Ready(set) => set.admit(root).unwrap(),
+                    crate::preflight::Preflight::Empty => panic!("days"),
+                };
+                crate::access::initialize_lock_trace();
+                let result = admitted.revoke_owner(&operation_b, &selector_b);
+                (result, crate::access::lock_trace())
+            });
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert_eq!(a.0.unwrap(), OwnerRevoke::Revoked);
+        assert_eq!(b.0.unwrap(), OwnerRevoke::Revoked);
+        assert!(a.1.starts_with(&["day", "topology"]));
+        assert!(b.1.starts_with(&["day", "topology"]));
+        assert!(a.1.contains(&"registry"));
+        assert!(b.1.contains(&"registry"));
+        assert!(matches!(
+            admitted.deliver_grants(&operation_a, &selector_a).unwrap(),
+            Delivery::Denied { .. }
+        ));
+        assert!(
+            !temporary
+                .journal_path()
+                .join("health/convergence/actives/1.json")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn grant_revocation_publication_failure_keeps_the_member_active() {
+        let (temporary, admitted, operation, selector) = committed("grant-revoke-publication");
+        let day = DayKey::parse("20260823").unwrap();
+        let revocations = temporary
+            .journal_path()
+            .join("health/convergence/registry/grants/revocations");
+        std::fs::create_dir(revocations.join("1.20260823.think.chronicle.json")).unwrap();
+        assert!(
+            admitted
+                .revoke_grant(
+                    &operation,
+                    &selector,
+                    &day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .is_err()
+        );
+        std::fs::remove_dir(revocations.join("1.20260823.think.chronicle.json")).unwrap();
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Ready(_)
+        ));
+    }
+
+    #[test]
+    fn pending_grant_revocation_denies_until_exact_active_or_revoked_state_recovers() {
+        let (temporary, admitted, operation, selector) = committed("grant-revoke-uncertainty");
+        let day = DayKey::parse("20260823").unwrap();
+        let ready = admitted.deliver_grants(&operation, &selector).unwrap();
+        let token = &ready.tokens()[0];
+        let token_hex = token.as_hex().to_owned();
+        let family = token.writer_family();
+        let scope = token.target_scope();
+        drop(ready);
+        assert_eq!(
+            admitted
+                .revoke_grant(&operation, &selector, &day, family, scope)
+                .unwrap(),
+            GrantRevoke::Revoked
+        );
+        let path = temporary.journal_path().join(format!(
+            "health/convergence/registry/grants/revocations/1.20260823.{}.{}.json",
+            family.as_str(),
+            scope.as_str(),
+        ));
+        let revoked = std::fs::read(&path).unwrap();
+        let mut pending: GrantRevocation = serde_json::from_slice(&revoked).unwrap();
+        pending.state = RevocationState::Pending;
+        let mut bytes = crate::digest::canonical_json_bytes(&pending).unwrap();
+        bytes.push(b'\n');
+        std::fs::write(&path, bytes).unwrap();
+
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Denied { .. }
+        ));
+        let lease = admitted.grant_lease().unwrap();
+        assert!(matches!(
+            lease
+                .authorize(&operation, &selector, &token_hex, &day, family, scope,)
+                .unwrap(),
+            Authorization::Denied { .. }
+        ));
+        drop(lease);
+
+        std::fs::remove_file(&path).unwrap();
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Ready(_)
+        ));
+        std::fs::write(&path, revoked).unwrap();
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Denied { .. }
+        ));
+    }
+
+    #[test]
     fn set_tombstone_requires_every_exact_member_tombstone_and_keeps_evidence() {
         let (temporary, admitted, operation, selector) = committed("grant-set-tombstone");
         let day = DayKey::parse("20260823").unwrap();

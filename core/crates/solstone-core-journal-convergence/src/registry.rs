@@ -41,3 +41,44 @@ pub(crate) fn sync_owners(owners: &OwnedFd) -> Result<(), ConvergenceError> {
         source,
     })
 }
+
+#[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+mod tests {
+    use super::*;
+    use crate::access::ResolverAccess;
+    use crate::test_support::admit_days;
+
+    #[test]
+    fn ensure_and_sync_owners_is_idempotent_under_the_registry_section() {
+        let (_temporary, admitted) = admit_days("registry-owners", &["20260823"]);
+        let access = ResolverAccess::acquire(&admitted).unwrap();
+        access
+            .with_registry(|section| {
+                let owners = ensure_owners_dir(section)?;
+                sync_owners(&owners)?;
+                let again = ensure_owners_dir(section)?;
+                sync_owners(&again)
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn owners_path_that_is_not_a_directory_is_an_io_error() {
+        let (temporary, admitted) = admit_days("registry-owners-file", &["20260823"]);
+        let owners = temporary
+            .journal_path()
+            .join("health/convergence/registry/owners");
+        std::fs::remove_dir(&owners).unwrap();
+        std::fs::write(&owners, b"not-a-directory").unwrap();
+        let access = ResolverAccess::acquire(&admitted).unwrap();
+        assert!(matches!(
+            access.with_registry(ensure_owners_dir),
+            Err(ConvergenceError::Io {
+                role: DurableRole::Directory,
+                ..
+            })
+        ));
+    }
+}
