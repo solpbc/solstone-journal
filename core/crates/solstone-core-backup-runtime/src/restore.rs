@@ -534,9 +534,18 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
+    struct RecordedCall {
+        status: String,
+        reason: Value,
+        files_expected: Value,
+        files_restored: Value,
+        bytes: Value,
+    }
+
     struct Recorder {
         fail: bool,
-        calls: RefCell<Vec<(String, Value, Value, Value, Value)>>,
+        calls: RefCell<Vec<RecordedCall>>,
     }
 
     impl Recorder {
@@ -575,13 +584,13 @@ mod tests {
             assert_eq!(day, Value::Null);
             assert_eq!(segments_selected, json!(0));
             assert_eq!(segments_restored, json!(0));
-            self.calls.borrow_mut().push((
-                status.to_owned(),
+            self.calls.borrow_mut().push(RecordedCall {
+                status: status.to_owned(),
                 reason,
                 files_expected,
                 files_restored,
-                json!([bytes_expected, bytes_restored]),
-            ));
+                bytes: json!([bytes_expected, bytes_restored]),
+            });
             if self.fail {
                 Err(solstone_core_backup::BackupError::InvalidRestoreStatus)
             } else {
