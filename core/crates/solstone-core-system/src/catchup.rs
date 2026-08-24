@@ -180,16 +180,20 @@ fn apply_no_progress_backoff(record: &mut Map<String, Value>, ended_at: f64) {
 }
 
 fn marker_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> u64 {
+    versioned_generation(journal, day, kind).unwrap_or(0)
+}
+
+fn versioned_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> Option<u64> {
     match read_health_marker(journal, day, kind) {
-        Ok(HealthMarkerState::Versioned { marker, .. }) => marker.generation,
+        Ok(HealthMarkerState::Versioned { marker, .. }) => Some(marker.generation),
         Ok(
             HealthMarkerState::Absent
             | HealthMarkerState::LegacyEmpty { .. }
             | HealthMarkerState::MalformedNonEmpty { .. },
-        ) => 0,
+        ) => None,
         Err(error) => {
             eprintln!("failed to read {kind:?} health marker for {day}: {error}");
-            0
+            None
         }
     }
 }
@@ -326,7 +330,8 @@ pub fn record_daily_catchup_outcome(
     admitted_generation: u64,
     outcome: DailyCatchupOutcome,
 ) {
-    let daily_generation = marker_generation(journal, day, HealthMarkerKind::Daily);
+    let daily_completed = versioned_generation(journal, day, HealthMarkerKind::Daily)
+        .is_some_and(|generation| generation >= admitted_generation);
     let stream_generation = marker_generation(journal, day, HealthMarkerKind::Stream);
     update_catchup_state(journal, false, |entries| {
         let key = catchup_state_key(day, KIND_DAILY_CATCHUP);
@@ -336,7 +341,7 @@ pub fn record_daily_catchup_outcome(
         record.insert("exit_code".to_owned(), json!(outcome.exit_code));
         record.insert("exit_status".to_owned(), json!(outcome.exit_status));
 
-        if daily_generation >= admitted_generation {
+        if daily_completed {
             record.insert("attempts".to_owned(), json!(0));
             record.insert("consecutive_non_completion".to_owned(), json!(0));
             record.insert("next_retry_at".to_owned(), json!(0));
@@ -914,6 +919,32 @@ mod tests {
         assert_eq!(daily["active"], Value::Null);
         assert_eq!(daily["next_retry_at"], 0);
         assert_eq!(daily["exit_status"], "error");
+    }
+
+    #[test]
+    fn daily_catchup_zero_generation_requires_versioned_daily_marker() {
+        let bed = Bed::new("daily-zero-generation");
+        record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 0, "fp");
+
+        record_daily_catchup_outcome(&bed.root, "20260101", 0, daily_outcome(20.0, 1));
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["last_outcome"], "error");
+        assert_eq!(daily["consecutive_non_completion"], 1);
+        assert_eq!(daily["next_retry_at"], 620.0);
+
+        bed.write(
+            "chronicle/20260101/health/daily.updated",
+            br#"{"version":1,"generation":0,"fingerprint":null}"#,
+        );
+        record_daily_catchup_outcome(&bed.root, "20260101", 0, daily_outcome(30.0, 1));
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["last_outcome"], "completed");
+        assert_eq!(daily["attempts"], 0);
+        assert_eq!(daily["active"], Value::Null);
     }
 
     #[test]

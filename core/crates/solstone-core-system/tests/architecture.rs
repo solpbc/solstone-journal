@@ -291,9 +291,10 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             );
         }
     }
-    // catchup is read-only in production but its unit tests build real fixture
-    // trees under the OS temp dir, so it is checked against production source
-    // only (everything before its trailing `mod tests`) rather than skipped.
+    // catchup owns the narrow operational catchup-state write path, while its
+    // unit tests build real fixture trees under the OS temp dir. Check only
+    // production source (everything before its trailing `mod tests`) rather
+    // than skipping the module entirely.
     let catchup_production = CATCHUP
         .split_once("mod tests")
         .map_or(CATCHUP, |(production, _)| production);

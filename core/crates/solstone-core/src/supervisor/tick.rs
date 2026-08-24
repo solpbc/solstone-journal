@@ -227,6 +227,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 // not immediately replay it through the retry-expiry path.
                 state.last_retry_expiry_drain = tick;
             } else if let Err(error) = handle_retry_expiry_drain(
+                state.is_remote_mode,
                 &state.journal,
                 &state.queue,
                 &mut state.last_retry_expiry_drain,
@@ -407,6 +408,7 @@ pub(crate) fn handle_daily_tasks(
 }
 
 fn handle_retry_expiry_drain(
+    is_remote: bool,
     journal: &Path,
     queue: &TaskQueue,
     last_drain: &mut Instant,
@@ -414,6 +416,9 @@ fn handle_retry_expiry_drain(
     tick: Instant,
     now: SystemTime,
 ) -> Result<(), CatchupError> {
+    if is_remote {
+        return Ok(());
+    }
     if tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL {
         return Ok(());
     }
@@ -1695,6 +1700,7 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(10);
 
         handle_retry_expiry_drain(
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1706,6 +1712,7 @@ mod tests {
         assert_eq!(pending(&queue), 0);
 
         handle_retry_expiry_drain(
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1717,6 +1724,7 @@ mod tests {
         assert_eq!(pending(&queue), 1, "only the non-today retry is drained");
 
         handle_retry_expiry_drain(
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1726,6 +1734,47 @@ mod tests {
         )
         .expect("throttled retry tick");
         assert_eq!(pending(&queue), 1, "the same window must not replay");
+    }
+
+    #[test]
+    fn retry_expiry_drain_is_a_remote_mode_noop() {
+        let bed = Bed::new("retry-expiry-remote");
+        bed.enable_thinking();
+        fs::create_dir_all(bed.root.join("chronicle/20260101")).expect("chronicle day");
+        fs::create_dir_all(bed.root.join("health")).expect("health directory");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260101:daily-catchup": {
+                        "day": "20260101",
+                        "command_kind": "daily-catchup",
+                        "active": null,
+                        "next_retry_at": 10.0,
+                    },
+                },
+            }))
+            .expect("retry state"),
+        )
+        .expect("write retry state");
+
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut last_drain = origin;
+        handle_retry_expiry_drain(
+            true,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(2),
+            origin + RETRY_EXPIRY_INTERVAL,
+            UNIX_EPOCH + Duration::from_secs(10),
+        )
+        .expect("remote retry tick");
+
+        assert_eq!(pending(&queue), 0);
+        assert_eq!(last_drain, origin);
     }
 
     #[test]

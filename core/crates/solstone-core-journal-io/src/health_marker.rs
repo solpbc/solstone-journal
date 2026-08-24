@@ -3,12 +3,14 @@
 
 //! Versioned per-day stream and daily health markers.
 
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use serde::{Deserialize, Serialize};
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
@@ -33,12 +35,69 @@ impl HealthMarkerKind {
 }
 
 /// Durable marker payload published with every new stream generation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HealthMarker {
     pub version: u64,
     pub generation: u64,
-    #[serde(default)]
     pub fingerprint: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for HealthMarker {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(HealthMarkerVisitor)
+    }
+}
+
+struct HealthMarkerVisitor;
+
+impl<'de> Visitor<'de> for HealthMarkerVisitor {
+    type Value = HealthMarker;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a health marker envelope")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<HealthMarker, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut version = None;
+        let mut generation = None;
+        let mut fingerprint = None;
+        while let Some(field) = map.next_key::<String>()? {
+            match field.as_str() {
+                "version" => {
+                    if version.is_some() {
+                        return Err(de::Error::duplicate_field("version"));
+                    }
+                    version = Some(map.next_value()?);
+                }
+                "generation" => {
+                    if generation.is_some() {
+                        return Err(de::Error::duplicate_field("generation"));
+                    }
+                    generation = Some(map.next_value()?);
+                }
+                "fingerprint" => {
+                    if fingerprint.is_some() {
+                        return Err(de::Error::duplicate_field("fingerprint"));
+                    }
+                    fingerprint = Some(map.next_value()?);
+                }
+                _ => {
+                    let _: de::IgnoredAny = map.next_value()?;
+                }
+            }
+        }
+        Ok(HealthMarker {
+            version: version.ok_or_else(|| de::Error::missing_field("version"))?,
+            generation: generation.ok_or_else(|| de::Error::missing_field("generation"))?,
+            fingerprint: fingerprint.ok_or_else(|| de::Error::missing_field("fingerprint"))?,
+        })
+    }
 }
 
 /// The parsed state of one on-disk marker.
@@ -380,6 +439,19 @@ mod tests {
             day_marker_pair_status(temporary.path(), DAY).unwrap(),
             DayMarkerPairStatus::Dirty
         );
+    }
+
+    #[test]
+    fn marker_without_fingerprint_is_malformed() {
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        fs::write(&stream, br#"{"version":1,"generation":1}"#).unwrap();
+
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::MalformedNonEmpty { .. }
+        ));
     }
 
     #[test]
