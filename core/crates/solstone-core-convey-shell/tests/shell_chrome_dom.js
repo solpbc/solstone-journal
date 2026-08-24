@@ -363,7 +363,7 @@ function addStaticElement(document, tagName, attributes = {}) {
   return element;
 }
 
-function shellFixture() {
+function shellFixture(options = {}) {
   const groups = [
     ['your_journal', [
       ['home', 'home', 'primary', 0, false],
@@ -392,7 +392,9 @@ function shellFixture() {
   ];
   const apps = groups.flatMap(([launcherGroup, rows]) => rows.map(([name, label, railGroup, railRank, facetsEnabled], launcherRank) => ({
     app_bar: '',
-    background_url: null,
+    background_url: options.boot && (name === 'support' || name === 'timeline')
+      ? '/app/' + name + '/background'
+      : null,
     date_nav: false,
     facets_enabled: facetsEnabled,
     icon: name,
@@ -403,12 +405,34 @@ function shellFixture() {
     name,
     rail_group: railGroup,
     rail_rank: railRank,
-    workspace_url: '/app/' + name + '/',
+    workspace_url: '/app/' + name + '/workspace',
   })));
   return { apps };
 }
 
-function createHarness() {
+function createHarness(options = {}) {
+  const shell = options.shell || shellFixture({ boot: options.boot });
+  const fetchCalls = [];
+  const surfaceCalls = [];
+  const logErrors = [];
+  const backgroundFailures = [];
+  const readyCalls = [];
+  const fetch = (url) => {
+    const requested = String(url);
+    fetchCalls.push(requested);
+    const fixture = options.fetchResponses?.[requested];
+    if (!fixture) {
+      return Promise.reject(new Error('unexpected fetch ' + requested));
+    }
+    const status = fixture.status;
+    const body = fixture.body || '';
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      text() { return Promise.resolve(body); },
+      json() { return Promise.resolve().then(() => JSON.parse(body)); },
+    });
+  };
   const document = new Document();
   addStaticElement(document, 'nav', { id: 'app-rail', class: 'app-rail' });
   addStaticElement(document, 'nav', { id: 'app-dock', class: 'app-dock' });
@@ -441,7 +465,10 @@ function createHarness() {
     },
     sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
     URL,
-    location: { href: 'http://localhost/app/home/', pathname: '/app/home/' },
+    location: {
+      href: 'http://localhost' + (options.pathname || '/app/home/'),
+      pathname: options.pathname || '/app/home/',
+    },
     addEventListener(type, listener) { (windowListeners[type] ||= []).push(listener); },
     removeEventListener(type, listener) {
       windowListeners[type] = (windowListeners[type] || []).filter((item) => item !== listener);
@@ -454,10 +481,30 @@ function createHarness() {
     CustomEvent: class CustomEvent {
       constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
     },
-    whenShellReady(callback) { callback(shellFixture()); },
-    resolveSolShellReady() {},
-    fetch() { return Promise.reject(new Error('boot is replaced for DOM harness')); },
+    whenShellReady(callback) { callback(shell); },
+    resolveSolShellReady(data) { readyCalls.push(data); },
+    apiJson(url) {
+      if (url === '/api/shell') return Promise.resolve(shell);
+      return Promise.reject(new Error('unexpected apiJson ' + url));
+    },
+    fetch,
   };
+  if (options.boot) {
+    window.SurfaceState = {
+      empty(state) {
+        surfaceCalls.push({ kind: 'empty', state });
+        return '<div class="surface-state surface-state--empty" data-surface-state="empty"></div>';
+      },
+      error(state) {
+        surfaceCalls.push({ kind: 'error', state });
+        return '<div class="surface-state surface-state--error" data-surface-state="error"></div>';
+      },
+    };
+    window.logError = (error, context) => { logErrors.push({ error, context }); };
+    window.AppServices = {
+      markBackgroundFailing(appName, error) { backgroundFailures.push({ appName, error }); },
+    };
+  }
   window.window = window;
   const context = vm.createContext({
     window,
@@ -471,16 +518,34 @@ function createHarness() {
     requestAnimationFrame: window.requestAnimationFrame,
     getComputedStyle: window.getComputedStyle,
     CustomEvent: window.CustomEvent,
+    fetch,
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
   vm.runInContext(read('modal_layer.js'), context, { filename: 'modal_layer.js' });
   vm.runInContext(read('presentation_mode.js'), context, { filename: 'presentation_mode.js' });
+  if (options.boot) {
+    vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
+    vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
+  }
   const bootSource = read('shell_boot.js').replace(
     /\s*boot\(\);\s*\}\)\(\);\s*$/,
-    '\n  window.__shellChrome = { renderAppRail, renderAppDock, renderAppLauncher, renderFacetStrip, renderStatusInstrument, installLauncherInteractions };\n})();\n',
+    '\n  window.__shellChrome = { renderAppRail, renderAppDock, renderAppLauncher, renderFacetStrip, renderStatusInstrument, installLauncherInteractions };\n'
+      + (options.boot ? '  window.__shellBoot = boot;\n' : '')
+      + '})();\n',
   );
   vm.runInContext(bootSource, context, { filename: 'shell_boot.js' });
-  return { document, window, chrome: window.__shellChrome, shell: shellFixture() };
+  return {
+    document,
+    window,
+    chrome: window.__shellChrome,
+    shell,
+    boot: options.boot ? () => window.__shellBoot() : null,
+    fetchCalls,
+    surfaceCalls,
+    logErrors,
+    backgroundFailures,
+    readyCalls,
+  };
 }
 
 function renderChrome(harness, currentAppName) {
@@ -512,6 +577,19 @@ function testCase(name, fn) {
     error.message = name + ': ' + error.message;
     throw error;
   }
+}
+
+const asyncCases = [];
+function asyncCase(name, fn) {
+  asyncCases.push(async () => {
+    try {
+      await fn();
+      cases += 1;
+    } catch (error) {
+      error.message = name + ': ' + error.message;
+      throw error;
+    }
+  });
 }
 
 testCase('rail composition', () => {
@@ -634,4 +712,96 @@ testCase('facet strip conditional visibility', () => {
   assert.ok(facetsDisabled.document.querySelector('#facet-strip').hidden);
 });
 
-console.log('DOM CASES: ' + cases + ' passed');
+asyncCase('unconverted workspace keeps its unavailable notice after boot', async () => {
+  const harness = createHarness({
+    boot: true,
+    pathname: '/app/activities/',
+    fetchResponses: {
+      '/app/timeline/background': { status: 200, body: '' },
+      '/app/support/background': { status: 200, body: '' },
+      '/app/activities/workspace': {
+        status: 501,
+        body: JSON.stringify({
+          reason_code: 'app_not_converted',
+          app: 'activities',
+        }),
+      },
+    },
+  });
+
+  await harness.boot();
+
+  assert.deepStrictEqual(harness.fetchCalls, [
+    '/app/timeline/background',
+    '/app/support/background',
+    '/app/activities/workspace',
+  ]);
+  assert.strictEqual(harness.surfaceCalls.length, 1);
+  assert.strictEqual(harness.surfaceCalls[0].kind, 'empty');
+  assert.strictEqual(
+    harness.surfaceCalls[0].state.heading,
+    "activities isn't available in the browser yet."
+  );
+  assert.strictEqual(
+    harness.surfaceCalls[0].state.desc,
+    "nothing is wrong on your end. this screen hasn't been built."
+  );
+  assert.strictEqual(harness.surfaceCalls[0].state.headingLevel, 'h1');
+  assert.ok(harness.document.querySelector('[data-surface-state="empty"]'));
+  assert.ok(!harness.document.querySelector('[data-surface-state="error"]'));
+  assert.strictEqual(harness.logErrors.length, 0);
+  assert.strictEqual(harness.backgroundFailures.length, 0);
+  assert.strictEqual(harness.readyCalls.length, 1);
+});
+
+asyncCase('generic workspace failures still reach the shell error state', async () => {
+  const harness = createHarness({
+    boot: true,
+    fetchResponses: {
+      '/app/timeline/background': { status: 200, body: '' },
+      '/app/support/background': { status: 200, body: '' },
+      '/app/home/workspace': { status: 500, body: '<h1>server error</h1>' },
+    },
+  });
+
+  await harness.boot();
+
+  assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'empty').length, 0);
+  assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'error').length, 2);
+  assert.ok(harness.document.querySelector('[data-surface-state="error"]'));
+  assert.strictEqual(harness.logErrors.length, 2);
+});
+
+asyncCase('converted workspace mounts normally', async () => {
+  const workspace = '<section data-workspace="home"></section>';
+  const harness = createHarness({
+    boot: true,
+    fetchResponses: {
+      '/app/timeline/background': { status: 200, body: '' },
+      '/app/support/background': { status: 200, body: '' },
+      '/app/home/workspace': { status: 200, body: workspace },
+    },
+  });
+  let mounted = null;
+  harness.document.addEventListener('workspace:mounted', (event) => { mounted = event.detail; });
+
+  await harness.boot();
+
+  assert.strictEqual(harness.document.querySelector('#main-content').innerHTML, workspace);
+  assert.strictEqual(mounted.appName, 'home');
+  assert.strictEqual(mounted.url, '/app/home/workspace');
+  assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'empty').length, 0);
+  assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'error').length, 0);
+});
+
+async function runAsyncCases() {
+  for (const runCase of asyncCases) {
+    await runCase();
+  }
+  console.log('DOM CASES: ' + cases + ' passed');
+}
+
+runAsyncCases().catch((error) => {
+  console.error(error.stack || error);
+  process.exitCode = 1;
+});
