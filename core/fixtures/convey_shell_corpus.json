@@ -27,8 +27,8 @@
         "why": "gate-exempt static, served before any session exists"
       },
       {
-        "body_bytes": 8293,
-        "body_sha256": "d20205b7262b5d45b25e120d5dbb7874cf0067b3a2fe60413bfaa7962224b498",
+        "body_bytes": 8202,
+        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -322,8 +322,8 @@
         "why": "gate-exempt static, served before any session exists"
       },
       {
-        "body_bytes": 8293,
-        "body_sha256": "d20205b7262b5d45b25e120d5dbb7874cf0067b3a2fe60413bfaa7962224b498",
+        "body_bytes": 8202,
+        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -737,8 +737,8 @@
         "why": "status_pane.js"
       },
       {
-        "body_bytes": 8293,
-        "body_sha256": "d20205b7262b5d45b25e120d5dbb7874cf0067b3a2fe60413bfaa7962224b498",
+        "body_bytes": 8202,
+        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1124,8 +1124,8 @@
         "why": "gate-exempt static, served before any session exists"
       },
       {
-        "body_bytes": 8293,
-        "body_sha256": "d20205b7262b5d45b25e120d5dbb7874cf0067b3a2fe60413bfaa7962224b498",
+        "body_bytes": 8202,
+        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",

@@ -514,7 +514,6 @@
 @media (max-width: 768px) {
   .backup-shell,
   [data-backup-root] {
-    padding-left: calc(var(--app-rail-width) + 1rem);
     padding-bottom: 3rem;
   }
 
@@ -538,5 +537,19 @@
 
   .backup-modes {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 701px) and (max-width: 768px) {
+  .backup-shell,
+  [data-backup-root] {
+    padding-left: calc(var(--app-rail-width) + 1rem);
+  }
+}
+
+@media (max-width: 700px) {
+  .backup-shell,
+  [data-backup-root] {
+    padding-left: 1rem;
   }
 }

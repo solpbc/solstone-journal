@@ -278,6 +278,9 @@ class Element {
     event.currentTarget = this;
     for (const listener of this.listeners[event.type] || []) listener.call(this, event);
     if (event.bubbles && !event.cancelBubble && this.parentElement) this.parentElement.dispatchEvent(event);
+    else if (event.bubbles && !event.cancelBubble && this === this.ownerDocument.documentElement) {
+      this.ownerDocument.dispatchEvent(event);
+    }
     return !event.defaultPrevented;
   }
 
@@ -564,14 +567,18 @@ testCase('launcher open and close lifecycle', () => {
   renderChrome(harness, 'home');
   const launcher = harness.document.querySelector('#app-launcher');
   const toggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  toggle.dispatchEvent(event('click'));
+  toggle.dispatchEvent(event('click', { bubbles: true }));
   assert.ok(!launcher.hidden && !launcher.inert);
   harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
   assert.ok(launcher.hidden && launcher.inert);
-  toggle.dispatchEvent(event('click'));
+  const statusIcon = harness.document.querySelector('#status-instrument .status-icon');
+  renderChrome(harness, 'timeline');
+  assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), statusIcon);
+  const rerenderedToggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
+  rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
   launcher.dispatchEvent(event('click', { target: launcher }));
   assert.ok(launcher.hidden && launcher.inert);
-  toggle.dispatchEvent(event('click'));
+  rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
   launcher.querySelector('[data-launcher-app] a').dispatchEvent(event('click', { bubbles: true }));
   assert.ok(launcher.hidden && launcher.inert);
 });
@@ -582,7 +589,7 @@ testCase('launcher remains inert while closed', () => {
   const launcher = harness.document.querySelector('#app-launcher');
   const toggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
   assert.ok(launcher.inert);
-  toggle.dispatchEvent(event('click'));
+  toggle.dispatchEvent(event('click', { bubbles: true }));
   assert.ok(!launcher.inert);
   harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
   assert.ok(launcher.inert);
@@ -603,7 +610,7 @@ testCase('presentation mode closes launcher', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
   const launcher = harness.document.querySelector('#app-launcher');
-  harness.document.querySelector('#app-rail [data-app-launcher-toggle]').dispatchEvent(event('click'));
+  harness.document.querySelector('#app-rail [data-app-launcher-toggle]').dispatchEvent(event('click', { bubbles: true }));
   assert.ok(!launcher.hidden);
   harness.window.solstonePresentation.on();
   assert.ok(launcher.hidden && launcher.inert);
