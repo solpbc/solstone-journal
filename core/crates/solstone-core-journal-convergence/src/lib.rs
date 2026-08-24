@@ -20,6 +20,7 @@
 mod allocate;
 mod claim;
 mod clearance;
+mod decision;
 mod digest;
 mod error;
 mod init;
@@ -111,6 +112,7 @@ mod architecture {
             include_str!("allocate.rs"),
             include_str!("claim.rs"),
             include_str!("clearance.rs"),
+            include_str!("decision.rs"),
             include_str!("digest.rs"),
             include_str!("error.rs"),
             include_str!("init.rs"),

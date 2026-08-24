@@ -21,6 +21,16 @@ pub enum WriterFamily {
     Import,
 }
 
+impl WriterFamily {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Observe => "observe",
+            Self::Think => "think",
+            Self::Import => "import",
+        }
+    }
+}
+
 /// Closed journal-tree target a grant request may name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -28,6 +38,16 @@ pub enum TargetScope {
     Chronicle,
     Entities,
     Facets,
+}
+
+impl TargetScope {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Chronicle => "chronicle",
+            Self::Entities => "entities",
+            Self::Facets => "facets",
+        }
+    }
 }
 
 /// Intended transaction class bound into a prepared owner.
@@ -144,6 +164,22 @@ impl GrantRequestSelector {
 
     pub fn days(&self) -> &[DayKey] {
         &self.days
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    /// The canonical, sorted request list. Each entry becomes exactly one
+    /// grant member once the transition-derived fields exist.
+    pub(crate) fn requests(&self) -> impl Iterator<Item = (&str, WriterFamily, TargetScope)> {
+        self.requests.iter().map(|request| {
+            (
+                request.day.as_str(),
+                request.writer_family,
+                request.target_scope,
+            )
+        })
     }
 
     pub fn digest(&self) -> Result<RecordDigest, ConvergenceError> {

@@ -732,7 +732,6 @@ mod tests {
     use crate::error::Refusal;
     use crate::init::initialize;
     use crate::layout::DayKey;
-    use crate::owner::OwnerBinding;
     use crate::preflight::{Preflight, preflight};
     use crate::schema::{ClaimHead, ClaimRevision};
     use crate::test_support::{

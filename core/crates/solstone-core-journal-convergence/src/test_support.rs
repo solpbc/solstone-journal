@@ -97,6 +97,10 @@ pub(crate) enum PublishFault {
     AfterPreparedOwner,
     AfterOwnerIntentLink,
     AfterOwnerIntentLinkSync,
+    AfterDecision,
+    AfterGrantMember { index: u8 },
+    AfterAllActiveBarrier,
+    AfterAllSupersededBarrier,
 }
 
 /// Clears TLS injects if a test panics between arm and take.
@@ -217,6 +221,41 @@ pub(crate) fn admit_proof(
         AdmitOutcome::Proof(proof) => Ok(proof),
         AdmitOutcome::ExistingLink => Err(ConvergenceError::Refused(Refusal::ReusedAuthority)),
     }
+}
+
+/// Prepared owner for a fresh operation whose selector actually requests
+/// grants, so the resolver decision, member, and barrier path runs.
+pub(crate) fn prepared_owner_with(
+    admitted: &Admitted,
+    requests: &[(
+        &str,
+        crate::selector::WriterFamily,
+        crate::selector::TargetScope,
+    )],
+) -> Result<OwnerBinding, ConvergenceError> {
+    let operation = OperationId::generate()?;
+    let selector = GrantRequestSelector::try_new(admitted.days(), requests.iter().copied())?;
+    OwnerBinding::prepare(
+        admitted,
+        &operation,
+        TransactionClass::AdvanceDirty,
+        &selector,
+    )
+}
+
+pub(crate) fn continue_ok_with<'a>(
+    admitted: &'a Admitted,
+    requests: &[(
+        &str,
+        crate::selector::WriterFamily,
+        crate::selector::TargetScope,
+    )],
+) -> HeldDays<'a> {
+    let owner = prepared_owner_with(admitted, requests).unwrap();
+    let mut held = admitted.begin(owner).unwrap();
+    let proof = admit_proof(&held, held.owner()).unwrap();
+    held.continue_with(proof).unwrap();
+    held
 }
 
 pub(crate) fn continue_ok(admitted: &Admitted) -> HeldDays<'_> {

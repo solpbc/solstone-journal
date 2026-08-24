@@ -477,7 +477,6 @@ mod tests {
     use super::*;
     use crate::error::{ConvergenceError, DurableRole, Refusal};
     use crate::layout::TERMINALS;
-    use crate::owner::{ClaimAdmission, OwnerBinding};
     use crate::test_support::{
         PublishFault, admit_days, after_discovery, continue_ok, continue_with_fault, days_dir,
         records_dir, sample_day, snapshot_tree,

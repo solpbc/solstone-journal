@@ -13,7 +13,7 @@ use solstone_core_journal_io::{
 use crate::digest::{RecordDigest, canonical_json_bytes, digest_bytes, digest_value};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::layout::DayKey;
-use crate::selector::TransactionClass;
+use crate::selector::{TargetScope, TransactionClass, WriterFamily};
 
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 pub(crate) const ROLE_CLAIM_GENESIS: &str = "solstone.convergence.claim-genesis.v1";
@@ -33,6 +33,10 @@ pub(crate) const ROLE_JOURNAL_SECRET: &str = "solstone.convergence.journal-secre
 pub(crate) const ROLE_GRANT_SELECTOR: &str = "solstone.convergence.grant-selector.v1";
 pub(crate) const ROLE_PREPARED_OWNER: &str = "solstone.convergence.prepared-owner.v1";
 pub(crate) const ROLE_OWNER_INTENT_LINK: &str = "solstone.convergence.owner-intent-link.v1";
+pub(crate) const ROLE_GRANT_DECISION: &str = "solstone.convergence.grant-decision.v1";
+pub(crate) const ROLE_GRANT_MEMBER: &str = "solstone.convergence.grant-member.v1";
+pub(crate) const ROLE_GRANT_ALL_ACTIVE: &str = "solstone.convergence.grant-all-active.v1";
+pub(crate) const ROLE_GRANT_ALL_SUPERSEDED: &str = "solstone.convergence.grant-all-superseded.v1";
 /// Domain-separation prefix for the secret-authenticated owner-binding digest.
 pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
@@ -366,6 +370,92 @@ pub(crate) struct JournalSecret {
     pub root_id: String,
     pub key_hex: String,
     pub auxiliary_time: String,
+}
+
+/// One grant tuple. Every transition-derived field is taken from that
+/// transition's exact store-proposed day record, never from a caller.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantTuple {
+    pub day: String,
+    pub writer_family: WriterFamily,
+    pub target_scope: TargetScope,
+    pub dirty_generation: u64,
+    pub dirty_by_transition_serial: u64,
+}
+
+/// Whether a commit was decided, or explicitly decided to open nothing.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionKind {
+    Commit,
+    AbortNoOpen,
+}
+
+/// One immutable decision per transition serial.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantDecision {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub selector_digest: String,
+    pub intent_digest: String,
+    pub kind: DecisionKind,
+    pub day_set: Vec<String>,
+    pub tuples: Vec<GrantTuple>,
+    pub decision_digest: String,
+}
+
+/// Lifecycle of one grant member. Membership persists after revocation.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MemberState {
+    Active,
+    RevocationPending,
+    Revoked,
+    Superseded,
+}
+
+/// One activated grant member.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantMember {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub selector_digest: String,
+    pub tuple: GrantTuple,
+    pub state: MemberState,
+    pub member_digest: String,
+}
+
+/// Historical barrier over a complete member set. `role` distinguishes the
+/// all-active barrier from the all-members-superseded barrier; both may be
+/// present, because supersession retains the prior all-active as history.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantBarrier {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation_id: String,
+    pub selector_digest: String,
+    pub day_set: Vec<String>,
+    pub member_digests: BTreeMap<String, String>,
+    pub descendant_discriminator: Option<BTreeMap<String, String>>,
+    pub prior_all_active_digest: Option<String>,
+    pub barrier_digest: String,
 }
 
 /// Immutable binding of a prepared owner to one exact intent. Create-only.
