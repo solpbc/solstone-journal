@@ -14,6 +14,9 @@ use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
 use solstone_core_local::install::ced_readiness::{
     CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
 };
+use solstone_core_local::install::rfdetr_readiness::{
+    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
+};
 use solstone_core_system_health::sanitize_for_terminal;
 use tokio::time::{Instant, timeout};
 
@@ -32,6 +35,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     };
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     let ced = evaluate_ced_readiness(&journal, os, arch);
+    let rfdetr = evaluate_rfdetr_readiness(&journal, os, arch);
     let socket_path = journal.join("health").join("callosum.sock");
     let fetch = match inspect_socket(&socket_path) {
         SocketInspection::InvalidUtf8 => Err(PresentedHealthError::InvalidUtf8),
@@ -58,7 +62,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
             }
         }
     };
-    let (stdout, stderr, code) = present_health(&ced, fetch);
+    let (stdout, stderr, code) = present_health(&ced, &rfdetr, fetch);
     print!("{stdout}");
     eprint!("{stderr}");
     code
@@ -82,16 +86,34 @@ fn ced_line(ced: &CedReadiness) -> String {
     }
 }
 
+fn rfdetr_line(rfdetr: &RfdetrReadiness) -> String {
+    match rfdetr {
+        RfdetrReadiness::Ready { .. } => RFDETR_READY_DETAIL.to_owned(),
+        RfdetrReadiness::Degraded { .. } => RFDETR_UNAVAILABLE_GUIDANCE.to_owned(),
+        RfdetrReadiness::Unsupported { os, arch } => {
+            format!(
+                "rf-detr install: unsupported platform {os}/{arch}; skipping rf-detr object-detection assets"
+            )
+        }
+    }
+}
+
 fn present_health(
     ced: &CedReadiness,
+    rfdetr: &RfdetrReadiness,
     fetch: Result<SupervisorStatus, PresentedHealthError>,
 ) -> (String, String, std::process::ExitCode) {
-    let stdout = format!("{}\n", ced_line(ced));
+    let stdout = format!("{}\n{}\n", ced_line(ced), rfdetr_line(rfdetr));
     match fetch {
-        Ok(status) => (
+        Ok(status) if matches!(rfdetr, RfdetrReadiness::Ready { .. }) => (
             format!("{stdout}{}", render_status(&status)),
             String::new(),
             std::process::ExitCode::SUCCESS,
+        ),
+        Ok(status) => (
+            format!("{stdout}{}", render_status(&status)),
+            format!("{RFDETR_UNAVAILABLE_GUIDANCE}\n"),
+            std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::InvalidUtf8) => (
             stdout,
@@ -568,12 +590,17 @@ mod tests {
             library: PathBuf::from("libced.so"),
             model: PathBuf::from("model.gguf"),
         };
-        let (stdout, stderr, code) = present_health(&ced, Ok(status));
+        let rfdetr = RfdetrReadiness::Ready {
+            binary: PathBuf::from("rfdetr-cli"),
+            model: PathBuf::from("rfdetr-nano-f16.gguf"),
+        };
+        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
         assert!(stdout.starts_with(&format!("{CED_READY_DETAIL}\n")));
+        assert!(stdout.contains(RFDETR_READY_DETAIL));
         assert!(stdout.contains("Services:"));
         assert!(stderr.is_empty());
         assert_eq!(code, std::process::ExitCode::SUCCESS);
-        assert_eq!(&stdout[CED_READY_DETAIL.len() + 1..], rendered);
+        assert!(stdout.ends_with(&rendered));
     }
 
     #[test]
@@ -582,18 +609,58 @@ mod tests {
             cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
             detail: "sidecar missing".to_owned(),
         };
+        let rfdetr = RfdetrReadiness::Ready {
+            binary: PathBuf::from("rfdetr-cli"),
+            model: PathBuf::from("rfdetr-nano-f16.gguf"),
+        };
         let (stdout, stderr, code) = present_health(
             &ced,
+            &rfdetr,
             Err(PresentedHealthError::NotFound {
                 path: "/journal/health/callosum.sock".to_owned(),
             }),
         );
-        assert_eq!(stdout, format!("{CED_UNAVAILABLE_GUIDANCE}\n"));
+        assert_eq!(
+            stdout,
+            format!("{CED_UNAVAILABLE_GUIDANCE}\n{RFDETR_READY_DETAIL}\n")
+        );
         assert_eq!(
             stderr,
             "Cannot connect: callosum socket not found at /journal/health/callosum.sock\n"
         );
         assert_eq!(code, std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn present_health_fails_for_degraded_rfdetr_with_a_healthy_supervisor() {
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let ced = CedReadiness::Degraded {
+            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+            detail: "sidecar missing".to_owned(),
+        };
+        let rfdetr = RfdetrReadiness::Degraded {
+            cause: solstone_core_local::install::rfdetr_readiness::RfdetrDegradedCause::Absent,
+            detail: "sidecar missing".to_owned(),
+        };
+        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        assert_eq!(stderr, format!("{RFDETR_UNAVAILABLE_GUIDANCE}\n"));
+        assert_eq!(code, std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn present_health_keeps_ced_degradation_non_gating_when_rfdetr_is_ready() {
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let ced = CedReadiness::Degraded {
+            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+            detail: "sidecar missing".to_owned(),
+        };
+        let rfdetr = RfdetrReadiness::Ready {
+            binary: PathBuf::from("rfdetr-cli"),
+            model: PathBuf::from("rfdetr-nano-f16.gguf"),
+        };
+        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        assert!(stderr.is_empty());
+        assert_eq!(code, std::process::ExitCode::SUCCESS);
     }
 
     #[test]

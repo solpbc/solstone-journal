@@ -119,6 +119,7 @@ pub fn build_parakeet_fit_report_with_free_bytes(
             "parakeet CPU server tarball",
             "parakeet Vulkan server tarball",
         ],
+        "known downloads",
     );
     FitReport {
         artifact: "parakeet.cpp artifacts".to_string(),
@@ -164,6 +165,7 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
             ("rf-detr CLI binary", 1_048_576),
         ],
         &[],
+        "bundled asset installation",
     );
     FitReport {
         artifact: "rf-detr.cpp artifacts".to_string(),
@@ -214,7 +216,13 @@ pub fn build_local_fit_report(
     } else {
         vec!["llama-server tarball"]
     };
-    let disk = disk_check(&pins::cache_root(journal), available_disk, &known, &unknown);
+    let disk = disk_check(
+        &pins::cache_root(journal),
+        available_disk,
+        &known,
+        &unknown,
+        "known downloads",
+    );
     let mut checks = vec![platform, ram, disk];
     if os_name == "linux" {
         checks.push(local_gpu_check(
@@ -382,6 +390,7 @@ fn disk_check(
     available: Result<u64, String>,
     known: &[(&str, u64)],
     unknown: &[&str],
+    requirement: &str,
 ) -> FitCheck {
     let required = known.iter().map(|(_, size)| size).sum::<u64>();
     let known_names = known
@@ -412,7 +421,7 @@ fn disk_check(
         },
         Ok(available) if available < required => {
             let mut detail = format!(
-                "insufficient disk space for known downloads (need {} GB, have {} GB free){}{}",
+                "insufficient disk space for {requirement} (need {} GB, have {} GB free){}{}",
                 gb_label(required),
                 gb_label(available),
                 if known_names.is_empty() { "" } else { ": " },
@@ -430,13 +439,13 @@ fn disk_check(
         Ok(available) => {
             let detail = if unknown.is_empty() {
                 format!(
-                    "{} GB free for {} GB known downloads",
+                    "{} GB free for {} GB {requirement}",
                     gb_label(available),
                     gb_label(required)
                 )
             } else {
                 format!(
-                    "{} GB free; known downloads need {} GB; {unknown}",
+                    "{} GB free; {requirement} need {} GB; {unknown}",
                     gb_label(available),
                     gb_label(required)
                 )

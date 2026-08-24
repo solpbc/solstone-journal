@@ -1,30 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Runtime installation for the pinned rf-detr.cpp detector.
+//! Runtime installation for the bundled rf-detr.cpp detector.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use solstone_core_assets::{Artifact, Backend, Platform};
 use thiserror::Error;
 
-use super::{archive, download_artifact, ensure_verified, fit_report, select_artifact};
+use super::{archive, fit_report};
 
-const ENGINE_UNIT: &str = "rfdetr-engine";
-const MODEL_UNIT: &str = "rfdetr-model";
-/// The engine pin the installer resolves against. Public because the
-/// owner-facing download disclosure prints it, and a version typed into that
-/// sentence goes silently false at the next bump while the owner reads a
-/// version that is not what arrived.
 pub const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
 pub const ENGINE_PROVENANCE_REF: &str = "ec73712e";
+pub const RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256: &str =
+    "56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7";
+pub const RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256: &str =
+    "6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af";
+pub const RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256: &str =
+    "2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d";
+pub const RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256: &str =
+    "14c47251ffd61a3ef0dc358c4b6a88d8718c5c3f266f4d79db9ae1440e3b6ecc";
+pub const RFDETR_ENGINE_MACOS_METAL_ARM64_TARBALL_SHA256: &str =
+    "46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71";
+pub const RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256: &str =
+    "f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e";
+pub const RFDETR_MODEL_SHA256: &str =
+    "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
+
 const BINARY: &str = "rfdetr-cli";
 const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
 const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
 const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
+const MODEL_SIZE: u64 = 63_439_488;
 const SIDECAR: &str = ".rfdetr-install.json";
+
+#[derive(Debug, Clone, Copy)]
+pub struct EngineSpec {
+    pub filename: &'static str,
+    pub tarball_sha256: &'static str,
+    pub tarball_size: u64,
+    pub binary_sha256: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ModelSpec {
+    pub sha256: &'static str,
+    pub size: u64,
+}
 
 #[derive(Debug, Error)]
 #[error("{message}")]
@@ -33,6 +56,7 @@ pub struct RfdetrInstallError {
     message: String,
     pub exit_code: u8,
 }
+
 impl RfdetrInstallError {
     pub fn new(reason_code: impl Into<String>, message: impl Into<String>, exit_code: u8) -> Self {
         Self {
@@ -80,9 +104,11 @@ pub fn rfdetr_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
 fn root(journal: &Path) -> PathBuf {
     journal.join("cache/providers/rfdetr")
 }
+
 pub fn binary_path(journal: &Path, key: &str) -> PathBuf {
     root(journal)
         .join(ENGINE_VERSION)
@@ -90,65 +116,107 @@ pub fn binary_path(journal: &Path, key: &str) -> PathBuf {
         .join(key)
         .join(BINARY)
 }
+
 pub fn model_path(journal: &Path) -> PathBuf {
     root(journal)
         .join("model")
         .join(MODEL_REVISION)
         .join(MODEL_FILE)
 }
+
 fn sidecar_path(journal: &Path) -> PathBuf {
     root(journal).join(SIDECAR)
 }
 fn extract_path(journal: &Path, key: &str) -> PathBuf {
     binary_path(journal, key).parent().unwrap().join(".extract")
 }
-fn engine(key: &str) -> Result<&'static Artifact, RfdetrInstallError> {
-    let (platform, backend) = match key {
-        "linux-cpu-x64" => (Platform::LinuxX64, Backend::Cpu),
-        "linux-cpu-arm64" => (Platform::LinuxArm64, Backend::Cpu),
-        "macos-metal-arm64" => (Platform::MacosArm64, Backend::Metal),
-        _ => {
-            return Err(RfdetrInstallError::new(
-                "unsupported_platform",
-                format!("rf-detr assets unsupported for {key}"),
-                69,
-            ));
-        }
+
+fn engine_spec(key: &str) -> &'static EngineSpec {
+    const X64: EngineSpec = EngineSpec {
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+        tarball_sha256: RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256,
+        tarball_size: 952_974,
+        binary_sha256: RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256,
     };
-    select_artifact(ENGINE_UNIT, Some(platform), Some(backend), Some(key), None).map_err(|error| {
-        RfdetrInstallError::new(
-            "artifact_registry_mismatch",
-            error
-                .envelope
-                .error
-                .map(|value| value.message)
-                .unwrap_or_else(|| "rf-detr engine catalog lookup failed".to_owned()),
-            65,
-        )
-    })
-}
-fn model() -> Result<&'static Artifact, RfdetrInstallError> {
-    select_artifact(MODEL_UNIT, None, None, None, Some(MODEL_FILE)).map_err(|error| {
-        RfdetrInstallError::new(
-            "artifact_registry_mismatch",
-            error
-                .envelope
-                .error
-                .map(|value| value.message)
-                .unwrap_or_else(|| "rf-detr model catalog lookup failed".to_owned()),
-            65,
-        )
-    })
-}
-fn tarball(journal: &Path, key: &str) -> Result<PathBuf, RfdetrInstallError> {
-    Ok(tarball_for(journal, key, engine(key)?))
+    const ARM64: EngineSpec = EngineSpec {
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+        tarball_sha256: RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256,
+        tarball_size: 869_316,
+        binary_sha256: RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256,
+    };
+    const MACOS: EngineSpec = EngineSpec {
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        tarball_sha256: RFDETR_ENGINE_MACOS_METAL_ARM64_TARBALL_SHA256,
+        tarball_size: 994_991,
+        binary_sha256: RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256,
+    };
+    match key {
+        "linux-cpu-x64" => &X64,
+        "linux-cpu-arm64" => &ARM64,
+        "macos-metal-arm64" => &MACOS,
+        _ => unreachable!("only rfdetr_artifact_key outputs reach engine_spec"),
+    }
 }
 
-fn tarball_for(journal: &Path, key: &str, engine: &Artifact) -> PathBuf {
-    binary_path(journal, key)
-        .parent()
-        .unwrap()
-        .join(engine.filename)
+fn model_spec() -> &'static ModelSpec {
+    const MODEL: ModelSpec = ModelSpec {
+        sha256: RFDETR_MODEL_SHA256,
+        size: MODEL_SIZE,
+    };
+    &MODEL
+}
+
+/// Locate a bundled RF-DETR payload without creating or changing any state.
+pub fn resolve_rfdetr_asset(filename: &str) -> Result<PathBuf, RfdetrInstallError> {
+    resolve_rfdetr_asset_from(
+        filename,
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf)),
+    )
+}
+
+fn resolve_rfdetr_asset_from(
+    filename: &str,
+    manifest_dir: &Path,
+    executable_parent: Option<PathBuf>,
+) -> Result<PathBuf, RfdetrInstallError> {
+    for ancestor in manifest_dir.ancestors() {
+        let candidate = ancestor.join("core/models/assets/rfdetr").join(filename);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    if let Some(parent) = executable_parent {
+        for ancestor in parent.ancestors() {
+            let candidate = ancestor
+                .join("lib/solstone_journal_models/assets/rfdetr")
+                .join(filename);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+    Err(RfdetrInstallError::new(
+        "bundled_payload_missing",
+        format!("bundled rf-detr asset missing: {filename}; reinstall the journal package"),
+        65,
+    ))
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn resolve_rfdetr_asset_in(root: &Path, filename: &str) -> Result<PathBuf, RfdetrInstallError> {
+    let candidate = root.join(filename);
+    if candidate.is_file() {
+        Ok(candidate)
+    } else {
+        Err(RfdetrInstallError::new(
+            "bundled_payload_missing",
+            format!("bundled rf-detr asset missing: {filename}; reinstall the journal package"),
+            65,
+        ))
+    }
 }
 
 fn verify(
@@ -193,37 +261,29 @@ fn verify(
             )
         })
 }
-fn installed_sidecar_for(
-    key: &str,
-    engine: &Artifact,
-    model: &Artifact,
-) -> Result<Sidecar, RfdetrInstallError> {
-    Ok(Sidecar {
+
+fn installed_sidecar_for(key: &str, engine: &EngineSpec, model: &ModelSpec) -> Sidecar {
+    Sidecar {
         artifact_key: Some(key.to_owned()),
-        engine_version: Some(engine.version.to_owned()),
-        engine_sha256: Some(engine.sha256.to_owned()),
+        engine_version: Some(ENGINE_VERSION.to_owned()),
+        engine_sha256: Some(engine.tarball_sha256.to_owned()),
         model_file: Some(MODEL_FILE.to_owned()),
         model_repo: Some(MODEL_REPO.to_owned()),
         model_revision: Some(MODEL_REVISION.to_owned()),
         model_sha256: Some(model.sha256.to_owned()),
         status: "installed".to_owned(),
-    })
+    }
 }
+
 fn write_sidecar(
     journal: &Path,
     record: &RfdetrInstallRecord,
-    artifacts: Option<(&str, &Artifact, &Artifact)>,
+    artifacts: Option<(&str, &EngineSpec, &ModelSpec)>,
 ) -> Result<(), RfdetrInstallError> {
     let record = match record {
         RfdetrInstallRecord::Installed => {
-            let (key, engine, model) = artifacts.ok_or_else(|| {
-                RfdetrInstallError::new(
-                    "artifact_registry_mismatch",
-                    "rf-detr installed sidecar has no resolved artifacts",
-                    65,
-                )
-            })?;
-            installed_sidecar_for(key, engine, model)?
+            let (key, engine, model) = artifacts.expect("installed sidecars have specs");
+            installed_sidecar_for(key, engine, model)
         }
         RfdetrInstallRecord::PlatformUnavailable => Sidecar {
             artifact_key: None,
@@ -241,32 +301,25 @@ fn write_sidecar(
         .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
     let mut text = serde_json::to_string_pretty(&record).expect("static rf-detr record serializes");
     text.push('\n');
+    atomic_write(&path, text.as_bytes())
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), RfdetrInstallError> {
     let tmp = path
         .parent()
         .unwrap()
         .join(format!("tmp{}", uuid::Uuid::new_v4().simple()));
-    let result = fs::write(&tmp, text).and_then(|_| fs::rename(&tmp, &path));
+    let result = fs::write(&tmp, bytes).and_then(|_| fs::rename(&tmp, path));
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
     result.map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
 }
-fn remove_archive(path: PathBuf) {
-    let _ = fs::remove_file(&path);
-    let _ = fs::remove_file(path.with_file_name(format!(
-        "{}.tmp",
-        path.file_name().unwrap().to_string_lossy()
-    )));
-}
 
-fn cleanup(journal: &Path, key: &str, engine: &Artifact, model: &Artifact) {
+fn cleanup(journal: &Path, key: &str, model: &ModelSpec) {
     let binary = binary_path(journal, key);
     let _ = fs::remove_file(&binary);
     let _ = fs::remove_file(binary.with_file_name(format!("{BINARY}.tmp")));
-    if let Ok(path) = tarball(journal, key) {
-        remove_archive(path);
-    }
-    remove_archive(tarball_for(journal, key, engine));
     let _ = fs::remove_dir_all(extract_path(journal, key));
     let model_path = model_path(journal);
     if verify(&model_path, model.sha256, None, MODEL_FILE).is_err() {
@@ -275,6 +328,7 @@ fn cleanup(journal: &Path, key: &str, engine: &Artifact, model: &Artifact) {
     let _ = fs::remove_file(model_path.with_file_name(format!("{MODEL_FILE}.tmp")));
     let _ = fs::remove_file(sidecar_path(journal));
 }
+
 fn find_binary(root: &Path) -> Option<PathBuf> {
     let direct = root.join(BINARY);
     if direct.is_file() {
@@ -301,36 +355,31 @@ pub fn check_rfdetr_model(
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         return Ok(RfdetrInstallRecord::PlatformUnavailable);
     };
-    check_rfdetr_model_with_rows(journal, key, engine(key)?, model()?)
+    check_rfdetr_model_with_rows(journal, key, engine_spec(key), model_spec())
 }
 
 fn check_rfdetr_model_with_rows(
     journal: &Path,
     key: &str,
-    engine: &Artifact,
-    model: &Artifact,
+    engine: &EngineSpec,
+    model: &ModelSpec,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    let text = fs::read_to_string(sidecar_path(journal)).map_err(|_| {
+    let path = sidecar_path(journal);
+    let text = fs::read_to_string(&path).map_err(|_| {
         RfdetrInstallError::new(
             "sidecar_missing",
-            format!(
-                "rf-detr sidecar missing: {}",
-                sidecar_path(journal).display()
-            ),
+            format!("rf-detr sidecar missing: {}", path.display()),
             65,
         )
     })?;
     let stored: Sidecar = serde_json::from_str(&text).map_err(|error| {
         RfdetrInstallError::new(
             "sidecar_invalid",
-            format!(
-                "rf-detr sidecar invalid: {}: {error}",
-                sidecar_path(journal).display()
-            ),
+            format!("rf-detr sidecar invalid: {}: {error}", path.display()),
             65,
         )
     })?;
-    let expected = installed_sidecar_for(key, engine, model)?;
+    let expected = installed_sidecar_for(key, engine, model);
     if stored.status != expected.status
         || stored.artifact_key != expected.artifact_key
         || stored.engine_version != expected.engine_version
@@ -348,14 +397,14 @@ fn check_rfdetr_model_with_rows(
     }
     verify(
         &binary_path(journal, key),
-        engine.extracted_binary_sha256.expect("catalog digest"),
+        engine.binary_sha256,
         None,
         BINARY,
     )?;
     verify(
         &model_path(journal),
         model.sha256,
-        Some(model.size_bytes),
+        Some(model.size),
         MODEL_FILE,
     )?;
     Ok(RfdetrInstallRecord::Installed)
@@ -365,8 +414,8 @@ fn check_rfdetr_model_with_rows(
 pub(crate) fn check_rfdetr_model_with_artifacts(
     journal: &Path,
     key: &str,
-    engine: &Artifact,
-    model: &Artifact,
+    engine: &EngineSpec,
+    model: &ModelSpec,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
     check_rfdetr_model_with_rows(journal, key, engine, model)
 }
@@ -377,54 +426,18 @@ pub fn install_rfdetr(
     arch: &str,
     force: bool,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    install_rfdetr_with_policy(
-        journal,
-        os_name,
-        arch,
-        force,
-        &archive::PRODUCTION_DOWNLOAD_POLICY,
-    )
-}
-pub(crate) fn install_rfdetr_with_policy(
-    journal: &Path,
-    os_name: &str,
-    arch: &str,
-    force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    install_rfdetr_with_policy_and_report(journal, os_name, arch, force, policy, None, None)
+    install_rfdetr_with_sources(journal, os_name, arch, force, None, None, None)
 }
 
-/// Internal fixture seam: install caller-supplied rows through the production installer.
-#[cfg(feature = "test-hooks")]
-pub(crate) fn install_rfdetr_with_artifacts(
+fn install_rfdetr_with_sources(
     journal: &Path,
     os_name: &str,
     arch: &str,
     force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
-    engine: &Artifact,
-    model: &Artifact,
-) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-    install_rfdetr_with_policy_and_report(
-        journal,
-        os_name,
-        arch,
-        force,
-        policy,
-        None,
-        Some((engine, model)),
-    )
-}
-
-fn install_rfdetr_with_policy_and_report(
-    journal: &Path,
-    os_name: &str,
-    arch: &str,
-    force: bool,
-    policy: &archive::DownloadHostPolicy<'_>,
     report_override: Option<fit_report::FitReport>,
-    artifact_override: Option<(&Artifact, &Artifact)>,
+    spec_override: Option<(&EngineSpec, &ModelSpec)>,
+    #[cfg(any(test, feature = "test-hooks"))] fixture_assets: Option<&Path>,
+    #[cfg(not(any(test, feature = "test-hooks")))] _fixture_assets: Option<&Path>,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         let record = RfdetrInstallRecord::PlatformUnavailable;
@@ -432,12 +445,8 @@ fn install_rfdetr_with_policy_and_report(
         log::info!("rf-detr.cpp platform unavailable on {os_name}/{arch}");
         return Ok(record);
     };
-    let (engine, model) = match artifact_override {
-        Some(rows) => rows,
-        None => (engine(key)?, model()?),
-    };
-    let ready = check_rfdetr_model_with_rows(journal, key, engine, model);
-    if !force && let Ok(record) = ready {
+    let (engine, model) = spec_override.unwrap_or((engine_spec(key), model_spec()));
+    if !force && let Ok(record) = check_rfdetr_model_with_rows(journal, key, engine, model) {
         return Ok(record);
     }
     let report = report_override
@@ -449,25 +458,35 @@ fn install_rfdetr_with_policy_and_report(
     if report.overall() == fit_report::FitSeverity::Warning {
         log::warn!("rf-detr.cpp host fit warning:\n{rendered}");
     }
-    cleanup(journal, key, engine, model);
+    cleanup(journal, key, model);
     let result = (|| {
-        let archive_path = tarball_for(journal, key, engine);
-        download_artifact(engine, &archive_path, policy, |_, _| {}, "download_failed")
-            .map_err(dispatch_error)?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        let tarball = match fixture_assets {
+            Some(root) => resolve_rfdetr_asset_in(root, engine.filename),
+            None => resolve_rfdetr_asset(engine.filename),
+        }?;
+        #[cfg(not(any(test, feature = "test-hooks")))]
+        let tarball = resolve_rfdetr_asset(engine.filename)?;
+        verify(
+            &tarball,
+            engine.tarball_sha256,
+            Some(engine.tarball_size),
+            engine.filename,
+        )?;
         let extract = extract_path(journal, key);
         let _ = fs::remove_dir_all(&extract);
         fs::create_dir_all(&extract)
             .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
-        archive::extract_tar_gz(&archive_path, &extract).map_err(|error| {
-            let path_escape = matches!(error, archive::ArchiveError::PathEscape(_));
+        archive::extract_tar_gz(&tarball, &extract).map_err(|error| {
+            let escaped = matches!(error, archive::ArchiveError::PathEscape(_));
             RfdetrInstallError::new(
-                if path_escape {
+                if escaped {
                     "archive_path_traversal"
                 } else {
                     "extract_failed"
                 },
                 error.to_string(),
-                if path_escape { 65 } else { 74 },
+                if escaped { 65 } else { 74 },
             )
         })?;
         let found = find_binary(&extract).ok_or_else(|| {
@@ -477,12 +496,7 @@ fn install_rfdetr_with_policy_and_report(
                 65,
             )
         })?;
-        verify(
-            &found,
-            engine.extracted_binary_sha256.expect("catalog digest"),
-            None,
-            BINARY,
-        )?;
+        verify(&found, engine.binary_sha256, None, BINARY)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -500,15 +514,15 @@ fn install_rfdetr_with_policy_and_report(
         fs::rename(&found, &final_binary)
             .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
         let _ = fs::remove_dir_all(&extract);
-        let _ = fs::remove_file(&archive_path);
-        ensure_verified(
-            model,
-            &model_path(journal),
-            policy,
-            |_, _| {},
-            "download_failed",
-        )
-        .map_err(dispatch_error)?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        let bundled_model = match fixture_assets {
+            Some(root) => resolve_rfdetr_asset_in(root, MODEL_FILE),
+            None => resolve_rfdetr_asset(MODEL_FILE),
+        }?;
+        #[cfg(not(any(test, feature = "test-hooks")))]
+        let bundled_model = resolve_rfdetr_asset(MODEL_FILE)?;
+        verify(&bundled_model, model.sha256, Some(model.size), MODEL_FILE)?;
+        copy_verified(&bundled_model, &model_path(journal), model)?;
         let record = RfdetrInstallRecord::Installed;
         write_sidecar(journal, &record, Some((key, engine, model)))?;
         check_rfdetr_model_with_rows(journal, key, engine, model)?;
@@ -524,45 +538,91 @@ fn install_rfdetr_with_policy_and_report(
         Ok(record)
     })();
     if result.is_err() {
-        cleanup(journal, key, engine, model);
+        cleanup(journal, key, model);
     }
     result
 }
-fn dispatch_error(error: super::DispatchError) -> RfdetrInstallError {
-    RfdetrInstallError::new(
-        error
-            .envelope
-            .error
-            .as_ref()
-            .map(|value| value.reason_code.clone())
-            .unwrap_or_else(|| "download_failed".to_owned()),
-        error
-            .envelope
-            .error
-            .map(|value| value.message)
-            .unwrap_or_else(|| "rf-detr download failed".to_owned()),
-        error.exit_code,
-    )
+
+fn copy_verified(
+    source: &Path,
+    destination: &Path,
+    model: &ModelSpec,
+) -> Result<(), RfdetrInstallError> {
+    fs::create_dir_all(destination.parent().unwrap())
+        .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
+    let tmp = destination
+        .parent()
+        .unwrap()
+        .join(format!("tmp{}", uuid::Uuid::new_v4().simple()));
+    let result = fs::copy(source, &tmp)
+        .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
+        .and_then(|_| verify(&tmp, model.sha256, Some(model.size), MODEL_FILE))
+        .and_then(|_| {
+            fs::rename(&tmp, destination)
+                .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::test_support::{leaked_temps, prove_temp_sweep};
+    use flate2::{Compression, write::GzEncoder};
+    use sha2::{Digest, Sha256};
 
-    use std::fs::OpenOptions;
-    #[cfg(unix)]
-    use std::os::unix::fs::MetadataExt;
-
-    const DENY_ALL_POLICY: archive::DownloadHostPolicy<'static> = archive::DownloadHostPolicy {
-        allowed_hosts: &["example.invalid"],
-        allow_http: false,
-        origin_base_url: "https://updates.solstone.app",
-    };
-    const TEST_KEY: &str = "linux-cpu-x64";
-
+    fn digest(bytes: &[u8]) -> &'static str {
+        Box::leak(format!("{:x}", Sha256::digest(bytes)).into_boxed_str())
+    }
+    fn fixture(binary: &[u8], model: &[u8]) -> (tempfile::TempDir, EngineSpec, ModelSpec) {
+        let root = tempfile::tempdir().unwrap();
+        let archive_path = root.path().join("fixture.tar.gz");
+        let file = fs::File::create(&archive_path).unwrap();
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(binary.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive.append_data(&mut header, BINARY, binary).unwrap();
+        archive.into_inner().unwrap().finish().unwrap();
+        let archive_bytes = fs::read(&archive_path).unwrap();
+        fs::write(root.path().join(MODEL_FILE), model).unwrap();
+        (
+            root,
+            EngineSpec {
+                filename: "fixture.tar.gz",
+                tarball_sha256: digest(&archive_bytes),
+                tarball_size: archive_bytes.len() as u64,
+                binary_sha256: digest(binary),
+            },
+            ModelSpec {
+                sha256: digest(model),
+                size: model.len() as u64,
+            },
+        )
+    }
+    fn install_fixture(
+        journal: &Path,
+        assets: &Path,
+        engine: &EngineSpec,
+        model: &ModelSpec,
+        force: bool,
+    ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+        install_rfdetr_with_sources(
+            journal,
+            "linux",
+            "x86_64",
+            force,
+            None,
+            Some((engine, model)),
+            Some(assets),
+        )
+    }
     #[test]
-    fn rfdetr_artifact_keys_match_the_catalog_platforms() {
+    fn rfdetr_artifact_keys_select_bundled_specs() {
         assert_eq!(
             rfdetr_artifact_key("darwin", "arm64"),
             Some("macos-metal-arm64")
@@ -575,237 +635,129 @@ mod tests {
             rfdetr_artifact_key("linux", "aarch64"),
             Some("linux-cpu-arm64")
         );
-        assert_eq!(rfdetr_artifact_key("macos", "aarch64"), None);
+        assert_eq!(engine_spec("linux-cpu-x64").tarball_size, 952_974);
     }
-
     #[test]
     fn unsupported_platform_only_writes_a_sidecar_on_install() {
-        let temp = tempfile::tempdir().unwrap();
+        let journal = tempfile::tempdir().unwrap();
         assert_eq!(
-            check_rfdetr_model(temp.path(), "windows", "x86_64").unwrap(),
+            check_rfdetr_model(journal.path(), "windows", "x86_64").unwrap(),
             RfdetrInstallRecord::PlatformUnavailable
         );
-        assert!(!sidecar_path(temp.path()).exists());
+        assert!(!sidecar_path(journal.path()).exists());
         assert_eq!(
-            install_rfdetr_with_policy(
-                temp.path(),
-                "windows",
-                "x86_64",
-                false,
-                &archive::PRODUCTION_DOWNLOAD_POLICY,
+            install_rfdetr(journal.path(), "windows", "x86_64", false).unwrap(),
+            RfdetrInstallRecord::PlatformUnavailable
+        );
+        assert!(sidecar_path(journal.path()).is_file());
+    }
+    #[test]
+    fn missing_bundled_payload_is_reported() {
+        let journal = tempfile::tempdir().unwrap();
+        let assets = tempfile::tempdir().unwrap();
+        let (_, engine, model) = fixture(b"#!/bin/sh\nexit 0\n", b"model");
+        assert_eq!(
+            install_fixture(journal.path(), assets.path(), &engine, &model, false)
+                .unwrap_err()
+                .reason_code,
+            "bundled_payload_missing"
+        );
+    }
+    #[test]
+    fn resolver_finds_development_and_installed_layouts() {
+        let root = tempfile::tempdir().unwrap();
+        let development = root.path().join("core/models/assets/rfdetr/fixture");
+        fs::create_dir_all(development.parent().unwrap()).unwrap();
+        fs::write(&development, b"fixture").unwrap();
+        assert_eq!(
+            resolve_rfdetr_asset_from(
+                "fixture",
+                &root.path().join("core/crates/solstone-core-local"),
+                None,
             )
             .unwrap(),
-            RfdetrInstallRecord::PlatformUnavailable
+            development
         );
-        assert_eq!(
-            fs::read_to_string(sidecar_path(temp.path())).unwrap(),
-            "{\n  \"status\": \"platform_unavailable\"\n}\n"
-        );
-    }
 
-    #[test]
-    fn sound_platform_unavailable_sidecar_is_returned_on_a_supported_host() {
-        let temp = tempfile::tempdir().unwrap();
-        write_sidecar(temp.path(), &RfdetrInstallRecord::PlatformUnavailable, None).unwrap();
-
+        fs::remove_file(&development).unwrap();
+        let installed = root
+            .path()
+            .join("lib/solstone_journal_models/assets/rfdetr/fixture");
+        fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        fs::write(&installed, b"fixture").unwrap();
         assert_eq!(
-            install_rfdetr_with_policy(temp.path(), "linux", "x86_64", false, &DENY_ALL_POLICY,)
-                .unwrap_err()
-                .reason_code,
-            "download_host_refused"
-        );
-        assert!(!binary_path(temp.path(), TEST_KEY).exists());
-        assert!(!model_path(temp.path()).exists());
-    }
-
-    #[test]
-    fn extracted_binary_digest_is_catalogued_and_rejects_tampering() {
-        let temp = tempfile::tempdir().unwrap();
-        let engine = engine(TEST_KEY).unwrap();
-        assert_eq!(
-            engine.extracted_binary_sha256,
-            Some("6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af")
-        );
-        let binary = temp.path().join(BINARY);
-        fs::write(&binary, b"tampered rfdetr binary").unwrap();
-        assert_eq!(
-            verify(
-                &binary,
-                engine.extracted_binary_sha256.unwrap(),
-                None,
-                BINARY,
+            resolve_rfdetr_asset_from(
+                "fixture",
+                &root.path().join("unrelated"),
+                Some(root.path().join("bin")),
             )
-            .unwrap_err()
-            .reason_code,
-            "sha256_mismatch"
+            .unwrap(),
+            installed
         );
     }
-
     #[test]
-    fn blocked_fit_refuses_before_download_and_leaves_the_tree_unchanged() {
-        let temp = tempfile::tempdir().unwrap();
+    fn extracted_binary_digest_mismatch_cleans_install_outputs() {
+        let journal = tempfile::tempdir().unwrap();
+        let (assets, mut engine, model) = fixture(b"binary", b"model");
+        engine.binary_sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+        assert_eq!(
+            install_fixture(journal.path(), assets.path(), &engine, &model, true)
+                .unwrap_err()
+                .reason_code,
+            "sha256_mismatch"
+        );
+        assert!(!binary_path(journal.path(), "linux-cpu-x64").exists());
+        assert!(!model_path(journal.path()).exists());
+    }
+    #[test]
+    fn blocked_fit_refuses_before_materializing() {
+        let journal = tempfile::tempdir().unwrap();
+        let (assets, engine, model) = fixture(b"binary", b"model");
         let report = fit_report::build_rfdetr_fit_report_with_free_bytes(
-            temp.path(),
+            journal.path(),
             "linux",
             "x86_64",
-            Ok(0),
+            Ok(1),
         );
-        assert_eq!(report.overall(), fit_report::FitSeverity::Blocked);
-        let sentinel = temp.path().join("sentinel");
-        fs::write(&sentinel, b"unchanged").unwrap();
-        let error = install_rfdetr_with_policy_and_report(
-            temp.path(),
-            "linux",
-            "x86_64",
-            true,
-            &DENY_ALL_POLICY,
-            Some(report),
-            None,
-        )
-        .unwrap_err();
-        assert_eq!(error.reason_code, "host_unfit");
-        assert_eq!(fs::read(&sentinel).unwrap(), b"unchanged");
-        assert!(!root(temp.path()).join("engine").exists());
-        assert!(!root(temp.path()).join("model").exists());
-    }
-
-    #[test]
-    fn failed_repair_removes_the_binary_and_model_but_not_unrelated_files() {
-        let temp = tempfile::tempdir().unwrap();
-        let binary = binary_path(temp.path(), TEST_KEY);
-        fs::create_dir_all(binary.parent().unwrap()).unwrap();
-        fs::write(&binary, b"wrong bytes").unwrap();
-        let model = model().unwrap();
-        let model_path = model_path(temp.path());
-        fs::create_dir_all(model_path.parent().unwrap()).unwrap();
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&model_path)
-            .unwrap()
-            .set_len(model.size_bytes)
-            .unwrap();
-        write_sidecar(
-            temp.path(),
-            &RfdetrInstallRecord::Installed,
-            Some((TEST_KEY, engine(TEST_KEY).unwrap(), model)),
-        )
-        .unwrap();
-        let sentinel = root(temp.path()).join("unrelated-sentinel");
-        fs::write(&sentinel, b"keep").unwrap();
-        assert_eq!(
-            check_rfdetr_model(temp.path(), "linux", "x86_64")
-                .unwrap_err()
-                .reason_code,
-            "sha256_mismatch"
-        );
-
-        let error =
-            install_rfdetr_with_policy(temp.path(), "linux", "x86_64", false, &DENY_ALL_POLICY)
-                .unwrap_err();
-        assert_eq!(error.reason_code, "download_host_refused");
-        assert!(!binary.exists());
-        assert!(!model_path.exists());
-        assert!(!sidecar_path(temp.path()).exists());
-        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
-    }
-
-    #[test]
-    fn check_rejects_right_size_wrong_bytes_for_rfdetr_assets() {
-        let temp = tempfile::tempdir().unwrap();
-        let binary = binary_path(temp.path(), TEST_KEY);
-        fs::create_dir_all(binary.parent().unwrap()).unwrap();
-        fs::write(&binary, b"right-size is not an rf-detr binary").unwrap();
-        let model = model().unwrap();
-        let model_path = model_path(temp.path());
-        fs::create_dir_all(model_path.parent().unwrap()).unwrap();
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&model_path)
-            .unwrap()
-            .set_len(model.size_bytes)
-            .unwrap();
-        write_sidecar(
-            temp.path(),
-            &RfdetrInstallRecord::Installed,
-            Some((TEST_KEY, engine(TEST_KEY).unwrap(), model)),
-        )
-        .unwrap();
-        assert_eq!(
-            check_rfdetr_model(temp.path(), "linux", "x86_64")
-                .unwrap_err()
-                .reason_code,
-            "sha256_mismatch"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn sound_no_force_install_keeps_rfdetr_files_and_sweeps_no_temps() {
-        let temp = tempfile::tempdir().unwrap();
-        let engine = Artifact {
-            unit: ENGINE_UNIT,
-            version: ENGINE_VERSION,
-            filename: "fixture.tar.gz",
-            sha256: "unused",
-            size_bytes: 0,
-            upstream_url: "https://example.invalid/engine",
-            origin_key: "test",
-            artifact_key: Some("linux-cpu-x64"),
-            platform: Some(Platform::LinuxX64),
-            backend: Some(Backend::Cpu),
-            extracted_binary_sha256: Some(
-                "675a67184e2105f6ed183822a42a7d502b0f0d94f0165e21da601acebcb2c196",
-            ),
-        };
-        let model = Artifact {
-            unit: MODEL_UNIT,
-            version: MODEL_REVISION,
-            filename: MODEL_FILE,
-            sha256: "3d9211f81f88b0a5b1acff8cd8ada105eab06d0e91707638525b95a0436ff4aa",
-            size_bytes: b"sound rf model".len() as u64,
-            upstream_url: "https://example.invalid/model",
-            origin_key: "test",
-            artifact_key: None,
-            platform: None,
-            backend: None,
-            extracted_binary_sha256: None,
-        };
-        let binary = binary_path(temp.path(), TEST_KEY);
-        let model_path = model_path(temp.path());
-        fs::create_dir_all(binary.parent().unwrap()).unwrap();
-        fs::create_dir_all(model_path.parent().unwrap()).unwrap();
-        fs::write(&binary, b"sound rf binary").unwrap();
-        fs::write(&model_path, b"sound rf model").unwrap();
-        let sidecar = installed_sidecar_for(TEST_KEY, &engine, &model).unwrap();
-        let sidecar_path = sidecar_path(temp.path());
-        fs::write(
-            &sidecar_path,
-            format!("{}\n", serde_json::to_string_pretty(&sidecar).unwrap()),
-        )
-        .unwrap();
-        let root = root(temp.path());
-        prove_temp_sweep(&root, BINARY, "linux-cpu-x64");
-        let paths = [binary, model_path, sidecar_path];
-        let before = paths.clone().map(|path| fs::metadata(path).unwrap());
-        install_rfdetr_with_policy_and_report(
-            temp.path(),
+        let error = install_rfdetr_with_sources(
+            journal.path(),
             "linux",
             "x86_64",
             false,
-            &DENY_ALL_POLICY,
-            None,
+            Some(report),
             Some((&engine, &model)),
+            Some(assets.path()),
         )
-        .unwrap();
-        for (path, metadata) in paths.iter().zip(before) {
-            let after = fs::metadata(path).unwrap();
-            assert_eq!(after.ino(), metadata.ino());
-            assert_eq!(after.mtime(), metadata.mtime());
-        }
-        assert!(leaked_temps(&root).is_empty());
+        .unwrap_err();
+        assert_eq!(error.reason_code, "host_unfit");
+        assert!(!root(journal.path()).exists());
+    }
+    #[test]
+    fn check_rejects_right_size_wrong_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        let (assets, engine, model) = fixture(b"#!/bin/sh\nexit 0\n", b"model");
+        install_fixture(journal.path(), assets.path(), &engine, &model, false).unwrap();
+        fs::write(model_path(journal.path()), b"wrong").unwrap();
+        assert_eq!(
+            check_rfdetr_model_with_rows(journal.path(), "linux-cpu-x64", &engine, &model)
+                .unwrap_err()
+                .reason_code,
+            "sha256_mismatch"
+        );
+    }
+    #[test]
+    fn install_check_and_repair_use_bundled_inputs_without_network() {
+        let journal = tempfile::tempdir().unwrap();
+        let (assets, engine, model) = fixture(
+            b"#!/bin/sh\n[ \"$1\" = \"--help\" ] && exit 0\nexit 1\n",
+            b"model",
+        );
+        install_fixture(journal.path(), assets.path(), &engine, &model, false).unwrap();
+        fs::write(binary_path(journal.path(), "linux-cpu-x64"), b"broken").unwrap();
+        install_fixture(journal.path(), assets.path(), &engine, &model, false).unwrap();
+        assert_eq!(
+            check_rfdetr_model_with_rows(journal.path(), "linux-cpu-x64", &engine, &model).unwrap(),
+            RfdetrInstallRecord::Installed
+        );
     }
 }

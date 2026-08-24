@@ -233,11 +233,11 @@ License notice: Apache License 2.0 (Apache-2.0).
 Apache-2.0 permits sol pbc's redistribution of these model files with its
 required notice and license terms.
 
-## runtime-downloaded provider artifacts (rf-detr.cpp)
+## bundled RF-DETR object-detection assets (rf-detr.cpp)
 
-sol pbc redistributes these artifacts from `updates.solstone.app` on demand
-into the journal provider cache for local object detection. They are not
-bundled in this repository.
+sol pbc bundles these artifacts in every journal release and installs them from
+the release tree into the journal provider cache for local object detection.
+They are not fetched at install time.
 
 ### rf-detr.cpp v0.1.0-solpbc.5 engine
 
@@ -250,11 +250,11 @@ Source:
 - Project: https://github.com/localai-org/rf-detr.cpp
 - Pinned engine ref: ec73712e
 - Release tag: v0.1.0-solpbc.5
-- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz`
+- Bundled file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz`
 - SHA-256: `56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7`
-- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz`
+- Bundled file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz`
 - SHA-256: `2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d`
-- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz`
+- Bundled file: `rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz`
 - SHA-256: `46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71`
 
 License notice: Apache License 2.0 (Apache-2.0).
@@ -270,7 +270,8 @@ Source:
 
 - Model repository: https://huggingface.co/mudler/rfdetr-cpp-nano
 - Pinned revision: c3dc0c037df499f5503545247df6618415fca643
-- Downloaded file: `rfdetr-nano-f16.gguf`
+- Bundled file: `rfdetr-nano-f16.gguf`
+- SHA-256: `d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee`
 
 License notice: Apache License 2.0 (Apache-2.0).
 

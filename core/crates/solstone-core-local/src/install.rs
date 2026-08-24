@@ -25,6 +25,7 @@ pub mod migration;
 pub mod pins;
 pub mod readiness;
 pub mod rfdetr_install;
+pub mod rfdetr_readiness;
 pub mod status;
 
 /// Fixture-only driver for the registered installer integration targets.
@@ -53,8 +54,8 @@ pub mod test_hooks {
     };
     #[cfg(feature = "test-hooks")]
     use super::rfdetr_install::{
-        RfdetrInstallError, RfdetrInstallRecord, check_rfdetr_model_with_artifacts,
-        install_rfdetr_with_artifacts,
+        EngineSpec, ModelSpec, RfdetrInstallError, RfdetrInstallRecord,
+        check_rfdetr_model_with_artifacts,
     };
     use super::{InstallVerb, dispatch, manifest, pins};
 
@@ -188,26 +189,12 @@ pub mod test_hooks {
         )
     }
 
-    #[allow(clippy::too_many_arguments)] // Fixture rows exercise installer cleanup through its production path.
-    #[cfg(feature = "test-hooks")]
-    pub fn install_rfdetr_with_fixture_artifacts(
-        journal: &Path,
-        os_name: &str,
-        arch: &str,
-        force: bool,
-        policy: &DownloadHostPolicy<'_>,
-        engine: &Artifact,
-        model: &Artifact,
-    ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
-        install_rfdetr_with_artifacts(journal, os_name, arch, force, policy, engine, model)
-    }
-
     #[cfg(feature = "test-hooks")]
     pub fn check_rfdetr_model_with_fixture_artifacts(
         journal: &Path,
         key: &str,
-        engine: &Artifact,
-        model: &Artifact,
+        engine: &EngineSpec,
+        model: &ModelSpec,
     ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
         check_rfdetr_model_with_artifacts(journal, key, engine, model)
     }
@@ -523,33 +510,6 @@ pub(crate) fn download_artifact(
     fallback_reason_code: &str,
 ) -> Result<(), DispatchError> {
     archive::download_verified(artifact, destination, policy, progress).map_err(|error| {
-        failure(
-            "download",
-            download_artifact_reason_code(&error, fallback_reason_code),
-            error,
-            74,
-        )
-    })
-}
-
-pub(crate) fn ensure_verified(
-    artifact: &Artifact,
-    destination: &Path,
-    policy: &archive::DownloadHostPolicy<'_>,
-    progress: impl FnMut(u64, Option<u64>),
-    fallback_reason_code: &str,
-) -> Result<(), DispatchError> {
-    let origin = archive::origin_url(policy.origin_base_url, artifact.origin_key);
-    archive::ensure_verified_url(
-        &origin,
-        artifact.sha256,
-        Some(artifact.size_bytes),
-        destination,
-        policy,
-        progress,
-    )
-    .map(|_| ())
-    .map_err(|error| {
         failure(
             "download",
             download_artifact_reason_code(&error, fallback_reason_code),

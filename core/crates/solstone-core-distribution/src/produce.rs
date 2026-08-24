@@ -1146,28 +1146,20 @@ fn stage_layout(
                 dest,
                 mode,
                 digest_const,
+                digest_source,
                 targets,
             } => {
-                if !targets.iter().any(|item| item == target_id) {
-                    continue;
-                }
-                let bytes = fs::read(repo.join(source))?;
-                let expected = digest_const_hex(
-                    &fs::read_to_string(
-                        repo.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
-                    )?,
+                stage_model_asset(
+                    repo,
+                    stage,
+                    target_id,
+                    source,
+                    dest,
+                    *mode,
                     digest_const,
-                )
-                .ok_or_else(|| {
-                    ProduceError::new(format!("missing required:\n  digest {digest_const}"))
-                })?;
-                let actual = sha256_hex(&bytes);
-                if actual != expected {
-                    return Err(ProduceError::new(format!(
-                        "unexpected:\n  {dest} digest {actual}"
-                    )));
-                }
-                stage::write_staged_file_mode(stage, dest, &bytes, *mode)?;
+                    digest_source,
+                    targets,
+                )?;
             }
             Entry::OnnxRuntime {
                 dest_dir,
@@ -1200,6 +1192,36 @@ fn stage_layout(
         let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
         stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
     }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stage_model_asset(
+    repo: &Path,
+    stage: &Path,
+    target_id: &str,
+    source: &str,
+    dest: &str,
+    mode: u32,
+    digest_const: &str,
+    digest_source: &str,
+    targets: &[String],
+) -> Result<(), ProduceError> {
+    if !targets.iter().any(|item| item == target_id) {
+        return Ok(());
+    }
+    let bytes = fs::read(repo.join(source))?;
+    let expected = digest_const_hex(&fs::read_to_string(repo.join(digest_source))?, digest_const)
+        .ok_or_else(|| {
+        ProduceError::new(format!("missing required:\n  digest {digest_const}"))
+    })?;
+    let actual = sha256_hex(&bytes);
+    if actual != expected {
+        return Err(ProduceError::new(format!(
+            "unexpected:\n  {dest} digest {actual}"
+        )));
+    }
+    stage::write_staged_file_mode(stage, dest, &bytes, mode)?;
     Ok(())
 }
 
@@ -1372,6 +1394,53 @@ mod tests {
             digest_const_hex(source, "WESPEAKER_RESNET34_SHA256").as_deref(),
             Some("5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94")
         );
+    }
+
+    #[test]
+    fn model_asset_digest_mismatch_is_rejected_and_target_exclusion_skips_it() {
+        let repo = tempfile::tempdir().unwrap();
+        let stage = tempfile::tempdir().unwrap();
+        fs::create_dir_all(repo.path().join("assets")).unwrap();
+        fs::write(repo.path().join("assets/payload"), b"expected bytes").unwrap();
+        fs::write(
+            repo.path().join("pins.rs"),
+            format!(
+                "pub const PAYLOAD_SHA256: &str = \"{}\";\n",
+                sha256_hex(b"expected bytes")
+            ),
+        )
+        .unwrap();
+        let targets = vec!["linux-x86_64".to_owned()];
+
+        stage_model_asset(
+            repo.path(),
+            stage.path(),
+            "macos-arm64",
+            "assets/payload",
+            "lib/payload",
+            0o644,
+            "PAYLOAD_SHA256",
+            "pins.rs",
+            &targets,
+        )
+        .unwrap();
+        assert!(!stage.path().join("lib/payload").exists());
+
+        fs::write(repo.path().join("assets/payload"), b"wrong bytes").unwrap();
+        let error = stage_model_asset(
+            repo.path(),
+            stage.path(),
+            "linux-x86_64",
+            "assets/payload",
+            "lib/payload",
+            0o644,
+            "PAYLOAD_SHA256",
+            "pins.rs",
+            &targets,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("digest"));
+        fs::write(repo.path().join("assets/payload"), b"expected bytes").unwrap();
     }
 
     #[test]

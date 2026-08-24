@@ -231,7 +231,11 @@ pub fn probe_binary(input: &Map<String, Value>) -> Value {
     let Some(path) = input.get("path").and_then(Value::as_str) else {
         return json!({"runnable":false,"reason_code":"path_required"});
     };
-    match std::process::Command::new(path).arg("--version").output() {
+    probe_binary_with_arg(path, "--version")
+}
+
+pub fn probe_binary_with_arg(path: &str, arg: &str) -> Value {
+    match std::process::Command::new(path).arg(arg).output() {
         Ok(output) if output.status.success() => json!({"runnable":true,"reason_code":Value::Null}),
         Ok(output) => {
             json!({"runnable":false,"reason_code":"binary_exit","exit_code":output.status.code()})
