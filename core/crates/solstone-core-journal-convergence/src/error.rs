@@ -76,6 +76,7 @@ pub enum DurableRole {
     GrantRevocation,
     GrantTombstone,
     GrantSetTombstone,
+    GrantReconcile,
 }
 
 #[derive(Debug)]

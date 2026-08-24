@@ -41,6 +41,7 @@ pub(crate) const ROLE_OWNER_REVOCATION: &str = "solstone.convergence.owner-revoc
 pub(crate) const ROLE_GRANT_REVOCATION: &str = "solstone.convergence.grant-revocation.v1";
 pub(crate) const ROLE_GRANT_TOMBSTONE: &str = "solstone.convergence.grant-tombstone.v1";
 pub(crate) const ROLE_GRANT_SET_TOMBSTONE: &str = "solstone.convergence.grant-set-tombstone.v1";
+pub(crate) const ROLE_GRANT_RECONCILE: &str = "solstone.convergence.grant-reconcile.v1";
 /// Domain-separation prefix for the secret-authenticated owner-binding digest.
 pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
 /// Domain-separation prefix for the sealed grant capability.
@@ -453,6 +454,7 @@ pub(crate) struct GrantMember {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DescendantDiscriminator {
     pub record_digests: BTreeMap<String, String>,
+    pub record_revisions: BTreeMap<String, u64>,
 }
 
 /// Historical barrier over a complete member set. `role` distinguishes the
@@ -567,6 +569,29 @@ pub(crate) struct GrantSetTombstone {
     pub decision_digest: String,
     pub barrier_digest: String,
     pub member_tombstones: BTreeMap<String, String>,
+}
+
+/// The immutable decisioned-supersession continuation.  It is published
+/// before member mutation so every crash prefix has exactly one legal path.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantReconcile {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub selector_digest: String,
+    pub decision_digest: String,
+    pub intent_digest: String,
+    pub day_set: Vec<String>,
+    pub tuples: Vec<GrantTuple>,
+    pub activated_member_digests: BTreeMap<String, String>,
+    pub prior_all_active_digest: Option<String>,
+    pub descendant_discriminator: DescendantDiscriminator,
+    pub reconcile_digest: String,
 }
 
 /// Durable create-only owner-operation record. Never overwritten in place by

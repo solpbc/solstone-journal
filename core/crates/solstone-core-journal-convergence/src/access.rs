@@ -10,7 +10,7 @@
 use std::os::fd::OwnedFd;
 use std::time::Duration;
 
-use crate::claim::{ClaimView, mechanical_finalize};
+use crate::claim::{ClaimView, classify as classify_claim, mechanical_finalize};
 use crate::error::ConvergenceError;
 use crate::init::{StoreDirs, open_store_dirs};
 use crate::layout::DayKey;
@@ -119,6 +119,17 @@ impl<'a> ResolverAccess<'a> {
         let topology =
             crate::lock::hold_topology_with_timeout(&self.dirs, self.admitted.lock_timeout())?;
         let view = mechanical_finalize(self.store(), &self.dirs)?;
+        drop(topology);
+        Ok(view)
+    }
+
+    /// Read the exact claim prefix under topology without mechanically
+    /// changing it.  Read-only oracles use this to name a pending cleanup
+    /// rather than becoming a second cleanup owner.
+    pub(crate) fn read_claim(&self) -> Result<ClaimView, ConvergenceError> {
+        let topology =
+            crate::lock::hold_topology_with_timeout(&self.dirs, self.admitted.lock_timeout())?;
+        let view = classify_claim(self.store(), &self.dirs)?;
         drop(topology);
         Ok(view)
     }

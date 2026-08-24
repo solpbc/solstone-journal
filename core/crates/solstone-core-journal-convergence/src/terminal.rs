@@ -232,6 +232,54 @@ pub(crate) fn publish_no_permit_superseded(
     .map(Some)
 }
 
+/// Publish the already-forced superseded outcome after a durable commit
+/// decision has entered reconciliation.  In addition to a safe descendant,
+/// an exact same-generation completion makes that fixed commit impossible.
+pub(crate) fn publish_decisioned_superseded(
+    store: &ConvergenceStore,
+    locks: &DayLockSet,
+    dirs: &StoreDirs,
+    intent: &Intent,
+    days: &[DayKey],
+) -> Result<Option<TerminalReceipt>, ConvergenceError> {
+    let (resolved, any_descendant, any_unresolved) =
+        match classify_vector(store, locks, intent, days) {
+            Ok(vector) => vector,
+            Err(_) => return Ok(None),
+        };
+    if any_unresolved || resolved.len() != days.len() {
+        return Ok(None);
+    }
+    let mut same_generation_completion = false;
+    for day in days {
+        let expected = *intent.proposed_dirty_generations.get(day.as_str()).ok_or(
+            ConvergenceError::Unknown {
+                role: DurableRole::Intent,
+            },
+        )?;
+        match store.load_day(locks, day)? {
+            LoadDay::Published(snapshot) if snapshot.completed_generation >= expected => {
+                same_generation_completion = true;
+            }
+            LoadDay::Published(_) | LoadDay::HeadedDescendant { .. } => {}
+            LoadDay::Genesis | LoadDay::PublicationPending { .. } => return Ok(None),
+        }
+    }
+    if !any_descendant && !same_generation_completion {
+        return Ok(None);
+    }
+    write_and_cleanup(
+        store,
+        locks,
+        dirs,
+        intent,
+        days,
+        resolved,
+        TerminalOutcome::Superseded,
+    )
+    .map(Some)
+}
+
 #[cfg(test)]
 pub(crate) fn bind_successor_identity(
     admitted: &Admitted,

@@ -14,7 +14,8 @@ use crate::digest::digest_value;
 use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error, random_hex};
 use crate::layout::{
     ALLOCATOR, BARRIERS, CONVERGENCE, DAYS, DECISIONS, GRANTS, HEALTH, LINKS, MEMBERS, OWNERS,
-    RECORDS, REGISTRY, REGISTRY_LOCK, REVOCATIONS, ROOT_WITNESS, TOMBSTONES, TOPOLOGY_LOCK,
+    RECONCILIATIONS, RECORDS, REGISTRY, REGISTRY_LOCK, REVOCATIONS, ROOT_WITNESS, TOMBSTONES,
+    TOPOLOGY_LOCK,
 };
 use crate::schema::{
     Allocator, RootWitness, SCHEMA_VERSION, now_rfc3339, read_json, write_json_exclusive,
@@ -210,6 +211,7 @@ fn ensure_registry_tree(convergence: &OwnedFd) -> Result<(), ConvergenceError> {
     create_directory_bound(&grants, OsStr::new(BARRIERS), 0o700).map_err(map_path)?;
     create_directory_bound(&grants, OsStr::new(REVOCATIONS), 0o700).map_err(map_path)?;
     create_directory_bound(&grants, OsStr::new(TOMBSTONES), 0o700).map_err(map_path)?;
+    create_directory_bound(&grants, OsStr::new(RECONCILIATIONS), 0o700).map_err(map_path)?;
     create_registry_lock_file(convergence)?;
     Ok(())
 }

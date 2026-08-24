@@ -31,6 +31,7 @@ pub(crate) const MEMBERS: &str = "members";
 pub(crate) const BARRIERS: &str = "barriers";
 pub(crate) const REVOCATIONS: &str = "revocations";
 pub(crate) const TOMBSTONES: &str = "tombstones";
+pub(crate) const RECONCILIATIONS: &str = "reconciliations";
 pub(crate) const ROOT_WITNESS: &str = "root.wit.json";
 pub(crate) const ALLOCATOR: &str = "allocator.json";
 pub(crate) const CLAIM_HEAD: &str = "head.json";
@@ -166,6 +167,10 @@ pub(crate) fn grant_tombstone_name(serial: u64, tuple: &crate::schema::GrantTupl
 
 pub(crate) fn grant_set_tombstone_name(serial: u64) -> OsString {
     OsString::from(format!("set.{serial}.json"))
+}
+
+pub(crate) fn reconcile_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
 }
 
 /// The initial owner-intent link is directly addressed before an intent serial

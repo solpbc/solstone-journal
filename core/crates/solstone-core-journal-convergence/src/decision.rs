@@ -32,14 +32,15 @@ use crate::access::RegistrySection;
 use crate::digest::{digest_value, digest_value_excluding};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::layout::{
-    ACTIVE_BARRIER_SUFFIX, BARRIERS, GRANTS, MEMBERS, barrier_file_name, decision_name,
-    member_file_name, serial_dir,
+    ACTIVE_BARRIER_SUFFIX, BARRIERS, GRANTS, MEMBERS, RECONCILIATIONS, barrier_file_name,
+    decision_name, member_file_name, reconcile_name, serial_dir,
 };
 use crate::owner::OwnerBinding;
 use crate::schema::{
-    DecisionKind, DescendantDiscriminator, GrantBarrier, GrantDecision, GrantMember, GrantTuple,
-    Intent, MemberState, ROLE_GRANT_ALL_ACTIVE, ROLE_GRANT_ALL_SUPERSEDED, ROLE_GRANT_DECISION,
-    ROLE_GRANT_MEMBER, SCHEMA_VERSION, read_json, write_json_exclusive,
+    DecisionKind, DescendantDiscriminator, GrantBarrier, GrantDecision, GrantMember,
+    GrantReconcile, GrantTuple, Intent, MemberState, ROLE_GRANT_ALL_ACTIVE,
+    ROLE_GRANT_ALL_SUPERSEDED, ROLE_GRANT_DECISION, ROLE_GRANT_MEMBER, ROLE_GRANT_RECONCILE,
+    SCHEMA_VERSION, read_json, write_json_exclusive,
 };
 use crate::selector::GrantRequestSelector;
 use crate::store::DaySnapshot;
@@ -416,6 +417,139 @@ fn barriers_dir(section: &RegistrySection<'_>) -> Result<OwnedFd, ConvergenceErr
     ensure_child(&grants, BARRIERS)
 }
 
+fn reconciliations_dir(section: &RegistrySection<'_>) -> Result<OwnedFd, ConvergenceError> {
+    let grants = ensure_child(section.registry(), GRANTS)?;
+    ensure_child(&grants, RECONCILIATIONS)
+}
+
+fn load_reconcile(
+    section: &RegistrySection<'_>,
+    serial: u64,
+) -> Result<Option<GrantReconcile>, ConvergenceError> {
+    let Some(grants) = open_grants(section)? else {
+        return Ok(None);
+    };
+    let Some(reconciliations) = open_dir(&grants, RECONCILIATIONS)? else {
+        return Ok(None);
+    };
+    read_json(
+        &reconciliations,
+        &reconcile_name(serial),
+        DurableRole::GrantReconcile,
+    )
+}
+
+fn reconcile_digest_of(reconcile: &GrantReconcile) -> Result<String, ConvergenceError> {
+    Ok(digest_value_excluding(reconcile, "reconcile_digest")?
+        .as_hex()
+        .to_owned())
+}
+
+fn accept_reconcile(
+    reconcile: GrantReconcile,
+    owner: &OwnerBinding,
+    decision: &GrantDecision,
+    snapshots: &BTreeMap<String, DaySnapshot>,
+) -> Result<GrantReconcile, ConvergenceError> {
+    if reconcile.role != ROLE_GRANT_RECONCILE
+        || reconcile.schema_version != SCHEMA_VERSION
+        || reconcile.journal_id != owner.journal_id()
+        || reconcile.root_id != owner.root_id()
+        || reconcile.serial != decision.serial
+        || reconcile.operation_id != owner.operation_id()
+        || reconcile.owner_binding_digest != owner.digest_hex()
+        || reconcile.selector_digest != owner.selector_digest()
+        || reconcile.decision_digest != decision.decision_digest
+        || reconcile.intent_digest != decision.intent_digest
+        || reconcile.day_set != decision.day_set
+        || reconcile.tuples != decision.tuples
+        || reconcile.reconcile_digest != reconcile_digest_of(&reconcile)?
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::GrantReconcile,
+        });
+    }
+    for (day, digest) in &reconcile.descendant_discriminator.record_digests {
+        let revision = reconcile
+            .descendant_discriminator
+            .record_revisions
+            .get(day)
+            .ok_or(ConvergenceError::Unknown {
+                role: DurableRole::GrantReconcile,
+            })?;
+        let snapshot = snapshots.get(day).ok_or(ConvergenceError::Unknown {
+            role: DurableRole::GrantReconcile,
+        })?;
+        if snapshot.record_revision < *revision
+            || (snapshot.record_revision == *revision && snapshot.digest.as_hex() != digest)
+        {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantReconcile,
+            });
+        }
+    }
+    Ok(reconcile)
+}
+
+fn publish_reconcile(
+    section: &RegistrySection<'_>,
+    owner: &OwnerBinding,
+    decision: &GrantDecision,
+    snapshots: &BTreeMap<String, DaySnapshot>,
+) -> Result<GrantReconcile, ConvergenceError> {
+    if let Some(existing) = load_reconcile(section, decision.serial)? {
+        return accept_reconcile(existing, owner, decision, snapshots);
+    }
+    let mut activated_member_digests = BTreeMap::new();
+    for tuple in &decision.tuples {
+        if let Some(member) = load_member(section, decision.serial, tuple)? {
+            activated_member_digests.insert(member_key(tuple), member.member_digest);
+        }
+    }
+    let prior_all_active_digest = load_barrier(section, decision.serial, ACTIVE_BARRIER_SUFFIX)?
+        .map(|barrier| barrier_digest(&barrier))
+        .transpose()?;
+    let mut reconcile = GrantReconcile {
+        role: ROLE_GRANT_RECONCILE.to_owned(),
+        schema_version: SCHEMA_VERSION,
+        journal_id: owner.journal_id().to_owned(),
+        root_id: owner.root_id().to_owned(),
+        serial: decision.serial,
+        operation_id: owner.operation_id().to_owned(),
+        owner_binding_digest: owner.digest_hex().to_owned(),
+        selector_digest: owner.selector_digest().to_owned(),
+        decision_digest: decision.decision_digest.clone(),
+        intent_digest: decision.intent_digest.clone(),
+        day_set: decision.day_set.clone(),
+        tuples: decision.tuples.clone(),
+        activated_member_digests,
+        prior_all_active_digest,
+        descendant_discriminator: descendant_discriminator(snapshots),
+        reconcile_digest: String::new(),
+    };
+    reconcile.reconcile_digest = reconcile_digest_of(&reconcile)?;
+    let directory = reconciliations_dir(section)?;
+    match write_json_exclusive(
+        &directory,
+        &reconcile_name(decision.serial),
+        &reconcile,
+        DurableRole::GrantReconcile,
+    ) {
+        Ok(_) => {}
+        Err(ConvergenceError::PreservedPrior { .. }) => {}
+        Err(error) => return Err(error),
+    }
+    sync_dir_bound(&directory).map_err(|source| ConvergenceError::Io {
+        operation: "sync grant reconciliation directory",
+        role: DurableRole::GrantReconcile,
+        source,
+    })?;
+    let durable = load_reconcile(section, decision.serial)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::GrantReconcile,
+    })?;
+    accept_reconcile(durable, owner, decision, snapshots)
+}
+
 /// Read: a barrier by suffix, or `None`. Never creates.
 pub(crate) fn load_barrier(
     section: &RegistrySection<'_>,
@@ -596,6 +730,10 @@ pub(crate) fn descendant_discriminator(
             .iter()
             .map(|(day, snapshot)| (day.clone(), snapshot.digest.as_hex().to_owned()))
             .collect(),
+        record_revisions: snapshots
+            .iter()
+            .map(|(day, snapshot)| (day.clone(), snapshot.record_revision))
+            .collect(),
     }
 }
 
@@ -670,7 +808,10 @@ pub(crate) fn commit_with_grants(
     })?;
     let tuples = decision.tuples.clone();
 
-    if !commit_permitted {
+    let reconciling = crate::access::with_registry(&dirs, held.timeout(), |section| {
+        Ok(load_reconcile(section, serial)?.is_some())
+    })?;
+    if reconciling || !commit_permitted {
         return reconcile_superseded(held, &dirs, serial, &intent, &decision, &tuples, &snapshots);
     }
 
@@ -758,25 +899,23 @@ fn reconcile_superseded(
     tuples: &[GrantTuple],
     snapshots: &BTreeMap<String, DaySnapshot>,
 ) -> Result<crate::permit::TerminalReceipt, ConvergenceError> {
-    let mut superseded = Vec::new();
-    let prior_all_active = crate::access::with_registry(dirs, held.timeout(), |section| {
-        load_barrier(section, serial, crate::layout::ACTIVE_BARRIER_SUFFIX)
+    // This create-only record is the irreversible branch point.  It captures
+    // the exact activation prefix before any member becomes superseded.
+    let reconcile = crate::access::with_registry(dirs, held.timeout(), |section| {
+        publish_reconcile(section, held.owner(), decision, snapshots)
     })?;
+    let mut superseded = Vec::new();
     for (index, tuple) in tuples.iter().enumerate() {
         let member = crate::access::with_registry(dirs, held.timeout(), |section| {
             // Activation prefixes, including a complete all-active barrier,
             // all convert to superseded membership.
             if load_member(section, serial, tuple)?.is_none() {
-                let _ = activate_member(section, held.owner(), serial, tuple, index);
+                activate_member(section, held.owner(), serial, tuple, index)?;
             }
             set_member_state(section, serial, tuple, MemberState::Superseded)
         })?;
         superseded.push(member);
     }
-    let prior_digest = match prior_all_active.as_ref() {
-        Some(barrier) => Some(barrier_digest(barrier)?),
-        None => None,
-    };
     crate::access::with_registry(dirs, held.timeout(), |section| {
         publish_barrier(
             section,
@@ -790,13 +929,19 @@ fn reconcile_superseded(
                 members: &superseded,
                 suffix: crate::layout::SUPERSEDED_BARRIER_SUFFIX,
                 descendant_discriminator: Some(descendant_discriminator(snapshots)),
-                prior_all_active_digest: prior_digest,
+                prior_all_active_digest: reconcile.prior_all_active_digest.clone(),
             },
         )
     })?;
-    // The base publishes the superseded terminal from owner-free no-permit
-    // recovery, never from a live permit, so the reconciliation stops here and
-    // the caller routes into that recovery.
+    // The terminal and its clearance are still base-owned, but reconciliation
+    // drives that owner-free path now that the one legal branch is durable.
+    let _ = crate::terminal::publish_decisioned_superseded(
+        &held.admitted.store,
+        &held.locks,
+        dirs,
+        intent,
+        &held.days,
+    )?;
     Err(ConvergenceError::Refused(Refusal::Superseded))
 }
 
@@ -884,6 +1029,16 @@ mod tests {
 
     fn read_decision(temporary: &TempDir, serial: u64) -> GrantDecision {
         let bytes = std::fs::read(decisions_dir(temporary).join(format!("{serial}.json"))).unwrap();
+        serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap()
+    }
+
+    fn read_reconcile(temporary: &TempDir, serial: u64) -> GrantReconcile {
+        let bytes = std::fs::read(
+            grants_dir(temporary)
+                .join(RECONCILIATIONS)
+                .join(format!("{serial}.json")),
+        )
+        .unwrap();
         serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap()
     }
 
@@ -1043,6 +1198,7 @@ mod tests {
         assert_barrier_unknown(|barrier| {
             barrier.descendant_discriminator = Some(DescendantDiscriminator {
                 record_digests: BTreeMap::new(),
+                record_revisions: BTreeMap::new(),
             });
         });
     }
@@ -1246,6 +1402,10 @@ mod tests {
         // The commit decision is still bound; supersession never rewrites it as
         // an abort.
         assert_eq!(read_decision(&temporary, serial).kind, DecisionKind::Commit);
+        let reconcile = read_reconcile(&temporary, serial);
+        assert_eq!(reconcile.serial, serial);
+        assert!(reconcile.activated_member_digests.is_empty());
+        assert_eq!(reconcile.tuples.len(), 2);
         // Every requested member is superseded, and the superseded barrier
         // binds the descendant discriminator.
         let names = member_files(&temporary, serial);
@@ -1312,6 +1472,11 @@ mod tests {
         );
         let superseded = read_barrier_file(&temporary, serial, SUPERSEDED_BARRIER_SUFFIX);
         assert!(superseded.prior_all_active_digest.is_some());
+        let reconcile = read_reconcile(&temporary, serial);
+        assert_eq!(
+            reconcile.prior_all_active_digest,
+            superseded.prior_all_active_digest
+        );
         for name in member_files(&temporary, serial) {
             assert_eq!(
                 read_member_file(&temporary, serial, &name).state,
@@ -1350,6 +1515,10 @@ mod tests {
             serial,
             SUPERSEDED_BARRIER_SUFFIX
         ));
+        // The durable reconciliation record precedes the member and barrier
+        // changes. It is the sole restart branch, not a suggestion to retry
+        // a commit or select an abort.
+        assert_eq!(read_reconcile(&temporary, serial).serial, serial);
         // Retrying cannot choose commit or abort. With the descendant standing,
         // the permit itself is refused, so no owner-selected terminal is
         // reachable and the only continuation is the base's owner-free

@@ -309,7 +309,7 @@ fn classify_terminal_polarity(
         return (None, None);
     };
     let Some(serial) = crate::claim::shared_serial(&table, admitted.days()) else {
-        return (None, None);
+        return (None, historical_clearance_outcome(dirs, admitted.days()));
     };
     let Ok(Some(intent)) = read_intent(dirs, serial) else {
         return (None, None);
@@ -340,6 +340,33 @@ fn classify_terminal_polarity(
             None,
         ),
     }
+}
+
+fn historical_clearance_outcome(
+    dirs: &crate::init::StoreDirs,
+    days: &[DayKey],
+) -> Option<TerminalOutcome> {
+    let first = crate::terminal::read_clearance_member(dirs, days.first()?).ok()??;
+    let barrier = crate::terminal::read_clearance_barrier(dirs, first.serial).ok()??;
+    if barrier.day_set
+        != days
+            .iter()
+            .map(|day| day.as_str().to_owned())
+            .collect::<Vec<_>>()
+    {
+        return None;
+    }
+    let outcome = crate::permit::parse_outcome(&first.outcome)?;
+    for day in days {
+        let member = crate::terminal::read_clearance_member(dirs, day).ok()??;
+        if member.serial != first.serial
+            || crate::permit::parse_outcome(&member.outcome) != Some(outcome)
+            || !barrier.member_digests.contains_key(day.as_str())
+        {
+            return None;
+        }
+    }
+    Some(outcome)
 }
 
 #[derive(Deserialize)]

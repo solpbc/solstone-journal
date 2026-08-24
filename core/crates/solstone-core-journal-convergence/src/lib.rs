@@ -31,6 +31,7 @@ mod layout;
 mod link;
 mod lock;
 mod mac;
+mod outcome;
 mod owner;
 mod permit;
 mod preflight;
@@ -56,6 +57,7 @@ pub use grant::{
 };
 pub use init::check_initialized;
 pub use layout::DayKey;
+pub use outcome::{GrantOutcome, GrantState};
 pub use owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
 pub use permit::{Permit, TerminalOutcome, TerminalReceipt};
 pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
@@ -92,6 +94,7 @@ mod architecture {
         ("lock.rs", include_str!("lock.rs")),
         ("mac.rs", include_str!("mac.rs")),
         ("owner.rs", include_str!("owner.rs")),
+        ("outcome.rs", include_str!("outcome.rs")),
         ("permit.rs", include_str!("permit.rs")),
         ("preflight.rs", include_str!("preflight.rs")),
         ("projection.rs", include_str!("projection.rs")),
