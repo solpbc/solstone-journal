@@ -416,7 +416,6 @@ mod tests {
     use super::*;
     use crate::error::Refusal;
     use crate::layout::DayKey;
-    use crate::owner::{ClaimAdmission, OwnerBinding};
     use crate::permit::TerminalOutcome;
     use crate::publish::{PreparedCompletionAuthority, publish_kind_for_test};
     use crate::test_support::{PublishFault, admit_days, continue_ok, fail_after, snapshot_tree};

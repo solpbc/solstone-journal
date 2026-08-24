@@ -50,12 +50,12 @@ impl<'s, 'a> Permit<'s, 'a> {
     /// failure returns [`ConvergenceError::PreservedPrior`]; the caller still
     /// holds [`HeldDays`] and retries with [`HeldDays::proceed`].
     pub fn commit(self) -> Result<TerminalReceipt, ConvergenceError> {
-        crate::terminal::publish_from_permit(self.held, TerminalOutcome::Committed)
+        crate::decision::commit_with_grants(self.held)
     }
 
     /// By-value. Writes `aborted`. Same prepublication polarity as [`Self::commit`].
     pub fn abort(self) -> Result<TerminalReceipt, ConvergenceError> {
-        crate::terminal::publish_from_permit(self.held, TerminalOutcome::Aborted)
+        crate::decision::abort_with_decision(self.held)
     }
 }
 
@@ -226,7 +226,6 @@ mod tests {
     use super::*;
     use crate::error::Refusal;
     use crate::layout::DayKey;
-    use crate::owner::{ClaimAdmission, OwnerBinding};
     use crate::preflight::{Preflight, preflight};
     use crate::publish::{
         PreparedCompletionAuthority, PreparedLaterDirtyAuthority, publish_kind_for_test,

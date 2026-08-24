@@ -68,6 +68,10 @@ pub enum DurableRole {
     JournalSecret,
     PreparedOwner,
     OwnerIntentLink,
+    Decision,
+    GrantMember,
+    GrantActiveBarrier,
+    GrantSupersededBarrier,
 }
 
 #[derive(Debug)]
@@ -119,6 +123,8 @@ pub enum Refusal {
     WrongOperation,
     OwnerRevoked,
     PendingOwnerRevocation,
+    GrantMemberRevoked,
+    GrantMemberSuperseded,
 }
 
 impl std::fmt::Display for ConvergenceError {

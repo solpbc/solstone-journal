@@ -118,6 +118,30 @@ pub(crate) fn prepared_owner_name(operation_id: &str) -> OsString {
     OsString::from(format!("{operation_id}.json"))
 }
 
+pub(crate) const ACTIVE_BARRIER_SUFFIX: &str = "active";
+pub(crate) const SUPERSEDED_BARRIER_SUFFIX: &str = "superseded";
+
+pub(crate) fn decision_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
+}
+
+pub(crate) fn serial_dir(serial: u64) -> String {
+    serial.to_string()
+}
+
+pub(crate) fn member_file_name(tuple: &crate::schema::GrantTuple) -> OsString {
+    OsString::from(format!(
+        "{}.{}.{}.json",
+        tuple.day,
+        tuple.writer_family.as_str(),
+        tuple.target_scope.as_str()
+    ))
+}
+
+pub(crate) fn barrier_file_name(serial: u64, suffix: &str) -> OsString {
+    OsString::from(format!("{serial}.{suffix}.json"))
+}
+
 pub(crate) fn link_name(serial: u64) -> OsString {
     OsString::from(format!("{serial}.json"))
 }

@@ -55,6 +55,7 @@ mod sealed {
             &self,
             record: &PreparedOwner,
             object_identity: solstone_core_journal_io::ObjectIdentity,
+            selector: super::GrantRequestSelector,
         ) -> Result<OwnerBinding, ConvergenceError>;
     }
 }
@@ -66,8 +67,9 @@ impl sealed::OwnerIssuer for RegistryOwner {
         &self,
         record: &PreparedOwner,
         object_identity: ObjectIdentity,
+        selector: GrantRequestSelector,
     ) -> Result<OwnerBinding, ConvergenceError> {
-        OwnerBinding::from_record(record, object_identity)
+        OwnerBinding::from_record(record, object_identity, selector)
     }
 }
 
@@ -79,6 +81,9 @@ pub struct OwnerBinding {
     owner_id: String,
     operation_id: String,
     selector_digest: String,
+    /// The live selector this binding was prepared with. Its digest must equal
+    /// the durable record's, so the requests cannot drift from what was bound.
+    selector: GrantRequestSelector,
     digest: RecordDigest,
 }
 
@@ -130,7 +135,12 @@ impl OwnerBinding {
             )?;
             prepare_owner_record(&section, &request)?
         };
-        sealed::OwnerIssuer::issue(&RegistryOwner, &record, store.object_identity())
+        sealed::OwnerIssuer::issue(
+            &RegistryOwner,
+            &record,
+            store.object_identity(),
+            selector.clone(),
+        )
     }
 
     pub fn digest(&self) -> RecordDigest {
@@ -173,6 +183,10 @@ impl OwnerBinding {
         &self.selector_digest
     }
 
+    pub(crate) fn selector(&self) -> &GrantRequestSelector {
+        &self.selector
+    }
+
     pub(crate) fn matches(
         &self,
         journal_id: &str,
@@ -195,7 +209,11 @@ impl OwnerBinding {
     fn from_record(
         record: &PreparedOwner,
         object_identity: ObjectIdentity,
+        selector: GrantRequestSelector,
     ) -> Result<Self, ConvergenceError> {
+        if selector.digest()?.as_hex() != record.selector_digest {
+            return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
+        }
         let canon = OwnerBindingCanon {
             role: ROLE_OWNER_BINDING.to_owned(),
             journal_id: record.journal_id.clone(),
@@ -215,6 +233,7 @@ impl OwnerBinding {
             owner_id: record.owner_id.clone(),
             operation_id: record.operation_id.clone(),
             selector_digest: record.selector_digest.clone(),
+            selector,
             digest,
         })
     }
