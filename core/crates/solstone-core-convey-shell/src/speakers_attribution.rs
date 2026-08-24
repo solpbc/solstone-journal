@@ -1304,7 +1304,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock")
                 .as_nanos();
-            let root = PathBuf::from("/var/tmp").join(format!(
+            let root = std::env::temp_dir().join(format!(
                 "solstone-propagation-offer-{}-{nanos}",
                 std::process::id()
             ));

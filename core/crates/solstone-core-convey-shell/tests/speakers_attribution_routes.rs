@@ -951,6 +951,7 @@ async fn propagate_refuses_an_invalid_owner_without_writes_in_preview_or_commit(
             json!({"labels":[{"sentence_id":1,"speaker":"legacy","confidence":"high","method":"user_assigned"}]}).to_string(),
         )
         .expect("labels");
+        // Materialize the lock file before snapshotting so the route's lock is not a mutation.
         let trust = solstone_core_entity::hold_entity_trust_lock(journal.root())
             .expect("initialize entity trust lock");
         drop(trust);
@@ -1284,6 +1285,7 @@ async fn propagation_preflights_direct_and_mixed_targets_before_resolver_or_writ
             "120000_1",
             json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
         );
+        // Materialize the lock file before snapshotting so the route's lock is not a mutation.
         let trust = solstone_core_entity::hold_entity_trust_lock(&journal.0)
             .expect("initialize entity trust lock");
         drop(trust);

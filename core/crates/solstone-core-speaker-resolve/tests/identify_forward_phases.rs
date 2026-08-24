@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,6 +74,28 @@ fn owner_centroid(root: &Path, centroid: Vec<f32>) {
         },
     )
     .unwrap();
+}
+
+fn snapshot_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory") {
+            let path = entry.expect("journal entry").path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("journal-relative file")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 #[test]
@@ -359,6 +382,7 @@ fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
     let candidate_bytes =
         fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
     owner_centroid(temporary.path(), vector());
+    let files_before = snapshot_files(temporary.path());
 
     assert!(matches!(
         phase_retro_tracker(temporary.path(), &mut tracker, &plan, &encoder()),
@@ -378,6 +402,7 @@ fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
             .join("entities/target/voiceprints.npz")
             .exists()
     );
+    assert_eq!(snapshot_files(temporary.path()), files_before);
 }
 
 #[test]

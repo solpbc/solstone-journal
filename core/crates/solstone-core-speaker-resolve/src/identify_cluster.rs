@@ -1184,6 +1184,7 @@ fn terminal_name(status: TerminalStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     use std::io::{Cursor, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1228,6 +1229,39 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn snapshot_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(directory).expect("journal directory") {
+                let path = entry.expect("journal entry").path();
+                if path.is_dir() {
+                    collect(root, &path, snapshot);
+                } else if path.is_file() {
+                    snapshot.insert(
+                        path.strip_prefix(root)
+                            .expect("journal-relative file")
+                            .to_path_buf(),
+                        fs::read(path).expect("journal file"),
+                    );
+                }
+            }
+        }
+
+        let mut snapshot = BTreeMap::new();
+        collect(root, root, &mut snapshot);
+        snapshot
+    }
+
+    fn snapshot_without_identify_ledger(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        let mut snapshot = snapshot_files(root);
+        snapshot.remove(Path::new("speakers/identify-operations.jsonl"));
+        snapshot
+    }
+
+    fn materialize_entity_trust_lock(root: &Path) {
+        let trust = hold_entity_trust_lock(root).expect("initialize entity trust lock");
+        drop(trust);
     }
 
     fn encoder() -> EncoderIdentity {
@@ -1419,6 +1453,8 @@ mod tests {
         invalidate_owner(temporary.path());
         write_cache(temporary.path());
         write_embeddings(temporary.path());
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_files(temporary.path());
         let request = IdentifyClusterRequest {
             journal_root: temporary.path().to_path_buf(),
             cluster_id: 1,
@@ -1438,6 +1474,7 @@ mod tests {
         assert_eq!(result["error"], OWNER_IDENTITY_INVALID_REASON);
         assert!(!identify_ledger_path(temporary.path()).exists());
         assert!(!temporary.path().join("entities/target").exists());
+        assert_eq!(snapshot_files(temporary.path()), before);
     }
 
     #[test]
@@ -1452,6 +1489,9 @@ mod tests {
         let path = identify_ledger_path(temporary.path());
         append_prepared(&path, &request, &operation_id, &planned).unwrap();
         invalidate_owner(temporary.path());
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_without_identify_ledger(temporary.path());
+        let ledger_before = fs::read(&path).unwrap();
 
         let result = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(result["status"], "repair_required");
@@ -1494,7 +1534,9 @@ mod tests {
                 .join("awareness/discovery_clusters.resolved.json")
                 .exists()
         );
+        assert_eq!(snapshot_without_identify_ledger(temporary.path()), before);
         let repair_ledger = fs::read(&path).unwrap();
+        assert!(repair_ledger.starts_with(&ledger_before));
         let retry = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(retry["status"], "repair_required");
         assert_eq!(fs::read(&path).unwrap(), repair_ledger);
@@ -1536,6 +1578,9 @@ mod tests {
         let candidates_before =
             fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
         invalidate_owner(temporary.path());
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_without_identify_ledger(temporary.path());
+        let ledger_before = fs::read(&path).unwrap();
 
         let result = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(result["status"], "repair_required");
@@ -1560,6 +1605,117 @@ mod tests {
                 .join("awareness/discovery_clusters.resolved.json")
                 .exists()
         );
+        assert_eq!(snapshot_without_identify_ledger(temporary.path()), before);
+        assert!(fs::read(&path).unwrap().starts_with(&ledger_before));
+    }
+
+    #[test]
+    fn resumed_identity_repair_refuses_a_validly_reconfigured_plan_owner_without_mutation() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "owner_b", "Owner B");
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let mut owner_a = vec![0.0; 256];
+        owner_a[1] = 1.0;
+        write_owner_centroid_for_test(temporary.path(), "owner", owner_a);
+        set_principal(temporary.path(), "owner", false);
+        set_principal(temporary.path(), "owner_b", true);
+        write_owner_centroid_for_test(temporary.path(), "owner_b", vector());
+        set_principal(temporary.path(), "owner_b", false);
+        set_principal(temporary.path(), "owner", true);
+        let mut tracker = CandidateTracker::new(temporary.path());
+        tracker
+            .process_segment(&[ClusterInput {
+                source_segment: json!({"day":"20260808","stream":"mic","segment_key":"120000_300","source":"audio","cluster_label":1}),
+                embeddings: vec![vector()],
+                durations_s: vec![1.0],
+            }])
+            .unwrap();
+
+        let request = request(temporary.path(), "request-retro-owner-changed", "target");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        assert_eq!(planned.prepared_plan["retro_confirm"]["matched"], true);
+        assert_eq!(
+            planned.prepared_plan["retro_confirm"]["planning_owner_entity_id"],
+            "owner"
+        );
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        for phase in FORWARD_PHASE_ORDER[..5].iter().copied() {
+            append_phase_checkpoint(
+                &path,
+                &request,
+                &operation_id,
+                &planned.prepared_plan,
+                phase,
+            );
+        }
+
+        invalidate_owner(temporary.path());
+        let first_refusal = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(first_refusal["repair_code"], OWNER_IDENTITY_INVALID_REASON);
+
+        set_principal(temporary.path(), "owner", false);
+        set_principal(temporary.path(), "owner_b", true);
+        materialize_entity_trust_lock(temporary.path());
+        let candidates_before =
+            fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
+        let voiceprints_before =
+            fs::read(temporary.path().join("entities/target/voiceprints.npz")).unwrap();
+        let before = snapshot_without_identify_ledger(temporary.path());
+        let ledger_before = fs::read(&path).unwrap();
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "repair_required");
+        assert_eq!(result["phase"], ForwardPhase::RetroTracker.as_str());
+        assert_eq!(result["repair_code"], "speaker_identify_plan_owner_changed");
+        let state = fold_operation(&load_operations(&path).unwrap(), &operation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.completed_phases, FORWARD_PHASE_ORDER[..5]);
+        assert!(
+            !state
+                .phase_checkpoints
+                .contains_key(&ForwardPhase::RetroTracker)
+        );
+        let EventPayload::RepairRequired { repair_code, .. } = &state
+            .repair_required
+            .as_ref()
+            .expect("outstanding plan-owner repair")
+            .payload
+        else {
+            panic!("repair projection contains repair payload");
+        };
+        assert_eq!(repair_code, "speaker_identify_plan_owner_changed");
+        assert_eq!(
+            fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap(),
+            candidates_before
+        );
+        assert_eq!(
+            fs::read(temporary.path().join("entities/target/voiceprints.npz")).unwrap(),
+            voiceprints_before
+        );
+        assert!(
+            !temporary
+                .path()
+                .join("awareness/discovery_clusters.resolved.json")
+                .exists()
+        );
+        assert_eq!(snapshot_without_identify_ledger(temporary.path()), before);
+        let ledger_after = fs::read(&path).unwrap();
+        assert!(ledger_after.starts_with(&ledger_before));
+        let rows = load_operations(&path).unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| matches!(row.event.payload, EventPayload::RepairResumed { .. }))
+                .count(),
+            1
+        );
+        assert!(rows.iter().any(|row| {
+            row.event.event_id == format!("{operation_id}:repair_required:retro_tracker:retry:1")
+        }));
     }
 
     #[test]
@@ -1586,12 +1742,17 @@ mod tests {
                 phase,
             );
         }
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_without_identify_ledger(temporary.path());
+        let ledger_before = fs::read(&path).unwrap();
 
         let result = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(result["status"], "repair_required");
         assert_eq!(result["phase"], ForwardPhase::RetroTracker.as_str());
         assert_eq!(result["repair_code"], "speaker_identify_plan_owner_unbound");
+        assert_eq!(snapshot_without_identify_ledger(temporary.path()), before);
         let before_retry = fs::read(&path).unwrap();
+        assert!(before_retry.starts_with(&ledger_before));
         let retry = identify_cluster(&request, &encoder()).unwrap();
         assert_eq!(retry["status"], "repair_required");
         assert_eq!(fs::read(&path).unwrap(), before_retry);
