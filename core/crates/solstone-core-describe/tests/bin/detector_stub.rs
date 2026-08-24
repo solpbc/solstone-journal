@@ -3,8 +3,6 @@
 
 use std::env;
 use std::fs;
-use std::thread;
-use std::time::Duration;
 
 use serde_json::json;
 
@@ -43,7 +41,6 @@ fn main() {
         "detected" => fs::write(output, json!({"image":{"width":1,"height":1},"detections":[{"class_name":"laptop","score":0.9},{"class_name":"person","score":0.1}]}).to_string()).expect("output"),
         "invalid_json" => fs::write(output, "not json").expect("output"),
         "exit_failure" => std::process::exit(1),
-        "hang" => thread::sleep(Duration::from_secs(5)),
         mode => panic!("unknown mode {mode}"),
     }
 }

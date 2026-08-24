@@ -779,7 +779,7 @@ check-rust-describe-cli-stubs:
 			blocking_or_unknown_refusals_abort_without_an_artifact \
 			describe_runs_one_session_and_promotes_an_analyzed_artifact \
 			describe_uses_convey_mask_for_live_handler_decode \
-			detection_failure_and_timeout_latch_after_one_attempt \
+			detection_failures_latch_after_one_attempt \
 			detection_runs_for_unselected_media_and_preserves_unfiltered_objects \
 			detection_secondary_gate_uses_secondary_label \
 			session_submits_a_later_request_before_the_first_response \

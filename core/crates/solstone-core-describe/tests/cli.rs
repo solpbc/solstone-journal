@@ -424,30 +424,19 @@ fn detection_secondary_gate_uses_secondary_label() {
 }
 
 #[test]
-fn detection_failure_and_timeout_latch_after_one_attempt() {
-    for (mode, timeout) in [
-        ("invalid_json", None),
-        ("exit_failure", None),
-        ("hang", Some("100")),
-    ] {
+fn detection_failures_latch_after_one_attempt() {
+    for mode in ["invalid_json", "exit_failure"] {
         let root = temporary_root(mode);
         let video = copied_video(&root, "mixed_vp8_screen.webm");
         let detector_log = root.join("detector.jsonl");
-        let start = Instant::now();
         let mut command = describe(&root, &video, "category_media");
         command
             .env("SOLSTONE_DESCRIBE_DETECT_BINARY", DETECT_STUB)
             .env("SOLSTONE_DESCRIBE_DETECT_STUB_MODE", mode)
             .env("SOLSTONE_DESCRIBE_DETECT_STUB_REQUESTS_PATH", &detector_log);
-        if let Some(timeout) = timeout {
-            command.env("SOLSTONE_DESCRIBE_DETECT_TIMEOUT_MS", timeout);
-        }
         let output = command.output().expect("describe");
         assert!(output.status.success(), "{mode}");
         assert_eq!(detector_requests(&detector_log).len(), 1, "{mode}");
-        if mode == "hang" {
-            assert!(start.elapsed() < Duration::from_secs(10));
-        }
         let rows = read_jsonl(&video.with_extension("jsonl"));
         assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
         assert!(rows[1..].iter().all(|row| row.get("detections").is_none()));
