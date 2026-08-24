@@ -1462,7 +1462,7 @@ mod tests {
             "b5e9a4aad6438763c8da16079d77563fbed35c65",
             "e87f176479d0855a907a41277aca2f8ee7a09523",
             "bf0af9f425fa01809cadec671b3cb672709d13e9",
-            "a09144355adeed5f58c8ed011d209bf8ee5a1fec",
+            "aed02740059203c4a87495924f685de3722ae9ce",
             "c3dc0c037df499f5503545247df6618415fca643",
         ] {
             assert_eq!(check_version(version), Ok(()));

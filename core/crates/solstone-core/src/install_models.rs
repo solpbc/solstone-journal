@@ -1488,7 +1488,7 @@ mod tests {
     }
 
     #[test]
-    fn posix_default_does_not_call_rerank_and_still_runs_ced_and_parakeet() {
+    fn posix_default_runs_ced_and_parakeet() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "linux", "x86_64");
         let mut parakeet_called = false;
@@ -1518,7 +1518,7 @@ mod tests {
     }
 
     #[test]
-    fn posix_check_does_not_call_rerank_and_still_runs_ced_and_coreml() {
+    fn posix_check_runs_ced_and_coreml() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "darwin", "arm64");
         let mut coreml_called = false;
@@ -1555,7 +1555,7 @@ mod tests {
     }
 
     #[test]
-    fn darwin_default_does_not_call_rerank_and_still_runs_ced_and_coreml() {
+    fn darwin_default_runs_ced_and_coreml() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "darwin", "arm64");
         let mut coreml_called = false;
