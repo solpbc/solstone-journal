@@ -649,12 +649,13 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     assert_eq!(refusal["reason_code"], "app_not_converted");
     assert_eq!(refusal["app"], "activities");
 
-    let (status, content_type, _, body) = get(router(journal.0.clone()), "/app/activities/").await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-    assert_eq!(content_type, "application/json");
-    let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
-    assert_eq!(refusal["reason_code"], "app_not_converted");
-    assert_eq!(refusal["app"], "activities");
+    let shell = include_bytes!("../assets/static/shell.html");
+    for path in ["/app/activities/", "/app/activities"] {
+        let (status, content_type, _, body) = get(router(journal.0.clone()), path).await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{path}");
+        assert_eq!(content_type, "text/html; charset=utf-8", "{path}");
+        assert_eq!(body, shell, "{path}");
+    }
 }
 
 #[tokio::test]
@@ -802,8 +803,12 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
             !status.is_success(),
             "{path} returned a success status for an unconverted app: {status}"
         );
-        let refusal: Value = serde_json::from_slice(&body)
-            .unwrap_or_else(|_| panic!("{path} refusal parses as JSON"));
-        assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+        // On 2026-08-24, the `/` tail moved to the shell HTML navigation response
+        // while the workspace tail retained its JSON fragment refusal.
+        if path.ends_with("/workspace") || path.ends_with("/background") {
+            let refusal: Value = serde_json::from_slice(&body)
+                .unwrap_or_else(|_| panic!("{path} refusal parses as JSON"));
+            assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+        }
     }
 }
