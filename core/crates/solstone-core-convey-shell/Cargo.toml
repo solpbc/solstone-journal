@@ -52,6 +52,10 @@ path = "tests/thinking_runs_dom.rs"
 name = "network_pairing_dom"
 path = "tests/network_pairing_dom.rs"
 
+[[test]]
+name = "shell_chrome_dom"
+path = "tests/shell_chrome_dom.rs"
+
 [lints]
 workspace = true
 

@@ -11,9 +11,10 @@ server.
 
 ## Architecture: static shell + per-app workspaces
 
-- **One static shell** (`convey/static/shell.html`) is served unconditionally for
-  every `/app/{name}` route. The client derives the current app from
-  `location.pathname` and boots from `GET /api/shell`.
+- **One static shell**
+  (`core/crates/solstone-core-convey-shell/assets/static/shell.html`) is served
+  unconditionally for every `/app/{name}` route. The client derives the
+  current app from `location.pathname` and boots from `GET /api/shell`.
 - **Per-app workspace fragments** stay one file per app
   (`apps/{name}/workspace.html`): markup + `<style>` + `<script>`, served
   verbatim as a static asset — zero server-side template processing. The shell
@@ -30,10 +31,15 @@ server.
 
 ## Shell boot sequence
 
-1. Static shell parses; chrome (menu, facet bar, status pane,
-   diagnostic console) renders in skeleton/loading state.
-2. `GET /api/shell` returns the app registry and shell state; chrome hydrates
-   (menu items, facet pills).
+1. Static shell parses with raw-hidden `#app-launcher` and `#facet-strip`, plus
+   `#app-rail`, `#app-dock`, and `#status-instrument` slots. The launcher is a
+   direct body child; the facet strip is an in-flow sibling immediately before
+   `<main>`.
+2. `GET /api/shell` returns the app registry and shell state. `shell_boot.js`
+   calls `renderAppRail`, `renderAppDock`, `renderAppLauncher`,
+   `renderFacetStrip`, `renderStatusInstrument`, and
+   `installLauncherInteractions`. Only a `facets_enabled` current app unhides
+   the facet strip.
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its
@@ -55,11 +61,13 @@ them in HTML.
       "label": "home",
       "icon": "🏠",
       "icon_svg": "<svg …>",
-      "starred": true,
       "facets_enabled": true,
       "date_nav": false,
       "app_bar": true,
-      "allow_future_dates": false,
+      "launcher_group": "your_journal",
+      "launcher_rank": 0,
+      "rail_group": "primary",
+      "rail_rank": 0,
       "workspace_url": "/app/home/workspace",
       "background_url": null
     }
@@ -72,9 +80,12 @@ them in HTML.
 
 Notes:
 
-- `apps` is **ordered** (owner's configured order, starred handling applied
-  server-side, agent-chosen `sol` label already resolved). The menu renders
-  the list as given.
+- Each app has 13 fields: `app_bar`, `background_url`, `date_nav`,
+  `facets_enabled`, `icon`, `icon_svg`, `label`, `launcher_group`,
+  `launcher_rank`, `name`, `rail_group`, `rail_rank`, and `workspace_url`.
+  The grouped launcher sorts by launcher group/rank. The pinned rail is the
+  independent non-null rail group/rank projection; it is not a persisted
+  starred or user-reordered list.
 - `workspace_url` always points at the static workspace fragment route.
   `background_url` points at the static background fragment route when present;
   a `null` `background_url` means the app registers no background service.
