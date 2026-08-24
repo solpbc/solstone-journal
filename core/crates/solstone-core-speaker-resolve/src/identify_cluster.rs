@@ -38,6 +38,7 @@ use crate::identify_target::{
     IdentifyTargetOutcome, IdentifyTargetRequest, TargetResolution, resolve_identify_target,
 };
 use crate::keep_separate::pair_key;
+use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admitted_owner_id};
 use crate::retroactive_confirm::plan_retroactive_confirm;
 
 const CALLER: &str = "speaker_resolve.identify_cluster";
@@ -87,7 +88,7 @@ enum ExecuteError {
         phase: ForwardPhase,
         code: &'static str,
         categories: BTreeMap<String, usize>,
-        partial_report: Value,
+        partial_report: Option<Value>,
     },
     Unexpected(String),
 }
@@ -195,20 +196,60 @@ pub fn identify_cluster(
     let rows = load_operations(&ledger_path)?;
     let state = fold_operation(&rows, &operation_id)?;
     let prepared_plan = if let Some(state) = state.as_ref() {
-        if stored_request_matches_raw(&state.prepared_plan, request) {
-            if state.terminal_status != TerminalStatus::InProgress {
-                return Ok(state_status_result(state));
-            }
-            state.prepared_plan.clone()
-        } else {
-            match plan_identify(request, &operation_id)? {
-                Ok(planned) if planned.fingerprint == state.request_fingerprint => {
-                    if state.terminal_status != TerminalStatus::InProgress {
-                        return Ok(state_status_result(state));
-                    }
-                    state.prepared_plan.clone()
+        match state.terminal_status {
+            TerminalStatus::RepairRequired => {
+                let Some(repair) = state.repair_required.as_ref() else {
+                    return Ok(state_status_result(state));
+                };
+                let EventPayload::RepairRequired {
+                    phase, repair_code, ..
+                } = &repair.payload
+                else {
+                    return Ok(state_status_result(state));
+                };
+                if repair_code != OWNER_IDENTITY_INVALID_REASON
+                    || !matches!(
+                        admitted_owner_id(&request.journal_root),
+                        OwnerAdmission::Admitted(_)
+                    )
+                {
+                    return Ok(state_status_result(state));
                 }
-                Ok(_) | Err(_) => return Ok(fingerprint_conflict_result(&operation_id, state)),
+                if !request_matches_state(request, &operation_id, state)? {
+                    return Ok(fingerprint_conflict_result(&operation_id, state));
+                }
+                let resume_event = event(
+                    request,
+                    &operation_id,
+                    format!("{}:resumed", repair.event_id),
+                    EventPayload::RepairResumed {
+                        repair_event_id: repair.event_id.clone(),
+                        phase: *phase,
+                    },
+                );
+                append_event(&ledger_path, &resume_event)?;
+                let Some(resumed) = fold_operation(&load_operations(&ledger_path)?, &operation_id)?
+                else {
+                    return recoverable_result(
+                        &ledger_path,
+                        &operation_id,
+                        "resumed operation disappeared".to_owned(),
+                    );
+                };
+                if resumed.terminal_status != TerminalStatus::InProgress {
+                    return Ok(state_status_result(&resumed));
+                }
+                resumed.prepared_plan
+            }
+            _ => {
+                if !request_matches_state(request, &operation_id, state)? {
+                    return Ok(fingerprint_conflict_result(&operation_id, state));
+                }
+                if state.terminal_status == TerminalStatus::InProgress {
+                    state.prepared_plan.clone()
+                } else {
+                    return Ok(state_status_result(state));
+                }
             }
         }
     } else {
@@ -262,10 +303,14 @@ pub fn identify_cluster(
             );
             let completed_phases = current_phase_names(&ledger_path, &operation_id)?;
             let pending_phases = pending_phase_names(&completed_phases);
+            let partial_report = match partial_report {
+                None => json!({"pending_phases": pending_phases}),
+                Some(value) => value,
+            };
             let event = event(
                 request,
                 &operation_id,
-                format!("{operation_id}:repair_required:{}", phase.as_str()),
+                next_repair_event_id(&ledger_path, &operation_id, phase)?,
                 EventPayload::RepairRequired {
                     phase,
                     repair_code: code.to_owned(),
@@ -294,6 +339,20 @@ pub fn identify_cluster(
 fn resolve_only_result(request: &IdentifyClusterRequest) -> Result<Value, IdentifyClusterError> {
     let outcome = resolve_identify_target(&target_request(request))?;
     Ok(target_outcome_value(outcome))
+}
+
+fn request_matches_state(
+    request: &IdentifyClusterRequest,
+    operation_id: &str,
+    state: &OperationState,
+) -> Result<bool, IdentifyClusterError> {
+    if stored_request_matches_raw(&state.prepared_plan, request) {
+        return Ok(true);
+    }
+    Ok(matches!(
+        plan_identify(request, operation_id)?,
+        Ok(planned) if planned.fingerprint == state.request_fingerprint
+    ))
 }
 
 fn plan_identify(
@@ -349,6 +408,14 @@ fn plan_identify(
                 ));
             }
         };
+    let planning_owner_entity_id = match admitted_owner_id(&request.journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => {
+            return Ok(Err(
+                json!({"status":"recoverable","error":OWNER_IDENTITY_INVALID_REASON}),
+            ));
+        }
+    };
     let assertions = match validate_near_matches(request, &target, operation_id)? {
         Ok(assertions) => assertions,
         Err(early) => return Ok(Err(early)),
@@ -358,6 +425,7 @@ fn plan_identify(
         &target.entity_id,
         &direct.items,
         added_at,
+        &planning_owner_entity_id,
     )?;
     let resolved = load_resolved_clusters(&request.journal_root);
     let prior_identity = read_entity_identity(&request.journal_root, &target.entity_id)?
@@ -555,6 +623,29 @@ fn event(
     }
 }
 
+fn next_repair_event_id(
+    ledger_path: &Path,
+    operation_id: &str,
+    phase: ForwardPhase,
+) -> Result<String, IdentifyClusterError> {
+    let attempts = load_operations(ledger_path)?
+        .iter()
+        .filter(|row| {
+            row.event.operation_id == operation_id
+                && matches!(
+                    &row.event.payload,
+                    EventPayload::RepairRequired { phase: repair_phase, .. } if *repair_phase == phase
+                )
+        })
+        .count();
+    let base = format!("{operation_id}:repair_required:{}", phase.as_str());
+    Ok(if attempts == 0 {
+        base
+    } else {
+        format!("{base}:retry:{attempts}")
+    })
+}
+
 fn target_request(request: &IdentifyClusterRequest) -> IdentifyTargetRequest {
     IdentifyTargetRequest {
         journal_root: request.journal_root.clone(),
@@ -703,16 +794,17 @@ fn build_retro_plan(
     target: &str,
     direct: &[VoiceprintItem],
     added_at: i64,
+    planning_owner_entity_id: &str,
 ) -> Result<Value, IdentifyClusterError> {
     let Some(centroid) = mean_centroid(direct) else {
-        return Ok(empty_retro_plan());
+        return Ok(empty_retro_plan(planning_owner_entity_id));
     };
     let mut tracker = CandidateTracker::new(root);
     let candidates = tracker.snapshot_candidates_locked()?;
     let Some((candidate, score)) = best_matching_candidate(&candidates, &centroid)
         .filter(|(_, score)| *score >= MERGE_THRESHOLD)
     else {
-        return Ok(empty_retro_plan());
+        return Ok(empty_retro_plan(planning_owner_entity_id));
     };
     let candidate = candidate.clone();
     let planned = plan_retroactive_confirm(root, &candidate, &centroid, target, added_at);
@@ -720,11 +812,11 @@ fn build_retro_plan(
     after.status = "confirmed".to_owned();
     after.confirmed_entity = Some(target.to_owned());
     Ok(
-        json!({"matched":planned.matched,"match_score":score,"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>() }),
+        json!({"matched":planned.matched,"match_score":score,"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>(),"planning_owner_entity_id":planning_owner_entity_id }),
     )
 }
-fn empty_retro_plan() -> Value {
-    json!({"matched":false,"match_score":null,"candidate_id":null,"candidate_before":null,"candidate_after":null,"preexisting_voiceprint_keys":[],"voiceprints_to_add":[]})
+fn empty_retro_plan(planning_owner_entity_id: &str) -> Value {
+    json!({"matched":false,"match_score":null,"candidate_id":null,"candidate_before":null,"candidate_after":null,"preexisting_voiceprint_keys":[],"voiceprints_to_add":[],"planning_owner_entity_id":planning_owner_entity_id})
 }
 fn mean_centroid(items: &[VoiceprintItem]) -> Option<Vec<f32>> {
     let first = items.first()?;
@@ -922,6 +1014,10 @@ fn retro_phase_plan(plan: &Value) -> Result<RetroTrackerPhasePlan, ExecuteError>
         matched: retro["matched"].as_bool().unwrap_or(false),
         candidate_id: retro["candidate_id"].as_i64(),
         target_entity_id: target,
+        planning_owner_entity_id: retro
+            .get("planning_owner_entity_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         candidate_before: (!retro["candidate_before"].is_null())
             .then(|| retro["candidate_before"].clone()),
         candidate_after: (!retro["candidate_after"].is_null())
@@ -1091,6 +1187,9 @@ mod tests {
     use std::fs;
     use std::io::{Cursor, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
 
     use solstone_core_entity::read_visible_history;
     use solstone_core_npy::write_npy;
@@ -1098,6 +1197,8 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::*;
+    use crate::candidate_tracker::ClusterInput;
+    use crate::owner_centroid::{OwnerCentroidWriteInput, write_owner_centroid};
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1200,6 +1301,61 @@ mod tests {
         )
         .unwrap();
     }
+    fn write_owner_centroid_for_test(root: &Path, entity_id: &str, centroid: Vec<f32>) {
+        write_owner_centroid(
+            root,
+            entity_id,
+            &OwnerCentroidWriteInput {
+                centroid,
+                cluster_size: 1,
+                timestamp: "2026-08-08T00:00:00Z".into(),
+                evidence_tier: "test".into(),
+            },
+        )
+        .unwrap();
+    }
+    fn invalidate_owner(root: &Path) {
+        fs::write(
+            root.join("entities/owner/entity.json"),
+            json!({"id":"owner","type":"Project","is_principal":true}).to_string(),
+        )
+        .unwrap();
+    }
+    fn set_principal(root: &Path, entity_id: &str, is_principal: bool) {
+        fs::write(
+            root.join("entities").join(entity_id).join("entity.json"),
+            json!({"id":entity_id,"type":"Person","is_principal":is_principal}).to_string(),
+        )
+        .unwrap();
+    }
+    fn append_phase_checkpoint(
+        path: &Path,
+        request: &IdentifyClusterRequest,
+        operation_id: &str,
+        plan: &Value,
+        phase: ForwardPhase,
+    ) {
+        let mut checkpoint = run_phase(phase, &request.journal_root, plan, &encoder()).unwrap();
+        let checkpoint = checkpoint.as_object_mut().expect("phase checkpoint object");
+        checkpoint.insert("phase_status".into(), Value::String("complete".into()));
+        checkpoint.insert(
+            "completed_at".into(),
+            Value::String(Utc::now().to_rfc3339()),
+        );
+        append_event(
+            path,
+            &event(
+                request,
+                operation_id,
+                format!("{operation_id}:checkpoint:{}", phase.as_str()),
+                EventPayload::Checkpoint {
+                    phase,
+                    checkpoint: Value::Object(checkpoint.clone()),
+                },
+            ),
+        )
+        .unwrap();
+    }
     fn request(root: &Path, request_id: &str, entity_id: &str) -> IdentifyClusterRequest {
         IdentifyClusterRequest {
             journal_root: root.to_path_buf(),
@@ -1241,7 +1397,7 @@ mod tests {
             metadata: json!({}),
         }];
         assert_eq!(
-            build_retro_plan(temporary.path(), "target", &direct, 1).unwrap()["matched"],
+            build_retro_plan(temporary.path(), "target", &direct, 1, "owner").unwrap()["matched"],
             false
         );
 
@@ -1252,9 +1408,380 @@ mod tests {
             json!({"next_id":2,"candidates":[pending.to_json()]}).to_string(),
         )
         .unwrap();
-        let plan = build_retro_plan(temporary.path(), "target", &direct, 1).unwrap();
+        let plan = build_retro_plan(temporary.path(), "target", &direct, 1, "owner").unwrap();
         assert_eq!(plan["matched"], true);
         assert_eq!(plan["candidate_id"], 1);
+    }
+
+    #[test]
+    fn invalid_owner_identity_refuses_planning_without_an_operation_or_mutation() {
+        let temporary = Temp::new();
+        invalidate_owner(temporary.path());
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("Target".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "request-invalid-planning-owner".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "recoverable");
+        assert_eq!(result["error"], OWNER_IDENTITY_INVALID_REASON);
+        assert!(!identify_ledger_path(temporary.path()).exists());
+        assert!(!temporary.path().join("entities/target").exists());
+    }
+
+    #[test]
+    fn direct_identity_repair_has_an_object_report_and_no_direct_checkpoint() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = request(temporary.path(), "request-direct-owner-repair", "target");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        invalidate_owner(temporary.path());
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "repair_required");
+        assert_eq!(result["phase"], ForwardPhase::DirectVoiceprints.as_str());
+        assert_eq!(result["repair_code"], OWNER_IDENTITY_INVALID_REASON);
+
+        let state = fold_operation(&load_operations(&path).unwrap(), &operation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.terminal_status, TerminalStatus::RepairRequired);
+        assert_eq!(state.completed_phases, FORWARD_PHASE_ORDER[..2]);
+        assert!(
+            !state
+                .phase_checkpoints
+                .contains_key(&ForwardPhase::DirectVoiceprints)
+        );
+        let EventPayload::RepairRequired { partial_report, .. } = &state
+            .repair_required
+            .as_ref()
+            .expect("outstanding repair")
+            .payload
+        else {
+            panic!("repair projection contains repair payload");
+        };
+        assert_eq!(
+            partial_report,
+            &json!({"pending_phases": [
+                "direct_voiceprints", "corrections", "labels", "retro_tracker", "sentinel"
+            ]})
+        );
+        assert!(
+            !temporary
+                .path()
+                .join("entities/target/voiceprints.npz")
+                .exists()
+        );
+        assert!(
+            !temporary
+                .path()
+                .join("awareness/discovery_clusters.resolved.json")
+                .exists()
+        );
+        let repair_ledger = fs::read(&path).unwrap();
+        let retry = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(retry["status"], "repair_required");
+        assert_eq!(fs::read(&path).unwrap(), repair_ledger);
+    }
+
+    #[test]
+    fn retro_identity_repair_keeps_prior_checkpoints_and_does_not_write_tracker_or_sentinel() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let mut owner = vec![0.0; 256];
+        owner[1] = 1.0;
+        write_owner_centroid_for_test(temporary.path(), "owner", owner);
+        let mut tracker = CandidateTracker::new(temporary.path());
+        tracker
+            .process_segment(&[ClusterInput {
+                source_segment: json!({"day":"20260808","stream":"mic","segment_key":"120000_300","source":"audio","cluster_label":1}),
+                embeddings: vec![vector()],
+                durations_s: vec![1.0],
+            }])
+            .unwrap();
+
+        let request = request(temporary.path(), "request-retro-owner-repair", "target");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        assert_eq!(planned.prepared_plan["retro_confirm"]["matched"], true);
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        for phase in FORWARD_PHASE_ORDER[..5].iter().copied() {
+            append_phase_checkpoint(
+                &path,
+                &request,
+                &operation_id,
+                &planned.prepared_plan,
+                phase,
+            );
+        }
+        let candidates_before =
+            fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
+        invalidate_owner(temporary.path());
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "repair_required");
+        assert_eq!(result["phase"], ForwardPhase::RetroTracker.as_str());
+        assert_eq!(result["repair_code"], OWNER_IDENTITY_INVALID_REASON);
+        let state = fold_operation(&load_operations(&path).unwrap(), &operation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.completed_phases, FORWARD_PHASE_ORDER[..5]);
+        assert!(
+            !state
+                .phase_checkpoints
+                .contains_key(&ForwardPhase::RetroTracker)
+        );
+        assert_eq!(
+            fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap(),
+            candidates_before
+        );
+        assert!(
+            !temporary
+                .path()
+                .join("awareness/discovery_clusters.resolved.json")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn unbound_legacy_retro_plan_stops_loudly_without_a_resume_event() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = request(temporary.path(), "request-unbound-retro-plan", "target");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let mut planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        planned.prepared_plan["retro_confirm"]
+            .as_object_mut()
+            .unwrap()
+            .remove("planning_owner_entity_id");
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        for phase in FORWARD_PHASE_ORDER[..5].iter().copied() {
+            append_phase_checkpoint(
+                &path,
+                &request,
+                &operation_id,
+                &planned.prepared_plan,
+                phase,
+            );
+        }
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "repair_required");
+        assert_eq!(result["phase"], ForwardPhase::RetroTracker.as_str());
+        assert_eq!(result["repair_code"], "speaker_identify_plan_owner_unbound");
+        let before_retry = fs::read(&path).unwrap();
+        let retry = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(retry["status"], "repair_required");
+        assert_eq!(fs::read(&path).unwrap(), before_retry);
+        assert!(
+            load_operations(&path)
+                .unwrap()
+                .iter()
+                .all(|row| !matches!(row.event.payload, EventPayload::RepairResumed { .. }))
+        );
+    }
+
+    #[test]
+    fn resumed_in_progress_operation_never_appends_a_second_resume_event() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target", "Target");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = request(
+            temporary.path(),
+            "request-resumed-before-checkpoint",
+            "target",
+        );
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        let repair_event_id = format!("{operation_id}:repair_required:direct_voiceprints");
+        append_event(
+            &path,
+            &event(
+                &request,
+                &operation_id,
+                repair_event_id.clone(),
+                EventPayload::RepairRequired {
+                    phase: ForwardPhase::DirectVoiceprints,
+                    repair_code: OWNER_IDENTITY_INVALID_REASON.into(),
+                    repair_categories: json!({"owner_identity":1}),
+                    partial_report: json!({"pending_phases":["direct_voiceprints"]}),
+                },
+            ),
+        )
+        .unwrap();
+        append_event(
+            &path,
+            &event(
+                &request,
+                &operation_id,
+                format!("{repair_event_id}:resumed"),
+                EventPayload::RepairResumed {
+                    repair_event_id: repair_event_id.clone(),
+                    phase: ForwardPhase::DirectVoiceprints,
+                },
+            ),
+        )
+        .unwrap();
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified");
+        let rows = load_operations(&path).unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.event.event_id == format!("{repair_event_id}:resumed"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|row| {
+                    matches!(
+                        &row.event.payload,
+                        EventPayload::Checkpoint {
+                            phase: ForwardPhase::DirectVoiceprints,
+                            ..
+                        }
+                    )
+                })
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn identify_holds_owner_identity_stable_for_its_full_operation_and_next_plan_observes_b() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "owner_b", "Owner B");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        entity(temporary.path(), "target", "Target");
+
+        set_principal(temporary.path(), "owner", false);
+        set_principal(temporary.path(), "owner_b", true);
+        write_owner_centroid_for_test(temporary.path(), "owner_b", vector());
+        set_principal(temporary.path(), "owner_b", false);
+        set_principal(temporary.path(), "owner", true);
+        let mut owner_a_centroid = vec![0.0; 256];
+        owner_a_centroid[1] = 1.0;
+        write_owner_centroid_for_test(temporary.path(), "owner", owner_a_centroid);
+
+        let active_request = request(temporary.path(), "request-owner-a", "target");
+        let operation_id = operation_id_for_request(&active_request.request_id).unwrap();
+        let root = temporary.path().to_path_buf();
+        let outer = hold_entity_trust_lock(temporary.path()).unwrap();
+        let planned = plan_identify(&active_request, &operation_id)
+            .unwrap()
+            .unwrap();
+        append_prepared(
+            &identify_ledger_path(temporary.path()),
+            &active_request,
+            &operation_id,
+            &planned,
+        )
+        .unwrap();
+        let (started, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let _trust = hold_entity_trust_lock(&root).unwrap();
+            started.send(()).unwrap();
+            set_principal(&root, "owner", false);
+            set_principal(&root, "owner_b", true);
+        });
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+
+        let result = identify_cluster(&active_request, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified");
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        let state = fold_operation(
+            &load_operations(&identify_ledger_path(temporary.path())).unwrap(),
+            &operation_id,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(state.terminal_status, TerminalStatus::Committed);
+        assert_eq!(
+            state.prepared_plan["retro_confirm"]["planning_owner_entity_id"],
+            "owner"
+        );
+        assert_eq!(
+            state
+                .phase_checkpoints
+                .get(&ForwardPhase::DirectVoiceprints)
+                .unwrap()["saved_count"],
+            1
+        );
+
+        drop(outer);
+        receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.join().unwrap();
+
+        let next = request(temporary.path(), "request-owner-b", "target");
+        let next_operation_id = operation_id_for_request(&next.request_id).unwrap();
+        let next_plan = plan_identify(&next, &next_operation_id).unwrap().unwrap();
+        assert_eq!(
+            next_plan.prepared_plan["retro_confirm"]["planning_owner_entity_id"],
+            "owner_b"
+        );
+    }
+
+    #[test]
+    fn repair_event_ids_gain_retry_suffixes_without_changing_existing_rows() {
+        let temporary = Temp::new();
+        let path = identify_ledger_path(temporary.path());
+        assert_eq!(
+            next_repair_event_id(&path, "idop_test", ForwardPhase::DirectVoiceprints).unwrap(),
+            "idop_test:repair_required:direct_voiceprints"
+        );
+        let request = request(temporary.path(), "request-repair-id", "target");
+        append_event(
+            &path,
+            &event(
+                &request,
+                "idop_test",
+                "idop_test:repair_required:direct_voiceprints".into(),
+                EventPayload::RepairRequired {
+                    phase: ForwardPhase::DirectVoiceprints,
+                    repair_code: OWNER_IDENTITY_INVALID_REASON.into(),
+                    repair_categories: json!({"owner_identity":1}),
+                    partial_report: json!({"pending_phases":["direct_voiceprints"]}),
+                },
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            next_repair_event_id(&path, "idop_test", ForwardPhase::DirectVoiceprints).unwrap(),
+            "idop_test:repair_required:direct_voiceprints:retry:1"
+        );
     }
 
     #[test]

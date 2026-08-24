@@ -16,7 +16,9 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
 use thiserror::Error;
 
-pub const IDENTIFY_OPERATION_SCHEMA_VERSION: i64 = 1;
+use crate::owner_admission::OWNER_IDENTITY_INVALID_REASON;
+
+pub const IDENTIFY_OPERATION_SCHEMA_VERSION: i64 = 2;
 pub const FORWARD_PHASE_ORDER: [ForwardPhase; 7] = [
     ForwardPhase::Entity,
     ForwardPhase::KeepSeparate,
@@ -116,6 +118,7 @@ pub enum EventKind {
     Checkpoint,
     Committed,
     RepairRequired,
+    RepairResumed,
     UndoPrepared,
     UndoCheckpoint,
     UndoCommitted,
@@ -130,6 +133,7 @@ impl EventKind {
             Self::Checkpoint => "checkpoint",
             Self::Committed => "committed",
             Self::RepairRequired => "repair_required",
+            Self::RepairResumed => "repair_resumed",
             Self::UndoPrepared => "undo_prepared",
             Self::UndoCheckpoint => "undo_checkpoint",
             Self::UndoCommitted => "undo_committed",
@@ -143,6 +147,7 @@ impl EventKind {
             "checkpoint" => Self::Checkpoint,
             "committed" => Self::Committed,
             "repair_required" => Self::RepairRequired,
+            "repair_resumed" => Self::RepairResumed,
             "undo_prepared" => Self::UndoPrepared,
             "undo_checkpoint" => Self::UndoCheckpoint,
             "undo_committed" => Self::UndoCommitted,
@@ -170,6 +175,10 @@ pub enum EventPayload {
         repair_code: String,
         repair_categories: Value,
         partial_report: Value,
+    },
+    RepairResumed {
+        repair_event_id: String,
+        phase: ForwardPhase,
     },
     UndoPrepared {
         undo_started_at: String,
@@ -209,6 +218,7 @@ impl IdentifyOperationEvent {
             EventPayload::Checkpoint { .. } => EventKind::Checkpoint,
             EventPayload::Committed { .. } => EventKind::Committed,
             EventPayload::RepairRequired { .. } => EventKind::RepairRequired,
+            EventPayload::RepairResumed { .. } => EventKind::RepairResumed,
             EventPayload::UndoPrepared { .. } => EventKind::UndoPrepared,
             EventPayload::UndoCheckpoint { .. } => EventKind::UndoCheckpoint,
             EventPayload::UndoCommitted { .. } => EventKind::UndoCommitted,
@@ -270,6 +280,16 @@ impl IdentifyOperationEvent {
                 row.insert("repair_code".to_owned(), Value::String(repair_code.clone()));
                 row.insert("repair_categories".to_owned(), repair_categories.clone());
                 row.insert("partial_report".to_owned(), partial_report.clone());
+            }
+            EventPayload::RepairResumed {
+                repair_event_id,
+                phase,
+            } => {
+                row.insert(
+                    "repair_event_id".to_owned(),
+                    Value::String(repair_event_id.clone()),
+                );
+                row.insert("phase".to_owned(), Value::String(phase.as_str().to_owned()));
             }
             EventPayload::UndoPrepared { undo_started_at } => {
                 row.insert(
@@ -924,6 +944,8 @@ pub enum IdentifyOperationError {
     },
     #[error("invalid schema_version")]
     InvalidSchemaVersion,
+    #[error("repair_resumed requires schema_version 2")]
+    RepairResumeRequiresSchemaVersion2,
     #[error("missing or invalid {field}")]
     MissingOrInvalidField { field: &'static str },
     #[error("unknown event_kind: {event_kind}")]
@@ -966,6 +988,8 @@ pub enum IdentifyOperationError {
     InvalidUndoRepairPhase { phase: String },
     #[error("conflicting duplicate event_id {event_id}")]
     ConflictingDuplicateEventId { event_id: String },
+    #[error("repair resume {event_id} does not name the latest outstanding identity repair")]
+    InvalidRepairResume { event_id: String },
     #[error("operation must have exactly one prepared event")]
     PreparedEventCount,
     #[error("conflicting checkpoint for phase {phase}")]
@@ -1052,11 +1076,11 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
     let object = row
         .as_object()
         .ok_or(IdentifyOperationError::MissingOrInvalidField { field: "row" })?;
-    if object.get("schema_version").and_then(Value::as_i64)
-        != Some(IDENTIFY_OPERATION_SCHEMA_VERSION)
-    {
+    let schema_version = object.get("schema_version").and_then(Value::as_i64);
+    if !matches!(schema_version, Some(1 | IDENTIFY_OPERATION_SCHEMA_VERSION)) {
         return Err(IdentifyOperationError::InvalidSchemaVersion);
     }
+    let schema_version = schema_version.expect("validated schema version");
     let event_kind_value = required_str(object, "event_kind")?;
     let kind =
         EventKind::parse(&event_kind_value).ok_or(IdentifyOperationError::UnknownEventKind {
@@ -1108,6 +1132,19 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
                 partial_report,
             }
         }
+        EventKind::RepairResumed => {
+            if schema_version != IDENTIFY_OPERATION_SCHEMA_VERSION {
+                return Err(IdentifyOperationError::RepairResumeRequiresSchemaVersion2);
+            }
+            let repair_event_id = required_str(object, "repair_event_id")?;
+            let phase_text = required_str(object, "phase")?;
+            let phase = ForwardPhase::parse(&phase_text)
+                .ok_or(IdentifyOperationError::InvalidRepairPhase { phase: phase_text })?;
+            EventPayload::RepairResumed {
+                repair_event_id,
+                phase,
+            }
+        }
         EventKind::UndoPrepared => EventPayload::UndoPrepared {
             undo_started_at: required_str(object, "undo_started_at")?,
         },
@@ -1136,7 +1173,7 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
         }
     };
     Ok(IdentifyOperationEvent {
-        schema_version: IDENTIFY_OPERATION_SCHEMA_VERSION,
+        schema_version,
         event_id,
         operation_id,
         request_id,
@@ -1439,7 +1476,8 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
         .copied()
         .filter(|phase| phase_checkpoints.contains_key(phase))
         .collect::<Vec<_>>();
-    let terminal_status = terminal_status(&events);
+    let lifecycle = lifecycle(&events)?;
+    let terminal_status = lifecycle.terminal_status;
     let plan = prepared_plan.as_object().expect("validated prepared plan");
     let request = plan["request"].as_object().expect("validated request");
     let target = plan["target"].as_object().expect("validated target");
@@ -1449,7 +1487,12 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
         .iter()
         .map(|member| member_provenance(member.as_object().expect("validated member")))
         .collect::<Result<_, _>>()?;
-    let pending_phases = pending_phases(terminal_status, &completed_phases, &events);
+    let pending_phases = pending_phases(
+        terminal_status,
+        &completed_phases,
+        lifecycle.repair_required,
+        &events,
+    );
     Ok(OperationState {
         operation_id: prepared_event.operation_id.clone(),
         request_id: prepared_event.request_id.clone(),
@@ -1499,11 +1542,7 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
             .count(),
         phase_checkpoints,
         prepared_plan,
-        repair_required: events
-            .iter()
-            .rev()
-            .find(|row| row.event.event_kind() == EventKind::RepairRequired)
-            .map(|row| row.event.clone()),
+        repair_required: lifecycle.repair_required.cloned(),
         undo_repair_required: events
             .iter()
             .rev()
@@ -1513,28 +1552,126 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
     })
 }
 
-fn terminal_status(events: &[&LedgerRow]) -> TerminalStatus {
-    let has = |kind| events.iter().any(|row| row.event.event_kind() == kind);
-    if has(EventKind::UndoRepairRequired) {
-        TerminalStatus::UndoRepairRequired
-    } else if has(EventKind::UndoCommitted) {
-        TerminalStatus::Undone
-    } else if has(EventKind::UndoPrepared) || has(EventKind::UndoCheckpoint) {
-        TerminalStatus::Undoing
-    } else if has(EventKind::RepairRequired) {
-        TerminalStatus::RepairRequired
-    } else if has(EventKind::Committed) {
-        TerminalStatus::Committed
-    } else {
-        TerminalStatus::InProgress
-    }
+struct Lifecycle<'a> {
+    terminal_status: TerminalStatus,
+    repair_required: Option<&'a IdentifyOperationEvent>,
 }
+
+fn lifecycle<'a>(events: &[&'a LedgerRow]) -> Result<Lifecycle<'a>, IdentifyOperationError> {
+    let mut terminal_status = TerminalStatus::InProgress;
+    let mut repair_required = None;
+    let mut committed_or_undo_started = false;
+
+    for row in events {
+        match &row.event.payload {
+            EventPayload::Prepared { .. } | EventPayload::Checkpoint { .. } => {}
+            EventPayload::RepairRequired { .. } => {
+                terminal_status = TerminalStatus::RepairRequired;
+                repair_required = Some(&row.event);
+            }
+            EventPayload::RepairResumed {
+                repair_event_id,
+                phase,
+            } => {
+                let Some(outstanding) = repair_required else {
+                    return Err(IdentifyOperationError::InvalidRepairResume {
+                        event_id: row.event.event_id.clone(),
+                    });
+                };
+                let EventPayload::RepairRequired {
+                    phase: repair_phase,
+                    repair_code,
+                    ..
+                } = &outstanding.payload
+                else {
+                    unreachable!("outstanding repair has repair payload");
+                };
+                if terminal_status != TerminalStatus::RepairRequired
+                    || committed_or_undo_started
+                    || outstanding.event_id != *repair_event_id
+                    || repair_phase != phase
+                    || repair_code != OWNER_IDENTITY_INVALID_REASON
+                {
+                    return Err(IdentifyOperationError::InvalidRepairResume {
+                        event_id: row.event.event_id.clone(),
+                    });
+                }
+                terminal_status = TerminalStatus::InProgress;
+                repair_required = None;
+            }
+            EventPayload::Committed { .. } => {
+                terminal_status = TerminalStatus::Committed;
+                repair_required = None;
+                committed_or_undo_started = true;
+            }
+            EventPayload::UndoPrepared { .. } | EventPayload::UndoCheckpoint { .. } => {
+                terminal_status = TerminalStatus::Undoing;
+                repair_required = None;
+                committed_or_undo_started = true;
+            }
+            EventPayload::UndoCommitted { .. } => {
+                terminal_status = TerminalStatus::Undone;
+                repair_required = None;
+                committed_or_undo_started = true;
+            }
+            EventPayload::UndoRepairRequired { .. } => {
+                terminal_status = TerminalStatus::UndoRepairRequired;
+                repair_required = None;
+                committed_or_undo_started = true;
+            }
+        }
+    }
+
+    Ok(Lifecycle {
+        terminal_status,
+        repair_required,
+    })
+}
+
 fn pending_phases(
     terminal: TerminalStatus,
     completed: &[ForwardPhase],
+    repair_required: Option<&IdentifyOperationEvent>,
     events: &[&LedgerRow],
 ) -> Vec<String> {
-    match terminal { TerminalStatus::InProgress => FORWARD_PHASE_ORDER.iter().filter(|phase| !completed.contains(phase)).map(|phase| phase.as_str().to_owned()).collect(), TerminalStatus::RepairRequired => events.iter().rev().find_map(|row| match &row.event.payload { EventPayload::RepairRequired { partial_report, .. } => partial_report.get("pending_phases").and_then(Value::as_array).map(|items| items.iter().map(Value::to_string).map(|value| value.trim_matches('"').to_owned()).collect()), _ => None }).unwrap_or_default(), TerminalStatus::Undoing => UNDO_PHASE_ORDER.iter().filter(|phase| !events.iter().any(|row| matches!(&row.event.payload, EventPayload::UndoCheckpoint { phase: completed_phase, .. } if completed_phase == *phase))).map(|phase| phase.as_str().to_owned()).collect(), _ => Vec::new() }
+    match terminal {
+        TerminalStatus::InProgress => FORWARD_PHASE_ORDER
+            .iter()
+            .filter(|phase| !completed.contains(phase))
+            .map(|phase| phase.as_str().to_owned())
+            .collect(),
+        TerminalStatus::RepairRequired => repair_required
+            .and_then(|event| match &event.payload {
+                EventPayload::RepairRequired { partial_report, .. } => partial_report
+                    .get("pending_phases")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(Value::to_string)
+                            .map(|value| value.trim_matches('"').to_owned())
+                            .collect()
+                    }),
+                _ => None,
+            })
+            .unwrap_or_default(),
+        TerminalStatus::Undoing => UNDO_PHASE_ORDER
+            .iter()
+            .filter(|phase| {
+                !events.iter().any(|row| {
+                    matches!(
+                        &row.event.payload,
+                        EventPayload::UndoCheckpoint {
+                            phase: completed_phase,
+                            ..
+                        } if completed_phase == *phase
+                    )
+                })
+            })
+            .map(|phase| phase.as_str().to_owned())
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 fn last_object_payload(events: &[&LedgerRow], kind: EventKind, field: &str) -> Option<Value> {
     events

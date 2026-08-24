@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
 use solstone_core_speaker_resolve::identify_operations::{
-    FORWARD_PHASE_ORDER, ForwardPhase, IdentifyOperationError, MemberProvenance, OperationState,
-    TerminalStatus, UNDO_PHASE_ORDER, UndoPhase, append_event,
+    FORWARD_PHASE_ORDER, ForwardPhase, IDENTIFY_OPERATION_SCHEMA_VERSION, IdentifyOperationError,
+    MemberProvenance, OperationState, TerminalStatus, UNDO_PHASE_ORDER, UndoPhase, append_event,
     expected_restored_correction_artifact_signatures, fold_operation,
     identify_correction_artifact_signature, is_fully_restored_identify_operation, load_operations,
     operation_id_for_request, request_fingerprint, validate_row,
@@ -92,6 +93,65 @@ fn repair(event_id: &str, kind: &str) -> Value {
         }
         .into(),
         json!({}),
+    );
+    Value::Object(value)
+}
+fn identity_repair(event_id: &str, phase: ForwardPhase, pending_phases: &[&str]) -> Value {
+    let mut value = base(event_id, "repair_required");
+    value.insert("phase".into(), json!(phase.as_str()));
+    value.insert("repair_code".into(), json!(OWNER_IDENTITY_INVALID_REASON));
+    value.insert("repair_categories".into(), json!({"owner_identity": 1}));
+    value.insert(
+        "partial_report".into(),
+        json!({"pending_phases": pending_phases}),
+    );
+    Value::Object(value)
+}
+fn resumed(event_id: &str, repair_event_id: &str, phase: ForwardPhase) -> Value {
+    let mut value = base(event_id, "repair_resumed");
+    value.insert(
+        "schema_version".into(),
+        json!(IDENTIFY_OPERATION_SCHEMA_VERSION),
+    );
+    value.insert("repair_event_id".into(), json!(repair_event_id));
+    value.insert("phase".into(), json!(phase.as_str()));
+    Value::Object(value)
+}
+fn checkpoint(event_id: &str, phase: ForwardPhase) -> Value {
+    let details = match phase {
+        ForwardPhase::Entity => {
+            json!({"entity_id":"alice","entity_created":false,"identity_after_hash":"hash","history_event_refs":[]})
+        }
+        ForwardPhase::KeepSeparate => {
+            json!({"pair_keys":[],"recorded_count":0,"already_present_count":0})
+        }
+        ForwardPhase::DirectVoiceprints => {
+            json!({"saved_keys":[],"saved_count":0,"skipped_existing_count":0})
+        }
+        ForwardPhase::Corrections => {
+            json!({"appended_keys":[],"appended_count":0,"skipped_existing_count":0,"segment_count":0})
+        }
+        ForwardPhase::Labels => {
+            json!({"patched_sentence_keys":[],"inserted_sentence_keys":[],"patched_count":0,"inserted_count":0,"skipped_already_intended_count":0,"segment_count":0})
+        }
+        ForwardPhase::RetroTracker => {
+            json!({"matched":false,"candidate_id":null,"saved_keys":[],"voiceprints_saved_count":0,"voiceprints_skipped_existing_count":0,"tracker_updated":false})
+        }
+        ForwardPhase::Sentinel => json!({"cluster_key":"cluster","written":true}),
+    };
+    let mut value = base(event_id, "checkpoint");
+    value.insert("phase".into(), json!(phase.as_str()));
+    value.insert(
+        "checkpoint".into(),
+        Value::Object(
+            json!({"phase_status":"complete","completed_at":"2026-08-08T00:00:00Z","counts":{},"skipped_reasons":{}})
+                .as_object()
+                .expect("object")
+                .clone()
+                .into_iter()
+                .chain(details.as_object().expect("object").clone())
+                .collect(),
+        ),
     );
     Value::Object(value)
 }
@@ -298,12 +358,230 @@ fn ac7_malformed_row_fails_loudly_without_a_partial_append() {
         Err(IdentifyOperationError::MalformedJson { line: 1, .. })
     ));
     let mut invalid_event = validate_row(&prepared("invalid-append")).unwrap();
-    invalid_event.schema_version = 2;
+    invalid_event.schema_version = 3;
     assert!(matches!(
         append_event(&path, &invalid_event),
         Err(IdentifyOperationError::InvalidSchemaVersion)
     ));
     assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn repair_resume_reads_a_v1_prefix_without_rewriting_it() {
+    let temporary = TempDir::new();
+    let path = temporary.ledger();
+    let prefix = vec![
+        prepared("prepared"),
+        identity_repair(
+            "idop_test:repair_required:direct_voiceprints",
+            ForwardPhase::DirectVoiceprints,
+            &["direct_voiceprints"],
+        ),
+    ];
+    write_rows(&path, &prefix);
+    let before = fs::read(&path).unwrap();
+
+    let resume = validate_row(&resumed(
+        "idop_test:repair_required:direct_voiceprints:resumed",
+        "idop_test:repair_required:direct_voiceprints",
+        ForwardPhase::DirectVoiceprints,
+    ))
+    .unwrap();
+    append_event(&path, &resume).unwrap();
+
+    let after = fs::read(&path).unwrap();
+    assert_eq!(&after[..before.len()], before.as_slice());
+    let state = fold_operation(&load_operations(&path).unwrap(), "idop_test")
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.terminal_status, TerminalStatus::InProgress);
+    assert!(state.repair_required.is_none());
+}
+
+#[test]
+fn repair_resume_requires_v2_and_the_latest_outstanding_identity_repair() {
+    let mut v1_resume = resumed("repair:resumed", "repair", ForwardPhase::DirectVoiceprints);
+    v1_resume["schema_version"] = json!(1);
+    assert!(matches!(
+        validate_row(&v1_resume),
+        Err(IdentifyOperationError::RepairResumeRequiresSchemaVersion2)
+    ));
+
+    let cases = [
+        (
+            "non_latest",
+            vec![
+                prepared("prepared"),
+                identity_repair("repair-a", ForwardPhase::DirectVoiceprints, &[]),
+                identity_repair("repair-b", ForwardPhase::Labels, &[]),
+                resumed(
+                    "repair-a:resumed",
+                    "repair-a",
+                    ForwardPhase::DirectVoiceprints,
+                ),
+            ],
+        ),
+        (
+            "wrong_phase",
+            vec![
+                prepared("prepared"),
+                identity_repair("repair", ForwardPhase::DirectVoiceprints, &[]),
+                resumed("repair:resumed", "repair", ForwardPhase::Labels),
+            ],
+        ),
+        (
+            "not_outstanding",
+            vec![
+                prepared("prepared"),
+                identity_repair("repair", ForwardPhase::DirectVoiceprints, &[]),
+                committed("committed"),
+                resumed("repair:resumed", "repair", ForwardPhase::DirectVoiceprints),
+            ],
+        ),
+    ];
+    for (name, rows) in cases {
+        let temporary = TempDir::new();
+        write_rows(&temporary.ledger(), &rows);
+        assert!(
+            matches!(
+                fold_operation(&load_operations(&temporary.ledger()).unwrap(), "idop_test"),
+                Err(IdentifyOperationError::InvalidRepairResume { .. })
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn repair_resume_cannot_reopen_a_committed_or_undo_lifecycle() {
+    let lifecycle_events = [
+        ("committed", vec![committed("committed")]),
+        (
+            "undoing",
+            vec![committed("committed"), undo_prepared("undo_prepared")],
+        ),
+        (
+            "undone",
+            vec![
+                committed("committed"),
+                undo_prepared("undo_prepared"),
+                undo_committed("undo_committed"),
+            ],
+        ),
+        (
+            "undo_repair_required",
+            vec![
+                committed("committed"),
+                undo_prepared("undo_prepared"),
+                repair("undo_repair", "undo_repair_required"),
+            ],
+        ),
+    ];
+    for (name, mut suffix) in lifecycle_events {
+        let temporary = TempDir::new();
+        let mut rows = vec![
+            prepared("prepared"),
+            identity_repair("repair", ForwardPhase::DirectVoiceprints, &[]),
+        ];
+        rows.append(&mut suffix);
+        rows.push(resumed(
+            "repair:resumed",
+            "repair",
+            ForwardPhase::DirectVoiceprints,
+        ));
+        write_rows(&temporary.ledger(), &rows);
+        assert!(
+            matches!(
+                fold_operation(&load_operations(&temporary.ledger()).unwrap(), "idop_test"),
+                Err(IdentifyOperationError::InvalidRepairResume { .. })
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn ordered_repair_resume_state_machine_uses_checkpoints_for_pending_phases() {
+    let temporary = TempDir::new();
+    let path = temporary.ledger();
+    let mut rows = vec![
+        prepared("prepared"),
+        checkpoint("entity", ForwardPhase::Entity),
+        identity_repair("repair", ForwardPhase::DirectVoiceprints, &["sentinel"]),
+        resumed("repair:resumed", "repair", ForwardPhase::DirectVoiceprints),
+    ];
+    write_rows(&path, &rows);
+    let resumed_state = fold_operation(&load_operations(&path).unwrap(), "idop_test")
+        .unwrap()
+        .unwrap();
+    assert_eq!(resumed_state.terminal_status, TerminalStatus::InProgress);
+    assert_eq!(
+        resumed_state.pending_phases,
+        FORWARD_PHASE_ORDER[1..]
+            .iter()
+            .map(|phase| phase.as_str().to_owned())
+            .collect::<Vec<_>>()
+    );
+
+    rows.extend([
+        checkpoint("keep_separate", ForwardPhase::KeepSeparate),
+        checkpoint("direct_voiceprints", ForwardPhase::DirectVoiceprints),
+        checkpoint("corrections", ForwardPhase::Corrections),
+        identity_repair("repair:retry:1", ForwardPhase::Labels, &["labels"]),
+        resumed(
+            "repair:retry:1:resumed",
+            "repair:retry:1",
+            ForwardPhase::Labels,
+        ),
+        checkpoint("labels", ForwardPhase::Labels),
+        checkpoint("retro_tracker", ForwardPhase::RetroTracker),
+        checkpoint("sentinel", ForwardPhase::Sentinel),
+        committed("committed"),
+    ]);
+    write_rows(&path, &rows);
+    let committed_state = fold_operation(&load_operations(&path).unwrap(), "idop_test")
+        .unwrap()
+        .unwrap();
+    assert_eq!(committed_state.terminal_status, TerminalStatus::Committed);
+    assert!(committed_state.repair_required.is_none());
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["event_kind"] == "repair_required")
+            .map(|row| row["event_id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["repair", "repair:retry:1"]
+    );
+}
+
+#[test]
+fn resumed_repair_is_not_projected_after_commit_and_undo() {
+    let temporary = TempDir::new();
+    let path = temporary.ledger();
+    let mut rows = vec![
+        prepared("prepared"),
+        identity_repair("repair", ForwardPhase::DirectVoiceprints, &[]),
+        resumed("repair:resumed", "repair", ForwardPhase::DirectVoiceprints),
+    ];
+    rows.extend(
+        FORWARD_PHASE_ORDER
+            .iter()
+            .map(|phase| checkpoint(phase.as_str(), *phase)),
+    );
+    rows.extend([
+        committed("committed"),
+        undo_prepared("undo_prepared"),
+        undo_committed("undone"),
+    ]);
+    write_rows(&path, &rows);
+    let state = fold_operation(&load_operations(&path).unwrap(), "idop_test")
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.terminal_status, TerminalStatus::Undone);
+    assert!(state.repair_required.is_none());
+
+    let mut restored = fully_restored_operation_state();
+    restored.repair_required = state.repair_required;
+    assert!(is_fully_restored_identify_operation(&restored));
 }
 
 #[test]

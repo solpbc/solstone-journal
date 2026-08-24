@@ -16,6 +16,9 @@ use solstone_core_speaker_resolve::identify_forward_phases::{
     phase_keep_separate, phase_labels, phase_retro_tracker, phase_sentinel,
 };
 use solstone_core_speaker_resolve::identify_operations::ForwardPhase;
+use solstone_core_speaker_resolve::owner_centroid::{
+    OwnerCentroidWriteInput, write_owner_centroid,
+};
 use solstone_core_speaker_resolve::voiceprint_metadata::VoiceprintMetadata;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -46,6 +49,30 @@ fn segment(root: &Path) -> PathBuf {
     let path = segment_path(root, "20260808", "120000_300", "mic", true).unwrap();
     fs::create_dir_all(path.join("talents")).unwrap();
     path
+}
+
+fn admitted_owner(root: &Path) {
+    let path = root.join("entities/owner");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("entity.json"),
+        json!({"id":"owner","type":"Person","is_principal":true}).to_string(),
+    )
+    .unwrap();
+}
+
+fn owner_centroid(root: &Path, centroid: Vec<f32>) {
+    write_owner_centroid(
+        root,
+        "owner",
+        &OwnerCentroidWriteInput {
+            centroid,
+            cluster_size: 1,
+            timestamp: "2026-08-08T00:00:00Z".into(),
+            evidence_tier: "test".into(),
+        },
+    )
+    .unwrap();
 }
 
 #[test]
@@ -178,6 +205,7 @@ fn phase_labels_patches_matching_prior_and_repairs_concurrent_change() {
 #[test]
 fn phase_retro_tracker_unmatched_returns_the_durable_empty_checkpoint_shape() {
     let temporary = Temp::new();
+    admitted_owner(temporary.path());
     let mut tracker = CandidateTracker::new(temporary.path());
     let result = phase_retro_tracker(
         temporary.path(),
@@ -186,6 +214,7 @@ fn phase_retro_tracker_unmatched_returns_the_durable_empty_checkpoint_shape() {
             matched: false,
             candidate_id: None,
             target_entity_id: "target".into(),
+            planning_owner_entity_id: Some("owner".into()),
             candidate_before: None,
             candidate_after: None,
             voiceprints_to_add: vec![],
@@ -204,6 +233,10 @@ fn phase_retro_tracker_unmatched_returns_the_durable_empty_checkpoint_shape() {
 #[test]
 fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one() {
     let temporary = Temp::new();
+    admitted_owner(temporary.path());
+    let mut owner = vec![0.0; 256];
+    owner[0] = 1.0;
+    owner_centroid(temporary.path(), owner);
     let entity_dir = temporary.path().join("entities/target");
     fs::create_dir_all(&entity_dir).unwrap();
     fs::write(
@@ -232,6 +265,7 @@ fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one()
         matched: true,
         candidate_id: Some(before.cand_id),
         target_entity_id: "target".into(),
+        planning_owner_entity_id: Some("owner".into()),
         candidate_before: Some(before.to_json()),
         candidate_after: Some(after.to_json()),
         voiceprints_to_add: vec![
@@ -269,6 +303,81 @@ fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one()
             ..
         })
     ));
+}
+
+#[test]
+fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
+    let temporary = Temp::new();
+    admitted_owner(temporary.path());
+    let mut clear_owner = vec![0.0; 256];
+    clear_owner[0] = 1.0;
+    owner_centroid(temporary.path(), clear_owner);
+    let entity_dir = temporary.path().join("entities/target");
+    fs::create_dir_all(&entity_dir).unwrap();
+    fs::write(
+        entity_dir.join("entity.json"),
+        json!({"id":"target","name":"Target","type":"Person"}).to_string(),
+    )
+    .unwrap();
+    let mut tracker = CandidateTracker::new(temporary.path());
+    tracker
+        .process_segment(&[ClusterInput {
+            source_segment: json!({"day":"20260808","stream":"mic","segment_key":"120000_300","source":"audio","cluster_label":1}),
+            embeddings: vec![vector()],
+            durations_s: vec![1.0],
+        }])
+        .unwrap();
+    let before = tracker.snapshot_candidates_locked().unwrap().remove(0);
+    let mut after = before.clone();
+    after.status = "confirmed".to_owned();
+    after.confirmed_entity = Some("target".to_owned());
+    let item = VoiceprintItem {
+        embedding: vector(),
+        metadata: VoiceprintMetadata::new("20260808", "120000_300", "audio", "mic", 7, 1, 1)
+            .to_json(),
+    };
+    let plan = RetroTrackerPhasePlan {
+        matched: true,
+        candidate_id: Some(before.cand_id),
+        target_entity_id: "target".into(),
+        planning_owner_entity_id: Some("owner".into()),
+        candidate_before: Some(before.to_json()),
+        candidate_after: Some(after.to_json()),
+        voiceprints_to_add: vec![
+            solstone_core_speaker_resolve::identify_forward_phases::RetroVoiceprintEntry {
+                key: solstone_core_speaker_resolve::direct_voiceprints::DirectVoiceprintKey {
+                    day: "20260808".into(),
+                    segment_key: "120000_300".into(),
+                    source: "audio".into(),
+                    sentence_id: 7,
+                },
+                metadata: item.metadata.clone(),
+                item,
+            },
+        ],
+    };
+    let candidate_bytes =
+        fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
+    owner_centroid(temporary.path(), vector());
+
+    assert!(matches!(
+        phase_retro_tracker(temporary.path(), &mut tracker, &plan, &encoder()),
+        Err(ForwardPhaseError::RepairRequired {
+            phase: ForwardPhase::RetroTracker,
+            code: "owner_similarity",
+            ..
+        })
+    ));
+    assert_eq!(
+        fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap(),
+        candidate_bytes
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("entities/target/voiceprints.npz")
+            .exists()
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     EncoderIdentity, EntityOperationContext, EntityOperationKind, JournalEntity, VoiceprintItem,
-    create_journal_entity, load_entity_voiceprints_file, read_entity_identity,
+    create_journal_entity, load_entity_voiceprints_file, normalize_embedding, read_entity_identity,
     read_visible_history,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, segment_path};
@@ -23,6 +23,8 @@ use crate::candidate_tracker::{CandidateTracker, CandidateTrackerError};
 use crate::direct_voiceprints::DirectVoiceprintKey;
 use crate::identify_operations::ForwardPhase;
 use crate::keep_separate::{KeepSeparateError, find_assertion, record_keep_separate_assertion};
+use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admitted_owner_id};
+use crate::owner_centroid::{OwnerCentroidError, load_owner_centroid};
 use crate::retroactive_confirm::{
     RetroactiveConfirmError, RetroactiveConfirmPlan, apply_retroactive_confirm_plan,
 };
@@ -80,6 +82,7 @@ pub struct RetroTrackerPhasePlan {
     pub matched: bool,
     pub candidate_id: Option<i64>,
     pub target_entity_id: String,
+    pub planning_owner_entity_id: Option<String>,
     pub candidate_before: Option<Value>,
     pub candidate_after: Option<Value>,
     pub voiceprints_to_add: Vec<RetroVoiceprintEntry>,
@@ -125,7 +128,8 @@ pub enum ForwardPhaseError {
         phase: ForwardPhase,
         code: &'static str,
         categories: BTreeMap<String, usize>,
-        partial_report: Value,
+        /// `None` lets the identify orchestrator record pending phases; `Some` is verbatim.
+        partial_report: Option<Value>,
     },
 }
 
@@ -176,7 +180,7 @@ pub fn phase_entity(
                 ForwardPhase::Entity,
                 "entity_missing",
                 "entity",
-                Value::Null,
+                Some(Value::Null),
             ));
         };
         if meaningful_identity(&entity.value) != meaningful_identity(expected) {
@@ -184,7 +188,7 @@ pub fn phase_entity(
                 ForwardPhase::Entity,
                 "concurrent_change",
                 "concurrent_change",
-                Value::Null,
+                Some(Value::Null),
             ));
         }
         let history_event_refs =
@@ -194,7 +198,7 @@ pub fn phase_entity(
                 ForwardPhase::Entity,
                 "concurrent_change",
                 "concurrent_change",
-                json!({"history_event_refs": history_event_refs}),
+                Some(json!({"history_event_refs": history_event_refs})),
             ));
         }
         return Ok(PhaseResult {
@@ -214,7 +218,7 @@ pub fn phase_entity(
             ForwardPhase::Entity,
             "entity_missing",
             "entity",
-            Value::Null,
+            Some(Value::Null),
         ));
     };
     Ok(PhaseResult {
@@ -315,7 +319,7 @@ pub fn phase_corrections(
                     ForwardPhase::Corrections,
                     "concurrent_change",
                     "segment_correction",
-                    Value::Null,
+                    Some(Value::Null),
                 )
             })?;
             append_correction(&directory, object)?;
@@ -381,7 +385,7 @@ pub fn phase_labels(
                     ForwardPhase::Labels,
                     "concurrent_change",
                     "concurrent_change",
-                    json!({"segment":segment.segment_key,"sentence_id":item.sentence_id}),
+                    Some(json!({"segment":segment.segment_key,"sentence_id":item.sentence_id})),
                 ));
             }
         }
@@ -405,11 +409,83 @@ pub fn phase_retro_tracker(
     plan: &RetroTrackerPhasePlan,
     encoder: &EncoderIdentity,
 ) -> Result<PhaseResult, ForwardPhaseError> {
+    let owner_id = match admitted_owner_id(journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                OWNER_IDENTITY_INVALID_REASON,
+                "owner_identity",
+                None,
+            ));
+        }
+    };
+    let Some(planning_owner_entity_id) = plan.planning_owner_entity_id.as_deref() else {
+        return Err(repair(
+            ForwardPhase::RetroTracker,
+            "speaker_identify_plan_owner_unbound",
+            "owner_plan",
+            None,
+        ));
+    };
+    if owner_id != planning_owner_entity_id {
+        return Err(repair(
+            ForwardPhase::RetroTracker,
+            "speaker_identify_plan_owner_changed",
+            "owner_identity",
+            None,
+        ));
+    }
     let Some(candidate_id) = plan.matched.then_some(plan.candidate_id).flatten() else {
         return Ok(PhaseResult {
             fields: json!({"matched":false,"candidate_id":null,"saved_keys":[],"voiceprints_saved_count":0,"voiceprints_skipped_existing_count":0,"tracker_updated":false,"counts":{},"skipped_reasons":{}}),
         });
     };
+    let owner = match load_owner_centroid(journal_root, &owner_id) {
+        Ok(Some(owner)) => owner,
+        Ok(None) => {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                "owner_centroid_unavailable",
+                "owner_centroid",
+                None,
+            ));
+        }
+        Err(OwnerCentroidError::IdentityInvalid | OwnerCentroidError::TargetMismatch { .. }) => {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                OWNER_IDENTITY_INVALID_REASON,
+                "owner_identity",
+                None,
+            ));
+        }
+        Err(_) => {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                "owner_centroid_unavailable",
+                "owner_centroid",
+                None,
+            ));
+        }
+    };
+    for entry in &plan.voiceprints_to_add {
+        let Some(embedding) = normalize_embedding(&entry.item.embedding) else {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                "retro_embedding_invalid",
+                "retro_embedding",
+                None,
+            ));
+        };
+        if dot(&embedding, &owner.centroid) >= owner.threshold {
+            return Err(repair(
+                ForwardPhase::RetroTracker,
+                "owner_similarity",
+                "owner_centroid",
+                None,
+            ));
+        }
+    }
     let metadata = voiceprint_metadata(journal_root, &plan.target_entity_id);
     let mut saved = Vec::new();
     let mut items = Vec::new();
@@ -427,7 +503,7 @@ pub fn phase_retro_tracker(
                     ForwardPhase::RetroTracker,
                     "voiceprint_metadata_mismatch",
                     "voiceprint",
-                    Value::Null,
+                    Some(Value::Null),
                 ));
             }
         }
@@ -441,7 +517,7 @@ pub fn phase_retro_tracker(
                 ForwardPhase::RetroTracker,
                 "candidate_missing",
                 "speaker_candidate",
-                Value::Null,
+                Some(Value::Null),
             )
         })?;
     let candidate_json = candidate.to_json();
@@ -452,7 +528,7 @@ pub fn phase_retro_tracker(
             ForwardPhase::RetroTracker,
             "concurrent_change",
             "concurrent_change",
-            Value::Null,
+            Some(Value::Null),
         ));
     }
     let tracker_updated = plan.candidate_before != plan.candidate_after;
@@ -500,7 +576,7 @@ pub fn phase_sentinel(
                 ForwardPhase::Sentinel,
                 "concurrent_change",
                 "concurrent_change",
-                Value::Null,
+                Some(Value::Null),
             ));
         }
     }
@@ -657,7 +733,7 @@ fn label_patch_fields(intended: &Value) -> Result<Map<String, Value>, ForwardPha
             ForwardPhase::Labels,
             "concurrent_change",
             "segment_label",
-            Value::Null,
+            Some(Value::Null),
         )
     })?;
     Ok(["speaker", "confidence", "method"]
@@ -720,11 +796,12 @@ pub(crate) fn replace_resolved_clusters(
         }
     })
 }
+// Existing `Some(Value::Null)` reports remain intentionally non-recordable pending §8 follow-up 1.
 fn repair(
     phase: ForwardPhase,
     code: &'static str,
     category: &str,
-    partial_report: Value,
+    partial_report: Option<Value>,
 ) -> ForwardPhaseError {
     ForwardPhaseError::RepairRequired {
         phase,
@@ -732,4 +809,11 @@ fn repair(
         categories: BTreeMap::from([(category.to_owned(), 1)]),
         partial_report,
     }
+}
+
+fn dot(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right)
+        .map(|(left, right)| left * right)
+        .sum()
 }

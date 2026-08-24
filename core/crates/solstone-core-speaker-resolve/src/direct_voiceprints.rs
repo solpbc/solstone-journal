@@ -17,7 +17,7 @@ use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
 use crate::identify_operations::{ForwardPhase, MemberProvenance};
-use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
+use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
@@ -104,7 +104,8 @@ pub enum DirectVoiceprintsError {
         phase: ForwardPhase,
         code: &'static str,
         categories: BTreeMap<String, usize>,
-        partial_report: Value,
+        /// `None` lets the identify orchestrator record pending phases; `Some` is verbatim.
+        partial_report: Option<Value>,
     },
 }
 
@@ -239,7 +240,18 @@ pub fn execute_direct_voiceprints_phase(
     let existing_metadata = entity_voiceprint_metadata(journal_root, &plan.target_entity_id);
     let mut saved_keys = Vec::new();
     let mut to_save = Vec::new();
-    let owner = current_owner_centroid(journal_root)?;
+    let owner = match current_owner_centroid(journal_root) {
+        Ok(owner) => owner,
+        Err(DirectVoiceprintsError::OwnerIdentityInvalid) => {
+            return Err(DirectVoiceprintsError::RepairRequired {
+                phase: ForwardPhase::DirectVoiceprints,
+                code: OWNER_IDENTITY_INVALID_REASON,
+                categories: BTreeMap::from([("owner_identity".to_owned(), 1)]),
+                partial_report: None,
+            });
+        }
+        Err(error) => return Err(error),
+    };
 
     for entry in &plan.entries_to_add {
         if let Some(rows) = existing_metadata.get(&entry.key) {
@@ -409,10 +421,10 @@ fn repair_required(
         phase: ForwardPhase::DirectVoiceprints,
         code,
         categories: BTreeMap::from([(category.to_owned(), 1)]),
-        partial_report: json!({
+        partial_report: Some(json!({
             "saved_keys": saved_keys.iter().map(DirectVoiceprintKey::to_json).collect::<Vec<_>>(),
             "saved_count": saved_keys.len(),
-        }),
+        })),
     }
 }
 
