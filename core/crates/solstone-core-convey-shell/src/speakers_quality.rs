@@ -16,7 +16,7 @@ use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
-    admitted_speaker_ids, audio_embedding_sources, day_dirs, iter_segments, journal_principal_id,
+    admitted_speaker_ids, audio_embedding_sources, day_dirs, iter_segments,
     label_has_admitted_speaker, load_all_journal_entities,
 };
 use crate::speakers_npz::{load_voiceprints, owner_centroid_summary};
@@ -29,7 +29,14 @@ const QUALITY_WINDOW_DAYS: usize = 30;
 pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     match quality_status(&root.0) {
         Ok(status) => Json(status).into_response(),
-        Err(error) => error_envelope(
+        Err(QualityError::IdentityInvalid) => error_envelope(
+            "speaker_owner_identity_invalid",
+            "I couldn't load speaker quality because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        )
+        .into_response(),
+        Err(QualityError::Catalog(error)) => error_envelope(
             "speaker_command_failed",
             "I couldn't finish that speaker command.",
             error.to_string(),
@@ -39,14 +46,27 @@ pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     }
 }
 
-fn quality_status(root: &Path) -> Result<QualityStatus, CatalogBuildError> {
+#[derive(Debug)]
+enum QualityError {
+    IdentityInvalid,
+    Catalog(CatalogBuildError),
+}
+
+fn quality_status(root: &Path) -> Result<QualityStatus, QualityError> {
+    let principal_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(root)
+    {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return Err(QualityError::IdentityInvalid);
+        }
+    };
     let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(root));
-    let mut window_days = day_dirs(root)?;
+    let mut window_days = day_dirs(root).map_err(QualityError::Catalog)?;
     window_days.sort_by(|left, right| right.cmp(left));
     window_days.truncate(QUALITY_WINDOW_DAYS);
     let mut counters = Counters::default();
     for day in &window_days {
-        for segment in iter_segments(root, day)? {
+        for segment in iter_segments(root, day).map_err(QualityError::Catalog)? {
             if audio_embedding_sources(&segment.path).is_empty() {
                 continue;
             }
@@ -62,7 +82,7 @@ fn quality_status(root: &Path) -> Result<QualityStatus, CatalogBuildError> {
         corrections_window_count: counters.corrections_window_count,
         unreadable_files: counters.unreadable_files,
         empty_labels_without_skipped_segments: counters.empty_labels_without_skipped_segments,
-        owner_voice: owner_voice_state(root),
+        owner_voice: owner_voice_state(root, &principal_id),
     })
 }
 
@@ -288,26 +308,20 @@ fn read_json_object(path: &Path) -> Option<Value> {
     value.is_object().then_some(value)
 }
 
-fn owner_voice_state(root: &Path) -> OwnerVoice {
+fn owner_voice_state(root: &Path, principal_id: &str) -> OwnerVoice {
     let voiceprint = awareness_voiceprint(root);
     let status = voiceprint
         .get("status")
         .and_then(Value::as_str)
         .map(str::to_owned)
         .unwrap_or_else(|| "none".to_owned());
-    let principal_id = journal_principal_id(root);
-    let manual_stats = principal_id
-        .as_deref()
-        .map(|id| manual_owner_tag_stats(root, id))
-        .unwrap_or_default();
-    if let Some(principal_id) = principal_id.as_deref()
-        && let Some(centroid) = owner_centroid_summary(
-            &root
-                .join("entities")
-                .join(principal_id)
-                .join("owner_centroid.npz"),
-        )
-    {
+    let manual_stats = manual_owner_tag_stats(root, principal_id);
+    if let Some(centroid) = owner_centroid_summary(
+        &root
+            .join("entities")
+            .join(principal_id)
+            .join("owner_centroid.npz"),
+    ) {
         return OwnerVoice {
             bootstrap_state: "bootstrapped",
             status,
@@ -546,6 +560,12 @@ mod tests {
         let root = std::env::temp_dir().join("solstone-quality-empty-test");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("chronicle")).expect("chronicle creates");
+        std::fs::create_dir_all(root.join("entities/owner")).expect("owner creates");
+        std::fs::write(
+            root.join("entities/owner/entity.json"),
+            r#"{"id":"owner","type":"Person","is_principal":true}"#,
+        )
+        .expect("owner writes");
         let status = serde_json::to_value(quality_status(&root).expect("quality builds"))
             .expect("quality serializes");
         assert_eq!(status["quality_window_count"], 0);

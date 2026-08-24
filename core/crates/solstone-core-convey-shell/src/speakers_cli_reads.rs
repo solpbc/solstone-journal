@@ -198,6 +198,18 @@ pub async fn review(
 }
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    let owner_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0)
+    {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return err(
+                "speaker_owner_identity_invalid",
+                "I couldn't load speaker status because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
     let entities = journal_entities(&root.0);
     let admitted_speaker_ids = entities
         .iter()
@@ -216,7 +228,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             );
         }
     };
-    let owner = owner_section(&root.0, &entities, &voiceprint);
+    let owner = owner_section(&root.0, &voiceprint, &owner_id);
     Json(json!({
         "embeddings": embeddings_section(&segments),
         "owner": owner,
@@ -225,7 +237,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         "clusters": clusters_section(&root.0),
         "imports": imports_section(&segments),
         "attribution": attribution_section(&segments, &admitted_speaker_ids),
-        "quality": quality_section(&root.0, &segments, &voiceprint, &admitted_speaker_ids),
+        "quality": quality_section(&root.0, &segments, &voiceprint, &admitted_speaker_ids, &owner_id),
     }))
     .into_response()
 }
@@ -349,18 +361,11 @@ fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
-fn owner_centroid_exists(root: &Path, entities: &BTreeMap<String, Value>) -> bool {
-    entities.iter().any(|(id, value)| {
-        value
-            .get("is_principal")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-            && root
-                .join("entities")
-                .join(id)
-                .join("owner_centroid.npz")
-                .exists()
-    })
+fn owner_centroid_exists(root: &Path, owner_id: &str) -> bool {
+    root.join("entities")
+        .join(owner_id)
+        .join("owner_centroid.npz")
+        .exists()
 }
 
 fn embeddings_section(segments: &[CatalogedSegment]) -> Value {
@@ -382,11 +387,7 @@ fn embeddings_section(segments: &[CatalogedSegment]) -> Value {
     json!({"segments":total,"streams":streams,"days":days.len(),"date_range":range})
 }
 
-fn owner_section(
-    root: &Path,
-    entities: &BTreeMap<String, Value>,
-    voiceprint: &BTreeMap<String, Value>,
-) -> Value {
+fn owner_section(root: &Path, voiceprint: &BTreeMap<String, Value>, owner_id: &str) -> Value {
     let status = voiceprint
         .get("status")
         .cloned()
@@ -437,14 +438,11 @@ fn owner_section(
             );
         }
     }
-    let principal = entities
-        .iter()
-        .find(|(_, entity)| entity.get("is_principal").and_then(Value::as_bool) == Some(true));
-    let centroid_path =
-        principal.map(|(id, _)| root.join("entities").join(id).join("owner_centroid.npz"));
-    let centroid = centroid_path
-        .as_deref()
-        .and_then(crate::speakers_npz::owner_centroid_summary);
+    let centroid_path = root
+        .join("entities")
+        .join(owner_id)
+        .join("owner_centroid.npz");
+    let centroid = crate::speakers_npz::owner_centroid_summary(&centroid_path);
     result.insert("centroid_saved".to_owned(), Value::Bool(centroid.is_some()));
     if status_text == "confirmed"
         && let Some(centroid) = centroid
@@ -588,6 +586,7 @@ fn quality_section(
     segments: &[CatalogedSegment],
     voiceprint: &BTreeMap<String, Value>,
     admitted_speaker_ids: &BTreeSet<String>,
+    owner_id: &str,
 ) -> Value {
     let mut tier = json!({"high_statements":0,"medium_statements":0,"margin_declined_statements":0,"unlabeled_sentence_statements":0,"skipped_stub_segments":0,"no_labels_file_segments":0});
     let mut unreadable = json!({"speaker_labels_window_count":0,"speaker_corrections_window_count":0,"total_window_count":0});
@@ -652,7 +651,7 @@ fn quality_section(
             }
         }
     }
-    let centroid = owner_centroid_exists(root, &journal_entities(root));
+    let centroid = owner_centroid_exists(root, owner_id);
     json!({"quality_window_days":30,"quality_window_count":segments.iter().map(|segment| &segment.day).collect::<BTreeSet<_>>().len().min(30),"quality_window_error_count":unreadable["total_window_count"],"tier_histogram":tier,"demotions_by_class":{"owner_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0},"acoustic_margin_declined":{"high_statements":0,"medium_statements":0,"none_statements":0,"total_statements":0}},"corrections_window_count":corrections,"unreadable_files":unreadable,"empty_labels_without_skipped_segments":empty,"owner_voice":{"bootstrap_state":if centroid { "bootstrapped" } else { "pre_bootstrap" },"status":voiceprint.get("status").cloned().unwrap_or_else(|| json!("none")),"centroid_saved":centroid,"evidence_tier":voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),"evidence_count":0,"built_at":Value::Null,"refreshed_at":Value::Null}})
 }
 
@@ -1011,7 +1010,7 @@ mod tests {
         assert_eq!(attribution["by_method"]["automatic"], 1);
         assert_eq!(attribution["by_method"]["unknown"], 1);
 
-        let quality = quality_section(&root, &segments, &BTreeMap::new(), &admitted);
+        let quality = quality_section(&root, &segments, &BTreeMap::new(), &admitted, "person");
         assert_eq!(quality["tier_histogram"]["high_statements"], 1);
         assert_eq!(
             quality["tier_histogram"]["unlabeled_sentence_statements"],

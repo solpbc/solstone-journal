@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, to_bytes};
-use axum::http::Request;
+use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
@@ -75,7 +75,7 @@ fn established_shell_case(path: &str) -> Value {
 }
 
 #[tokio::test]
-async fn quality_route_stays_reachable_with_a_direct_segment() {
+async fn quality_route_refuses_an_unconfigured_owner_identity() {
     let journal = EmptyEstablishedJournal::new();
     std::fs::create_dir_all(journal.0.join("chronicle/20260731/080000_300")).expect("direct");
     let response = router(journal.0.clone())
@@ -86,7 +86,14 @@ async fn quality_route_stays_reachable_with_a_direct_segment() {
         )
         .await
         .expect("response");
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response reads"),
+    )
+    .expect("response JSON parses");
+    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
 }
 
 async fn assert_case(app: axum::Router, path: &str, expected: Value) {
@@ -221,16 +228,19 @@ async fn known_voices_matches_every_populated_speakers_corpus_case() {
 async fn quality_and_known_voices_match_the_empty_established_shell_corpus() {
     let journal = EmptyEstablishedJournal::new();
     let app = router(journal.0.clone());
-    for path in [
-        "/app/speakers/api/quality",
+    let (status, _, body) = request_json(app.clone(), "/app/speakers/api/quality").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST.as_u16());
+    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
+    assert_case(
+        app,
         "/app/speakers/api/speakers/known",
-    ] {
-        assert_case(app.clone(), path, established_shell_case(path)).await;
-    }
+        established_shell_case("/app/speakers/api/speakers/known"),
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn owner_status_matches_populated_and_empty_corpora() {
+async fn owner_status_matches_the_populated_corpus_and_refuses_empty_identity() {
     let journal = support::build_populated_journal();
     assert_case(
         router(journal.root().to_path_buf()),
@@ -240,10 +250,8 @@ async fn owner_status_matches_populated_and_empty_corpora() {
     .await;
 
     let journal = EmptyEstablishedJournal::new();
-    assert_case(
-        router(journal.0.clone()),
-        "/app/speakers/api/owner/status",
-        established_shell_case("/app/speakers/api/owner/status"),
-    )
-    .await;
+    let (status, _, body) =
+        request_json(router(journal.0.clone()), "/app/speakers/api/owner/status").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST.as_u16());
+    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
 }

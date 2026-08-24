@@ -22,6 +22,7 @@ use solstone_core_journal_io::{
 use solstone_core_speaker_resolve::candidate_tracker::{
     CandidateProfile, CandidateTracker, trim_solo_cluster_rows,
 };
+use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
 use solstone_core_speaker_resolve::owner_candidate::{clear_owner_candidate, load_owner_candidate};
 use solstone_core_speaker_resolve::owner_centroid::{
     OwnerCentroidRebuildInput, OwnerCentroidRebuildOutcome, OwnerCentroidWriteInput,
@@ -46,6 +47,10 @@ const COOLDOWN_DAYS: i64 = 14;
 const CANDIDATE_EXPANSION_MAX_EMBEDDINGS: usize = 3000;
 const OWNER_THRESHOLD: f32 = 0.43;
 const EXISTING_CENTROID_GUIDANCE: &str = "Owner centroid already exists. Run solstone call speakers rebuild-owner to refresh it from current manual tags.";
+const OWNER_IDENTITY_INVALID: &str = "speaker_owner_identity_invalid";
+const OWNER_IDENTITY_INVALID_MESSAGE: &str =
+    "I couldn't run that speaker command because your configured owner identity needs attention.";
+const OWNER_IDENTITY_INVALID_DETAIL: &str = "configured owner identity is not admitted";
 
 pub async fn detect(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = optional_json(request).await;
@@ -58,6 +63,7 @@ pub async fn detect(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
 
 pub async fn build_from_tags(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     match bootstrap_owner_from_manual_tags(&root.0) {
+        Ok(value) if value["reason_code"] == OWNER_IDENTITY_INVALID => owner_identity_invalid(),
         Ok(value) if value.get("error").is_some() => err(
             "entity_not_found",
             "I couldn't find that person.",
@@ -85,6 +91,9 @@ pub async fn rebuild(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     let override_regression = body.get("override") == Some(&Value::Bool(true));
     match rebuild_owner(&root.0, override_regression) {
         Ok(value) => {
+            if value["reason_code"] == OWNER_IDENTITY_INVALID {
+                return owner_identity_invalid();
+            }
             if value["status"] == "rebuilt"
                 && let Err(error) = action(
                     &root.0,
@@ -101,6 +110,9 @@ pub async fn rebuild(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 }
 
 pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    let Some(principal_id) = admitted_principal_id(&root.0) else {
+        return owner_identity_invalid();
+    };
     let candidate = match load_owner_candidate(&root.0) {
         Ok(Some(candidate)) => candidate,
         Ok(None) => {
@@ -112,14 +124,6 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             );
         }
         Err(error) => return owner_error(error.to_string()),
-    };
-    let Some(principal_id) = principal_id(&root.0) else {
-        return err(
-            "entity_not_found",
-            "I couldn't find that person.",
-            "No principal entity found",
-            StatusCode::BAD_REQUEST,
-        );
     };
     if let Err(error) = write_owner_centroid(
         &root.0,
@@ -153,6 +157,9 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 }
 
 pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    if admitted_principal_id(&root.0).is_none() {
+        return owner_identity_invalid();
+    }
     if let Err(error) = clear_owner_candidate(&root.0) {
         return owner_error(error.to_string());
     }
@@ -181,6 +188,9 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     };
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return missing_fields();
+    };
+    let Some(principal) = admitted_principal_id(&root.0) else {
+        return owner_identity_invalid();
     };
     if !valid_day(day) {
         return err(
@@ -225,9 +235,6 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             );
         }
     };
-    let Some(principal) = principal_id(&root.0) else {
-        return Json(json!({"sentences":[]})).into_response();
-    };
     let Some(centroid) = load_owner_centroid(&root.0, &principal).ok().flatten() else {
         return Json(json!({"sentences":[]})).into_response();
     };
@@ -241,13 +248,16 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
 }
 
 pub async fn ready(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    Json(owner_detection_ready(&root.0)).into_response()
+    match owner_detection_ready(&root.0) {
+        Ok(value) => Json(value).into_response(),
+        Err(()) => owner_identity_invalid(),
+    }
 }
 
 /// Shared in-process owner bootstrap used by attribution's owner-teach path.
 pub(crate) fn bootstrap_owner_from_manual_tags(root: &Path) -> Result<Value, String> {
-    let Some(principal_id) = principal_id(root) else {
-        return Ok(json!({"error":"No principal entity found"}));
+    let Some(principal_id) = admitted_principal_id(root) else {
+        return Ok(identity_invalid_value());
     };
     if let Ok(Some(centroid)) = load_owner_centroid(root, &principal_id) {
         return Ok(
@@ -296,8 +306,8 @@ pub(crate) fn bootstrap_owner_from_manual_tags(root: &Path) -> Result<Value, Str
 }
 
 fn rebuild_owner(root: &Path, override_regression: bool) -> Result<Value, String> {
-    let Some(principal_id) = principal_id(root) else {
-        return Ok(rebuild_refusal("no_principal"));
+    let Some(principal_id) = admitted_principal_id(root) else {
+        return Ok(identity_invalid_value());
     };
     if load_owner_centroid(root, &principal_id)
         .ok()
@@ -371,10 +381,8 @@ fn rebuild_owner(root: &Path, override_regression: bool) -> Result<Value, String
 }
 
 fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
-    let principal = principal_id(root);
-    if let Some(principal_id) = principal.as_deref()
-        && let Ok(Some(centroid)) = load_owner_centroid(root, principal_id)
-    {
+    let principal = admitted_principal_id(root).ok_or_else(|| OWNER_IDENTITY_INVALID.to_owned())?;
+    if let Ok(Some(centroid)) = load_owner_centroid(root, &principal) {
         update_voiceprint(
             root,
             json!({"status":"confirmed","cluster_size":centroid.cluster_size,"confirmed_at":Utc::now().to_rfc3339(),"evidence_tier":centroid.evidence_tier.clone().unwrap_or_else(|| "standard".to_owned())}),
@@ -390,7 +398,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     let state = awareness_voiceprint(root);
     if !force && cooldown(&state).is_some() {
         return Ok(
-            json!({"status":"no_cluster","reason":"cooldown","segments_checked":0,"segments_available":0,"embeddings_available":0,"recommendation":"no_cluster","manual_tags_count":manual_count(root, principal.as_deref()),"can_build_from_tags":manual_count(root, principal.as_deref()) >= MIN_STATEMENTS,"days_remaining":cooldown(&state),"next_step":"wait_for_cooldown","guidance":"Wait for the owner voice rejection cooldown before running detection again, or run solstone call speakers detect --force to look now."}),
+            json!({"status":"no_cluster","reason":"cooldown","segments_checked":0,"segments_available":0,"embeddings_available":0,"recommendation":"no_cluster","manual_tags_count":manual_count(root, Some(&principal)),"can_build_from_tags":manual_count(root, Some(&principal)) >= MIN_STATEMENTS,"days_remaining":cooldown(&state),"next_step":"wait_for_cooldown","guidance":"Wait for the owner voice rejection cooldown before running detection again, or run solstone call speakers detect --force to look now."}),
         );
     }
     if let Ok(Some(candidate)) = load_owner_candidate(root)
@@ -402,14 +410,14 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     }
     let pool_exists = root.join("awareness/speaker_candidates.json").exists();
     let candidates = CandidateTracker::new(root).candidates();
-    let candidate = match select_candidate(pool_exists, candidates, principal.as_deref()) {
+    let candidate = match select_candidate(pool_exists, candidates, Some(&principal)) {
         Ok(candidate) => candidate,
-        Err(reason) => return no_cluster(root, principal.as_deref(), reason, 0, 0, 0),
+        Err(reason) => return no_cluster(root, Some(&principal), reason, 0, 0, 0),
     };
     if candidate.n_intervals < MIN_STATEMENTS {
         return candidate_low_quality(
             root,
-            principal.as_deref(),
+            Some(&principal),
             CandidateLowQuality {
                 reason: "too_few_stmts",
                 observed: candidate.n_intervals as f64,
@@ -425,7 +433,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     if expansion.rows.is_empty() {
         return no_cluster(
             root,
-            principal.as_deref(),
+            Some(&principal),
             "candidate_no_usable_embeddings",
             expansion.checked,
             expansion.available,
@@ -436,7 +444,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     if let Some(reason) = quality.reason {
         return candidate_low_quality(
             root,
-            principal.as_deref(),
+            Some(&principal),
             CandidateLowQuality {
                 reason,
                 observed: if reason == "median_duration_too_short" {
@@ -466,7 +474,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     .and_then(|row| solstone_core_entity::normalize_embedding(&row)) else {
         return no_cluster(
             root,
-            principal.as_deref(),
+            Some(&principal),
             "candidate_centroid_unusable",
             expansion.checked,
             expansion.available,
@@ -894,18 +902,18 @@ fn no_cluster(
     )
 }
 
-fn owner_detection_ready(root: &Path) -> Value {
-    if let Some(principal) = principal_id(root)
-        && load_owner_centroid(root, &principal)
-            .ok()
-            .flatten()
-            .is_some()
+fn owner_detection_ready(root: &Path) -> Result<Value, ()> {
+    let principal = admitted_principal_id(root).ok_or(())?;
+    if load_owner_centroid(root, &principal)
+        .ok()
+        .flatten()
+        .is_some()
     {
-        return json!({"ready":false,"reason":"centroid_exists"});
+        return Ok(json!({"ready":false,"reason":"centroid_exists"}));
     }
     let state = awareness_voiceprint(root);
     if let Some(days_remaining) = cooldown(&state) {
-        return json!({"ready":false,"reason":"cooldown","days_remaining":days_remaining});
+        return Ok(json!({"ready":false,"reason":"cooldown","days_remaining":days_remaining}));
     }
     if root.join("awareness/owner_candidate.npz").exists()
         && state.get("status").and_then(Value::as_str) == Some("candidate")
@@ -914,9 +922,11 @@ fn owner_detection_ready(root: &Path) -> Value {
             .get("recommendation")
             .and_then(Value::as_str)
             .unwrap_or("single_stream");
-        return json!({"ready":recommendation == "ready","reason":if recommendation == "ready" { "candidate_found" } else { recommendation },"candidate_available":true,"recommendation":recommendation,"cluster_size":state.get("cluster_size").cloned().unwrap_or_else(|| json!(0)),"streams_represented":state.get("streams_represented").cloned().unwrap_or_else(|| json!(0)),"evidence_tier":state.get("evidence_tier").cloned().unwrap_or_else(|| json!("standard"))});
+        return Ok(
+            json!({"ready":recommendation == "ready","reason":if recommendation == "ready" { "candidate_found" } else { recommendation },"candidate_available":true,"recommendation":recommendation,"cluster_size":state.get("cluster_size").cloned().unwrap_or_else(|| json!(0)),"streams_represented":state.get("streams_represented").cloned().unwrap_or_else(|| json!(0)),"evidence_tier":state.get("evidence_tier").cloned().unwrap_or_else(|| json!("standard"))}),
+        );
     }
-    json!({"ready":false,"reason":"no_candidate"})
+    Ok(json!({"ready":false,"reason":"no_candidate"}))
 }
 
 struct Quality {
@@ -987,7 +997,7 @@ fn low_quality(
     json!({"status":"low_quality","reason":reason,"observed_value":observed,"threshold_value":threshold,"segment_count":evidence.iter().map(|item| (&item.day,&item.stream,&item.segment_key)).collect::<BTreeSet<_>>().len(),"embeddings_count":evidence.len(),"source":source,"evidence_tier":quality.tier,"intra_cosine_p25_bound":quality.bound,"next_step":"seed_manual_tags","guidance":"Add more validated owner tags and try again."})
 }
 fn rebuild_refusal(reason: &str) -> Value {
-    json!({"status":"refused","reason":reason,"next_step":if reason == "no_principal" {"set_identity"} else {"build_from_tags"},"guidance":if reason == "no_principal" {"set your journal identity before rebuilding your voice."} else {"Build or confirm an owner voice before running rebuild-owner."}})
+    json!({"status":"refused","reason":reason,"next_step":"build_from_tags","guidance":"Build or confirm an owner voice before running rebuild-owner."})
 }
 fn mean(rows: &[Vec<f32>]) -> Option<Vec<f32>> {
     let first = rows.first()?;
@@ -1040,13 +1050,22 @@ fn evidence_hash(
     }
     format!("{:x}", hasher.finalize())
 }
-fn principal_id(root: &Path) -> Option<String> {
-    solstone_core_entity::read_journal_principal(root)
-        .ok()
-        .flatten()?
-        .get("id")?
-        .as_str()
-        .map(ToOwned::to_owned)
+fn admitted_principal_id(root: &Path) -> Option<String> {
+    match admitted_owner_id(root) {
+        OwnerAdmission::Admitted(id) => Some(id),
+        OwnerAdmission::Invalid => None,
+    }
+}
+fn identity_invalid_value() -> Value {
+    json!({"reason_code":OWNER_IDENTITY_INVALID})
+}
+fn owner_identity_invalid() -> Response {
+    err(
+        OWNER_IDENTITY_INVALID,
+        OWNER_IDENTITY_INVALID_MESSAGE,
+        OWNER_IDENTITY_INVALID_DETAIL,
+        StatusCode::BAD_REQUEST,
+    )
 }
 fn manual_count(root: &Path, principal: Option<&str>) -> usize {
     principal
@@ -1125,6 +1144,9 @@ fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response 
     error_envelope(code, message, detail, status).into_response()
 }
 fn owner_error(detail: String) -> Response {
+    if detail == OWNER_IDENTITY_INVALID {
+        return owner_identity_invalid();
+    }
     if detail.contains("busy") || detail.contains("lock") {
         err(
             "speaker_voiceprint_busy",

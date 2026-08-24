@@ -18,7 +18,7 @@ use tower::ServiceExt;
 
 use super::support::{
     PERSON_ADMISSION_DAY, PERSON_ADMISSION_SEGMENT, PERSON_ADMISSION_SOURCE,
-    PERSON_ADMISSION_STREAM, build_person_admission_journal,
+    PERSON_ADMISSION_STREAM, PersonAdmissionMode, build_person_admission_journal,
 };
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -245,77 +245,56 @@ async fn confirm_declares_skipped_awareness_state_after_native_mutation() {
 }
 
 #[tokio::test]
-async fn tag_cli_requires_admitted_person_before_idempotency_or_writes() {
-    for (speaker, labels, status, reason) in [
-        (
-            "tool",
-            json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_assigned"}]}),
-            StatusCode::BAD_REQUEST,
-            "speaker_not_person",
-        ),
-        (
-            "project",
-            json!({"labels":[{"sentence_id":1}]}),
-            StatusCode::BAD_REQUEST,
-            "speaker_not_person",
-        ),
-        (
-            "company",
-            json!({"labels":[{"sentence_id":1}]}),
-            StatusCode::BAD_REQUEST,
-            "speaker_not_person",
-        ),
-        (
-            "blocked_person",
-            json!({"labels":[{"sentence_id":1}]}),
-            StatusCode::BAD_REQUEST,
-            "entity_blocked",
-        ),
-        (
-            "malformed",
-            json!({"labels":[{"sentence_id":1}]}),
-            StatusCode::NOT_FOUND,
-            "speaker_not_found",
-        ),
-        (
-            "missing",
-            json!({"labels":[{"sentence_id":1}]}),
-            StatusCode::NOT_FOUND,
-            "speaker_not_found",
-        ),
+async fn confirm_cli_refuses_invalid_owner_identity_before_candidate_reads_or_writes() {
+    let journal = Journal::new();
+    let before = content_snapshot(&journal.0);
+
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/confirm-cli",
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
+    assert_eq!(value["reason_code"], "speaker_owner_identity_invalid");
+    assert_eq!(content_snapshot(&journal.0), before);
+}
+
+#[tokio::test]
+async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_writes() {
+    for mode in [
+        PersonAdmissionMode::MissingTypePrincipal,
+        PersonAdmissionMode::CollisionLoserPrincipal,
     ] {
-        let journal = build_person_admission_journal();
-        fs::write(
-            journal.segment().join("talents/speaker_labels.json"),
-            labels.to_string(),
-        )
-        .expect("labels write");
+        let journal = build_person_admission_journal(mode);
         let before = content_snapshot(journal.root());
         let (actual_status, response) = call(
             router(journal.root().to_path_buf()),
             "/app/speakers/api/owner/tag-cli",
-            json!({"day":"20260808","stream":"main","segment":"120000_1","source":"audio","sentence_id":1,"speaker":speaker}),
+            json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
         )
         .await;
-        assert_eq!(actual_status, status, "{speaker}: {response}");
-        assert_eq!(response["reason_code"], reason, "{speaker}: {response}");
-        assert_eq!(content_snapshot(journal.root()), before, "{speaker}");
+        assert_eq!(actual_status, StatusCode::BAD_REQUEST, "{response}");
+        assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+        assert_eq!(content_snapshot(journal.root()), before);
     }
 
-    let journal = build_person_admission_journal();
+    let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
     let (status, response) = call(
         router(journal.root().to_path_buf()),
         "/app/speakers/api/owner/tag-cli",
-        json!({"day":"20260808","stream":"main","segment":"120000_1","source":"audio","sentence_id":1,"speaker":"person"}),
+        json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(response["status"], "assigned");
+    assert_eq!(response["speaker"], "owner");
 }
 
 #[tokio::test]
 async fn backfill_last_seen_skips_ineligible_speaker_voiceprints() {
-    let journal = build_person_admission_journal();
+    let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
     let encoder = solstone_core_entity::EncoderIdentity {
         id: "test".to_owned(),
         sha256: "0".repeat(64),
@@ -473,9 +452,8 @@ async fn tag_cli_refuses_direct_layout_without_writes() {
         json!({
             "day": "20260808",
             "stream": "_default",
-            "segment": "120000_1",
+            "segment_key": "120000_1",
             "sentence_id": 1,
-            "speaker": "owner",
             "source": "audio",
             "stream_layout": "direct",
         }),
@@ -550,9 +528,8 @@ async fn tag_cli_malformed_stream_layout_is_not_named() {
         json!({
             "day": "20260808",
             "stream": "main",
-            "segment": "120000_1",
+            "segment_key": "120000_1",
             "sentence_id": 1,
-            "speaker": "owner",
             "source": "audio",
             "stream_layout": "Direct",
         }),

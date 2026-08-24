@@ -53,6 +53,13 @@ pub const PERSON_ADMISSION_STREAM: &str = "main";
 pub const PERSON_ADMISSION_SEGMENT: &str = "120000_1";
 pub const PERSON_ADMISSION_SOURCE: &str = "audio";
 
+#[derive(Clone, Copy)]
+pub enum PersonAdmissionMode {
+    Valid,
+    MissingTypePrincipal,
+    CollisionLoserPrincipal,
+}
+
 /// Temporary populated journal used by the frozen speakers read-surface corpus.
 pub struct PopulatedJournal {
     root: PathBuf,
@@ -97,17 +104,33 @@ impl Drop for PersonAdmissionJournal {
 }
 
 /// Build a minimal journal with admitted and refused speaker targets.
-pub fn build_person_admission_journal() -> PersonAdmissionJournal {
+pub fn build_person_admission_journal(mode: PersonAdmissionMode) -> PersonAdmissionJournal {
     let root = temporary_journal_root();
     write_json(
         &root.join("config/journal.json"),
         &json!({"setup":{"completed_at":1}}),
     );
-    for (id, entity) in [
-        (
+    let owner_entities = match mode {
+        PersonAdmissionMode::Valid => vec![(
             "owner",
             json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
-        ),
+        )],
+        PersonAdmissionMode::MissingTypePrincipal => vec![(
+            "owner",
+            json!({"id":"owner","name":"Owner","is_principal":true}),
+        )],
+        PersonAdmissionMode::CollisionLoserPrincipal => vec![
+            (
+                "owner",
+                json!({"name":"Owner collision loser","type":"Person","is_principal":true}),
+            ),
+            (
+                "z_winner",
+                json!({"id":"owner","name":"Owner collision winner","type":"Person","is_principal":false}),
+            ),
+        ],
+    };
+    for (id, entity) in owner_entities.into_iter().chain([
         (
             "person",
             json!({"id":"person","name":"Person","type":"Person"}),
@@ -125,20 +148,22 @@ pub fn build_person_admission_journal() -> PersonAdmissionJournal {
             "blocked_person",
             json!({"id":"blocked_person","name":"Blocked Person","type":"Person","blocked":true}),
         ),
-    ] {
+    ]) {
         write_json(&root.join(format!("entities/{id}/entity.json")), &entity);
     }
-    solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
-        &root,
-        "owner",
-        &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
-            centroid: unit_vector(1),
-            cluster_size: 5,
-            timestamp: "2026-08-08T00:00:00Z".to_owned(),
-            evidence_tier: "standard".to_owned(),
-        },
-    )
-    .expect("owner centroid writes");
+    if matches!(mode, PersonAdmissionMode::Valid) {
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            &root,
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: unit_vector(1),
+                cluster_size: 5,
+                timestamp: "2026-08-08T00:00:00Z".to_owned(),
+                evidence_tier: "standard".to_owned(),
+            },
+        )
+        .expect("owner centroid writes");
+    }
     fs::create_dir_all(root.join("entities/malformed")).expect("malformed entity directory");
     fs::write(root.join("entities/malformed/entity.json"), "{not json")
         .expect("malformed entity writes");

@@ -20,7 +20,7 @@ use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use super::support::build_person_admission_journal;
+use super::support::{PersonAdmissionMode, build_person_admission_journal};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const DAY: &str = "20260808";
@@ -161,6 +161,21 @@ async fn call(app: axum::Router, path: &str, body: Value) -> (StatusCode, Value)
                 .body(Body::from(body.to_string()))
                 .expect("request"),
         )
+        .await
+        .expect("response");
+    let status = response.status();
+    let value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+    )
+    .expect("json");
+    (status, value)
+}
+
+async fn get(app: axum::Router, path: &str) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(Request::get(path).body(Body::empty()).expect("request"))
         .await
         .expect("response");
     let status = response.status();
@@ -426,6 +441,46 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     .await;
     assert_eq!(status, StatusCode::OK, "{rejected}");
     assert_eq!(rejected["status"], "needs_detection");
+}
+
+#[tokio::test]
+async fn owner_identity_invalid_refuses_every_owner_surface_without_writes() {
+    for mode in [
+        PersonAdmissionMode::MissingTypePrincipal,
+        PersonAdmissionMode::CollisionLoserPrincipal,
+    ] {
+        let journal = build_person_admission_journal(mode);
+        for (path, body) in [
+            ("/app/speakers/api/owner/detect", json!({})),
+            ("/app/speakers/api/owner/ready", json!({})),
+            ("/app/speakers/api/owner/confirm", json!({})),
+            ("/app/speakers/api/owner/build-from-tags", json!({})),
+            ("/app/speakers/api/owner/rebuild", json!({})),
+            ("/app/speakers/api/owner/reject", json!({})),
+            (
+                "/app/speakers/api/owner/classify",
+                json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE}),
+            ),
+        ] {
+            let before = content_snapshot(journal.root());
+            let (status, response) = call(router(journal.root().to_path_buf()), path, body).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
+            assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+            assert_eq!(content_snapshot(journal.root()), before, "{path}");
+        }
+
+        for path in [
+            "/app/speakers/api/owner/status",
+            "/app/speakers/api/quality",
+            "/app/speakers/api/status",
+        ] {
+            let before = content_snapshot(journal.root());
+            let (status, response) = get(router(journal.root().to_path_buf()), path).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
+            assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+            assert_eq!(content_snapshot(journal.root()), before, "{path}");
+        }
+    }
 }
 
 #[tokio::test]
@@ -841,7 +896,7 @@ async fn attribution_trust_lock_timeout_is_the_python_compatible_labels_busy_ref
 
 #[tokio::test]
 async fn indeterminate_owner_screen_refuses_assign_confirm_and_correct_without_writes() {
-    // No principal deliberately produces the native `no_principal` indeterminate result.
+    // No admitted owner deliberately produces the native identity-invalid indeterminate result.
     // This is the AC3 falsification oracle: changing the route's Indeterminate arm to allow
     // would make each of these three refusal assertions fail and create a voiceprint.
     for (path, labels, body) in [
@@ -874,9 +929,9 @@ async fn indeterminate_owner_screen_refuses_assign_confirm_and_correct_without_w
         journal.entity("other", false);
         journal.segment(labels);
         let (status, refused) = call(router(journal.0.clone()), path, body).await;
-        assert_eq!(status, StatusCode::CONFLICT, "{path}: {refused}");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {refused}");
         assert_eq!(
-            refused["reason_code"], "speaker_owner_centroid_required",
+            refused["reason_code"], "speaker_owner_identity_invalid",
             "{path}: {refused}"
         );
         assert_ne!(refused["reason_code"], "speaker_owner_voice_too_close");
@@ -1076,7 +1131,7 @@ async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unc
             "speaker_not_found",
         ),
     ] {
-        let journal = build_person_admission_journal();
+        let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
         set_labels(journal.root(), labels);
         let before = content_snapshot(journal.root());
         let mut body = request();
@@ -1092,7 +1147,7 @@ async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unc
         assert_eq!(content_snapshot(journal.root()), before, "{speaker}");
     }
 
-    let journal = build_person_admission_journal();
+    let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
     set_labels(
         journal.root(),
         json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_confirmed"}]}),
@@ -1108,7 +1163,7 @@ async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unc
     assert_eq!(response["reason_code"], "speaker_not_person");
     assert_eq!(content_snapshot(journal.root()), before);
 
-    let journal = build_person_admission_journal();
+    let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
     let before = content_snapshot(journal.root());
     let mut body = request();
     body["new_speaker"] = json!("project");
@@ -1122,7 +1177,7 @@ async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unc
     assert_eq!(response["reason_code"], "speaker_not_person");
     assert_eq!(content_snapshot(journal.root()), before);
 
-    let journal = build_person_admission_journal();
+    let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
     let mut body = request();
     body["speaker"] = json!("person");
     let (status, response) = call(
@@ -1138,7 +1193,7 @@ async fn person_admission_refusals_precede_idempotency_and_leave_the_journal_unc
 #[tokio::test]
 async fn correct_repairs_legacy_invalid_old_speakers_into_an_admitted_person() {
     for old_speaker in ["tool", "blocked_person", "malformed", "deleted"] {
-        let journal = build_person_admission_journal();
+        let journal = build_person_admission_journal(PersonAdmissionMode::Valid);
         if old_speaker == "tool" {
             solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
                 journal.root(),

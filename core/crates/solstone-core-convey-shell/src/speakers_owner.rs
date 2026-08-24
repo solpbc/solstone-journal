@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
-use crate::speakers_calendar::{audio_embedding_sources, journal_principal_id};
+use crate::speakers_calendar::audio_embedding_sources;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_npz::{load_voiceprints, npz_row_count, owner_centroid_summary};
 use crate::speakers_quality::{
@@ -30,7 +30,14 @@ or run solstone call speakers detect --force to look now.";
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     match owner_status(&root.0) {
         Ok(status) => Json(status).into_response(),
-        Err(error) => error_envelope(
+        Err(OwnerStatusError::IdentityInvalid) => error_envelope(
+            "speaker_owner_identity_invalid",
+            "I couldn't load your owner voice because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        )
+        .into_response(),
+        Err(OwnerStatusError::Catalog(error)) => error_envelope(
             "speaker_command_failed",
             "I couldn't finish that speaker command.",
             error.to_string(),
@@ -40,22 +47,30 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     }
 }
 
-fn owner_status(root: &Path) -> Result<Value, CatalogBuildError> {
+enum OwnerStatusError {
+    IdentityInvalid,
+    Catalog(CatalogBuildError),
+}
+
+fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
+    let principal_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(root)
+    {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return Err(OwnerStatusError::IdentityInvalid);
+        }
+    };
     let voiceprint = awareness_voiceprint(root);
     let status = match voiceprint.get("status") {
         Some(Value::String(status)) => status.as_str(),
         Some(_) => "invalid",
         None => "none",
     };
-    let principal_id = journal_principal_id(root);
-    let manual_stats = principal_id
-        .as_deref()
-        .map(|principal_id| manual_owner_tag_stats(root, principal_id))
-        .unwrap_or_else(empty_manual_tag_stats);
-    let diagnostics = diagnostics(root, &manual_stats)?;
+    let manual_stats = manual_owner_tag_stats(root, &principal_id);
+    let diagnostics = diagnostics(root, &manual_stats).map_err(OwnerStatusError::Catalog)?;
 
     Ok(match status {
-        "confirmed" => confirmed_status(root, principal_id.as_deref(), &manual_stats),
+        "confirmed" => confirmed_status(root, &principal_id, &manual_stats),
         "candidate" => json!({
             "status": "candidate",
             "cluster_size": voiceprint.get("cluster_size").cloned().unwrap_or(Value::Null),
@@ -131,42 +146,33 @@ fn owner_status(root: &Path) -> Result<Value, CatalogBuildError> {
     })
 }
 
-fn confirmed_status(
-    root: &Path,
-    principal_id: Option<&str>,
-    manual_stats: &ManualOwnerTagStats,
-) -> Value {
-    let centroid = principal_id.and_then(|principal_id| {
-        owner_centroid_summary(
+fn confirmed_status(root: &Path, principal_id: &str, manual_stats: &ManualOwnerTagStats) -> Value {
+    let centroid = owner_centroid_summary(
+        &root
+            .join("entities")
+            .join(principal_id)
+            .join("owner_centroid.npz"),
+    );
+    let (streams, intra_cosine_p25) = if centroid.is_some() {
+        load_voiceprints(
             &root
                 .join("entities")
                 .join(principal_id)
-                .join("owner_centroid.npz"),
+                .join("voiceprints.npz"),
         )
-    });
-    let (streams, intra_cosine_p25) = if centroid.is_some() {
-        principal_id
-            .and_then(|principal_id| {
-                load_voiceprints(
-                    &root
-                        .join("entities")
-                        .join(principal_id)
-                        .join("voiceprints.npz"),
-                )
-            })
-            .map(|voiceprints| {
-                let mut streams = voiceprints
-                    .metadata
-                    .iter()
-                    .filter_map(|row| row.get("stream").and_then(Value::as_str))
-                    .filter(|stream| !stream.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>();
-                streams.sort();
-                streams.dedup();
-                (streams, intra_cosine_p25(&voiceprints.embeddings))
-            })
-            .unwrap_or_default()
+        .map(|voiceprints| {
+            let mut streams = voiceprints
+                .metadata
+                .iter()
+                .filter_map(|row| row.get("stream").and_then(Value::as_str))
+                .filter(|stream| !stream.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            streams.sort();
+            streams.dedup();
+            (streams, intra_cosine_p25(&voiceprints.embeddings))
+        })
+        .unwrap_or_default()
     } else {
         (Vec::new(), None)
     };
@@ -249,14 +255,6 @@ fn manual_fallback(diagnostics: &Diagnostics, manual_stats: &ManualOwnerTagStats
         "next_step": guidance.next_step,
         "guidance": guidance.guidance,
     })
-}
-
-fn empty_manual_tag_stats() -> ManualOwnerTagStats {
-    ManualOwnerTagStats {
-        manual_tags_count: 0,
-        streams_represented: 0,
-        lookup_error_count: 0,
-    }
 }
 
 fn rejection_cooldown(voiceprint: &std::collections::BTreeMap<String, Value>) -> Option<i64> {

@@ -16,7 +16,6 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
-use crate::speakers_attribution::entity_allowed;
 use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
     UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
@@ -33,17 +32,25 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let Some(stream) = body.get("stream").and_then(Value::as_str) else {
         return required("stream");
     };
-    let Some(segment_key) = body.get("segment").and_then(Value::as_str) else {
-        return required("segment");
+    let Some(segment_key) = body.get("segment_key").and_then(Value::as_str) else {
+        return required("segment_key");
     };
     let Some(sentence_id) = body.get("sentence_id").and_then(Value::as_i64) else {
         return required("sentence_id");
     };
-    let Some(speaker) = body.get("speaker").and_then(Value::as_str) else {
-        return required("speaker");
-    };
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return required("source");
+    };
+    let speaker = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0) {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return err(
+                "speaker_owner_identity_invalid",
+                "I couldn't change that speaker attribution because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            );
+        }
     };
     let layout = decode_stream_layout_value(body.get("stream_layout"));
     let segment = match lookup_segment(
@@ -99,11 +106,8 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let current = labels
         .iter()
         .find(|label| label.get("sentence_id").and_then(Value::as_i64) == Some(sentence_id));
-    if let Err(response) = entity_allowed(&root.0, speaker) {
-        return response;
-    }
     if current.is_some_and(|label| {
-        label.get("speaker").and_then(Value::as_str) == Some(speaker)
+        label.get("speaker").and_then(Value::as_str) == Some(speaker.as_str())
             && label.get("method").and_then(Value::as_str) == Some("user_assigned")
     }) {
         return Json(json!({"success":true,"status":"already_assigned","owner_bootstrap_outcome":Value::Null})).into_response();
@@ -116,7 +120,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
             "speaker_attribution_state_invalid",
             "I couldn't change that speaker attribution.",
             "Pick a sentence without a speaker.",
-            StatusCode::CONFLICT,
+            StatusCode::BAD_REQUEST,
         );
     }
     let embedding_path = segment.join(format!("{source}.npz"));
@@ -140,7 +144,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let metadata = json!({"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"segment_key":segment_key,"source":source,"sentence_id":sentence_id,"stream":stream});
     if let Err(error) = solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
         &root.0,
-        speaker,
+        &speaker,
         embedding,
         metadata,
         &encoder(),
@@ -195,6 +199,19 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
 }
 
 pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    let principal_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(
+        &root.0,
+    ) {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return err(
+                "speaker_owner_identity_invalid",
+                "I couldn't confirm that owner voice because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
     let candidate =
         match solstone_core_speaker_resolve::owner_candidate::load_owner_candidate(&root.0) {
             Ok(Some(candidate)) => candidate,
@@ -208,25 +225,6 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             }
             Err(error) => return owner_error(error.to_string()),
         };
-    let principal = match solstone_core_entity::read_journal_principal(&root.0) {
-        Ok(Some(principal)) => principal,
-        _ => {
-            return err(
-                "speaker_command_failed",
-                "I couldn't finish that speaker command.",
-                "No principal entity found",
-                StatusCode::BAD_REQUEST,
-            );
-        }
-    };
-    let Some(principal_id) = principal.get("id").and_then(Value::as_str) else {
-        return err(
-            "speaker_command_failed",
-            "I couldn't finish that speaker command.",
-            "No principal entity found",
-            StatusCode::BAD_REQUEST,
-        );
-    };
     let input = solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
         centroid: candidate.centroid,
         cluster_size: candidate.cluster_size,
@@ -235,7 +233,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     };
     if let Err(error) = solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
         &root.0,
-        principal_id,
+        &principal_id,
         &input,
     ) {
         return owner_error(error.to_string());
