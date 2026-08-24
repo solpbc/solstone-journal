@@ -114,8 +114,8 @@
     "established": [
       {
         "body": {
-          "byte_length": 8293,
-          "digest": "d20205b7262b5d45b25e120d5dbb7874cf0067b3a2fe60413bfaa7962224b498"
+          "byte_length": 8202,
+          "digest": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a"
         },
         "content_type": "text/html; charset=utf-8",
         "method": "GET",

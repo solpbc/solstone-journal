@@ -255,7 +255,7 @@
 
   function renderStatusInstrument() {
     const instrument = document.getElementById('status-instrument');
-    if (!instrument) return;
+    if (!instrument || instrument.querySelector('.status-icon')) return;
     instrument.innerHTML =
       '<button class="status-icon" type="button" aria-expanded="false" aria-controls="status-pane" aria-label="connecting">' +
       '<img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
@@ -300,10 +300,14 @@
     if (!launcher) return;
     launcherInteractionsInstalled = true;
 
-    document.querySelectorAll('[data-app-launcher-toggle]').forEach((toggle) => {
-      toggle.addEventListener('click', openLauncher);
+    document.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-app-launcher-toggle]')) {
+        openLauncher();
+        return;
+      }
+      if (target?.closest('[data-app-launcher-close]')) closeLauncher();
     });
-    launcher.querySelector('[data-app-launcher-close]')?.addEventListener('click', closeLauncher);
     launcher.addEventListener('click', (event) => {
       if (event.target === launcher) {
         closeLauncher();

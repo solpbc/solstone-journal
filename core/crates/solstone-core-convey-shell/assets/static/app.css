@@ -180,25 +180,6 @@ body:has(.status-pane.visible) .facet-bar::after {
   right: var(--status-pane-width);
 }
 
-.facet-bar #hamburger {
-  display: flex;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 4px;
-  transition: background 0.2s;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.facet-bar #hamburger:hover {
-  background: rgba(0,0,0,0.05);
-}
-
-.facet-bar #hamburger:active {
-  background: rgba(0, 0, 0, 0.10);
-}
-
 #status-instrument {
   position: fixed;
   top: var(--status-instrument-inset);
@@ -1672,7 +1653,6 @@ a.notification-card:active {
 }
 
 /* Button reset for a11y-converted controls */
-button#hamburger,
 button.status-icon,
 button.close {
   appearance: none;
@@ -1746,7 +1726,6 @@ button.close {
 /* Focus-visible states for keyboard navigation */
 .facet-pill:focus-visible,
 .facet-add-pill:focus-visible,
-#hamburger:focus-visible,
 #status-instrument .status-icon:focus-visible,
 .facet-create-submit:focus-visible,
 .facet-create-cancel:focus-visible,
