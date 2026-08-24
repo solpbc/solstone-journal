@@ -13,6 +13,10 @@ use solstone_core_entity::{
 /// Machine-readable reason for an inadmissible configured owner identity.
 pub const OWNER_IDENTITY_INVALID_REASON: &str = "speaker_owner_identity_invalid";
 
+/// Machine-readable reason for an owner-artifact request aimed at a different
+/// real entity than the admitted owner.
+pub const OWNER_TARGET_MISMATCH_REASON: &str = "speaker_owner_target_mismatch";
+
 /// The one configured owner identity that is safe to use for speaker artifacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnerAdmission {

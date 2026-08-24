@@ -1642,10 +1642,10 @@ fn parse_accumulation_request(
 
 fn write_owner_centroid_request(value: Value) -> Result<Value, String> {
     use solstone_core_speaker_resolve::owner_centroid::{
-        OwnerCentroidWriteInput, write_owner_centroid,
+        OwnerCentroidWriteError, OwnerCentroidWriteInput, write_owner_centroid,
     };
     let fields = owner_fields(value)?;
-    write_owner_centroid(
+    match write_owner_centroid(
         &fields.root,
         &fields.principal,
         &OwnerCentroidWriteInput {
@@ -1654,14 +1654,19 @@ fn write_owner_centroid_request(value: Value) -> Result<Value, String> {
             timestamp: fields.timestamp,
             evidence_tier: fields.evidence_tier,
         },
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(json!({"status":"written"}))
+    ) {
+        Ok(()) => Ok(json!({"status":"written"})),
+        Err(
+            error @ (OwnerCentroidWriteError::IdentityInvalid
+            | OwnerCentroidWriteError::TargetMismatch { .. }),
+        ) => Ok(json!({"status":owner_centroid_refusal_reason(&error)})),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn rebuild_owner_centroid_request(value: Value) -> Result<Value, String> {
     use solstone_core_speaker_resolve::owner_centroid::{
-        OwnerCentroidRebuildInput, rebuild_owner_centroid,
+        OwnerCentroidRebuildInput, OwnerCentroidWriteError, rebuild_owner_centroid,
     };
     let object = value
         .as_object()
@@ -1679,7 +1684,7 @@ fn rebuild_owner_centroid_request(value: Value) -> Result<Value, String> {
         .map(|value| value as f32)
         .filter(|value| value.is_finite())
         .ok_or_else(|| "evidence_intra_cosine_p25 is required".to_owned())?;
-    let outcome = rebuild_owner_centroid(
+    let outcome = match rebuild_owner_centroid(
         &fields.root,
         &fields.principal,
         &OwnerCentroidRebuildInput {
@@ -1694,10 +1699,33 @@ fn rebuild_owner_centroid_request(value: Value) -> Result<Value, String> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         },
-    )
-    .map_err(|error| error.to_string())?;
+    ) {
+        Ok(outcome) => outcome,
+        Err(
+            error @ (OwnerCentroidWriteError::IdentityInvalid
+            | OwnerCentroidWriteError::TargetMismatch { .. }),
+        ) => {
+            return Ok(json!({"status":owner_centroid_refusal_reason(&error)}));
+        }
+        Err(error) => return Err(error.to_string()),
+    };
     let outcome = serde_json::to_value(outcome).map_err(|error| error.to_string())?;
     Ok(json!({"outcome": outcome}))
+}
+
+fn owner_centroid_refusal_reason(
+    error: &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteError,
+) -> &'static str {
+    use solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteError;
+    use solstone_core_speaker_resolve::{
+        OWNER_IDENTITY_INVALID_REASON, OWNER_TARGET_MISMATCH_REASON,
+    };
+
+    match error {
+        OwnerCentroidWriteError::IdentityInvalid => OWNER_IDENTITY_INVALID_REASON,
+        OwnerCentroidWriteError::TargetMismatch { .. } => OWNER_TARGET_MISMATCH_REASON,
+        _ => unreachable!("owner centroid refusal reason is only called for admission errors"),
+    }
 }
 
 fn write_owner_candidate_request(value: Value) -> Result<Value, String> {

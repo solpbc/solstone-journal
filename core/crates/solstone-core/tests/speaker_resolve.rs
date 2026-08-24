@@ -96,6 +96,23 @@ fn create_entity(root: &std::path::Path, entity_id: &str) {
     .expect("create test entity");
 }
 
+fn create_principal_entity(root: &std::path::Path, entity_id: &str) {
+    std::fs::create_dir_all(root.join("entities")).expect("create entities directory");
+    let identity_names = ["Test Person".to_owned()];
+    solstone_core_entity::create_journal_entity(
+        root,
+        entity_id,
+        "Test Person",
+        "Person",
+        None,
+        None,
+        &identity_names,
+        false,
+        None,
+    )
+    .expect("create test principal entity");
+}
+
 fn f32_bytes(values: &[f32]) -> Vec<u8> {
     values
         .iter()
@@ -441,17 +458,11 @@ fn ac1_seed_from_imports_cli_reaches_native_orchestrator() {
 #[test]
 fn write_owner_centroid_refuses_a_foreign_target_without_retargeting() {
     let journal = root("owner-target-mismatch");
-    create_entity(&journal, "owner");
+    create_principal_entity(&journal, "owner");
     let before = content_snapshot(&journal);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-        .args(["speaker-resolve", "write-owner-centroid"])
-        .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("start write-owner-centroid request");
-    serde_json::to_writer(
-        child.stdin.as_mut().expect("stdin"),
-        &json!({
+    let (_, output) = run(
+        "write-owner-centroid",
+        json!({
             "journal_root": journal,
             "principal_entity_id": "foreign",
             "centroid": vector(1.0),
@@ -459,21 +470,68 @@ fn write_owner_centroid_refuses_a_foreign_target_without_retargeting() {
             "timestamp": "2026-08-09T00:00:00Z",
             "evidence_tier": "standard",
         }),
-    )
-    .expect("write request");
-    child.stdin.take();
-    let output = child.wait_with_output().expect("wait for target mismatch");
-
-    assert_eq!(output.status.code(), Some(64));
-    let error: Value = serde_json::from_slice(&output.stderr).expect("structured error");
-    assert_eq!(error["error"], "speaker_resolve_failed");
-    assert!(
-        error["detail"]
-            .as_str()
-            .is_some_and(|detail| detail.contains("target does not match"))
     );
+    assert_eq!(output["status"], "speaker_owner_target_mismatch");
     assert!(!journal.join("entities/owner/owner_centroid.npz").exists());
     assert!(!journal.join("entities/foreign").exists());
+    assert_eq!(content_snapshot(&journal), before);
+}
+
+#[test]
+fn rebuild_owner_centroid_refuses_a_foreign_target_without_retargeting() {
+    let journal = root("rebuild-owner-target-mismatch");
+    create_principal_entity(&journal, "owner");
+    let before = content_snapshot(&journal);
+    let (_, output) = run(
+        "rebuild-owner-centroid",
+        json!({
+            "journal_root": journal,
+            "principal_entity_id": "foreign",
+            "centroid": vector(1.0),
+            "cluster_size": 5,
+            "timestamp": "2026-08-09T00:00:00Z",
+            "evidence_tier": "standard",
+            "evidence_hash": "test-evidence",
+            "evidence_intra_cosine_p25": 0.5,
+        }),
+    );
+    assert_eq!(output["status"], "speaker_owner_target_mismatch");
+    assert!(!journal.join("entities/owner/owner_centroid.npz").exists());
+    assert!(!journal.join("entities/foreign").exists());
+    assert_eq!(content_snapshot(&journal), before);
+}
+
+#[test]
+fn owner_centroid_commands_report_an_invalid_owner_identity() {
+    let journal = root("owner-identity-invalid");
+    let before = content_snapshot(&journal);
+    let (_, write) = run(
+        "write-owner-centroid",
+        json!({
+            "journal_root": journal,
+            "principal_entity_id": "owner",
+            "centroid": vector(1.0),
+            "cluster_size": 5,
+            "timestamp": "2026-08-09T00:00:00Z",
+            "evidence_tier": "standard",
+        }),
+    );
+    assert_eq!(write["status"], "speaker_owner_identity_invalid");
+
+    let (_, rebuild) = run(
+        "rebuild-owner-centroid",
+        json!({
+            "journal_root": journal,
+            "principal_entity_id": "owner",
+            "centroid": vector(1.0),
+            "cluster_size": 5,
+            "timestamp": "2026-08-09T00:00:00Z",
+            "evidence_tier": "standard",
+            "evidence_hash": "test-evidence",
+            "evidence_intra_cosine_p25": 0.5,
+        }),
+    );
+    assert_eq!(rebuild["status"], "speaker_owner_identity_invalid");
     assert_eq!(content_snapshot(&journal), before);
 }
 

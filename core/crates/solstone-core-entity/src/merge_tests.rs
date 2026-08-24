@@ -2107,7 +2107,7 @@ fn speakers_listing_joins_stay_byte_identical() {
         (
             "speakers_owner.rs",
             r#".join(principal_id)
-                        .join("voiceprints.npz")"#,
+                .join("voiceprints.npz")"#,
         ),
         (
             "speakers_quality.rs",
