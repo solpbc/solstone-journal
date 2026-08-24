@@ -218,7 +218,7 @@ fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
     let body = b"fixture-origin".to_vec();
     let mut origin = server(move |_| (String::new(), body.clone()));
     let target = target(
-        "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
+        "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/analytics/coremldata.bin",
         b"fixture-origin",
     );
     verify_targets(&[target], &temp("gate-inner-slash"), &policy(&origin.base)).unwrap();
@@ -226,7 +226,7 @@ fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
     assert_eq!(
         origin.request_lines(),
         vec![
-            "GET /assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx HTTP/1.1"
+            "GET /assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/analytics/coremldata.bin HTTP/1.1"
                 .to_owned()
         ]
     );

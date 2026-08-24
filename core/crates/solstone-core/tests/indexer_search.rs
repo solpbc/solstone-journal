@@ -184,14 +184,18 @@ fn indexer_search_reaches_query_engine_and_pins_json_envelope() {
             .is_empty()
     );
     assert_eq!(non_tokenizable["reason"], "not_tokenizable");
-    let reranked = run_indexer_verb(&root, "search", &["--json", "--order", "reranked", "José"]);
-    assert_eq!(reranked.status.code(), Some(64));
+    let invalid_order = run_indexer_verb(
+        &root,
+        "search",
+        &["--json", "--order", "unexpected_order", "José"],
+    );
+    assert_eq!(invalid_order.status.code(), Some(64));
     assert_eq!(
-        String::from_utf8(reranked.stdout).expect("stdout utf-8"),
+        String::from_utf8(invalid_order.stdout).expect("stdout utf-8"),
         ""
     );
     assert_eq!(
-        String::from_utf8(reranked.stderr).expect("stderr utf-8"),
+        String::from_utf8(invalid_order.stderr).expect("stderr utf-8"),
         solstone_core_cli::USAGE
     );
     fs::remove_dir_all(root).expect("cleanup JSON index");

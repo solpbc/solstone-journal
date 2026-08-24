@@ -17,10 +17,6 @@ use solstone_core_local::{VulkanDevice, VulkanProbeConfig, VulkanProbeProgram, e
 // Pin table read from solstone_core_assets::{catalog, resolve} and the public
 // install path helpers (ced_model_path, ced_artifact_key, rfdetr
 // binary_path / model_path / rfdetr_platform_supported) on 2026-08-16.
-const RERANK_MODEL_SHA256: &str =
-    "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870";
-const RERANK_TOKENIZER_SHA256: &str =
-    "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66";
 const CED_MODEL_SHA256: &str = "48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674";
 const CED_ENGINE_X64_SHA256: &str =
     "915e0573bc4e17197a7a893d0eb98e1a851abb64451b2e1a8ad51f5f99040360";
@@ -118,43 +114,6 @@ fn sibling_helper_is_empty_failure_or_well_formed_success() {
 #[test]
 fn downloading_installer_specs_match_the_catalog_pins() {
     let journal = Path::new("/synthetic/journal");
-
-    let rerank = resolve("rerank-model", None, None);
-    assert_eq!(
-        rerank.len(),
-        2,
-        "rerank catalog must keep model + tokenizer"
-    );
-    let model = rerank
-        .iter()
-        .find(|row| row.filename == "onnx/model.onnx")
-        .expect("rerank model row");
-    let tokenizer = rerank
-        .iter()
-        .find(|row| row.filename == "tokenizer.json")
-        .expect("rerank tokenizer row");
-    assert_eq!(model.version, "a09144355adeed5f58c8ed011d209bf8ee5a1fec");
-    assert_eq!(
-        model.upstream_url,
-        "https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2/resolve/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx"
-    );
-    assert_eq!(model.sha256, RERANK_MODEL_SHA256);
-    assert_eq!(model.size_bytes, 90_992_115);
-    assert_eq!(
-        tokenizer.version,
-        "a09144355adeed5f58c8ed011d209bf8ee5a1fec"
-    );
-    assert_eq!(
-        tokenizer.upstream_url,
-        "https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2/resolve/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json"
-    );
-    assert_eq!(tokenizer.sha256, RERANK_TOKENIZER_SHA256);
-    assert_eq!(tokenizer.size_bytes, 711_396);
-    assert_eq!(catalog_row(RERANK_MODEL_SHA256).filename, "onnx/model.onnx");
-    assert_eq!(
-        catalog_row(RERANK_TOKENIZER_SHA256).filename,
-        "tokenizer.json"
-    );
 
     assert_eq!(ENGINE_VERSION, "v0.1.0");
     assert_eq!(ced_artifact_key("linux", "x86_64"), Some("linux-cpu-x64"));
