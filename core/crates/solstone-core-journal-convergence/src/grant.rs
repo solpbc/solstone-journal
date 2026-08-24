@@ -242,8 +242,8 @@ pub enum DeniedReason {
 
 /// Outcome of a delivery or reissue attempt.
 ///
-/// `Pending` and `Unknown` are variants here rather than errors, so a state can
-/// never classify as both: exactly one variant is produced per attempt.
+/// `Pending` and `Denied` are settled delivery outcomes. Uninterpretable
+/// durable state is always returned as [`ConvergenceError::Unknown`].
 #[derive(Debug)]
 pub enum Delivery {
     /// Exact eligible members, with their sealed bytes.
@@ -256,8 +256,6 @@ pub enum Delivery {
     },
     /// A settled denial. No bytes, and nothing is written here.
     Denied { reason: DeniedReason },
-    /// The evidence cannot be interpreted. No bytes, no write, no cleanup.
-    Unknown { role: DurableRole },
 }
 
 impl Delivery {
@@ -333,54 +331,58 @@ impl Admitted {
                 return Ok(LinkLookup::MissingOwner);
             };
             match resolve_owner_intent_link(section, &owner)? {
-                LinkResolution::Exact(link) => Ok(LinkLookup::Linked(link)),
-                LinkResolution::Absent | LinkResolution::Unknown => Ok(LinkLookup::MissingLink),
+                LinkResolution::Exact(link) => Ok(LinkLookup::Linked {
+                    owner_digest: owner.digest_hex().to_owned(),
+                    link,
+                }),
+                LinkResolution::Absent => Ok(LinkLookup::Absent {
+                    owner_digest: owner.digest_hex().to_owned(),
+                }),
+                LinkResolution::Unknown => Ok(LinkLookup::UnknownLink),
             }
         })?;
-        let (serial, link) = match linked {
-            LinkLookup::Linked(link) => {
+        let (owner_digest, link) = match linked {
+            LinkLookup::Linked { owner_digest, link } => {
                 let link = *link;
-                (link.serial, link)
+                (owner_digest, Some(link))
             }
+            LinkLookup::Absent { owner_digest } => (owner_digest, None),
             LinkLookup::MissingOwner => {
-                return Ok(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::PreparedOwner,
                 });
             }
-            LinkLookup::MissingLink => {
-                return Ok(Delivery::Unknown {
+            LinkLookup::UnknownLink => {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::OwnerIntentLink,
                 });
             }
         };
 
-        let claim_table = match &claim {
-            ClaimView::Empty => None,
-            ClaimView::Headed(body) | ClaimView::Unheaded(body) => Some(&body.table),
-        };
-        let own_claim = claim_table.is_some_and(|table| {
-            locks.days().iter().all(|day| {
-                table
-                    .get(day.as_str())
-                    .is_some_and(|entry| entry.serial == serial)
-            })
-        });
-        let overlapping = claim_table.is_some_and(|table| {
-            locks.days().iter().any(|day| {
-                table
-                    .get(day.as_str())
-                    .is_some_and(|entry| entry.serial != serial)
-            })
-        });
-        if own_claim && matches!(claim, ClaimView::Unheaded(_)) {
+        let fence = classify_claim_fence(store, locks, dirs, &claim, &owner_digest, link.as_ref())?;
+        if let ClaimFence::Own {
+            serial,
+            pending: Some((stage, recovery)),
+        } = &fence
+            && crate::terminal::read_terminal(dirs, *serial)?.is_none()
+        {
             return Ok(Delivery::Pending {
-                stage: PendingStage::ClaimHead,
-                recovery: "claim-head recovery",
+                stage: *stage,
+                recovery,
             });
         }
-        if overlapping {
+
+        let (serial, link) = match link {
+            Some(link) => (link.serial, link),
+            None => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                });
+            }
+        };
+        if matches!(fence, ClaimFence::Overlapping) {
             if crate::terminal::read_terminal(dirs, serial)?.is_some() {
-                return Ok(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::ClaimRevision,
                 });
             }
@@ -388,12 +390,7 @@ impl Admitted {
                 reason: DeniedReason::OverlappingSuccessor,
             });
         }
-        let claim_released = claim_table.is_none_or(|table| {
-            locks
-                .days()
-                .iter()
-                .all(|day| !table.contains_key(day.as_str()))
-        });
+        let claim_released = claim_is_released(locks.days(), &claim);
 
         // The intent is unlinked during cleanup, so post-eviction the link is
         // the surviving anchor. While the intent is still present it must agree
@@ -401,7 +398,7 @@ impl Admitted {
         if let Some(intent) = crate::intent::read_intent(dirs, serial)?
             && intent.intent_digest != link.intent_digest
         {
-            return Ok(Delivery::Unknown {
+            return Err(ConvergenceError::Unknown {
                 role: DurableRole::OwnerIntentLink,
             });
         }
@@ -413,15 +410,15 @@ impl Admitted {
         match establish_committed(store, locks, dirs, serial, &link, claim_released)? {
             Committed::Yes => {}
             Committed::No { reason } => return Ok(Delivery::Denied { reason }),
-            Committed::Unknown { role } => return Ok(Delivery::Unknown { role }),
+            Committed::Unknown { role } => return Err(ConvergenceError::Unknown { role }),
         }
         // Brief registry: re-read owner, link, decision, members, barrier and
         // mint the already-classified authority. No day scan happens here.
-        let prepared = match access.with_registry(|section| {
+        let prepared = access.with_registry(|section| {
             let Some(secret) = load_journal_secret(section.registry())? else {
-                return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::JournalSecret,
-                }));
+                });
             };
             let Some((owner, state)) = load_owner_binding(
                 section,
@@ -433,9 +430,9 @@ impl Admitted {
                 &secret.key_hex,
             )?
             else {
-                return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::PreparedOwner,
-                }));
+                });
             };
             if state != PreparedOwnerState::Active
                 || crate::revocation::owner_revocation_state(section, &owner, self.days())?
@@ -447,22 +444,22 @@ impl Admitted {
             }
             // Authoritative re-read of the link under the registry lock.
             let Some(exact) = load_owner_intent_link(section, &owner, serial)? else {
-                return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::OwnerIntentLink,
-                }));
+                });
             };
             if exact != link
                 || exact.owner_binding_digest != owner.digest_hex()
                 || exact.selector_digest != owner.selector_digest()
             {
-                return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::OwnerIntentLink,
-                }));
+                });
             }
             let Some(decision) = load_decision(section, serial)? else {
-                return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                return Err(ConvergenceError::Unknown {
                     role: DurableRole::Decision,
-                }));
+                });
             };
             if decision.kind == DecisionKind::AbortNoOpen {
                 return Ok(RegistryPrepared::Delivery(Delivery::Denied {
@@ -486,18 +483,18 @@ impl Admitted {
             let mut members = Vec::new();
             for tuple in &decision.tuples {
                 let Some(member) = load_member(section, serial, tuple)? else {
-                    return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                    return Err(ConvergenceError::Unknown {
                         role: DurableRole::GrantMember,
-                    }));
+                    });
                 };
                 if barrier
                     .member_digests
                     .get(&crate::decision::member_key(tuple))
                     != Some(&member.member_digest)
                 {
-                    return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
+                    return Err(ConvergenceError::Unknown {
                         role: DurableRole::GrantActiveBarrier,
-                    }));
+                    });
                 }
                 if crate::revocation::member_revocation_state(section, &member)?.is_some() {
                     return Ok(RegistryPrepared::Delivery(Delivery::Denied {
@@ -528,11 +525,7 @@ impl Admitted {
                 members,
                 barrier_digest: barrier.barrier_digest.clone(),
             }))
-        }) {
-            Ok(prepared) => prepared,
-            Err(ConvergenceError::Unknown { role }) => return Ok(Delivery::Unknown { role }),
-            Err(error) => return Err(error),
-        };
+        })?;
         let prepared = match prepared {
             RegistryPrepared::Prepared(prepared) => prepared,
             RegistryPrepared::Delivery(delivery) => return Ok(delivery),
@@ -692,31 +685,26 @@ impl<'admitted> LiveGrantLease<'admitted> {
             link,
         } = *prepared;
 
-        let claim_table = match &claim {
-            ClaimView::Empty => None,
-            ClaimView::Headed(body) | ClaimView::Unheaded(body) => Some(&body.table),
-        };
-        let own_claim = claim_table.is_some_and(|table| {
-            self.access.days().iter().all(|day| {
-                table
-                    .get(day.as_str())
-                    .is_some_and(|entry| entry.serial == authority.serial)
-            })
-        });
-        let overlapping = claim_table.is_some_and(|table| {
-            self.access.days().iter().any(|day| {
-                table
-                    .get(day.as_str())
-                    .is_some_and(|entry| entry.serial != authority.serial)
-            })
-        });
-        if own_claim && matches!(claim, ClaimView::Unheaded(_)) {
+        let fence = classify_claim_fence(
+            self.access.store(),
+            self.access.locks(),
+            self.access.dirs(),
+            &claim,
+            &authority.owner_binding_digest,
+            Some(&link),
+        )?;
+        if let ClaimFence::Own {
+            serial,
+            pending: Some((stage, recovery)),
+        } = &fence
+            && crate::terminal::read_terminal(self.access.dirs(), *serial)?.is_none()
+        {
             return Ok(Authorization::Pending {
-                stage: PendingStage::ClaimHead,
-                recovery: "claim-head recovery",
+                stage: *stage,
+                recovery,
             });
         }
-        if overlapping {
+        if matches!(fence, ClaimFence::Overlapping) {
             if crate::terminal::read_terminal(self.access.dirs(), authority.serial)?.is_some() {
                 return Err(ConvergenceError::Unknown {
                     role: DurableRole::ClaimRevision,
@@ -726,12 +714,7 @@ impl<'admitted> LiveGrantLease<'admitted> {
                 reason: DeniedReason::OverlappingSuccessor,
             });
         }
-        let claim_released = claim_table.is_none_or(|table| {
-            self.access
-                .days()
-                .iter()
-                .all(|candidate| !table.contains_key(candidate.as_str()))
-        });
+        let claim_released = claim_is_released(self.access.days(), &claim);
         match establish_committed(
             self.access.store(),
             self.access.locks(),
@@ -780,9 +763,129 @@ enum RegistryPrepared {
 }
 
 enum LinkLookup {
-    Linked(Box<crate::schema::OwnerIntentLink>),
+    Linked {
+        owner_digest: String,
+        link: Box<crate::schema::OwnerIntentLink>,
+    },
+    Absent {
+        owner_digest: String,
+    },
     MissingOwner,
-    MissingLink,
+    UnknownLink,
+}
+
+enum ClaimFence {
+    None,
+    Own {
+        serial: u64,
+        pending: Option<(PendingStage, &'static str)>,
+    },
+    Overlapping,
+}
+
+fn claim_is_released<'a>(days: impl IntoIterator<Item = &'a DayKey>, claim: &ClaimView) -> bool {
+    match claim {
+        ClaimView::Empty => true,
+        ClaimView::Headed(body) | ClaimView::Unheaded(body) => days
+            .into_iter()
+            .all(|day| !body.table.contains_key(day.as_str())),
+    }
+}
+
+fn classify_claim_fence(
+    store: &ConvergenceStore,
+    locks: &DayLockSet,
+    dirs: &StoreDirs,
+    claim: &ClaimView,
+    owner_digest: &str,
+    link: Option<&crate::schema::OwnerIntentLink>,
+) -> Result<ClaimFence, ConvergenceError> {
+    let (ClaimView::Headed(body) | ClaimView::Unheaded(body)) = claim else {
+        return Ok(ClaimFence::None);
+    };
+    let entries: Vec<_> = locks
+        .days()
+        .iter()
+        .filter_map(|day| body.table.get(day.as_str()))
+        .collect();
+    if entries.is_empty() {
+        return Ok(ClaimFence::None);
+    }
+    if entries.len() != locks.days().len() {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::ClaimRevision,
+        });
+    }
+    let first = entries[0];
+    if entries.iter().any(|entry| {
+        entry.serial != first.serial
+            || entry.intent_digest != first.intent_digest
+            || entry.owner_binding_digest != first.owner_binding_digest
+    }) {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::ClaimRevision,
+        });
+    }
+    if first.owner_binding_digest != owner_digest {
+        return Ok(ClaimFence::Overlapping);
+    }
+    if let Some(link) = link {
+        if first.serial != link.serial {
+            return Ok(ClaimFence::Overlapping);
+        }
+        if first.intent_digest != link.intent_digest {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerIntentLink,
+            });
+        }
+    }
+    let pending = match claim {
+        ClaimView::Unheaded(_) => Some((PendingStage::ClaimHead, "claim-head recovery")),
+        ClaimView::Headed(_) => {
+            let Some(intent) = crate::intent::read_intent(dirs, first.serial)? else {
+                return Ok(ClaimFence::Own {
+                    serial: first.serial,
+                    pending: Some((PendingStage::ClaimIntent, "intent recovery")),
+                });
+            };
+            if intent.serial != first.serial || intent.intent_digest != first.intent_digest {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Intent,
+                });
+            }
+            let Some(active) = crate::intent::read_active(dirs, first.serial)? else {
+                return Ok(ClaimFence::Own {
+                    serial: first.serial,
+                    pending: Some((PendingStage::ClaimConsumption, "consumption recovery")),
+                });
+            };
+            if active.serial != first.serial
+                || active.owner_binding_digest != first.owner_binding_digest
+                || active.intent_digest != first.intent_digest
+                || active.day_set != intent.day_set
+            {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Active,
+                });
+            }
+            let all_published = locks.days().iter().all(|day| {
+                let expected = intent.proposed_day_revisions.get(day.as_str());
+                matches!(
+                    store.load_day(locks, day),
+                    Ok(LoadDay::Published(snapshot)) if expected == Some(&snapshot.record_revision)
+                )
+            });
+            (!all_published).then_some((
+                PendingStage::ClaimDayPublication,
+                "day publication recovery",
+            ))
+        }
+        ClaimView::Empty => unreachable!(),
+    };
+    Ok(ClaimFence::Own {
+        serial: first.serial,
+        pending,
+    })
 }
 
 enum LeasePrepared {
@@ -1256,6 +1359,44 @@ mod tests {
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
     }
 
+    fn assert_own_claim_prefix_pending(
+        fault: PublishFault,
+        stage: PendingStage,
+        recovery: &'static str,
+    ) {
+        let (temporary, admitted) = admit_days("own-claim-prefix", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = GrantRequestSelector::try_new(admitted.days(), requests()).unwrap();
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
+        let guard = fail_after(fault);
+        assert!(matches!(
+            held.continue_with(proof),
+            Err(ConvergenceError::PreservedPrior { .. })
+        ));
+        drop(guard);
+        drop(held);
+
+        let before = snapshot_tree(&temporary.journal_path());
+        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
+        assert!(delivery.tokens().is_empty());
+        assert!(matches!(
+            delivery,
+            Delivery::Pending {
+                stage: observed,
+                recovery: observed_recovery,
+            } if observed == stage && observed_recovery == recovery
+        ));
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+    }
+
     #[test]
     fn own_unheaded_claim_is_pending_without_bytes_or_writes() {
         let (temporary, admitted, operation, selector) = committed("own-claim-pending");
@@ -1303,6 +1444,38 @@ mod tests {
                 recovery: "claim-head recovery",
             }
         ));
+    }
+
+    #[test]
+    fn own_headed_pre_intent_claim_is_pending_for_intent_recovery() {
+        // Contrasts with `overlapping_headed_pre_intent_successor_denies`:
+        // the same claim-head prefix belongs to this operation, not a newer
+        // claimant, so only its intent recovery may continue it.
+        assert_own_claim_prefix_pending(
+            PublishFault::AfterClaimHead,
+            PendingStage::ClaimIntent,
+            "intent recovery",
+        );
+    }
+
+    #[test]
+    fn own_intent_before_consumption_claim_is_pending_for_consumption_recovery() {
+        // Contrasts with `overlapping_intent_before_consumption_successor_denies`.
+        assert_own_claim_prefix_pending(
+            PublishFault::AfterIntent,
+            PendingStage::ClaimConsumption,
+            "consumption recovery",
+        );
+    }
+
+    #[test]
+    fn own_witness_before_dirty_record_claim_is_pending_for_day_publication() {
+        // Contrasts with `overlapping_witness_before_dirty_record_successor_denies`.
+        assert_own_claim_prefix_pending(
+            PublishFault::AfterActive,
+            PendingStage::ClaimDayPublication,
+            "day publication recovery",
+        );
     }
 
     #[test]
@@ -1387,13 +1560,11 @@ mod tests {
             true,
         );
         let before = snapshot_tree(&temporary.journal_path());
-        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
-        assert!(delivery.tokens().is_empty());
         assert!(matches!(
-            delivery,
-            Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::ClaimRevision
-            }
+            })
         ));
         let lease = admitted.grant_lease().unwrap();
         assert!(matches!(
@@ -1913,10 +2084,10 @@ mod tests {
         bytes.push(b'\n');
         std::fs::write(path, bytes).unwrap();
         assert!(matches!(
-            admitted.deliver_grants(&operation, &selector).unwrap(),
-            Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::Terminal
-            }
+            })
         ));
     }
 
@@ -1934,10 +2105,10 @@ mod tests {
         bytes.push(b'\n');
         std::fs::write(path, bytes).unwrap();
         assert!(matches!(
-            admitted.deliver_grants(&operation, &selector).unwrap(),
-            Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::GrantActiveBarrier
-            }
+            })
         ));
     }
 
@@ -2067,17 +2238,15 @@ mod tests {
         // A caller who knows the tuples but not the operation gets nothing: the
         // only public route is `deliver_grants`, and it is keyed by operation.
         let foreign = OperationId::generate().unwrap();
-        let delivery = admitted.deliver_grants(&foreign, &selector).unwrap();
-        assert!(delivery.tokens().is_empty());
         // No link for that operation, so there is no transition to deliver for.
         assert!(
             matches!(
-                delivery,
-                Delivery::Unknown {
+                admitted.deliver_grants(&foreign, &selector),
+                Err(ConvergenceError::Unknown {
                     role: DurableRole::PreparedOwner
-                }
+                })
             ),
-            "{delivery:?}"
+            "tuple knowledge unexpectedly reached delivery"
         );
         // And asking with the right operation but a different selector cannot
         // even reach the outbox.
@@ -2100,12 +2269,11 @@ mod tests {
                 .join(format!("{}.json", operation.as_hex())),
         )
         .unwrap();
-        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
         assert!(matches!(
-            delivery,
-            Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::PreparedOwner
-            }
+            })
         ));
     }
 
@@ -2129,12 +2297,11 @@ mod tests {
                 )),
         )
         .unwrap();
-        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
         assert!(matches!(
-            delivery,
-            Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::OwnerIntentLink
-            }
+            })
         ));
     }
 
@@ -2225,9 +2392,12 @@ mod tests {
         let mut out = serde_json::to_vec(&value).unwrap();
         out.push(b'\n');
         std::fs::write(&entry, out).unwrap();
-        let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
-        assert!(delivery.tokens().is_empty());
-        assert!(matches!(delivery, Delivery::Unknown { .. }), "{delivery:?}");
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::GrantActiveBarrier
+            })
+        ));
     }
 
     #[test]

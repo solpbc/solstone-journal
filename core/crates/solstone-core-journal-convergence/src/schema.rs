@@ -713,7 +713,7 @@ fn encode_disk<T: Serialize>(value: &T) -> Result<(RecordDigest, Vec<u8>), Conve
     Ok((digest, disk))
 }
 
-/// Which unique contiguous publication is in flight. These are the only two
+/// Which unique contiguous publication is in flight. These are the only
 /// shapes that are `Pending`; everything else that fails to interpret is
 /// `Unknown`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -721,6 +721,15 @@ pub enum PendingStage {
     /// An exact owner claim introduction is durable but has not published its
     /// claim head.  Only claim-head recovery owns this prefix.
     ClaimHead,
+    /// An exact headed owner claim has not yet written its intent. Only
+    /// intent recovery for that owner may continue it.
+    ClaimIntent,
+    /// An exact owner intent has not yet consumed its predecessor evidence.
+    /// Only consumption recovery for that owner may continue it.
+    ClaimConsumption,
+    /// An exact active owner transition has not yet published every bound day
+    /// record. Only day-publication recovery for that owner may continue it.
+    ClaimDayPublication,
     WitnessAheadOfHead,
     HeadAheadOfRecord,
 }

@@ -535,10 +535,10 @@ mod tests {
         ));
         drop(held);
         assert!(matches!(
-            admitted.deliver_grants(&operation, &selector).unwrap(),
-            crate::grant::Delivery::Unknown {
+            admitted.deliver_grants(&operation, &selector),
+            Err(ConvergenceError::Unknown {
                 role: DurableRole::OwnerIntentLink
-            }
+            })
         ));
     }
 }
