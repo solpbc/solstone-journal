@@ -9,6 +9,7 @@ mod cadence;
 mod cadence_state;
 mod context;
 mod daily;
+mod daily_lifecycle;
 mod day;
 mod dispatch;
 mod dry_run;
@@ -324,28 +325,12 @@ where
                 parsed.jobs,
             )
         } else {
-            // Source-derived, not measured: main records this pre-phase at
-            // thinking.py:4606 before it invokes `run_daily_prompts`.
-            let mut fields = serde_json::Map::new();
-            fields.insert(
-                "mode".to_owned(),
-                serde_json::Value::String("daily".to_owned()),
-            );
-            fields.insert(
-                "day".to_owned(),
-                serde_json::Value::String(selected_day.clone()),
-            );
-            fields.insert(
-                "phase".to_owned(),
-                serde_json::Value::String("sense_repair".to_owned()),
-            );
-            log.log("phase.start", now_ms, fields);
-            daily::run(
+            daily_lifecycle::run(
                 &context,
                 &mut log,
-                parsed.stream.as_deref(),
-                parsed.from_scratch,
-                parsed.jobs,
+                &parsed,
+                default_segment_workers,
+                timeout,
             )
         }
         .map_err(|message| CliError::InvalidDay { message })?;
@@ -929,6 +914,7 @@ mod tests {
             ],
             applicable_units: BTreeSet::new(),
             success_names: vec!["schedule".to_owned()],
+            ..dispatch::ModeResult::default()
         });
         assert_eq!(reported.exit_code, 1);
         assert!(reported.stdout.is_empty());
@@ -1474,6 +1460,8 @@ mod tests {
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
+        assert_eq!(repeated.terminal_units, repeated.applicable_units);
+        assert!(repeated.capped_units.is_empty());
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
 
@@ -1501,6 +1489,8 @@ mod tests {
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
+        assert_eq!(repeated.terminal_units, repeated.applicable_units);
+        assert_eq!(repeated.capped_units, repeated.applicable_units);
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
 
@@ -1953,17 +1943,26 @@ mod tests {
     }
 
     #[test]
-    fn daily_records_its_source_derived_sense_repair_pre_phase() {
+    fn daily_runs_the_whole_day_lifecycle_in_order() {
         let journal = tempdir().unwrap();
         let _ = run_at(journal.path(), &[]);
         let events = sidecar_events(journal.path(), "20260813", "daily");
         assert_eq!(events[0]["event"], "run.start");
         assert_eq!(events[0]["mode"], "daily");
-        assert!(events.iter().any(|event| {
-            event["event"] == "phase.start"
-                && event["mode"] == "daily"
-                && event["phase"] == "sense_repair"
-        }));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event["event"] == "phase.start")
+                .map(|event| event["phase"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "sense_batch",
+                "segment_repair",
+                "daily",
+                "indexer",
+                "journal_stats"
+            ]
+        );
     }
 
     #[test]
@@ -3749,6 +3748,7 @@ mod tests {
             state: &'static str,
             success: usize,
             failed: usize,
+            timed_out: bool,
             failed_names: &'static [&'static str],
             success_names: &'static [&'static str],
             need_sense_output: bool,
@@ -3761,6 +3761,7 @@ mod tests {
                 state: "finish",
                 success: 1,
                 failed: 0,
+                timed_out: false,
                 failed_names: &[],
                 success_names: &["sense"],
                 need_sense_output: true,
@@ -3777,6 +3778,7 @@ mod tests {
                 state: "error",
                 success: 0,
                 failed: 1,
+                timed_out: false,
                 failed_names: &["sense (error)"],
                 success_names: &[],
                 need_sense_output: false,
@@ -3794,6 +3796,7 @@ mod tests {
                 state: "timeout",
                 success: 0,
                 failed: 1,
+                timed_out: true,
                 failed_names: &["sense (timeout)"],
                 success_names: &[],
                 need_sense_output: false,
@@ -3811,6 +3814,7 @@ mod tests {
                 state: "lost",
                 success: 0,
                 failed: 1,
+                timed_out: true,
                 failed_names: &["sense (lost)"],
                 success_names: &[],
                 need_sense_output: false,
@@ -3824,6 +3828,7 @@ mod tests {
                 state: "missing_completion",
                 success: 0,
                 failed: 1,
+                timed_out: false,
                 failed_names: &["sense (unknown)"],
                 success_names: &[],
                 need_sense_output: false,
@@ -3837,6 +3842,7 @@ mod tests {
                 state: "wait_failed",
                 success: 0,
                 failed: 1,
+                timed_out: false,
                 failed_names: &["sense (unavailable)"],
                 success_names: &[],
                 need_sense_output: false,
@@ -3864,12 +3870,14 @@ mod tests {
                 (
                     result.success,
                     result.failed,
+                    result.timed_out,
                     result.failed_names,
                     result.success_names
                 ),
                 (
                     case.success,
                     case.failed,
+                    case.timed_out,
                     case.failed_names
                         .iter()
                         .map(|name| (*name).to_owned())

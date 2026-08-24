@@ -199,10 +199,13 @@ fn queue_daily(
         facet: unit.1.clone(),
     };
     let retry = config.metadata.get("retry_on_deterministic_failure") == Some(&Value::Bool(true));
-    if !from_scratch
-        && (completed.contains(&completed_key)
-            || (!retry && deterministic.contains_key(&failure_key)))
-    {
+    if !from_scratch && completed.contains(&completed_key) {
+        result.terminal_units.insert(unit);
+        return Ok(());
+    }
+    if !from_scratch && !retry && deterministic.contains_key(&failure_key) {
+        result.terminal_units.insert(unit.clone());
+        result.capped_units.insert(unit);
         return Ok(());
     }
     match dispatch(context, runtime, config, "daily", facet, true, Map::new()) {
@@ -275,6 +278,15 @@ fn drain_if_full(
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
+    for label in &from.success_names {
+        if let Some(unit) = into
+            .applicable_units
+            .iter()
+            .find(|(name, facet)| crate::dispatch::item_label(name, facet.as_deref()) == *label)
+        {
+            into.terminal_units.insert(unit.clone());
+        }
+    }
     merge_mode_result(into, from);
 }
 

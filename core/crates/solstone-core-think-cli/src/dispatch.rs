@@ -21,9 +21,16 @@ pub(crate) const DEFAULT_THINK_TIMEOUT: Duration = Duration::from_secs(610);
 pub(crate) struct ModeResult {
     pub(crate) success: usize,
     pub(crate) failed: usize,
+    pub(crate) timed_out: bool,
     pub(crate) failed_names: Vec<String>,
     pub(crate) success_names: Vec<String>,
     pub(crate) applicable_units: BTreeSet<(String, Option<String>)>,
+    /// Daily units that are terminal either from this invocation or a
+    /// previously folded terminal record.
+    pub(crate) terminal_units: BTreeSet<(String, Option<String>)>,
+    /// Subset of [`Self::terminal_units`] whose deterministic failure cap
+    /// made them terminal for daily-completion purposes.
+    pub(crate) capped_units: BTreeSet<(String, Option<String>)>,
 }
 
 pub(crate) fn item_label(name: &str, facet: Option<&str>) -> String {
@@ -33,9 +40,12 @@ pub(crate) fn item_label(name: &str, facet: Option<&str>) -> String {
 pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
     into.success += from.success;
     into.failed += from.failed;
+    into.timed_out |= from.timed_out;
     into.failed_names.extend(from.failed_names);
     into.success_names.extend(from.success_names);
     into.applicable_units.extend(from.applicable_units);
+    into.terminal_units.extend(from.terminal_units);
+    into.capped_units.extend(from.capped_units);
 }
 
 /// Blocking local-runtime reason from the same health record the runtime API reads.
@@ -447,6 +457,7 @@ pub(crate) fn drain_with_deadline_observed(
                     .find(|timeout| timeout.use_id() == item.use_id)
                 {
                     result.failed += 1;
+                    result.timed_out = true;
                     result.failed_names.push(named_failure(
                         &label,
                         blocked_runtime_reason(&context.journal)
