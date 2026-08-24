@@ -23,13 +23,17 @@ mod init;
 mod intent;
 mod layout;
 mod lock;
+mod mac;
 mod owner;
 mod permit;
 mod preflight;
 mod projection;
 mod publish;
 mod recover;
+mod registry;
 mod schema;
+mod secret;
+mod selector;
 mod store;
 mod terminal;
 #[cfg(test)]
@@ -47,6 +51,9 @@ pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
 pub use recover::{
     AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
     StoreVerdict,
+};
+pub use selector::{
+    GrantRequestSelector, OperationId, TargetScope, TransactionClass, WriterFamily,
 };
 pub use store::{ConvergenceStore, DaySnapshot};
 pub use transaction::HeldDays;
@@ -107,13 +114,17 @@ mod architecture {
             include_str!("layout.rs"),
             include_str!("lib.rs"),
             include_str!("lock.rs"),
+            include_str!("mac.rs"),
             include_str!("owner.rs"),
             include_str!("permit.rs"),
             include_str!("preflight.rs"),
             include_str!("projection.rs"),
             include_str!("publish.rs"),
             include_str!("recover.rs"),
+            include_str!("registry.rs"),
             include_str!("schema.rs"),
+            include_str!("secret.rs"),
+            include_str!("selector.rs"),
             include_str!("store.rs"),
             include_str!("terminal.rs"),
             include_str!("transaction.rs"),

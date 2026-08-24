@@ -64,6 +64,8 @@ pub enum DurableRole {
     StreamUpdated,
     DailyUpdated,
     ChronicleHealth,
+    RegistryLock,
+    JournalSecret,
 }
 
 #[derive(Debug)]
@@ -110,6 +112,7 @@ pub enum Refusal {
     StaleEvidence,
     MixedEvidence,
     Superseded,
+    DuplicateGrantRequest,
 }
 
 impl std::fmt::Display for ConvergenceError {

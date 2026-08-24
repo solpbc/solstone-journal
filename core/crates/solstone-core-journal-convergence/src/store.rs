@@ -4,7 +4,7 @@
 use solstone_core_journal_io::{JournalRoot, ObjectIdentity};
 
 use crate::digest::RecordDigest;
-use crate::error::{ConvergenceError, Refusal, map_root_error};
+use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error};
 use crate::init::{check_initialized, load_allocator, load_root_witness, open_store_dirs};
 use crate::layout::{DayKey, require_nonempty_unique};
 use crate::lock::{DayLockSet, acquire_days};
@@ -71,6 +71,13 @@ impl ConvergenceStore {
             &allocator.journal_id,
             &allocator.root_id,
         )?;
+        if let Some(secret) = crate::secret::load_journal_secret(&dirs.registry)?
+            && (secret.journal_id != witness.journal_id || secret.root_id != root_id)
+        {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::JournalSecret,
+            });
+        }
         Ok(Self {
             object_identity: root.identity(),
             root,

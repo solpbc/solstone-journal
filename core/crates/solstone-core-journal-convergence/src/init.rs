@@ -7,20 +7,25 @@ use std::time::Duration;
 
 use solstone_core_journal_io::{
     JournalRoot, acquire_existing_parent_lock_bound, create_directory_bound, read_bytes_bound,
+    write_bytes_exclusive_bound,
 };
 
 use crate::digest::digest_value;
 use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error, random_hex};
-use crate::layout::{ALLOCATOR, CONVERGENCE, DAYS, HEALTH, RECORDS, ROOT_WITNESS, TOPOLOGY_LOCK};
+use crate::layout::{
+    ALLOCATOR, BARRIERS, CONVERGENCE, DAYS, DECISIONS, GRANTS, HEALTH, LINKS, MEMBERS, OWNERS,
+    RECORDS, REGISTRY, REGISTRY_LOCK, REVOCATIONS, ROOT_WITNESS, TOMBSTONES, TOPOLOGY_LOCK,
+};
 use crate::schema::{
     Allocator, RootWitness, SCHEMA_VERSION, now_rfc3339, read_json, write_json_exclusive,
 };
-use crate::walk::open_dir;
+use crate::walk::{open_dir, open_file};
 
 pub(crate) struct StoreDirs {
     pub convergence: OwnedFd,
     pub days: OwnedFd,
     pub records: OwnedFd,
+    pub registry: OwnedFd,
 }
 
 pub(crate) fn open_store_dirs(root: &JournalRoot) -> Result<Option<StoreDirs>, ConvergenceError> {
@@ -36,10 +41,14 @@ pub(crate) fn open_store_dirs(root: &JournalRoot) -> Result<Option<StoreDirs>, C
     let Some(records) = open_dir(&convergence, RECORDS)? else {
         return Ok(None);
     };
+    let Some(registry) = open_dir(&convergence, REGISTRY)? else {
+        return Ok(None);
+    };
     Ok(Some(StoreDirs {
         convergence,
         days,
         records,
+        registry,
     }))
 }
 
@@ -134,6 +143,8 @@ pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
         read_json::<Allocator>(&convergence, OsStr::new(ALLOCATOR), DurableRole::Allocator)?;
     match (witness, allocator) {
         (Some(witness), Some(allocator)) => {
+            let registry_was_complete = registry_tree_complete(&convergence)?;
+            ensure_registry_tree(&convergence)?;
             let root_id = digest_value(&witness)?.as_hex().to_owned();
             drop(topology);
             if witness.journal_id != allocator.journal_id || allocator.root_id != root_id {
@@ -141,10 +152,14 @@ pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
                     role: DurableRole::Allocator,
                 });
             }
+            if !registry_was_complete {
+                return Ok(());
+            }
             Err(ConvergenceError::Refused(Refusal::AlreadyInitialized))
         }
         (Some(witness), None) => {
             write_allocator(&convergence, &witness)?;
+            ensure_registry_tree(&convergence)?;
             drop(topology);
             Ok(())
         }
@@ -161,6 +176,7 @@ pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
                 DurableRole::RootWitness,
             )?;
             write_allocator(&convergence, &witness)?;
+            ensure_registry_tree(&convergence)?;
             drop(topology);
             Ok(())
         }
@@ -168,6 +184,49 @@ pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
             drop(topology);
             Err(ConvergenceError::Unknown {
                 role: DurableRole::RootWitness,
+            })
+        }
+    }
+}
+
+fn registry_tree_complete(convergence: &OwnedFd) -> Result<bool, ConvergenceError> {
+    Ok(open_dir(convergence, REGISTRY)?.is_some()
+        && open_file(convergence, REGISTRY_LOCK)?.is_some())
+}
+
+fn ensure_registry_tree(convergence: &OwnedFd) -> Result<(), ConvergenceError> {
+    create_directory_bound(convergence, OsStr::new(REGISTRY), 0o700).map_err(map_path)?;
+    let registry = open_dir(convergence, REGISTRY)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::Directory,
+    })?;
+    create_directory_bound(&registry, OsStr::new(OWNERS), 0o700).map_err(map_path)?;
+    create_directory_bound(&registry, OsStr::new(LINKS), 0o700).map_err(map_path)?;
+    create_directory_bound(&registry, OsStr::new(DECISIONS), 0o700).map_err(map_path)?;
+    create_directory_bound(&registry, OsStr::new(GRANTS), 0o700).map_err(map_path)?;
+    let grants = open_dir(&registry, GRANTS)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::Directory,
+    })?;
+    create_directory_bound(&grants, OsStr::new(MEMBERS), 0o700).map_err(map_path)?;
+    create_directory_bound(&grants, OsStr::new(BARRIERS), 0o700).map_err(map_path)?;
+    create_directory_bound(&grants, OsStr::new(REVOCATIONS), 0o700).map_err(map_path)?;
+    create_directory_bound(&grants, OsStr::new(TOMBSTONES), 0o700).map_err(map_path)?;
+    create_registry_lock_file(convergence)?;
+    Ok(())
+}
+
+fn create_registry_lock_file(convergence: &OwnedFd) -> Result<(), ConvergenceError> {
+    match write_bytes_exclusive_bound(convergence, OsStr::new(REGISTRY_LOCK), b"", 0o600) {
+        Ok(()) => Ok(()),
+        Err(solstone_core_journal_io::AtomicWriteError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::AlreadyExists =>
+        {
+            Ok(())
+        }
+        Err(solstone_core_journal_io::AtomicWriteError::Io { source, .. }) => {
+            Err(ConvergenceError::Io {
+                operation: "create registry lock file",
+                role: DurableRole::RegistryLock,
+                source,
             })
         }
     }
@@ -264,6 +323,41 @@ mod tests {
         assert!(journal.join("health/convergence/topology.lock").exists());
         assert!(journal.join("health/convergence/root.wit.json").exists());
         assert!(journal.join("health/convergence/allocator.json").exists());
+        assert!(journal.join("health/convergence/registry.lock").exists());
+        assert!(journal.join("health/convergence/registry").is_dir());
+        assert!(journal.join("health/convergence/registry/owners").is_dir());
+        assert!(journal.join("health/convergence/registry/links").is_dir());
+        assert!(
+            journal
+                .join("health/convergence/registry/decisions")
+                .is_dir()
+        );
+        assert!(journal.join("health/convergence/registry/grants").is_dir());
+        assert!(
+            journal
+                .join("health/convergence/registry/grants/members")
+                .is_dir()
+        );
+        assert!(
+            journal
+                .join("health/convergence/registry/grants/barriers")
+                .is_dir()
+        );
+        assert!(
+            journal
+                .join("health/convergence/registry/grants/revocations")
+                .is_dir()
+        );
+        assert!(
+            journal
+                .join("health/convergence/registry/grants/tombstones")
+                .is_dir()
+        );
+        assert!(
+            !journal
+                .join("health/convergence/registry/secret.json")
+                .exists()
+        );
         assert!(
             !journal
                 .join("health/convergence/days/20260823.ever.wit.json")
@@ -374,6 +468,37 @@ mod tests {
             solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn initialize_completes_missing_registry() {
+        let temporary = TempDir::new("partial-registry");
+        let (journal, root) = open_root(&temporary);
+        initialize(&root).unwrap();
+        std::fs::remove_dir_all(journal.join("health/convergence/registry")).unwrap();
+        std::fs::remove_file(journal.join("health/convergence/registry.lock")).unwrap();
+        assert!(check_initialized(&root).unwrap());
+        let opened = crate::store::ConvergenceStore::open(
+            solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
+        );
+        assert!(opened.is_err());
+        initialize(&root).unwrap();
+        assert!(journal.join("health/convergence/registry.lock").exists());
+        assert!(journal.join("health/convergence/registry").is_dir());
+        assert!(
+            !journal
+                .join("health/convergence/registry/secret.json")
+                .exists()
+        );
+        crate::store::ConvergenceStore::open(
+            solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
+        )
+        .unwrap();
+        let error = initialize(&root).unwrap_err();
+        assert!(matches!(
+            error,
+            ConvergenceError::Refused(Refusal::AlreadyInitialized)
+        ));
     }
 
     fn fs_entries(dir: &std::path::Path) -> Vec<String> {

@@ -126,6 +126,11 @@ mod tests {
         let outcome = preflight::<[&str; 0], &str>([]).unwrap();
         assert!(matches!(outcome, Preflight::Empty));
         assert_eq!(before, snapshot_tree(&journal));
+        assert!(
+            !journal
+                .join("health/convergence/registry/secret.json")
+                .exists()
+        );
     }
 
     #[test]
