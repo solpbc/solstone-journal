@@ -242,18 +242,18 @@ fn apply_permanent_starred_removal_divergence(expected: &mut Value) {
 
 /// Permanent documented divergence, introduced 2026-08-24, with no expiry
 /// condition: the frozen corpus records the reference shell's facet strip for
-/// Activities and Search, while the native chrome now enables facets only for
-/// Entities, Import, and Settings. The corpus CANNOT be regenerated -- its
+/// Activities, Import, and Search, while the native chrome now enables facets
+/// only for Entities and Settings. The corpus CANNOT be regenerated -- its
 /// generator needs a runnable reference tree and this wave removes it -- so
 /// the fixture is a frozen record and the divergence is absorbed here instead.
 /// Because this cannot expire, narrowness is the safeguard: it flips only the
-/// two named rows. Never generalize this into a rule over facet-enabled apps,
+/// three named rows. Never generalize this into a rule over facet-enabled apps,
 /// and never retire it.
 fn apply_permanent_facets_enabled_divergence(expected: &mut Value) {
     let apps = expected["apps"]
         .as_array_mut()
         .expect("shell apps are an array");
-    for name in ["activities", "search"] {
+    for name in ["activities", "import", "search"] {
         let matches: Vec<_> = apps.iter_mut().filter(|app| app["name"] == name).collect();
         assert_eq!(
             matches.len(),
@@ -335,29 +335,55 @@ fn permanent_starred_removal_divergence_requires_starred_on_every_app_row() {
 }
 
 #[test]
-fn permanent_facets_enabled_divergence_requires_both_enabled_target_rows() {
-    for (case, mut expected) in [
-        (
-            "missing",
-            json!({"apps": [{"name": "activities", "facets_enabled": true}]}),
-        ),
-        (
-            "disabled",
+fn permanent_facets_enabled_divergence_requires_all_three_enabled_target_rows() {
+    for name in ["activities", "import", "search"] {
+        let enabled = || {
             json!({
                 "apps": [
                     {"name": "activities", "facets_enabled": true},
-                    {"name": "search", "facets_enabled": false}
+                    {"name": "import", "facets_enabled": true},
+                    {"name": "search", "facets_enabled": true}
                 ]
-            }),
-        ),
-    ] {
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                apply_permanent_facets_enabled_divergence(&mut expected);
-            }))
-            .is_err(),
-            "{case} target rows must fail the narrow divergence"
-        );
+            })
+        };
+        let mut missing = enabled();
+        missing["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .retain(|app| app["name"] != name);
+        let mut disabled = enabled();
+        disabled["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .iter_mut()
+            .find(|app| app["name"] == name)
+            .expect("named app exists")["facets_enabled"] = Value::Bool(false);
+        let mut duplicate = enabled();
+        let app = duplicate["apps"]
+            .as_array()
+            .expect("apps are an array")
+            .iter()
+            .find(|app| app["name"] == name)
+            .expect("named app exists")
+            .clone();
+        duplicate["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .push(app);
+
+        for (case, mut expected) in [
+            ("missing", missing),
+            ("disabled", disabled),
+            ("duplicate", duplicate),
+        ] {
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    apply_permanent_facets_enabled_divergence(&mut expected);
+                }))
+                .is_err(),
+                "{case} {name} target row must fail the narrow divergence"
+            );
+        }
     }
 }
 

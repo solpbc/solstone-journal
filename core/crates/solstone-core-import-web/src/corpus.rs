@@ -907,6 +907,32 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn legacy_import_metadata_keeps_facet_available_to_loaders() {
+        let root = phase_root("empty");
+        let timestamp = "20260110_000000";
+        seed_import(
+            root.path(),
+            timestamp,
+            "legacy.txt",
+            "text/plain",
+            "legacy",
+            None,
+            b"legacy\n",
+        );
+        let path = root
+            .path()
+            .join("imports")
+            .join(timestamp)
+            .join("import.json");
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        metadata["facet"] = json!("work");
+        fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+
+        let info = crate::imports::load_import_info(root.path(), timestamp).unwrap();
+        assert_eq!(info.values["facet"], json!("work"));
+    }
+
     #[tokio::test]
     async fn ac18_corrupt_metadata_has_reference_key_arithmetic() {
         let root = phase_root("empty");

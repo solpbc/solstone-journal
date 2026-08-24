@@ -183,7 +183,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Management),
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: true,
+        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -407,7 +407,7 @@ pub fn shell_payload() -> ShellPayload {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeSet, fs};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -450,6 +450,16 @@ mod tests {
                 .iter()
                 .any(|app| app.name == "network" && app.converted)
         );
+    }
+
+    #[test]
+    fn facets_enabled_apps_are_entities_and_settings_at_this_checkpoint() {
+        let enabled = APP_REGISTRY
+            .iter()
+            .filter(|app| app.facets_enabled)
+            .map(|app| app.name)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(enabled, BTreeSet::from(["entities", "settings"]));
     }
 
     #[test]

@@ -665,12 +665,6 @@
         <input id="timestampInput" />
       </div>
       <div class="confirm-field">
-        <label for="facetSelect">facet</label>
-        <select id="facetSelect">
-          <option value="">none</option>
-        </select>
-      </div>
-      <div class="confirm-field">
         <label for="settingInput">setting</label>
         <input id="settingInput" placeholder="e.g. rae lunch with joe" />
       </div>
@@ -686,7 +680,6 @@
 </div>
 
 <script>
-const facetSelect = document.getElementById('facetSelect');
 const settingInput = document.getElementById('settingInput');
 const startBtn = document.getElementById('startBtn');
 
@@ -891,8 +884,6 @@ function showDetect(res) {
     startBtn.disabled = true;
     startBtn.style.display = 'none';
   }
-  const defaultFacet = res.facet || window.selectedFacet || '';
-  loadFacets(defaultFacet);
   settingInput.value = res.setting || '';
   previousDetectFocus = document.activeElement;
   document.getElementById('detectModal').style.display = 'block';
@@ -1123,7 +1114,7 @@ function renderImportRow(imp) {
     : renderSourceDisplay('', imp.original_filename || '-', imp.original_filename || '-');
   const statsText = formatImportStats(imp.entries_written, imp.entities_seeded);
 
-  let html = `<tr data-import-id="${imp.timestamp}" data-facet="${imp.facet || ''}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
+  let html = `<tr data-import-id="${imp.timestamp}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
   html += `<td class="nowrap">${importedAt}</td>`;
   html += `<td>${escapeHtml(imp.original_filename || 'Unknown')}</td>`;
   html += `<td class="source-cell">${sourceCell}</td>`;
@@ -1210,7 +1201,7 @@ async function loadImports() {
     if (sourceFilter) {
       sourceFilter.onchange = event => {
         currentSourceFilter = event.target.value;
-        filterImportsByFacet(window.selectedFacet);
+        filterImportsBySource();
       };
     }
 
@@ -1222,7 +1213,7 @@ async function loadImports() {
       }
     });
 
-    filterImportsByFacet(window.selectedFacet);
+    filterImportsBySource();
   } catch (err) {
     window.SurfaceState.replaceLoading('importListContent', window.SurfaceState.error({
       heading: 'couldn\'t load your import history',
@@ -1300,22 +1291,21 @@ async function loadMoreImports() {
       }
     });
 
-    filterImportsByFacet(window.selectedFacet);
+    filterImportsBySource();
   } catch (err) {
     currentPage--;
     renderLoadMoreError(err);
   }
 }
 
-function filterImportsByFacet(facetName) {
+function filterImportsBySource() {
   const rows = document.querySelectorAll('.import-table tbody tr');
   if (rows.length === 0) return;
 
   let visibleCount = 0;
   rows.forEach(row => {
-    const facetMatches = facetName === null || row.dataset.facet === facetName;
     const sourceMatches = !currentSourceFilter || row.dataset.sourceType === currentSourceFilter;
-    if (facetMatches && sourceMatches) {
+    if (sourceMatches) {
       row.style.display = '';
       visibleCount++;
     } else {
@@ -1325,8 +1315,6 @@ function filterImportsByFacet(facetName) {
 
   const container = document.getElementById('importListContent');
   if (visibleCount === 0 && rows.length > 0) {
-    const facetData = window.facetsData?.find(f => f.name === facetName);
-    const facetTitle = facetData?.title || facetName || 'this view';
     let noMatchEl = container.querySelector('.no-imports-filtered');
     if (!noMatchEl) {
       noMatchEl = document.createElement('div');
@@ -1519,10 +1507,6 @@ async function loadGuidedFlow(sourceName) {
           <h4>configure and start</h4>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="guidedFacetSelect">facet</label>
-              <select id="guidedFacetSelect"><option value="">None</option></select>
-            </div>
-            <div class="confirm-field">
               <label for="guidedSettingInput">setting</label>
               <input id="guidedSettingInput" placeholder="e.g. weekly planning" />
             </div>
@@ -1535,9 +1519,6 @@ async function loadGuidedFlow(sourceName) {
     </ol></form>
   `;
 
-  if (source.name !== 'journal_archive') {
-    loadFacets(window.selectedFacet || '', document.getElementById('guidedFacetSelect'));
-  }
   if (source.input_type !== 'path_input') {
     setupGuidedUploadArea();
   } else {
@@ -1592,10 +1573,6 @@ function renderQuickImportFlow() {
           <textarea id="pasteText" class="import-paste-text" placeholder="paste text here..."></textarea>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="quickFacetSelect">facet</label>
-              <select id="quickFacetSelect"><option value="">None</option></select>
-            </div>
-            <div class="confirm-field">
               <label for="quickSettingInput">setting</label>
               <input id="quickSettingInput" placeholder="e.g. paste from notes app" />
             </div>
@@ -1608,7 +1585,6 @@ function renderQuickImportFlow() {
     </form>
   `;
 
-  loadFacets(window.selectedFacet || '', document.getElementById('quickFacetSelect'));
   setupQuickImportForm();
 }
 
@@ -1664,7 +1640,6 @@ function setupQuickImportForm() {
   const fileLabel = document.getElementById('fileLabel');
   const pasteText = document.getElementById('pasteText');
   const importForm = document.getElementById('importForm');
-  const quickFacetSelect = document.getElementById('quickFacetSelect');
   const quickSettingInput = document.getElementById('quickSettingInput');
 
   if (!dropArea || !fileInput || !fileLabel || !pasteText || !importForm) {
@@ -1741,10 +1716,6 @@ function setupQuickImportForm() {
         window._quickClientItemId || (window._quickClientItemId = crypto.randomUUID())
       );
 
-      const facet = quickFacetSelect ? quickFacetSelect.value : '';
-      if (facet) {
-        fd.append('facet', facet);
-      }
       const settingValue = quickSettingInput ? quickSettingInput.value.trim() : '';
       if (settingValue) {
         fd.append('setting', settingValue);
@@ -1777,7 +1748,6 @@ async function uploadGuidedSourceFile(source) {
     throw new Error('Please select a file to import.');
   }
 
-  const guidedFacetSelect = document.getElementById('guidedFacetSelect');
   const guidedSettingInput = document.getElementById('guidedSettingInput');
   const fd = new FormData();
   fd.append('file', currentGuidedFile);
@@ -1787,9 +1757,6 @@ async function uploadGuidedSourceFile(source) {
   );
   if (source && source.name !== 'recording') {
     fd.append('source_hint', source.name);
-  }
-  if (guidedFacetSelect && guidedFacetSelect.value) {
-    fd.append('facet', guidedFacetSelect.value);
   }
   if (guidedSettingInput && guidedSettingInput.value.trim()) {
     fd.append('setting', guidedSettingInput.value.trim());
@@ -1829,13 +1796,10 @@ async function saveGuidedPath(source) {
     throw new Error('Please enter the path to your vault folder.');
   }
 
-  const guidedFacetSelect = document.getElementById('guidedFacetSelect');
   const guidedSettingInput = document.getElementById('guidedSettingInput');
-  const facet = guidedFacetSelect ? guidedFacetSelect.value : '';
   const setting = guidedSettingInput ? guidedSettingInput.value.trim() : '';
   const payload = {
     path: pathInput.value.trim(),
-    facet,
     setting,
     client_item_id: window._guidedClientItemId
       || (window._guidedClientItemId = crypto.randomUUID()),
@@ -1863,7 +1827,6 @@ async function saveGuidedPath(source) {
 
 async function startGuidedImport(source) {
   const startButton = document.getElementById('guidedStartBtn');
-  const guidedFacetSelect = document.getElementById('guidedFacetSelect');
   const guidedSettingInput = document.getElementById('guidedSettingInput');
   const originalText = startButton.textContent;
 
@@ -1883,13 +1846,12 @@ async function startGuidedImport(source) {
     }
     const path = saved.path;
     const ts = saved.timestamp;
-    const facet = guidedFacetSelect ? guidedFacetSelect.value : '';
     const setting = guidedSettingInput ? guidedSettingInput.value.trim() : '';
 
     const metaResponse = await fetch('/app/import/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, facet, setting }),
+      body: JSON.stringify({ path, setting }),
     });
 
     if (!metaResponse.ok) {
@@ -2037,7 +1999,6 @@ function showProgressView(importId, eventData = null) {
 startBtn.addEventListener('click', async () => {
   const ts = document.getElementById('timestampInput').value.trim();
   const path = document.getElementById('savedPath').value;
-  const facet = facetSelect.value;
   const setting = settingInput.value.trim();
 
   if (!ts) {
@@ -2057,12 +2018,12 @@ startBtn.addEventListener('click', async () => {
     const response = await fetch('/app/import/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, facet, setting }),
+      body: JSON.stringify({ path, setting }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to save facet selection');
+      throw new Error(errorData.error || 'Failed to save import settings');
     }
 
     const startResponse = await fetch('/app/import/api/start', {
@@ -2108,26 +2069,6 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-function loadFacets(defaultValue = null, selectEl = null) {
-  const select = selectEl || document.getElementById('facetSelect');
-  if (!select) {
-    return;
-  }
-
-  select.innerHTML = '<option value="">None</option>';
-  const facets = window.facetsData || [];
-  facets.forEach(facet => {
-    const opt = document.createElement('option');
-    opt.value = facet.name;
-    opt.textContent = facet.title || facet.name;
-    select.appendChild(opt);
-  });
-
-  if (defaultValue !== null) {
-    select.value = defaultValue;
-  }
-}
-
 function initImportWorkspace() {
   const listView = document.getElementById('importListView');
   if (window.solPathContext().segment) {
@@ -2153,13 +2094,8 @@ function initImportWorkspace() {
   });
 
   loadSourceGrid();
-  loadFacets();
   loadImports();
   handleHashChange();
-
-  window.addEventListener('facet.switch', e => {
-    filterImportsByFacet(e.detail.facet);
-  });
 }
 
 if (document.readyState === 'loading') {

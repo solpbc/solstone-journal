@@ -335,6 +335,86 @@ mod tests {
         assert!(workspace.contains("fetch('/app/import/api/start'"));
     }
 
+    fn assert_no_facet_control(markup: &str) {
+        assert!(!markup.contains("<select"));
+        assert!(!markup.contains("for=\"facet"));
+        assert!(!markup.contains("for='facet"));
+
+        for attribute in ["id=\"", "id='", "name=\"", "name='"] {
+            let mut remaining = markup;
+            while let Some((_, tail)) = remaining.split_once(attribute) {
+                let quote = attribute.as_bytes()[attribute.len() - 1] as char;
+                let (value, tail) = tail.split_once(quote).expect("attribute value closes");
+                assert!(
+                    !value.to_ascii_lowercase().contains("facet"),
+                    "{attribute}{value} must not name a facet control"
+                );
+                remaining = tail;
+            }
+        }
+    }
+
+    #[test]
+    fn import_metadata_forms_keep_setting_without_facet_controls() {
+        let workspace = include_str!("../assets/workspace.html");
+        let guided = workspace
+            .split("${source.name === 'journal_archive' ? `")
+            .nth(1)
+            .and_then(|tail| tail.split_once("` : `").map(|(_, branch)| branch))
+            .and_then(|branch| branch.split_once("\n  `;").map(|(markup, _)| markup))
+            .expect("guided import metadata branch");
+        let quick = workspace
+            .split_once("function renderQuickImportFlow() {")
+            .and_then(|(_, tail)| {
+                tail.split_once("function setupGuidedUploadArea() {")
+                    .map(|(body, _)| body)
+            })
+            .expect("quick import flow");
+        let quick_submit = workspace
+            .split_once("function setupQuickImportForm() {")
+            .and_then(|(_, tail)| {
+                tail.split_once("async function uploadGuidedSourceFile(source) {")
+                    .map(|(body, _)| body)
+            })
+            .expect("quick import submit flow");
+        let confirm = workspace
+            .split_once("<div id=\"detectModal\"")
+            .and_then(|(_, tail)| tail.split_once("<script>").map(|(markup, _)| markup))
+            .expect("detect modal");
+
+        for markup in [guided, quick, confirm] {
+            assert_no_facet_control(markup);
+        }
+
+        assert!(quick.contains("id=\"quickSettingInput\""));
+        assert!(quick_submit.contains("fd.append('setting', settingValue)"));
+        assert!(guided.contains("id=\"guidedSettingInput\""));
+        assert!(workspace.contains("fd.append('setting', guidedSettingInput.value.trim())"));
+        assert!(confirm.contains("id=\"settingInput\""));
+        assert_eq!(
+            workspace
+                .matches("body: JSON.stringify({ path, setting })")
+                .count(),
+            2
+        );
+        assert!(workspace.contains("settingInput.value = res.setting || '';"));
+    }
+
+    #[test]
+    fn import_history_has_only_source_filtering_and_detail_hides_legacy_facets() {
+        let workspace = include_str!("../assets/workspace.html");
+        let detail = include_str!("../assets/import_detail.js");
+
+        assert!(!workspace.contains("data-facet="));
+        assert!(workspace.contains("function filterImportsBySource()"));
+        assert!(workspace.contains("row.dataset.sourceType === currentSourceFilter"));
+        assert!(workspace.contains("no-imports-filtered"));
+        assert!(!detail.contains("importJson.facet"));
+        assert!(!detail.contains("kvRow(strings.facet,"));
+        assert!(detail.contains("facets_created"));
+        assert!(detail.contains("facets_merged"));
+    }
+
     fn establish(root: &Path) {
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
