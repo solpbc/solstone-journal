@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -16,7 +16,8 @@ use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
-    audio_embedding_sources, day_dirs, iter_segments, journal_principal_id,
+    admitted_speaker_ids, audio_embedding_sources, day_dirs, iter_segments, journal_principal_id,
+    label_has_admitted_speaker, load_all_journal_entities,
 };
 use crate::speakers_npz::{load_voiceprints, owner_centroid_summary};
 use crate::speakers_segment_catalog::{
@@ -39,6 +40,7 @@ pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 }
 
 fn quality_status(root: &Path) -> Result<QualityStatus, CatalogBuildError> {
+    let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(root));
     let mut window_days = day_dirs(root)?;
     window_days.sort_by(|left, right| right.cmp(left));
     window_days.truncate(QUALITY_WINDOW_DAYS);
@@ -48,7 +50,7 @@ fn quality_status(root: &Path) -> Result<QualityStatus, CatalogBuildError> {
             if audio_embedding_sources(&segment.path).is_empty() {
                 continue;
             }
-            count_segment_quality(&segment.path, &mut counters);
+            count_segment_quality(&segment.path, &mut counters, &admitted_speaker_ids);
         }
     }
     Ok(QualityStatus {
@@ -129,12 +131,20 @@ struct OwnerVoice {
     refreshed_at: Option<String>,
 }
 
-fn count_segment_quality(segment: &Path, counters: &mut Counters) {
-    count_label_file(&segment.join("talents/speaker_labels.json"), counters);
+fn count_segment_quality(
+    segment: &Path,
+    counters: &mut Counters,
+    admitted_speaker_ids: &BTreeSet<String>,
+) {
+    count_label_file(
+        &segment.join("talents/speaker_labels.json"),
+        counters,
+        admitted_speaker_ids,
+    );
     count_corrections_file(&segment.join("talents/speaker_corrections.json"), counters);
 }
 
-fn count_label_file(path: &Path, counters: &mut Counters) {
+fn count_label_file(path: &Path, counters: &mut Counters, admitted_speaker_ids: &BTreeSet<String>) {
     if !path.exists() {
         counters.tier_histogram.no_labels_file_segments += 1;
         return;
@@ -157,7 +167,7 @@ fn count_label_file(path: &Path, counters: &mut Counters) {
         counters.empty_labels_without_skipped_segments += 1;
     }
     for label in labels {
-        count_label(label, counters);
+        count_label(label, counters, admitted_speaker_ids);
     }
 }
 
@@ -171,7 +181,7 @@ fn label_is_classifiable(label: &Value) -> bool {
         })
 }
 
-fn count_label(label: &Value, counters: &mut Counters) {
+fn count_label(label: &Value, counters: &mut Counters, admitted_speaker_ids: &BTreeSet<String>) {
     let confidence = label.get("confidence").and_then(Value::as_str);
     let owner_declined = label.get("owner_margin_declined") == Some(&Value::Bool(true));
     let acoustic_declined = label.get("acoustic_margin_declined") == Some(&Value::Bool(true));
@@ -187,13 +197,42 @@ fn count_label(label: &Value, counters: &mut Counters) {
             confidence,
         );
     }
-    match confidence {
-        Some("high") => counters.tier_histogram.high_statements += 1,
-        Some("medium") => counters.tier_histogram.medium_statements += 1,
-        _ if owner_declined || acoustic_declined => {
+    match quality_tier_for_label(label, admitted_speaker_ids) {
+        "high_statements" => counters.tier_histogram.high_statements += 1,
+        "medium_statements" => counters.tier_histogram.medium_statements += 1,
+        "margin_declined_statements" => {
             counters.tier_histogram.margin_declined_statements += 1;
         }
-        _ => counters.tier_histogram.unlabeled_sentence_statements += 1,
+        "unlabeled_sentence_statements" => {
+            counters.tier_histogram.unlabeled_sentence_statements += 1;
+        }
+        _ => unreachable!("quality tier is fixed"),
+    }
+}
+
+pub(crate) fn label_has_ineligible_speaker(
+    label: &Value,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> bool {
+    !label_has_admitted_speaker(label, admitted_speaker_ids)
+}
+
+pub(crate) fn quality_tier_for_label(
+    label: &Value,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> &'static str {
+    if label_has_ineligible_speaker(label, admitted_speaker_ids) {
+        return "unlabeled_sentence_statements";
+    }
+    match label.get("confidence").and_then(Value::as_str) {
+        Some("high") => "high_statements",
+        Some("medium") => "medium_statements",
+        _ if label.get("owner_margin_declined") == Some(&Value::Bool(true))
+            || label.get("acoustic_margin_declined") == Some(&Value::Bool(true)) =>
+        {
+            "margin_declined_statements"
+        }
+        _ => "unlabeled_sentence_statements",
     }
 }
 
@@ -494,7 +533,11 @@ pub(crate) fn segment_overlap_fraction(path: &Path) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::quality_status;
+    use std::collections::BTreeSet;
+
+    use serde_json::json;
+
+    use super::{quality_status, quality_tier_for_label};
     use crate::speakers_npz::owner_centroid_summary;
     use std::path::Path;
 
@@ -545,5 +588,22 @@ mod tests {
             stream,
             super::ManualOwnerTagResolution::Tagged(ref value) if value == "_default"
         ));
+    }
+
+    #[test]
+    fn invalid_speaker_is_reclassified_as_unlabeled() {
+        let admitted = BTreeSet::from(["person".to_owned()]);
+        assert_eq!(
+            quality_tier_for_label(&json!({"speaker":"tool","confidence":"high"}), &admitted),
+            "unlabeled_sentence_statements"
+        );
+        assert_eq!(
+            quality_tier_for_label(&json!({"speaker":"person","confidence":"high"}), &admitted),
+            "high_statements"
+        );
+        assert_eq!(
+            quality_tier_for_label(&json!({"confidence":"high"}), &admitted),
+            "unlabeled_sentence_statements"
+        );
     }
 }

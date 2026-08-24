@@ -9,7 +9,9 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use solstone_core_entity::{read_entity_identity, read_journal_principal};
+use solstone_core_entity::{
+    is_admissible_person, load_all_journal_entities, read_journal_principal,
+};
 use solstone_core_npy::parse_npy;
 use zip::ZipArchive;
 
@@ -56,6 +58,12 @@ pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> Speak
     }
     let mut labels = BTreeMap::new();
     let mut loaded = false;
+    let entities = load_all_journal_entities(journal_root).unwrap_or_default();
+    let admitted_entity_ids = entities
+        .iter()
+        .filter(|entity| is_admissible_person(entity))
+        .map(|entity| entity.id.as_str())
+        .collect::<BTreeSet<_>>();
     if present {
         match fs_read_json(&path) {
             Some(Value::Object(payload)) => match payload.get("labels").and_then(Value::as_array) {
@@ -72,10 +80,13 @@ pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> Speak
                         let Some(entity_id) = row.get("speaker").and_then(Value::as_str) else {
                             continue;
                         };
-                        let entity = read_entity_identity(journal_root, entity_id).ok().flatten();
-                        let name = entity
-                            .as_ref()
-                            .and_then(|value| value.value().get("name"))
+                        if !admitted_entity_ids.contains(entity_id) {
+                            continue;
+                        }
+                        let name = entities
+                            .iter()
+                            .find(|entity| entity.id == entity_id)
+                            .and_then(|entity| entity.value.get("name"))
                             .and_then(Value::as_str)
                             .unwrap_or(entity_id)
                             .to_owned();
@@ -216,5 +227,58 @@ fn read_statement_ids(path: &Path) -> Option<Vec<i64>> {
             .map(|b| Some(i64::from_le_bytes(b.try_into().ok()?)))
             .collect(),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use chrono::Utc;
+    use serde_json::json;
+
+    use super::load;
+
+    #[test]
+    fn load_omits_labels_for_ineligible_speakers() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-transcript-speaker-admission-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        for (id, entity) in [
+            (
+                "person",
+                json!({"id":"person","name":"Person","type":"Person"}),
+            ),
+            ("tool", json!({"id":"tool","name":"Tool","type":"Tool"})),
+        ] {
+            let entity_dir = root.join("entities").join(id);
+            fs::create_dir_all(&entity_dir).expect("entity directory");
+            fs::write(
+                entity_dir.join("entity.json"),
+                serde_json::to_vec(&entity).expect("entity json"),
+            )
+            .expect("entity writes");
+        }
+        let segment = root.join("segment");
+        fs::create_dir_all(segment.join("talents")).expect("talents directory");
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"labels":[
+                {"sentence_id":1,"speaker":"person","confidence":"high"},
+                {"sentence_id":2,"speaker":"tool","confidence":"high"}
+            ]})
+            .to_string(),
+        )
+        .expect("labels");
+
+        let join = load(&segment, &root, Utc::now());
+        assert!(join.labels.contains_key(&1));
+        assert!(!join.labels.contains_key(&2));
+        let _ = fs::remove_dir_all(root);
     }
 }

@@ -18,7 +18,11 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
-use crate::speakers_calendar::{audio_embedding_sources, is_day, scan_segment_embeddings};
+use crate::speakers_calendar::{
+    audio_embedding_sources, is_day, label_has_admitted_speaker, scan_segment_embeddings,
+};
+use crate::speakers_quality::{label_has_ineligible_speaker, quality_tier_for_label};
+use crate::speakers_review::is_admissible_speaker_entity;
 use crate::speakers_segment_catalog::{
     CatalogedSegment, DirectSupport, SegmentLookup, catalog_journal, decode_stream_layout,
     lookup_segment,
@@ -152,6 +156,11 @@ pub async fn review(
     };
     let embedded = embedded_sentence_ids(&segment.join(format!("{source}.npz")));
     let labels = labels_by_sentence(&segment);
+    let admitted_speaker_ids = journal_entities(&root.0)
+        .iter()
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+        .map(|(entity_id, _)| entity_id.clone())
+        .collect::<BTreeSet<_>>();
     let sentences = raw
         .lines()
         .skip(1)
@@ -160,15 +169,16 @@ pub async fn review(
             let entry: Value = serde_json::from_str(line).ok()?;
             let id = i64::try_from(index + 1).ok()?;
             let label = labels.get(&id);
-            let speaker = label
+            let active_label = active_speaker_label(label, &admitted_speaker_ids);
+            let speaker = active_label
                 .and_then(|value| value.get("speaker"))
                 .cloned()
                 .unwrap_or(Value::Null);
-            let confidence = label
+            let confidence = active_label
                 .and_then(|value| value.get("confidence"))
                 .cloned()
                 .unwrap_or(Value::Null);
-            let method = label
+            let method = active_label
                 .and_then(|value| value.get("method"))
                 .cloned()
                 .unwrap_or(Value::Null);
@@ -189,6 +199,11 @@ pub async fn review(
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     let entities = journal_entities(&root.0);
+    let admitted_speaker_ids = entities
+        .iter()
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+        .map(|(entity_id, _)| entity_id.clone())
+        .collect::<BTreeSet<_>>();
     let voiceprint = awareness_voiceprint(&root.0);
     let segments = match catalog_journal(&root.0) {
         Ok(segments) => segments,
@@ -205,12 +220,12 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     Json(json!({
         "embeddings": embeddings_section(&segments),
         "owner": owner,
-        "speakers": speakers_section(&root.0, &entities),
+        "speakers": speakers_section(&root.0, &entities, &admitted_speaker_ids),
         "pool": pool_section(&root.0),
         "clusters": clusters_section(&root.0),
         "imports": imports_section(&segments),
-        "attribution": attribution_section(&segments),
-        "quality": quality_section(&root.0, &segments, &voiceprint),
+        "attribution": attribution_section(&segments, &admitted_speaker_ids),
+        "quality": quality_section(&root.0, &segments, &voiceprint, &admitted_speaker_ids),
     }))
     .into_response()
 }
@@ -286,6 +301,13 @@ fn labels_by_sentence(segment: &Path) -> BTreeMap<i64, Value> {
                 .map(|id| (id, label))
         })
         .collect()
+}
+
+fn active_speaker_label<'a>(
+    label: Option<&'a Value>,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> Option<&'a Value> {
+    label.filter(|label| label_has_admitted_speaker(label, admitted_speaker_ids))
 }
 
 fn embedded_sentence_ids(path: &Path) -> BTreeSet<i64> {
@@ -432,9 +454,16 @@ fn owner_section(
     Value::Object(result)
 }
 
-fn speakers_section(root: &Path, entities: &BTreeMap<String, Value>) -> Value {
+fn speakers_section(
+    root: &Path,
+    entities: &BTreeMap<String, Value>,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> Value {
     let mut speakers = Vec::new();
     for (id, entity) in entities {
+        if !admitted_speaker_ids.contains(id) {
+            continue;
+        }
         let Some(archive) = solstone_core_entity::load_entity_voiceprints_file(root, id) else {
             continue;
         };
@@ -511,7 +540,10 @@ fn imports_section(segments: &[CatalogedSegment]) -> Value {
     json!({"meetings_files":segments.iter().filter(|segment| segment.path.join("meetings.md").exists()).count(),"screen_files":segments.iter().filter(|segment| segment.path.join("talents/screen.json").exists()).count()})
 }
 
-fn attribution_section(segments: &[CatalogedSegment]) -> Value {
+fn attribution_section(
+    segments: &[CatalogedSegment],
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> Value {
     let mut files = 0usize;
     let mut labels = 0usize;
     let mut confidence = BTreeMap::<String, usize>::new();
@@ -525,9 +557,12 @@ fn attribution_section(segments: &[CatalogedSegment]) -> Value {
         files += 1;
         for row in rows {
             labels += 1;
+            let ineligible = label_has_ineligible_speaker(&row, admitted_speaker_ids);
             *confidence
                 .entry(
-                    row.get("confidence")
+                    (!ineligible)
+                        .then(|| row.get("confidence"))
+                        .flatten()
                         .and_then(Value::as_str)
                         .unwrap_or("unknown")
                         .to_owned(),
@@ -535,7 +570,9 @@ fn attribution_section(segments: &[CatalogedSegment]) -> Value {
                 .or_default() += 1;
             *method
                 .entry(
-                    row.get("method")
+                    (!ineligible)
+                        .then(|| row.get("method"))
+                        .flatten()
                         .and_then(Value::as_str)
                         .unwrap_or("unknown")
                         .to_owned(),
@@ -550,6 +587,7 @@ fn quality_section(
     root: &Path,
     segments: &[CatalogedSegment],
     voiceprint: &BTreeMap<String, Value>,
+    admitted_speaker_ids: &BTreeSet<String>,
 ) -> Value {
     let mut tier = json!({"high_statements":0,"medium_statements":0,"margin_declined_statements":0,"unlabeled_sentence_statements":0,"skipped_stub_segments":0,"no_labels_file_segments":0});
     let mut unreadable = json!({"speaker_labels_window_count":0,"speaker_corrections_window_count":0,"total_window_count":0});
@@ -593,17 +631,7 @@ fn quality_section(
                         empty += 1;
                     }
                     for row in rows {
-                        let target = match row.get("confidence").and_then(Value::as_str) {
-                            Some("high") => "high_statements",
-                            Some("medium") => "medium_statements",
-                            _ if row.get("owner_margin_declined") == Some(&Value::Bool(true))
-                                || row.get("acoustic_margin_declined")
-                                    == Some(&Value::Bool(true)) =>
-                            {
-                                "margin_declined_statements"
-                            }
-                            _ => "unlabeled_sentence_statements",
-                        };
+                        let target = quality_tier_for_label(row, admitted_speaker_ids);
                         tier[target] = json!(tier[target].as_u64().unwrap_or(0) + 1);
                     }
                 }
@@ -897,4 +925,101 @@ fn stable_id(input: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     input.hash(&mut hasher);
     format!("{:024x}", hasher.finish())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use serde_json::json;
+
+    use solstone_core_journal_io::SegmentLayout;
+
+    use super::{
+        CatalogedSegment, active_speaker_label, attribution_section, quality_section,
+        speakers_section,
+    };
+
+    #[test]
+    fn invalid_speakers_are_unassigned_in_cli_read_projections() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-cli-read-admission-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let segment = root.join("segment");
+        fs::create_dir_all(segment.join("talents")).expect("talents directory");
+        fs::write(segment.join("audio.npz"), []).expect("audio marker");
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"labels":[
+                {"speaker":"person","confidence":"high","method":"automatic"},
+                {"speaker":"tool","confidence":"high","method":"automatic"}
+            ]})
+            .to_string(),
+        )
+        .expect("labels");
+        let entities = BTreeMap::from([
+            (
+                "person".to_owned(),
+                json!({"type":"Person","name":"Person"}),
+            ),
+            ("tool".to_owned(), json!({"type":"Tool","name":"Tool"})),
+        ]);
+        for entity_id in ["person", "tool"] {
+            let entity_dir = root.join("entities").join(entity_id);
+            fs::create_dir_all(&entity_dir).expect("entity directory");
+            fs::write(
+                entity_dir.join("entity.json"),
+                serde_json::to_vec(&entities[entity_id]).expect("entity json"),
+            )
+            .expect("entity writes");
+            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+                &root,
+                entity_id,
+                vec![1.0; 256],
+                json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                &solstone_core_entity::EncoderIdentity {
+                    id: "test".to_owned(),
+                    sha256: "0".repeat(64),
+                    width: 256,
+                },
+            )
+            .expect("voiceprint writes");
+        }
+        let segments = vec![CatalogedSegment {
+            day: "20260808".to_owned(),
+            layout: SegmentLayout::Named,
+            stream: "main".to_owned(),
+            name: "120000_1".to_owned(),
+            key: "120000_1".to_owned(),
+            path: segment,
+        }];
+        let admitted = BTreeSet::from(["person".to_owned()]);
+
+        let speakers = speakers_section(&root, &entities, &admitted);
+        assert_eq!(speakers.as_array().map(Vec::len), Some(1));
+        assert_eq!(speakers[0]["entity_id"], "person");
+
+        let attribution = attribution_section(&segments, &admitted);
+        assert_eq!(attribution["by_confidence"]["high"], 1);
+        assert_eq!(attribution["by_confidence"]["unknown"], 1);
+        assert_eq!(attribution["by_method"]["automatic"], 1);
+        assert_eq!(attribution["by_method"]["unknown"], 1);
+
+        let quality = quality_section(&root, &segments, &BTreeMap::new(), &admitted);
+        assert_eq!(quality["tier_histogram"]["high_statements"], 1);
+        assert_eq!(
+            quality["tier_histogram"]["unlabeled_sentence_statements"],
+            1
+        );
+
+        assert!(active_speaker_label(Some(&json!({"speaker":"tool"})), &admitted,).is_none());
+        assert!(active_speaker_label(Some(&json!({"speaker":"person"})), &admitted,).is_some());
+        let _ = fs::remove_dir_all(root);
+    }
 }

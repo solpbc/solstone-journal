@@ -306,7 +306,21 @@ mod tests {
     }
 
     fn seeded_root() -> PathBuf {
-        materialize_captured_fixture(&captured_fixture_root())
+        let root = materialize_captured_fixture(&captured_fixture_root());
+        // The frozen capture predates durable entity types, but its active
+        // speaker labels model these two identities as people.
+        for entity_id in ["owner", "other"] {
+            let path = root.join("entities").join(entity_id).join("entity.json");
+            let mut entity: Value =
+                serde_json::from_slice(&fs::read(&path).expect("entity")).expect("entity json");
+            entity
+                .as_object_mut()
+                .expect("entity object")
+                .insert("type".to_owned(), json!("Person"));
+            fs::write(path, serde_json::to_vec(&entity).expect("entity json"))
+                .expect("entity writes");
+        }
+        root
     }
 
     fn assert_malformed_fixture_rejected(root: &Path, label: &str) {

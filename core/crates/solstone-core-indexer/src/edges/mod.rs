@@ -1669,15 +1669,37 @@ mod tests {
     }
 
     #[test]
-    fn speaker_edges_emit_spoke_with_using_verbatim_ids() {
+    fn speaker_edges_emit_spoke_with_only_for_admitted_people() {
         let root = temp_root("speaker-spoke");
+        seed_entity_value(
+            &root,
+            "speaker_a",
+            json!({"name":"Speaker A","type":"Person"}),
+        );
+        seed_entity_value(
+            &root,
+            "speaker_b",
+            json!({"name":"Speaker B","type":"Person"}),
+        );
+        seed_entity_value(
+            &root,
+            "speaker_tool",
+            json!({"name":"Speaker Tool","type":"Tool"}),
+        );
+        seed_entity_value(
+            &root,
+            "speaker_blocked",
+            json!({"name":"Speaker Blocked","type":"Person","blocked":true}),
+        );
         let rel = "20260430/default/120000_300/talents/speaker_labels.json";
         write_json(
             &root,
             &format!("chronicle/{rel}"),
             json!({"labels":[
-                {"speaker":"speaker_z","sentence_id":0},
+                {"speaker":"speaker_b","sentence_id":0},
                 {"speaker":"speaker_a","sentence_id":0},
+                {"speaker":"speaker_tool","sentence_id":0},
+                {"speaker":"speaker_blocked","sentence_id":0},
                 {"speaker":"","sentence_id":0},
                 {"speaker":123,"sentence_id":0}
             ]}),
@@ -1693,7 +1715,7 @@ mod tests {
         let row = &extracted.rows[0];
         assert_eq!(row.kind, "spoke-with");
         assert_eq!(row.src, "speaker_a");
-        assert_eq!(row.dst, "speaker_z");
+        assert_eq!(row.dst, "speaker_b");
         assert_eq!(row.source, "speaker");
         assert_eq!(row.directed, 0);
         assert_eq!(row.ts, EdgeValue::Int(1_777_550_400_000));

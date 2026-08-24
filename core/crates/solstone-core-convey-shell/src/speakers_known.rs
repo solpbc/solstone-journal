@@ -18,6 +18,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
 use crate::speakers_npz::load_voiceprints;
+use crate::speakers_review::is_admissible_speaker_entity;
 
 const SORT_RECENT: &str = "recent";
 const SORT_MOST_SAMPLES: &str = "most samples";
@@ -78,6 +79,10 @@ fn known_speakers(root: &Path) -> Vec<Speaker> {
         .into_iter()
         .filter_map(|entry| {
             let entity_id = entry.file_name().to_string_lossy().into_owned();
+            let entity = load_entity(&entry.path())?;
+            if !is_admissible_speaker_entity(&entity) {
+                return None;
+            }
             let voiceprints = load_voiceprints(&entry.path().join("voiceprints.npz"))?;
             let mut streams = Vec::new();
             let mut segments = Vec::new();
@@ -106,7 +111,7 @@ fn known_speakers(root: &Path) -> Vec<Speaker> {
                 }
             }
             streams.sort();
-            let name = entity_name(&entry.path(), &entity_id);
+            let name = entity_name(&entity, &entity_id);
             Some(Speaker {
                 entity_id,
                 name,
@@ -120,16 +125,15 @@ fn known_speakers(root: &Path) -> Vec<Speaker> {
         .collect()
 }
 
-fn entity_name(path: &Path, entity_id: &str) -> String {
-    fs::read(path.join("entity.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|entity| {
-            entity
-                .get("name")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
+fn load_entity(path: &Path) -> Option<Value> {
+    serde_json::from_slice(&fs::read(path.join("entity.json")).ok()?).ok()
+}
+
+fn entity_name(entity: &Value, entity_id: &str) -> String {
+    entity
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
         .unwrap_or_else(|| entity_id.to_owned())
 }
 
@@ -215,7 +219,12 @@ pub(crate) fn intra_cosine_p25(embeddings: &[Vec<f32>]) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::intra_cosine_p25;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use serde_json::json;
+
+    use super::{intra_cosine_p25, known_speakers};
 
     #[test]
     fn p25_is_none_for_one_voiceprint() {
@@ -238,5 +247,51 @@ mod tests {
                 "{name}: {actual} vs {expected}"
             );
         }
+    }
+
+    #[test]
+    fn known_speakers_excludes_non_person_and_blocked_voiceprints() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-known-speaker-admission-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        for (id, entity) in [
+            ("person", json!({"id":"person","type":"Person"})),
+            ("tool", json!({"id":"tool","type":"Tool"})),
+            (
+                "blocked",
+                json!({"id":"blocked","type":"Person","blocked":true}),
+            ),
+        ] {
+            let entity_dir = root.join("entities").join(id);
+            fs::create_dir_all(&entity_dir).expect("entity directory");
+            fs::write(
+                entity_dir.join("entity.json"),
+                serde_json::to_vec(&entity).expect("entity json"),
+            )
+            .expect("entity writes");
+            solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+                &root,
+                id,
+                vec![1.0; 256],
+                json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+                &solstone_core_entity::EncoderIdentity {
+                    id: "test".to_owned(),
+                    sha256: "0".repeat(64),
+                    width: 256,
+                },
+            )
+            .expect("voiceprint writes");
+        }
+
+        let ids = known_speakers(&root)
+            .into_iter()
+            .map(|speaker| speaker.entity_id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["person"]);
+        let _ = fs::remove_dir_all(root);
     }
 }

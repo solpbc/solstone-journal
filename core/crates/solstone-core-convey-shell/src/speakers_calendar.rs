@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::speakers_review::is_admissible_speaker_entity;
 use crate::speakers_segment_catalog::{
     CatalogBuildError, CatalogedSegment, catalog_day, catalog_days,
 };
@@ -122,13 +123,14 @@ pub async fn segments(
         None => None,
     };
 
+    let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(&root.0));
     let mut rows = match scan_segment_embeddings(&root.0, &day) {
         Ok(rows) => rows,
         Err(error) => return catalog_failure(error),
     };
     rows.sort_by(|left, right| left.key.cmp(&right.key));
     if let Some(speaker) = speaker.as_deref() {
-        rows.retain(|segment| segment_has_speaker(&segment.path, speaker));
+        rows.retain(|segment| segment_has_speaker(&segment.path, speaker, &admitted_speaker_ids));
     }
     let total = rows.len();
     let principal_id = journal_principal_id(&root.0);
@@ -141,6 +143,7 @@ pub async fn segments(
                 &mut segment.payload,
                 load_speaker_labels(&segment.path).as_ref(),
                 principal_id.as_deref(),
+                &admitted_speaker_ids,
             );
             segment.payload
         })
@@ -199,6 +202,7 @@ fn speaker_segment_counts(
 }
 
 fn speaker_grid_counts(root: &Path) -> Result<(DayCounts, DayCounts), CatalogBuildError> {
+    let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(root));
     let mut days = BTreeMap::new();
     let mut activity = BTreeMap::new();
     for day in day_dirs(root)? {
@@ -209,7 +213,10 @@ fn speaker_grid_counts(root: &Path) -> Result<(DayCounts, DayCounts), CatalogBui
                 continue;
             }
             activity_count += 1;
-            if segment_has_speaker_review(load_speaker_labels(&segment.path).as_ref()) {
+            if segment_has_speaker_review(
+                load_speaker_labels(&segment.path).as_ref(),
+                &admitted_speaker_ids,
+            ) {
                 needs_review_count += 1;
             }
         }
@@ -371,7 +378,10 @@ fn read_json(path: &Path) -> Option<Value> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
-fn segment_has_speaker_review(labels_data: Option<&Value>) -> bool {
+fn segment_has_speaker_review(
+    labels_data: Option<&Value>,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> bool {
     let Some(labels_data) = labels_data.filter(|value| value_truthy(value)) else {
         return false;
     };
@@ -379,9 +389,9 @@ fn segment_has_speaker_review(labels_data: Option<&Value>) -> bool {
         .get("labels")
         .and_then(Value::as_array)
         .is_some_and(|labels| {
-            labels
-                .iter()
-                .any(|label| speaker_sentence_needs_review(Some(label), Some(labels_data)))
+            labels.iter().any(|label| {
+                speaker_sentence_needs_review(Some(label), Some(labels_data), admitted_speaker_ids)
+            })
         })
 }
 
@@ -389,11 +399,12 @@ fn segment_has_speaker_review(labels_data: Option<&Value>) -> bool {
 pub(crate) fn speaker_sentence_needs_review(
     label: Option<&Value>,
     labels_data: Option<&Value>,
+    admitted_speaker_ids: &BTreeSet<String>,
 ) -> bool {
     match label.filter(|label| value_truthy(label)) {
         Some(label) => {
             label.get("confidence").and_then(Value::as_str) == Some("medium")
-                || !label.get("speaker").is_some_and(value_truthy)
+                || !label_has_admitted_speaker(label, admitted_speaker_ids)
         }
         None => labels_data.is_some_and(value_truthy),
     }
@@ -410,14 +421,37 @@ pub(crate) fn value_truthy(value: &Value) -> bool {
     }
 }
 
-fn segment_has_speaker(path: &Path, speaker: &str) -> bool {
-    load_speaker_labels(path)
-        .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())
-        .is_some_and(|labels| {
-            labels
-                .iter()
-                .any(|label| label.get("speaker").and_then(Value::as_str) == Some(speaker))
-        })
+fn segment_has_speaker(
+    path: &Path,
+    speaker: &str,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> bool {
+    admitted_speaker_ids.contains(speaker)
+        && load_speaker_labels(path)
+            .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())
+            .is_some_and(|labels| {
+                labels
+                    .iter()
+                    .any(|label| label.get("speaker").and_then(Value::as_str) == Some(speaker))
+            })
+}
+
+pub(crate) fn admitted_speaker_ids(entities: &[(String, Value)]) -> BTreeSet<String> {
+    entities
+        .iter()
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+        .map(|(entity_id, _)| entity_id.clone())
+        .collect()
+}
+
+pub(crate) fn label_has_admitted_speaker(
+    label: &Value,
+    admitted_speaker_ids: &BTreeSet<String>,
+) -> bool {
+    label
+        .get("speaker")
+        .and_then(Value::as_str)
+        .is_some_and(|entity_id| !entity_id.is_empty() && admitted_speaker_ids.contains(entity_id))
 }
 
 pub(crate) fn journal_principal_id(root: &Path) -> Option<String> {
@@ -444,6 +478,7 @@ fn add_attribution_counts(
     payload: &mut Value,
     labels_data: Option<&Value>,
     principal_id: Option<&str>,
+    admitted_speaker_ids: &BTreeSet<String>,
 ) {
     let Some(labels_data) = labels_data.filter(|value| value_truthy(value)) else {
         add_zero_attribution_counts(payload);
@@ -457,11 +492,13 @@ fn add_attribution_counts(
     let attribution_total = labels.len();
     let attribution_needs_review = labels
         .iter()
-        .filter(|label| speaker_sentence_needs_review(Some(label), Some(labels_data)))
+        .filter(|label| {
+            speaker_sentence_needs_review(Some(label), Some(labels_data), admitted_speaker_ids)
+        })
         .count();
     let attribution_null = labels
         .iter()
-        .filter(|label| !label.get("speaker").is_some_and(value_truthy))
+        .filter(|label| !label_has_admitted_speaker(label, admitted_speaker_ids))
         .count();
     let owner_count = labels
         .iter()
@@ -547,4 +584,38 @@ fn day_grid_payload(
         .map(|(day, count)| (day.clone(), json!(count)))
         .collect::<Map<_, _>>();
     json!({"coverage": coverage, "days": days, "pending": pending, "activity": activity})
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::json;
+
+    use super::{add_attribution_counts, speaker_sentence_needs_review};
+
+    #[test]
+    fn invalid_speakers_are_unassigned_for_review_and_attribution_counts() {
+        let admitted = BTreeSet::from(["person".to_owned()]);
+        let labels = json!({"labels":[
+            {"speaker":"person","confidence":"high"},
+            {"speaker":"tool","confidence":"high"}
+        ]});
+        assert!(!speaker_sentence_needs_review(
+            Some(&labels["labels"][0]),
+            Some(&labels),
+            &admitted,
+        ));
+        assert!(speaker_sentence_needs_review(
+            Some(&labels["labels"][1]),
+            Some(&labels),
+            &admitted,
+        ));
+
+        let mut payload = json!({});
+        add_attribution_counts(&mut payload, Some(&labels), None, &admitted);
+        assert_eq!(payload["attribution_total"], 2);
+        assert_eq!(payload["attribution_needs_review"], 1);
+        assert_eq!(payload["attribution_null"], 1);
+    }
 }

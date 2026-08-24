@@ -55,14 +55,24 @@ pub(crate) fn extract_speaker_edges(
         });
     };
 
-    let speaker_ids = distinct_speaker_ids(labels);
-    if speaker_ids.is_empty() {
+    let raw_speaker_ids = distinct_speaker_ids(labels);
+    if raw_speaker_ids.is_empty() {
         return Ok(SpeakerExtraction {
             rows: Vec::new(),
             warnings: Vec::new(),
         });
     }
 
+    let entities = load_journal_entities(journal)?;
+    let speaker_ids = raw_speaker_ids
+        .into_iter()
+        .filter(|entity_id| {
+            entities
+                .iter()
+                .find(|(id, _)| id == entity_id)
+                .is_some_and(|(_, entity)| is_admissible_speaker_entity(entity))
+        })
+        .collect::<BTreeSet<_>>();
     let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
     let mut rows = spoke_with_rows(&speaker_ids, context, &composite_id, ts);
     let mention_labels = valid_label_records(labels);
@@ -585,6 +595,12 @@ fn load_journal_entities(journal: &Path) -> Result<Vec<(String, JsonObject)>, Ed
         entities.push((entity_id, entity));
     }
     Ok(entities)
+}
+
+// This duplicates `is_admissible_person` locally because indexer entities are raw JSON and one boolean does not warrant a new crate dependency.
+fn is_admissible_speaker_entity(entity: &JsonObject) -> bool {
+    entity.get("type").and_then(Value::as_str) == Some("Person")
+        && !json_truthy(entity.get("blocked"))
 }
 
 fn entity_variants(entity: &JsonObject) -> Vec<String> {
