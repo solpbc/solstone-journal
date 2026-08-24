@@ -82,6 +82,7 @@ disallowed-methods = [
     { path = "solstone_core_journal_io::paths::day_path", reason = "paths::day_path is path-based", allow-invalid = true },
     { path = "solstone_core_journal_io::journal_root::JournalRoot::open", reason = "the store never acquires a root; it is handed one", allow-invalid = true },
     { path = "solstone_core_journal_io::journal_root::JournalRoot::canonical_path", reason = "canonical path is diagnostic metadata, never an open input", allow-invalid = true },
+    { path = "nix::unistd::unlink", reason = "use unlinkat on a bound parent; the non-at form reacquires by path" },
 ]
 disallowed-types = [
     { path = "std::fs::OpenOptions", reason = "store I/O is descriptor-relative" },

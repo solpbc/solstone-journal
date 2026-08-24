@@ -29,6 +29,8 @@ use solstone_core_spl::{
 };
 use solstone_core_thinking::confidential::OperationRegistry;
 
+use solstone_core_journal_config::read_direct_door_port;
+
 use crate::JournalRoot;
 use crate::link_health_cache::{RelayHealthCache, RelayHealthCacheStore};
 use crate::network::{hardened_loopback, read_posture};
@@ -189,6 +191,7 @@ struct StatusInputs<'a> {
     home_address: Option<String>,
     snapshot: Result<PairingSnapshot, AddressError>,
     now_ms: i64,
+    direct_port: u16,
 }
 
 #[derive(Serialize)]
@@ -253,6 +256,10 @@ pub(crate) async fn status(
             .as_ref()
             .map(project_relay_health)
     });
+    let direct_port = match read_direct_door_port(&root.0) {
+        Ok(port) => port,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let body = build_status_body(StatusInputs {
         link_state: load_link_state(&root.0, "solstone"),
         token_present,
@@ -266,6 +273,7 @@ pub(crate) async fn status(
         home_address: configured_home_address(config.as_ref()),
         snapshot,
         now_ms: Utc::now().timestamp_millis(),
+        direct_port,
     });
     Json(body).into_response()
 }
@@ -310,7 +318,7 @@ pub(crate) fn private_link_body(
 }
 
 pub(crate) async fn local_endpoints(
-    Extension(_root): Extension<Arc<JournalRoot>>,
+    Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
     headers: HeaderMap,
     snapshot: Option<Extension<PairingSnapshot>>,
@@ -324,7 +332,10 @@ pub(crate) async fn local_endpoints(
     let Ok(snapshot) = snapshot else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    Json(build_local_endpoints_body(&snapshot)).into_response()
+    let Ok(port) = read_direct_door_port(&root.0) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    Json(build_local_endpoints_body(&snapshot, port)).into_response()
 }
 
 fn derive_spl_service_state(posture: LinkPosture, token_present: bool) -> SplServiceState {
@@ -430,6 +441,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
         home_address,
         snapshot,
         now_ms,
+        direct_port,
     } = inputs;
     let (instance_id, home_label) = match link_state {
         LinkStateRead::Present(state) => (Some(state.instance_id), Some(state.home_label)),
@@ -443,7 +455,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                 let detected =
                     resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4)
                         .into_iter()
-                        .map(|address| format!("{address}:{}", spl_core::DEFAULT_DIRECT_PORT))
+                        .map(|address| format!("{address}:{direct_port}"))
                         .collect::<Vec<_>>();
                 let selected = home_address
                     .as_deref()
@@ -471,7 +483,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                     .filter(|endpoint| endpoint.scope == EndpointScope::Vpn)
                     .map(|endpoint| VpnCandidate {
                         label: endpoint_scope_name(endpoint.scope),
-                        address: format!("{}:{}", endpoint.ip, spl_core::DEFAULT_DIRECT_PORT),
+                        address: format!("{}:{direct_port}", endpoint.ip),
                     })
                     .collect::<Vec<_>>();
                 let vpn = VpnStatus {
@@ -605,7 +617,7 @@ fn build_private_link_body(
     }
 }
 
-fn build_local_endpoints_body(snapshot: &PairingSnapshot) -> LocalEndpointsBody {
+fn build_local_endpoints_body(snapshot: &PairingSnapshot, port: u16) -> LocalEndpointsBody {
     LocalEndpointsBody {
         v: 1,
         endpoints: snapshot
@@ -613,7 +625,7 @@ fn build_local_endpoints_body(snapshot: &PairingSnapshot) -> LocalEndpointsBody 
             .iter()
             .map(|endpoint| LocalEndpointBody {
                 ip: endpoint.ip.to_string(),
-                port: spl_core::DEFAULT_DIRECT_PORT,
+                port,
                 scope: endpoint_scope_name(endpoint.scope),
             })
             .collect(),
@@ -741,6 +753,7 @@ mod tests {
             home_address: home_address.map(str::to_owned),
             snapshot,
             now_ms: 1_000_000,
+            direct_port: 7657,
         }))
         .expect("status serializes")
     }
@@ -1066,6 +1079,28 @@ mod tests {
         );
         let configured_only = status_json(Some("10.0.0.9:7657"), Ok(snapshot(Vec::new())), None);
         assert_eq!(configured_only["lan_accessible"], true);
+        let custom = serde_json::to_value(build_status_body(StatusInputs {
+            link_state: LinkStateRead::Missing,
+            token_present: false,
+            posture: LinkPosture::Direct,
+            relay_url: DEFAULT_RELAY_URL.to_owned(),
+            ca_fingerprint: None,
+            health: None,
+            home_address: None,
+            snapshot: Ok(snapshot(vec![(
+                Ipv4Addr::new(192, 168, 1, 2),
+                EndpointScope::Lan,
+            )])),
+            now_ms: 1_000_000,
+            direct_port: 9000,
+        }))
+        .expect("status serializes");
+        assert_eq!(
+            custom["home_candidates"],
+            json!([
+                {"address":"192.168.1.2:9000","selected":true,"source":"detected"}
+            ])
+        );
     }
 
     #[test]

@@ -50,7 +50,8 @@ const DEFAULT_CONFIG_JSON: &str = r#"
     }
   },
   "pairing": {
-    "home_address": null
+    "home_address": null,
+    "direct_port": 7657
   },
   "backup": {
     "enabled": false,

@@ -14,10 +14,12 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::JournalRoot;
 
 use crate::digest::hex_encode;
+use crate::init::{check_initialized, initialize};
 use crate::layout::DayKey;
-use crate::lock::DayLockSet;
+use crate::owner::{ClaimAdmission, OwnerBinding};
+use crate::preflight::{Admitted, Preflight, preflight};
 use crate::store::ConvergenceStore;
-use crate::{OrdinaryAuthority, OrdinaryIntent, PublishOutcome, check_initialized, initialize};
+use crate::transaction::HeldDays;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -55,12 +57,41 @@ thread_local! {
     static FAIL_DIR_SYNC: Cell<bool> = const { Cell::new(false) };
     static PUBLISH_FAULT: Cell<Option<PublishFault>> = const { Cell::new(None) };
     static AFTER_WITNESS: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
+    static AFTER_DISCOVERY: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum PublishFault {
     AfterEver,
     AfterWitness,
+    AfterHead,
+    AfterRecord,
+    AfterAdopt,
+    AfterSerial,
+    AfterClaimDir,
+    AfterClaimRevision,
+    AfterClaimHead,
+    AfterIntent,
+    AfterActive,
+    AfterHealthDir,
+    AfterProjectionStream,
+    AfterDailyUnlink,
+    AfterProjectionSync,
+    AfterTerminalPrepub,
+    AfterTerminal,
+    AfterTerminalSync,
+    AfterActiveClear,
+    AfterIntentClear,
+    AfterMemberA,
+    AfterMemberB,
+    AfterBarrier,
+    AfterTerminalEvict,
+    AfterReleaseRevision,
+    AfterReleaseHead,
+    AfterConsumeWitness,
+    AfterConsumeUnlink,
+    AfterConsumeSync,
 }
 
 /// Clears TLS injects if a test panics between arm and take.
@@ -71,6 +102,7 @@ impl Drop for InjectGuard {
         FAIL_DIR_SYNC.set(false);
         PUBLISH_FAULT.set(None);
         AFTER_WITNESS.with(|slot| slot.borrow_mut().take());
+        AFTER_DISCOVERY.with(|slot| slot.borrow_mut().take());
     }
 }
 
@@ -79,18 +111,23 @@ pub(crate) fn fail_next_dir_sync() -> InjectGuard {
     InjectGuard
 }
 
-pub(crate) fn fail_after_ever() -> InjectGuard {
-    PUBLISH_FAULT.set(Some(PublishFault::AfterEver));
-    InjectGuard
-}
-
 pub(crate) fn fail_after_witness() -> InjectGuard {
     PUBLISH_FAULT.set(Some(PublishFault::AfterWitness));
     InjectGuard
 }
 
+pub(crate) fn fail_after(fault: PublishFault) -> InjectGuard {
+    PUBLISH_FAULT.set(Some(fault));
+    InjectGuard
+}
+
 pub(crate) fn after_witness(hook: impl FnOnce() + 'static) -> InjectGuard {
     AFTER_WITNESS.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    InjectGuard
+}
+
+pub(crate) fn after_discovery(hook: impl FnOnce() + 'static) -> InjectGuard {
+    AFTER_DISCOVERY.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
     InjectGuard
 }
 
@@ -114,6 +151,12 @@ pub(crate) fn run_after_witness_hook() {
     }
 }
 
+pub(crate) fn run_after_discovery_hook() {
+    if let Some(hook) = AFTER_DISCOVERY.with(|slot| slot.borrow_mut().take()) {
+        hook();
+    }
+}
+
 pub(crate) fn open_root(temporary: &TempDir) -> (PathBuf, JournalRoot) {
     let journal = temporary.journal_path();
     fs::create_dir(&journal).expect("create journal root");
@@ -133,13 +176,35 @@ pub(crate) fn sample_day() -> DayKey {
     DayKey::parse("20260823").unwrap()
 }
 
-pub(crate) fn dirty(store: &ConvergenceStore, locks: &DayLockSet, day: &DayKey) -> PublishOutcome {
-    let proof = store.allocate(locks).unwrap();
-    let proposal = store
-        .propose(locks, day, OrdinaryIntent::AdvanceDirty)
-        .unwrap();
-    let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-    store.publish(locks, day, &mut authority).unwrap()
+pub(crate) fn admit_days(name: &str, days: &[&str]) -> (TempDir, Admitted) {
+    let temporary = TempDir::new(name);
+    let (_, root) = open_root(&temporary);
+    let set = match preflight(days.iter().copied()).unwrap() {
+        Preflight::Ready(set) => set,
+        Preflight::Empty => panic!("days"),
+    };
+    let admitted = set.admit(root).unwrap();
+    (temporary, admitted)
+}
+
+pub(crate) fn continue_ok(admitted: &Admitted) -> HeldDays<'_> {
+    let owner = OwnerBinding::issue_from_base(admitted).unwrap();
+    let mut held = admitted.begin(owner).unwrap();
+    let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+    held.continue_with(proof).unwrap();
+    held
+}
+
+pub(crate) fn continue_with_fault<'a>(
+    admitted: &'a Admitted,
+    fault: PublishFault,
+) -> (HeldDays<'a>, crate::error::ConvergenceError) {
+    let owner = OwnerBinding::issue_from_base(admitted).unwrap();
+    let mut held = admitted.begin(owner).unwrap();
+    let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+    let _guard = fail_after(fault);
+    let error = held.continue_with(proof).unwrap_err();
+    (held, error)
 }
 
 pub(crate) fn days_dir(temporary: &TempDir) -> PathBuf {

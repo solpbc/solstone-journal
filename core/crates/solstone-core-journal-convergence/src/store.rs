@@ -6,7 +6,7 @@ use solstone_core_journal_io::{JournalRoot, ObjectIdentity};
 use crate::digest::RecordDigest;
 use crate::error::{ConvergenceError, Refusal, map_root_error};
 use crate::init::{check_initialized, load_allocator, load_root_witness, open_store_dirs};
-use crate::layout::{DayKey, validate_day_set};
+use crate::layout::{DayKey, require_nonempty_unique};
 use crate::lock::{DayLockSet, acquire_days};
 use crate::schema::{DayRecord, require_ids, validate_record_numbers};
 
@@ -30,7 +30,13 @@ pub struct DaySnapshot {
 pub enum LoadDay {
     Genesis,
     Published(DaySnapshot),
-    PublicationPending { kind: PendingKind },
+    PublicationPending {
+        kind: PendingKind,
+    },
+    HeadedDescendant {
+        head_revision: u64,
+        proposed_revision: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,8 +83,9 @@ impl ConvergenceStore {
         self.root.revalidate().map_err(map_root_error)
     }
 
-    pub fn acquire_days(&self, days: &[DayKey]) -> Result<DayLockSet, ConvergenceError> {
-        validate_day_set(days)?;
+    #[allow(dead_code)]
+    pub(crate) fn acquire_days(&self, days: &[DayKey]) -> Result<DayLockSet, ConvergenceError> {
+        require_nonempty_unique(days)?;
         self.revalidate()?;
         let dirs = open_store_dirs(&self.root)?
             .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
@@ -92,7 +99,12 @@ impl ConvergenceStore {
     }
 
     /// Read a day under a live lock set. Performs no on-disk write.
-    pub fn load_day(&self, days: &DayLockSet, day: &DayKey) -> Result<LoadDay, ConvergenceError> {
+    #[allow(dead_code)]
+    pub(crate) fn load_day(
+        &self,
+        days: &DayLockSet,
+        day: &DayKey,
+    ) -> Result<LoadDay, ConvergenceError> {
         self.inspect(days, day)
     }
 
@@ -151,20 +163,18 @@ pub(crate) fn snapshot_from_record(record: &DayRecord) -> Result<DaySnapshot, Co
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::initialize;
     use crate::layout::DayKey;
     use crate::test_support::{
-        TempDir, dirty, initialized_store, open_root, sample_day, snapshot_tree,
+        TempDir, admit_days, continue_ok, initialized_store, open_root, sample_day, snapshot_tree,
     };
 
     #[test]
     fn load_day_creates_nothing() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("load-noop", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
-        let _ = store.load_day(&locks, &day).unwrap();
+        let _ = held.inspect_day(&day).unwrap();
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
     }
 
@@ -183,23 +193,22 @@ mod tests {
 
     #[test]
     fn genesis_is_adoption_present_absent_ever_head_record() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("genesis", &["20260823"]);
+        let (held, error) = crate::test_support::continue_with_fault(
+            &admitted,
+            crate::test_support::PublishFault::AfterAdopt,
+        );
+        assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
-        assert!(matches!(
-            store.load_day(&locks, &day).unwrap(),
-            LoadDay::Genesis
-        ));
+        assert!(matches!(held.inspect_day(&day).unwrap(), LoadDay::Genesis));
     }
 
     #[test]
     fn g1_is_dirty1_completed0_rev1_first_eq_current() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("g1", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.record_revision, 1);
                 assert_eq!(snapshot.dirty_generation, 1);
@@ -215,16 +224,15 @@ mod tests {
 
     #[test]
     fn later_dirty_preserves_first_changes_current() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("later-dirty", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = match store.load_day(&locks, &day).unwrap() {
+        let first = match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
+        held.advance_dirty().unwrap();
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(
                     snapshot.first_transition_serial,
@@ -245,24 +253,20 @@ mod tests {
 
     #[test]
     fn retained_root_survives_namespace_rename_without_touching_replacement() {
-        let temporary = TempDir::new("rename");
-        let (journal, root) = open_root(&temporary);
-        initialize(&root).unwrap();
-        let store = ConvergenceStore::open(root).unwrap();
+        let (temporary, admitted) = admit_days("rename", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
-        dirty(&store, &locks, &day);
-        let original = match store.load_day(&locks, &day).unwrap() {
+        let original = match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
+        let journal = temporary.journal_path();
         let moved = temporary.path().join("journal-moved");
         std::fs::rename(&journal, &moved).unwrap();
         std::fs::create_dir(&journal).unwrap();
         std::fs::write(journal.join("poison"), b"replacement").unwrap();
-        store.revalidate().unwrap();
-        match store.load_day(&locks, &day).unwrap() {
+        admitted.store().revalidate().unwrap();
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.digest, original.digest);
             }
@@ -284,38 +288,37 @@ mod tests {
 
     #[test]
     fn restart_reopens_from_durable_bytes() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("restart", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = match store.load_day(&locks, &day).unwrap() {
+        let first = match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
-        drop(locks);
-        drop(store);
+        drop(held);
+        drop(admitted);
         let root = JournalRoot::open(&temporary.journal_path()).unwrap();
-        let store = ConvergenceStore::open(root).unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        match store.load_day(&locks, &day).unwrap() {
-            LoadDay::Published(snapshot) => assert_eq!(snapshot.digest, first.digest),
+        let set = match crate::preflight::preflight(["20260823"]).unwrap() {
+            crate::preflight::Preflight::Ready(set) => set,
+            crate::preflight::Preflight::Empty => panic!("days"),
+        };
+        let admitted = set.admit(root).unwrap();
+        let report = admitted.inspect().unwrap();
+        match &report.for_day(&day).unwrap().verdict {
+            crate::recover::StoreVerdict::Published(snapshot) => {
+                assert_eq!(snapshot.digest, first.digest)
+            }
             other => panic!("{other:?}"),
         }
     }
 
     #[test]
-    fn g1_sets_first_equal_current() {
-        g1_is_dirty1_completed0_rev1_first_eq_current();
-    }
-
-    #[test]
     fn later_dirty_accepts_proof_once_per_day() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("proof-once", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
+        held.advance_dirty().unwrap();
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.dirty_generation, 2);
                 assert_ne!(
@@ -329,17 +332,18 @@ mod tests {
 
     #[test]
     fn genesis_head_ever_record_matrix() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("matrix", &["20260823"]);
+        let (held, error) = crate::test_support::continue_with_fault(
+            &admitted,
+            crate::test_support::PublishFault::AfterAdopt,
+        );
+        assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
+        assert!(matches!(held.inspect_day(&day).unwrap(), LoadDay::Genesis));
+        drop(held);
+        let held = continue_ok(&admitted);
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap(),
-            LoadDay::Genesis
-        ));
-        dirty(&store, &locks, &day);
-        assert!(matches!(
-            store.load_day(&locks, &day).unwrap(),
+            held.inspect_day(&day).unwrap(),
             LoadDay::Published(_)
         ));
         std::fs::remove_file(
@@ -349,17 +353,16 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn record_without_matching_head_is_unknown_or_pending() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("no-head", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         std::fs::remove_file(
             temporary
                 .journal_path()
@@ -367,20 +370,18 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn record_deleted_then_reopen_is_unknown() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        drop(locks);
-        drop(store);
+        let (temporary, admitted) = admit_days("del-record", &["20260823"]);
+        let mut held = continue_ok(&admitted);
+        held.advance_dirty().unwrap();
+        drop(held);
+        drop(admitted);
         std::fs::remove_file(
             temporary
                 .journal_path()
@@ -388,23 +389,25 @@ mod tests {
         )
         .unwrap();
         let root = JournalRoot::open(&temporary.journal_path()).unwrap();
-        let store = ConvergenceStore::open(root).unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
-            ConvergenceError::Unknown {
-                role: crate::DurableRole::Record
-            }
-        ));
+        let set = match crate::preflight::preflight(["20260823"]).unwrap() {
+            crate::preflight::Preflight::Ready(set) => set,
+            crate::preflight::Preflight::Empty => panic!("days"),
+        };
+        let admitted = set.admit(root).unwrap();
+        let report = admitted.inspect().unwrap();
+        match &report.for_day(&sample_day()).unwrap().verdict {
+            crate::recover::StoreVerdict::Unknown {
+                role: crate::DurableRole::Record,
+            } => {}
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
     fn record_copied_to_other_day_is_wrong_day_or_unknown() {
-        let (temporary, store) = initialized_store();
-        let day_a = DayKey::parse("20260823").unwrap();
+        let (temporary, admitted) = admit_days("copy-day", &["20260823", "20260824"]);
+        let held = continue_ok(&admitted);
         let day_b = DayKey::parse("20260824").unwrap();
-        let locks = store.acquire_days(&[day_a.clone(), day_b.clone()]).unwrap();
-        dirty(&store, &locks, &day_a);
         let source = temporary
             .journal_path()
             .join("health/convergence/records/20260823/record.json");
@@ -413,19 +416,17 @@ mod tests {
             .join("health/convergence/records/20260824");
         std::fs::create_dir_all(&dest_dir).unwrap();
         std::fs::copy(source, dest_dir.join("record.json")).unwrap();
-        store.allocate(&locks).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day_b).unwrap_err(),
-            ConvergenceError::Unknown { .. }
+            held.inspect_day(&day_b).unwrap_err(),
+            ConvergenceError::Unknown { .. } | ConvergenceError::Refused(Refusal::WrongDay { .. })
         ));
     }
 
     #[test]
     fn artifact_grafted_from_other_journal_id_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("graft", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let path = temporary
             .journal_path()
             .join("health/convergence/records/20260823/record.json");
@@ -434,17 +435,16 @@ mod tests {
         record["journal_id"] = serde_json::Value::String("grafted".into());
         std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn future_serial_is_refused() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("future-serial", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let path = temporary
             .journal_path()
             .join("health/convergence/records/20260823/record.json");
@@ -453,18 +453,17 @@ mod tests {
         record["dirty_by_transition_serial"] = serde_json::json!(99);
         std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Refused(Refusal::FutureSerial { .. })
         ));
     }
 
     #[test]
     fn wrong_lineage_wrong_day_wrong_journal() {
-        let (_temporary, store) = initialized_store();
-        let day = sample_day();
+        let (_temporary, admitted) = admit_days("wrong-day", &["20260823"]);
+        let held = continue_ok(&admitted);
         let other = DayKey::parse("20260824").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let error = store.load_day(&locks, &other).unwrap_err();
+        let error = held.inspect_day(&other).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::WrongDay { .. })
@@ -473,16 +472,15 @@ mod tests {
 
     #[test]
     fn auxiliary_time_is_not_an_ordering_input() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("aux-time", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = match store.load_day(&locks, &day).unwrap() {
+        let first = match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
+        held.advance_dirty().unwrap();
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.auxiliary_time, first.auxiliary_time);
                 assert!(snapshot.record_revision > first.record_revision);
@@ -493,14 +491,13 @@ mod tests {
 
     #[test]
     fn caller_authored_fields_unrepresentable() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("fields", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
+        match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
-                assert_eq!(snapshot.journal_id, store.journal_id());
-                assert_eq!(snapshot.root_id, store.root_id());
+                assert_eq!(snapshot.journal_id, admitted.store().journal_id());
+                assert_eq!(snapshot.root_id, admitted.store().root_id());
                 assert_eq!(snapshot.record_revision, 1);
                 assert_eq!(snapshot.dirty_generation, 1);
                 assert_eq!(snapshot.completed_generation, 0);

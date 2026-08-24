@@ -20,6 +20,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_handoff_nonce::mint_nonce;
+use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_sol_link::pairing::addresses::is_usable_ipv4;
 use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
@@ -187,8 +188,18 @@ async fn set_home_address(
         .get("home_address")
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty());
+    let expected_port = match read_direct_door_port(&journal.0) {
+        Ok(port) => port,
+        Err(_) => {
+            return refusal(
+                "service_operation_failed",
+                "couldn't save your home address",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
     let address = match requested {
-        Some(value) => match validate_home_address(value) {
+        Some(value) => match validate_home_address(value, expected_port) {
             Ok(value) => Some(value),
             Err(detail) => {
                 return refusal("invalid_config_value", &detail, StatusCode::BAD_REQUEST);
@@ -508,7 +519,7 @@ fn copy(name: &str) -> String {
         .and_then(|value| value.get(name).and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_default()
 }
-fn validate_home_address(value: &str) -> Result<String, String> {
+fn validate_home_address(value: &str, expected_port: u16) -> Result<String, String> {
     let cleaned = value.trim();
     if cleaned.is_empty() || cleaned.contains("://") || cleaned.contains('/') {
         return Err(copy("HOME_ADDRESS_INVALID"));
@@ -537,7 +548,7 @@ fn validate_home_address(value: &str) -> Result<String, String> {
     let port = port
         .parse::<u16>()
         .map_err(|_| copy("HOME_ADDRESS_INVALID"))?;
-    if port != spl_core::DEFAULT_DIRECT_PORT || !is_usable_ipv4(ipv4) {
+    if port != expected_port || !is_usable_ipv4(ipv4) {
         return Err(copy("HOME_ADDRESS_INVALID"));
     }
     Ok(format!("{ipv4}:{port}"))

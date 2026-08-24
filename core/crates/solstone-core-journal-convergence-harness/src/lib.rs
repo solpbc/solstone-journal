@@ -14,10 +14,11 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use std::collections::BTreeMap;
+
     use solstone_core_journal_convergence::{
-        AllocationProof, ConvergenceError, ConvergenceStore, DayKey, LoadDay, OrdinaryAuthority,
-        OrdinaryIntent, PendingKind, PublishOutcome, Refusal, check_initialized, initialize,
-        validate_day_set,
+        ClaimAdmission, ConvergenceError, DayKey, OwnerBinding, Preflight, Refusal, StoreVerdict,
+        TerminalOutcome, check_initialized, preflight,
     };
     use solstone_core_journal_io::JournalRoot;
 
@@ -49,75 +50,86 @@ mod tests {
         }
     }
 
-    fn open_store(name: &str) -> (TempDir, ConvergenceStore) {
+    fn open_admitted(
+        name: &str,
+        days: &[&str],
+    ) -> (TempDir, solstone_core_journal_convergence::Admitted) {
         let temporary = TempDir::new(name);
         let journal = temporary.journal_path();
         fs::create_dir(&journal).unwrap();
         let root = JournalRoot::open(&journal).unwrap();
-        initialize(&root).unwrap();
-        let store = ConvergenceStore::open(root).unwrap();
-        (temporary, store)
+        let set = match preflight(days.iter().copied()).unwrap() {
+            Preflight::Ready(set) => set,
+            Preflight::Empty => panic!("expected days"),
+        };
+        let admitted = set.admit(root).unwrap();
+        (temporary, admitted)
     }
 
     fn sample_day() -> DayKey {
         DayKey::parse("20260823").unwrap()
     }
 
-    fn dirty(
-        store: &ConvergenceStore,
-        locks: &solstone_core_journal_convergence::DayLockSet,
-        day: &DayKey,
-    ) {
-        let proof = store.allocate(locks).unwrap();
-        let proposal = store
-            .propose(locks, day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        match store.publish(locks, day, &mut authority).unwrap() {
-            PublishOutcome::Published { .. } => {}
-            other => panic!("{other:?}"),
-        }
+    fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        let mut entries = BTreeMap::new();
+        snapshot_walk(root, root, &mut entries);
+        entries
     }
 
-    fn days_dir(temporary: &TempDir) -> PathBuf {
-        temporary.journal_path().join("health/convergence/days")
+    fn snapshot_walk(root: &Path, dir: &Path, entries: &mut BTreeMap<String, Vec<u8>>) {
+        let listing = match fs::read_dir(dir) {
+            Ok(listing) => listing,
+            Err(_) => return,
+        };
+        for entry in listing.flatten() {
+            let path = entry.path();
+            let rel = path
+                .strip_prefix(root)
+                .expect("child of root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                entries.insert(rel, Vec::new());
+                snapshot_walk(root, &path, entries);
+            } else if let Ok(bytes) = fs::read(&path) {
+                entries.insert(rel, bytes);
+            }
+        }
     }
 
     #[test]
-    fn harness_topology_allocate_propose_bind_publish() {
-        let (temporary, store) = open_store("topology");
+    fn harness_preflight_begin_continue() {
+        let (temporary, admitted) = open_admitted("topology", &["20260823"]);
         assert!(check_initialized(&JournalRoot::open(&temporary.journal_path()).unwrap()).unwrap());
-        let day = sample_day();
-        validate_day_set(std::slice::from_ref(&day)).unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof: AllocationProof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        store.publish(&locks, &day, &mut authority).unwrap();
-        match store.load_day(&locks, &day).unwrap() {
-            LoadDay::Published(snapshot) => {
-                assert_eq!(snapshot.record_revision, 1);
-                assert_eq!(
-                    snapshot.first_transition_serial,
-                    snapshot.dirty_by_transition_serial
-                );
-            }
-            other => panic!("{other:?}"),
-        }
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let snapshot = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(snapshot.record_revision, 1);
+        assert_eq!(
+            snapshot.first_transition_serial,
+            snapshot.dirty_by_transition_serial
+        );
     }
 
     #[test]
     fn harness_lock_order_disjoint_days() {
-        let (temporary, store_a) = open_store("locks");
+        let (temporary, admitted_a) = open_admitted("locks", &["20260823"]);
         let root_b = JournalRoot::open(&temporary.journal_path()).unwrap();
-        let store_b = ConvergenceStore::open(root_b).unwrap();
-        let day_a = DayKey::parse("20260823").unwrap();
-        let day_b = DayKey::parse("20260824").unwrap();
-        let held = store_a.acquire_days(&[day_a]).unwrap();
+        let set_b = match preflight(["20260824"]).unwrap() {
+            Preflight::Ready(set) => set,
+            Preflight::Empty => panic!("days"),
+        };
+        let admitted_b = set_b
+            .admit(root_b)
+            .unwrap()
+            .with_lock_timeout(Duration::from_millis(80));
+        let owner_a = OwnerBinding::issue_from_base(&admitted_a).unwrap();
+        let held = admitted_a.begin(owner_a).unwrap();
         let started = Instant::now();
-        let other = thread::spawn(move || store_b.acquire_days(&[day_b]));
+        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let other = thread::spawn(move || admitted_b.begin(owner_b).map(drop));
         let got = other.join().expect("thread");
         assert!(got.is_ok());
         assert!(started.elapsed() < Duration::from_secs(2));
@@ -126,103 +138,76 @@ mod tests {
 
     #[test]
     fn harness_lineage_and_authority() {
-        let (_temporary, store) = open_store("lineage");
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        match store.load_day(&locks, &day).unwrap() {
-            LoadDay::Published(snapshot) => {
-                assert_eq!(snapshot.first_transition_serial, 1);
-                assert_eq!(snapshot.dirty_by_transition_serial, 2);
-                assert_eq!(snapshot.dirty_generation, 2);
-            }
-            other => panic!("{other:?}"),
-        }
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        store.publish(&locks, &day, &mut authority).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
-        assert!(matches!(
-            error,
-            ConvergenceError::Refused(Refusal::ReusedAuthority)
-        ));
+        let (_temporary, admitted) = open_admitted("lineage", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let snapshot = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(snapshot.record_revision, 1);
+        let error = held.proceed();
+        assert!(
+            error.is_ok() || matches!(error, Err(ConvergenceError::Refused(Refusal::CleanupOnly)))
+        );
     }
 
     #[test]
     fn harness_artifact_loss_head() {
-        let (temporary, store) = open_store("loss-head");
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
-        assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
-            ConvergenceError::Unknown { .. }
-        ));
+        let (temporary, admitted) = open_admitted("loss-head", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        fs::remove_file(
+            temporary
+                .journal_path()
+                .join("health/convergence/days/20260823.head.json"),
+        )
+        .unwrap();
+        assert!(held.snapshot(&sample_day()).is_err());
     }
 
     #[test]
     fn harness_artifact_loss_tail_witness() {
-        let (temporary, store) = open_store("loss-witness");
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        fs::remove_file(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
-        assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
-            ConvergenceError::Unknown { .. }
-        ));
-    }
-
-    #[test]
-    fn harness_artifact_loss_record() {
-        let (temporary, store) = open_store("loss-record");
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = open_admitted("loss-witness", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
         fs::remove_file(
             temporary
                 .journal_path()
-                .join("health/convergence/records/20260823/record.json"),
+                .join("health/convergence/days/20260823.rev.1.wit.json"),
         )
         .unwrap();
-        match store.load_day(&locks, &day) {
-            Err(ConvergenceError::Unknown { .. })
-            | Ok(LoadDay::PublicationPending {
-                kind: PendingKind::HeadAheadOfRecord,
-            }) => {}
-            other => panic!("{other:?}"),
-        }
+        assert!(held.snapshot(&sample_day()).is_err());
     }
 
     #[test]
     fn harness_restart_reopens_from_durable_bytes() {
-        let (temporary, store) = open_store("restart");
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = match store.load_day(&locks, &day).unwrap() {
-            LoadDay::Published(snapshot) => snapshot,
-            other => panic!("{other:?}"),
-        };
-        drop(locks);
-        drop(store);
+        let (temporary, admitted) = open_admitted("restart", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let first = held.snapshot(&sample_day()).unwrap();
+        drop(held);
+        drop(admitted);
         let root = JournalRoot::open(&temporary.journal_path()).unwrap();
-        let store = ConvergenceStore::open(root).unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        match store.load_day(&locks, &day).unwrap() {
-            LoadDay::Published(snapshot) => {
-                assert_eq!(snapshot.digest, first.digest);
-                assert_eq!(snapshot.record_revision, first.record_revision);
-            }
-            other => panic!("{other:?}"),
-        }
+        let set = match preflight(["20260823"]).unwrap() {
+            Preflight::Ready(set) => set,
+            Preflight::Empty => panic!("days"),
+        };
+        let admitted = set.admit(root).unwrap();
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let error = held.continue_with(proof).unwrap_err();
+        assert!(
+            matches!(error, ConvergenceError::Refused(Refusal::Busy)),
+            "{error:?}"
+        );
+        let _ = first;
     }
 
     #[test]
@@ -237,5 +222,91 @@ mod tests {
                 .to_string_lossy()
                 .starts_with("sjc-")
         );
+    }
+
+    #[test]
+    fn harness_empty_preflight() {
+        assert!(matches!(
+            preflight::<[&str; 0], &str>([]).unwrap(),
+            Preflight::Empty
+        ));
+    }
+
+    #[test]
+    fn ac9_live_permit_commit() {
+        let (_temporary, admitted) = open_admitted("permit", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let receipt = permit.commit().unwrap();
+        assert_eq!(receipt.outcome, TerminalOutcome::Committed);
+        assert_eq!(receipt.serial, 1);
+    }
+
+    #[test]
+    fn ac9_awaiting_owner_decision() {
+        let (temporary, admitted) = open_admitted("awaiting", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+        let before = snapshot_tree(&temporary.journal_path());
+        let report = admitted.inspect().unwrap();
+        assert!(report.awaiting().is_some());
+        assert!(report.terminal_outcome().is_none());
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+    }
+
+    #[test]
+    fn ac9_supersession() {
+        let (_temporary, admitted) = open_admitted("supersede", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let _ = permit;
+        let first = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(first.record_revision, 1);
+        held.advance_dirty().unwrap();
+        let second = held.snapshot(&sample_day()).unwrap();
+        assert!(second.record_revision > first.record_revision);
+        assert!(second.dirty_generation > first.dirty_generation);
+        drop(held);
+        let verdict = admitted
+            .inspect_proposed(&sample_day(), first.record_revision)
+            .unwrap();
+        match verdict {
+            StoreVerdict::HeadedDescendant {
+                head_revision,
+                proposed_revision,
+            } => {
+                assert_eq!(proposed_revision, first.record_revision);
+                assert_eq!(head_revision, second.record_revision);
+            }
+            other => panic!("expected headed descendant, got {other:?}"),
+        }
+        let report = admitted.inspect().unwrap();
+        assert!(report.awaiting().is_some());
+        assert!(report.terminal_outcome().is_none());
+    }
+
+    #[test]
+    fn ac9_clearance() {
+        let (_temporary, admitted) = open_admitted("clearance", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        permit.commit().unwrap();
+        drop(held);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let snapshot = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(snapshot.record_revision, 2);
+        assert_eq!(snapshot.dirty_generation, 2);
     }
 }

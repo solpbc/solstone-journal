@@ -202,6 +202,40 @@ async fn host_address_normalizes_status_and_clears_lenient_twins() {
 }
 
 #[tokio::test]
+async fn host_address_admits_the_journal_selected_direct_port() {
+    let root = journal();
+    let path = root.join("config/journal.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&path).expect("config reads")).unwrap();
+    config
+        .as_object_mut()
+        .expect("object")
+        .insert("pairing".to_owned(), json!({"direct_port": 9000}));
+    fs::write(
+        &path,
+        serde_json::to_vec(&config).expect("config serializes"),
+    )
+    .expect("config writes");
+    let (status, body) = post(
+        &root,
+        "/app/network/host-address",
+        Body::from(r#"{"home_address":"10.0.0.2:9000"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"ok":true,"home_address":"10.0.0.2:9000"}));
+    let (status, rejected) = post(
+        &root,
+        "/app/network/host-address",
+        Body::from(r#"{"home_address":"10.0.0.2:7657"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(rejected["reason_code"], "invalid_config_value");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
 async fn host_address_refusals_and_identical_write_are_exact() {
     let root = journal();
     let (status, hostname) = post(

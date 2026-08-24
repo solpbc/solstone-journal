@@ -1,37 +1,55 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Journal- and lineage-bound record store for monotonic per-day convergence state.
+//! Journal- and lineage-bound claimed-dirty transaction.
 //!
 //! This crate deliberately owns no command-line surface, HTTP route, callosum
 //! tract, generic filesystem traversal API, or output-path selection. It does
 //! not acquire a journal root; callers hand it a
-//! [`solstone_core_journal_io::JournalRoot`]. It owns no recovery/intent
-//! surface and no production completion authority. It does not read, write,
-//! migrate, or unify with `journal/health/catchup-state.json`.
+//! [`solstone_core_journal_io::JournalRoot`]. It owns no production completion
+//! authority, no migration surface, no resume issuer, and no reciprocal
+//! owner-operation file. It does not read, write, migrate, or unify with
+//! `journal/health/catchup-state.json`. The resolver-authority lode replaces
+//! [`OwnerBinding::issue_from_base`] and [`ClaimAdmission::issue_from_base`].
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod allocate;
+mod claim;
+mod clearance;
 mod digest;
 mod error;
 mod init;
+mod intent;
 mod layout;
 mod lock;
+mod owner;
+mod permit;
+mod preflight;
+mod projection;
 mod publish;
+mod recover;
 mod schema;
 mod store;
+mod terminal;
 #[cfg(test)]
 mod test_support;
+mod transaction;
 mod walk;
 
 pub use digest::RecordDigest;
 pub use error::{ChangedWhat, ConvergenceError, DurableRole, Refusal};
-pub use init::{check_initialized, initialize};
-pub use layout::{DayKey, validate_day_set};
-pub use lock::{AllocationProof, DayLockSet};
-pub use publish::{OrdinaryAuthority, OrdinaryIntent, PublishOutcome, ValidatedProposal};
-pub use store::{ConvergenceStore, DaySnapshot, LoadDay, PendingKind};
+pub use init::check_initialized;
+pub use layout::DayKey;
+pub use owner::{ClaimAdmission, OwnerBinding};
+pub use permit::{Permit, TerminalOutcome, TerminalReceipt};
+pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
+pub use recover::{
+    AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
+    StoreVerdict,
+};
+pub use store::{ConvergenceStore, DaySnapshot};
+pub use transaction::HeldDays;
 
 #[cfg(test)]
 // Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
@@ -80,15 +98,25 @@ mod architecture {
     fn canonical_path_not_used_to_open() {
         for source in [
             include_str!("allocate.rs"),
+            include_str!("claim.rs"),
+            include_str!("clearance.rs"),
             include_str!("digest.rs"),
             include_str!("error.rs"),
             include_str!("init.rs"),
+            include_str!("intent.rs"),
             include_str!("layout.rs"),
             include_str!("lib.rs"),
             include_str!("lock.rs"),
+            include_str!("owner.rs"),
+            include_str!("permit.rs"),
+            include_str!("preflight.rs"),
+            include_str!("projection.rs"),
             include_str!("publish.rs"),
+            include_str!("recover.rs"),
             include_str!("schema.rs"),
             include_str!("store.rs"),
+            include_str!("terminal.rs"),
+            include_str!("transaction.rs"),
             include_str!("walk.rs"),
         ] {
             let production = production_source(source);
@@ -98,7 +126,10 @@ mod architecture {
     }
 
     #[test]
-    fn no_public_completion_or_recovery_type() {
+    fn no_public_completion_or_migration_type() {
+        // Recovery is a public read-only surface required by AC3/AC4/AC6
+        // (`RecoveryReport`, `AwaitingOwnerDecision`). This lode still bars a
+        // public *completion* authority and any *migration* surface.
         let production = production_source(include_str!("lib.rs"));
         let public: String = production
             .lines()
@@ -113,7 +144,6 @@ mod architecture {
             .join("\n")
             .to_ascii_lowercase();
         assert!(!public.contains("completion"));
-        assert!(!public.contains("recovery"));
         assert!(!public.contains("migration"));
         assert!(!public.contains("preparedcompletion"));
     }

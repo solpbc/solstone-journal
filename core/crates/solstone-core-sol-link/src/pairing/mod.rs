@@ -118,6 +118,7 @@ pub enum PairingError {
     Attestation(AttestationError),
     Serialization(serde_json::Error),
     Clock,
+    JournalConfig,
     RelayPairingRegistrationRefused,
     RelayPairingUnavailable,
     RelayPairingRegistrationTimedOut,
@@ -142,6 +143,7 @@ impl PairingError {
             | Self::Attestation(_)
             | Self::Serialization(_)
             | Self::Clock
+            | Self::JournalConfig
             | Self::RelayPairingNonceCommit => 500,
         }
     }
@@ -164,6 +166,7 @@ impl PairingError {
             | Self::Attestation(_)
             | Self::Serialization(_)
             | Self::Clock
+            | Self::JournalConfig
             | Self::RelayPairingNonceCommit => "internal_error",
         }
     }
@@ -183,6 +186,7 @@ impl PairingError {
             | Self::Attestation(_)
             | Self::Serialization(_)
             | Self::Clock
+            | Self::JournalConfig
             | Self::RelayPairingRegistrationRefused
             | Self::RelayPairingUnavailable
             | Self::RelayPairingRegistrationTimedOut
@@ -212,6 +216,7 @@ impl fmt::Display for PairingError {
             Self::Attestation(error) => error.fmt(formatter),
             Self::Serialization(error) => error.fmt(formatter),
             Self::Clock => formatter.write_str("pairing clock is outside the supported range"),
+            Self::JournalConfig => formatter.write_str("journal config could not be read"),
             Self::RelayPairingRegistrationRefused => {
                 formatter.write_str("relay pairing registration refused")
             }
@@ -288,17 +293,19 @@ pub fn mint_pairing_from_snapshot(
     ca_fp_prefix.copy_from_slice(&digest[..16]);
     let nonce = random_nonce()?;
     let nonce_bytes = nonce_bytes(&nonce)?;
+    let port = solstone_core_journal_config::read_direct_door_port(journal_root)
+        .map_err(|_| PairingError::JournalConfig)?;
     let pair_link = if same_machine {
         // Same-host pairing bypasses configured-home and all discovery, exactly
         // as the reference's loopback branch does.
-        encode_configured_home_pair_link(Ipv4Addr::LOCALHOST, nonce_bytes, ca_fp_prefix)
+        encode_configured_home_pair_link(Ipv4Addr::LOCALHOST, nonce_bytes, ca_fp_prefix, port)
     } else {
         match request.configured_home {
-            Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix),
+            Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port),
             None => {
                 let candidates =
                     resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4);
-                encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix).map_err(|error| {
+                encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix, port).map_err(|error| {
                     match error {
                         PairLinkEncodeError::CandidateCount(_)
                         | PairLinkEncodeError::DisallowedAddress => {

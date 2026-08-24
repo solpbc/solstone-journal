@@ -763,15 +763,24 @@ fn configure_relay_pairing(fixture: &Fixture, relay_origin: &str) {
         .expect("service token writes");
 }
 
-fn link_for_door(pair_link: &str, port: u16) -> String {
-    let (_, fragment) = pair_link.split_once('#').expect("pair-link fragment");
-    let mut blob = spl_core::crockford::decode(fragment).expect("pair-link bytes");
-    assert_eq!(blob[0], 0x04, "same-machine loopback link is v04");
-    blob[6..8].copy_from_slice(&port.to_be_bytes());
-    format!(
-        "https://go.solstone.app/p#{}",
-        spl_core::crockford::encode(&blob)
+fn configure_direct_port(fixture: &Fixture, port: u16) {
+    let path = fixture.root.join("config/journal.json");
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).expect("config reads")).expect("config parses");
+    let pairing = config
+        .as_object_mut()
+        .expect("config object")
+        .entry("pairing")
+        .or_insert_with(|| serde_json::json!({}));
+    pairing
+        .as_object_mut()
+        .expect("pairing object")
+        .insert("direct_port".to_owned(), serde_json::json!(port));
+    fs::write(
+        &path,
+        serde_json::to_vec(&config).expect("config serializes"),
     )
+    .expect("config writes");
 }
 
 fn pairing_snapshot() -> PairingSnapshot {
@@ -2200,6 +2209,104 @@ async fn ac6_authorized_client_is_admitted() {
 }
 
 #[tokio::test]
+async fn two_journal_custom_ports_complete_own_pairings_and_refuse_cross_root_certificates() {
+    let fixture_a = Fixture::established(1);
+    let fixture_b = Fixture::established(1);
+    let handle_a = serve(options(
+        &fixture_a,
+        pairing_router(&fixture_a, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve A");
+    let handle_b = serve(options(
+        &fixture_b,
+        pairing_router(&fixture_b, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve B");
+    let port_a = door_port(handle_a.door_outcome());
+    let port_b = door_port(handle_b.door_outcome());
+    assert_ne!(port_a, 0);
+    assert_ne!(port_b, 0);
+    assert_ne!(port_a, port_b);
+    configure_direct_port(&fixture_a, port_a);
+    configure_direct_port(&fixture_b, port_b);
+
+    let mint_a = mint_from_loopback(&handle_a, "A phone").await;
+    let mint_b = mint_from_loopback(&handle_b, "B phone").await;
+    let link_a = mint_a["pair_link"].as_str().expect("A pair link");
+    let link_b = mint_b["pair_link"].as_str().expect("B pair link");
+    for (link, port) in [(link_a, port_a), (link_b, port_b)] {
+        let spl_core::pairlink::ParsedPairLink::Direct(parsed) =
+            spl_core::pairlink::parse(link).expect("pair link parses")
+        else {
+            panic!("local pairing must emit a direct link");
+        };
+        assert_eq!(parsed.candidates[0].port, port);
+    }
+    let credential_a =
+        spl_transport::pairing::pair_from_link(link_a, "A phone", &serde_json::Map::new())
+            .await
+            .expect("A completes its own pairing ceremony");
+    let credential_b =
+        spl_transport::pairing::pair_from_link(link_b, "B phone", &serde_json::Map::new())
+            .await
+            .expect("B completes its own pairing ceremony");
+    TransportClient::new(credential_a, None)
+        .expect("A credential has strict mTLS configuration")
+        .dial_carrier()
+        .await
+        .expect("A credential authenticates to A");
+    TransportClient::new(credential_b, None)
+        .expect("B credential has strict mTLS configuration")
+        .dial_carrier()
+        .await
+        .expect("B credential authenticates to B");
+
+    let error_a_on_b = tls_handshake(
+        test_client_config(
+            &[&rustls::version::TLS13],
+            Some(fixture_a.client_identity(0)),
+        ),
+        port_b,
+    )
+    .await
+    .expect_err("A's cert must fail at B's TLS authorization layer");
+    assert!(
+        matches!(
+            error_a_on_b.kind(),
+            std::io::ErrorKind::InvalidData
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::ConnectionReset
+        ),
+        "A-against-B must fail at TLS, not connect-refused: {error_a_on_b:?}"
+    );
+    let error_b_on_a = tls_handshake(
+        test_client_config(
+            &[&rustls::version::TLS13],
+            Some(fixture_b.client_identity(0)),
+        ),
+        port_a,
+    )
+    .await
+    .expect_err("B's cert must fail at A's TLS authorization layer");
+    assert!(
+        matches!(
+            error_b_on_a.kind(),
+            std::io::ErrorKind::InvalidData
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::ConnectionReset
+        ),
+        "B-against-A must fail at TLS, not connect-refused: {error_b_on_a:?}"
+    );
+
+    handle_a.shutdown();
+    handle_b.shutdown();
+}
+
+#[tokio::test]
 async fn ac6_no_client_certificate_fails_at_tls() {
     let fixture = Fixture::established(1);
     assert!(matches!(
@@ -3297,13 +3404,18 @@ async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_finger
     ))
     .await
     .expect("serve");
+    let port = door_port(handle.door_outcome());
+    configure_direct_port(&fixture, port);
     let mint = mint_from_loopback(&handle, "paired phone").await;
-    let link = link_for_door(
-        mint["pair_link"].as_str().expect("minted pair link"),
-        door_port(handle.door_outcome()),
-    );
+    let link = mint["pair_link"].as_str().expect("minted pair link");
+    let spl_core::pairlink::ParsedPairLink::Direct(parsed) =
+        spl_core::pairlink::parse(link).expect("minted direct pair link parses")
+    else {
+        panic!("same-machine mint emits a direct link");
+    };
+    assert_eq!(parsed.candidates[0].port, port);
     let credential =
-        spl_transport::pairing::pair_from_link(&link, "paired phone", &serde_json::Map::new())
+        spl_transport::pairing::pair_from_link(link, "paired phone", &serde_json::Map::new())
             .await
             .expect("shipped pairing client completes ceremony");
     let (_, certificate) =
@@ -3335,13 +3447,12 @@ async fn minted_pair_link_reconnects_after_a_door_restart_with_a_fresh_leaf() {
     ))
     .await
     .expect("first serve");
+    let first_port = door_port(first.door_outcome());
+    configure_direct_port(&fixture, first_port);
     let mint = mint_from_loopback(&first, "restart phone").await;
-    let link = link_for_door(
-        mint["pair_link"].as_str().expect("minted pair link"),
-        door_port(first.door_outcome()),
-    );
+    let link = mint["pair_link"].as_str().expect("minted pair link");
     let credential =
-        spl_transport::pairing::pair_from_link(&link, "restart phone", &serde_json::Map::new())
+        spl_transport::pairing::pair_from_link(link, "restart phone", &serde_json::Map::new())
             .await
             .expect("shipped pairing client completes ceremony");
     let first_chain = presented_chain(&fixture, door_port(first.door_outcome())).await;

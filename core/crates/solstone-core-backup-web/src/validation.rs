@@ -82,7 +82,9 @@ fn canonical_origin(value: &str) -> Option<String> {
         return None;
     }
     if let Some(port) = port
-        && (!(1..=5).contains(&port.len()) || !port.bytes().all(|byte| byte.is_ascii_digit()))
+        && (!(1..=5).contains(&port.len())
+            || !port.bytes().all(|byte| byte.is_ascii_digit())
+            || port.parse::<u16>().is_err())
     {
         return None;
     }
@@ -379,6 +381,7 @@ mod tests {
     fn configured_portal_base_accepts_https_origin_and_rejects_the_invalid_shapes() {
         assert!(require_configured_portal_base(PORTAL).is_ok());
         assert!(require_configured_portal_base("https://services.solstone.app/").is_ok());
+        assert!(require_configured_portal_base("https://services.solstone.app:65535").is_ok());
         for base in [
             "http://services.solstone.app",
             "https://",
@@ -387,6 +390,8 @@ mod tests {
             "https://services.solstone.app?x=1",
             "https://services.solstone.app#f",
             "https://services.solstone.app//",
+            "https://services.solstone.app:65536",
+            "https://services.solstone.app:99999",
         ] {
             assert_eq!(
                 require_configured_portal_base(base),

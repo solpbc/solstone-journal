@@ -5,9 +5,12 @@
 
 use std::os::fd::{AsFd, OwnedFd};
 
+use std::ffi::OsStr;
+
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, openat};
 use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+use nix::unistd::{UnlinkatFlags, unlinkat};
 
 use crate::error::{ConvergenceError, DurableRole};
 
@@ -89,6 +92,18 @@ pub(crate) fn open_file(
         });
     }
     Ok(Some(fd))
+}
+
+pub(crate) fn unlink_bound(
+    parent: &impl AsFd,
+    name: &OsStr,
+    role: DurableRole,
+) -> Result<(), ConvergenceError> {
+    match unlinkat(parent, name, UnlinkatFlags::NoRemoveDir) {
+        Ok(()) => Ok(()),
+        Err(Errno::ENOENT) => Ok(()),
+        Err(source) => io("unlink bound name", role, source),
+    }
 }
 
 fn io<T>(operation: &'static str, role: DurableRole, source: Errno) -> Result<T, ConvergenceError> {

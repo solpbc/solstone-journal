@@ -34,6 +34,7 @@ use crate::door::PairingAdmission;
 use crate::network_status::{identity, local_endpoints, private_link, status};
 use crate::network_writes;
 use crate::pair_window_manager::PairWindowManager;
+use solstone_core_journal_config::{direct_door_port_from_config, read_direct_door_port};
 use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::{JournalRoot, asset_response, assets};
@@ -477,7 +478,19 @@ pub(crate) async fn pair(
             request: &request,
             nonce,
             sender_instance_id,
-            local_endpoints: response_local_endpoints(&snapshot),
+            local_endpoints: response_local_endpoints(
+                &snapshot,
+                match read_direct_door_port(&root.0) {
+                    Ok(port) => port,
+                    Err(_) => {
+                        return refusal(
+                            "internal_error",
+                            "couldn't read journal config",
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        );
+                    }
+                },
+            ),
         },
         now(),
     ) {
@@ -501,7 +514,7 @@ pub(crate) fn uses_relay_pairing(journal_root: &std::path::Path, request: &MintR
     read_posture(journal_root) == "spl" && request.same_machine == Some(false)
 }
 
-fn response_local_endpoints(snapshot: &PairingSnapshot) -> Option<Value> {
+fn response_local_endpoints(snapshot: &PairingSnapshot, port: u16) -> Option<Value> {
     (!snapshot.endpoints.is_empty()).then(|| {
         Value::Array(
             snapshot
@@ -510,7 +523,7 @@ fn response_local_endpoints(snapshot: &PairingSnapshot) -> Option<Value> {
                 .map(|endpoint| {
                     json!({
                         "ip": endpoint.ip.to_string(),
-                        "port": spl_core::DEFAULT_DIRECT_PORT,
+                        "port": port,
                         "scope": endpoint.scope,
                     })
                 })
@@ -570,11 +583,12 @@ pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> boo
 }
 
 fn configured_home(journal_root: &std::path::Path) -> Option<Ipv4Addr> {
-    let contents = std::fs::read(journal_root.join("config/journal.json")).ok()?;
-    let value: Value = serde_json::from_slice(&contents).ok()?;
-    let address = value.get("pairing")?.get("home_address")?.as_str()?;
+    let read = solstone_core_journal_config::read_journal_config(journal_root).ok()?;
+    let config = read.config.as_ref()?;
+    let address = config.get("pairing")?.get("home_address")?.as_str()?;
     let (host, port) = address.rsplit_once(':')?;
-    (port.parse::<u16>().ok() == Some(spl_core::DEFAULT_DIRECT_PORT))
+    let expected = direct_door_port_from_config(config).ok()?;
+    (port.parse::<u16>().ok() == Some(expected))
         .then(|| host.parse().ok())
         .flatten()
 }
@@ -1002,6 +1016,27 @@ mod tests {
         )
         .expect("direct posture");
         assert!(!uses_relay_pairing(temporary.path(), &request));
+    }
+
+    #[test]
+    fn configured_home_requires_the_journal_direct_port() {
+        let temporary = TempDir::new();
+        fs::create_dir_all(temporary.path().join("config")).expect("config directory");
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"pairing":{"home_address":"10.0.0.2:9000","direct_port":9000}}"#,
+        )
+        .expect("custom port config");
+        assert_eq!(
+            configured_home(temporary.path()),
+            Some(Ipv4Addr::new(10, 0, 0, 2))
+        );
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"pairing":{"home_address":"10.0.0.2:7657","direct_port":9000}}"#,
+        )
+        .expect("mismatched port config");
+        assert_eq!(configured_home(temporary.path()), None);
     }
 
     #[tokio::test]

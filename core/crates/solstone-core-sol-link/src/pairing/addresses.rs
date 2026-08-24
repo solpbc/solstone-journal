@@ -209,6 +209,7 @@ pub fn encode_pair_link(
     candidates: &[Ipv4Addr],
     nonce: [u8; 16],
     ca_fp_prefix: [u8; 16],
+    port: u16,
 ) -> Result<String, PairLinkEncodeError> {
     if candidates.is_empty() || candidates.len() > 4 {
         return Err(PairLinkEncodeError::CandidateCount(candidates.len()));
@@ -219,7 +220,12 @@ pub fn encode_pair_link(
     {
         return Err(PairLinkEncodeError::DisallowedAddress);
     }
-    Ok(encode_unchecked_pair_link(candidates, nonce, ca_fp_prefix))
+    Ok(encode_unchecked_pair_link(
+        candidates,
+        nonce,
+        ca_fp_prefix,
+        port,
+    ))
 }
 
 /// The configured-home branch intentionally bypasses resolver and parser-range
@@ -228,8 +234,9 @@ pub fn encode_configured_home_pair_link(
     home: Ipv4Addr,
     nonce: [u8; 16],
     ca_fp_prefix: [u8; 16],
+    port: u16,
 ) -> String {
-    encode_unchecked_pair_link(&[home], nonce, ca_fp_prefix)
+    encode_unchecked_pair_link(&[home], nonce, ca_fp_prefix, port)
 }
 
 /// Encode a v06 relay pair link.
@@ -357,15 +364,16 @@ fn encode_unchecked_pair_link(
     candidates: &[Ipv4Addr],
     nonce: [u8; 16],
     ca_fp_prefix: [u8; 16],
+    port: u16,
 ) -> String {
     let mut blob = Vec::new();
     if candidates.len() == 1 {
         blob.extend([0x04, 0x01]);
         blob.extend(candidates[0].octets());
-        blob.extend(spl_core::DEFAULT_DIRECT_PORT.to_be_bytes());
+        blob.extend(port.to_be_bytes());
     } else {
         blob.extend([0x05, 0x01, candidates.len() as u8]);
-        blob.extend(spl_core::DEFAULT_DIRECT_PORT.to_be_bytes());
+        blob.extend(port.to_be_bytes());
         for address in candidates {
             blob.extend(address.octets());
         }
@@ -545,21 +553,35 @@ mod tests {
     fn encoded_links_round_trip_at_the_spl_boundary() {
         let nonce = [7; 16];
         let pin = [9; 16];
-        for candidates in [
-            vec![Ipv4Addr::new(10, 0, 0, 2)],
-            vec![Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(192, 168, 1, 2)],
-        ] {
-            let link = encode_pair_link(&candidates, nonce, pin).expect("link");
-            let blob = spl_core::crockford::decode(link.split('#').nth(1).expect("fragment"))
-                .expect("decode");
-            assert_eq!(blob[0], if candidates.len() == 1 { 0x04 } else { 0x05 });
-            assert!(matches!(
-                spl_core::pairlink::parse(&link),
-                Ok(spl_core::pairlink::ParsedPairLink::Direct(_))
-            ));
+        for port in [spl_core::DEFAULT_DIRECT_PORT, 9000] {
+            for candidates in [
+                vec![Ipv4Addr::new(10, 0, 0, 2)],
+                vec![Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(192, 168, 1, 2)],
+            ] {
+                let link = encode_pair_link(&candidates, nonce, pin, port).expect("link");
+                let blob = spl_core::crockford::decode(link.split('#').nth(1).expect("fragment"))
+                    .expect("decode");
+                assert_eq!(blob[0], if candidates.len() == 1 { 0x04 } else { 0x05 });
+                let spl_core::pairlink::ParsedPairLink::Direct(parsed) =
+                    spl_core::pairlink::parse(&link).expect("direct pair link parses")
+                else {
+                    panic!("direct encoder must emit a direct pair link");
+                };
+                assert!(
+                    parsed
+                        .candidates
+                        .iter()
+                        .all(|candidate| candidate.port == port)
+                );
+            }
         }
         assert_eq!(
-            encode_pair_link(&[Ipv4Addr::new(8, 8, 8, 8)], nonce, pin),
+            encode_pair_link(
+                &[Ipv4Addr::new(8, 8, 8, 8)],
+                nonce,
+                pin,
+                spl_core::DEFAULT_DIRECT_PORT,
+            ),
             Err(PairLinkEncodeError::DisallowedAddress)
         );
     }
@@ -567,10 +589,16 @@ mod tests {
     #[test]
     fn configured_home_is_single_host_v04_without_resolution() {
         let link =
-            encode_configured_home_pair_link(Ipv4Addr::new(192, 168, 1, 7), [1; 16], [2; 16]);
+            encode_configured_home_pair_link(Ipv4Addr::new(192, 168, 1, 7), [1; 16], [2; 16], 9000);
         let blob =
             spl_core::crockford::decode(link.split('#').nth(1).expect("fragment")).expect("decode");
         assert_eq!(blob[0], 0x04);
+        let spl_core::pairlink::ParsedPairLink::Direct(parsed) =
+            spl_core::pairlink::parse(&link).expect("configured-home link parses")
+        else {
+            panic!("configured-home encoder must emit a direct link");
+        };
+        assert_eq!(parsed.candidates[0].port, 9000);
     }
 
     #[test]
