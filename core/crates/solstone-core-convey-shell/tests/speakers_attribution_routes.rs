@@ -51,13 +51,16 @@ impl Journal {
     }
 
     fn entity(&self, id: &str, principal: bool) {
+        self.entity_value(
+            id,
+            json!({"id":id,"name":id,"type":"Person","is_principal":principal}),
+        );
+    }
+
+    fn entity_value(&self, id: &str, value: Value) {
         let directory = self.0.join("entities").join(id);
         fs::create_dir_all(&directory).expect("entity directory");
-        fs::write(
-            directory.join("entity.json"),
-            json!({"id":id,"name":id,"type":"Person","is_principal":principal}).to_string(),
-        )
-        .expect("entity");
+        fs::write(directory.join("entity.json"), value.to_string()).expect("entity");
     }
 
     fn segment(&self, labels: Value) {
@@ -756,6 +759,66 @@ async fn correct_reports_a_real_nonzero_propagation_preview() {
         offer["request"],
         json!({"old_speaker":"old","new_speaker":"new","commit":false})
     );
+}
+
+#[tokio::test]
+async fn propagate_allows_legacy_old_speakers_but_requires_an_admitted_new_speaker() {
+    for (old_speaker, legacy_entity) in [
+        (
+            "tool",
+            Some(json!({"id":"tool","name":"tool","type":"Tool"})),
+        ),
+        (
+            "blocked",
+            Some(json!({"id":"blocked","name":"blocked","type":"Person","blocked":true})),
+        ),
+        ("missing", None),
+    ] {
+        let journal = Journal::new();
+        journal.entity("owner", true);
+        journal.entity("new", false);
+        if let Some(entity) = legacy_entity {
+            journal.entity_value(old_speaker, entity);
+        }
+        journal.owner_centroid();
+        journal.voiceprint("new", unit(0.0, 1.0));
+        journal.segment(json!({"labels":[{"sentence_id":1,"speaker":old_speaker,"confidence":"high","method":"user_assigned"}]}));
+
+        let (status, response) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/propagate-correction",
+            json!({"old_speaker":old_speaker,"new_speaker":"new","commit":false}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{old_speaker}: {response}");
+        assert_eq!(response["status"], "preview", "{old_speaker}: {response}");
+        assert!(
+            response["statement_count"].as_u64().unwrap_or(0) > 0,
+            "{old_speaker}: {response}"
+        );
+    }
+
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity_value("tool", json!({"id":"tool","name":"tool","type":"Tool"}));
+    journal.entity_value(
+        "project",
+        json!({"id":"project","name":"project","type":"Project"}),
+    );
+    journal.segment(json!({"labels":[{"sentence_id":1,"speaker":"tool","confidence":"high","method":"user_assigned"}]}));
+    let before = content_snapshot(&journal.0);
+
+    let (status, response) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/propagate-correction",
+        json!({"old_speaker":"tool","new_speaker":"project","commit":false}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
+    assert_eq!(response["reason_code"], "speaker_not_person");
+    assert_eq!(content_snapshot(&journal.0), before);
 }
 
 #[tokio::test]

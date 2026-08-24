@@ -465,9 +465,6 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             StatusCode::BAD_REQUEST,
         );
     }
-    if let Err(response) = entity_allowed(&root.0, old_speaker) {
-        return response;
-    }
     if let Err(response) = entity_allowed(&root.0, new_speaker) {
         return response;
     }
