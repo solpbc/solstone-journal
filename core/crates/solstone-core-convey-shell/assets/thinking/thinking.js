@@ -895,26 +895,52 @@
     return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   }
 
+  function thinkingRunsRoute({kind = 'runs', day = '', talent = '', useId = '', facet = '', facetExplicit = false}) {
+    const resolvedFacet = facetExplicit && facet ? facet : '';
+    const resolvedFacetExplicit = Boolean(resolvedFacet);
+    const key = kind === 'run-id'
+      ? `run:${useId}`
+      : `runs:${day}:${talent}:${useId}`;
+    return {kind, day, talent, useId, facet: resolvedFacet, facetExplicit: resolvedFacetExplicit, key};
+  }
+
+  function currentThinkingRunsRoute(route) {
+    return thinkingRunsRoute({
+      ...route,
+      facet: state.runsFacet,
+      facetExplicit: state.runsFacetExplicit,
+    });
+  }
+
   function thinkingRunsHash(route) {
+    const suffix = route.facetExplicit && route.facet
+      ? `?facet=${encodeURIComponent(route.facet)}`
+      : '';
     if (route.kind === 'run-id') {
-      return `#runs/run/${encodeThinkingSegment(route.useId)}`;
+      return `#runs/run/${encodeThinkingSegment(route.useId)}${suffix}`;
     }
     const parts = ['#runs', route.day];
     if (route.talent) parts.push(encodeThinkingSegment(route.talent));
     if (route.useId) parts.push(encodeThinkingSegment(route.useId));
-    return parts.join('/');
+    return `${parts.join('/')}${suffix}`;
   }
 
   function parseThinkingHash() {
-    const hash = window.location.hash.replace(/^#/, '');
+    const rawHash = window.location.hash.replace(/^#/, '');
+    const [hash, query = ''] = rawHash.split('?', 2);
     if (!hash.startsWith('runs')) return null;
+    const params = new URLSearchParams(query);
+    const facet = params.get('facet') || '';
+    const facetExplicit = Boolean(facet);
     const parts = hash.split('/');
     if (parts[0] !== 'runs') return null;
     if (parts.length === 1) return {kind: 'runs-root', key: 'runs-root'};
     if (parts[1] === 'run') {
       if (parts.length !== 3 || !parts[2]) return {kind: 'runs-invalid', key: 'runs-invalid'};
       const useId = decodeThinkingSegment(parts[2]);
-      return useId ? {kind: 'run-id', useId, key: `run:${useId}`} : {kind: 'runs-invalid', key: 'runs-invalid'};
+      return useId
+        ? thinkingRunsRoute({kind: 'run-id', useId, facet, facetExplicit})
+        : {kind: 'runs-invalid', key: 'runs-invalid'};
     }
     if (parts.length < 2 || parts.length > 4 || !/^\d{8}$/.test(parts[1])) {
       return {kind: 'runs-invalid', key: 'runs-invalid'};
@@ -923,13 +949,14 @@
     if (decoded.some((part) => !part)) return {kind: 'runs-invalid', key: 'runs-invalid'};
     const [talent = '', useId = ''] = decoded;
     if (useId && !talent) return {kind: 'runs-invalid', key: 'runs-invalid'};
-    return {
+    return thinkingRunsRoute({
       kind: 'runs',
       day: parts[1],
       talent,
       useId,
-      key: `runs:${parts[1]}:${talent}:${useId}`,
-    };
+      facet,
+      facetExplicit,
+    });
   }
 
   function replaceThinkingHash(hash) {
@@ -944,6 +971,7 @@
 
   function setThinkingRoute(route) {
     if (route?.kind === 'runs' || route?.kind === 'run-id') {
+      setRunsFacet(route.facet, route.facetExplicit);
       state.runsLastHash = thinkingRunsHash(route);
     }
     const selectedUseId = thinkingSelectedRunId(route);
@@ -1027,7 +1055,11 @@
     const talent = record?.name;
     const useId = record?.id || route.useId;
     if (!/^\d{8}$/.test(day || '') || !talent || !useId) return route;
-    const contextual = {kind: 'runs', day, talent, useId, key: `runs:${day}:${talent}:${useId}`};
+    const contextual = thinkingRunsRoute({
+      kind: 'runs', day, talent, useId,
+      facet: route.facet,
+      facetExplicit: route.facetExplicit,
+    });
     if (route.day !== day || route.talent !== talent || route.useId !== useId || route.kind === 'run-id') {
       replaceThinkingHash(thinkingRunsHash(contextual));
     }
@@ -1103,21 +1135,20 @@
     }
     const route = parseThinkingHash();
     if (route?.kind === 'runs-root') {
-      const canonical = {kind: 'runs', day: todayThinkingDay(), talent: '', useId: '', key: ''};
-      canonical.key = `runs:${canonical.day}::`;
+      const canonical = thinkingRunsRoute({kind: 'runs', day: todayThinkingDay()});
       replaceThinkingHash(thinkingRunsHash(canonical));
       showThinkingSection('runs', canonical, origin);
       return;
     }
     if (route?.kind === 'runs-invalid') {
-      const canonical = {kind: 'runs', day: todayThinkingDay(), talent: '', useId: '', key: ''};
-      canonical.key = `runs:${canonical.day}::`;
+      const canonical = thinkingRunsRoute({kind: 'runs', day: todayThinkingDay()});
       replaceThinkingHash(thinkingRunsHash(canonical));
       showThinkingSection('runs', canonical, origin);
       setThinkingStatus('thinkingRunsStatus', "that talent run isn't available.");
       return;
     }
     if (route?.kind === 'runs' || route?.kind === 'run-id') {
+      replaceThinkingHash(thinkingRunsHash(route));
       showThinkingSection('runs', route, origin);
       setThinkingStatus('thinkingRunsStatus', '');
       return;
@@ -1172,7 +1203,7 @@
   }
 
   function currentRunsSelectionKey() {
-    return `${state.runsRouteKey}:facet:${state.runsFacetExplicit ? state.runsFacet : 'cookie'}`;
+    return `${state.runsRouteKey}:facet:${state.runsFacet}`;
   }
 
   function setRunsFacet(value, explicit) {
@@ -1380,7 +1411,7 @@
     host.replaceChildren();
     (Array.isArray(days) ? days : []).forEach((day) => {
       const link = document.createElement('a');
-      link.href = thinkingRunsHash({kind: 'runs', day, talent: '', useId: ''});
+      link.href = thinkingRunsHash(currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''}));
       link.textContent = day;
       host.appendChild(link);
     });
@@ -1404,7 +1435,7 @@
 
   function loadThinkingRuns(route, force = false) {
     if (!route || route.kind !== 'runs') return;
-    const key = thinkingCacheKey('day', {day: route.day, facet: state.runsFacetExplicit ? state.runsFacet : ''});
+    const key = thinkingCacheKey('day', {day: route.day, facet: state.runsFacet});
     const cached = readThinkingCache('day', key);
     if (cached && !force) {
       renderThinkingRunsDay(cached, route);
@@ -1427,7 +1458,11 @@
   function navigateThinkingRun(run) {
     const route = parseThinkingHash();
     if (!route?.day) return;
-    const next = {kind: 'runs', day: route.day, talent: run.name, useId: run.id, key: `runs:${route.day}:${run.name}:${run.id}`};
+    const next = thinkingRunsRoute({
+      kind: 'runs', day: route.day, talent: run.name, useId: run.id,
+      facet: route.facet,
+      facetExplicit: route.facetExplicit,
+    });
     window.history.pushState(null, '', thinkingRunsHash(next));
     routeThinkingHash('pointer');
   }
@@ -1623,12 +1658,16 @@
     $('thinkingRunsNext')?.addEventListener('click', () => navigateThinkingRunsDay(1));
     $('thinkingRunsDate')?.addEventListener('change', (event) => navigateThinkingRunsDay(0, runsDayFromInput(event.target.value)));
     $('thinkingRunsFacet')?.addEventListener('change', (event) => {
-      setRunsFacet(event.target.value, true);
+      setRunsFacet(event.target.value, Boolean(event.target.value));
       const expires = new Date();
       expires.setFullYear(expires.getFullYear() + 1);
       document.cookie = `selectedFacet=${state.runsFacet}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
       const route = parseThinkingHash();
-      if (route?.kind === 'runs') loadThinkingRuns(route, true);
+      if (route?.kind === 'runs') {
+        const next = currentThinkingRunsRoute(route);
+        window.history.pushState(null, '', thinkingRunsHash(next));
+        routeThinkingHash('pointer');
+      }
     });
     $('thinkingRunsPrompt')?.addEventListener('click', openThinkingPrompt);
     $('thinkingRunsPromptClose')?.addEventListener('click', closeThinkingPrompt);
@@ -1637,7 +1676,7 @@
   function navigateThinkingRunsDay(amount, requestedDay = '') {
     const route = parseThinkingHash();
     const day = requestedDay || shiftThinkingDay(route?.day || todayThinkingDay(), amount);
-    const next = {kind: 'runs', day, talent: '', useId: '', key: `runs:${day}::`};
+    const next = currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''});
     window.history.pushState(null, '', thinkingRunsHash(next));
     routeThinkingHash('pointer');
   }

@@ -131,6 +131,7 @@ async function main() {
     loadThinkingOutput,
     openThinkingPrompt,
     navigateThinkingRunsDay,
+    currentRunsSelectionKey,
   };
 })();`,
   );
@@ -264,6 +265,7 @@ async function main() {
     Map,
     Set,
     Promise,
+    URLSearchParams,
     fetch() { throw new Error('unexpected fetch'); },
     setTimeout,
     clearTimeout,
@@ -271,6 +273,8 @@ async function main() {
   vm.runInNewContext(source, context, {filename: 'thinking.js'});
   const thinking = window.__thinkingRuns;
   assert(thinking, 'test exports present');
+  assert.strictEqual(source.includes('window.selectedFacet'), false, 'Thinking does not read the shared selected facet');
+  assert.strictEqual(source.includes('facet.switch'), false, 'Thinking does not register the retired facet event');
   thinking.bind();
   thinking.bindThinkingSectionTabs();
   thinking.bindThinkingRuns();
@@ -329,7 +333,10 @@ async function main() {
   window.location.hash = encoded;
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(thinking.parseThinkingHash())),
-    {kind: 'runs', day: '20260815', talent: 'talent/with #', useId: 'use/id?#', key: 'runs:20260815:talent/with #:use/id?#'},
+    {
+      kind: 'runs', day: '20260815', talent: 'talent/with #', useId: 'use/id?#',
+      facet: '', facetExplicit: false, key: 'runs:20260815:talent/with #:use/id?#',
+    },
     'dynamic hash segments round-trip independently',
   );
 
@@ -378,7 +385,7 @@ async function main() {
   thinking.state.runsCache.run.set('run:use-id', {
     id: 'use-id', day: '20260310', name: 'talent', events: [],
   });
-  window.location.hash = '#runs/20260310/talent/use-id';
+  window.location.hash = '#runs/20260310/talent/use-id?facet=work';
   thinking.routeThinkingHash('history');
   await settle();
   setupTab.emit('click');
@@ -386,7 +393,7 @@ async function main() {
   assert.strictEqual(document.activeElement, setupTab, 'pointer activation keeps focus on selected tab');
   runsTab.emit('click');
   await settle();
-  assert.strictEqual(window.location.hash, '#runs/20260310/talent/use-id', 'setup round-trip restores the prior Runs drill-down');
+  assert.strictEqual(window.location.hash, '#runs/20260310/talent/use-id?facet=work', 'setup round-trip restores the prior Runs drill-down');
   assert.strictEqual(thinking.state.runsFacet, 'work', 'setup round-trip retains the explicit facet');
   assert.strictEqual(nodes.get('thinkingRunsFacet').value, 'work', 'setup round-trip restores the facet control');
   setupTab.emit('click');
@@ -421,12 +428,20 @@ async function main() {
   facetControl.emit('change');
   await settle();
   assert.strictEqual(document.cookie.includes('selectedFacet=work'), true, 'explicit facet persists selectedFacet cookie');
+  assert.strictEqual(window.location.hash, '#runs/20260101?facet=work', 'explicit facet is encoded in the Runs hash');
   assert(requests.includes('/app/thinking/api/talents/20260101?facet=work'), 'explicit facet is sent after selection');
 
+  thinking.state.runsFacet = '';
+  thinking.state.runsFacetExplicit = false;
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(thinking.state.runsFacet, 'work', 'Runs hash restores the selected facet on reload');
+  assert.strictEqual(thinking.state.runsFacetExplicit, true, 'Runs hash restores explicit facet state on reload');
+  assert.strictEqual(thinking.currentRunsSelectionKey().includes('cookie'), false, 'Runs selection keys have no cookie sentinel');
+
   thinking.navigateThinkingRunsDay(1);
-  assert.strictEqual(window.location.hash, '#runs/20260102', 'next day updates the hash');
+  assert.strictEqual(window.location.hash, '#runs/20260102?facet=work', 'next day preserves the facet hash');
   thinking.navigateThinkingRunsDay(-1);
-  assert.strictEqual(window.location.hash, '#runs/20260101', 'previous day updates the hash');
+  assert.strictEqual(window.location.hash, '#runs/20260101?facet=work', 'previous day preserves the facet hash');
 
   const dayFailure = deferred();
   dayResponses.push(dayFailure.promise);
@@ -603,8 +618,8 @@ async function main() {
   first.resolve({uses: [{id: 'old', name: 'stale-day'}], facets: []});
   await settle();
   await settle();
-  assert.strictEqual(thinking.state.runsCache.day.has('day:20260104:facet:work'), false, 'stale day response is not cached');
-  assert.strictEqual(thinking.state.runsCache.day.has('day:20260105:facet:work'), true, 'current day response is cached');
+  assert.strictEqual(thinking.state.runsCache.day.has('day:20260104:facet:'), false, 'stale day response is not cached');
+  assert.strictEqual(thinking.state.runsCache.day.has('day:20260105:facet:'), true, 'current day response is cached without a cookie sentinel');
   assert.strictEqual(nodes.get('thinkingRunsContent').children[0].children[0].textContent, 'current-day', 'stale day response does not replace the current render');
 
   const firstRun = deferred();
