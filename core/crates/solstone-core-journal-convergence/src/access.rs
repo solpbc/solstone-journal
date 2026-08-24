@@ -274,7 +274,7 @@ pub(crate) fn lock_trace() -> Vec<&'static str> {
 mod tests {
     use super::*;
     use crate::lock::{acquire_days_with_timeout, hold_topology_with_timeout};
-    use crate::test_support::{admit_days, continue_ok};
+    use crate::test_support::{admit_days, admit_proof, continue_ok, prepared_owner};
 
     fn trace_claim_read_path(admitted: &Admitted) {
         initialize_lock_trace();
@@ -323,6 +323,41 @@ mod tests {
         let _view = access.finalize_claim_head().unwrap();
         access.with_registry(|_| Ok(())).unwrap();
         assert_eq!(lock_trace(), vec!["day", "topology", "registry"]);
+    }
+
+    #[test]
+    fn transaction_advance_observes_its_topology_then_registry_sequence() {
+        let (_temporary, admitted) = admit_days("access-transaction-advance", &["20260823"]);
+        let owner = prepared_owner(&admitted).unwrap();
+        initialize_lock_trace();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+        assert_eq!(
+            lock_trace(),
+            vec!["day", "registry", "topology", "registry"],
+            "the direct transaction path must retain no topology guard before registry entry"
+        );
+    }
+
+    #[test]
+    fn recovery_cleanup_observes_its_topology_then_day_sequence() {
+        let (_temporary, admitted) = admit_days("access-recovery-cleanup", &["20260823"]);
+        let held = continue_ok(&admitted);
+        drop(held);
+        initialize_lock_trace();
+        assert!(matches!(
+            admitted.cleanup(),
+            Err(crate::error::ConvergenceError::Refused(
+                crate::error::Refusal::IncompleteEvidence
+            ))
+        ));
+        assert_eq!(
+            lock_trace(),
+            vec!["topology", "day"],
+            "the direct recovery path must drop topology before acquiring days"
+        );
     }
 
     #[test]

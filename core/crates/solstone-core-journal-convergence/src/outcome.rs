@@ -112,7 +112,9 @@ impl Admitted {
             Ok((owner, *link, decision, reconcile, active, superseded))
         })?;
         let (owner, link, decision, reconcile, active, superseded) = linked;
-        if claim_still_names(&claim, self.days(), link.serial) {
+        if claim_still_names(&claim, self.days(), &link)?
+            && crate::terminal::read_terminal(access.dirs(), link.serial)?.is_none()
+        {
             return Ok(GrantState::Pending {
                 recovery: "terminal and clearance cleanup",
             });
@@ -120,17 +122,30 @@ impl Admitted {
         let base = clearance_outcome(&access, link.serial, self.days(), &owner)?;
         match (base, decision) {
             (TerminalOutcome::Committed, None) => {
+                if !owner.selector().is_empty() {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::Decision,
+                    });
+                }
                 require_absent(active, DurableRole::GrantActiveBarrier)?;
                 require_absent(superseded, DurableRole::GrantSupersededBarrier)?;
                 require_no_members(&access, link.serial)?;
                 Ok(GrantState::Outcome(GrantOutcome::EmptySetCommitted))
             }
             (TerminalOutcome::Superseded, None) => {
+                if superseded.is_some() {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::Decision,
+                    });
+                }
                 require_absent(active, DurableRole::GrantActiveBarrier)?;
                 require_absent(superseded, DurableRole::GrantSupersededBarrier)?;
                 require_no_members(&access, link.serial)?;
                 Ok(GrantState::Outcome(GrantOutcome::PassiveSuperseded))
             }
+            (TerminalOutcome::Aborted, None) => Err(ConvergenceError::Unknown {
+                role: DurableRole::Decision,
+            }),
             (TerminalOutcome::Aborted, Some(decision)) => {
                 require_abort_decision(&decision, &owner, &link)?;
                 require_absent(active, DurableRole::GrantActiveBarrier)?;
@@ -167,8 +182,7 @@ impl Admitted {
                 let barrier = superseded.ok_or(ConvergenceError::Unknown {
                     role: DurableRole::GrantSupersededBarrier,
                 })?;
-                let members =
-                    historical_members(&access, &owner, &decision, true, active.as_ref())?;
+                let members = historical_members(&access, &owner, &decision, true, Some(&barrier))?;
                 accept_barrier(
                     barrier.clone(),
                     &owner,
@@ -218,14 +232,34 @@ fn reconcile_snapshots(
     Ok(snapshots)
 }
 
-fn claim_still_names(view: &ClaimView, days: &[crate::layout::DayKey], serial: u64) -> bool {
+fn claim_still_names(
+    view: &ClaimView,
+    days: &[crate::layout::DayKey],
+    link: &crate::schema::OwnerIntentLink,
+) -> Result<bool, ConvergenceError> {
     match view {
-        ClaimView::Empty => false,
-        ClaimView::Headed(body) | ClaimView::Unheaded(body) => days.iter().any(|day| {
-            body.table
-                .get(day.as_str())
-                .is_some_and(|entry| entry.serial == serial)
-        }),
+        ClaimView::Empty => Ok(false),
+        ClaimView::Headed(body) | ClaimView::Unheaded(body) => {
+            let entries: Vec<_> = days
+                .iter()
+                .filter_map(|day| body.table.get(day.as_str()))
+                .collect();
+            if !entries.iter().any(|entry| entry.serial == link.serial) {
+                return Ok(false);
+            }
+            if entries.len() != days.len()
+                || entries.iter().any(|entry| {
+                    entry.serial != link.serial
+                        || entry.owner_binding_digest != link.owner_binding_digest
+                        || entry.intent_digest != link.intent_digest
+                })
+            {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::ClaimRevision,
+                });
+            }
+            Ok(true)
+        }
     }
 }
 
@@ -416,7 +450,7 @@ fn historical_members(
     owner: &crate::owner::OwnerBinding,
     decision: &GrantDecision,
     superseded: bool,
-    active_barrier: Option<&GrantBarrier>,
+    tombstone_barrier: Option<&GrantBarrier>,
 ) -> Result<Vec<GrantMember>, ConvergenceError> {
     access.with_registry(|section| {
         let mut members = Vec::new();
@@ -465,7 +499,7 @@ fn historical_members(
             });
         }
         if tombstones.len() == decision.tuples.len() {
-            let barrier = active_barrier.ok_or(ConvergenceError::Unknown {
+            let barrier = tombstone_barrier.ok_or(ConvergenceError::Unknown {
                 role: DurableRole::GrantSetTombstone,
             })?;
             crate::revocation::validate_grant_set_tombstone(
@@ -641,14 +675,7 @@ mod tests {
                 | Self::ClearanceMemberReplaced
                 | Self::ClearanceMemberDigestMismatched => Some(DurableRole::ClearanceMember),
                 Self::OwnerIntentLinkUnlinked => Some(DurableRole::OwnerIntentLink),
-                Self::DecisionUnlinked => Some(match matrix {
-                    Matrix::NonemptyCommitted => DurableRole::GrantActiveBarrier,
-                    Matrix::Aborted => DurableRole::ClearanceBarrier,
-                    Matrix::DecisionedSuperseded => DurableRole::GrantSupersededBarrier,
-                    Matrix::EmptySetCommitted | Matrix::PassiveSuperseded => {
-                        unreachable!("inapplicable matrix condition is skipped")
-                    }
-                }),
+                Self::DecisionUnlinked => Some(DurableRole::Decision),
                 Self::ResolverArtifactPresent => Some(DurableRole::GrantMember),
                 Self::GrantMemberUnlinked | Self::GrantTombstoneUnlinked => {
                     Some(DurableRole::GrantTombstone)
@@ -682,7 +709,10 @@ mod tests {
                     None
                 }
                 Self::ResolverArtifactPresent
-                    if matches!(matrix, Matrix::Aborted | Matrix::EmptySetCommitted) =>
+                    if matches!(
+                        matrix,
+                        Matrix::Aborted | Matrix::EmptySetCommitted | Matrix::PassiveSuperseded
+                    ) =>
                 {
                     None
                 }
@@ -695,7 +725,10 @@ mod tests {
                     None
                 }
                 Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched
-                    if matches!(matrix, Matrix::NonemptyCommitted) =>
+                    if matches!(
+                        matrix,
+                        Matrix::NonemptyCommitted | Matrix::DecisionedSuperseded
+                    ) =>
                 {
                     None
                 }
@@ -711,9 +744,9 @@ mod tests {
                 Self::GrantMemberUnlinked | Self::GrantBarrierUnlinked => {
                     Some("this matrix has no historical grant-member fold")
                 }
-                Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched => {
-                    Some("only the nonempty-committed matrix permits authorized grant tombstones")
-                }
+                Self::GrantTombstoneUnlinked | Self::GrantSetTombstoneBindingMismatched => Some(
+                    "only committed and decisioned-superseded matrices permit authorized grant tombstones",
+                ),
                 Self::ReconcileNoTokenEvidenceContradicted => {
                     Some("only decisioned supersession has a reconciliation no-token proof")
                 }
@@ -1034,6 +1067,57 @@ mod tests {
         );
     }
 
+    fn prepare_decisioned_authorized_tombstone_fold(temporary: &TempDir, serial: u64) {
+        let member_path = grant_member_path(temporary, serial);
+        let member: GrantMember =
+            serde_json::from_slice(&std::fs::read(&member_path).unwrap()).unwrap();
+        let decision: GrantDecision = serde_json::from_slice(
+            &std::fs::read(temporary.journal_path().join(format!(
+                "health/convergence/registry/decisions/{serial}.json"
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        let barrier: GrantBarrier = serde_json::from_slice(
+            &std::fs::read(temporary.journal_path().join(format!(
+                "health/convergence/registry/grants/barriers/{serial}.{}.json",
+                crate::layout::SUPERSEDED_BARRIER_SUFFIX
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        let tombstone = GrantTombstone {
+            role: crate::schema::ROLE_GRANT_TOMBSTONE.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: member.journal_id.clone(),
+            root_id: member.root_id.clone(),
+            serial,
+            tuple: member.tuple.clone(),
+            member_digest: member.member_digest.clone(),
+            reason: "later_dirty_descendant".to_owned(),
+        };
+        write_canonical(&grant_tombstone_path(temporary, serial), &tombstone);
+        let mut member_tombstones = std::collections::BTreeMap::new();
+        member_tombstones.insert(member_key(&member.tuple), member.member_digest);
+        let set = crate::schema::GrantSetTombstone {
+            role: crate::schema::ROLE_GRANT_SET_TOMBSTONE.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: decision.journal_id,
+            root_id: decision.root_id,
+            serial,
+            decision_digest: decision.decision_digest,
+            barrier_digest: barrier.barrier_digest,
+            member_tombstones,
+        };
+        write_canonical(
+            &temporary.journal_path().join(format!(
+                "health/convergence/registry/grants/tombstones/set.{serial}.json"
+            )),
+            &set,
+        );
+        std::fs::remove_file(member_path).unwrap();
+    }
+
     fn mutate_named_matrix_member(
         temporary: &TempDir,
         operation: &OperationId,
@@ -1171,6 +1255,77 @@ mod tests {
     }
 
     #[test]
+    fn reporting_an_outcome_cannot_mint_or_reterminalize() {
+        let (_temporary, admitted, operation, selector) = committed("outcome-no-authority");
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
+        assert!(matches!(
+            crate::terminal::attempt_generic_rejection(),
+            Err(ConvergenceError::Refused(crate::Refusal::GenericRejection))
+        ));
+        assert!(matches!(
+            crate::permit::BaseSuccessorCommit::bind(&admitted),
+            Err(ConvergenceError::Refused(crate::Refusal::NoPermit))
+        ));
+    }
+
+    #[test]
+    fn grant_state_pending_requires_an_exact_active_claim_prefix() {
+        let (temporary, admitted) = admit_days("outcome-pending", &["20260823"]);
+        let (operation, selector, owner) = prepared(&admitted, false);
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        let _fault = fail_after(PublishFault::AfterActive);
+        assert!(matches!(
+            held.continue_with(proof),
+            Err(ConvergenceError::PreservedPrior { .. })
+        ));
+        drop(held);
+
+        let before = snapshot_tree(&temporary.journal_path());
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Pending {
+                recovery: "terminal and clearance cleanup"
+            }
+        );
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+
+        let revision_path = temporary
+            .journal_path()
+            .join("health/convergence/claim/rev.1.json");
+        let mut revision: crate::schema::ClaimRevision =
+            serde_json::from_slice(&std::fs::read(&revision_path).unwrap()).unwrap();
+        revision
+            .table
+            .get_mut("20260823")
+            .unwrap()
+            .owner_binding_digest = "00".repeat(32);
+        write_canonical(&revision_path, &revision);
+        let head_path = temporary
+            .journal_path()
+            .join("health/convergence/claim/head.json");
+        let mut head: crate::schema::ClaimHead =
+            serde_json::from_slice(&std::fs::read(&head_path).unwrap()).unwrap();
+        head.revision_digest = crate::digest::digest_value(&revision)
+            .unwrap()
+            .as_hex()
+            .to_owned();
+        write_canonical(&head_path, &head);
+
+        let before = snapshot_tree(&temporary.journal_path());
+        assert!(matches!(
+            admitted.grant_state(&operation, &selector),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::ClaimRevision
+            })
+        ));
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+    }
+
+    #[test]
     fn causal_owner_revocation_leaves_only_the_read_only_outcome() {
         let (_temporary, admitted, operation, selector) = committed("outcome-owner-revoked");
         assert_eq!(
@@ -1194,6 +1349,65 @@ mod tests {
             ),
             Err(ConvergenceError::Refused(crate::Refusal::OwnerRevoked))
         ));
+    }
+
+    #[test]
+    fn reports_a_mixed_live_member_and_authorized_tombstone_fold() {
+        let (temporary, admitted) = admit_days("outcome-mixed-fold", &["20260823", "20260824"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = GrantRequestSelector::try_new(
+            admitted.days(),
+            vec![
+                ("20260823", WriterFamily::Think, TargetScope::Chronicle),
+                ("20260824", WriterFamily::Think, TargetScope::Chronicle),
+            ],
+        )
+        .unwrap();
+        let owner = OwnerBinding::prepare(
+            &admitted,
+            &operation,
+            TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        let serial = held.continue_with(proof).unwrap().commit().unwrap().serial;
+        drop(held);
+
+        publish_same_generation_completion(&admitted);
+        let completed_day = crate::layout::DayKey::parse("20260823").unwrap();
+        assert_eq!(
+            admitted
+                .revoke_grant(
+                    &operation,
+                    &selector,
+                    &completed_day,
+                    WriterFamily::Think,
+                    TargetScope::Chronicle,
+                )
+                .unwrap(),
+            crate::GrantRevoke::Revoked
+        );
+        assert!(grant_tombstone_path(&temporary, serial).is_file());
+        std::fs::remove_file(grant_member_path(&temporary, serial)).unwrap();
+        assert!(
+            !grant_member_path(&temporary, serial).exists(),
+            "the completed tuple is retained only by its authorized tombstone"
+        );
+        assert!(
+            temporary
+                .journal_path()
+                .join(format!(
+                    "health/convergence/registry/grants/members/{serial}/20260824.think.chronicle.json"
+                ))
+                .is_file(),
+            "the unaffected tuple remains a live historical member"
+        );
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::NonemptyCommitted)
+        );
     }
 
     #[test]
@@ -1233,9 +1447,7 @@ mod tests {
         std::fs::write(&revocation, bytes).unwrap();
         assert!(matches!(
             admitted.grant_state(&operation, &selector),
-            Err(ConvergenceError::Unknown {
-                role: DurableRole::OwnerRevocation
-            })
+            Err(ConvergenceError::Refused(crate::Refusal::WrongOperation))
         ));
 
         std::fs::write(&revocation, b"{malformed").unwrap();
@@ -1384,6 +1596,74 @@ mod tests {
     }
 
     #[test]
+    fn decisioned_history_accepts_authorized_tombstones_without_prior_active_barrier() {
+        let (temporary, admitted, operation, selector, serial) =
+            matrix_history(Matrix::DecisionedSuperseded);
+        let member_path = grant_member_path(&temporary, serial);
+        let member: GrantMember =
+            serde_json::from_slice(&std::fs::read(&member_path).unwrap()).unwrap();
+        let decision: GrantDecision = serde_json::from_slice(
+            &std::fs::read(temporary.journal_path().join(format!(
+                "health/convergence/registry/decisions/{serial}.json"
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        let superseded: GrantBarrier = serde_json::from_slice(
+            &std::fs::read(temporary.journal_path().join(format!(
+                "health/convergence/registry/grants/barriers/{serial}.{}.json",
+                crate::layout::SUPERSEDED_BARRIER_SUFFIX
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !temporary
+                .journal_path()
+                .join(format!(
+                    "health/convergence/registry/grants/barriers/{serial}.{ACTIVE_BARRIER_SUFFIX}.json"
+                ))
+                .exists()
+        );
+
+        let tombstone = GrantTombstone {
+            role: crate::schema::ROLE_GRANT_TOMBSTONE.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: member.journal_id.clone(),
+            root_id: member.root_id.clone(),
+            serial,
+            tuple: member.tuple.clone(),
+            member_digest: member.member_digest.clone(),
+            reason: "later_dirty_descendant".to_owned(),
+        };
+        write_canonical(&grant_tombstone_path(&temporary, serial), &tombstone);
+        let mut member_tombstones = std::collections::BTreeMap::new();
+        member_tombstones.insert(member_key(&member.tuple), member.member_digest.clone());
+        let set = crate::schema::GrantSetTombstone {
+            role: crate::schema::ROLE_GRANT_SET_TOMBSTONE.to_owned(),
+            schema_version: SCHEMA_VERSION,
+            journal_id: decision.journal_id.clone(),
+            root_id: decision.root_id.clone(),
+            serial,
+            decision_digest: decision.decision_digest.clone(),
+            barrier_digest: superseded.barrier_digest.clone(),
+            member_tombstones,
+        };
+        write_canonical(
+            &temporary.journal_path().join(format!(
+                "health/convergence/registry/grants/tombstones/set.{serial}.json"
+            )),
+            &set,
+        );
+        std::fs::remove_file(member_path).unwrap();
+
+        assert_eq!(
+            admitted.grant_state(&operation, &selector).unwrap(),
+            GrantState::Outcome(GrantOutcome::DecisionedSuperseded)
+        );
+    }
+
+    #[test]
     fn reports_passive_superseded_without_resolver_artifacts() {
         let (_temporary, admitted) = admit_days("outcome-passive", &["20260823"]);
         let (operation, selector, owner) = prepared(&admitted, true);
@@ -1456,7 +1736,7 @@ mod tests {
         );
         let skipped = rows.iter().filter(|row| row.skip_reason.is_some()).count();
         assert_eq!(
-            skipped, 92,
+            skipped, 80,
             "every inapplicable matrix/artifact pair remains an explicit skip"
         );
         // The rows use isolated journals and the fault injection is
@@ -1488,7 +1768,19 @@ mod tests {
         }
         let (temporary, admitted, operation, selector, serial) = matrix_history(row.matrix);
         if row.condition.needs_tombstone_fold() {
-            prepare_authorized_tombstone_fold(&temporary, &admitted, &operation, &selector, serial);
+            match row.matrix {
+                Matrix::DecisionedSuperseded => {
+                    prepare_decisioned_authorized_tombstone_fold(&temporary, serial);
+                }
+                Matrix::NonemptyCommitted => {
+                    prepare_authorized_tombstone_fold(
+                        &temporary, &admitted, &operation, &selector, serial,
+                    );
+                }
+                Matrix::Aborted | Matrix::EmptySetCommitted | Matrix::PassiveSuperseded => {
+                    unreachable!("inapplicable tombstone fold must be skipped")
+                }
+            }
         }
         leave_successor_prefix(&admitted, row.stage);
         mutate_named_matrix_member(&temporary, &operation, serial, row.matrix, row.condition);

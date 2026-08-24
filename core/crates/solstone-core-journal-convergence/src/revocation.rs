@@ -14,12 +14,15 @@ use solstone_core_journal_io::{create_directory_bound, sync_dir_bound};
 
 use crate::access::{RegistrySection, ResolverAccess};
 use crate::claim::{ClaimView, same_owner_claim};
-use crate::decision::{accept_decision, load_barrier, load_decision, load_member, member_key};
+use crate::decision::{
+    accept_decision, load_barrier, load_decision, load_member, load_reconcile, member_key,
+};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::grant::{Committed, PruneGate, establish_committed, prune_gate};
 use crate::layout::{
-    ACTIVE_BARRIER_SUFFIX, GRANTS, REVOCATIONS, TOMBSTONES, grant_revocation_name,
-    grant_set_tombstone_name, grant_tombstone_name, owner_revocation_name, prepared_owner_name,
+    ACTIVE_BARRIER_SUFFIX, GRANTS, REVOCATIONS, SUPERSEDED_BARRIER_SUFFIX, TOMBSTONES,
+    grant_revocation_name, grant_set_tombstone_name, grant_tombstone_name, owner_revocation_name,
+    prepared_owner_name,
 };
 use crate::link::{LinkResolution, resolve_owner_intent_link};
 use crate::owner::{load_owner_binding, load_prepared_owner};
@@ -111,18 +114,19 @@ pub(crate) fn owner_revocation_state(
         .iter()
         .map(|day| day.as_str().to_owned())
         .collect::<Vec<_>>();
-    if record.role != ROLE_OWNER_REVOCATION
-        || record.schema_version != SCHEMA_VERSION
-        || record.journal_id != owner.journal_id()
+    if record.role != ROLE_OWNER_REVOCATION || record.schema_version != SCHEMA_VERSION {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::OwnerRevocation,
+        });
+    }
+    if record.journal_id != owner.journal_id()
         || record.root_id != owner.root_id()
         || record.operation_id != owner.operation_id()
         || record.owner_binding_digest != owner.digest_hex()
         || record.selector_digest != selector_digest
         || record.day_set != day_set
     {
-        return Err(ConvergenceError::Unknown {
-            role: DurableRole::OwnerRevocation,
-        });
+        return Err(ConvergenceError::Refused(Refusal::WrongOperation));
     }
     Ok(Some(record.state))
 }
@@ -755,7 +759,7 @@ pub(crate) fn grant_tombstone_present(
 
 /// Validate the retained set proof once every requested member has become an
 /// authorized tombstone.  The set record binds the immutable decision, its
-/// historical all-active barrier, and every per-member tombstone digest.
+/// historical grant barrier, and every per-member tombstone digest.
 pub(crate) fn validate_grant_set_tombstone(
     section: &RegistrySection<'_>,
     decision: &crate::schema::GrantDecision,
@@ -889,7 +893,12 @@ fn put_set_tombstone_if_complete(
     section: &RegistrySection<'_>,
     decision: &crate::schema::GrantDecision,
 ) -> Result<(), ConvergenceError> {
-    let Some(barrier) = load_barrier(section, decision.serial, ACTIVE_BARRIER_SUFFIX)? else {
+    let barrier_suffix = if load_reconcile(section, decision.serial)?.is_some() {
+        SUPERSEDED_BARRIER_SUFFIX
+    } else {
+        ACTIVE_BARRIER_SUFFIX
+    };
+    let Some(barrier) = load_barrier(section, decision.serial, barrier_suffix)? else {
         return Ok(());
     };
     let Some(grants) = open_dir(section.registry(), GRANTS)? else {
@@ -1594,6 +1603,29 @@ mod tests {
                 .journal_path()
                 .join("health/convergence/actives/1.json")
                 .exists()
+        );
+        for artifact in [
+            "health/convergence/terminals/1.json",
+            "health/convergence/registry/grants/members/1/20260823.think.chronicle.json",
+            "health/convergence/registry/grants/barriers/1.active.json",
+        ] {
+            assert!(
+                !temporary.journal_path().join(artifact).exists(),
+                "concurrent owner revocation must not infer result evidence at {artifact}",
+            );
+        }
+        let clearance: crate::schema::ClearanceMember = serde_json::from_slice(
+            &std::fs::read(
+                temporary
+                    .journal_path()
+                    .join("health/convergence/days/20260823.clear.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            clearance.outcome, "aborted",
+            "the required abort cleanup vector is not a completion or receipt"
         );
     }
 

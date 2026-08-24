@@ -372,16 +372,10 @@ impl Admitted {
             });
         }
 
-        let (serial, link) = match link {
-            Some(link) => (link.serial, link),
-            None => {
-                return Err(ConvergenceError::Unknown {
-                    role: DurableRole::OwnerIntentLink,
-                });
-            }
-        };
         if matches!(fence, ClaimFence::Overlapping) {
-            if crate::terminal::read_terminal(dirs, serial)?.is_some() {
+            if let Some(link) = link.as_ref()
+                && crate::terminal::read_terminal(dirs, link.serial)?.is_some()
+            {
                 return Err(ConvergenceError::Unknown {
                     role: DurableRole::ClaimRevision,
                 });
@@ -390,6 +384,15 @@ impl Admitted {
                 reason: DeniedReason::OverlappingSuccessor,
             });
         }
+
+        let (serial, link) = match link {
+            Some(link) => (link.serial, link),
+            None => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                });
+            }
+        };
         let claim_released = claim_is_released(locks.days(), &claim);
 
         // The intent is unlinked during cleanup, so post-eviction the link is
@@ -1405,12 +1408,11 @@ mod tests {
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
     }
 
-    fn assert_own_claim_prefix_pending(
+    fn incomplete_claim_prefix(
+        name: &str,
         fault: PublishFault,
-        stage: PendingStage,
-        recovery: &'static str,
-    ) {
-        let (temporary, admitted) = admit_days("own-claim-prefix", &["20260823"]);
+    ) -> (TempDir, Admitted, OperationId, GrantRequestSelector) {
+        let (temporary, admitted) = admit_days(name, &["20260823"]);
         let operation = OperationId::generate().unwrap();
         let selector = GrantRequestSelector::try_new(admitted.days(), requests()).unwrap();
         let owner = OwnerBinding::prepare(
@@ -1429,7 +1431,16 @@ mod tests {
         ));
         drop(guard);
         drop(held);
+        (temporary, admitted, operation, selector)
+    }
 
+    fn assert_own_claim_prefix_pending(
+        fault: PublishFault,
+        stage: PendingStage,
+        recovery: &'static str,
+    ) {
+        let (temporary, admitted, operation, selector) =
+            incomplete_claim_prefix("own-claim-prefix", fault);
         let before = snapshot_tree(&temporary.journal_path());
         let delivery = admitted.deliver_grants(&operation, &selector).unwrap();
         assert!(delivery.tokens().is_empty());
@@ -1439,6 +1450,44 @@ mod tests {
                 stage: observed,
                 recovery: observed_recovery,
             } if observed == stage && observed_recovery == recovery
+        ));
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+    }
+
+    fn assert_foreign_claim_prefix_denied(fault: PublishFault) {
+        let (temporary, admitted, operation, selector) =
+            incomplete_claim_prefix("foreign-claim-prefix", fault);
+        let revision_path = temporary
+            .journal_path()
+            .join("health/convergence/claim/rev.1.json");
+        let mut revision: crate::schema::ClaimRevision =
+            serde_json::from_slice(&std::fs::read(&revision_path).unwrap()).unwrap();
+        revision.owner_binding_digest = "ff".repeat(32);
+        for entry in revision.table.values_mut() {
+            entry.owner_binding_digest = "ff".repeat(32);
+        }
+        let mut revision_bytes = crate::digest::canonical_json_bytes(&revision).unwrap();
+        revision_bytes.push(b'\n');
+        std::fs::write(&revision_path, revision_bytes).unwrap();
+        let head_path = temporary
+            .journal_path()
+            .join("health/convergence/claim/head.json");
+        let mut head: crate::schema::ClaimHead =
+            serde_json::from_slice(&std::fs::read(&head_path).unwrap()).unwrap();
+        head.revision_digest = crate::digest::digest_value(&revision)
+            .unwrap()
+            .as_hex()
+            .to_owned();
+        let mut head_bytes = crate::digest::canonical_json_bytes(&head).unwrap();
+        head_bytes.push(b'\n');
+        std::fs::write(&head_path, head_bytes).unwrap();
+
+        let before = snapshot_tree(&temporary.journal_path());
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            Delivery::Denied {
+                reason: DeniedReason::OverlappingSuccessor
+            }
         ));
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
     }
@@ -1505,6 +1554,13 @@ mod tests {
     }
 
     #[test]
+    fn foreign_headed_pre_intent_claim_denies_on_the_same_prefix() {
+        // This starts from `incomplete_claim_prefix`, exactly as the paired
+        // own-claim test does, then changes only the claim's owner binding.
+        assert_foreign_claim_prefix_denied(PublishFault::AfterClaimHead);
+    }
+
+    #[test]
     fn own_intent_before_consumption_claim_is_pending_for_consumption_recovery() {
         // Contrasts with `overlapping_intent_before_consumption_successor_denies`.
         assert_own_claim_prefix_pending(
@@ -1515,6 +1571,13 @@ mod tests {
     }
 
     #[test]
+    fn foreign_intent_before_consumption_claim_denies_on_the_same_prefix() {
+        // See the headed pair: the durable prefix is identical except for the
+        // claimant carried by the claim revision and table entry.
+        assert_foreign_claim_prefix_denied(PublishFault::AfterIntent);
+    }
+
+    #[test]
     fn own_witness_before_dirty_record_claim_is_pending_for_day_publication() {
         // Contrasts with `overlapping_witness_before_dirty_record_successor_denies`.
         assert_own_claim_prefix_pending(
@@ -1522,6 +1585,11 @@ mod tests {
             PendingStage::ClaimDayPublication,
             "day publication recovery",
         );
+    }
+
+    #[test]
+    fn foreign_witness_before_dirty_record_claim_denies_on_the_same_prefix() {
+        assert_foreign_claim_prefix_denied(PublishFault::AfterActive);
     }
 
     #[test]
