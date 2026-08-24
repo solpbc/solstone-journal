@@ -19,11 +19,14 @@ use crate::intent::{
 };
 use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
-use crate::owner::{ClaimAdmission, OwnerBinding};
+use crate::owner::{
+    AdmitOutcome, ClaimAdmission, OwnerBinding, load_prepared_owner, require_active,
+};
 use crate::permit::Permit;
 use crate::preflight::Admitted;
 use crate::projection::{project_day, refuse_mutated_projection};
 use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
+use crate::registry::enter_registry;
 use crate::schema::{
     Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, now_rfc3339,
 };
@@ -85,12 +88,21 @@ impl Admitted {
 }
 
 impl ClaimAdmission {
-    /// Base-crate fixture issuer. Resolver-authority lode replaces this.
-    /// Must be called while `held` remains locked.
-    pub fn issue_from_base(
+    /// Under-day owner reauthentication and one-shot proof mint (hook B).
+    ///
+    /// The complete day set is already held. This briefly reacquires the
+    /// registry in days-to-registry order, proves the prepared owner is still
+    /// exactly active and unrevoked with no pending revocation, and proves the
+    /// operation's immutable owner-intent link is exactly absent. Only exact
+    /// absence releases the registry and returns a proof bound to this held
+    /// set, owner, operation, and grant-request selector digest. An existing
+    /// link classifies the attempt as recovery of the original linked
+    /// transaction and mints no proof, serial, claim, or intent. No global
+    /// lock overlaps the registry section.
+    pub fn admit(
         held: &HeldDays<'_>,
         owner: &OwnerBinding,
-    ) -> Result<Self, ConvergenceError> {
+    ) -> Result<AdmitOutcome, ConvergenceError> {
         if owner.digest_hex() != held.owner.digest_hex() {
             return Err(ConvergenceError::Refused(Refusal::WrongLineage));
         }
@@ -99,13 +111,40 @@ impl ClaimAdmission {
             held.admitted.store.root_id(),
             held.admitted.store.object_identity(),
         )?;
-        Ok(Self::from_parts(
+        held.locks.matches(
+            held.admitted.store.journal_id(),
+            held.admitted.store.root_id(),
+            held.admitted.store.object_identity(),
+        )?;
+        let dirs = open_store_dirs(held.admitted.store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        {
+            let section = enter_registry(&dirs)?;
+            let record = load_prepared_owner(&section, owner.operation_id())?.ok_or(
+                ConvergenceError::Unknown {
+                    role: DurableRole::PreparedOwner,
+                },
+            )?;
+            if record.owner_binding_digest != owner.digest_hex() {
+                return Err(ConvergenceError::Refused(Refusal::WrongLineage));
+            }
+            if record.selector_digest != owner.selector_digest() {
+                return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
+            }
+            require_active(&record)?;
+            if crate::link::operation_link_present(&section, owner.operation_id())? {
+                return Ok(AdmitOutcome::ExistingLink);
+            }
+        }
+        Ok(AdmitOutcome::Proof(Self::from_parts(
             held.locks.instance().to_owned(),
             owner.journal_id().to_owned(),
             owner.root_id().to_owned(),
             owner.digest_hex().to_owned(),
+            owner.operation_id().to_owned(),
+            owner.selector_digest().to_owned(),
             held.days.clone(),
-        ))
+        )))
     }
 }
 
@@ -116,20 +155,9 @@ impl<'a> HeldDays<'a> {
 
     pub fn continue_with(
         &mut self,
-        mut proof: ClaimAdmission,
+        proof: ClaimAdmission,
     ) -> Result<Permit<'_, 'a>, ConvergenceError> {
-        proof.consume()?;
-        if proof.instance() != self.locks.instance() {
-            return Err(ConvergenceError::Refused(Refusal::StaleLease));
-        }
-        if proof.owner_digest() != self.owner.digest_hex()
-            || proof.journal_id() != self.admitted.store.journal_id()
-            || proof.root_id() != self.admitted.store.root_id()
-            || proof.days() != self.days.as_slice()
-        {
-            return Err(ConvergenceError::Refused(Refusal::WrongLineage));
-        }
-        self.proof_consumed = true;
+        self.bind_proof(proof)?;
         self.proceed()
     }
 
@@ -203,13 +231,43 @@ impl<'a> HeldDays<'a> {
         self.admitted.store.load_day(&self.locks, day)
     }
 
-    /// Same-owner later-dirty under live day locks (Phase 3, no release revision).
-    pub fn advance_dirty(&mut self) -> Result<(), ConvergenceError> {
-        self.proof_consumed = true;
+    /// Same-owner later-dirty under live day locks (Phase 3, no release
+    /// revision).
+    ///
+    /// Every claim and global allocation is preceded by owner
+    /// reauthentication, so a later-dirty successor consumes its own fresh
+    /// one-shot proof rather than reusing the admission that opened the first
+    /// transition. A revoked or revocation-pending owner therefore cannot keep
+    /// allocating.
+    pub fn advance_dirty(&mut self, proof: ClaimAdmission) -> Result<(), ConvergenceError> {
+        if self.serial.is_none() {
+            return Err(ConvergenceError::Refused(Refusal::NoPermit));
+        }
+        self.bind_proof(proof)?;
         self.serial = None;
         self.claim_revision = None;
         self.intent_digest = None;
         self.advance(true)
+    }
+
+    fn bind_proof(&mut self, mut proof: ClaimAdmission) -> Result<(), ConvergenceError> {
+        proof.consume()?;
+        if proof.instance() != self.locks.instance() {
+            return Err(ConvergenceError::Refused(Refusal::StaleLease));
+        }
+        if proof.owner_digest() != self.owner.digest_hex()
+            || proof.journal_id() != self.admitted.store.journal_id()
+            || proof.root_id() != self.admitted.store.root_id()
+            || proof.days() != self.days.as_slice()
+            || proof.operation_id() != self.owner.operation_id()
+        {
+            return Err(ConvergenceError::Refused(Refusal::WrongLineage));
+        }
+        if proof.selector_digest() != self.owner.selector_digest() {
+            return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
+        }
+        self.proof_consumed = true;
+        Ok(())
     }
 
     fn advance(&mut self, successor: bool) -> Result<(), ConvergenceError> {
@@ -693,7 +751,7 @@ mod tests {
         };
         let root = JournalRoot::open(&journal).unwrap();
         let admitted = set.admit(root).unwrap();
-        let _owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let _owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let after = snapshot_tree(&journal);
         assert!(after.contains_key("health/convergence/allocator.json"));
         assert!(
@@ -716,7 +774,7 @@ mod tests {
         std::fs::rename(&journal, &moved).unwrap();
         std::fs::create_dir(&journal).unwrap();
         std::fs::write(journal.join("poison"), b"same-name").unwrap();
-        OwnerBinding::issue_from_base(&admitted).unwrap();
+        crate::test_support::prepared_owner(&admitted).unwrap();
         assert_eq!(std::fs::read(journal.join("poison")).unwrap(), b"same-name");
         assert!(!journal.join("health").exists());
     }
@@ -734,9 +792,9 @@ mod tests {
         std::fs::rename(&journal, &moved).unwrap();
         std::fs::create_dir(&journal).unwrap();
         std::fs::write(journal.join("poison"), b"divergent").unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         assert_eq!(std::fs::read(journal.join("poison")).unwrap(), b"divergent");
         let other = JournalRoot::open(&journal);
@@ -764,9 +822,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         assert_eq!(left.subdigest().unwrap(), right.subdigest().unwrap());
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         let snap_a = held.snapshot(&DayKey::parse("20260823").unwrap()).unwrap();
         let snap_b = held.snapshot(&DayKey::parse("20260824").unwrap()).unwrap();
@@ -785,8 +843,10 @@ mod tests {
     #[test]
     fn ac10_begin_split_writes_only_lock() {
         let (temporary, admitted) = admit_days("split", &["20260823"]);
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
+        // Baseline after hook A: the secret and the prepared owner record are
+        // registry-section writes, so `begin` itself must add only the day lock.
         let before = snapshot_tree(&temporary.journal_path());
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
         let _held = admitted.begin(owner).unwrap();
         let after = snapshot_tree(&temporary.journal_path());
         let extra: Vec<_> = after
@@ -931,9 +991,9 @@ mod tests {
             .admit(root_b)
             .unwrap()
             .with_lock_timeout(Duration::from_millis(80));
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
         let mut held_b = admitted_b.begin(owner_b).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held_b, held_b.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held_b, held_b.owner()).unwrap();
         held_b.continue_with(proof).unwrap();
         let tree = snapshot_tree(&temporary.journal_path());
         assert!(tree.contains_key("health/convergence/claim/head.json"));
@@ -984,7 +1044,6 @@ mod tests {
     fn ac10_10_78_overlapping_busy_no_new_serial() {
         let (temporary, admitted_a) = admit_days("busy", &["20260823"]);
         let held_a = continue_ok(&admitted_a);
-        let before = snapshot_tree(&temporary.journal_path());
         let root_b = JournalRoot::open(&temporary.journal_path()).unwrap();
         let set_b = match preflight(["20260823"]).unwrap() {
             Preflight::Ready(set) => set,
@@ -994,7 +1053,10 @@ mod tests {
             .admit(root_b)
             .unwrap()
             .with_lock_timeout(Duration::from_millis(80));
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
+        // Baseline after B's own hook A: a contended `begin` must introduce no
+        // serial, claim, or intent.
+        let before = snapshot_tree(&temporary.journal_path());
         let error = admitted_b.begin(owner_b).unwrap_err();
         assert!(matches!(error, ConvergenceError::Refused(Refusal::Busy)));
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
@@ -1013,7 +1075,7 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted_b = set_b.admit(root_b).unwrap();
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
         let mut held_b = admitted_b.begin(owner_b).unwrap();
         let next_before = std::fs::read(
             temporary
@@ -1021,7 +1083,7 @@ mod tests {
                 .join("health/convergence/allocator.json"),
         )
         .unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held_b, held_b.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held_b, held_b.owner()).unwrap();
         let error = held_b.continue_with(proof).unwrap_err();
         assert!(matches!(error, ConvergenceError::Refused(Refusal::Busy)));
         let next_after = std::fs::read(
@@ -1200,9 +1262,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(
@@ -1233,9 +1295,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(
@@ -1288,9 +1350,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
@@ -1315,9 +1377,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
@@ -1345,9 +1407,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
@@ -1376,9 +1438,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
@@ -1405,9 +1467,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted_b = set_b.admit(root_b).unwrap();
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
         let mut held_b = admitted_b.begin(owner_b).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held_b, held_b.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held_b, held_b.owner()).unwrap();
         let error = held_b.continue_with(proof).unwrap_err();
         assert!(matches!(error, ConvergenceError::Refused(Refusal::Busy)));
         let after = std::fs::read(
@@ -1442,9 +1504,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(
@@ -1475,9 +1537,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(
@@ -1507,9 +1569,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),

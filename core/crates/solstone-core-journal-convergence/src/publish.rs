@@ -960,7 +960,7 @@ mod tests {
         let old_head = fs::read(days.join("20260823.head.json")).unwrap();
         let old_record = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
         let _inject = fail_after_witness();
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         assert!(days.join("20260823.rev.2.wit.json").exists());
         assert_eq!(fs::read(days.join("20260823.head.json")).unwrap(), old_head);
@@ -976,7 +976,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let ever_path = days_dir(&temporary).join("20260823.ever.wit.json");
         let before = fs::read(&ever_path).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         assert_eq!(before, fs::read(&ever_path).unwrap());
     }
 
@@ -988,7 +988,7 @@ mod tests {
         assert!(adoption.exists());
         assert!(!records_dir(&temporary).join("20260823.adopt.json").exists());
         let before = fs::read(&adoption).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         assert_eq!(before, fs::read(&adoption).unwrap());
     }
 
@@ -996,7 +996,7 @@ mod tests {
     fn revision_witness_has_prior_digest_chain() {
         let (temporary, admitted) = admit_days("wit-chain", &["20260823"]);
         let mut held = continue_ok(&admitted);
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let days = days_dir(&temporary);
         let rev1: RevisionWitness = read_json_file(&days.join("20260823.rev.1.wit.json"));
         let rev2: RevisionWitness = read_json_file(&days.join("20260823.rev.2.wit.json"));
@@ -1058,8 +1058,8 @@ mod tests {
         let (temporary, admitted) = admit_days("gap-wit", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::remove_file(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
         assert!(matches!(
             held.inspect_day(&day).unwrap_err(),
@@ -1074,7 +1074,7 @@ mod tests {
         let (temporary, admitted) = admit_days("conflict-wit", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let path = days_dir(&temporary).join("20260823.rev.2.wit.json");
         let mut witness: RevisionWitness = read_json_file(&path);
         witness.prior_witness_digest = "ab".repeat(32);
@@ -1092,7 +1092,7 @@ mod tests {
         let (temporary, admitted) = admit_days("chain-head", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let path = days_dir(&temporary).join("20260823.head.json");
         let mut head: Head = read_json_file(&path);
         head.witness_digest = "cd".repeat(32);
@@ -1112,7 +1112,7 @@ mod tests {
         let day = sample_day();
         let before = published_snapshot(&held, &day);
         fs::create_dir(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         assert_eq!(published_snapshot(&held, &day).digest, before.digest);
     }
@@ -1124,7 +1124,7 @@ mod tests {
         let day = sample_day();
         let blocker = days_dir(&temporary).join("20260823.rev.2.wit.json");
         fs::create_dir(&blocker).unwrap();
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         fs::remove_dir(&blocker).unwrap();
         held.proceed().unwrap();
@@ -1139,7 +1139,7 @@ mod tests {
         let days = days_dir(&temporary);
         let head1 = fs::read(days.join("20260823.head.json")).unwrap();
         let record1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::write(days.join("20260823.head.json"), head1).unwrap();
         fs::write(
             records_dir(&temporary).join("20260823/record.json"),
@@ -1176,7 +1176,7 @@ mod tests {
         let record_path = records_dir(&temporary).join("20260823/record.json");
         let before = fs::read(&record_path).unwrap();
         let _inject = fail_next_dir_sync();
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(
             error,
             ConvergenceError::Unknown {
@@ -1192,7 +1192,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let day = sample_day();
         let record1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::write(
             records_dir(&temporary).join("20260823/record.json"),
             record1,
@@ -1276,7 +1276,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let day = sample_day();
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         let dirty_snap = published_snapshot(&held, &day);
         assert_eq!(dirty_snap.dirty_generation, 5);
@@ -1382,7 +1382,7 @@ mod tests {
         let day = sample_day();
         let g1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         publish_kind_for_test(
             admitted.store(),
@@ -1406,7 +1406,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let day = sample_day();
         let g1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::remove_file(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
         fs::write(records_dir(&temporary).join("20260823/record.json"), g1).unwrap();
         assert!(matches!(
@@ -1432,7 +1432,7 @@ mod tests {
         let (temporary, admitted) = admit_days("head-rewound", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let path = days_dir(&temporary).join("20260823.head.json");
         let mut head: Head = read_json_file(&path);
         head.record_revision = 1;
@@ -1446,12 +1446,11 @@ mod tests {
     #[test]
     fn authority_reuse_after_witness_refused() {
         let (_temporary, admitted) = admit_days("reuse", &["20260823"]);
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
-        let mut reused =
-            crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let mut reused = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         reused.consume().unwrap();
         let error = held.continue_with(reused).unwrap_err();
         assert!(matches!(
@@ -1488,7 +1487,7 @@ mod tests {
         let (_temporary, admitted) = admit_days("rev-rollback", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let error = publish_kind_for_test(admitted.store(), held.lock_set(), &day, LowerRevision)
             .unwrap_err();
         assert!(matches!(
@@ -1514,7 +1513,7 @@ mod tests {
         let (_temporary, admitted) = admit_days("gen-rollback", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let error = publish_kind_for_test(admitted.store(), held.lock_set(), &day, LowerGeneration)
             .unwrap_err();
         assert!(matches!(
@@ -1534,7 +1533,7 @@ mod tests {
             head.witness_digest = "ff".repeat(32);
             fs::write(&head_path, serde_json::to_vec(&head).unwrap()).unwrap();
         });
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(
             error,
             ConvergenceError::Unknown {

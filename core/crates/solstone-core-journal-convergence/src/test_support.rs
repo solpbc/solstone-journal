@@ -14,10 +14,12 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::JournalRoot;
 
 use crate::digest::hex_encode;
+use crate::error::{ConvergenceError, Refusal};
 use crate::init::{check_initialized, initialize};
 use crate::layout::DayKey;
-use crate::owner::{ClaimAdmission, OwnerBinding};
+use crate::owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
 use crate::preflight::{Admitted, Preflight, preflight};
+use crate::selector::{GrantRequestSelector, OperationId, TransactionClass};
 use crate::store::ConvergenceStore;
 use crate::transaction::HeldDays;
 
@@ -92,6 +94,7 @@ pub(crate) enum PublishFault {
     AfterConsumeWitness,
     AfterConsumeUnlink,
     AfterConsumeSync,
+    AfterPreparedOwner,
 }
 
 /// Clears TLS injects if a test panics between arm and take.
@@ -187,21 +190,60 @@ pub(crate) fn admit_days(name: &str, days: &[&str]) -> (TempDir, Admitted) {
     (temporary, admitted)
 }
 
+/// Prepared owner for a **fresh** external operation over the admitted days,
+/// with an empty grant-request selector. A fresh operation per call keeps the
+/// two-owner contention tests meaningful; same-operation retry tests construct
+/// and reuse an `OperationId` explicitly.
+pub(crate) fn prepared_owner(admitted: &Admitted) -> Result<OwnerBinding, ConvergenceError> {
+    let operation = OperationId::generate()?;
+    let selector = GrantRequestSelector::empty(admitted.days())?;
+    OwnerBinding::prepare(
+        admitted,
+        &operation,
+        TransactionClass::AdvanceDirty,
+        &selector,
+    )
+}
+
+/// Hook B, unwrapped to the proof. `ExistingLink` is a recovery outcome, not a
+/// proof, so it is an error here.
+pub(crate) fn admit_proof(
+    held: &HeldDays<'_>,
+    owner: &OwnerBinding,
+) -> Result<ClaimAdmission, ConvergenceError> {
+    match ClaimAdmission::admit(held, owner)? {
+        AdmitOutcome::Proof(proof) => Ok(proof),
+        AdmitOutcome::ExistingLink => Err(ConvergenceError::Refused(Refusal::ReusedAuthority)),
+    }
+}
+
 pub(crate) fn continue_ok(admitted: &Admitted) -> HeldDays<'_> {
-    let owner = OwnerBinding::issue_from_base(admitted).unwrap();
+    let owner = prepared_owner(admitted).unwrap();
     let mut held = admitted.begin(owner).unwrap();
-    let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+    let proof = admit_proof(&held, held.owner()).unwrap();
     held.continue_with(proof).unwrap();
     held
+}
+
+/// Later-dirty successor with its own fresh one-shot proof.
+pub(crate) fn advance_dirty_ok(held: &mut HeldDays<'_>) {
+    let proof = admit_proof(held, held.owner()).unwrap();
+    held.advance_dirty(proof).unwrap();
+}
+
+/// Later-dirty successor, returning the refusal instead of panicking.
+pub(crate) fn advance_dirty_err(held: &mut HeldDays<'_>) -> ConvergenceError {
+    let proof = admit_proof(held, held.owner()).unwrap();
+    held.advance_dirty(proof).unwrap_err()
 }
 
 pub(crate) fn continue_with_fault<'a>(
     admitted: &'a Admitted,
     fault: PublishFault,
 ) -> (HeldDays<'a>, crate::error::ConvergenceError) {
-    let owner = OwnerBinding::issue_from_base(admitted).unwrap();
+    let owner = prepared_owner(admitted).unwrap();
     let mut held = admitted.begin(owner).unwrap();
-    let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+    let proof = admit_proof(&held, held.owner()).unwrap();
     let _guard = fail_after(fault);
     let error = held.continue_with(proof).unwrap_err();
     (held, error)

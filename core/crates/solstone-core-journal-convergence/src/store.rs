@@ -238,7 +238,7 @@ mod tests {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(
@@ -324,7 +324,7 @@ mod tests {
         let (_temporary, admitted) = admit_days("proof-once", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let day = sample_day();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.dirty_generation, 2);
@@ -386,7 +386,7 @@ mod tests {
     fn record_deleted_then_reopen_is_unknown() {
         let (temporary, admitted) = admit_days("del-record", &["20260823"]);
         let mut held = continue_ok(&admitted);
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         drop(held);
         drop(admitted);
         std::fs::remove_file(
@@ -486,7 +486,7 @@ mod tests {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         };
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         match held.inspect_day(&day).unwrap() {
             LoadDay::Published(snapshot) => {
                 assert_eq!(snapshot.auxiliary_time, first.auxiliary_time);

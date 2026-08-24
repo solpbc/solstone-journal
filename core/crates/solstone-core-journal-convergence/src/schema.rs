@@ -13,6 +13,7 @@ use solstone_core_journal_io::{
 use crate::digest::{RecordDigest, canonical_json_bytes, digest_bytes, digest_value};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::layout::DayKey;
+use crate::selector::TransactionClass;
 
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 pub(crate) const ROLE_CLAIM_GENESIS: &str = "solstone.convergence.claim-genesis.v1";
@@ -30,6 +31,9 @@ pub(crate) const ROLE_CLEARANCE_BARRIER: &str = "solstone.convergence.clearance-
 pub(crate) const ROLE_CONSUMPTION: &str = "solstone.convergence.consumption-witness.v1";
 pub(crate) const ROLE_JOURNAL_SECRET: &str = "solstone.convergence.journal-secret.v1";
 pub(crate) const ROLE_GRANT_SELECTOR: &str = "solstone.convergence.grant-selector.v1";
+pub(crate) const ROLE_PREPARED_OWNER: &str = "solstone.convergence.prepared-owner.v1";
+/// Domain-separation prefix for the secret-authenticated owner-binding digest.
+pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -363,6 +367,36 @@ pub(crate) struct JournalSecret {
     pub auxiliary_time: String,
 }
 
+/// Lifecycle of a prepared owner-operation record.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PreparedOwnerState {
+    Active,
+    RevocationPending,
+    Revoked,
+}
+
+/// Durable create-only owner-operation record. Never overwritten in place by
+/// issuance; only revocation replaces `state`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PreparedOwner {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub operation_id: String,
+    pub transaction_class: TransactionClass,
+    pub day_set: Vec<String>,
+    pub day_set_subdigest: String,
+    pub selector_digest: String,
+    pub owner_id: String,
+    pub owner_binding_digest: String,
+    pub owner_binding_mac: String,
+    pub state: PreparedOwnerState,
+    pub auxiliary_time: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ClaimGenesis {
@@ -458,6 +492,13 @@ fn encode_disk<T: Serialize>(value: &T) -> Result<(RecordDigest, Vec<u8>), Conve
     let mut disk = canonical;
     disk.push(b'\n');
     Ok((digest, disk))
+}
+
+/// Canonical bytes of the owner-binding preimage, for keyed authentication.
+pub(crate) fn canonical_owner_binding_bytes(
+    canon: &OwnerBindingCanon,
+) -> Result<Vec<u8>, ConvergenceError> {
+    canonical_json_bytes(canon)
 }
 
 pub(crate) fn record_digest(record: &DayRecord) -> Result<RecordDigest, ConvergenceError> {

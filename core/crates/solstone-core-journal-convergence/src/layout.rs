@@ -114,6 +114,14 @@ pub(crate) fn barrier_name(serial: u64) -> OsString {
     OsString::from(format!("{serial}.barrier.json"))
 }
 
+pub(crate) fn prepared_owner_name(operation_id: &str) -> OsString {
+    OsString::from(format!("{operation_id}.json"))
+}
+
+pub(crate) fn operation_links_dir(operation_id: &str) -> String {
+    operation_id.to_owned()
+}
+
 pub(crate) fn consumption_witness_name(day: &DayKey, serial: u64) -> OsString {
     OsString::from(format!("{}.consumed.{serial}.wit.json", day.as_str()))
 }

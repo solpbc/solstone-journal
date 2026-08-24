@@ -9,8 +9,11 @@
 //! [`solstone_core_journal_io::JournalRoot`]. It owns no production completion
 //! authority, no migration surface, no resume issuer, and no reciprocal
 //! owner-operation file. It does not read, write, migrate, or unify with
-//! `journal/health/catchup-state.json`. The resolver-authority lode replaces
-//! [`OwnerBinding::issue_from_base`] and [`ClaimAdmission::issue_from_base`].
+//! `journal/health/catchup-state.json`. Owner issuance is registry-backed:
+//! [`OwnerBinding::prepare`] returns a binding only from an exact durable
+//! prepared owner-operation record, and [`ClaimAdmission::admit`]
+//! reauthenticates that record under the held day set before minting the
+//! one-shot claim-admission proof.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
@@ -22,6 +25,7 @@ mod error;
 mod init;
 mod intent;
 mod layout;
+mod link;
 mod lock;
 mod mac;
 mod owner;
@@ -45,7 +49,7 @@ pub use digest::RecordDigest;
 pub use error::{ChangedWhat, ConvergenceError, DurableRole, Refusal};
 pub use init::check_initialized;
 pub use layout::DayKey;
-pub use owner::{ClaimAdmission, OwnerBinding};
+pub use owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
 pub use permit::{Permit, TerminalOutcome, TerminalReceipt};
 pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
 pub use recover::{
@@ -113,6 +117,7 @@ mod architecture {
             include_str!("intent.rs"),
             include_str!("layout.rs"),
             include_str!("lib.rs"),
+            include_str!("link.rs"),
             include_str!("lock.rs"),
             include_str!("mac.rs"),
             include_str!("owner.rs"),

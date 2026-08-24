@@ -39,14 +39,10 @@ pub(crate) fn hold_topology_with_timeout(
     Ok(TopologyGuard { _lock: guard })
 }
 
-// Wired by hook A in the next commit (prepared-owner issuance).
-#[allow(dead_code)]
 pub(crate) struct RegistryGuard {
     _lock: BoundParentLock,
 }
 
-// Wired by hook A in the next commit (prepared-owner issuance).
-#[allow(dead_code)]
 pub(crate) fn hold_registry_with_timeout(
     dirs: &StoreDirs,
     timeout: Duration,
@@ -237,20 +233,20 @@ mod tests {
     #[test]
     fn proof_bound_to_lock_set_instance() {
         let (_temporary, admitted) = crate::test_support::admit_days("proof-inst", &["20260823"]);
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let held = admitted.begin(owner).unwrap();
-        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         assert_eq!(proof.instance(), held.lock_set().instance());
     }
 
     #[test]
     fn proof_refused_after_relock_same_days() {
         let (_temporary, admitted) = crate::test_support::admit_days("stale-proof", &["20260823"]);
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let held = admitted.begin(owner).unwrap();
-        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         drop(held);
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
@@ -263,7 +259,7 @@ mod tests {
     fn allocate_requires_live_day_lock_set() {
         let (_temporary_a, admitted_a) = crate::test_support::admit_days("live-a", &["20260823"]);
         let (_temporary_b, admitted_b) = crate::test_support::admit_days("live-b", &["20260823"]);
-        let owner_a = crate::owner::OwnerBinding::issue_from_base(&admitted_a).unwrap();
+        let owner_a = crate::test_support::prepared_owner(&admitted_a).unwrap();
         let error = admitted_b.begin(owner_a).unwrap_err();
         assert!(
             matches!(
@@ -278,9 +274,9 @@ mod tests {
     fn proof_consumed_by_bind_cannot_bind_twice() {
         let (_temporary, admitted) =
             crate::test_support::admit_days("consume-twice", &["20260823"]);
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let mut proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let mut proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         proof.consume().unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(

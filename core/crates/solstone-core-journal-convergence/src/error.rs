@@ -66,6 +66,8 @@ pub enum DurableRole {
     ChronicleHealth,
     RegistryLock,
     JournalSecret,
+    PreparedOwner,
+    OwnerIntentLink,
 }
 
 #[derive(Debug)]
@@ -113,6 +115,10 @@ pub enum Refusal {
     MixedEvidence,
     Superseded,
     DuplicateGrantRequest,
+    ConflictingSelector,
+    WrongOperation,
+    OwnerRevoked,
+    PendingOwnerRevocation,
 }
 
 impl std::fmt::Display for ConvergenceError {
