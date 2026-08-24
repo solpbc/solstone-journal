@@ -38,6 +38,7 @@ mod projection;
 mod publish;
 mod recover;
 mod registry;
+mod revocation;
 mod schema;
 mod secret;
 mod selector;
@@ -62,6 +63,7 @@ pub use recover::{
     AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
     StoreVerdict,
 };
+pub use revocation::{GrantRevoke, OwnerRevoke};
 pub use schema::PendingStage;
 pub use selector::{
     GrantRequestSelector, OperationId, TargetScope, TransactionClass, WriterFamily,
@@ -95,6 +97,7 @@ mod architecture {
         ("projection.rs", include_str!("projection.rs")),
         ("publish.rs", include_str!("publish.rs")),
         ("recover.rs", include_str!("recover.rs")),
+        ("revocation.rs", include_str!("revocation.rs")),
         ("registry.rs", include_str!("registry.rs")),
         ("schema.rs", include_str!("schema.rs")),
         ("secret.rs", include_str!("secret.rs")),

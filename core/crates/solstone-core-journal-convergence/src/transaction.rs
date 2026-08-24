@@ -130,20 +130,40 @@ impl ClaimAdmission {
                 owner.transaction_class(),
                 &held.days,
             )?;
-            // Absence is required only for the operation's first admission. A
-            // lease that has already allocated is asking for a later-dirty
-            // successor, and its predecessor link is legitimately present.
-            crate::link::resolve_owner_intent_link(section, owner)
-        })?;
-        if !held.had_allocation() {
-            match resolution {
-                crate::link::LinkResolution::Absent => {}
-                crate::link::LinkResolution::Exact(_) => return Ok(AdmitOutcome::ExistingLink),
-                crate::link::LinkResolution::Unknown => {
-                    return Err(ConvergenceError::Unknown {
-                        role: DurableRole::OwnerIntentLink,
-                    });
+            // The first admission addresses its direct initial link.  A
+            // later-dirty admission knows its current serial, so it loads
+            // that exact successor address rather than treating the initial
+            // link as evidence for every later transition.
+            if held.had_allocation() {
+                let serial = held.serial.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                })?;
+                match crate::link::load_owner_intent_link(section, owner, serial)? {
+                    Some(link) => Ok(crate::link::LinkResolution::Exact(Box::new(link))),
+                    None => Ok(crate::link::LinkResolution::Absent),
                 }
+            } else {
+                crate::link::resolve_owner_intent_link(section, owner)
+            }
+        })?;
+        match (held.had_allocation(), resolution) {
+            (false, crate::link::LinkResolution::Absent) => {}
+            (false, crate::link::LinkResolution::Exact(_)) => {
+                return Ok(AdmitOutcome::ExistingLink);
+            }
+            (true, crate::link::LinkResolution::Exact(link))
+                if held.serial == Some(link.serial)
+                    && held.intent_digest.as_deref() == Some(link.intent_digest.as_str()) => {}
+            (true, crate::link::LinkResolution::Exact(_)) => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                });
+            }
+            (true, crate::link::LinkResolution::Absent)
+            | (_, crate::link::LinkResolution::Unknown) => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::OwnerIntentLink,
+                });
             }
         }
         Ok(AdmitOutcome::Proof(Self::from_parts(

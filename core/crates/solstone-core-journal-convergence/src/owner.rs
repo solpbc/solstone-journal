@@ -300,6 +300,9 @@ pub(crate) fn reauthenticate_owner(
         });
     }
     verify_owner_mac(&record, &secret.key_hex)?;
+    if crate::revocation::owner_revocation_state(section, owner, days)?.is_some() {
+        return Err(ConvergenceError::Refused(Refusal::PendingOwnerRevocation));
+    }
     require_active(&record)?;
     Ok(record)
 }

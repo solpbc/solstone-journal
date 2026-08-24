@@ -142,6 +142,32 @@ pub(crate) fn barrier_file_name(serial: u64, suffix: &str) -> OsString {
     OsString::from(format!("{serial}.{suffix}.json"))
 }
 
+pub(crate) fn owner_revocation_name(owner_binding_digest: &str) -> OsString {
+    OsString::from(format!("owner.{owner_binding_digest}.json"))
+}
+
+pub(crate) fn grant_revocation_name(serial: u64, tuple: &crate::schema::GrantTuple) -> OsString {
+    OsString::from(format!(
+        "{serial}.{}.{}.{}.json",
+        tuple.day,
+        tuple.writer_family.as_str(),
+        tuple.target_scope.as_str()
+    ))
+}
+
+pub(crate) fn grant_tombstone_name(serial: u64, tuple: &crate::schema::GrantTuple) -> OsString {
+    OsString::from(format!(
+        "member.{serial}.{}.{}.{}.json",
+        tuple.day,
+        tuple.writer_family.as_str(),
+        tuple.target_scope.as_str()
+    ))
+}
+
+pub(crate) fn grant_set_tombstone_name(serial: u64) -> OsString {
+    OsString::from(format!("set.{serial}.json"))
+}
+
 /// The initial owner-intent link is directly addressed before an intent serial
 /// exists.  Both inputs are canonical fixed-width digests, so this name is a
 /// bounded descriptor-relative lookup rather than a namespace traversal.

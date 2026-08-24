@@ -37,6 +37,10 @@ pub(crate) const ROLE_GRANT_DECISION: &str = "solstone.convergence.grant-decisio
 pub(crate) const ROLE_GRANT_MEMBER: &str = "solstone.convergence.grant-member.v1";
 pub(crate) const ROLE_GRANT_ALL_ACTIVE: &str = "solstone.convergence.grant-all-active.v1";
 pub(crate) const ROLE_GRANT_ALL_SUPERSEDED: &str = "solstone.convergence.grant-all-superseded.v1";
+pub(crate) const ROLE_OWNER_REVOCATION: &str = "solstone.convergence.owner-revocation.v1";
+pub(crate) const ROLE_GRANT_REVOCATION: &str = "solstone.convergence.grant-revocation.v1";
+pub(crate) const ROLE_GRANT_TOMBSTONE: &str = "solstone.convergence.grant-tombstone.v1";
+pub(crate) const ROLE_GRANT_SET_TOMBSTONE: &str = "solstone.convergence.grant-set-tombstone.v1";
 /// Domain-separation prefix for the secret-authenticated owner-binding digest.
 pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
 /// Domain-separation prefix for the sealed grant capability.
@@ -498,6 +502,71 @@ pub(crate) enum PreparedOwnerState {
     Active,
     RevocationPending,
     Revoked,
+}
+
+/// The durable revocation state is kept separate from immutable member and
+/// barrier records, preserving the evidence needed to authorize siblings.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RevocationState {
+    Pending,
+    Revoked,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OwnerRevocation {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub selector_digest: String,
+    pub day_set: Vec<String>,
+    pub state: RevocationState,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantRevocation {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub selector_digest: String,
+    pub tuple: GrantTuple,
+    pub cutoff_generation: u64,
+    pub state: RevocationState,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantTombstone {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub tuple: GrantTuple,
+    pub member_digest: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GrantSetTombstone {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub decision_digest: String,
+    pub barrier_digest: String,
+    pub member_tombstones: BTreeMap<String, String>,
 }
 
 /// Durable create-only owner-operation record. Never overwritten in place by

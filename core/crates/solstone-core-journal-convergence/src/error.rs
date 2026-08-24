@@ -72,6 +72,10 @@ pub enum DurableRole {
     GrantMember,
     GrantActiveBarrier,
     GrantSupersededBarrier,
+    OwnerRevocation,
+    GrantRevocation,
+    GrantTombstone,
+    GrantSetTombstone,
 }
 
 #[derive(Debug)]

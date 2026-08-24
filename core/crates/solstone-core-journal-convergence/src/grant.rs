@@ -445,7 +445,10 @@ impl Admitted {
                     role: DurableRole::PreparedOwner,
                 }));
             };
-            if state != PreparedOwnerState::Active {
+            if state != PreparedOwnerState::Active
+                || crate::revocation::owner_revocation_state(section, &owner, self.days())?
+                    .is_some()
+            {
                 return Ok(RegistryPrepared::Delivery(Delivery::Denied {
                     reason: DeniedReason::OwnerRevoked,
                 }));
@@ -502,6 +505,11 @@ impl Admitted {
                 {
                     return Ok(RegistryPrepared::Delivery(Delivery::Unknown {
                         role: DurableRole::GrantActiveBarrier,
+                    }));
+                }
+                if crate::revocation::member_revocation_state(section, &member)?.is_some() {
+                    return Ok(RegistryPrepared::Delivery(Delivery::Denied {
+                        reason: DeniedReason::MemberRevoked,
                     }));
                 }
                 members.push(member);
@@ -587,7 +595,10 @@ impl<'admitted> LiveGrantLease<'admitted> {
                     role: DurableRole::PreparedOwner,
                 });
             };
-            if state != PreparedOwnerState::Active {
+            if state != PreparedOwnerState::Active
+                || crate::revocation::owner_revocation_state(section, &owner, self.access.days())?
+                    .is_some()
+            {
                 return Ok(LeasePrepared::Denied(DeniedReason::OwnerRevoked));
             }
             reauthenticate_owner(
@@ -638,6 +649,9 @@ impl<'admitted> LiveGrantLease<'admitted> {
                 .ok_or(ConvergenceError::Unknown {
                     role: DurableRole::GrantMember,
                 })?;
+            if crate::revocation::member_revocation_state(section, &member)?.is_some() {
+                return Ok(LeasePrepared::Denied(DeniedReason::MemberRevoked));
+            }
             if barrier
                 .member_digests
                 .get(&crate::decision::member_key(tuple))
@@ -860,7 +874,7 @@ fn classify_member_state(
 }
 
 /// Whether the transition is committed, and by which evidence.
-enum Committed {
+pub(crate) enum Committed {
     Yes,
     No { reason: DeniedReason },
     Unknown { role: DurableRole },
@@ -868,7 +882,7 @@ enum Committed {
 
 /// The exact visible terminal during the cleanup window, or the post-eviction
 /// nonempty-committed clearance vector once the claim is released.
-fn establish_committed(
+pub(crate) fn establish_committed(
     dirs: &StoreDirs,
     serial: u64,
     link: &crate::schema::OwnerIntentLink,
@@ -942,6 +956,31 @@ fn establish_committed(
         }
     }
     Ok(Committed::Yes)
+}
+
+/// The only two canonical changes that permit pruning an immutable member.
+/// This delegates to the shared delivery/authorization classifier so the
+/// revocation path cannot invent a second polarity table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PruneGate {
+    SameGenerationCompletion,
+    LaterDirtyDescendant,
+}
+
+pub(crate) fn prune_gate(
+    store: &ConvergenceStore,
+    locks: &DayLockSet,
+    member: &GrantMember,
+) -> Result<Option<PruneGate>, ConvergenceError> {
+    match classify_member_state(store, locks, member)? {
+        MemberClass::Denied(DeniedReason::SameGenerationCompletion) => {
+            Ok(Some(PruneGate::SameGenerationCompletion))
+        }
+        MemberClass::Denied(DeniedReason::LaterDirtyDescendant) => {
+            Ok(Some(PruneGate::LaterDirtyDescendant))
+        }
+        MemberClass::Ready | MemberClass::Pending { .. } | MemberClass::Denied(_) => Ok(None),
+    }
 }
 
 #[cfg(test)]

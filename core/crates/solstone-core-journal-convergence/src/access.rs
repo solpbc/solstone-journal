@@ -10,6 +10,7 @@
 use std::os::fd::OwnedFd;
 use std::time::Duration;
 
+use crate::claim::{ClaimView, mechanical_finalize};
 use crate::error::ConvergenceError;
 use crate::init::{StoreDirs, open_store_dirs};
 use crate::layout::DayKey;
@@ -109,6 +110,17 @@ impl<'a> ResolverAccess<'a> {
 
     pub(crate) fn load_day(&self, day: &DayKey) -> Result<LoadDay, ConvergenceError> {
         self.admitted.store.load_day(&self.locks, day)
+    }
+
+    /// Mechanically publish the unique next claim head while the complete day
+    /// set is held.  The global section ends before a caller may enter the
+    /// registry, making the ordering available as one executable primitive.
+    pub(crate) fn finalize_claim_head(&self) -> Result<ClaimView, ConvergenceError> {
+        let topology =
+            crate::lock::hold_topology_with_timeout(&self.dirs, self.admitted.lock_timeout())?;
+        let view = mechanical_finalize(self.store(), &self.dirs)?;
+        drop(topology);
+        Ok(view)
     }
 }
 

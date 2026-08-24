@@ -46,6 +46,18 @@ fn ensure_links_dir(section: &RegistrySection<'_>) -> Result<OwnedFd, Convergenc
     })
 }
 
+#[cfg(test)]
+fn link_boundary(fault: crate::test_support::PublishFault) -> Result<(), ConvergenceError> {
+    if crate::test_support::take_publish_fault(fault) {
+        return Err(ConvergenceError::Io {
+            operation: "inject after owner intent link",
+            role: DurableRole::OwnerIntentLink,
+            source: std::io::Error::other("injected"),
+        });
+    }
+    Ok(())
+}
+
 fn expected_link(owner: &OwnerBinding, intent: &Intent) -> OwnerIntentLink {
     OwnerIntentLink {
         role: ROLE_OWNER_INTENT_LINK.to_owned(),
@@ -163,11 +175,15 @@ pub(crate) fn create_owner_intent_link(
         Err(ConvergenceError::PreservedPrior { .. }) => {}
         Err(error) => return Err(error),
     }
+    #[cfg(test)]
+    link_boundary(crate::test_support::PublishFault::AfterOwnerIntentLink)?;
     sync_dir_bound(&links).map_err(|source| ConvergenceError::Io {
         operation: "sync links directory",
         role: DurableRole::OwnerIntentLink,
         source,
     })?;
+    #[cfg(test)]
+    link_boundary(crate::test_support::PublishFault::AfterOwnerIntentLinkSync)?;
     let durable = read_json::<OwnerIntentLink>(&links, &name, DurableRole::OwnerIntentLink)
         .map_err(|_| ConvergenceError::Unknown {
             role: DurableRole::OwnerIntentLink,
@@ -180,6 +196,8 @@ pub(crate) fn create_owner_intent_link(
             role: DurableRole::OwnerIntentLink,
         });
     }
+    #[cfg(test)]
+    link_boundary(crate::test_support::PublishFault::AfterOwnerIntentLinkResult)?;
     Ok(durable)
 }
 
@@ -188,7 +206,9 @@ pub(crate) fn create_owner_intent_link(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::test_support::{admit_days, continue_ok, prepared_owner};
+    use crate::test_support::{
+        PublishFault, admit_days, admit_proof, continue_ok, fail_after, prepared_owner,
+    };
 
     fn link_path(
         temporary: &crate::test_support::TempDir,
@@ -442,5 +462,83 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn initial_link_crash_halves_resync_the_exact_link() {
+        for fault in [
+            PublishFault::AfterOwnerIntentLink,
+            PublishFault::AfterOwnerIntentLinkSync,
+            PublishFault::AfterOwnerIntentLinkResult,
+        ] {
+            let (_temporary, admitted) = admit_days("link-initial-crash", &["20260823"]);
+            let owner = prepared_owner(&admitted).unwrap();
+            let mut held = admitted.begin(owner).unwrap();
+            let proof = admit_proof(&held, held.owner()).unwrap();
+            let guard = fail_after(fault);
+            assert!(held.continue_with(proof).is_err());
+            drop(guard);
+            held.proceed().unwrap();
+            assert!(held.had_allocation());
+        }
+    }
+
+    #[test]
+    fn successor_link_crash_halves_resync_the_addressed_successor() {
+        for fault in [
+            PublishFault::AfterOwnerIntentLink,
+            PublishFault::AfterOwnerIntentLinkSync,
+            PublishFault::AfterOwnerIntentLinkResult,
+        ] {
+            let (_temporary, admitted) = admit_days("link-successor-crash", &["20260823"]);
+            let mut held = continue_ok(&admitted);
+            held.proceed().unwrap().commit().unwrap();
+            let proof = admit_proof(&held, held.owner()).unwrap();
+            let guard = fail_after(fault);
+            assert!(held.advance_dirty(proof).is_err());
+            drop(guard);
+            held.proceed().unwrap();
+            let serial = held.serial.unwrap();
+            let dirs = crate::init::open_store_dirs(admitted.store().root())
+                .unwrap()
+                .unwrap();
+            crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+                assert!(load_owner_intent_link(section, held.owner(), serial)?.is_some());
+                Ok(())
+            })
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn conflicting_link_blocks_decision_resume_and_grant_boundaries() {
+        let (temporary, admitted) = admit_days("link-conflict-e2e", &["20260823"]);
+        let mut held = continue_ok(&admitted);
+        let operation = held.owner().operation_id().to_owned();
+        let operation = crate::selector::OperationId::parse(&operation).unwrap();
+        let selector = held.owner().selector().clone();
+        rewrite_link(&temporary, held.owner(), |link| {
+            link.intent_digest = "00".repeat(32);
+        });
+
+        assert!(matches!(
+            crate::owner::ClaimAdmission::admit(&held, held.owner()),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerIntentLink
+            })
+        ));
+        assert!(matches!(
+            held.proceed(),
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerIntentLink
+            })
+        ));
+        drop(held);
+        assert!(matches!(
+            admitted.deliver_grants(&operation, &selector).unwrap(),
+            crate::grant::Delivery::Unknown {
+                role: DurableRole::OwnerIntentLink
+            }
+        ));
     }
 }
