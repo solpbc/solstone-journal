@@ -17,9 +17,9 @@ use crate::layout::{
     ACTIVES, CLEARANCE, DayKey, TERMINALS, active_name, barrier_name, intent_name, member_name,
     terminal_name,
 };
-use crate::lock::DayLockSet;
 #[cfg(test)]
 use crate::lock::acquire_days_with_timeout;
+use crate::lock::{DayLockSet, LOCK_TIMEOUT, hold_topology_with_timeout};
 use crate::permit::{TerminalOutcome, TerminalReceipt, outcome_name, parse_outcome};
 #[cfg(test)]
 use crate::preflight::Admitted;
@@ -168,14 +168,24 @@ pub(crate) fn publish_from_permit(
         return Err(ConvergenceError::Refused(Refusal::IntentMismatch));
     }
     let days = held.days.clone();
+    let existing = read_terminal(&dirs, serial)?;
+    let exact_visible = existing.as_ref().is_some_and(|terminal| {
+        terminal.outcome == outcome_name(outcome) && terminal.intent_digest == intent.intent_digest
+    });
+    let existing_resolved = existing.as_ref().map(|terminal| terminal.resolved.clone());
     let mut resolved = BTreeMap::new();
+    let mut saw_descendant = false;
     for day in &days {
         match classify_day(store, &held.locks, day, &intent)? {
             DayClass::ExactProposed(slice) => {
                 resolved.insert(day.as_str().to_owned(), slice);
             }
-            DayClass::SafeDescendant(_) => {
-                return Err(ConvergenceError::Refused(Refusal::Superseded));
+            DayClass::SafeDescendant(slice) => {
+                if !exact_visible {
+                    return Err(ConvergenceError::Refused(Refusal::Superseded));
+                }
+                saw_descendant = true;
+                resolved.insert(day.as_str().to_owned(), slice);
             }
             DayClass::Unresolved => {
                 return Err(ConvergenceError::Unknown {
@@ -184,6 +194,14 @@ pub(crate) fn publish_from_permit(
             }
         }
     }
+    if exact_visible && !saw_descendant && existing_resolved.as_ref() != Some(&resolved) {
+        return Err(ConvergenceError::Refused(Refusal::ConflictingTerminal));
+    }
+    let resolved = if exact_visible && saw_descendant {
+        existing_resolved.expect("exact terminal")
+    } else {
+        resolved
+    };
     write_and_cleanup(store, &held.locks, &dirs, &intent, &days, resolved, outcome)
 }
 
@@ -352,11 +370,13 @@ fn write_and_cleanup(
         day_set: intent.day_set.clone(),
         adoption_ids,
         outcome: outcome_name(outcome).to_owned(),
-        predecessors: intent.predecessors.clone(),
+        predecessors: crate::clearance::authenticated_terminal_predecessors(
+            store, dirs, intent, days,
+        )?,
         resolved,
     };
     let digest = publish_terminal(dirs, &terminal)?;
-    continue_cleanup(dirs, intent, days, &terminal, &digest)?;
+    continue_cleanup(store, dirs, intent, days, &terminal, &digest)?;
     Ok(TerminalReceipt {
         serial: intent.serial,
         outcome,
@@ -476,6 +496,7 @@ fn classify_existing(
 }
 
 fn continue_cleanup(
+    store: &crate::store::ConvergenceStore,
     dirs: &StoreDirs,
     intent: &Intent,
     days: &[DayKey],
@@ -575,6 +596,48 @@ fn continue_cleanup(
         return Err(ConvergenceError::PreservedPrior {
             operation: "injected abort",
             source: std::io::Error::other("test abort after terminal eviction"),
+        });
+    }
+    release_after_evict(store, dirs, intent, days)?;
+    Ok(())
+}
+
+fn release_after_evict(
+    store: &crate::store::ConvergenceStore,
+    dirs: &StoreDirs,
+    intent: &Intent,
+    days: &[DayKey],
+) -> Result<(), ConvergenceError> {
+    let _topology = hold_topology_with_timeout(dirs, LOCK_TIMEOUT)?;
+    let view = crate::claim::mechanical_finalize(store, dirs)?;
+    let prior = match view {
+        crate::claim::ClaimView::Headed(body) | crate::claim::ClaimView::Unheaded(body) => body,
+        crate::claim::ClaimView::Empty => return Ok(()),
+    };
+    if !prior
+        .table
+        .values()
+        .any(|entry| entry.serial == intent.serial)
+    {
+        return Ok(());
+    }
+    let body = crate::claim::release(store, dirs, &prior, intent.serial, days)?;
+    #[cfg(test)]
+    if crate::test_support::take_publish_fault(
+        crate::test_support::PublishFault::AfterReleaseRevision,
+    ) {
+        return Err(ConvergenceError::PreservedPrior {
+            operation: "injected abort",
+            source: std::io::Error::other("test abort after release revision"),
+        });
+    }
+    crate::claim::write_head(store, dirs, &body)?;
+    #[cfg(test)]
+    if crate::test_support::take_publish_fault(crate::test_support::PublishFault::AfterReleaseHead)
+    {
+        return Err(ConvergenceError::PreservedPrior {
+            operation: "injected abort",
+            source: std::io::Error::other("test abort after release head"),
         });
     }
     Ok(())

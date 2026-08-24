@@ -87,6 +87,11 @@ pub(crate) enum PublishFault {
     AfterMemberB,
     AfterBarrier,
     AfterTerminalEvict,
+    AfterReleaseRevision,
+    AfterReleaseHead,
+    AfterConsumeWitness,
+    AfterConsumeUnlink,
+    AfterConsumeSync,
 }
 
 /// Clears TLS injects if a test panics between arm and take.

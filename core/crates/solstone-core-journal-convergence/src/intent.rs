@@ -161,6 +161,121 @@ pub(crate) fn build_virgin_intent(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub(crate) fn build_allocation_intent(
+    store: &ConvergenceStore,
+    days: &[DayKey],
+    serial: u64,
+    owner_digest: &str,
+    claim_revision: u64,
+    prior_claim_head_revision: u64,
+    prior_claim_head_digest: &str,
+    adoptions: &BTreeMap<String, Adoption>,
+    classes: &BTreeMap<String, crate::clearance::PredecessorClass>,
+    snapshots: &BTreeMap<String, crate::store::DaySnapshot>,
+) -> Result<Intent, ConvergenceError> {
+    let mut prior_day_revisions = BTreeMap::new();
+    let mut proposed_day_revisions = BTreeMap::new();
+    let mut proposed_dirty_generations = BTreeMap::new();
+    let mut predecessors = BTreeMap::new();
+    let mut projections = BTreeMap::new();
+    for day in days {
+        let adoption = adoptions
+            .get(day.as_str())
+            .ok_or(ConvergenceError::Unknown {
+                role: DurableRole::Adoption,
+            })?;
+        let class = classes.get(day.as_str()).ok_or(ConvergenceError::Unknown {
+            role: DurableRole::ClearanceMember,
+        })?;
+        match class {
+            crate::clearance::PredecessorClass::Virgin { digest } => {
+                prior_day_revisions.insert(day.as_str().to_owned(), 0);
+                proposed_day_revisions.insert(day.as_str().to_owned(), 1);
+                proposed_dirty_generations.insert(day.as_str().to_owned(), 1);
+                predecessors.insert(
+                    day.as_str().to_owned(),
+                    Predecessor::Virgin {
+                        digest: digest.clone(),
+                    },
+                );
+                let binding = ProjectionBinding {
+                    prior_stream: PresentAbsent::Absent,
+                    prior_daily: PresentAbsent::Absent,
+                    proposed_stream: marker_present(store, adoption, day, 1, serial)?,
+                    proposed_daily: PresentAbsent::Absent,
+                };
+                verify_projection_binding(&binding)?;
+                projections.insert(day.as_str().to_owned(), binding);
+            }
+            crate::clearance::PredecessorClass::Member {
+                member_digest,
+                barrier_digest,
+            } => {
+                let snapshot = snapshots
+                    .get(day.as_str())
+                    .ok_or(ConvergenceError::Unknown {
+                        role: DurableRole::Record,
+                    })?;
+                prior_day_revisions.insert(day.as_str().to_owned(), snapshot.record_revision);
+                proposed_day_revisions
+                    .insert(day.as_str().to_owned(), snapshot.record_revision + 1);
+                proposed_dirty_generations
+                    .insert(day.as_str().to_owned(), snapshot.dirty_generation + 1);
+                predecessors.insert(
+                    day.as_str().to_owned(),
+                    Predecessor::Member {
+                        member_digest: member_digest.clone(),
+                        barrier_digest: barrier_digest.clone(),
+                    },
+                );
+                let binding = ProjectionBinding {
+                    prior_stream: marker_present(
+                        store,
+                        adoption,
+                        day,
+                        snapshot.dirty_generation,
+                        snapshot.dirty_by_transition_serial,
+                    )?,
+                    prior_daily: PresentAbsent::Absent,
+                    proposed_stream: marker_present(
+                        store,
+                        adoption,
+                        day,
+                        snapshot.dirty_generation + 1,
+                        serial,
+                    )?,
+                    proposed_daily: PresentAbsent::Absent,
+                };
+                verify_projection_binding(&binding)?;
+                projections.insert(day.as_str().to_owned(), binding);
+            }
+        }
+    }
+    let mut intent = Intent {
+        role: ROLE_INTENT.to_owned(),
+        schema_version: SCHEMA_VERSION,
+        journal_id: store.journal_id().to_owned(),
+        root_id: store.root_id().to_owned(),
+        serial,
+        operation: OPERATION_ADVANCE_DIRTY.to_owned(),
+        day_set: days.iter().map(|day| day.as_str().to_owned()).collect(),
+        day_set_subdigest: day_set_subdigest(days)?.as_hex().to_owned(),
+        owner_binding_digest: owner_digest.to_owned(),
+        claim_revision,
+        prior_claim_head_revision,
+        prior_claim_head_digest: prior_claim_head_digest.to_owned(),
+        prior_day_revisions,
+        proposed_day_revisions,
+        proposed_dirty_generations,
+        predecessors,
+        projections,
+        intent_digest: String::new(),
+    };
+    intent.intent_digest = intent_digest(&intent)?.as_hex().to_owned();
+    Ok(intent)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_later_intent(
     store: &ConvergenceStore,
     days: &[DayKey],

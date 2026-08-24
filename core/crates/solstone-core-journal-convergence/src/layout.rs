@@ -103,6 +103,10 @@ pub(crate) fn barrier_name(serial: u64) -> OsString {
     OsString::from(format!("{serial}.barrier.json"))
 }
 
+pub(crate) fn consumption_witness_name(day: &DayKey, serial: u64) -> OsString {
+    OsString::from(format!("{}.consumed.{serial}.wit.json", day.as_str()))
+}
+
 #[cfg(test)]
 // Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]

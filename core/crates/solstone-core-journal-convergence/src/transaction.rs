@@ -9,12 +9,13 @@ use crate::claim::{
     ClaimView, IntroduceSpec, all_unclaimed, ancestry_preserves, days_claimed_by_other,
     ensure_claim_dir, introduce, mechanical_finalize, same_owner_claim, write_head,
 };
+use crate::clearance::{PredecessorClass, classify_predecessor, consume_intent_days};
 use crate::digest::digest_value;
 use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error};
 use crate::init::open_store_dirs;
 use crate::intent::{
-    build_later_intent, build_virgin_intent, day_is_store_genesis, read_intent,
-    verify_intent_matches_claim, write_active, write_intent,
+    build_allocation_intent, build_later_intent, build_virgin_intent, day_is_store_genesis,
+    read_intent, verify_intent_matches_claim, write_active, write_intent,
 };
 use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
@@ -136,6 +137,13 @@ impl<'a> HeldDays<'a> {
         if !self.proof_consumed && self.serial.is_none() {
             return Err(ConvergenceError::Refused(Refusal::NoPermit));
         }
+        if let Some(serial) = self.serial {
+            let dirs = open_store_dirs(self.admitted.store.root())?
+                .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+            if crate::terminal::read_terminal(&dirs, serial)?.is_some() {
+                return self.mint_permit();
+            }
+        }
         self.advance(false)?;
         self.mint_permit()
     }
@@ -162,7 +170,9 @@ impl<'a> HeldDays<'a> {
             match inspect_against_proposed(store, &self.locks, day, proposed)? {
                 LoadDay::Published(snapshot) if snapshot.record_revision == proposed => {}
                 LoadDay::HeadedDescendant { .. } => {
-                    return Err(ConvergenceError::Refused(Refusal::Superseded));
+                    if crate::terminal::read_terminal(&dirs, serial)?.is_none() {
+                        return Err(ConvergenceError::Refused(Refusal::Superseded));
+                    }
                 }
                 _ => {
                     return Err(ConvergenceError::Unknown {
@@ -302,24 +312,24 @@ impl<'a> HeldDays<'a> {
             };
             let intent = match read_intent(&dirs, entry.serial)? {
                 Some(existing) => {
-                    let expected = build_virgin_intent(
-                        store,
-                        &self.days,
-                        entry.serial,
-                        self.owner.digest_hex(),
-                        entry.introduced_revision,
-                        prior_rev,
-                        &prior_digest,
-                        &adoptions,
-                    )?;
-                    if existing.predecessors != expected.predecessors {
-                        return Err(ConvergenceError::Refused(Refusal::ChangedPredecessor));
-                    }
                     if existing
                         .prior_day_revisions
                         .values()
                         .all(|revision| *revision == 0)
                     {
+                        let expected = build_virgin_intent(
+                            store,
+                            &self.days,
+                            entry.serial,
+                            self.owner.digest_hex(),
+                            entry.introduced_revision,
+                            prior_rev,
+                            &prior_digest,
+                            &adoptions,
+                        )?;
+                        if existing.predecessors != expected.predecessors {
+                            return Err(ConvergenceError::Refused(Refusal::ChangedPredecessor));
+                        }
                         refuse_mutated_projection(&existing, &expected)?;
                     }
                     verify_intent_matches_claim(&existing, &entry.intent_digest)?;
@@ -351,13 +361,26 @@ impl<'a> HeldDays<'a> {
             };
             (entry.serial, intent)
         } else if all_unclaimed(&table, &self.days) {
-            for day in &self.days {
-                if !day_is_store_genesis(&dirs, day)? {
-                    return Err(ConvergenceError::Refused(Refusal::NotVirgin));
-                }
-            }
             let adoptions = adopt_all(store, &dirs, &self.days)?;
             abort_after_adopt()?;
+            let mut classes = BTreeMap::new();
+            let mut snapshots = BTreeMap::new();
+            for day in &self.days {
+                let class = classify_predecessor(store, &dirs, &table, day)?;
+                if let PredecessorClass::Member { .. } = &class {
+                    match self.admitted.store.load_day(&self.locks, day)? {
+                        LoadDay::Published(snapshot) => {
+                            snapshots.insert(day.as_str().to_owned(), snapshot);
+                        }
+                        _ => {
+                            return Err(ConvergenceError::Unknown {
+                                role: DurableRole::Record,
+                            });
+                        }
+                    }
+                }
+                classes.insert(day.as_str().to_owned(), class);
+            }
             let serial = match self.serial {
                 Some(serial) => serial,
                 None => {
@@ -375,7 +398,7 @@ impl<'a> HeldDays<'a> {
                     .to_owned(),
             };
             let n = prior_revision + 1;
-            let intent = build_virgin_intent(
+            let intent = build_allocation_intent(
                 store,
                 &self.days,
                 serial,
@@ -384,6 +407,8 @@ impl<'a> HeldDays<'a> {
                 prior_revision,
                 &prior_digest,
                 &adoptions,
+                &classes,
+                &snapshots,
             )?;
             ensure_claim_dir(&dirs)?;
             abort_after_claim_dir()?;
@@ -421,6 +446,7 @@ impl<'a> HeldDays<'a> {
             &intent.intent_digest,
             &self.days,
         )?;
+        consume_intent_days(store, &dirs, &intent, &self.days)?;
 
         let active = Active {
             role: ROLE_ACTIVE.to_owned(),
@@ -1090,7 +1116,8 @@ mod tests {
         .unwrap();
         match intent.predecessors.get_mut("20260823").unwrap() {
             crate::schema::Predecessor::Virgin { digest } => *digest = "ab".repeat(32),
-            crate::schema::Predecessor::Member { .. } => panic!("virgin"),
+            crate::schema::Predecessor::Member { .. }
+            | crate::schema::Predecessor::Consumed { .. } => panic!("virgin"),
         }
         intent.intent_digest = crate::schema::intent_digest(&intent)
             .unwrap()

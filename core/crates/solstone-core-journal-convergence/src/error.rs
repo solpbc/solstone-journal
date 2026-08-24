@@ -60,7 +60,6 @@ pub enum DurableRole {
     Terminal,
     ClearanceMember,
     ClearanceBarrier,
-    #[allow(dead_code)]
     ConsumptionWitness,
     StreamUpdated,
     DailyUpdated,
@@ -69,31 +68,17 @@ pub enum DurableRole {
 
 #[derive(Debug)]
 pub enum Refusal {
-    UnknownField {
-        field: String,
-    },
+    UnknownField { field: String },
     MissingSerial,
-    FutureSerial {
-        observed: u64,
-        next: u64,
-    },
-    RevisionRollback {
-        observed: u64,
-        current: u64,
-    },
-    GenerationRollback {
-        observed: u64,
-        current: u64,
-    },
+    FutureSerial { observed: u64, next: u64 },
+    RevisionRollback { observed: u64, current: u64 },
+    GenerationRollback { observed: u64, current: u64 },
     PersistedZeroRevision,
     PersistedZeroDirtyGeneration,
     PersistedZeroSerial,
     CompletedExceedsDirty,
     WrongLineage,
-    WrongDay {
-        expected: String,
-        observed: String,
-    },
+    WrongDay { expected: String, observed: String },
     Exhausted,
     Uninitialized,
     AlreadyInitialized,
@@ -119,14 +104,10 @@ pub enum Refusal {
     WrongOutcome,
     OppositeTerminal,
     GenericRejection,
-    #[allow(dead_code)]
     DaySetChanged,
-    #[allow(dead_code)]
     ClaimSwapped,
-    #[allow(dead_code)]
     IncompleteEvidence,
     StaleEvidence,
-    #[allow(dead_code)]
     MixedEvidence,
     Superseded,
 }

@@ -16,6 +16,7 @@
 
 mod allocate;
 mod claim;
+mod clearance;
 mod digest;
 mod error;
 mod init;
@@ -44,7 +45,8 @@ pub use owner::{ClaimAdmission, OwnerBinding};
 pub use permit::{Permit, TerminalOutcome, TerminalReceipt};
 pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
 pub use recover::{
-    AwaitingOwnerDecision, AwaitingStage, DayStoreRecovery, RecoveryReport, StoreVerdict,
+    AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
+    StoreVerdict,
 };
 pub use store::{ConvergenceStore, DaySnapshot};
 pub use transaction::HeldDays;
@@ -97,6 +99,7 @@ mod architecture {
         for source in [
             include_str!("allocate.rs"),
             include_str!("claim.rs"),
+            include_str!("clearance.rs"),
             include_str!("digest.rs"),
             include_str!("error.rs"),
             include_str!("init.rs"),

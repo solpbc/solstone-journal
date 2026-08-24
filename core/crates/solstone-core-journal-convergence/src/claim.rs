@@ -392,3 +392,74 @@ pub(crate) fn ancestry_preserves(
     }
     Ok(())
 }
+
+pub(crate) fn release(
+    store: &ConvergenceStore,
+    dirs: &StoreDirs,
+    prior: &ClaimRevision,
+    serial: u64,
+    days: &[DayKey],
+) -> Result<ClaimRevision, ConvergenceError> {
+    let claim = open_claim_dir(dirs)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::ClaimRevision,
+    })?;
+    let mut table = prior.table.clone();
+    for day in days {
+        match table.remove(day.as_str()) {
+            Some(entry) if entry.serial == serial => {}
+            Some(_) => {
+                return Err(ConvergenceError::Refused(Refusal::ClaimSwapped));
+            }
+            None => {
+                return Err(ConvergenceError::Refused(Refusal::IncompleteEvidence));
+            }
+        }
+    }
+    let owner_binding_digest = prior
+        .table
+        .values()
+        .find(|entry| entry.serial == serial)
+        .map(|entry| entry.owner_binding_digest.clone())
+        .unwrap_or_else(|| prior.owner_binding_digest.clone());
+    let intent_digest = prior
+        .table
+        .values()
+        .find(|entry| entry.serial == serial)
+        .map(|entry| entry.intent_digest.clone())
+        .unwrap_or_else(|| prior.intent_digest.clone());
+    let body = ClaimRevision {
+        role: ROLE_CLAIM_REVISION.to_owned(),
+        schema_version: SCHEMA_VERSION,
+        journal_id: store.journal_id().to_owned(),
+        root_id: store.root_id().to_owned(),
+        revision: prior.revision + 1,
+        prior_revision: prior.revision,
+        prior_revision_digest: digest_value(prior)?.as_hex().to_owned(),
+        transition: ClaimTransition::Release,
+        serial,
+        owner_binding_digest,
+        day_set: days.iter().map(|day| day.as_str().to_owned()).collect(),
+        day_set_subdigest: crate::schema::day_set_subdigest(days)?.as_hex().to_owned(),
+        intent_digest,
+        table,
+    };
+    write_json_exclusive(
+        &claim,
+        &claim_revision_name(body.revision),
+        &body,
+        DurableRole::ClaimRevision,
+    )?;
+    Ok(body)
+}
+
+pub(crate) fn allocations_from_table(
+    table: &BTreeMap<String, TableEntry>,
+) -> BTreeMap<u64, Vec<DayKey>> {
+    let mut out: BTreeMap<u64, Vec<DayKey>> = BTreeMap::new();
+    for (day, entry) in table {
+        if let Ok(key) = DayKey::parse(day) {
+            out.entry(entry.serial).or_default().push(key);
+        }
+    }
+    out
+}

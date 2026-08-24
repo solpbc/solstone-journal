@@ -19,7 +19,7 @@ use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::init::open_store_dirs;
 use crate::intent::{open_intents_dir, read_intent};
 use crate::layout::{DayKey, intent_name};
-use crate::lock::acquire_days_with_timeout;
+use crate::lock::{acquire_days_with_timeout, hold_topology_with_timeout};
 use crate::permit::TerminalOutcome;
 use crate::preflight::{Admitted, CanonicalDaySet, canonicalize_discovered};
 use crate::publish::inspect_against_proposed;
@@ -108,6 +108,12 @@ impl RecoveryReport {
     pub fn terminal_outcome(&self) -> Option<TerminalOutcome> {
         self.terminal_outcome
     }
+}
+
+/// Informational counts of owner-free mechanical cleanup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CleanupOutcome {
+    pub released_serials: Vec<u64>,
 }
 
 impl Admitted {
@@ -217,6 +223,80 @@ impl Admitted {
             },
             Err(error) => return Err(error),
         })
+    }
+
+    /// Owner-free mechanical head + evidenced claim release.
+    pub fn cleanup(&self) -> Result<CleanupOutcome, ConvergenceError> {
+        self.store.revalidate()?;
+        let dirs = open_store_dirs(self.store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        let topology = hold_topology_with_timeout(&dirs, self.lock_timeout())?;
+        let table = crate::claim::current_table(&self.store, &dirs)?;
+        drop(topology);
+        let allocations = crate::claim::allocations_from_table(&table);
+        let mut released_serials = Vec::new();
+        for (serial, mut days) in allocations {
+            days.sort();
+            let locks = acquire_days_with_timeout(
+                &dirs,
+                &days,
+                self.store.journal_id(),
+                self.store.root_id(),
+                self.store.object_identity(),
+                self.lock_timeout(),
+            )?;
+            if crate::terminal::read_terminal(&dirs, serial)?.is_some() {
+                drop(locks);
+                continue;
+            }
+            for day in &days {
+                let member = crate::clearance::read_member(&dirs, day)?
+                    .ok_or(ConvergenceError::Refused(Refusal::IncompleteEvidence))?;
+                if member.serial != serial {
+                    drop(locks);
+                    return Err(ConvergenceError::Refused(Refusal::ClaimSwapped));
+                }
+                let barrier = crate::clearance::read_barrier(&dirs, serial)?
+                    .ok_or(ConvergenceError::Refused(Refusal::IncompleteEvidence))?;
+                if barrier.serial != serial {
+                    drop(locks);
+                    return Err(ConvergenceError::Refused(Refusal::StaleEvidence));
+                }
+            }
+            let topology = hold_topology_with_timeout(&dirs, self.lock_timeout())?;
+            let table_again = crate::claim::current_table(&self.store, &dirs)?;
+            let mut again = crate::claim::allocations_from_table(&table_again)
+                .remove(&serial)
+                .unwrap_or_default();
+            again.sort();
+            if again != days {
+                drop(topology);
+                drop(locks);
+                return Err(ConvergenceError::Refused(Refusal::DaySetChanged));
+            }
+            let view = crate::claim::mechanical_finalize(&self.store, &dirs)?;
+            let prior = match view {
+                crate::claim::ClaimView::Headed(body) | crate::claim::ClaimView::Unheaded(body) => {
+                    body
+                }
+                crate::claim::ClaimView::Empty => {
+                    drop(topology);
+                    drop(locks);
+                    continue;
+                }
+            };
+            if !prior.table.values().any(|entry| entry.serial == serial) {
+                drop(topology);
+                drop(locks);
+                continue;
+            }
+            let body = crate::claim::release(&self.store, &dirs, &prior, serial, &days)?;
+            crate::claim::write_head(&self.store, &dirs, &body)?;
+            released_serials.push(serial);
+            drop(topology);
+            drop(locks);
+        }
+        Ok(CleanupOutcome { released_serials })
     }
 }
 

@@ -27,6 +27,7 @@ pub(crate) const ROLE_ACTIVE: &str = "solstone.convergence.active.v1";
 pub(crate) const ROLE_TERMINAL: &str = "solstone.convergence.terminal.v1";
 pub(crate) const ROLE_CLEARANCE_MEMBER: &str = "solstone.convergence.clearance-member.v1";
 pub(crate) const ROLE_CLEARANCE_BARRIER: &str = "solstone.convergence.clearance-barrier.v1";
+pub(crate) const ROLE_CONSUMPTION: &str = "solstone.convergence.consumption-witness.v1";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -174,6 +175,11 @@ pub(crate) enum Predecessor {
         member_digest: String,
         barrier_digest: String,
     },
+    Consumed {
+        witness_digest: String,
+        member_digest: String,
+        barrier_digest: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -311,6 +317,21 @@ pub(crate) struct ClearanceBarrier {
     pub day_set: Vec<String>,
     pub member_digests: BTreeMap<String, String>,
     pub resolved: BTreeMap<String, ResolvedDay>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ConsumptionWitness {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub adoption_id: String,
+    pub day: String,
+    pub new_serial: u64,
+    pub new_intent_digest: String,
+    pub member_digest: String,
+    pub barrier_digest: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

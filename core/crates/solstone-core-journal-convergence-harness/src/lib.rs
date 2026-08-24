@@ -291,4 +291,22 @@ mod tests {
         assert!(report.awaiting().is_some());
         assert!(report.terminal_outcome().is_none());
     }
+
+    #[test]
+    fn ac9_clearance() {
+        let (_temporary, admitted) = open_admitted("clearance", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        permit.commit().unwrap();
+        drop(held);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let snapshot = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(snapshot.record_revision, 2);
+        assert_eq!(snapshot.dirty_generation, 2);
+    }
 }
