@@ -680,11 +680,13 @@ mod tests {
         initialize(&root).unwrap();
         std::fs::remove_file(journal.join("health/convergence/allocator.json")).unwrap();
         let before_owner = snapshot_tree(&journal);
-        assert!(
-            !before_owner
-                .keys()
-                .any(|key| key.contains("intent") || key.contains("owner"))
-        );
+        // Init now creates the empty `registry/owners/` parent. This test still
+        // requires no intent/active records and no prepared-owner files.
+        assert!(!before_owner.keys().any(|key| {
+            key.contains("intents/")
+                || key.contains("actives/")
+                || (key.contains("registry/owners/") && key.ends_with(".json"))
+        }));
         let set = match preflight(["20260823"]).unwrap() {
             Preflight::Ready(set) => set,
             Preflight::Empty => panic!("days"),

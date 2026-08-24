@@ -11,7 +11,7 @@ use solstone_core_journal_io::{
 
 use crate::error::{ConvergenceError, DurableRole, Refusal, random_hex};
 use crate::init::StoreDirs;
-use crate::layout::{DayKey, TOPOLOGY_LOCK, day_lock_name, require_nonempty_unique};
+use crate::layout::{DayKey, REGISTRY_LOCK, TOPOLOGY_LOCK, day_lock_name, require_nonempty_unique};
 
 pub(crate) const LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const LOCK_POLL: Duration = Duration::from_millis(20);
@@ -37,6 +37,28 @@ pub(crate) fn hold_topology_with_timeout(
     )
     .map_err(|error| map_lock_error("acquire topology lock", DurableRole::TopologyLock, error))?;
     Ok(TopologyGuard { _lock: guard })
+}
+
+// Wired by hook A in the next commit (prepared-owner issuance).
+#[allow(dead_code)]
+pub(crate) struct RegistryGuard {
+    _lock: BoundParentLock,
+}
+
+// Wired by hook A in the next commit (prepared-owner issuance).
+#[allow(dead_code)]
+pub(crate) fn hold_registry_with_timeout(
+    dirs: &StoreDirs,
+    timeout: Duration,
+) -> Result<RegistryGuard, ConvergenceError> {
+    let guard = acquire_existing_parent_lock_bound(
+        &dirs.convergence,
+        OsStr::new(REGISTRY_LOCK),
+        timeout,
+        LOCK_POLL,
+    )
+    .map_err(|error| map_lock_error("acquire registry lock", DurableRole::RegistryLock, error))?;
+    Ok(RegistryGuard { _lock: guard })
 }
 
 fn map_lock_error(
@@ -163,6 +185,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use crate::error::{ConvergenceError, Refusal};
+    use crate::init::open_store_dirs;
     use crate::layout::DayKey;
     use crate::test_support::initialized_store;
 
@@ -264,5 +287,60 @@ mod tests {
             error,
             ConvergenceError::Refused(Refusal::ReusedAuthority)
         ));
+    }
+
+    #[test]
+    fn registry_lock_contention_is_busy() {
+        let (temporary, store_a) = initialized_store();
+        let root_b =
+            solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
+        let dirs_a = open_store_dirs(store_a.root()).unwrap().unwrap();
+        let dirs_b = open_store_dirs(store_b.root()).unwrap().unwrap();
+        let held = super::hold_registry_with_timeout(&dirs_a, Duration::from_secs(2)).unwrap();
+        let started = Instant::now();
+        let result = super::hold_registry_with_timeout(&dirs_b, Duration::from_millis(80));
+        assert!(matches!(
+            result,
+            Err(ConvergenceError::Refused(Refusal::Busy))
+        ));
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        drop(held);
+    }
+
+    #[test]
+    fn held_registry_does_not_block_disjoint_day() {
+        let (temporary, store_a) = initialized_store();
+        let root_b =
+            solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
+        let dirs_a = open_store_dirs(store_a.root()).unwrap().unwrap();
+        let day = DayKey::parse("20260823").unwrap();
+        let held = super::hold_registry_with_timeout(&dirs_a, Duration::from_secs(2)).unwrap();
+        let started = Instant::now();
+        let other = thread::spawn(move || store_b.acquire_days(&[day]));
+        let got = other.join().expect("thread");
+        assert!(got.is_ok());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(held);
+    }
+
+    #[test]
+    fn held_day_does_not_block_registry() {
+        let (temporary, store_a) = initialized_store();
+        let root_b =
+            solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
+        let dirs_b = open_store_dirs(store_b.root()).unwrap().unwrap();
+        let day = DayKey::parse("20260823").unwrap();
+        let held = store_a.acquire_days(std::slice::from_ref(&day)).unwrap();
+        let started = Instant::now();
+        let other = thread::spawn(move || {
+            super::hold_registry_with_timeout(&dirs_b, Duration::from_millis(80))
+        });
+        let got = other.join().expect("thread");
+        assert!(got.is_ok());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(held);
     }
 }

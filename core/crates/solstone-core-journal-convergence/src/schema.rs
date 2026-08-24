@@ -28,6 +28,8 @@ pub(crate) const ROLE_TERMINAL: &str = "solstone.convergence.terminal.v1";
 pub(crate) const ROLE_CLEARANCE_MEMBER: &str = "solstone.convergence.clearance-member.v1";
 pub(crate) const ROLE_CLEARANCE_BARRIER: &str = "solstone.convergence.clearance-barrier.v1";
 pub(crate) const ROLE_CONSUMPTION: &str = "solstone.convergence.consumption-witness.v1";
+pub(crate) const ROLE_JOURNAL_SECRET: &str = "solstone.convergence.journal-secret.v1";
+pub(crate) const ROLE_GRANT_SELECTOR: &str = "solstone.convergence.grant-selector.v1";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -348,6 +350,17 @@ pub(crate) struct OwnerBindingCanon {
     pub journal_id: String,
     pub root_id: String,
     pub owner_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JournalSecret {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub key_hex: String,
+    pub auxiliary_time: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
