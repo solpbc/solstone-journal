@@ -227,7 +227,7 @@
       '<label for="app-launcher-filter">find a journal app</label>' +
       '<input id="app-launcher-filter" type="search" placeholder="find a journal app">' +
       `<div class="app-launcher-groups">${groupMarkup}</div>` +
-      '<p class="app-launcher-empty" hidden>no apps found</p>' +
+      '<p class="app-launcher-empty" hidden>no journal apps match that search.</p>' +
       '</div>';
 
     const filter = document.getElementById('app-launcher-filter');
