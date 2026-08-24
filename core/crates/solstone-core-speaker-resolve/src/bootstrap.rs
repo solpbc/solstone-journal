@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
     JournalEntity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
-    read_journal_principal, record_entity_resolution_from_name_evidence, save_voiceprints_batch,
+    record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
 use solstone_core_journal_io::{PathOrDay, SegmentIdentityError, day_dirs, iter_segments};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
@@ -21,7 +21,8 @@ use crate::admission::{
     admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
 };
 use crate::evidence::load_segment_speakers_with_gaps;
-use crate::owner_centroid::load_owner_centroid;
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
+use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
 /// Kept verbatim from `solstone/apps/speakers/bootstrap.py`; consumed by the
@@ -53,6 +54,7 @@ pub struct BootstrapStats {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BootstrapOutcome {
+    IdentityInvalid,
     NoOwnerCentroid,
     Completed(BootstrapStats),
 }
@@ -71,6 +73,7 @@ pub struct SeedFromImportsStats {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeedFromImportsOutcome {
+    IdentityInvalid,
     NoOwnerCentroid,
     Completed(SeedFromImportsStats),
 }
@@ -131,14 +134,10 @@ pub enum MergeNamesOutcome {
 pub fn bootstrap_voiceprints(
     request: &BootstrapRequest,
 ) -> Result<BootstrapOutcome, BootstrapError> {
-    let Some(principal) = read_journal_principal(&request.journal_root)? else {
-        return Ok(BootstrapOutcome::NoOwnerCentroid);
-    };
-    let Some(owner_id) = principal.get("id").and_then(Value::as_str) else {
-        return Ok(BootstrapOutcome::NoOwnerCentroid);
-    };
-    let Some(owner) = load_owner_centroid(&request.journal_root, owner_id)? else {
-        return Ok(BootstrapOutcome::NoOwnerCentroid);
+    let owner = match bootstrap_owner(&request.journal_root)? {
+        BootstrapOwner::IdentityInvalid => return Ok(BootstrapOutcome::IdentityInvalid),
+        BootstrapOwner::NoOwnerCentroid => return Ok(BootstrapOutcome::NoOwnerCentroid),
+        BootstrapOwner::Resolved(owner) => owner,
     };
 
     let entities = load_all_journal_entities(&request.journal_root)?;
@@ -280,14 +279,10 @@ pub fn bootstrap_voiceprints(
 pub fn seed_from_imports(
     request: &BootstrapRequest,
 ) -> Result<SeedFromImportsOutcome, BootstrapError> {
-    let Some(principal) = read_journal_principal(&request.journal_root)? else {
-        return Ok(SeedFromImportsOutcome::NoOwnerCentroid);
-    };
-    let Some(owner_id) = principal.get("id").and_then(Value::as_str) else {
-        return Ok(SeedFromImportsOutcome::NoOwnerCentroid);
-    };
-    let Some(owner) = load_owner_centroid(&request.journal_root, owner_id)? else {
-        return Ok(SeedFromImportsOutcome::NoOwnerCentroid);
+    let owner = match bootstrap_owner(&request.journal_root)? {
+        BootstrapOwner::IdentityInvalid => return Ok(SeedFromImportsOutcome::IdentityInvalid),
+        BootstrapOwner::NoOwnerCentroid => return Ok(SeedFromImportsOutcome::NoOwnerCentroid),
+        BootstrapOwner::Resolved(owner) => owner,
     };
 
     let entities = load_all_journal_entities(&request.journal_root)?;
@@ -449,6 +444,27 @@ pub fn seed_from_imports(
         }
     }
     Ok(SeedFromImportsOutcome::Completed(stats))
+}
+
+enum BootstrapOwner {
+    IdentityInvalid,
+    NoOwnerCentroid,
+    Resolved(OwnerCentroid),
+}
+
+fn bootstrap_owner(journal_root: &Path) -> Result<BootstrapOwner, BootstrapError> {
+    let owner_id = match admitted_owner_id(journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => return Ok(BootstrapOwner::IdentityInvalid),
+    };
+    match load_owner_centroid(journal_root, &owner_id) {
+        Ok(Some(owner)) => Ok(BootstrapOwner::Resolved(owner)),
+        Ok(None) => Ok(BootstrapOwner::NoOwnerCentroid),
+        Err(OwnerCentroidError::IdentityInvalid | OwnerCentroidError::TargetMismatch { .. }) => {
+            Ok(BootstrapOwner::IdentityInvalid)
+        }
+        Err(error) => Err(BootstrapError::Owner(error)),
+    }
 }
 
 /// Resolve both names and perform every merge guard before the write.

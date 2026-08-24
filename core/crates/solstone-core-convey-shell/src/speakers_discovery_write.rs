@@ -51,6 +51,7 @@ pub(crate) struct DiscoveryCandidate {
 }
 
 pub(crate) enum DiscoveryCandidates {
+    IdentityInvalid,
     NoConfirmedOwner,
     Candidates {
         rows: Vec<DiscoveryCandidate>,
@@ -140,14 +141,24 @@ pub(crate) fn preflight_identify_cluster(
 }
 
 pub(crate) fn discovery_candidates(root: &std::path::Path) -> Result<DiscoveryCandidates, String> {
-    let Some(principal) = crate::speakers_calendar::journal_principal_id(root) else {
-        return Ok(DiscoveryCandidates::NoConfirmedOwner);
+    let principal = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(root) {
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+            return Ok(DiscoveryCandidates::IdentityInvalid);
+        }
     };
-    let owner =
-        solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(root, &principal)
-            .map_err(|error| error.to_string())?;
-    let Some(owner) = owner else {
-        return Ok(DiscoveryCandidates::NoConfirmedOwner);
+    let owner = match solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(
+        root, &principal,
+    ) {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return Ok(DiscoveryCandidates::NoConfirmedOwner),
+        Err(
+            solstone_core_speaker_resolve::owner_centroid::OwnerCentroidError::IdentityInvalid
+            | solstone_core_speaker_resolve::owner_centroid::OwnerCentroidError::TargetMismatch {
+                ..
+            },
+        ) => return Ok(DiscoveryCandidates::IdentityInvalid),
+        Err(error) => return Err(error.to_string()),
     };
     let mut rows = Vec::new();
     let mut dropped = 0;
@@ -495,6 +506,14 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 /// Run a native discovery scan and publish its derived cache on successful clustering.
 pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     let (rows, issues) = match discovery_candidates(&root.0) {
+        Ok(DiscoveryCandidates::IdentityInvalid) => {
+            return error(
+                "speaker_owner_identity_invalid",
+                "I couldn't look for new voices because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            );
+        }
         Ok(DiscoveryCandidates::NoConfirmedOwner) => {
             return Json(json!({
                 "status": "degraded",

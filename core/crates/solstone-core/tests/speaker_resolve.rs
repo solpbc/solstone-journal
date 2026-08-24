@@ -398,7 +398,7 @@ fn ac1_bootstrap_voiceprints_cli_reaches_native_orchestrator() {
             "journal_root":journal, "encoder":encoder(), "added_at":1, "dry_run":true,
         }),
     );
-    assert_eq!(output["status"], "no_owner_centroid");
+    assert_eq!(output["status"], "speaker_owner_identity_invalid");
 }
 
 #[test]
@@ -411,7 +411,44 @@ fn ac1_seed_from_imports_cli_reaches_native_orchestrator() {
             "journal_root":journal, "encoder":encoder(), "added_at":1, "dry_run":true,
         }),
     );
-    assert_eq!(output["status"], "no_owner_centroid");
+    assert_eq!(output["status"], "speaker_owner_identity_invalid");
+}
+
+#[test]
+fn write_owner_centroid_refuses_a_foreign_target_without_retargeting() {
+    let journal = root("owner-target-mismatch");
+    create_entity(&journal, "owner");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["speaker-resolve", "write-owner-centroid"])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start write-owner-centroid request");
+    serde_json::to_writer(
+        child.stdin.as_mut().expect("stdin"),
+        &json!({
+            "journal_root": journal,
+            "principal_entity_id": "foreign",
+            "centroid": vector(1.0),
+            "cluster_size": 5,
+            "timestamp": "2026-08-09T00:00:00Z",
+            "evidence_tier": "standard",
+        }),
+    )
+    .expect("write request");
+    child.stdin.take();
+    let output = child.wait_with_output().expect("wait for target mismatch");
+
+    assert_eq!(output.status.code(), Some(64));
+    let error: Value = serde_json::from_slice(&output.stderr).expect("structured error");
+    assert_eq!(error["error"], "speaker_resolve_failed");
+    assert!(
+        error["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("target does not match"))
+    );
+    assert!(!journal.join("entities/owner/owner_centroid.npz").exists());
+    assert!(!journal.join("entities/foreign").exists());
 }
 
 #[test]

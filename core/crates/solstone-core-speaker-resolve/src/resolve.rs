@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_entity::{
     EntityLifecycleError, EntityResolutionError, EntityStoreError, load_all_journal_entities,
-    read_journal_principal,
 };
 use solstone_core_journal_io::PathError;
 
@@ -24,7 +23,8 @@ use crate::evidence::{
 use crate::layer1::{OwnerSeparationContext, separate_owner_statements};
 use crate::layer2::{Layer2Inputs, apply_structural_heuristics};
 use crate::layer3::{Layer3Inputs, apply_acoustic_matching};
-use crate::owner_centroid::load_owner_centroid;
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
+use crate::owner_centroid::{OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_centroid::{VoiceprintCentroidCache, VoiceprintLoadGap};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use solstone_core_speaker_id::transcript::{TranscriptError, read_transcript_rows};
@@ -58,6 +58,7 @@ pub struct ResolveMetadata {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResolveOutcome {
     SegmentMissing,
+    IdentityInvalid,
     NoOwnerCentroid,
     Empty { source: Option<String> },
     Resolved(Box<ResolveOutput>),
@@ -134,15 +135,17 @@ pub fn resolve(
     if read_only && !segment_dir.is_dir() {
         return Ok(ResolveOutcome::SegmentMissing);
     }
-    let Some(principal) = read_journal_principal(journal_root)? else {
-        return Ok(ResolveOutcome::NoOwnerCentroid);
+    let owner_entity_id = match admitted_owner_id(journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => return Ok(ResolveOutcome::IdentityInvalid),
     };
-    let Some(owner_entity_id) = principal.get("id").and_then(serde_json::Value::as_str) else {
-        return Ok(ResolveOutcome::NoOwnerCentroid);
-    };
-    let owner = match load_owner_centroid(journal_root, owner_entity_id) {
+    let owner = match load_owner_centroid(journal_root, &owner_entity_id) {
         Ok(Some(owner)) => owner,
-        Ok(None) | Err(_) => return Ok(ResolveOutcome::NoOwnerCentroid),
+        Ok(None) => return Ok(ResolveOutcome::NoOwnerCentroid),
+        Err(OwnerCentroidError::IdentityInvalid | OwnerCentroidError::TargetMismatch { .. }) => {
+            return Ok(ResolveOutcome::IdentityInvalid);
+        }
+        Err(_) => return Ok(ResolveOutcome::NoOwnerCentroid),
     };
     let Some((source, embeddings_path)) = embeddings_path(&segment_dir)? else {
         return Ok(ResolveOutcome::Empty { source: None });
@@ -181,7 +184,7 @@ pub fn resolve(
         &embeddings.statements,
         OwnerSeparationContext {
             owner: &owner,
-            owner_entity_id,
+            owner_entity_id: &owner_entity_id,
             margin_non_principal_entity_ids: &margin_ids,
             journal_root,
             stream,

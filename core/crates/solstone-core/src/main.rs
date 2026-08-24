@@ -1194,7 +1194,15 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
                 )
                 .map_err(|error| error.to_string())
             })
-            .and_then(|outcome| serde_json::to_value(outcome).map_err(|error| error.to_string())),
+            .and_then(|outcome| match outcome {
+                solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::IdentityInvalid {
+                    entity_reports,
+                } => Ok(json!({
+                    "status":"speaker_owner_identity_invalid",
+                    "entity_reports":entity_reports,
+                })),
+                outcome => serde_json::to_value(outcome).map_err(|error| error.to_string()),
+            }),
         SpeakerResolveCommand::WriteOwnerCentroid => write_owner_centroid_request(value),
         SpeakerResolveCommand::RebuildOwnerCentroid => rebuild_owner_centroid_request(value),
         SpeakerResolveCommand::WriteOwnerCandidate => write_owner_candidate_request(value),
@@ -1342,6 +1350,9 @@ fn bootstrap_request(value: Value, imports: bool) -> Result<Value, String> {
     if imports {
         let outcome = seed_from_imports(&request).map_err(|error| error.to_string())?;
         Ok(match outcome {
+            SeedFromImportsOutcome::IdentityInvalid => {
+                json!({"status":"speaker_owner_identity_invalid"})
+            }
             SeedFromImportsOutcome::NoOwnerCentroid => json!({"status":"no_owner_centroid"}),
             SeedFromImportsOutcome::Completed(stats) => json!({
                 "status":"completed", "segments_scanned":stats.segments_scanned,
@@ -1355,6 +1366,9 @@ fn bootstrap_request(value: Value, imports: bool) -> Result<Value, String> {
     } else {
         let outcome = bootstrap_voiceprints(&request).map_err(|error| error.to_string())?;
         Ok(match outcome {
+            BootstrapOutcome::IdentityInvalid => {
+                json!({"status":"speaker_owner_identity_invalid"})
+            }
             BootstrapOutcome::NoOwnerCentroid => json!({"status":"no_owner_centroid"}),
             BootstrapOutcome::Completed(stats) => json!({
                 "status":"completed", "segments_scanned":stats.segments_scanned,

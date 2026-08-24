@@ -120,7 +120,8 @@ fn skip(outcome: &AccumulationOutcome, reason: AccumulationSkipReason) -> usize 
         | AccumulationOutcome::Completed { skipped_rows, .. } => {
             *skipped_rows.get(&reason).unwrap_or(&0)
         }
-        AccumulationOutcome::NoOwnerCentroid { .. } => 0,
+        AccumulationOutcome::IdentityInvalid { .. }
+        | AccumulationOutcome::NoOwnerCentroid { .. } => 0,
     }
 }
 
@@ -139,6 +140,24 @@ fn ac3_absent_owner_centroid_writes_nothing_with_a_specific_outcome() {
     assert!(matches!(
         result,
         AccumulationOutcome::NoOwnerCentroid { .. }
+    ));
+    assert!(load_entity_voiceprints_file(t.path(), "alice").is_none());
+}
+
+#[test]
+fn invalid_owner_identity_writes_nothing_with_a_distinct_outcome() {
+    let t = TempDir::new();
+    entity(&t, "alice", "Person", false);
+    let result = accumulate_voiceprints(&request(
+        &t,
+        vec![label(1, "alice")],
+        vec![embedding(1, vector(0.0, 1.0))],
+        vec!["alice"],
+    ))
+    .unwrap();
+    assert!(matches!(
+        result,
+        AccumulationOutcome::IdentityInvalid { .. }
     ));
     assert!(load_entity_voiceprints_file(t.path(), "alice").is_none());
 }

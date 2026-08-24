@@ -10,13 +10,14 @@ use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, VoiceprintRemoval, VoiceprintRemovalReport,
     load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
-    read_journal_principal, remove_voiceprints_by_key, save_voiceprints_batch,
+    remove_voiceprints_by_key, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
 use crate::identify_operations::{ForwardPhase, MemberProvenance};
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
@@ -90,8 +91,8 @@ impl DirectVoiceprintsPhaseResult {
 /// Failure while planning or replaying direct voiceprints.
 #[derive(Debug, Error)]
 pub enum DirectVoiceprintsError {
-    #[error("principal lookup failed: {0}")]
-    Principal(#[from] solstone_core_entity::EntityLifecycleError),
+    #[error("speaker_owner_identity_invalid")]
+    OwnerIdentityInvalid,
     #[error("owner centroid lookup failed: {0}")]
     Owner(#[from] OwnerCentroidError),
     #[error("segment path failed: {0}")]
@@ -289,13 +290,17 @@ pub fn execute_direct_voiceprints_phase(
 fn current_owner_centroid(
     journal_root: &Path,
 ) -> Result<Option<OwnerCentroid>, DirectVoiceprintsError> {
-    let Some(principal) = read_journal_principal(journal_root)? else {
-        return Ok(None);
+    let owner_id = match admitted_owner_id(journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => return Err(DirectVoiceprintsError::OwnerIdentityInvalid),
     };
-    let Some(principal_id) = principal.get("id").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    Ok(load_owner_centroid(journal_root, principal_id)?)
+    match load_owner_centroid(journal_root, &owner_id) {
+        Ok(owner) => Ok(owner),
+        Err(OwnerCentroidError::IdentityInvalid | OwnerCentroidError::TargetMismatch { .. }) => {
+            Err(DirectVoiceprintsError::OwnerIdentityInvalid)
+        }
+        Err(error) => Err(DirectVoiceprintsError::Owner(error)),
+    }
 }
 
 fn load_member_embedding(

@@ -1110,6 +1110,13 @@ mod tests {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir(&path).unwrap();
+            let owner = path.join("entities/owner");
+            fs::create_dir_all(&owner).unwrap();
+            fs::write(
+                owner.join("entity.json"),
+                json!({"id":"owner","type":"Person","is_principal":true}).to_string(),
+            )
+            .unwrap();
             Self(path)
         }
         fn path(&self) -> &Path {

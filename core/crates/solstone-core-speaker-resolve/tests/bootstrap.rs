@@ -260,6 +260,20 @@ fn bootstrap_stats_json(stats: &BootstrapStats) -> Value {
 }
 
 #[test]
+fn bootstrap_and_seed_distinguish_invalid_owner_identity() {
+    let temporary = Temp::new();
+
+    assert!(matches!(
+        bootstrap_voiceprints(&request(temporary.path())).unwrap(),
+        BootstrapOutcome::IdentityInvalid
+    ));
+    assert!(matches!(
+        seed_from_imports(&request(temporary.path())).unwrap(),
+        SeedFromImportsOutcome::IdentityInvalid
+    ));
+}
+
+#[test]
 fn ac4_ac22_bootstrap_skips_non_person_and_continues_after_entity_write_failure() {
     let temporary = Temp::new();
     entity(temporary.path(), "principal", "Principal", "Person", true);

@@ -181,6 +181,17 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     let result = resolve_value(&outcome);
     if matches!(
         outcome,
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
+    ) {
+        return err(
+            "speaker_owner_identity_invalid",
+            "I couldn't run that speaker command because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    if matches!(
+        outcome,
         solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
     ) {
         return err(
@@ -455,6 +466,9 @@ pub(crate) fn accumulate(
         entity_ids,
     };
     let reports = match solstone_core_speaker_resolve::voiceprint_accumulation::accumulate_voiceprints(&request)? {
+        solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::IdentityInvalid { .. } => {
+            return Ok(json!({"error":"speaker_owner_identity_invalid"}));
+        }
         solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::NoOwnerCentroid { entity_reports }
         | solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::NothingEligible { entity_reports, .. }
         | solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::Completed { entity_reports, .. } => entity_reports,
@@ -621,6 +635,9 @@ fn resolve_value(outcome: &solstone_core_speaker_resolve::resolve::ResolveOutcom
         solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing => {
             json!({"status":"skipped","skip_reason":"segment_missing"})
         }
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid => {
+            json!({"error":"speaker_owner_identity_invalid"})
+        }
         solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
             json!({"error":"owner centroid unavailable"})
         }
@@ -634,6 +651,9 @@ fn resolve_value(outcome: &solstone_core_speaker_resolve::resolve::ResolveOutcom
 }
 fn bootstrap_value(outcome: solstone_core_speaker_resolve::bootstrap::BootstrapOutcome) -> Value {
     match outcome {
+        solstone_core_speaker_resolve::bootstrap::BootstrapOutcome::IdentityInvalid => {
+            json!({"error":"speaker_owner_identity_invalid"})
+        }
         solstone_core_speaker_resolve::bootstrap::BootstrapOutcome::NoOwnerCentroid => {
             json!({"error":"owner_centroid_required"})
         }
@@ -644,6 +664,9 @@ fn bootstrap_value(outcome: solstone_core_speaker_resolve::bootstrap::BootstrapO
 }
 fn seed_value(outcome: solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome) -> Value {
     match outcome {
+        solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome::IdentityInvalid => {
+            json!({"error":"speaker_owner_identity_invalid"})
+        }
         solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome::NoOwnerCentroid => {
             json!({"error":"owner_centroid_required"})
         }

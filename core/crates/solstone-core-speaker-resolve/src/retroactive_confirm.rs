@@ -9,7 +9,7 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
-    load_entity_voiceprints_file, read_journal_principal, save_voiceprints_batch,
+    load_entity_voiceprints_file, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::calibration::{
@@ -20,6 +20,7 @@ use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use crate::candidate_tracker::{
     CandidateProfile, CandidateTracker, MERGE_THRESHOLD, retroactive_voiceprint_metadata,
 };
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::load_owner_centroid;
 use crate::voiceprint_accumulation::read_overlap_fraction;
 
@@ -34,8 +35,6 @@ pub struct RetroactiveConfirmPlan {
 pub enum RetroactiveConfirmError {
     #[error("entity lookup failed: {0}")]
     Entity(#[from] solstone_core_entity::EntityStoreError),
-    #[error("principal lookup failed: {0}")]
-    Principal(#[from] solstone_core_entity::EntityLifecycleError),
     #[error("voiceprint write failed: {0}")]
     Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
     #[error("target entity is not an admissible Person")]
@@ -55,16 +54,14 @@ pub fn plan_retroactive_confirm(
     if score < MERGE_THRESHOLD {
         return empty(entity_id);
     }
-    let Ok(Some(principal)) = read_journal_principal(journal) else {
-        return matched_empty(candidate, entity_id);
-    };
-    let Some(owner_id) = principal.get("id").and_then(Value::as_str) else {
-        return matched_empty(candidate, entity_id);
+    let owner_id = match admitted_owner_id(journal) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => return matched_empty(candidate, entity_id),
     };
     if owner_id == entity_id {
         return matched_empty(candidate, entity_id);
     }
-    let Ok(Some(owner)) = load_owner_centroid(journal, owner_id) else {
+    let Ok(Some(owner)) = load_owner_centroid(journal, &owner_id) else {
         return matched_empty(candidate, entity_id);
     };
     let (existing_keys, existing_count, existing_centroid) =

@@ -15,8 +15,9 @@ use axum::{Extension, Json};
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_entity::{EncoderIdentity, normalize_embedding, read_journal_principal};
+use solstone_core_entity::{EncoderIdentity, normalize_embedding};
 use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
+use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
 use solstone_core_speaker_resolve::owner_contamination_screen::{
     ContaminationProbe, ContaminationScreen, screen_owner_contamination,
 };
@@ -42,6 +43,11 @@ const OWNER_DAMAGED: (&str, &str, StatusCode) = (
     "speaker_owner_voice_reference_invalid",
     "I couldn't save that voice because your owner voice reference needs attention.",
     StatusCode::CONFLICT,
+);
+const OWNER_IDENTITY_INVALID: (&str, &str, StatusCode) = (
+    "speaker_owner_identity_invalid",
+    "I couldn't run that speaker command because your configured owner identity needs attention.",
+    StatusCode::BAD_REQUEST,
 );
 
 pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -73,10 +79,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         row.get("speaker").and_then(Value::as_str) == Some(fields.speaker.as_str())
             && row.get("method").and_then(Value::as_str) == Some("user_assigned")
     }) {
-        let principal = read_journal_principal(&root.0)
-            .ok()
-            .flatten()
-            .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+        let principal = admitted_owner(&root.0);
         let mut response = json!({"success":true,"status":"already_assigned"});
         if principal.as_deref() == Some(fields.speaker.as_str()) {
             response["owner_bootstrap_outcome"] = json!("not_attempted");
@@ -135,10 +138,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     ) {
         return write_error(error, true);
     }
-    let principal = read_journal_principal(&root.0)
-        .ok()
-        .flatten()
-        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+    let principal = admitted_owner(&root.0);
     let mut response = json!({"success":true,"status":"assigned","speaker":fields.speaker});
     if principal.as_deref() == Some(fields.speaker.as_str()) {
         owner_bootstrap_response(
@@ -385,14 +385,15 @@ fn propagation_offer(
 }
 
 fn maybe_bootstrap_owner(root: &std::path::Path, speaker: &str) {
-    if read_journal_principal(root)
-        .ok()
-        .flatten()
-        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned))
-        .as_deref()
-        == Some(speaker)
-    {
+    if admitted_owner(root).as_deref() == Some(speaker) {
         let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(root);
+    }
+}
+
+fn admitted_owner(root: &std::path::Path) -> Option<String> {
+    match admitted_owner_id(root) {
+        OwnerAdmission::Admitted(id) => Some(id),
+        OwnerAdmission::Invalid => None,
     }
 }
 
@@ -422,6 +423,9 @@ fn owner_bootstrap_response(response: &mut Value, result: Result<Value, String>)
         }
         Ok(value) if value["error_kind"] == "voiceprint_busy" => {
             json!({"owner_bootstrap_outcome":"busy"})
+        }
+        Ok(value) if value["reason_code"] == "speaker_owner_identity_invalid" => {
+            json!({"owner_bootstrap_outcome":"identity_invalid","owner_bootstrap_reason_code":"speaker_owner_identity_invalid"})
         }
         _ => json!({"owner_bootstrap_outcome":"failed"}),
     };
@@ -572,6 +576,7 @@ fn propagate_speaker_correction(
             && matches!(
                 outcome,
                 solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing
+                    | solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
                     | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
             )
         {
@@ -649,7 +654,8 @@ fn propagate_speaker_correction(
             solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { source } => {
                 results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
             }
-            solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
+            | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
                 let error = "owner centroid unavailable".to_owned();
                 errors.push(format!(
                     "{}/{}/{}: {error}",
@@ -907,10 +913,7 @@ fn contamination_allowed(
     fields: &Fields,
     embedding: &[f32],
 ) -> Result<(), Response> {
-    let owner = read_journal_principal(root)
-        .ok()
-        .flatten()
-        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+    let owner = admitted_owner(root);
     if owner.as_deref() == Some(fields.speaker.as_str()) {
         return Ok(());
     }
@@ -944,6 +947,9 @@ fn contamination_allowed(
 fn classify_indeterminate(
     reason: &str,
 ) -> Result<(&'static str, &'static str, StatusCode), Response> {
+    if reason == "speaker_owner_identity_invalid" {
+        return Ok(OWNER_IDENTITY_INVALID);
+    }
     if let Some(tier_reason) = OwnerTierReason::ALL
         .iter()
         .copied()
@@ -966,8 +972,7 @@ fn classify_indeterminate(
 
 fn classify_owner_tier(reason: OwnerTierReason) -> (&'static str, &'static str, StatusCode) {
     match reason {
-        OwnerTierReason::NoPrincipal
-        | OwnerTierReason::ConfirmedAbsent
+        OwnerTierReason::ConfirmedAbsent
         | OwnerTierReason::VoiceprintsAbsent
         | OwnerTierReason::BelowRowFloor
         | OwnerTierReason::BelowEmbeddingFloor => OWNER_NOT_ENOUGH,
@@ -1235,13 +1240,15 @@ fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response 
 
 #[cfg(test)]
 mod tests {
-    use super::{OWNER_DAMAGED, OWNER_NOT_ENOUGH, classify_indeterminate, classify_owner_tier};
+    use super::{
+        OWNER_DAMAGED, OWNER_IDENTITY_INVALID, OWNER_NOT_ENOUGH, classify_indeterminate,
+        classify_owner_tier,
+    };
     use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
 
     #[test]
     fn every_indeterminate_owner_tier_is_refused_by_an_exhaustive_mapping() {
         let expected = [
-            OWNER_NOT_ENOUGH,
             OWNER_NOT_ENOUGH,
             OWNER_DAMAGED,
             OWNER_DAMAGED,
@@ -1258,7 +1265,6 @@ mod tests {
             "a new tier reason must be deliberately assigned to a refusal class"
         );
         for reason in [
-            "no_principal",
             "confirmed_absent",
             "confirmed_unreadable",
             "confirmed_incomplete",
@@ -1273,6 +1279,10 @@ mod tests {
             assert!(class == OWNER_NOT_ENOUGH || class == OWNER_DAMAGED);
             assert_ne!(class.0, "speaker_owner_voice_too_close");
         }
+        assert!(matches!(
+            classify_indeterminate("speaker_owner_identity_invalid"),
+            Ok(class) if class == OWNER_IDENTITY_INVALID
+        ));
         assert!(classify_indeterminate("unknown_reason").is_err());
     }
 }

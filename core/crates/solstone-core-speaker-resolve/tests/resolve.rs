@@ -358,6 +358,11 @@ fn resolve_short_circuits_missing_owner_and_embeddings() {
     let _ = segment(temporary.path());
     assert_eq!(
         resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        ResolveOutcome::IdentityInvalid
+    );
+    entity(temporary.path(), "principal", "Principal", true);
+    assert_eq!(
+        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
         ResolveOutcome::NoOwnerCentroid
     );
     seed_owner(temporary.path());

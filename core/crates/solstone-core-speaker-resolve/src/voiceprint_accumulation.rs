@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
-    load_entity_voiceprints_file, normalize_embedding, read_journal_principal,
-    save_voiceprints_batch,
+    load_entity_voiceprints_file, normalize_embedding, save_voiceprints_batch,
 };
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::segment_path;
@@ -24,7 +23,8 @@ use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
 };
 
-use crate::owner_centroid::load_owner_centroid;
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
+use crate::owner_centroid::{OwnerCentroidError, load_owner_centroid};
 
 const METHODS: [&str; 4] = [
     "structural_single_speaker",
@@ -104,6 +104,9 @@ impl Default for EntityAccumulationReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum AccumulationOutcome {
+    IdentityInvalid {
+        entity_reports: BTreeMap<String, EntityAccumulationReport>,
+    },
     NoOwnerCentroid {
         entity_reports: BTreeMap<String, EntityAccumulationReport>,
     },
@@ -124,7 +127,6 @@ pub enum AccumulationError {
     Invalid(String),
     Owner(crate::owner_centroid::OwnerCentroidError),
     Entity(solstone_core_entity::EntityStoreError),
-    Lifecycle(solstone_core_entity::EntityLifecycleError),
     Path(solstone_core_journal_io::PathError),
     Config(solstone_core_journal_config::ConfigLoadError),
 }
@@ -135,7 +137,6 @@ impl fmt::Display for AccumulationError {
             Self::Invalid(detail) => formatter.write_str(detail),
             Self::Owner(error) => error.fmt(formatter),
             Self::Entity(error) => error.fmt(formatter),
-            Self::Lifecycle(error) => error.fmt(formatter),
             Self::Path(error) => error.fmt(formatter),
             Self::Config(error) => error.fmt(formatter),
         }
@@ -148,24 +149,27 @@ pub fn accumulate_voiceprints(
     request: &AccumulationRequest,
 ) -> Result<AccumulationOutcome, AccumulationError> {
     validate_request(request)?;
-    let Some(principal) =
-        read_journal_principal(&request.journal_root).map_err(AccumulationError::Lifecycle)?
-    else {
-        return Ok(AccumulationOutcome::NoOwnerCentroid {
-            entity_reports: BTreeMap::new(),
-        });
+    let owner_id = match admitted_owner_id(&request.journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => {
+            return Ok(AccumulationOutcome::IdentityInvalid {
+                entity_reports: BTreeMap::new(),
+            });
+        }
     };
-    let Some(owner_id) = principal.get("id").and_then(Value::as_str) else {
-        return Ok(AccumulationOutcome::NoOwnerCentroid {
-            entity_reports: BTreeMap::new(),
-        });
-    };
-    let Some(owner) =
-        load_owner_centroid(&request.journal_root, owner_id).map_err(AccumulationError::Owner)?
-    else {
-        return Ok(AccumulationOutcome::NoOwnerCentroid {
-            entity_reports: BTreeMap::new(),
-        });
+    let owner = match load_owner_centroid(&request.journal_root, &owner_id) {
+        Ok(Some(owner)) => owner,
+        Ok(None) => {
+            return Ok(AccumulationOutcome::NoOwnerCentroid {
+                entity_reports: BTreeMap::new(),
+            });
+        }
+        Err(OwnerCentroidError::IdentityInvalid | OwnerCentroidError::TargetMismatch { .. }) => {
+            return Ok(AccumulationOutcome::IdentityInvalid {
+                entity_reports: BTreeMap::new(),
+            });
+        }
+        Err(error) => return Err(AccumulationError::Owner(error)),
     };
     let mut skipped = BTreeMap::new();
     let mut reports = BTreeMap::new();

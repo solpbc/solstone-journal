@@ -11,7 +11,7 @@ use solstone_core_entity::{EncoderIdentity, load_entity_voiceprints_file, save_v
 use solstone_core_journal_io::segment_path;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::direct_voiceprints::{
-    execute_direct_voiceprints_phase, plan_direct_voiceprints,
+    DirectVoiceprintsError, execute_direct_voiceprints_phase, plan_direct_voiceprints,
 };
 use solstone_core_speaker_resolve::identify_operations::MemberProvenance;
 use zip::write::SimpleFileOptions;
@@ -68,6 +68,16 @@ fn entity(root: &Path, id: &str) {
     .unwrap();
 }
 
+fn admitted_owner(root: &Path) {
+    let path = root.join("entities/owner");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("entity.json"),
+        json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}).to_string(),
+    )
+    .unwrap();
+}
+
 fn member_embeddings(root: &Path) -> MemberProvenance {
     let member = MemberProvenance {
         day: "20260808".to_owned(),
@@ -112,6 +122,7 @@ fn ints(values: &[i32]) -> Vec<u8> {
 #[test]
 fn ac8_direct_voiceprint_replay_reports_a_crash_saved_key_without_rewriting() {
     let temporary = Temp::new();
+    admitted_owner(temporary.path());
     entity(temporary.path(), "target");
     let member = member_embeddings(temporary.path());
     let encoder = encoder();
@@ -151,6 +162,7 @@ fn ac8_direct_voiceprint_replay_reports_a_crash_saved_key_without_rewriting() {
 #[test]
 fn ac8_direct_voiceprint_replay_writes_a_new_key_and_reports_it_saved() {
     let temporary = Temp::new();
+    admitted_owner(temporary.path());
     entity(temporary.path(), "target");
     let member = member_embeddings(temporary.path());
     let encoder = encoder();
@@ -170,5 +182,26 @@ fn ac8_direct_voiceprint_replay_writes_a_new_key_and_reports_it_saved() {
             .unwrap()
             .rows,
         1
+    );
+}
+
+#[test]
+fn direct_voiceprints_refuse_invalid_owner_identity_before_writing() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "target");
+    let member = member_embeddings(temporary.path());
+
+    let error = plan_direct_voiceprints(temporary.path(), "target", &[member], 123)
+        .expect_err("missing admitted owner refuses planning");
+
+    assert!(matches!(
+        error,
+        DirectVoiceprintsError::OwnerIdentityInvalid
+    ));
+    assert!(
+        !temporary
+            .path()
+            .join("entities/target/voiceprints.npz")
+            .exists()
     );
 }
