@@ -823,10 +823,10 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let journal = temporary.journal_path();
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         let g5 = fs::read(marker_path(&journal)).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let g6 = fs::read(marker_path(&journal)).unwrap();
         assert_ne!(g5, g6, "marker bytes must change G5→G6 with no clock input");
         assert!(!daily_path(&journal).exists());
@@ -976,7 +976,7 @@ mod tests {
             let (src, admitted_src) = admit_days(&format!("{}-src", case.id), &["20260823"]);
             let mut held_src = continue_ok(&admitted_src);
             if case.kind == "e" {
-                held_src.advance_dirty().unwrap();
+                crate::test_support::advance_dirty_ok(&mut held_src);
             }
             drop(held_src);
             let dst_days: &[&str] = if case.kind == "b" {

@@ -126,9 +126,9 @@ mod tests {
             &allocator,
         )
         .unwrap();
-        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,

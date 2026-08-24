@@ -14,8 +14,6 @@ use crate::schema::{
 };
 
 /// Write: exclusive create under a live registry section, then exact re-read.
-// Wired by hook A in the next commit (prepared-owner issuance).
-#[allow(dead_code)]
 pub(crate) fn create_journal_secret(
     section: &RegistrySection<'_>,
     journal_id: &str,

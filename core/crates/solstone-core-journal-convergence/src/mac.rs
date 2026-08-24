@@ -11,8 +11,6 @@ use crate::digest::hex_encode;
 /// HMAC-SHA256(key, prefix || payload) as lowercase hex.
 ///
 /// `prefix` is a domain-separation label and must include its trailing NUL.
-// Wired by hook A in the next commit (prepared-owner issuance).
-#[allow(dead_code)]
 pub(crate) fn hmac_hex(key: &[u8], prefix: &[u8], payload: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts keys of any length");
     mac.update(prefix);

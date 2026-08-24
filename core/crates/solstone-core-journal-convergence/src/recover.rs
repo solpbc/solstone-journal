@@ -507,14 +507,14 @@ mod tests {
     fn ac10_10_10_11_split_phase_root_replacement() {
         for (name, poison) in [("ident", b"same-name".as_slice()), ("div", b"divergent")] {
             let (temporary, admitted) = admit_days(name, &["20260823"]);
-            let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+            let owner = crate::test_support::prepared_owner(&admitted).unwrap();
             let mut held = admitted.begin(owner).unwrap();
             let journal = temporary.journal_path();
             let moved = temporary.path().join(format!("journal-moved-{name}"));
             fs::rename(&journal, &moved).unwrap();
             fs::create_dir(&journal).unwrap();
             fs::write(journal.join("poison"), poison).unwrap();
-            let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+            let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
             held.continue_with(proof).unwrap();
             assert_eq!(fs::read(journal.join("poison")).unwrap(), poison);
             assert!(!journal.join("health").exists());
@@ -690,14 +690,14 @@ mod tests {
         let (temporary, admitted) = admit_days("137", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let record = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::write(
             records_dir(&temporary).join("20260823/record.json"),
             &record,
         )
         .unwrap();
         let before = snapshot_tree(&temporary.journal_path());
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
             "{error:?}"
@@ -709,7 +709,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         fs::remove_file(records_dir(&temporary).join("20260823/record.json")).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
             "{error:?}"
@@ -725,7 +725,7 @@ mod tests {
         record["auxiliary_time"] = serde_json::Value::String("tampered".into());
         fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
             "{error:?}"
@@ -741,7 +741,7 @@ mod tests {
         head["record_digest"] = serde_json::Value::String("ab".repeat(32));
         fs::write(&path, serde_json::to_vec(&head).unwrap()).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(
             matches!(error, ConvergenceError::Unknown { .. }),
             "{error:?}"
@@ -754,7 +754,7 @@ mod tests {
         let (temporary, admitted) = admit_days("141", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let _inject = crate::test_support::fail_after(PublishFault::AfterWitness);
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         let path = records_dir(&temporary).join("20260823/record.json");
         let mut record: serde_json::Value =
@@ -780,7 +780,7 @@ mod tests {
         let (_temporary, admitted) = admit_days("145", &["20260823"]);
         let mut held = continue_ok(&admitted);
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         drop(held);
         let report = admitted.inspect().unwrap();
@@ -792,7 +792,7 @@ mod tests {
         let (temporary, admitted) = admit_days("146", &["20260823"]);
         let mut held = continue_ok(&admitted);
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         fs::remove_file(days_dir(&temporary).join("20260823.ever.wit.json")).unwrap();
         drop(held);
@@ -809,7 +809,7 @@ mod tests {
         let (temporary, admitted) = admit_days("147", &["20260823"]);
         let mut held = continue_ok(&admitted);
         for _ in 0..4 {
-            held.advance_dirty().unwrap();
+            crate::test_support::advance_dirty_ok(&mut held);
         }
         let path = days_dir(&temporary).join("20260823.ever.wit.json");
         let mut ever: serde_json::Value =
@@ -834,7 +834,7 @@ mod tests {
     fn ac10_10_148_149_150_headed_descendant_vs_unheaded_and_gap() {
         let (_temporary, admitted) = admit_days("148", &["20260823"]);
         let mut held = continue_ok(&admitted);
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         drop(held);
         let verdict = admitted.inspect_proposed(&sample_day(), 1).unwrap();
         match verdict {
@@ -849,7 +849,7 @@ mod tests {
         let mut held = continue_ok(&admitted);
         let days = days_dir(&temporary);
         let r1 = fs::read(days.join("20260823.rev.1.wit.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::write(days.join("20260823.rev.3.wit.json"), r1).unwrap();
         drop(held);
         let before = snapshot_tree(&temporary.journal_path());
@@ -865,7 +865,7 @@ mod tests {
 
         let (temporary, admitted) = admit_days("150", &["20260823"]);
         let mut held = continue_ok(&admitted);
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::remove_file(days_dir(&temporary).join("20260823.rev.1.wit.json")).unwrap();
         drop(held);
         let before = snapshot_tree(&temporary.journal_path());
@@ -887,7 +887,7 @@ mod tests {
         let before_record = fs::read(&record_path).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
         let _inject = crate::test_support::fail_next_dir_sync();
-        let error = held.advance_dirty().unwrap_err();
+        let error = crate::test_support::advance_dirty_err(&mut held);
         assert!(
             matches!(
                 error,
@@ -919,7 +919,7 @@ mod tests {
         .unwrap();
         let completed = held.snapshot(&day).unwrap();
         assert_eq!(completed.completed_generation, completed.dirty_generation);
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         let later = held.snapshot(&day).unwrap();
         assert_eq!(
             later.first_transition_serial,
@@ -938,7 +938,7 @@ mod tests {
         let (temporary, admitted) = admit_days("153", &["20260823"]);
         let mut held = continue_ok(&admitted);
         let g1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        held.advance_dirty().unwrap();
+        crate::test_support::advance_dirty_ok(&mut held);
         fs::write(records_dir(&temporary).join("20260823/record.json"), g1).unwrap();
         drop(held);
         let before = snapshot_tree(&temporary.journal_path());
@@ -1358,7 +1358,7 @@ mod tests {
         let report = admitted.inspect().unwrap();
         let cloned = report.clone();
         assert_eq!(report, cloned);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let _held = admitted.begin(owner).unwrap();
     }
 }

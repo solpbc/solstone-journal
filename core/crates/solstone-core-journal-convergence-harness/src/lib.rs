@@ -17,8 +17,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use solstone_core_journal_convergence::{
-        ClaimAdmission, ConvergenceError, DayKey, OwnerBinding, Preflight, Refusal, StoreVerdict,
-        TerminalOutcome, check_initialized, preflight,
+        AdmitOutcome, ClaimAdmission, ConvergenceError, DayKey, GrantRequestSelector, OperationId,
+        OwnerBinding, Preflight, Refusal, StoreVerdict, TerminalOutcome, TransactionClass,
+        check_initialized, preflight,
     };
     use solstone_core_journal_io::JournalRoot;
 
@@ -47,6 +48,32 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// Prepared owner for a fresh external operation over the admitted days,
+    /// with an empty grant-request selector. The harness drives the same public
+    /// mint the store's own tests use; there is no test-only feature.
+    fn prepared_owner(
+        admitted: &solstone_core_journal_convergence::Admitted,
+    ) -> Result<OwnerBinding, ConvergenceError> {
+        let operation = OperationId::generate()?;
+        let selector = GrantRequestSelector::empty(admitted.days())?;
+        OwnerBinding::prepare(
+            admitted,
+            &operation,
+            TransactionClass::AdvanceDirty,
+            &selector,
+        )
+    }
+
+    fn admit_proof(
+        held: &solstone_core_journal_convergence::HeldDays<'_>,
+        owner: &OwnerBinding,
+    ) -> Result<ClaimAdmission, ConvergenceError> {
+        match ClaimAdmission::admit(held, owner)? {
+            AdmitOutcome::Proof(proof) => Ok(proof),
+            AdmitOutcome::ExistingLink => Err(ConvergenceError::Refused(Refusal::ReusedAuthority)),
         }
     }
 
@@ -101,9 +128,9 @@ mod tests {
     fn harness_preflight_begin_continue() {
         let (temporary, admitted) = open_admitted("topology", &["20260823"]);
         assert!(check_initialized(&JournalRoot::open(&temporary.journal_path()).unwrap()).unwrap());
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         let snapshot = held.snapshot(&sample_day()).unwrap();
         assert_eq!(snapshot.record_revision, 1);
@@ -125,10 +152,10 @@ mod tests {
             .admit(root_b)
             .unwrap()
             .with_lock_timeout(Duration::from_millis(80));
-        let owner_a = OwnerBinding::issue_from_base(&admitted_a).unwrap();
+        let owner_a = prepared_owner(&admitted_a).unwrap();
         let held = admitted_a.begin(owner_a).unwrap();
         let started = Instant::now();
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = prepared_owner(&admitted_b).unwrap();
         let other = thread::spawn(move || admitted_b.begin(owner_b).map(drop));
         let got = other.join().expect("thread");
         assert!(got.is_ok());
@@ -139,9 +166,9 @@ mod tests {
     #[test]
     fn harness_lineage_and_authority() {
         let (_temporary, admitted) = open_admitted("lineage", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         let snapshot = held.snapshot(&sample_day()).unwrap();
         assert_eq!(snapshot.record_revision, 1);
@@ -154,9 +181,9 @@ mod tests {
     #[test]
     fn harness_artifact_loss_head() {
         let (temporary, admitted) = open_admitted("loss-head", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         fs::remove_file(
             temporary
@@ -170,9 +197,9 @@ mod tests {
     #[test]
     fn harness_artifact_loss_tail_witness() {
         let (temporary, admitted) = open_admitted("loss-witness", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         fs::remove_file(
             temporary
@@ -186,9 +213,9 @@ mod tests {
     #[test]
     fn harness_restart_reopens_from_durable_bytes() {
         let (temporary, admitted) = open_admitted("restart", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         let first = held.snapshot(&sample_day()).unwrap();
         drop(held);
@@ -199,9 +226,9 @@ mod tests {
             Preflight::Empty => panic!("days"),
         };
         let admitted = set.admit(root).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Refused(Refusal::Busy)),
@@ -235,9 +262,9 @@ mod tests {
     #[test]
     fn ac9_live_permit_commit() {
         let (_temporary, admitted) = open_admitted("permit", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         let permit = held.continue_with(proof).unwrap();
         let receipt = permit.commit().unwrap();
         assert_eq!(receipt.outcome, TerminalOutcome::Committed);
@@ -247,9 +274,9 @@ mod tests {
     #[test]
     fn ac9_awaiting_owner_decision() {
         let (temporary, admitted) = open_admitted("awaiting", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         drop(held);
         let before = snapshot_tree(&temporary.journal_path());
@@ -262,14 +289,15 @@ mod tests {
     #[test]
     fn ac9_supersession() {
         let (_temporary, admitted) = open_admitted("supersede", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         let permit = held.continue_with(proof).unwrap();
         let _ = permit;
         let first = held.snapshot(&sample_day()).unwrap();
         assert_eq!(first.record_revision, 1);
-        held.advance_dirty().unwrap();
+        let successor = admit_proof(&held, held.owner()).unwrap();
+        held.advance_dirty(successor).unwrap();
         let second = held.snapshot(&sample_day()).unwrap();
         assert!(second.record_revision > first.record_revision);
         assert!(second.dirty_generation > first.dirty_generation);
@@ -295,15 +323,15 @@ mod tests {
     #[test]
     fn ac9_clearance() {
         let (_temporary, admitted) = open_admitted("clearance", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         let permit = held.continue_with(proof).unwrap();
         permit.commit().unwrap();
         drop(held);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
         held.continue_with(proof).unwrap();
         let snapshot = held.snapshot(&sample_day()).unwrap();
         assert_eq!(snapshot.record_revision, 2);

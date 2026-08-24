@@ -461,10 +461,11 @@ mod tests {
                 .join("health/convergence/days/20260823.clear.json"),
         )
         .unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
+        // Baseline after hook A: the refused continuation must write nothing.
         let before = snapshot_tree(&temporary.journal_path());
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,
@@ -482,9 +483,9 @@ mod tests {
             .join("health/convergence/days/20260823.clear.json");
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,
@@ -543,9 +544,9 @@ mod tests {
                 .with_lock_timeout(Duration::from_millis(80));
             let u = continue_ok(&admitted_u);
             if case.expect_cleanup {
-                let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+                let owner = crate::test_support::prepared_owner(&admitted).unwrap();
                 let mut held = admitted.begin(owner).unwrap();
-                let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+                let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
                 let error = held.continue_with(proof).unwrap_err();
                 assert!(
                     matches!(
@@ -566,9 +567,9 @@ mod tests {
     fn ac10_10_71_72_73_consume_resume_vs_overlap() {
         let (temporary, admitted) = admit_days("71", &["20260823", "20260824"]);
         commit_days(&admitted);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let _guard = fail_after(PublishFault::AfterConsumeWitness);
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
@@ -577,7 +578,6 @@ mod tests {
             tree.keys()
                 .any(|key| key.contains("consumed") && key.contains("20260823"))
         );
-        let before = snapshot_tree(&temporary.journal_path());
         let admitted_b = {
             let root =
                 solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
@@ -589,7 +589,9 @@ mod tests {
                 .unwrap()
                 .with_lock_timeout(Duration::from_millis(80))
         };
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
+        // Baseline after B's own hook A: a contended `begin` must write nothing.
+        let before = snapshot_tree(&temporary.journal_path());
         let error = admitted_b.begin(owner_b).unwrap_err();
         assert!(matches!(error, ConvergenceError::Refused(Refusal::Busy)));
         assert_eq!(before, snapshot_tree(&temporary.journal_path()));
@@ -619,7 +621,7 @@ mod tests {
             .admit(root)
             .unwrap()
             .with_lock_timeout(Duration::from_millis(80));
-        let owner_b = OwnerBinding::issue_from_base(&admitted_b).unwrap();
+        let owner_b = crate::test_support::prepared_owner(&admitted_b).unwrap();
         let error = admitted_b.begin(owner_b).unwrap_err();
         assert!(
             matches!(error, ConvergenceError::Refused(Refusal::Busy)),
@@ -773,9 +775,9 @@ mod tests {
                 let permit = held.proceed().unwrap();
                 permit.commit().unwrap();
                 drop(held);
-                let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+                let owner = crate::test_support::prepared_owner(&admitted).unwrap();
                 let mut held = admitted.begin(owner).unwrap();
-                let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+                let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
                 let _guard = fail_after(case.fault);
                 let error = held.continue_with(proof).unwrap_err();
                 assert!(
@@ -856,9 +858,9 @@ mod tests {
             bytes
         })
         .unwrap();
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(
             matches!(

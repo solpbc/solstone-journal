@@ -266,11 +266,11 @@ mod tests {
     #[test]
     fn ac10_10_132_wrong_live_permit_stale_instance() {
         let (_temporary, admitted) = admit_days("132", &["20260823"]);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let proof = crate::test_support::admit_proof(&held, held.owner()).unwrap();
         drop(held);
-        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let owner = crate::test_support::prepared_owner(&admitted).unwrap();
         let mut held = admitted.begin(owner).unwrap();
         let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(

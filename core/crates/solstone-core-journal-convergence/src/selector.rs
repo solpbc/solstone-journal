@@ -46,6 +46,20 @@ impl OperationId {
         Ok(Self(random_hex()?))
     }
 
+    /// Adopt a caller-held operation identity so the same external operation
+    /// can be retried across processes. This is an identity, not a capability:
+    /// it authorizes nothing on its own, and a prepared owner still has to be
+    /// exact and active before any binding is issued.
+    pub fn parse(value: &str) -> Result<Self, ConvergenceError> {
+        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(ConvergenceError::Refused(Refusal::WrongOperation));
+        }
+        if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            return Err(ConvergenceError::Refused(Refusal::WrongOperation));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
     pub fn as_hex(&self) -> &str {
         &self.0
     }
