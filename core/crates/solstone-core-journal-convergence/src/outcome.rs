@@ -459,7 +459,9 @@ mod tests {
     };
     use crate::schema::{ClearanceBarrier, ClearanceMember, GrantBarrier};
     use crate::selector::{TargetScope, TransactionClass, WriterFamily};
-    use crate::test_support::{PublishFault, TempDir, admit_days, admit_proof, fail_after};
+    use crate::test_support::{
+        PublishFault, TempDir, admit_days, admit_proof, fail_after, snapshot_tree,
+    };
     use solstone_core_journal_io::JournalRoot;
 
     fn requests() -> Vec<(&'static str, WriterFamily, TargetScope)> {
@@ -558,32 +560,80 @@ mod tests {
     #[derive(Clone, Copy, Debug)]
     enum MemberCondition {
         ExactPresent,
-        BarrierAbsent,
-        MemberUnlinked,
-        MemberReplaced,
-        BarrierDigestMismatched,
+        ClearanceBarrierAbsent,
+        ClearanceMemberUnlinked,
+        ClearanceMemberReplaced,
+        ClearanceMemberDigestMismatched,
     }
 
     impl MemberCondition {
         fn name(self) -> &'static str {
             match self {
                 Self::ExactPresent => "exact-present",
-                Self::BarrierAbsent => "barrier-absent",
-                Self::MemberUnlinked => "clearance-member-unlinked",
-                Self::MemberReplaced => "clearance-member-replaced",
-                Self::BarrierDigestMismatched => "barrier-member-digest-mismatched",
+                Self::ClearanceBarrierAbsent => "clearance-barrier-absent",
+                Self::ClearanceMemberUnlinked => "clearance-member-unlinked",
+                Self::ClearanceMemberReplaced => "clearance-member-replaced",
+                Self::ClearanceMemberDigestMismatched => {
+                    "clearance-barrier-member-digest-mismatched"
+                }
             }
         }
 
         fn expected_role(self) -> Option<DurableRole> {
             match self {
                 Self::ExactPresent => None,
-                Self::BarrierAbsent => Some(DurableRole::ClearanceBarrier),
-                Self::MemberUnlinked | Self::MemberReplaced | Self::BarrierDigestMismatched => {
-                    Some(DurableRole::ClearanceMember)
-                }
+                Self::ClearanceBarrierAbsent => Some(DurableRole::ClearanceBarrier),
+                Self::ClearanceMemberUnlinked
+                | Self::ClearanceMemberReplaced
+                | Self::ClearanceMemberDigestMismatched => Some(DurableRole::ClearanceMember),
             }
         }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct MatrixRow {
+        matrix: Matrix,
+        stage: SuccessorStage,
+        condition: MemberCondition,
+    }
+
+    fn matrix_rows() -> Vec<MatrixRow> {
+        const MATRICES: [Matrix; 5] = [
+            Matrix::NonemptyCommitted,
+            Matrix::Aborted,
+            Matrix::EmptySetCommitted,
+            Matrix::PassiveSuperseded,
+            Matrix::DecisionedSuperseded,
+        ];
+        const STAGES: [SuccessorStage; 4] = [
+            SuccessorStage::BodyBeforeHead,
+            SuccessorStage::HeadedBeforeIntent,
+            SuccessorStage::IntentBeforeConsumption,
+            SuccessorStage::ConsumptionWitness,
+        ];
+        const CONDITIONS: [MemberCondition; 5] = [
+            MemberCondition::ExactPresent,
+            MemberCondition::ClearanceBarrierAbsent,
+            MemberCondition::ClearanceMemberUnlinked,
+            MemberCondition::ClearanceMemberReplaced,
+            MemberCondition::ClearanceMemberDigestMismatched,
+        ];
+
+        // Every historical matrix includes the exact base clearance barrier
+        // and the exact clearance-vector member for each admitted day. Thus
+        // all 100 Cartesian rows are applicable: no row is silently skipped.
+        MATRICES
+            .into_iter()
+            .flat_map(|matrix| {
+                STAGES.into_iter().flat_map(move |stage| {
+                    CONDITIONS.into_iter().map(move |condition| MatrixRow {
+                        matrix,
+                        stage,
+                        condition,
+                    })
+                })
+            })
+            .collect()
     }
 
     fn matrix_history(
@@ -698,16 +748,16 @@ mod tests {
         let member_path = clearance_member_path(temporary);
         match condition {
             MemberCondition::ExactPresent => {}
-            MemberCondition::BarrierAbsent => {
+            MemberCondition::ClearanceBarrierAbsent => {
                 std::fs::remove_file(temporary.journal_path().join(format!(
                     "health/convergence/clearance/{serial}.barrier.json"
                 )))
                 .unwrap();
             }
-            MemberCondition::MemberUnlinked => {
+            MemberCondition::ClearanceMemberUnlinked => {
                 std::fs::remove_file(member_path).unwrap();
             }
-            MemberCondition::MemberReplaced => {
+            MemberCondition::ClearanceMemberReplaced => {
                 let bytes = std::fs::read(&member_path).unwrap();
                 let mut member: ClearanceMember = serde_json::from_slice(&bytes).unwrap();
                 member.serial += 1;
@@ -715,7 +765,7 @@ mod tests {
                 bytes.push(b'\n');
                 std::fs::write(member_path, bytes).unwrap();
             }
-            MemberCondition::BarrierDigestMismatched => {
+            MemberCondition::ClearanceMemberDigestMismatched => {
                 let path = temporary.journal_path().join(format!(
                     "health/convergence/clearance/{serial}.barrier.json"
                 ));
@@ -997,52 +1047,58 @@ mod tests {
 
     #[test]
     fn historical_matrix_boundary_names_the_first_changed_member() {
-        let matrices = [
-            Matrix::NonemptyCommitted,
-            Matrix::Aborted,
-            Matrix::EmptySetCommitted,
-            Matrix::PassiveSuperseded,
-            Matrix::DecisionedSuperseded,
-        ];
-        let stages = [
-            SuccessorStage::BodyBeforeHead,
-            SuccessorStage::HeadedBeforeIntent,
-            SuccessorStage::IntentBeforeConsumption,
-            SuccessorStage::ConsumptionWitness,
-        ];
-        let conditions = [
-            MemberCondition::ExactPresent,
-            MemberCondition::BarrierAbsent,
-            MemberCondition::MemberUnlinked,
-            MemberCondition::MemberReplaced,
-            MemberCondition::BarrierDigestMismatched,
-        ];
-
-        for matrix in matrices {
-            for stage in stages {
-                for condition in conditions {
-                    let (temporary, admitted, operation, selector, serial) = matrix_history(matrix);
-                    leave_successor_prefix(&admitted, stage);
-                    mutate_named_clearance_member(&temporary, serial, condition);
-                    let state = admitted.grant_state(&operation, &selector);
-                    match condition.expected_role() {
-                        None => assert_eq!(
-                            state.unwrap(),
-                            GrantState::Outcome(matrix.outcome()),
-                            "{} / {} retained exact evidence",
-                            matrix.name(),
-                            stage.name()
-                        ),
-                        Some(role) => assert!(
-                            matches!(state, Err(ConvergenceError::Unknown { role: actual }) if actual == role),
-                            "{} / {} / {} must name the changed clearance member: {state:?}",
-                            matrix.name(),
-                            stage.name(),
-                            condition.name()
-                        ),
+        let rows = matrix_rows();
+        assert_eq!(
+            rows.len(),
+            100,
+            "five matrices × four stages × five conditions"
+        );
+        // The rows use isolated journals and the fault injection is
+        // thread-local, so exercise the Cartesian table under the same
+        // parallelism that ordinary test execution permits.
+        const WORKERS: usize = 4;
+        std::thread::scope(|scope| {
+            for worker in 0..WORKERS {
+                let rows = &rows;
+                scope.spawn(move || {
+                    for row in rows.iter().copied().skip(worker).step_by(WORKERS) {
+                        run_matrix_row(row);
                     }
-                }
+                });
             }
+        });
+    }
+
+    fn run_matrix_row(row: MatrixRow) {
+        let (temporary, admitted, operation, selector, serial) = matrix_history(row.matrix);
+        leave_successor_prefix(&admitted, row.stage);
+        mutate_named_clearance_member(&temporary, serial, row.condition);
+        let before = snapshot_tree(&temporary.journal_path());
+        let state = admitted.grant_state(&operation, &selector);
+        assert_eq!(
+            before,
+            snapshot_tree(&temporary.journal_path()),
+            "{} / {} / {} must not write while reporting",
+            row.matrix.name(),
+            row.stage.name(),
+            row.condition.name()
+        );
+        match row.condition.expected_role() {
+            None => assert_eq!(
+                state.unwrap(),
+                GrantState::Outcome(row.matrix.outcome()),
+                "{} / {} / {} must report retained exact evidence",
+                row.matrix.name(),
+                row.stage.name(),
+                row.condition.name()
+            ),
+            Some(role) => assert!(
+                matches!(state, Err(ConvergenceError::Unknown { role: actual }) if actual == role),
+                "{} / {} / {} must name the changed matrix member: {state:?}",
+                row.matrix.name(),
+                row.stage.name(),
+                row.condition.name()
+            ),
         }
     }
 
