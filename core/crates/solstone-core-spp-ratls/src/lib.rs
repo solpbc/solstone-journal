@@ -10,6 +10,9 @@ pub mod nvattest;
 pub mod ratls;
 pub mod state;
 
+#[cfg(test)]
+mod test_support;
+
 pub use cadence::{
     AttestationSession, CompositeVerdict, GPU_REATTEST_INTERVAL, SESSION_CAP,
     TPM_HEARTBEAT_INTERVAL,

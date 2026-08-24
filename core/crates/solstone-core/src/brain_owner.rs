@@ -1171,6 +1171,15 @@ mod tests {
             spp_reason("nvattest_platform_unsupported"),
             "nvattest_platform_unsupported"
         );
+        assert_eq!(spp_reason("nvattest_unavailable"), "nvattest_unavailable");
+        assert_eq!(
+            spp_reason("nvattest_integrity_failed"),
+            "nvattest_integrity_failed"
+        );
+        assert_eq!(
+            spp_reason("nvattest_install_failed"),
+            "nvattest_install_failed"
+        );
         assert_eq!(spp_reason("certificate_invalid"), "attestation_rejected");
         assert_eq!(
             spp_reason("unrecognized-provider-reason"),

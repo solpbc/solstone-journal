@@ -675,6 +675,41 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_nvattest_records_its_cause_before_an_endpoint_request() {
+        let store = AttestationStateStore::new();
+        let channel_attempts = AtomicUsize::new(0);
+        let endpoint = endpoint("https://127.0.0.1:9");
+        let config = active_config().config.unwrap();
+        let error = confidential_transcribe_with(
+            ConfidentialCall {
+                wav: b"WAV",
+                journal_path: Path::new("/journal"),
+                endpoint: &endpoint,
+                config: &config,
+                state: &store,
+                now: UNIX_EPOCH,
+                timeout: Duration::from_millis(10),
+            },
+            |_| NvattestEnsureStatus::Unavailable,
+            |_, _| {
+                channel_attempts.fetch_add(1, Ordering::SeqCst);
+                Err("gateway_unreachable")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_failed");
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            store
+                .get_attestation_state()
+                .failure
+                .as_ref()
+                .map(|failure| failure.reason_code),
+            Some("nvattest_unavailable")
+        );
+    }
+
+    #[test]
     fn invalid_target_failure_refuses_before_a_channel_attempt() {
         let store = AttestationStateStore::new();
         let channel_attempts = AtomicUsize::new(0);

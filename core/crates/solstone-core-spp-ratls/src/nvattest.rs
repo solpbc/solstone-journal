@@ -9,6 +9,8 @@ pub enum NvattestEnsureStatus {
     Installed,
     InstallInFlight,
     PlatformUnsupported,
+    Unavailable,
+    IntegrityFailed,
     InstallFailed,
 }
 
@@ -22,6 +24,14 @@ pub fn classify_nvattest_prerequisite(status: NvattestEnsureStatus) -> Option<At
         NvattestEnsureStatus::PlatformUnsupported => Some(AttestationFailure {
             kind: AttestationFailureKind::Failed,
             reason_code: "nvattest_platform_unsupported",
+        }),
+        NvattestEnsureStatus::Unavailable => Some(AttestationFailure {
+            kind: AttestationFailureKind::Failed,
+            reason_code: "nvattest_unavailable",
+        }),
+        NvattestEnsureStatus::IntegrityFailed => Some(AttestationFailure {
+            kind: AttestationFailureKind::Failed,
+            reason_code: "nvattest_integrity_failed",
         }),
         NvattestEnsureStatus::InstallFailed => Some(AttestationFailure {
             kind: AttestationFailureKind::Failed,
@@ -71,6 +81,20 @@ mod tests {
             Some(AttestationFailure {
                 kind: AttestationFailureKind::Failed,
                 reason_code: "nvattest_install_failed"
+            })
+        );
+        assert_eq!(
+            classify_nvattest_prerequisite(NvattestEnsureStatus::Unavailable),
+            Some(AttestationFailure {
+                kind: AttestationFailureKind::Failed,
+                reason_code: "nvattest_unavailable"
+            })
+        );
+        assert_eq!(
+            classify_nvattest_prerequisite(NvattestEnsureStatus::IntegrityFailed),
+            Some(AttestationFailure {
+                kind: AttestationFailureKind::Failed,
+                reason_code: "nvattest_integrity_failed"
             })
         );
     }
