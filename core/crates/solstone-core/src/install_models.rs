@@ -130,6 +130,46 @@ struct ProviderInstallers<'a> {
     coreml: Box<CoremlInstaller<'a>>,
 }
 
+fn install_required_rfdetr(
+    journal: &Path,
+    host: &HostPlatform,
+    options: &InstallModelsOptions,
+    provider: &mut RfdetrInstaller<'_>,
+    stdout: &mut Vec<String>,
+) -> Result<(), rfdetr_install::RfdetrInstallError> {
+    if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
+        stdout.push(format!(
+            "rf-detr install: unsupported platform {}/{}; skipping rf-detr object-detection assets",
+            host.os_name, host.arch
+        ));
+        return Ok(());
+    }
+    if options.check {
+        provider(journal, &host.os_name, &host.arch, InstallerAction::Check)?;
+        return Ok(());
+    }
+    let ready = if options.force {
+        false
+    } else {
+        matches!(
+            provider(journal, &host.os_name, &host.arch, InstallerAction::Check),
+            Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+        )
+    };
+    if !ready {
+        stdout.push(rfdetr_bundled_asset_disclosure());
+        provider(
+            journal,
+            &host.os_name,
+            &host.arch,
+            InstallerAction::Install {
+                force: options.force,
+            },
+        )?;
+    }
+    Ok(())
+}
+
 struct InstallModelsHooks<A> {
     asset_gate: A,
     report_override: Option<fit_report::FitReport>,
@@ -304,6 +344,36 @@ where
     A: FnMut(&str) -> Result<(), String>,
     I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
 {
+    if options.required_only {
+        let journal = match journal_resolver() {
+            Ok(journal) => journal,
+            Err(()) => {
+                return InstallModelsOutcome {
+                    resolved_variant: None,
+                    exit_code: EXIT_TEMPFAIL,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                };
+            }
+        };
+        let mut provider_stdout = Vec::new();
+        if let Err(error) = install_required_rfdetr(
+            &journal,
+            &host,
+            &options,
+            providers.rfdetr.as_mut(),
+            &mut provider_stdout,
+        ) {
+            return InstallModelsOutcome::failure_with_stdout(
+                None,
+                error.exit_code,
+                error.to_string(),
+                provider_stdout,
+            );
+        }
+        return InstallModelsOutcome::success(None, provider_stdout);
+    }
+
     let variant = match resolve_variant(&options, &host, nvidia_probe) {
         Ok(variant) => variant,
         Err(message) => return InstallModelsOutcome::failure(None, EXIT_USAGE, message),
@@ -397,49 +467,19 @@ where
             }
         }
     }
-    if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
-        provider_stdout.push(format!(
-            "rf-detr install: unsupported platform {}/{}; skipping rf-detr object-detection assets",
-            host.os_name, host.arch
-        ));
-    } else if options.check {
-        if let Err(error) =
-            (providers.rfdetr)(&journal, &host.os_name, &host.arch, InstallerAction::Check)
-        {
-            return InstallModelsOutcome::failure_with_stdout(
-                variant,
-                error.exit_code,
-                error.to_string(),
-                provider_stdout,
-            );
-        }
-    } else {
-        let ready = if options.force {
-            false
-        } else {
-            match (providers.rfdetr)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
-                Ok(rfdetr_install::RfdetrInstallRecord::Installed) => true,
-                Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable) | Err(_) => false,
-            }
-        };
-        if !ready {
-            provider_stdout.push(rfdetr_bundled_asset_disclosure());
-            if let Err(error) = (providers.rfdetr)(
-                &journal,
-                &host.os_name,
-                &host.arch,
-                InstallerAction::Install {
-                    force: options.force,
-                },
-            ) {
-                return InstallModelsOutcome::failure_with_stdout(
-                    variant,
-                    error.exit_code,
-                    error.to_string(),
-                    provider_stdout,
-                );
-            }
-        }
+    if let Err(error) = install_required_rfdetr(
+        &journal,
+        &host,
+        &options,
+        providers.rfdetr.as_mut(),
+        &mut provider_stdout,
+    ) {
+        return InstallModelsOutcome::failure_with_stdout(
+            variant,
+            error.exit_code,
+            error.to_string(),
+            provider_stdout,
+        );
     }
 
     let Some(variant) = variant else {
@@ -902,8 +942,54 @@ mod tests {
         InstallModelsOptions {
             check: false,
             force: false,
+            required_only: false,
             variant,
         }
+    }
+
+    #[test]
+    fn required_only_registers_bundled_rfdetr_without_optional_installers() {
+        let journal = tempfile::tempdir().unwrap();
+        let actions = std::cell::RefCell::new(Vec::new());
+        let outcome = run_inner_with_test!(
+            host("linux", "x86_64", Some("not-a-variant")),
+            || panic!("required-only must not probe the optional STT variant"),
+            InstallModelsOptions {
+                required_only: true,
+                ..options(InstallModelsVariant::Auto)
+            },
+            || Ok(journal.path().to_path_buf()),
+            |_| panic!("required-only must not verify optional model assets"),
+            None,
+            |_, _, _, _| panic!("required-only must not inspect or install CED"),
+            |_, _, _, action| {
+                actions.borrow_mut().push(action);
+                match action {
+                    InstallerAction::Check => Err(rfdetr_install::RfdetrInstallError::new(
+                        "sidecar_missing",
+                        "rf-detr sidecar missing",
+                        EXIT_DATAERR,
+                    )),
+                    InstallerAction::Install { force: false } => {
+                        Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+                    }
+                    InstallerAction::Install { force: true } => {
+                        panic!("required-only must preserve the default non-forced install")
+                    }
+                }
+            },
+            |_, _, _| panic!("required-only must not install Core ML"),
+            |_, _, _| panic!("required-only must not install Parakeet"),
+        );
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+        assert_eq!(
+            actions.into_inner(),
+            [
+                InstallerAction::Check,
+                InstallerAction::Install { force: false }
+            ]
+        );
+        assert_eq!(outcome.stdout, [rfdetr_bundled_asset_disclosure()]);
     }
 
     fn host(os_name: &str, arch: &str, journal_variant: Option<&str>) -> HostPlatform {
@@ -1387,6 +1473,7 @@ mod tests {
             InstallModelsOptions {
                 check: false,
                 force: true,
+                required_only: false,
                 variant: InstallModelsVariant::Auto,
             },
             || Ok(journal.path().to_path_buf()),
@@ -1428,6 +1515,7 @@ mod tests {
             InstallModelsOptions {
                 check: false,
                 force: true,
+                required_only: false,
                 variant: InstallModelsVariant::Auto,
             },
             || Ok(journal.path().to_path_buf()),
@@ -1491,6 +1579,7 @@ mod tests {
             InstallModelsOptions {
                 check: false,
                 force: true,
+                required_only: false,
                 variant: InstallModelsVariant::Auto,
             },
             || Ok(journal.path().to_path_buf()),

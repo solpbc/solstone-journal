@@ -612,26 +612,30 @@ pub const CHECK_HELP: &str = concat!(
 
 pub const INSTALL_MODELS_USAGE: &str = concat!(
     "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--required-only]\n",
     "                              [--variant {auto,cpu,cuda,coreml}]\n",
 );
 
 pub const INSTALL_MODELS_HELP: &str = concat!(
     "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--required-only]\n",
     "                              [--variant {auto,cpu,cuda,coreml}]\n",
     "\n",
-    "Install and verify solstone's bundled ML models (local STT plus bundled\n",
-    "wespeaker/pyannote assets). Default action checks the local STT artifacts and\n",
+    "install and verify solstone's bundled ML models (local STT plus bundled\n",
+    "wespeaker/pyannote assets). default action checks the local STT artifacts and\n",
     "fetches if missing; --force re-fetches; --check verifies only and exits\n",
     "nonzero on any problem.\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
-    "  --check               Verify bundled assets and local STT artifacts without\n",
+    "  --check               verify bundled assets and local STT artifacts without\n",
     "                        fetching.\n",
-    "  --force               Ignore readiness and refetch/verify local STT\n",
+    "  --force               ignore readiness and refetch/verify local STT\n",
     "                        artifacts.\n",
+    "  --required-only       install or verify only bundled models required for\n",
+    "                        journal readiness; do not fetch optional providers.\n",
     "  --variant {auto,cpu,cuda,coreml}\n",
-    "                        Journal variant to install or verify. auto honors\n",
+    "                        journal variant to install or verify. auto honors\n",
     "                        JOURNAL_VARIANT on linux/x86_64, then autodetects.\n",
 );
 
@@ -986,6 +990,7 @@ pub enum InstallModelsVariant {
 pub struct InstallModelsOptions {
     pub check: bool,
     pub force: bool,
+    pub required_only: bool,
     pub variant: InstallModelsVariant,
 }
 
@@ -3382,6 +3387,7 @@ fn parse_cogitate(args: &[OsString]) -> CogitateCommand {
 fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, UsageError> {
     let mut check = false;
     let mut force = false;
+    let mut required_only = false;
     let mut variant = InstallModelsVariant::Auto;
     let mut variant_seen = false;
     let mut index = 0;
@@ -3397,6 +3403,11 @@ fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, Usage
                 return Err(UsageError);
             }
             force = true;
+        } else if argument == OsStr::new("--required-only") {
+            if required_only {
+                return Err(UsageError);
+            }
+            required_only = true;
         } else {
             let value = if argument == OsStr::new("--variant") {
                 index += 1;
@@ -3426,6 +3437,7 @@ fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, Usage
     Ok(InstallModelsOptions {
         check,
         force,
+        required_only,
         variant,
     })
 }
@@ -7320,6 +7332,7 @@ mod tests {
             Ok(Command::InstallModels(InstallModelsOptions {
                 check: false,
                 force: false,
+                required_only: false,
                 variant: InstallModelsVariant::Auto,
             }))
         );
@@ -7328,6 +7341,7 @@ mod tests {
             Ok(Command::InstallModels(InstallModelsOptions {
                 check: true,
                 force: false,
+                required_only: false,
                 variant: InstallModelsVariant::Cpu,
             }))
         );
@@ -7336,7 +7350,17 @@ mod tests {
             Ok(Command::InstallModels(InstallModelsOptions {
                 check: false,
                 force: true,
+                required_only: false,
                 variant: InstallModelsVariant::Coreml,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["install-models", "--required-only"])),
+            Ok(Command::InstallModels(InstallModelsOptions {
+                check: false,
+                force: false,
+                required_only: true,
+                variant: InstallModelsVariant::Auto,
             }))
         );
         for values in [
@@ -7344,6 +7368,7 @@ mod tests {
             &["install-models", "--variant"][..],
             &["install-models", "--variant", "bad"][..],
             &["install-models", "--variant", "cpu", "--variant", "cuda"][..],
+            &["install-models", "--required-only", "--required-only"][..],
         ] {
             assert_eq!(
                 evaluate_args(&args(values)),
