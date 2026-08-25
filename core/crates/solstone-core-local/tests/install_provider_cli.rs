@@ -6,8 +6,11 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+#[cfg(target_os = "linux")]
 use serde_json::{Value, json};
-use solstone_core_local::install::{lease, manifest, pins, status};
+use solstone_core_local::install::{lease, status};
+#[cfg(target_os = "linux")]
+use solstone_core_local::install::{manifest, pins};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -129,6 +132,7 @@ fn stage_parakeet(journal: &Path, cpu_executable: bool) {
 
 // Expected CLI text from install_provider.rs::PARAKEET_DOWNLOAD_DISCLOSURE and
 // the ready / held-mismatch arms (2026-08-16).
+#[cfg(target_os = "linux")]
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.";
 
 #[cfg(target_os = "linux")]
