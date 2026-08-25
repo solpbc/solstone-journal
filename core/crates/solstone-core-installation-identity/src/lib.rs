@@ -906,10 +906,12 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
             journal_token: request.journal_token.clone(),
         };
         let stage = write_stage(&namespace, StageKind::Prepared, &prepared)?;
-        // See the function-level documentation: do not make owner-lock timing
-        // the first-writer arbitration mechanism.
+        // See the function-level documentation: do not make the cross-process
+        // owner-file lock the first-writer arbitration mechanism. Keep the
+        // process-local coordinator through publication so another thread in
+        // this process cannot mistake this live stage for stale state on
+        // platforms whose file locks are process-scoped.
         drop(owner_lock);
-        drop(owner_coordinator);
         match publish_prepared(&namespace, stage) {
             Ok(()) => continue,
             Err(PublishPreparedError::AlreadyExists) => continue,
@@ -2180,7 +2182,6 @@ impl ParkGate {
 #[derive(Clone)]
 struct TestControl {
     fail: Option<FaultPoint>,
-    rendezvous: Option<(FaultPoint, std::sync::Arc<std::sync::Barrier>)>,
     park: Option<(FaultPoint, std::sync::Arc<ParkGate>)>,
 }
 
@@ -2193,22 +2194,17 @@ fn hit(point: FaultPoint) -> Result<(), IdentityError> {
     let control = TEST_CONTROL.get_or_init(|| {
         std::sync::Mutex::new(TestControl {
             fail: None,
-            rendezvous: None,
             park: None,
         })
     });
-    let (fail, rendezvous, park) = {
+    let (fail, park) = {
         let guard = control.lock().expect("test fault control poisoned");
-        (guard.fail, guard.rendezvous.clone(), guard.park.clone())
+        (guard.fail, guard.park.clone())
     };
     if let Some((target, gate)) = park.filter(|(target, _)| *target == point) {
         let _ = target;
         gate.arrived.wait();
         gate.release.wait();
-    }
-    if let Some((target, barrier)) = rendezvous.filter(|(target, _)| *target == point) {
-        let _ = target;
-        barrier.wait();
     }
     if fail == Some(point) {
         return Err(IdentityError::Io {
@@ -2226,7 +2222,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::mpsc::{self, RecvTimeoutError};
-    use std::sync::{Arc, Barrier, Mutex, OnceLock};
+    use std::sync::{Arc, Mutex, OnceLock};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -2317,14 +2313,12 @@ mod tests {
             .get_or_init(|| {
                 Mutex::new(TestControl {
                     fail: None,
-                    rendezvous: None,
                     park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = None;
-        control.rendezvous = None;
         control.park = None;
     }
 
@@ -2333,30 +2327,12 @@ mod tests {
             .get_or_init(|| {
                 Mutex::new(TestControl {
                     fail: None,
-                    rendezvous: None,
                     park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = Some(point);
-        control.rendezvous = None;
-        control.park = None;
-    }
-
-    fn rendezvous_at(point: FaultPoint, barrier: Arc<Barrier>) {
-        let mut control = TEST_CONTROL
-            .get_or_init(|| {
-                Mutex::new(TestControl {
-                    fail: None,
-                    rendezvous: None,
-                    park: None,
-                })
-            })
-            .lock()
-            .expect("test control");
-        control.fail = None;
-        control.rendezvous = Some((point, barrier));
         control.park = None;
     }
 
@@ -2366,14 +2342,12 @@ mod tests {
             .get_or_init(|| {
                 Mutex::new(TestControl {
                     fail: None,
-                    rendezvous: None,
                     park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = None;
-        control.rendezvous = None;
         control.park = Some((point, gate.clone()));
         gate
     }
@@ -2729,7 +2703,7 @@ mod tests {
     }
 
     #[test]
-    fn first_admission_releases_owner_coordinator_before_no_replace_publication() {
+    fn first_admission_holds_owner_coordinator_through_no_replace_publication() {
         let _serial = serial();
         clear_control();
         let held_fixture = TestRoot::new();
@@ -2766,7 +2740,7 @@ mod tests {
 
         released_gate.arrived.wait();
         let released_key = provider_key(&released_fixture.owner);
-        assert!(!owner_coordinator_held_for_test(released_key));
+        assert!(owner_coordinator_held_for_test(released_key));
         released_gate.release.wait();
         released_thread.join().expect("released admission thread");
         clear_control();
@@ -3189,8 +3163,8 @@ mod tests {
         let _serial = serial();
         clear_control();
         let fixture = TestRoot::new();
-        let barrier = Arc::new(Barrier::new(2));
-        rendezvous_at(FaultPoint::PreparedNoReplace, barrier);
+        let key = provider_key(&fixture.owner);
+        let gate = park_at(FaultPoint::PreparedNoReplace);
         let first = fixture.request(b"/install/race", b"/journal/race");
         let second = first.clone();
         let one = thread::spawn(move || {
@@ -3199,12 +3173,15 @@ mod tests {
                 .binding()
                 .clone()
         });
+        gate.arrived.wait();
         let two = thread::spawn(move || {
             admit_setup(second)
                 .expect("second admission")
                 .binding()
                 .clone()
         });
+        wait_for_owner_coordinator_waiters(key, 1);
+        gate.release.wait();
         let one = one.join().expect("first thread");
         let two = two.join().expect("second thread");
         clear_control();
