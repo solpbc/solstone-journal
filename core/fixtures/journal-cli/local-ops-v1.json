@@ -123,7 +123,8 @@
         "--merge requires --fix; it lowercases orphan slugs, removes ., _, and -, groups variants in sorted raw-slug order, elects the first raw slug as destination, and folds remaining members in that same order",
         "--fix --merge adopts each elected destination before merging its variants, reports every source-to-destination fold, and leaves singleton orphan repair behavior unchanged",
         "plain regular-file collisions retain the already-staged copy and report the incoming member, relative path, and retained member",
-        "a failed destination adoption or rolled-back member merge does not stop later independent groups or singleton orphan adoption"
+        "a failed destination adoption or rolled-back member merge does not stop later independent groups or singleton orphan adoption",
+        "a merge that commits but has post-commit cleanup or index-maintenance failure exits nonzero and is reported separately from failed orphan repairs"
       ],
       "cases": [
         {

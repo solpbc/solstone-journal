@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "85dae76479ad8405885eba5cc9dcf091366dd08fdf428bd0fddaabf7d4ccc0ab";
+const LOCAL_OPS_SHA256: &str = "2a03cbc345a870b2167d3e3f1b4f9948bf689e275194c7d7df52dc025d51bb52";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -488,6 +488,47 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     assert_eq!(
         fs::read(journal.join("config/convey.json")).unwrap(),
         b"{\"facets\":{\"selected\":\"source\",\"order\":[\"dest\",\"source\"]}}\n"
+    );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_facet_doctor_plain_fix_keeps_name_variants_separate() {
+    let temp = TempDir::new("journal-facet-doctor-plain-fix");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+    seed_name_variant_orphans(
+        &journal,
+        &["field_notes", "field.notes", "field-notes"],
+        true,
+    );
+
+    let output = run_journal_with_journal(&["facet", "doctor", "--fix"], Some(&path), &journal);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.stdout,
+        b"Repaired orphan facets:\n- field-notes\n- field.notes\n- field_notes\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+    );
+    assert_eq!(output.stderr, b"");
+    for slug in ["field-notes", "field.notes", "field_notes"] {
+        let facet = journal.join("facets").join(slug);
+        assert!(facet.is_dir(), "{slug} directory remains");
+        assert!(
+            facet.join("facet.json").is_file(),
+            "{slug} declaration exists"
+        );
+    }
+    let heals = fs::read_to_string(journal.join("logs/facet-heals.jsonl"))
+        .expect("read facet heal audit")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("parse facet heal audit"))
+        .collect::<Vec<_>>();
+    assert_eq!(heals.len(), 3);
+    assert!(heals.iter().all(|record| record["action"] == "facet_heal"));
+    assert!(
+        !journal.join("config/actions").exists(),
+        "plain --fix must not emit facet_merge audit records"
     );
     assert_sentinel_untouched(&sentinel);
 }

@@ -964,6 +964,18 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
         ));
         return success(stdout);
     }
+    if failed_orphans == 0 {
+        stdout.push_str(&format!(
+            "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'journal indexer --rescan-full' to refresh the index.\n",
+            committed_failures.len()
+        ));
+        return Outcome::LocalFailure {
+            stdout,
+            stderr: "journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
+                .to_owned(),
+            exit: EXIT_IO,
+        };
+    }
     stdout.push_str(&format!(
         "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'journal indexer --rescan-full' to refresh the index.\n"
     ));
