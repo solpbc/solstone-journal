@@ -215,7 +215,8 @@
   margin-bottom: 1.5em;
 }
 
-.settings-field label {
+.settings-field label,
+.settings-field-label {
   display: block;
   font-weight: 600;
   color: #333;
@@ -746,6 +747,8 @@ input:checked + .slider:before {
 }
 
 .color-close {
+  background: transparent;
+  border: 0;
   position: absolute;
   right: 1em;
   top: 1em;
@@ -1409,55 +1412,6 @@ input:checked + .slider:before {
   cursor: default;
 }
 
-/* Setup section */
-.setup-section {
-  padding: 1.5em;
-  background: linear-gradient(135deg, #007bff08 0%, #007bff15 100%);
-  border: 2px solid #007bff30;
-  border-radius: 12px;
-  margin-bottom: 1.5em;
-}
-
-.setup-section h3 {
-  color: #333;
-  font-size: 1.2em;
-  margin: 0 0 0.5em 0;
-}
-
-.setup-section p {
-  color: #555;
-  margin: 0 0 1em 0;
-  line-height: 1.5;
-}
-
-.setup-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  padding: 0.75em 1.5em;
-  background: #E8923A;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1em;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.setup-btn:hover {
-  background: #d47e2e;
-}
-
-.setup-btn:active:not(:disabled) {
-  background: #c06e20;
-  transform: translateY(1px);
-}
-
-.setup-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
 /* Activities section */
 .activities-section {
   border: 1px solid var(--facet-border, #e5e0db);
@@ -1755,7 +1709,6 @@ input:checked + .slider:before {
 
 /* Keyboard focus indicators */
 .settings-nav-item:focus-visible,
-.setup-btn:focus-visible,
 .save-color-btn:focus-visible,
 .settings-preset-btn:focus-visible,
 .password-toggle:focus-visible,
@@ -1787,7 +1740,6 @@ button:focus-visible {
 
 /* Remove default focus outline for mouse users - only show for keyboard */
 .settings-nav-item:focus:not(:focus-visible),
-.setup-btn:focus:not(:focus-visible),
 .save-color-btn:focus:not(:focus-visible),
 .field-display:focus:not(:focus-visible),
 .color-picker-trigger:focus:not(:focus-visible),
@@ -1918,9 +1870,13 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-detail-page {
+  box-sizing: border-box;
+  flex: 1;
   max-width: 720px;
   margin: 0 auto;
+  min-width: 0;
   padding: 2rem 1rem;
+  width: 100%;
 }
 
 .facet-detail-page[hidden] {
@@ -1928,29 +1884,31 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-detail-back {
+  align-items: center;
   display: inline-flex;
+  gap: 0.35rem;
   color: #64748b;
   font-size: 0.9rem;
   margin-bottom: 1.5rem;
   text-decoration: none;
 }
 
-.facet-detail-heading {
-  color: #111827;
-  font-size: 2rem;
-  line-height: 1.15;
-  margin: 0 0 1rem;
+.facet-mobile-back {
+  display: none;
 }
 
-.facet-detail-meta {
+.facet-detail-heading-row {
   align-items: center;
   display: flex;
   gap: 0.75rem;
   margin-bottom: 1.25rem;
 }
 
-.facet-detail-emoji {
-  font-size: 1.75rem;
+.facet-detail-heading {
+  color: #111827;
+  font-size: 2rem;
+  line-height: 1.15;
+  margin: 0;
 }
 
 .facet-detail-swatch {
@@ -1961,7 +1919,54 @@ button:focus:not(:focus-visible) {
   width: 1.25rem;
 }
 
-.facet-detail-muted {
+.facet-mute-action {
+  margin-left: auto;
+  width: auto;
+}
+
+.facets-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.facet-list-row {
+  align-items: center;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 8px;
+  color: inherit;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0.85rem 1rem;
+  text-decoration: none;
+}
+
+.facet-list-row:hover {
+  border-color: var(--facet-color, #E8923A);
+}
+
+.facet-list-row-main {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.facet-list-title {
+  font-weight: 600;
+}
+
+.facet-list-swatch {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 0.85rem;
+  width: 0.85rem;
+}
+
+.facet-list-muted {
   background: #f1f5f9;
   border-radius: 999px;
   color: #64748b;
@@ -1969,42 +1974,71 @@ button:focus:not(:focus-visible) {
   padding: 0.2rem 0.6rem;
 }
 
-.facet-detail-copy {
-  color: #475569;
-  font-size: 1rem;
-  line-height: 1.6;
-  margin: 0 0 2rem;
-}
-
-.facet-detail-actions {
+.facet-list-row-end {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  flex: 0 0 auto;
+  gap: 0.65rem;
 }
 
-.facet-detail-action {
-  border-radius: 8px;
-  display: inline-flex;
-  font-weight: 600;
-  padding: 0.7rem 1rem;
-  text-decoration: none;
-}
-
-.facet-detail-action--primary {
-  background: var(--facet-color, #E8923A);
-  color: white;
-}
-
-.facet-detail-action--secondary {
-  background: #f8fafc;
-  color: #334155;
-}
-
-.facet-detail-action--tertiary {
+.facet-list-chevron {
   color: #64748b;
-  padding-left: 0.25rem;
-  padding-right: 0.25rem;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.facets-list-empty {
+  color: #64748b;
+}
+
+.facets-list-action {
+  justify-self: start;
+}
+
+.facet-create-reassurance {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.facet-create-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.facet-create-actions .save-color-btn,
+.facet-create-actions .btn-secondary {
+  width: auto;
+}
+
+.facet-detail-tabs {
+  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.facet-detail-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+}
+
+.facet-detail-tab.active {
+  border-bottom-color: var(--facet-color, #E8923A);
+  color: #111827;
+  font-weight: 600;
+}
+
+.facet-detail-tabpanel[hidden] {
+  display: none;
 }
 
 /* Responsive */
@@ -2020,6 +2054,15 @@ button:focus:not(:focus-visible) {
 
   .settings-nav-mobile {
     display: block;
+  }
+
+  .settings-wrap.facet-detail-open .settings-nav-mobile,
+  .settings-wrap.facets-section-open .settings-nav-mobile {
+    display: none;
+  }
+
+  .facet-mobile-back {
+    display: inline-flex;
   }
 
   .settings-content {
@@ -2069,11 +2112,6 @@ button:focus:not(:focus-visible) {
         <option value="support">support</option>
         <option value="facets">facets</option>
       </optgroup>
-      <optgroup label="facet" id="navSelectFacetGroup" style="display:none">
-        <option value="facet-appearance">appearance</option>
-        <option value="facet-activities">activities</option>
-        <option value="facet-activity">activity log</option>
-      </optgroup>
     </select>
   </div>
 
@@ -2107,16 +2145,10 @@ button:focus:not(:focus-visible) {
       <button class="settings-nav-item" data-section="support" id="tab-support" role="tab" aria-selected="false" aria-controls="section-support" tabindex="-1">support</button>
       <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
-    <div class="settings-nav-group" id="facetNavGroup" style="display:none">
-      <div class="settings-nav-label" id="facetNavLabel">facet</div>
-      <button class="settings-nav-item" data-section="facet-appearance" id="tab-facet-appearance" role="tab" aria-selected="false" aria-controls="section-facet-appearance" tabindex="-1">appearance</button>
-      <button class="settings-nav-item" data-section="facet-activities" id="tab-facet-activities" role="tab" aria-selected="false" aria-controls="section-facet-activities" tabindex="-1">activities</button>
-      <button class="settings-nav-item" data-section="facet-activity" id="tab-facet-activity" role="tab" aria-selected="false" aria-controls="section-facet-activity" tabindex="-1">activity log</button>
-    </div>
   </nav>
 
   <!-- Content panels -->
-  <div class="settings-content">
+  <div class="settings-content" id="settings-index-content">
     <!-- Guide Section -->
     <section class="settings-section active" id="section-guide" role="tabpanel" aria-labelledby="tab-guide">
       <h2>guide</h2>
@@ -2166,12 +2198,6 @@ button:focus:not(:focus-visible) {
 
       <form class="settings-form" onsubmit="return false;">
 
-      <!-- Setup prompt (shown when no facets) -->
-      <div class="setup-section" id="setupSection" style="display:none">
-        <h3>welcome to solstone</h3>
-        <p>create your first facet to start organizing your journal.</p>
-        <button type="button" class="setup-btn" id="createPersonalBtn">create personal facet</button>
-      </div>
 
       <div class="settings-field">
         <label for="field-name">full name</label>
@@ -2638,43 +2664,51 @@ button:focus:not(:focus-visible) {
       </form>
     </section>
 
-    <!-- Facets Section (journal-level, not per-facet) -->
     <section class="settings-section" id="section-facets" role="tabpanel" aria-labelledby="tab-facets">
+      <a class="facet-detail-back facet-mobile-back" href="/app/settings#guide"><span aria-hidden="true">‹</span> settings</a>
       <h2>facets</h2>
-      <p class="settings-section-desc">manage muted facets. muted facets are hidden from the facet bar but retain all their data.</p>
-
-      <h3>all facets</h3>
-      <div id="allFacetsList">
-        <p class="text-muted">loading…</p>
-      </div>
-
-      <h3>muted facets</h3>
-      <div id="mutedFacetsList">
+      <p class="settings-section-desc">facets keep parts of your life separate inside one journal.</p>
+      <div id="facetsList" class="facets-list" aria-live="polite">
         <p class="text-muted">loading…</p>
       </div>
     </section>
+    <p style="font-size: 0.8rem; color: #aaa; margin-top: 1.5rem; text-align: center;">your journal stays on your device — nothing leaves unless you send it</p>
+  </div>
 
-    <!-- Facet Appearance Section -->
-    <section class="settings-section" id="section-facet-appearance" data-requires-facet role="tabpanel" aria-labelledby="tab-facet-appearance">
-      <div class="facet-header">
-        <h2>appearance</h2>
-        <div class="toggle-container">
-          <span class="toggle-label" id="toggleLabel">active</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="mutedToggle">
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
+  <section id="settings-facet-detail-view" class="facet-detail-page" hidden>
+    <a class="facet-detail-back" href="/app/settings#facets"><span aria-hidden="true">‹</span> facets</a>
+    <div class="facet-detail-heading-row">
+      <span id="facetDetailSwatch" class="facet-detail-swatch" aria-hidden="true"></span>
+      <h2 id="facetDetailHeading" class="facet-detail-heading"></h2>
+      <button type="button" id="facetMuteAction" class="btn-secondary facet-mute-action">mute</button>
+    </div>
+
+    <div class="facet-detail-tabs" role="tablist" aria-label="facet settings">
+      <button type="button" class="facet-detail-tab active" role="tab" id="facetDetailTabAppearance" aria-selected="true" aria-controls="facetDetailAppearance" data-facet-detail-tab="appearance">appearance</button>
+      <button type="button" class="facet-detail-tab" role="tab" id="facetDetailTabActivities" aria-selected="false" aria-controls="facetDetailActivities" data-facet-detail-tab="activities" tabindex="-1">activities</button>
+      <button type="button" class="facet-detail-tab" role="tab" id="facetDetailTabActivity" aria-selected="false" aria-controls="facetDetailActivity" data-facet-detail-tab="activity" tabindex="-1">activity log</button>
+    </div>
+
+    <section id="facetDetailAppearance" class="facet-detail-tabpanel active" role="tabpanel" aria-labelledby="facetDetailTabAppearance">
+      <h3>appearance</h3>
       <p class="settings-section-desc">customize how this facet appears in the interface.</p>
 
       <div class="settings-field">
-        <label for="facetTitleInput">title</label>
+        <label for="facetTitleInput">name</label>
         <div class="editable-field" id="facetTitleField">
           <span class="field-display" id="facetTitleDisplay">loading...</span>
           <input type="text" class="field-input" id="facetTitleInput" style="display:none">
         </div>
         <small id="facetTitleField-hint">double-click or press Enter to edit</small>
+      </div>
+
+      <div class="settings-field">
+        <label>color</label>
+        <div class="color-picker-trigger" id="colorTrigger" tabindex="0" role="button">
+          <div class="color-preview" id="colorPreview"></div>
+          <span id="colorHexDisplay">#667eea</span>
+        </div>
+        <small>click to choose a color</small>
       </div>
 
       <div class="settings-field">
@@ -2702,22 +2736,12 @@ button:focus:not(:focus-visible) {
         <small>choose a Lucide override, or keep using the emoji</small>
       </div>
 
-      <div class="settings-field">
-        <label>theme color</label>
-        <div class="color-picker-trigger" id="colorTrigger" tabindex="0" role="button">
-          <div class="color-preview" id="colorPreview"></div>
-          <span id="colorHexDisplay">#667eea</span>
-        </div>
-        <small>click to choose a color</small>
-      </div>
     </section>
 
-    <!-- Facet Activities Section -->
-    <section class="settings-section" id="section-facet-activities" data-requires-facet role="tabpanel" aria-labelledby="tab-facet-activities">
-      <h2>activities</h2>
+    <section id="facetDetailActivities" class="facet-detail-tabpanel" role="tabpanel" aria-labelledby="facetDetailTabActivities" hidden>
+      <h3>activities</h3>
       <p class="settings-section-desc">configure which activities are observed for this facet.</p>
 
-      <!-- Attached Activities -->
       <div class="activities-section">
         <div class="activities-header">
           <span class="activities-title">attached activities</span>
@@ -2728,52 +2752,22 @@ button:focus:not(:focus-visible) {
         </div>
       </div>
 
-      <!-- Add Activities -->
       <div class="activities-section" style="margin-top: 1.5em;">
         <div class="activities-header">
           <span class="activities-title">add activity</span>
         </div>
         <div class="activities-add-panel">
-          <div class="activities-defaults" id="defaultActivitiesList">
-            loading...
-          </div>
+          <div class="activities-defaults" id="defaultActivitiesList">loading...</div>
           <div class="activities-custom">
             <button class="activities-add-custom-btn" id="addCustomActivityBtn">+ add custom activity</button>
           </div>
         </div>
       </div>
-
-      <!-- Custom Activity Modal -->
-      <div id="customActivityModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="customActivityHeading">
-        <div class="color-modal-content" style="max-width: 400px;">
-          <span class="color-close" id="customActivityClose">&times;</span>
-          <h3 id="customActivityHeading">add custom activity</h3>
-          <div class="settings-field">
-            <label for="customActivityName">name</label>
-            <input type="text" id="customActivityName" placeholder="e.g., research">
-          </div>
-          <div class="settings-field">
-            <label for="customActivityDesc">description</label>
-            <textarea id="customActivityDesc" rows="2" placeholder="brief description of this activity"></textarea>
-          </div>
-          <div class="settings-field">
-            <label for="customActivityIcon">icon (emoji)</label>
-            <input type="text" id="customActivityIcon" placeholder="e.g., 🔬" maxlength="4" style="max-width: 100px;">
-          </div>
-          <div class="settings-field">
-            <label for="customActivityInstructions">instructions <span style="font-weight:normal;color:#888;">(optional)</span></label>
-            <textarea id="customActivityInstructions" rows="2" placeholder="detection hints and level guidance for the ai agent"></textarea>
-          </div>
-          <button class="save-color-btn" id="saveCustomActivityBtn">add activity</button>
-        </div>
-      </div>
     </section>
 
-    <!-- Facet Activity Section -->
-    <section class="settings-section" id="section-facet-activity" data-requires-facet role="tabpanel" aria-labelledby="tab-facet-activity">
-      <h2>activity log</h2>
+    <section id="facetDetailActivity" class="facet-detail-tabpanel" role="tabpanel" aria-labelledby="facetDetailTabActivity" hidden>
+      <h3>activity log</h3>
       <p class="settings-section-desc">recent actions and changes to this facet.</p>
-
       <div class="log-panel">
         <div class="log-header">action log</div>
         <div class="log-entries" id="logEntries">
@@ -2784,8 +2778,31 @@ button:focus:not(:focus-visible) {
         </div>
       </div>
     </section>
-    <p style="font-size: 0.8rem; color: #aaa; margin-top: 1.5rem; text-align: center;">your journal stays on your device — nothing leaves unless you send it</p>
-  </div>
+
+    <div id="customActivityModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="customActivityHeading">
+      <div class="color-modal-content" style="max-width: 400px;">
+        <button type="button" class="color-close" id="customActivityClose" aria-label="close add custom activity">&times;</button>
+        <h3 id="customActivityHeading">add custom activity</h3>
+        <div class="settings-field">
+          <label for="customActivityName">name</label>
+          <input type="text" id="customActivityName" placeholder="e.g., research">
+        </div>
+        <div class="settings-field">
+          <label for="customActivityDesc">description</label>
+          <textarea id="customActivityDesc" rows="2" placeholder="brief description of this activity"></textarea>
+        </div>
+        <div class="settings-field">
+          <label for="customActivityIcon">icon (emoji)</label>
+          <input type="text" id="customActivityIcon" placeholder="e.g., 🔬" maxlength="4" style="max-width: 100px;">
+        </div>
+        <div class="settings-field">
+          <label for="customActivityInstructions">instructions <span style="font-weight:normal;color:#888;">(optional)</span></label>
+          <textarea id="customActivityInstructions" rows="2" placeholder="detection hints and level guidance for the ai agent"></textarea>
+        </div>
+        <button class="save-color-btn" id="saveCustomActivityBtn">add activity</button>
+      </div>
+    </div>
+  </section>
 </div>
 
 <!-- Icon Picker Modal -->
@@ -2887,23 +2904,45 @@ button:focus:not(:focus-visible) {
     </div>
   </div>
 </div>
-<section id="settings-facet-detail-view" class="facet-detail-page" hidden></section>
+<div id="facetCreateModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="facetCreateHeading" style="display:none">
+  <form class="color-modal-content" id="facetCreateForm">
+    <button type="button" class="color-close" id="facetCreateClose" aria-label="close add facet">&times;</button>
+    <h3 id="facetCreateHeading">add a facet</h3>
+    <div class="settings-field">
+      <label for="facetCreateName">name</label>
+      <input type="text" id="facetCreateName" autocomplete="off" required>
+    </div>
+    <div class="settings-field">
+      <span class="settings-field-label" id="facetCreateColorLabel">color</span>
+      <div class="color-swatches" id="facetCreateColors" role="group" aria-labelledby="facetCreateColorLabel"></div>
+    </div>
+    <p class="facet-create-reassurance">you can change both later.</p>
+    <div class="facet-create-actions">
+      <button type="button" class="btn-secondary" id="facetCreateCancel">cancel</button>
+      <button type="submit" class="save-color-btn" id="facetCreateSubmit">add</button>
+    </div>
+  </form>
+</div>
 
 <script>
 let INSTALL_COPY = {};
 const IN_FLIGHT_INSTALL_STATES = ['resolving', 'downloading', 'verifying', 'installing'];
 const settingsStateGate = document.getElementById('settings-state-gate');
 const settingsIndexView = document.getElementById('settings-index-view');
+const settingsIndexContent = document.getElementById('settings-index-content');
 const settingsFacetDetailView = document.getElementById('settings-facet-detail-view');
 
 // ========== STATE ==========
 let configData = null;
 let facetConfig = null;
+let facetDetailSlugState = '';
+let facetDetailTabLoaded = new Set();
 const saveTimeouts = new Map();
 let logNextCursor = null;
 let keyValidationData = {};
 let transcribeResource = null;
 let settingsInitialized = false;
+const FACET_COLORS = ['#007bff','#28a745','#17a2b8','#ffc107','#6f42c1','#fd7e14','#e83e8c','#6c757d','#20c997','#ff5722','#9c27b0','#795548'];
 const iconSvgCache = new Map();
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
 // ========== TAB ATTENTION ==========
@@ -2982,19 +3021,19 @@ setupModalAccessibility('colorPickerModal');
 setupModalAccessibility('iconPickerModal');
 setupModalAccessibility('customActivityModal');
 setupModalAccessibility('cleanupModal');
+setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-  const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets', 'facet-appearance', 'facet-activities', 'facet-activity'];
+const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets'];
 
-function switchSection(sectionId, updateHash = true) {
+function switchSection(sectionId, updateHash = true, loadSection = true) {
   // Validate section exists
   if (!VALID_SECTIONS.includes(sectionId)) {
     sectionId = 'guide';
   }
 
-  // Facet sections require a selected facet
-  if (sectionId.startsWith('facet-') && !window.selectedFacet) {
-    sectionId = 'guide';
+  if (settingsIndexView) {
+    settingsIndexView.classList.toggle('facets-section-open', sectionId === 'facets');
   }
 
   // Update nav items
@@ -3014,9 +3053,8 @@ function switchSection(sectionId, updateHash = true) {
   });
 
 
-  if (sectionId === 'facets') {
-    loadAllFacets();
-    loadMutedFacets();
+  if (loadSection && sectionId === 'facets') {
+    loadFacetsList();
   }
 
   // Update URL hash
@@ -3024,169 +3062,201 @@ function switchSection(sectionId, updateHash = true) {
     history.replaceState(null, '', '#' + sectionId);
   }
 
-  // Load facet data if switching to facet section
-  if (sectionId.startsWith('facet-') && window.selectedFacet) {
-    if (!facetConfig) {
-      loadFacetConfig(window.selectedFacet);
-    }
-    if (sectionId === 'facet-activity') {
-      loadLogs(window.selectedFacet);
-    }
-    if (sectionId === 'facet-activities') {
-      loadActivities(window.selectedFacet);
-    }
-  }
 }
 
 // ========== FACETS ==========
-async function loadAllFacets() {
-  const container = document.getElementById('allFacetsList');
+async function loadFacetsList() {
+  const container = document.getElementById('facetsList');
   if (!container) return;
   try {
-    const response = await fetch('/app/settings/api/facets');
+    const response = await fetch('/app/settings/api/facets?all=true');
     const data = await response.json();
-    if (data.error) throw new Error(data.error);
-
-    const facets = data.facets || [];
-    if (facets.length === 0) {
-      container.innerHTML = '<p class="text-muted">no facets yet.</p>';
-      return;
-    }
-
-    container.innerHTML = '';
-    facets.forEach(facet => {
-      const row = document.createElement('a');
-      row.className = 'settings-field';
-      row.href = `/app/settings/facets/${encodeURIComponent(facet.name)}`;
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.justifyContent = 'space-between';
-      row.style.textDecoration = 'none';
-      row.style.color = 'inherit';
-
-      const info = document.createElement('div');
-      info.style.display = 'flex';
-      info.style.alignItems = 'center';
-      info.style.gap = '0.5em';
-
-      if (facet.emoji) {
-        const emoji = document.createElement('span');
-        emoji.textContent = facet.emoji;
-        info.appendChild(emoji);
-      }
-
-      const title = document.createElement('span');
-      title.textContent = facet.title || facet.name;
-      info.appendChild(title);
-
-      if (facet.color) {
-        const swatch = document.createElement('span');
-        swatch.style.display = 'inline-block';
-        swatch.style.width = '12px';
-        swatch.style.height = '12px';
-        swatch.style.borderRadius = '50%';
-        swatch.style.backgroundColor = facet.color;
-        swatch.style.marginLeft = '0.25em';
-        info.appendChild(swatch);
-      }
-
-      const state = document.createElement('span');
-      state.className = 'text-muted';
-      state.style.fontSize = '0.85em';
-      state.textContent = facet.muted ? 'muted' : 'open';
-
-      row.appendChild(info);
-      row.appendChild(state);
-      container.appendChild(row);
-    });
+    if (!response.ok || data.error) throw new Error(data.error || 'failed to load facets');
+    renderFacetsList(data.facets || []);
   } catch (err) {
     container.innerHTML = '<p class="text-muted">failed to load facets.</p>';
   }
 }
 
-async function loadMutedFacets() {
-  const container = document.getElementById('mutedFacetsList');
-  try {
-    const response = await fetch('/app/settings/api/facets/muted');
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+function facetCreateAction(label) {
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'save-color-btn facets-list-action';
+  action.textContent = label;
+  action.addEventListener('click', () => openFacetCreateModal(action));
+  return action;
+}
 
-    const facets = data.facets || [];
-    if (facets.length === 0) {
-      container.innerHTML = '<p class="text-muted">no muted facets.</p>';
+function renderFacetsList(facets) {
+  const container = document.getElementById('facetsList');
+  if (!container) return;
+  container.replaceChildren();
+
+  if (facets.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'facets-list-empty';
+    const heading = document.createElement('h3');
+    heading.textContent = 'no facets yet.';
+    const body = document.createElement('p');
+    body.textContent = 'facets keep parts of your life separate inside one journal — work and home, say — without needing two journals.';
+    empty.append(heading, body, facetCreateAction('add a facet'));
+    container.appendChild(empty);
+    return;
+  }
+
+  facets.forEach(facet => {
+    const row = document.createElement('a');
+    row.className = 'facet-list-row';
+    row.href = `/app/settings/facets/${encodeURIComponent(facet.name)}`;
+
+    const main = document.createElement('span');
+    main.className = 'facet-list-row-main';
+    const title = document.createElement('span');
+    title.className = 'facet-list-title';
+    title.textContent = facet.title || facet.name;
+    const swatch = document.createElement('span');
+    swatch.className = 'facet-list-swatch';
+    swatch.setAttribute('aria-hidden', 'true');
+    swatch.style.backgroundColor = facet.color || '';
+    swatch.hidden = !facet.color;
+    main.append(swatch, title);
+    row.appendChild(main);
+
+    const end = document.createElement('span');
+    end.className = 'facet-list-row-end';
+    if (facet.muted) {
+      const muted = document.createElement('span');
+      muted.className = 'facet-list-muted';
+      muted.textContent = 'muted';
+      end.appendChild(muted);
+    }
+    const chevron = document.createElement('span');
+    chevron.className = 'facet-list-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '›';
+    end.appendChild(chevron);
+    row.appendChild(end);
+    container.appendChild(row);
+  });
+
+  container.appendChild(facetCreateAction('+ add a facet'));
+}
+
+let facetCreateColor = FACET_COLORS[0];
+
+function updateFacetCreateColors() {
+  document.querySelectorAll('#facetCreateColors .color-swatch').forEach(swatch => {
+    const selected = swatch.dataset.color === facetCreateColor;
+    swatch.classList.toggle('selected', selected);
+    swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+}
+
+function openFacetCreateModal(trigger) {
+  const modal = document.getElementById('facetCreateModal');
+  const name = document.getElementById('facetCreateName');
+  facetCreateColor = FACET_COLORS[0];
+  name.value = '';
+  updateFacetCreateColors();
+  modal.style.display = 'block';
+  modal._openAccessible(trigger);
+  requestAnimationFrame(() => name.focus());
+}
+
+function setupFacetCreateModal() {
+  const modal = document.getElementById('facetCreateModal');
+  const form = document.getElementById('facetCreateForm');
+  const name = document.getElementById('facetCreateName');
+  const colors = document.getElementById('facetCreateColors');
+  const close = document.getElementById('facetCreateClose');
+  const cancel = document.getElementById('facetCreateCancel');
+  const submit = document.getElementById('facetCreateSubmit');
+  if (!modal || !form || !name || !colors || !close || !cancel || !submit) return;
+
+  colors.innerHTML = FACET_COLORS.map(color =>
+    `<button type="button" class="color-swatch" aria-label="${colorName(color)}" data-color="${color}" style="background:${color}"></button>`
+  ).join('');
+  updateFacetCreateColors();
+
+  colors.addEventListener('click', (event) => {
+    const swatch = event.target.closest('.color-swatch');
+    if (!swatch) return;
+    facetCreateColor = swatch.dataset.color;
+    updateFacetCreateColors();
+  });
+  close.addEventListener('click', () => modal._closeAccessible());
+  cancel.addEventListener('click', () => modal._closeAccessible());
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) modal._closeAccessible();
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const title = name.value.trim();
+    if (!title) {
+      notifyError('validation error', 'name is required');
+      name.focus();
       return;
     }
-
-    container.innerHTML = '';
-    facets.forEach(facet => {
-      const row = document.createElement('div');
-      row.className = 'settings-field';
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.justifyContent = 'space-between';
-
-      const info = document.createElement('div');
-      info.style.display = 'flex';
-      info.style.alignItems = 'center';
-      info.style.gap = '0.5em';
-
-      if (facet.emoji) {
-        const emoji = document.createElement('span');
-        emoji.textContent = facet.emoji;
-        info.appendChild(emoji);
+    submit.disabled = true;
+    try {
+      const response = await fetch('/app/settings/api/facet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, color: facetCreateColor })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.facet) {
+        throw new Error(result.error || 'failed to add facet');
       }
-
-      const title = document.createElement('span');
-      title.textContent = facet.title;
-      info.appendChild(title);
-
-      if (facet.color) {
-        const swatch = document.createElement('span');
-        swatch.style.display = 'inline-block';
-        swatch.style.width = '12px';
-        swatch.style.height = '12px';
-        swatch.style.borderRadius = '50%';
-        swatch.style.backgroundColor = facet.color;
-        swatch.style.marginLeft = '0.25em';
-        info.appendChild(swatch);
-      }
-
-      const btn = document.createElement('button');
-      btn.className = 'setup-btn';
-      btn.style.fontSize = '0.85em';
-      btn.style.padding = '0.3em 0.8em';
-      btn.textContent = 'unmute';
-      btn.onclick = async () => {
-        btn.disabled = true;
-        btn.textContent = 'unmuting...';
-        try {
-          const res = await fetch(`/app/settings/api/facet/${facet.name}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ muted: false })
-          });
-          const result = await res.json();
-          if (result.error) throw new Error(result.error);
-          row.remove();
-          if (container.children.length === 0) {
-            container.innerHTML = '<p class="text-muted">no muted facets.</p>';
-          }
-          notifySuccess('unmuted', `${facet.title} will appear in the facet bar on reload.`);
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = 'unmute';
-          notifyError('error', 'failed to unmute facet');
-        }
-      };
-
-      row.appendChild(info);
-      row.appendChild(btn);
-      container.appendChild(row);
-    });
-  } catch (err) {
-    container.innerHTML = '<p class="text-muted">failed to load muted facets.</p>';
-  }
+      modal._closeAccessible();
+      window.location.href = `/app/settings/facets/${encodeURIComponent(result.facet)}`;
+    } catch (err) {
+      notifyError('creation failed', err.message);
+    } finally {
+      submit.disabled = false;
+    }
+  });
 }
+
+setupFacetCreateModal();
+
+function switchFacetDetailTab(tabName) {
+  const tabs = ['appearance', 'activities', 'activity'];
+  if (!tabs.includes(tabName)) tabName = 'appearance';
+
+  document.querySelectorAll('[data-facet-detail-tab]').forEach(tab => {
+    const active = tab.dataset.facetDetailTab === tabName;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.setAttribute('tabindex', active ? '0' : '-1');
+  });
+  tabs.forEach(name => {
+    const panel = document.getElementById(`facetDetail${name.charAt(0).toUpperCase()}${name.slice(1)}`);
+    if (panel) panel.hidden = name !== tabName;
+  });
+
+  if (!facetDetailSlugState || facetDetailTabLoaded.has(tabName)) return;
+  facetDetailTabLoaded.add(tabName);
+  if (tabName === 'activities') loadActivities(facetDetailSlugState);
+  if (tabName === 'activity') loadLogs(facetDetailSlugState);
+}
+
+document.querySelectorAll('[data-facet-detail-tab]').forEach(tab => {
+  tab.addEventListener('click', () => switchFacetDetailTab(tab.dataset.facetDetailTab));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = Array.from(document.querySelectorAll('[data-facet-detail-tab]'));
+    const current = tabs.indexOf(tab);
+    let next = current;
+    if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+    if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = tabs.length - 1;
+    tabs[next].focus();
+    switchFacetDetailTab(tabs[next].dataset.facetDetailTab);
+  });
+});
 
 // Desktop nav clicks
 document.querySelectorAll('.settings-nav-item').forEach(btn => {
@@ -3235,49 +3305,6 @@ window.addEventListener('hashchange', () => {
   }
 });
 
-// Update facet nav visibility
-function updateFacetNav() {
-  const hasFacet = !!window.selectedFacet;
-  const facetNavGroup = document.getElementById('facetNavGroup');
-  const facetNavLabel = document.getElementById('facetNavLabel');
-  const navSelectFacetGroup = document.getElementById('navSelectFacetGroup');
-
-  facetNavGroup.style.display = hasFacet ? 'block' : 'none';
-  navSelectFacetGroup.style.display = hasFacet ? 'block' : 'none';
-
-  if (hasFacet && window.facetsData) {
-    const facet = window.facetsData.find(f => f.name === window.selectedFacet);
-    if (facet) {
-      facetNavLabel.textContent = facet.title || window.selectedFacet;
-    }
-  }
-
-  // Hide sections that require facet if none selected
-  document.querySelectorAll('[data-requires-facet]').forEach(el => {
-    if (!hasFacet && el.classList.contains('active')) {
-      switchSection('profile');
-    }
-  });
-}
-
-// Listen for facet switches
-window.addEventListener('facet.switch', (e) => {
-  facetConfig = null; // Reset so it reloads
-  activitiesData = null; // Reset activities too
-  updateFacetNav();
-  // If currently viewing a facet section, reload
-  const activeSection = document.querySelector('.settings-section.active');
-  if (activeSection && activeSection.dataset.requiresFacet !== undefined && e.detail.facet) {
-    loadFacetConfig(e.detail.facet);
-    if (activeSection.id === 'section-facet-activity') {
-      loadLogs(e.detail.facet);
-    }
-    if (activeSection.id === 'section-facet-activities') {
-      loadActivities(e.detail.facet);
-    }
-  }
-});
-
 // ========== CONFIG LOADING ==========
 async function loadConfig() {
   try {
@@ -3297,7 +3324,6 @@ async function loadConfig() {
     configData = journalConfig;
     populateFields(configData);
     populateConveyFields(conveyConfig);
-    checkShowSetup();
   } catch (err) {
     console.error('Error loading config:', err);
     notifyError( 'Load Failed', 'Error loading configuration');
@@ -3716,19 +3742,24 @@ function showFieldStatus(el, type, message) {
 }
 
 // ========== FACET CONFIG ==========
-async function loadFacetConfig(facetName) {
-  try {
-    const response = await fetch(`/app/settings/api/facet/${facetName}`);
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+function hydrateFacetDetail(facet) {
+  facetDetailSlugState = facet.facet || facet.name || facetDetailSlugState;
+  facetConfig = facet.config || {};
+  facetDetailTabLoaded = new Set();
+  window.SettingsRender.renderFacetDetailPage(document, {
+    facet: facetDetailSlugState,
+    config: facetConfig
+  });
+  populateFacetForm(facetDetailSlugState, facetConfig);
+  setupFacetEditing();
+  switchFacetDetailTab('appearance');
+}
 
-    facetConfig = data.config;
-    populateFacetForm(facetName, data.config);
-    setupFacetEditing();
-  } catch (err) {
-    console.error('Error loading facet config:', err);
-    notifyError( 'load failed', 'error loading facet configuration');
-  }
+function refreshFacetDetailHeader() {
+  window.SettingsRender.renderFacetDetailPage(document, {
+    facet: facetDetailSlugState,
+    config: facetConfig || {}
+  });
 }
 
 function populateFacetForm(facetName, config) {
@@ -3750,9 +3781,6 @@ function populateFacetForm(facetName, config) {
   document.getElementById('colorPreview').style.backgroundColor = color;
   document.getElementById('colorHexDisplay').textContent = color;
 
-  const isMuted = config.muted || false;
-  document.getElementById('mutedToggle').checked = isMuted;
-  document.getElementById('toggleLabel').textContent = isMuted ? 'Muted' : 'Active';
 }
 
 function setupFacetEditing() {
@@ -3761,7 +3789,7 @@ function setupFacetEditing() {
   setupEmojiPicker();
   setupIconPicker();
   setupColorPicker();
-  setupMutedToggle();
+  setupMutedAction();
 }
 
 function setupDoubleTapEdit(fieldId, displayId, inputId, configKey) {
@@ -4084,8 +4112,7 @@ function setupColorPicker() {
   let selectedColor = '#667eea';
 
   // Populate swatches
-  const colors = ['#007bff','#28a745','#17a2b8','#ffc107','#6f42c1','#fd7e14','#e83e8c','#6c757d','#20c997','#ff5722','#9c27b0','#795548'];
-  swatches.innerHTML = colors.map(c => `<div class="color-swatch" role="button" tabindex="0" aria-label="${colorName(c)}" data-color="${c}" style="background:${c}"></div>`).join('');
+  swatches.innerHTML = FACET_COLORS.map(c => `<div class="color-swatch" role="button" tabindex="0" aria-label="${colorName(c)}" data-color="${c}" style="background:${c}"></div>`).join('');
 
   swatches.onclick = (e) => {
     if (e.target.classList.contains('color-swatch')) {
@@ -4158,17 +4185,17 @@ function setupColorPicker() {
   }
 }
 
-function setupMutedToggle() {
-  const toggle = document.getElementById('mutedToggle');
-  toggle.onchange = () => {
-    const muted = toggle.checked;
-    document.getElementById('toggleLabel').textContent = muted ? 'Muted' : 'Active';
-    saveFacetField('muted', muted, null);
+function setupMutedAction() {
+  const action = document.getElementById('facetMuteAction');
+  action.onclick = async () => {
+    action.disabled = true;
+    await saveFacetField('muted', !Boolean(facetConfig?.muted), null);
+    action.disabled = false;
   };
 }
 
 async function saveFacetField(field, value, triggerEl) {
-  if (!window.selectedFacet) return;
+  if (!facetDetailSlugState) return;
 
   // Skip save if value unchanged
   if (JSON.stringify(facetConfig?.[field]) === JSON.stringify(value)) {
@@ -4176,7 +4203,7 @@ async function saveFacetField(field, value, triggerEl) {
   }
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${window.selectedFacet}`, {
+    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value })
@@ -4184,13 +4211,11 @@ async function saveFacetField(field, value, triggerEl) {
     const result = await response.json();
     if (result.success) {
       facetConfig = result.config;
+      populateFacetForm(facetDetailSlugState, facetConfig);
+      refreshFacetDetailHeader();
       // Show inline status if we have a trigger element
       if (triggerEl) {
         showFieldStatus(triggerEl, 'saved');
-      }
-      // Prompt reload for changes that affect the facet bar
-      if (field === 'title' || field === 'emoji' || field === 'icon' || field === 'color' || field === 'muted') {
-        promptReload();
       }
     } else {
       throw new Error(result.error);
@@ -4259,40 +4284,8 @@ function formatLogDay(day) {
 }
 
 document.getElementById('logMoreBtn').onclick = () => {
-  if (logNextCursor && window.selectedFacet) {
-    loadLogs(window.selectedFacet, logNextCursor);
-  }
-};
-
-// ========== SETUP / FIRST-RUN ==========
-function checkShowSetup() {
-  const hasFacets = window.facetsData && window.facetsData.length > 0;
-  document.getElementById('setupSection').style.display = hasFacets ? 'none' : 'block';
-}
-
-document.getElementById('createPersonalBtn').onclick = async () => {
-  const btn = document.getElementById('createPersonalBtn');
-  btn.disabled = true;
-  btn.textContent = 'creating...';
-
-  try {
-    const response = await fetch('/app/settings/api/facet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Personal', emoji: '\uD83C\uDFE0', color: '#007bff' })
-    });
-    const data = await response.json();
-    if (data.success) {
-      document.cookie = `selectedFacet=${data.facet}; path=/; SameSite=Lax`;
-      window.location.href = '/app/settings/facets/' + encodeURIComponent(data.facet);
-    } else {
-      throw new Error(data.error);
-    }
-  } catch (err) {
-    console.error('Error creating facet:', err);
-    btn.disabled = false;
-    btn.textContent = 'create personal facet';
-    notifyError( 'creation failed', err.message);
+  if (logNextCursor && facetDetailSlugState) {
+    loadLogs(facetDetailSlugState, logNextCursor);
   }
 };
 
@@ -5410,10 +5403,10 @@ function startEditField(el, field) {
 }
 
 async function addDefaultActivity(activityId) {
-  if (!window.selectedFacet) return;
+  if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${window.selectedFacet}/activities`, {
+    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: activityId })
@@ -5422,7 +5415,7 @@ async function addDefaultActivity(activityId) {
     if (result.error) throw new Error(result.error);
 
     // Reload activities
-    await loadActivities(window.selectedFacet);
+    await loadActivities(facetDetailSlugState);
   } catch (err) {
     console.error('Error adding activity:', err);
     notifyError('add failed', err.message);
@@ -5430,10 +5423,10 @@ async function addDefaultActivity(activityId) {
 }
 
 async function updateActivity(activityId, updates) {
-  if (!window.selectedFacet) return;
+  if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${window.selectedFacet}/activities/${activityId}`, {
+    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
@@ -5444,22 +5437,22 @@ async function updateActivity(activityId, updates) {
     console.error('Error updating activity:', err);
     notifyError('update failed', err.message);
     // Reload to revert
-    await loadActivities(window.selectedFacet);
+    await loadActivities(facetDetailSlugState);
   }
 }
 
 async function removeActivity(activityId) {
-  if (!window.selectedFacet) return;
+  if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${window.selectedFacet}/activities/${activityId}`, {
+    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
       method: 'DELETE'
     });
     const result = await response.json();
     if (result.error) throw new Error(result.error);
 
     // Reload activities
-    await loadActivities(window.selectedFacet);
+    await loadActivities(facetDetailSlugState);
   } catch (err) {
     console.error('Error removing activity:', err);
     notifyError('remove failed', err.message);
@@ -5495,10 +5488,10 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
     return;
   }
 
-  if (!window.selectedFacet) return;
+  if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${window.selectedFacet}/activities`, {
+    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, description, icon: icon || undefined, instructions: instructions || undefined })
@@ -5507,7 +5500,7 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
     if (result.error) throw new Error(result.error);
 
     document.getElementById('customActivityModal')._closeAccessible();
-    await loadActivities(window.selectedFacet);
+    await loadActivities(facetDetailSlugState);
   } catch (err) {
     console.error('Error adding custom activity:', err);
     notifyError('add failed', err.message);
@@ -6141,7 +6134,6 @@ function facetDetailSlug() {
 
 function showSettingsLoading() {
   if (settingsIndexView) settingsIndexView.hidden = true;
-  if (settingsFacetDetailView) settingsFacetDetailView.hidden = true;
   if (!settingsStateGate || !window.SurfaceState) return;
   settingsStateGate.hidden = false;
   settingsStateGate.innerHTML = window.SurfaceState.loading({ text: 'loading settings...' });
@@ -6152,6 +6144,8 @@ function revealSettingsIndex() {
     settingsStateGate.hidden = true;
     settingsStateGate.innerHTML = '';
   }
+  if (settingsIndexView) settingsIndexView.classList.remove('facet-detail-open');
+  if (settingsIndexContent) settingsIndexContent.hidden = false;
   if (settingsFacetDetailView) settingsFacetDetailView.hidden = true;
   if (settingsIndexView) settingsIndexView.hidden = false;
 }
@@ -6161,13 +6155,17 @@ function revealFacetDetail() {
     settingsStateGate.hidden = true;
     settingsStateGate.innerHTML = '';
   }
-  if (settingsIndexView) settingsIndexView.hidden = true;
+  if (settingsIndexView) {
+    settingsIndexView.hidden = false;
+    settingsIndexView.classList.add('facet-detail-open');
+  }
+  if (settingsIndexContent) settingsIndexContent.hidden = true;
   if (settingsFacetDetailView) settingsFacetDetailView.hidden = false;
+  switchSection('facets', false, false);
 }
 
 function showSettingsStateError(err) {
   if (settingsIndexView) settingsIndexView.hidden = true;
-  if (settingsFacetDetailView) settingsFacetDetailView.hidden = true;
   if (!settingsStateGate || !window.SurfaceState) return;
   settingsStateGate.hidden = false;
   settingsStateGate.innerHTML = window.SurfaceState.error({
@@ -6193,7 +6191,7 @@ async function initSettingsWorkspace() {
         window.apiJson(`/app/settings/api/facet/${encodeURIComponent(slug)}`, { headers: { accept: 'application/json' } }),
       ]);
       applySettingsState(state || {});
-      window.SettingsRender.renderFacetDetail(document, facet || {}, state.settings_copy || {});
+      hydrateFacetDetail(facet || {});
       revealFacetDetail();
       return;
     }
@@ -6211,7 +6209,6 @@ async function initSettingsWorkspace() {
 function initSettings() {
   if (settingsInitialized) return;
   settingsInitialized = true;
-  updateFacetNav();
   initFromHash();
   loadConfig();
   loadObserve();
@@ -6230,11 +6227,6 @@ function initSettings() {
       }
     });
   });
-
-  // If facet is selected on load, load its config
-  if (window.selectedFacet) {
-    loadFacetConfig(window.selectedFacet);
-  }
 }
 
 if (document.readyState === 'loading') {
