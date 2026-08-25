@@ -33,8 +33,6 @@ pub fn compose_connections_horizon_note(earlier_days: usize) -> String {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasonCode {
     AgentUnavailable,
-    /// `/app/entities/api/search` is the sole remaining route that still
-    /// serves `IndexPlateNotPorted` instead of this variant.
     EdgeIndexUnavailable,
     EntityAliasConflict,
     EntityAlreadyExists,
@@ -42,6 +40,10 @@ pub enum ReasonCode {
     EntityBusy,
     EntityNotFound,
     EntityOperationFailed,
+    EntitySearchActivityUnavailable,
+    EntitySearchIndexBusy,
+    EntitySearchIndexStale,
+    EntitySearchIndexUnavailable,
     InvalidEntityType,
     InvalidRequestValue,
     MissingRequestBody,
@@ -51,7 +53,6 @@ pub enum ReasonCode {
     ResolvedChoiceEntityAbsent,
     ResolvedChoiceEntityBlocked,
     EntityAmbiguityCorrupt,
-    IndexPlateNotPorted,
     /// Native talent spawn is not ported; not a transient agent outage.
     TalentNotPorted,
 }
@@ -67,6 +68,10 @@ impl ReasonCode {
             Self::EntityBusy => "entity_busy",
             Self::EntityNotFound => "entity_not_found",
             Self::EntityOperationFailed => "entity_operation_failed",
+            Self::EntitySearchActivityUnavailable => "entity_search_activity_unavailable",
+            Self::EntitySearchIndexBusy => "entity_search_index_busy",
+            Self::EntitySearchIndexStale => "entity_search_index_stale",
+            Self::EntitySearchIndexUnavailable => "entity_search_index_unavailable",
             Self::InvalidEntityType => "invalid_entity_type",
             Self::InvalidRequestValue => "invalid_request_value",
             Self::MissingRequestBody => "missing_request_body",
@@ -76,21 +81,24 @@ impl ReasonCode {
             Self::ResolvedChoiceEntityAbsent => "resolved_choice_entity_absent",
             Self::ResolvedChoiceEntityBlocked => "resolved_choice_entity_blocked",
             Self::EntityAmbiguityCorrupt => "entity_ambiguity_corrupt",
-            Self::IndexPlateNotPorted => "index_plate_not_ported",
             Self::TalentNotPorted => "talent_not_ported",
         }
     }
     pub const fn status(self) -> StatusCode {
         match self {
-            Self::AgentUnavailable | Self::EdgeIndexUnavailable | Self::EntityBusy => {
-                StatusCode::SERVICE_UNAVAILABLE
-            }
+            Self::AgentUnavailable
+            | Self::EdgeIndexUnavailable
+            | Self::EntityBusy
+            | Self::EntitySearchActivityUnavailable
+            | Self::EntitySearchIndexBusy
+            | Self::EntitySearchIndexStale
+            | Self::EntitySearchIndexUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::EntityAliasConflict | Self::EntityAlreadyExists => StatusCode::CONFLICT,
             Self::EntityNotFound
             | Self::ResolvedChoiceEntityAbsent
             | Self::ResolvedChoiceEntityBlocked => StatusCode::NOT_FOUND,
             Self::OperationNoLongerAvailable => StatusCode::GONE,
-            Self::IndexPlateNotPorted | Self::TalentNotPorted => StatusCode::NOT_IMPLEMENTED,
+            Self::TalentNotPorted => StatusCode::NOT_IMPLEMENTED,
             Self::EntityOperationFailed | Self::EntityAmbiguityCorrupt => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }

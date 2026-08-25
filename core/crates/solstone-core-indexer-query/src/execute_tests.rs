@@ -17,7 +17,7 @@ use crate::execute::{
 use crate::test_support::reserve_temp_path;
 use crate::{
     CompileOutcome, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, Order,
-    SearchRequest, compile_query, coverage, search, search_counts,
+    SearchRequest, compile_query, coverage, indexed_entity_ids, search, search_counts,
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
@@ -227,6 +227,41 @@ fn empty_and_undated_indexes_have_distinct_states() {
         }
     );
     fs::remove_dir_all(root).expect("cleanup undated index");
+}
+
+#[test]
+fn indexed_entity_ids_are_distinct_and_exclude_detected_rows() {
+    let root = temp_root("indexed-entity-ids");
+    write_rel(
+        &root,
+        "entities/alice/entity.json",
+        r#"{"id":"alice","name":"Alice","type":"Person"}"#,
+    );
+    write_rel(
+        &root,
+        "entities/beta/entity.json",
+        r#"{"id":"beta","name":"Beta","type":"Tool"}"#,
+    );
+    write_rel(
+        &root,
+        "facets/work/entities/alice/entity.json",
+        r#"{"entity_id":"alice","description":"Works with the platform team."}"#,
+    );
+    write_rel(
+        &root,
+        "facets/work/entities/20260101.jsonl",
+        r#"{"type":"Person","name":"Alice","description":"Mentioned today."}"#,
+    );
+    scan_journal(&root, true).expect("scan journal");
+
+    assert_eq!(
+        indexed_entity_ids(&root).expect("indexed entity ids"),
+        ["alice".to_owned(), "beta".to_owned()]
+            .into_iter()
+            .collect()
+    );
+
+    fs::remove_dir_all(root).expect("cleanup indexed entity ids");
 }
 
 #[test]

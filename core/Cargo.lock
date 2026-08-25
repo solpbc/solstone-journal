@@ -3681,6 +3681,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-indexer",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-serving",

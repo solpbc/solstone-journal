@@ -15,7 +15,7 @@ use solstone_core_entity_matching::{
 };
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
 
-use super::detected_entities::read_detected_entities;
+use super::detected_entities::{read_detected_entities, read_detected_entities_strict};
 use super::error::{FacetEntityWriteError, FacetStoreError};
 use super::facet_entities::list_scoped_facet_entities;
 use super::relationship_scans::enrich_relationship_with_journal;
@@ -91,14 +91,64 @@ pub fn iter_detected_entity_names_since(
     journal_root: &Path,
     since: &str,
 ) -> Result<Vec<(String, String, String)>, FacetEntityWriteError> {
-    let facets = contained_path(journal_root, "facets")
-        .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+    iter_detected_entity_names_since_with_reader(journal_root, since, None, read_detected_entities)
+}
+
+/// Read one detected-day file strictly, returning names in source-row order.
+pub fn read_detected_entity_names_strict(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+) -> Result<Vec<String>, FacetEntityWriteError> {
+    read_detected_entities_strict(journal_root, facet_dir, day).map(|entities| {
+        entities
+            .into_iter()
+            .map(|entity| {
+                entity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .expect("strict detected reader requires a name")
+                    .trim()
+                    .to_owned()
+            })
+            .collect()
+    })
+}
+
+/// Return every strictly-valid detected name at or after `since`, optionally within one facet.
+pub fn iter_detected_entity_names_since_strict(
+    journal_root: &Path,
+    since: &str,
+    facet: Option<&str>,
+) -> Result<Vec<(String, String, String)>, FacetEntityWriteError> {
+    iter_detected_entity_names_since_with_reader(
+        journal_root,
+        since,
+        facet,
+        read_detected_entities_strict,
+    )
+}
+
+fn iter_detected_entity_names_since_with_reader(
+    journal_root: &Path,
+    since: &str,
+    requested_facet: Option<&str>,
+    reader: fn(&Path, &str, &str) -> Result<Vec<Value>, FacetEntityWriteError>,
+) -> Result<Vec<(String, String, String)>, FacetEntityWriteError> {
     let mut files = Vec::new();
-    for facet in list_dir_entries(&facets).map_err(FacetStoreError::from)? {
-        if facet.kind != DirEntryKind::Directory {
-            continue;
-        }
-        let facet_dir = facet.name.to_string_lossy().into_owned();
+    let facet_dirs = if let Some(facet) = requested_facet {
+        vec![facet.to_owned()]
+    } else {
+        let facets = contained_path(journal_root, "facets")
+            .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+        list_dir_entries(&facets)
+            .map_err(FacetStoreError::from)?
+            .into_iter()
+            .filter(|facet| facet.kind == DirEntryKind::Directory)
+            .map(|facet| facet.name.to_string_lossy().into_owned())
+            .collect()
+    };
+    for facet_dir in facet_dirs {
         for day in detected_days(journal_root, &facet_dir)? {
             if day.as_str() >= since {
                 files.push((facet_dir.clone(), day));
@@ -109,7 +159,7 @@ pub fn iter_detected_entity_names_since(
 
     let mut names = Vec::new();
     for (facet, day) in files {
-        for entity in read_detected_entities(journal_root, &facet, &day)? {
+        for entity in reader(journal_root, &facet, &day)? {
             let name = entity
                 .get("name")
                 .and_then(Value::as_str)

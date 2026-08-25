@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 use std::cell::Cell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use chrono::{Local, NaiveDate};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,9 +22,15 @@ use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::refusal::{MergeRepairRequired, UndoRepairRequired};
+use solstone_core_entity_matching::{
+    EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
+};
+use solstone_core_indexer::entity_search::json_truthy;
 use solstone_core_indexer_query::{
-    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NetworkOverviewRequest, NetworkRequest,
-    is_safe_entity_id_component, load_edge_evidence, load_entity_network, load_network_overview,
+    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, IndexAccessError, IndexDegraded,
+    NetworkOverviewRequest, NetworkRequest, Order, SearchHit, SearchRequest, coverage,
+    indexed_entity_ids, is_safe_entity_id_component, load_edge_evidence, load_entity_network,
+    load_network_overview, search,
 };
 
 use crate::deferred_delete::DeferredDeleteRegistry;
@@ -369,15 +376,41 @@ struct IndexPlateQuery {
     include_principal: Option<String>,
 }
 
+#[derive(Default, Deserialize)]
+struct EntitySearchQuery {
+    query: Option<String>,
+    #[serde(rename = "type")]
+    entity_type: Option<String>,
+    facet: Option<String>,
+    since: Option<String>,
+    limit: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 enum IndexPlateRoute {
     Network,
     History,
     Overview,
-    Search,
 }
 
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
+
+#[derive(Clone)]
+struct EntitySearchParams {
+    query: Option<String>,
+    entity_type: Option<String>,
+    facet: Option<String>,
+    since: Option<String>,
+    limit: usize,
+}
+
+#[derive(Clone, Copy)]
+enum EntitySearchFailure {
+    ActivityUnavailable,
+    IndexBusy,
+    IndexStale,
+    IndexUnavailable,
+}
 
 #[derive(Clone)]
 struct FacetResolutionEntity {
@@ -4260,33 +4293,381 @@ fn validate_index_plate_pagination(
         IndexPlateRoute::Overview => {
             let _limit = index_plate_integer(query.limit.as_deref(), "limit", 25)?;
         }
-        IndexPlateRoute::Search => {
-            // Python's search endpoint deliberately falls back to 20 on bad input.
-            let _limit = query
-                .limit
-                .as_deref()
-                .and_then(|value| value.trim().parse::<i64>().ok())
-                .unwrap_or(20);
-        }
     }
     Ok(())
 }
 
-fn index_plate_response(
-    basis: AccessBasis,
-    query: IndexPlateQuery,
-    route: IndexPlateRoute,
-) -> Response {
-    if !require_access(&basis) {
-        return refusal(ReasonCode::AgentUnavailable, "access denied");
+fn normalize_entity_search_value(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_owned())
+    })
+}
+
+fn parse_entity_search_query(
+    query: EntitySearchQuery,
+) -> Result<EntitySearchParams, Box<Response>> {
+    let since = normalize_entity_search_value(query.since);
+    if since
+        .as_deref()
+        .is_some_and(|day| !is_entity_search_day(day))
+    {
+        return Err(Box::new(refusal(
+            ReasonCode::InvalidRequestValue,
+            "since must be a YYYYMMDD day",
+        )));
     }
-    if let Err(response) = validate_index_plate_pagination(route, &query) {
-        return *response;
+    let limit = query
+        .limit
+        .as_deref()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .unwrap_or(20);
+    Ok(EntitySearchParams {
+        query: normalize_entity_search_value(query.query),
+        entity_type: normalize_entity_search_value(query.entity_type),
+        facet: normalize_entity_search_value(query.facet),
+        since,
+        limit: usize::try_from(limit).unwrap_or_default(),
+    })
+}
+
+fn entity_search_index_access_failure(error: IndexAccessError) -> EntitySearchFailure {
+    match error {
+        IndexAccessError::Locked { .. } => EntitySearchFailure::IndexBusy,
+        IndexAccessError::Absent { .. }
+        | IndexAccessError::Unreadable { .. }
+        | IndexAccessError::Empty { .. } => EntitySearchFailure::IndexUnavailable,
     }
-    refusal(
-        ReasonCode::IndexPlateNotPorted,
-        "This entity index route is not ported yet.",
-    )
+}
+
+fn entity_search_degradation_failure(
+    degraded: Option<&IndexDegraded>,
+) -> Result<(), EntitySearchFailure> {
+    match degraded {
+        Some(IndexDegraded::Building { .. }) => Err(EntitySearchFailure::IndexBusy),
+        Some(IndexDegraded::Unknown) => Err(EntitySearchFailure::IndexStale),
+        None => Ok(()),
+    }
+}
+
+fn entity_search_failure_response(failure: EntitySearchFailure) -> Response {
+    match failure {
+        EntitySearchFailure::ActivityUnavailable => refusal(
+            ReasonCode::EntitySearchActivityUnavailable,
+            "detected entity activity is unavailable",
+        ),
+        EntitySearchFailure::IndexBusy => refusal(
+            ReasonCode::EntitySearchIndexBusy,
+            "entity search index is busy",
+        ),
+        EntitySearchFailure::IndexStale => refusal(
+            ReasonCode::EntitySearchIndexStale,
+            "entity search index is stale",
+        ),
+        EntitySearchFailure::IndexUnavailable => refusal(
+            ReasonCode::EntitySearchIndexUnavailable,
+            "entity search index is unavailable",
+        ),
+    }
+}
+
+fn eligible_entity_records(records: Vec<Value>) -> Vec<Value> {
+    records
+        .into_iter()
+        .filter(|record| !json_truthy(record.get("blocked")))
+        .map(|mut record| {
+            if let Some(facets) = record.get_mut("facets").and_then(Value::as_array_mut) {
+                facets.retain(|facet| !json_truthy(facet.get("detached")));
+            }
+            record
+        })
+        .collect()
+}
+
+fn entity_record_id(record: &Value) -> Option<&str> {
+    record
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+}
+
+fn entity_search_records_for_request(records: &[Value], params: &EntitySearchParams) -> Vec<Value> {
+    records
+        .iter()
+        .filter(|record| {
+            params.entity_type.as_deref().is_none_or(|entity_type| {
+                record
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|current_type| current_type.eq_ignore_ascii_case(entity_type))
+            })
+        })
+        .filter_map(|record| {
+            let mut record = record.clone();
+            if let Some(facet) = params.facet.as_deref() {
+                let facets = record.get_mut("facets").and_then(Value::as_array_mut)?;
+                facets.retain(|item| {
+                    item.get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| name.eq_ignore_ascii_case(facet))
+                });
+                if facets.is_empty() {
+                    return None;
+                }
+            }
+            Some(record)
+        })
+        .collect()
+}
+
+fn entity_name_candidates(records: &[Value]) -> Vec<EntityNameCandidate> {
+    records
+        .iter()
+        .filter_map(|record| {
+            let id = entity_record_id(record)?.to_owned();
+            let name = record.get("name").and_then(Value::as_str)?.to_owned();
+            Some(EntityNameCandidate {
+                id: Some(id),
+                name,
+                aka: record
+                    .get("aka")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                emails: Vec::new(),
+            })
+        })
+        .collect()
+}
+
+fn resolve_detected_entity_name(name: &str, candidates: &[EntityNameCandidate]) -> Option<String> {
+    match find_matching_entity_detailed(name, candidates, RESOLUTION_FUZZY_THRESHOLD) {
+        EntityNameMatchOutcome::Matched {
+            candidate_index, ..
+        } => candidates.get(candidate_index)?.id.clone(),
+        EntityNameMatchOutcome::Ambiguous { .. } | EntityNameMatchOutcome::NoMatch => None,
+    }
+}
+
+fn entity_ids_detected_since(
+    root: &Path,
+    since: &str,
+    facet: Option<&str>,
+    candidates: &[EntityNameCandidate],
+) -> Result<HashSet<String>, EntitySearchFailure> {
+    solstone_core_facets::iter_detected_entity_names_since_strict(root, since, facet)
+        .map_err(|_| EntitySearchFailure::ActivityUnavailable)
+        .map(|detections| {
+            detections
+                .into_iter()
+                .filter_map(|(name, _, _)| resolve_detected_entity_name(&name, candidates))
+                .collect()
+        })
+}
+
+fn is_entity_search_day(value: &str) -> bool {
+    NaiveDate::parse_from_str(value, "%Y%m%d")
+        .ok()
+        .is_some_and(|day| day.format("%Y%m%d").to_string() == value)
+}
+
+fn detected_hit_entity_id(
+    root: &Path,
+    hit: &SearchHit,
+    names_by_day: &mut HashMap<(String, String), Vec<String>>,
+    candidates: &[EntityNameCandidate],
+) -> Result<Option<String>, EntitySearchFailure> {
+    let facet = &hit.metadata.facet;
+    let day = &hit.metadata.day;
+    let Some(index) = usize::try_from(hit.metadata.idx).ok() else {
+        return Err(EntitySearchFailure::IndexStale);
+    };
+    if facet.is_empty() || !is_entity_search_day(day) {
+        return Err(EntitySearchFailure::IndexStale);
+    }
+    let expected_path = format!("facets/{facet}/entities/{day}.jsonl");
+    if hit.metadata.path != expected_path {
+        return Err(EntitySearchFailure::IndexStale);
+    }
+    let key = (facet.clone(), day.clone());
+    if !names_by_day.contains_key(&key) {
+        let names = solstone_core_facets::read_detected_entity_names_strict(root, facet, day)
+            .map_err(|_| EntitySearchFailure::ActivityUnavailable)?;
+        names_by_day.insert(key.clone(), names);
+    }
+    let name = names_by_day
+        .get(&key)
+        .and_then(|names| names.get(index))
+        .ok_or(EntitySearchFailure::IndexStale)?;
+    Ok(resolve_detected_entity_name(name, candidates))
+}
+
+fn entity_search_item(record: &Value) -> Value {
+    let facets = record
+        .get("facets")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let description = facets
+        .first()
+        .and_then(|facet| facet.get("description"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let facet_names: Vec<_> = facets
+        .iter()
+        .filter_map(|facet| facet.get("name").and_then(Value::as_str))
+        .collect();
+    json!({
+        "entity_id": entity_record_id(record).unwrap_or_default(),
+        "name": record.get("name").and_then(Value::as_str).unwrap_or_default(),
+        "type": record.get("type").and_then(Value::as_str).unwrap_or_default(),
+        "description": description,
+        "facets": facet_names,
+    })
+}
+
+fn entity_search_work(
+    root: &Path,
+    params: &EntitySearchParams,
+) -> Result<Value, EntitySearchFailure> {
+    let coverage_response = coverage(root).map_err(entity_search_index_access_failure)?;
+    entity_search_degradation_failure(coverage_response.degraded.as_ref())?;
+
+    let eligible = eligible_entity_records(
+        assemble_journal_entity_records(root, None).map_err(|_| EntitySearchFailure::IndexStale)?,
+    );
+    let eligible_ids: BTreeSet<_> = eligible
+        .iter()
+        .filter_map(entity_record_id)
+        .map(str::to_owned)
+        .collect();
+    let indexed_ids = indexed_entity_ids(root).map_err(entity_search_index_access_failure)?;
+    if indexed_ids != eligible_ids {
+        return Err(EntitySearchFailure::IndexStale);
+    }
+
+    let candidates = entity_name_candidates(&eligible);
+    let requested_records = entity_search_records_for_request(&eligible, params);
+    let requested_by_id: HashMap<_, _> = requested_records
+        .into_iter()
+        .filter_map(|record| {
+            let id = entity_record_id(&record)?.to_owned();
+            Some((id, record))
+        })
+        .collect();
+
+    let (entity_hits, detected_hits) = if let Some(query) = params.query.as_deref() {
+        let mut entity_request = SearchRequest::new(query, Order::Relevance);
+        entity_request.limit = usize::MAX;
+        entity_request.agent = Some("entity".to_owned());
+        entity_request.facet = params.facet.clone();
+        let entity_response = search(root, &entity_request, Local::now().date_naive())
+            .map_err(entity_search_index_access_failure)?;
+        entity_search_degradation_failure(entity_response.degraded.as_ref())?;
+
+        let mut detected_request = SearchRequest::new(query, Order::Relevance);
+        detected_request.limit = usize::MAX;
+        detected_request.agent = Some("entity:detected".to_owned());
+        detected_request.facet = params.facet.clone();
+        detected_request.day_from = params.since.clone();
+        let detected_response = search(root, &detected_request, Local::now().date_naive())
+            .map_err(entity_search_index_access_failure)?;
+        entity_search_degradation_failure(detected_response.degraded.as_ref())?;
+        (entity_response.results, detected_response.results)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
+    let since_ids = params
+        .since
+        .as_deref()
+        .map(|since| entity_ids_detected_since(root, since, params.facet.as_deref(), &candidates))
+        .transpose()?;
+
+    let mut records = if params.query.is_some() {
+        let mut hits: Vec<_> = entity_hits
+            .into_iter()
+            .map(|hit| (0_u8, hit))
+            .chain(detected_hits.into_iter().map(|hit| (1_u8, hit)))
+            .collect();
+        hits.sort_by(|(left_priority, left), (right_priority, right)| {
+            left.score
+                .total_cmp(&right.score)
+                .then_with(|| left_priority.cmp(right_priority))
+                .then_with(|| left.metadata.path.cmp(&right.metadata.path))
+                .then_with(|| left.metadata.idx.cmp(&right.metadata.idx))
+        });
+
+        let mut names_by_day = HashMap::new();
+        let mut seen = HashSet::new();
+        let mut records = Vec::new();
+        for (priority, hit) in hits {
+            let entity_id = if priority == 0 {
+                hit.metadata
+                    .path
+                    .strip_prefix("entity_search:")
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned)
+                    .ok_or(EntitySearchFailure::IndexStale)?
+            } else {
+                let Some(entity_id) =
+                    detected_hit_entity_id(root, &hit, &mut names_by_day, &candidates)?
+                else {
+                    continue;
+                };
+                entity_id
+            };
+            if since_ids
+                .as_ref()
+                .is_some_and(|ids| !ids.contains(&entity_id))
+            {
+                continue;
+            }
+            let Some(record) = requested_by_id.get(&entity_id) else {
+                continue;
+            };
+            if seen.insert(entity_id) {
+                records.push(record.clone());
+            }
+        }
+        records
+    } else {
+        requested_by_id
+            .into_values()
+            .filter(|record| {
+                since_ids
+                    .as_ref()
+                    .is_none_or(|ids| entity_record_id(record).is_some_and(|id| ids.contains(id)))
+            })
+            .collect()
+    };
+
+    if params.query.is_none() {
+        records.sort_by(|left, right| {
+            left.get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_lowercase()
+                .cmp(
+                    &right
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_lowercase(),
+                )
+                .then_with(|| entity_record_id(left).cmp(&entity_record_id(right)))
+        });
+    }
+    records.truncate(params.limit);
+    Ok(json!({
+        "items": records.iter().map(entity_search_item).collect::<Vec<_>>(),
+    }))
 }
 
 async fn index_plate_network(
@@ -4353,9 +4734,23 @@ async fn index_plate_overview(
 
 async fn index_plate_search(
     Extension(basis): Extension<AccessBasis>,
-    Query(query): Query<IndexPlateQuery>,
+    State(root): State<Arc<RouterState>>,
+    Query(query): Query<EntitySearchQuery>,
 ) -> Response {
-    index_plate_response(basis, query, IndexPlateRoute::Search)
+    if let Some(response) = admitted(&basis) {
+        return response;
+    }
+    let params = match parse_entity_search_query(query) {
+        Ok(params) => params,
+        Err(response) => return *response,
+    };
+    match solstone_core_serving::seam::run_blocking(move || entity_search_work(&root, &params))
+        .await
+    {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(failure)) => entity_search_failure_response(failure),
+        Err(_) => entity_search_failure_response(EntitySearchFailure::IndexUnavailable),
+    }
 }
 
 #[cfg(test)]

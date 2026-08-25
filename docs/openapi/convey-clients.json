@@ -3276,11 +3276,38 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "properties": {
                     "items": {
                       "items": {
-                        "additionalProperties": true,
+                        "additionalProperties": false,
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "entity_id": {
+                            "type": "string"
+                          },
+                          "facets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "entity_id",
+                          "name",
+                          "type",
+                          "description",
+                          "facets"
+                        ],
                         "type": "object"
                       },
                       "type": "array"
@@ -3294,6 +3321,35 @@
               }
             },
             "description": "Search result collection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The since day was invalid.",
+            "x-reason-codes": [
+              "invalid_request_value"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Entity search evidence is unavailable, busy, or stale.",
+            "x-reason-codes": [
+              "entity_search_index_unavailable",
+              "entity_search_index_busy",
+              "entity_search_index_stale",
+              "entity_search_activity_unavailable"
+            ]
           }
         },
         "summary": "Search entities",

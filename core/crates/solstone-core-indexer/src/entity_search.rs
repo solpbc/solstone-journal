@@ -250,7 +250,8 @@ fn string_array(value: Option<&Value>) -> Vec<String> {
         .collect()
 }
 
-fn json_truthy(value: Option<&Value>) -> bool {
+/// Return whether a JSON field has the truthy semantics used by entity indexing.
+pub fn json_truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,
         Some(Value::Bool(value)) => *value,
