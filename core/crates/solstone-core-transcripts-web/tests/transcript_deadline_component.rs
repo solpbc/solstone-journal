@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(target_os = "linux")]
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
+#[cfg(target_os = "linux")]
+use axum::body::to_bytes;
 use axum::http::{Method, Request, StatusCode};
 use chrono::{TimeZone, Utc};
 use serde_json::Value;
@@ -249,6 +252,7 @@ fn write(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
     fs::write(path, contents).expect("file");
 }
 
+#[cfg(target_os = "linux")]
 fn deletion_root() -> TempDir {
     let root = TempDir::new().expect("journal");
     write(
@@ -271,6 +275,7 @@ fn deletion_root() -> TempDir {
     root
 }
 
+#[cfg(target_os = "linux")]
 fn delete_app(root: &Path, window: Duration) -> axum::Router {
     router_with_delete_window(
         root.to_path_buf(),
@@ -280,6 +285,7 @@ fn delete_app(root: &Path, window: Duration) -> axum::Router {
     )
 }
 
+#[cfg(target_os = "linux")]
 async fn delete_request(app: axum::Router) -> Value {
     let response = app
         .oneshot(
