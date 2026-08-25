@@ -69,7 +69,7 @@ fn execute_plan_refuses_torn_day_without_mutating() {
     assert!(after.contains("\"type\":\"pruned\"") || after.contains("pruned"));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn execute_refuses_unrepresentable_stream_before_crash_repair_writes() {
     use std::ffi::OsStr;

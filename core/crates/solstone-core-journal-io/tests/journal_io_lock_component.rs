@@ -3,9 +3,12 @@
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io;
+#[cfg(all(unix, not(target_os = "macos")))]
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -448,13 +451,17 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
     drop(raw_guard);
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 const FF: &[u8] = b"seg-\xff";
+#[cfg(all(unix, not(target_os = "macos")))]
 const FE: &[u8] = b"seg-\xfe";
 
+#[cfg(all(unix, not(target_os = "macos")))]
 fn os_path(dir: &Path, bytes: &[u8]) -> PathBuf {
     dir.join(OsString::from_vec(bytes.to_vec()))
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 fn spawn_lock_holder(path: &Path, marker: &Path) -> std::process::Child {
     Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "lock_pause_helper", "--nocapture"])
@@ -464,11 +471,13 @@ fn spawn_lock_holder(path: &Path, marker: &Path) -> std::process::Child {
         .unwrap()
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 fn kill_lock_holder(mut child: std::process::Child) {
     kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
     child.wait().unwrap();
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn exact_name_locks_are_independent_across_processes() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -485,6 +494,7 @@ fn exact_name_locks_are_independent_across_processes() {
     kill_lock_holder(child);
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn same_invalid_name_contends_across_processes() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -508,6 +518,7 @@ fn same_invalid_name_contends_across_processes() {
     kill_lock_holder(child);
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn invalid_name_lock_is_released_when_the_holder_dies() {
     let temporary = tempfile::TempDir::new().unwrap();

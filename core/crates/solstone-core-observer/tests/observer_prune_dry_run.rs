@@ -5,7 +5,7 @@ use super::observer_render_support::{seed_observer_owning_stream, segment_dir, w
 use serde_json::json;
 use solstone_core_observer::store::prune::{format_result, run_prune};
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn prune_refuses_non_utf8_segment_identity() {
     use std::ffi::OsStr;

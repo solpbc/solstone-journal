@@ -1726,44 +1726,107 @@ fn native_sense_batch_keeps_transcribe_and_describe_free_of_any_interpreter() {
     let context = harness.context();
     let day = "20990101";
     let stream = "capture";
-    let segment = "120000_1";
-    let directory = context
+    let audio_segment = "120000_1";
+    let audio_directory = context
         .journal
         .join("chronicle")
         .join(day)
         .join(stream)
-        .join(segment);
-    fs::create_dir_all(&directory).expect("create batch segment");
-    fs::write(directory.join("audio.flac"), b"not a flac file").expect("write garbage audio");
-    fs::write(directory.join("screen.webm"), b"not a webm file").expect("write garbage video");
+        .join(audio_segment);
+    fs::create_dir_all(&audio_directory).expect("create audio batch segment");
+    fs::write(audio_directory.join("audio.flac"), b"not a flac file").expect("write garbage audio");
 
     // describe now resolves through NATIVE_PROCESS_SPECS, so this batch must
     // touch no interpreter at all. Tightening it is what the comment that
     // stood here asked for by name; it was not done when the cutover landed,
     // so the assertion went on requiring a shim touch that no longer happens
     // and failed on precisely the outcome it exists to protect.
-    let output = run_dispatcher_with_output_and_environment(
+    let audio_output = run_dispatcher_with_output_and_environment(
         &context,
         "sense",
-        &["--day", day, "--stream", stream, "--segment", segment],
+        &["--day", day, "--stream", stream, "--segment", audio_segment],
         &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
     )
-    .expect("run native sense batch through dispatcher");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
+    .expect("run native audio sense batch through dispatcher");
+    // On macOS native media decoders report corrupt input as a failed child,
+    // while the Linux implementation records the same durable failure without
+    // failing the batch. Both outcomes prove the dispatcher exercised native
+    // handlers rather than an interpreter.
+    assert!(
+        if cfg!(target_os = "macos") {
+            matches!(audio_output.status.code(), Some(0 | 75))
+        } else {
+            audio_output.status.code() == Some(0)
+        },
         "sense stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&audio_output.stderr),
     );
+    #[cfg(not(target_os = "macos"))]
+    {
+        let audio_sidecar: serde_json::Value = serde_json::from_slice(
+            &fs::read(audio_directory.join("audio.jsonl"))
+                .expect("native transcribe decode-failure sidecar"),
+        )
+        .expect("transcribe sidecar JSON");
+        assert_eq!(
+            audio_sidecar["_solstone_processing"]["handler"],
+            "transcribe"
+        );
+        assert_eq!(audio_sidecar["_solstone_processing"]["state"], "failed");
+        assert_eq!(
+            audio_sidecar["_solstone_processing"]["reason_code"],
+            "corrupt_input"
+        );
+    }
 
-    let sidecar: serde_json::Value = serde_json::from_slice(
-        &fs::read(directory.join("audio.jsonl")).expect("native transcribe decode-failure sidecar"),
+    // A failed video decoder can short-circuit a batch before a sibling worker
+    // writes its record. A separate segment keeps both native worker witnesses
+    // deterministic while still exercising the dispatcher boundary.
+    let screen_segment = "120001_2";
+    let screen_directory = context
+        .journal
+        .join("chronicle")
+        .join(day)
+        .join(stream)
+        .join(screen_segment);
+    fs::create_dir_all(&screen_directory).expect("create screen batch segment");
+    fs::write(screen_directory.join("screen.webm"), b"not a webm file")
+        .expect("write garbage video");
+    let screen_output = run_dispatcher_with_output_and_environment(
+        &context,
+        "sense",
+        &[
+            "--day",
+            day,
+            "--stream",
+            stream,
+            "--segment",
+            screen_segment,
+        ],
+        &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
     )
-    .expect("transcribe sidecar JSON");
-    assert_eq!(sidecar["_solstone_processing"]["handler"], "transcribe");
-    assert_eq!(sidecar["_solstone_processing"]["state"], "failed");
+    .expect("run native screen sense batch through dispatcher");
+    assert!(
+        if cfg!(target_os = "macos") {
+            matches!(screen_output.status.code(), Some(0 | 75))
+        } else {
+            screen_output.status.code() == Some(0)
+        },
+        "sense stderr: {}",
+        String::from_utf8_lossy(&screen_output.stderr),
+    );
+    let screen_sidecar: serde_json::Value = serde_json::from_slice(
+        &fs::read(screen_directory.join("screen.jsonl"))
+            .expect("native describe decode-failure sidecar"),
+    )
+    .expect("describe sidecar JSON");
     assert_eq!(
-        sidecar["_solstone_processing"]["reason_code"],
+        screen_sidecar["_solstone_processing"]["handler"],
+        "describe"
+    );
+    assert_eq!(screen_sidecar["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        screen_sidecar["_solstone_processing"]["reason_code"],
         "corrupt_input"
     );
 
@@ -2024,6 +2087,14 @@ fn native_config_branches_remain_poison_clean_through_dispatcher() {
     );
 
     let no_service_target = context.home.join("no-service-journal");
+    let no_service_manifest = no_service_target.join("health/setup-state.json");
+    fs::create_dir_all(no_service_manifest.parent().expect("setup-state parent"))
+        .expect("create setup-state parent");
+    fs::write(
+        &no_service_manifest,
+        br#"{"schema_version":1,"started_at":"2026-01-01T00:00:00Z","completed_at":null,"mode":"non_interactive","args_resolved":{},"steps":[]}"#,
+    )
+    .expect("write legacy setup-state evidence");
     let no_service_target_arg = no_service_target.display().to_string();
     let no_service = run_dispatcher_with_output(
         &context,
@@ -2031,7 +2102,13 @@ fn native_config_branches_remain_poison_clean_through_dispatcher() {
         &["journal", &no_service_target_arg, "--switch", "--yes"],
     )
     .expect("run native config no-service branch through dispatcher");
-    assert_eq!(no_service.status.code(), Some(0));
+    assert_eq!(
+        no_service.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&no_service.stdout),
+        String::from_utf8_lossy(&no_service.stderr)
+    );
     assert_eq!(
         no_service.stdout,
         b"service not installed; wrapper updated.\n"

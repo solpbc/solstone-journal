@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::io::Write;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -10,7 +10,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_local::LoopbackAddr;
 use solstone_core_local::admission::{AdmissionError, acquire_local_slot};
 use solstone_core_local::connect::{ConnectInput, ConnectOutcome, connect};
@@ -38,22 +37,14 @@ fn input(root: &Path) -> ConnectInput {
     }
 }
 
-fn refusal_reservation() -> Socket {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-        .expect("create refusal socket");
-    socket
-        .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into())
-        .expect("bind refusal socket");
-    socket
-}
-
-fn reserved_port(socket: &Socket) -> u16 {
-    socket
-        .local_addr()
-        .expect("refusal address")
-        .as_socket_ipv4()
-        .expect("IPv4 refusal address")
-        .port()
+fn closed_peer() -> (u16, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind closed peer");
+    let port = listener.local_addr().expect("closed peer address").port();
+    let peer = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept health client");
+        drop(stream);
+    });
+    (port, peer)
 }
 
 struct ReapChild(Option<std::process::Child>);
@@ -141,14 +132,18 @@ impl Drop for WithholdingPeer {
 }
 
 #[test]
-fn connect_reports_transport_failure() {
-    let reservation = refusal_reservation();
-    let port = reserved_port(&reservation);
+fn connect_reports_closed_peer_transport_failure() {
+    let (port, peer) = closed_peer();
     let root = journal(Some(port));
-    assert!(matches!(
-        connect(input(root.path())),
-        ConnectOutcome::Failed { ref reason } if reason.to_ascii_lowercase().contains("refused")
-    ));
+    let outcome = connect(input(root.path()));
+    peer.join().expect("join closed peer");
+    assert!(
+        matches!(
+            &outcome,
+            ConnectOutcome::Failed { reason } if reason.to_ascii_lowercase().contains("reset")
+        ),
+        "{outcome:?}"
+    );
 }
 
 #[test]

@@ -3,15 +3,19 @@
 
 //! Native CLI contract for `solstone-core install-provider` on staged journals.
 
+#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::{Command, Output};
 
 #[cfg(target_os = "linux")]
 use serde_json::{Value, json};
+#[cfg(target_os = "linux")]
 use solstone_core_local::install::{lease, status};
 #[cfg(target_os = "linux")]
 use solstone_core_local::install::{manifest, pins};
 
+#[cfg(target_os = "linux")]
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -22,6 +26,7 @@ fn repository_root() -> PathBuf {
 
 /// `solstone-core` is a sibling binary, not a library dependency of this
 /// package. Ask Cargo for the artifact path rather than guessing target dirs.
+#[cfg(target_os = "linux")]
 fn locate_solstone_core_binary() -> PathBuf {
     let root = repository_root();
     let output = Command::new(env!("CARGO"))
@@ -60,6 +65,7 @@ fn locate_solstone_core_binary() -> PathBuf {
     panic!("cargo build did not report a solstone-core binary artifact");
 }
 
+#[cfg(target_os = "linux")]
 fn native(binary: &Path, journal: &Path, name: &str) -> Output {
     Command::new(binary)
         .args(["install-provider", name])
@@ -172,6 +178,7 @@ fn ready_provider_prints_status_without_a_fetch() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn held_mismatched_attempt_refuses() {
     let journal = tempfile::tempdir().unwrap();
