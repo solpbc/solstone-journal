@@ -10,7 +10,7 @@
 
 #![cfg(unix)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -19,6 +19,7 @@ use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 
 use getrandom::fill;
 use nix::dir::Dir;
@@ -444,6 +445,9 @@ struct NamespaceLease {
     _owner_lock: Flock<File>,
     _marker_lock: Flock<File>,
     _namespace: SecureDir,
+    // Struct fields drop in declaration order. Keep the process-local outer
+    // guard last so it remains held until every file and namespace lock drops.
+    _owner_coordinator: OwnerCoordinatorGuard,
 }
 
 /// Provider failures, including unsafe storage states that require repair.
@@ -825,6 +829,7 @@ pub fn load_installation_binding(
 ) -> Result<InstallationBinding, IdentityError> {
     let namespace_name = namespace_name(owner.platform(), root_token);
     let provider = open_provider(owner, false)?;
+    let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
     let owner_lock = lock_existing_owner(&provider)?;
     let namespace = open_namespace(&provider, &namespace_name, false)?;
     let snapshot = read_namespace(&namespace, namespace_name.clone())?;
@@ -850,9 +855,11 @@ pub fn load_installation_binding(
         ));
     }
     let marker_lock = lock_existing_marker(&namespace)?;
+    hit(FaultPoint::LoadLocksHeld)?;
     let binding = InstallationBinding::from_record(namespace_name, &record);
     drop(marker_lock);
     drop(owner_lock);
+    drop(owner_coordinator);
     Ok(binding)
 }
 
@@ -868,6 +875,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
     loop {
         let provider = open_provider(&request.owner, true)?;
+        let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
         let owner_lock = lock_owner(&provider)?;
         let registry = enumerate_registry(&provider)?;
         if let Some(snapshot) = registry
@@ -881,6 +889,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
                 namespace,
                 snapshot.clone(),
                 owner_lock,
+                owner_coordinator,
                 &registry,
             );
         }
@@ -900,6 +909,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
         // See the function-level documentation: do not make owner-lock timing
         // the first-writer arbitration mechanism.
         drop(owner_lock);
+        drop(owner_coordinator);
         match publish_prepared(&namespace, stage) {
             Ok(()) => continue,
             Err(PublishPreparedError::AlreadyExists) => continue,
@@ -923,6 +933,7 @@ pub fn admit_clean_uninstall(
     }
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
     let provider = open_provider(&request.owner, true)?;
+    let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
     let owner_lock = lock_owner(&provider)?;
     let registry = enumerate_registry(&provider)?;
     let snapshot = registry
@@ -986,6 +997,7 @@ pub fn admit_clean_uninstall(
         _owner_lock: owner_lock,
         _marker_lock: marker_lock,
         _namespace: namespace.try_clone()?,
+        _owner_coordinator: owner_coordinator,
     };
     Ok(CleanUninstallSession {
         plan: CleanUninstallPlan {
@@ -1029,6 +1041,139 @@ impl SecureDir {
             .sync_all()
             .map_err(|source| io_error("sync directory", source))
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct OwnerCoordinatorKey {
+    device: u64,
+    inode: u64,
+}
+
+#[derive(Debug)]
+struct OwnerCoordinatorState {
+    occupied: bool,
+    waiters: usize,
+}
+
+#[derive(Debug)]
+struct OwnerCoordinator {
+    state: Mutex<OwnerCoordinatorState>,
+    condvar: Condvar,
+}
+
+#[derive(Debug)]
+struct OwnerCoordinatorGuard {
+    coordinator: Arc<OwnerCoordinator>,
+}
+
+static OWNER_COORDINATORS: OnceLock<Mutex<HashMap<OwnerCoordinatorKey, Weak<OwnerCoordinator>>>> =
+    OnceLock::new();
+
+fn owner_coordinator_poisoned() -> IdentityError {
+    IdentityError::UnsafeState("owner coordinator is poisoned")
+}
+
+fn owner_coordinator_key(dir: &File) -> Result<OwnerCoordinatorKey, IdentityError> {
+    let stat = fstat(dir).map_err(|error| nix_error("stat owner coordinator directory", error))?;
+    Ok(OwnerCoordinatorKey {
+        device: stat.st_dev as u64,
+        inode: stat.st_ino as u64,
+    })
+}
+
+fn owner_coordinator_for(key: OwnerCoordinatorKey) -> Result<Arc<OwnerCoordinator>, IdentityError> {
+    let registry = OWNER_COORDINATORS.get_or_init(|| Mutex::new(HashMap::new()));
+    // Deliberately fail loudly rather than recovering a poisoned coordinator:
+    // letting a caller proceed would defeat the owner-wide exclusion boundary.
+    let mut registry = registry.lock().map_err(|_| owner_coordinator_poisoned())?;
+    registry.retain(|_, coordinator| coordinator.strong_count() != 0);
+    if let Some(coordinator) = registry.get(&key).and_then(Weak::upgrade) {
+        return Ok(coordinator);
+    }
+    let coordinator = Arc::new(OwnerCoordinator {
+        state: Mutex::new(OwnerCoordinatorState {
+            occupied: false,
+            waiters: 0,
+        }),
+        condvar: Condvar::new(),
+    });
+    registry.insert(key, Arc::downgrade(&coordinator));
+    Ok(coordinator)
+}
+
+fn acquire_owner_coordinator(
+    key: OwnerCoordinatorKey,
+) -> Result<OwnerCoordinatorGuard, IdentityError> {
+    let coordinator = owner_coordinator_for(key)?;
+    let mut state = coordinator
+        .state
+        .lock()
+        .map_err(|_| owner_coordinator_poisoned())?;
+    while state.occupied {
+        state.waiters += 1;
+        state = coordinator
+            .condvar
+            .wait(state)
+            .map_err(|_| owner_coordinator_poisoned())?;
+        state.waiters -= 1;
+    }
+    state.occupied = true;
+    drop(state);
+    Ok(OwnerCoordinatorGuard { coordinator })
+}
+
+impl Drop for OwnerCoordinatorGuard {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.coordinator.state.lock() {
+            state.occupied = false;
+        }
+        // Wake all waiters even when the state mutex is poisoned. Each will
+        // reacquire it, observe the poison, and fail rather than hanging.
+        self.coordinator.condvar.notify_all();
+    }
+}
+
+#[cfg(test)]
+fn owner_coordinator_held_for_test(key: OwnerCoordinatorKey) -> bool {
+    let registry = OWNER_COORDINATORS.get_or_init(|| Mutex::new(HashMap::new()));
+    let coordinator = registry
+        .lock()
+        .expect("test owner coordinator registry poisoned")
+        .get(&key)
+        .and_then(Weak::upgrade);
+    let Some(coordinator) = coordinator else {
+        return false;
+    };
+    match coordinator.state.try_lock() {
+        Ok(state) => state.occupied,
+        Err(std::sync::TryLockError::WouldBlock) => true,
+        Err(std::sync::TryLockError::Poisoned(_)) => false,
+    }
+}
+
+#[cfg(test)]
+fn owner_coordinator_waiters_for_test(key: OwnerCoordinatorKey) -> usize {
+    let registry = OWNER_COORDINATORS.get_or_init(|| Mutex::new(HashMap::new()));
+    let coordinator = registry
+        .lock()
+        .expect("test owner coordinator registry poisoned")
+        .get(&key)
+        .and_then(Weak::upgrade)
+        .expect("test owner coordinator must exist");
+    coordinator
+        .state
+        .lock()
+        .expect("test owner coordinator state poisoned")
+        .waiters
+}
+
+#[cfg(test)]
+fn owner_coordinator_entry_exists_for_test(key: OwnerCoordinatorKey) -> bool {
+    OWNER_COORDINATORS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("test owner coordinator registry poisoned")
+        .contains_key(&key)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1201,12 +1346,16 @@ fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityE
 }
 
 fn lock_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
+    #[cfg(test)]
+    note_owner_file_lock_attempt();
     let file = open_or_create_file(provider, "owner.lock")?;
     Flock::lock(file, FlockArg::LockExclusive)
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
 
 fn lock_existing_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
+    #[cfg(test)]
+    note_owner_file_lock_attempt();
     let file = open_existing_file(provider, "owner.lock", true)?;
     Flock::lock(file, FlockArg::LockExclusive)
         .map_err(|(_, error)| nix_error("lock owner registry", error))
@@ -1409,6 +1558,7 @@ fn admit_existing_setup(
     namespace: SecureDir,
     snapshot: NamespaceSnapshot,
     owner_lock: Flock<File>,
+    owner_coordinator: OwnerCoordinatorGuard,
     _registry: &BTreeMap<NamespaceName, NamespaceSnapshot>,
 ) -> Result<SetupAdmission, IdentityError> {
     let mut record = snapshot
@@ -1434,6 +1584,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
+                    _owner_coordinator: owner_coordinator,
                 },
             })
         }
@@ -1456,6 +1607,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
+                    _owner_coordinator: owner_coordinator,
                 },
             })
         }
@@ -1486,6 +1638,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
+                    _owner_coordinator: owner_coordinator,
                 },
             })
         }
@@ -1974,6 +2127,7 @@ fn nix_error(operation: &'static str, error: Errno) -> IdentityError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FaultPoint {
+    LoadLocksHeld,
     PreparedWrite,
     PreparedFileSync,
     PreparedNoReplace,
@@ -1984,6 +2138,21 @@ enum FaultPoint {
     AdoptedReplace,
     AdoptedFileSync,
     AdoptedDirectorySync,
+}
+
+#[cfg(test)]
+thread_local! {
+    static OWNER_FILE_LOCK_ATTEMPTS: std::cell::Cell<usize> = std::cell::Cell::new(0);
+}
+
+#[cfg(test)]
+fn note_owner_file_lock_attempt() {
+    OWNER_FILE_LOCK_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
+}
+
+#[cfg(test)]
+fn owner_file_lock_attempts_for_test() -> usize {
+    OWNER_FILE_LOCK_ATTEMPTS.with(std::cell::Cell::get)
 }
 
 #[cfg(not(test))]
@@ -2055,11 +2224,11 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::{Arc, Barrier, Mutex, OnceLock};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     static TEST_SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
@@ -2265,6 +2434,343 @@ mod tests {
 
     fn assert_tree_unchanged(root: &Path, before: BTreeMap<PathBuf, TreeEntry>) {
         assert_eq!(snapshot_tree(root), before);
+    }
+
+    fn provider_key(owner: &OwnerBase) -> OwnerCoordinatorKey {
+        let provider = open_provider(owner, true).expect("open provider");
+        owner_coordinator_key(&provider.file).expect("owner coordinator key")
+    }
+
+    fn wait_for_owner_coordinator_waiters(key: OwnerCoordinatorKey, expected: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while owner_coordinator_waiters_for_test(key) < expected {
+            assert!(
+                Instant::now() < deadline,
+                "owner coordinator never reached {expected} waiters"
+            );
+            thread::yield_now();
+        }
+    }
+
+    fn release_waiter(label: u8, first: &mpsc::Sender<()>, second: &mpsc::Sender<()>) {
+        match label {
+            1 => first.send(()).expect("release first waiter"),
+            2 => second.send(()).expect("release second waiter"),
+            _ => panic!("unknown waiter"),
+        }
+    }
+
+    #[test]
+    fn owner_coordinator_excludes_same_process_threads_without_flock() {
+        let fixture = TestRoot::new();
+        let key = provider_key(&fixture.owner);
+        let (held_tx, held_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let first = thread::spawn(move || {
+            let guard = acquire_owner_coordinator(key).expect("first coordinator guard");
+            held_tx
+                .send(Arc::as_ptr(&guard.coordinator) as usize)
+                .expect("first guard ready");
+            release_rx.recv().expect("release first guard");
+            drop(guard);
+        });
+        let first_identity = held_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("first guard ready");
+        let (second_tx, second_rx) = mpsc::channel();
+        let second = thread::spawn(move || {
+            // This deliberately invokes no Flock/file-lock backend: the
+            // process-local guard alone must exclude same-process threads.
+            let guard = acquire_owner_coordinator(key).expect("second coordinator guard");
+            second_tx
+                .send(Arc::as_ptr(&guard.coordinator) as usize)
+                .expect("second guard ready");
+            drop(guard);
+        });
+
+        wait_for_owner_coordinator_waiters(key, 1);
+        assert!(matches!(
+            second_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        release_tx.send(()).expect("release first guard");
+        let second_identity = second_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("second guard after release");
+        first.join().expect("first thread");
+        second.join().expect("second thread");
+
+        assert_eq!(first_identity, second_identity);
+        assert!(!owner_coordinator_held_for_test(key));
+    }
+
+    #[test]
+    fn owner_coordinator_distinct_provider_bases_do_not_block_each_other() {
+        let first = TestRoot::new();
+        let second = TestRoot::new();
+        let first_key = provider_key(&first.owner);
+        let second_key = provider_key(&second.owner);
+        assert_ne!(first_key, second_key);
+        let first_guard = acquire_owner_coordinator(first_key).expect("first coordinator guard");
+        let (second_tx, second_rx) = mpsc::channel();
+        let second_thread = thread::spawn(move || {
+            let guard = acquire_owner_coordinator(second_key).expect("second coordinator guard");
+            second_tx.send(()).expect("second guard ready");
+            drop(guard);
+        });
+
+        second_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("different owner must not wait");
+        drop(first_guard);
+        second_thread.join().expect("second thread");
+    }
+
+    #[test]
+    fn owner_coordinator_alias_paths_share_the_physical_provider() {
+        let fixture = TestRoot::new();
+        let plain_key = provider_key(&fixture.owner);
+        let alias = OwnerBase::at_home(
+            fixture.root.join("home").join("..").join("home"),
+            PlatformTag::Linux,
+        )
+        .expect("alias owner");
+        let alias_key = provider_key(&alias);
+        assert_eq!(plain_key, alias_key);
+        let first_guard = acquire_owner_coordinator(plain_key).expect("plain coordinator guard");
+        let (alias_tx, alias_rx) = mpsc::channel();
+        let alias_thread = thread::spawn(move || {
+            let guard = acquire_owner_coordinator(alias_key).expect("alias coordinator guard");
+            alias_tx.send(()).expect("alias guard ready");
+            drop(guard);
+        });
+
+        wait_for_owner_coordinator_waiters(plain_key, 1);
+        assert!(matches!(
+            alias_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        drop(first_guard);
+        alias_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("alias guard after release");
+        alias_thread.join().expect("alias thread");
+    }
+
+    #[test]
+    fn owner_coordinator_registry_reclaims_after_hold_wait_and_arrival() {
+        let fixture = TestRoot::new();
+        let key = provider_key(&fixture.owner);
+        assert!(!owner_coordinator_entry_exists_for_test(key));
+        let first_guard = acquire_owner_coordinator(key).expect("first coordinator guard");
+        let first_identity = Arc::as_ptr(&first_guard.coordinator) as usize;
+        let active = Arc::new(AtomicUsize::new(0));
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let (first_release_tx, first_release_rx) = mpsc::channel();
+        let (second_release_tx, second_release_rx) = mpsc::channel();
+
+        let first_active = Arc::clone(&active);
+        let first_acquired = acquired_tx.clone();
+        let first_waiter = thread::spawn(move || {
+            let guard = acquire_owner_coordinator(key).expect("first waiter coordinator guard");
+            assert_eq!(first_active.fetch_add(1, Ordering::SeqCst), 0);
+            first_acquired
+                .send((1_u8, Arc::as_ptr(&guard.coordinator) as usize))
+                .expect("first waiter acquired");
+            first_release_rx.recv().expect("release first waiter");
+            assert_eq!(first_active.fetch_sub(1, Ordering::SeqCst), 1);
+            drop(guard);
+        });
+        wait_for_owner_coordinator_waiters(key, 1);
+
+        let second_active = Arc::clone(&active);
+        let second_waiter = thread::spawn(move || {
+            let guard = acquire_owner_coordinator(key).expect("second waiter coordinator guard");
+            assert_eq!(second_active.fetch_add(1, Ordering::SeqCst), 0);
+            acquired_tx
+                .send((2_u8, Arc::as_ptr(&guard.coordinator) as usize))
+                .expect("second waiter acquired");
+            second_release_rx.recv().expect("release second waiter");
+            assert_eq!(second_active.fetch_sub(1, Ordering::SeqCst), 1);
+            drop(guard);
+        });
+        wait_for_owner_coordinator_waiters(key, 2);
+
+        drop(first_guard);
+        let (first_label, first_waiter_identity) = acquired_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("one queued waiter acquired");
+        assert_eq!(first_waiter_identity, first_identity);
+        assert_eq!(active.load(Ordering::SeqCst), 1);
+        assert!(matches!(
+            acquired_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        release_waiter(first_label, &first_release_tx, &second_release_tx);
+
+        let (second_label, second_waiter_identity) = acquired_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("remaining queued waiter acquired");
+        assert_ne!(first_label, second_label);
+        assert_eq!(second_waiter_identity, first_identity);
+        assert_eq!(active.load(Ordering::SeqCst), 1);
+        release_waiter(second_label, &first_release_tx, &second_release_tx);
+        first_waiter.join().expect("first waiter thread");
+        second_waiter.join().expect("second waiter thread");
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+
+        let cleanup = TestRoot::new();
+        let cleanup_key = provider_key(&cleanup.owner);
+        drop(acquire_owner_coordinator(cleanup_key).expect("cleanup coordinator guard"));
+        assert!(!owner_coordinator_entry_exists_for_test(key));
+        let fresh_guard = acquire_owner_coordinator(key).expect("fresh coordinator guard");
+        assert_ne!(
+            Arc::as_ptr(&fresh_guard.coordinator) as usize,
+            first_identity
+        );
+        drop(fresh_guard);
+        drop(acquire_owner_coordinator(cleanup_key).expect("second cleanup coordinator guard"));
+        assert!(!owner_coordinator_entry_exists_for_test(key));
+
+        for _ in 0..4 {
+            let short_lived = TestRoot::new();
+            let short_lived_key = provider_key(&short_lived.owner);
+            assert!(!owner_coordinator_entry_exists_for_test(short_lived_key));
+            drop(
+                acquire_owner_coordinator(short_lived_key).expect("short-lived coordinator guard"),
+            );
+            drop(acquire_owner_coordinator(cleanup_key).expect("retain coordinator guard"));
+            assert!(!owner_coordinator_entry_exists_for_test(short_lived_key));
+        }
+    }
+
+    #[test]
+    fn poisoned_owner_coordinator_refuses_before_owner_file_lock() {
+        let fixture = TestRoot::new();
+        let request = fixture.request(b"/install/poisoned", b"/journal/poisoned");
+        let root = request.root_token.clone();
+        let admission = admit_setup(request).expect("initial admission");
+        drop(admission);
+        let key = provider_key(&fixture.owner);
+        let coordinator = owner_coordinator_for(key).expect("owner coordinator");
+        let poisoned = Arc::clone(&coordinator);
+        let poisoner = thread::spawn(move || {
+            let _state = poisoned.state.lock().expect("poison coordinator state");
+            panic!("poison owner coordinator");
+        });
+        assert!(poisoner.join().is_err());
+
+        let before = owner_file_lock_attempts_for_test();
+        let result = load_installation_binding(&fixture.owner, &root);
+        let after = owner_file_lock_attempts_for_test();
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::UnsafeState("owner coordinator is poisoned"))
+        ));
+        assert_eq!(after, before);
+        drop(coordinator);
+    }
+
+    #[test]
+    fn load_holds_owner_coordinator_for_its_whole_call() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let request = fixture.request(b"/install/load-coordinator", b"/journal/load-coordinator");
+        let root = request.root_token.clone();
+        let admission = admit_setup(request).expect("initial admission");
+        drop(admission);
+        let key = provider_key(&fixture.owner);
+        let gate = park_at(FaultPoint::LoadLocksHeld);
+        let owner = fixture.owner.clone();
+        let reader = thread::spawn(move || load_installation_binding(&owner, &root));
+
+        gate.arrived.wait();
+        assert!(owner_coordinator_held_for_test(key));
+        gate.release.wait();
+        reader
+            .join()
+            .expect("reader thread")
+            .expect("loaded binding");
+        clear_control();
+        assert!(!owner_coordinator_held_for_test(key));
+    }
+
+    #[test]
+    fn setup_and_clean_sessions_hold_owner_coordinator_until_drop() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let request = fixture.request(
+            b"/install/session-coordinator",
+            b"/journal/session-coordinator",
+        );
+        let root = request.root_token.clone();
+        let initial = admit_setup(request.clone()).expect("initial admission");
+        let key = provider_key(&fixture.owner);
+        assert!(owner_coordinator_held_for_test(key));
+        drop(initial);
+        assert!(!owner_coordinator_held_for_test(key));
+
+        let setup = admit_setup(request).expect("existing setup admission");
+        assert!(owner_coordinator_held_for_test(key));
+        drop(setup);
+        assert!(!owner_coordinator_held_for_test(key));
+
+        let clean = admit_clean_uninstall(CleanUninstallRequest {
+            owner: fixture.owner.clone(),
+            root_token: root,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .expect("clean uninstall admission");
+        assert!(owner_coordinator_held_for_test(key));
+        clean.commit_tombstone().expect("commit tombstone");
+        assert!(!owner_coordinator_held_for_test(key));
+    }
+
+    #[test]
+    fn first_admission_releases_owner_coordinator_before_no_replace_publication() {
+        let _serial = serial();
+        clear_control();
+        let held_fixture = TestRoot::new();
+        let held_gate = park_at(FaultPoint::PreparedWrite);
+        let held_request =
+            held_fixture.request(b"/install/prepublish-held", b"/journal/prepublish-held");
+        let held_thread = thread::spawn(move || {
+            admit_setup(held_request)
+                .expect("held first admission")
+                .binding()
+                .clone()
+        });
+
+        held_gate.arrived.wait();
+        let held_key = provider_key(&held_fixture.owner);
+        assert!(owner_coordinator_held_for_test(held_key));
+        held_gate.release.wait();
+        held_thread.join().expect("held admission thread");
+        clear_control();
+        assert!(!owner_coordinator_held_for_test(held_key));
+
+        let released_fixture = TestRoot::new();
+        let released_gate = park_at(FaultPoint::PreparedNoReplace);
+        let released_request = released_fixture.request(
+            b"/install/prepublish-released",
+            b"/journal/prepublish-released",
+        );
+        let released_thread = thread::spawn(move || {
+            admit_setup(released_request)
+                .expect("released first admission")
+                .binding()
+                .clone()
+        });
+
+        released_gate.arrived.wait();
+        let released_key = provider_key(&released_fixture.owner);
+        assert!(!owner_coordinator_held_for_test(released_key));
+        released_gate.release.wait();
+        released_thread.join().expect("released admission thread");
+        clear_control();
     }
 
     #[test]
