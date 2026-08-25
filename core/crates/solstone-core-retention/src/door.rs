@@ -30,11 +30,16 @@ use solstone_core_journal_io::paths::{
     DirEntryKind, contained_path, list_dir_entries, path_lexists,
 };
 use solstone_core_journal_io::removal::remove_dir_all;
-use solstone_core_journal_io::{AtomicWriteOptions, LockOptions, hold_lock, write_bytes_exclusive};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, HealthMarkerKind, LockOptions, bump_stream_marker, health_marker_path,
+    hold_lock, write_bytes_exclusive,
+};
 
 use crate::eligibility::{Evidence, ProvenRaw};
 use crate::notify::{IndexNotify, NotifyError, PruneCounts};
-use crate::receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
+use crate::receipt::{
+    NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,
+};
 use crate::staging::staged_name;
 use crate::tombstone::{RemovalReason, TOMBSTONE_NAME, TombstoneBody, tombstone_bytes};
 
@@ -90,6 +95,7 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
                     target,
                     removed: Vec::new(),
                     not_removed: Vec::new(),
+                    post_commit_failure: None,
                 });
                 outcome.targets.len().saturating_sub(1)
             }
@@ -116,6 +122,7 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
                     continue;
                 }
                 row.removed.push(RemovedPath::confirmed(rel));
+                dirty_removed_day(journal, row);
                 match item.evidence() {
                     Evidence::Record => tally.on_record = tally.on_record.saturating_add(1),
                     Evidence::LegacyRows => {
@@ -198,9 +205,11 @@ pub fn remove_segments(
             continue;
         }
         seen.push(target);
-        outcome
-            .targets
-            .push(remove_one(journal, target, deleted_at, reason, did));
+        let (mut row, mutated) = remove_one(journal, target, deleted_at, reason, did);
+        if mutated {
+            dirty_removed_day(journal, &mut row);
+        }
+        outcome.targets.push(row);
     }
     outcome
 }
@@ -256,6 +265,7 @@ pub fn remove_logs(journal: &Path, targets: &[crate::logs::LogTarget]) -> Outcom
                 },
                 removed: Vec::new(),
                 not_removed: Vec::new(),
+                post_commit_failure: None,
             });
         }
         let Some(slot) = by_class.iter_mut().find(|done| done.target.dir == class) else {
@@ -322,6 +332,7 @@ pub fn compact_log(journal: &Path, planned: &crate::logs::Compaction) -> Outcome
                 // file whose old end is gone.
                 removed: vec![RemovedPath::confirmed(planned.rel().to_owned())],
                 not_removed: Vec::new(),
+                post_commit_failure: None,
             }],
             halted: None,
         },
@@ -354,6 +365,7 @@ fn refused(target: &Target, entry: String, reason: String) -> TargetOutcome {
             reason,
             staged: None,
         }],
+        post_commit_failure: None,
     }
 }
 
@@ -366,6 +378,7 @@ fn refused_staged(target: &Target, staged: String, reason: String) -> TargetOutc
             reason,
             staged: Some(staged),
         }],
+        post_commit_failure: None,
     }
 }
 
@@ -375,7 +388,7 @@ fn remove_one(
     deleted_at: &str,
     reason: RemovalReason,
     did: &str,
-) -> TargetOutcome {
+) -> (TargetOutcome, bool) {
     let live = segment_rel(target);
     let staged = format!("{}/{}", parent_rel(target), staged_name(&target.dir));
 
@@ -387,13 +400,16 @@ fn remove_one(
     match path_lexists(&journal.join(&live)) {
         Ok(true) => {}
         Ok(false) => {
-            return refused(
-                target,
-                live,
-                "there is no such segment in your journal".to_owned(),
+            return (
+                refused(
+                    target,
+                    live,
+                    "there is no such segment in your journal".to_owned(),
+                ),
+                false,
             );
         }
-        Err(error) => return refused(target, live, owner_reason(&error)),
+        Err(error) => return (refused(target, live, owner_reason(&error)), false),
     }
 
     // Step 0: the lock, keyed on the segment's DIRECTORY NAME.
@@ -406,10 +422,13 @@ fn remove_one(
     let _lock = match hold_lock(journal.join(&live), LockOptions::default()) {
         Ok(lock) => lock,
         Err(error) => {
-            return refused(
-                target,
-                live,
-                format!("another process is working on this segment ({error})"),
+            return (
+                refused(
+                    target,
+                    live,
+                    format!("another process is working on this segment ({error})"),
+                ),
+                false,
             );
         }
     };
@@ -422,43 +441,72 @@ fn remove_one(
     // owner's deletion record.
     match path_lexists(&journal.join(&live).join(TOMBSTONE_NAME)) {
         Ok(true) => {
-            return refused(
-                target,
-                live,
-                "this segment has already been removed".to_owned(),
+            return (
+                refused(
+                    target,
+                    live,
+                    "this segment has already been removed".to_owned(),
+                ),
+                false,
             );
         }
         Ok(false) => {}
-        Err(error) => return refused(target, live, owner_reason(&error)),
+        Err(error) => return (refused(target, live, owner_reason(&error)), false),
     }
     if !matches!(path_lexists(&journal.join(&live)), Ok(true)) {
-        return refused(
-            target,
-            live,
-            "there is no such segment in your journal".to_owned(),
+        return (
+            refused(
+                target,
+                live,
+                "there is no such segment in your journal".to_owned(),
+            ),
+            false,
         );
     }
     // ⛔ Refuse rather than clobber: a rename onto an existing empty directory
     // succeeds and destroys it.
     if !matches!(path_lexists(&journal.join(&staged)), Ok(false)) {
-        return refused_staged(
-            target,
-            staged,
-            "a previous removal of this segment did not finish; \
-             it needs looking at before this can be retried"
-                .to_owned(),
+        return (
+            refused_staged(
+                target,
+                staged,
+                "a previous removal of this segment did not finish; \
+                 it needs looking at before this can be retried"
+                    .to_owned(),
+            ),
+            false,
         );
     }
 
     // Step 2: stage, then make the move durable.
     if let Err(error) = rename_within(journal, &live, &staged) {
-        return refused(target, live, owner_reason(&error));
+        return (refused(target, live, owner_reason(&error)), false);
     }
     if let Err(error) = sync_dir(journal, &parent_rel(target)) {
-        return refused_staged(target, staged, owner_reason(&error));
+        return (refused_staged(target, staged, owner_reason(&error)), true);
     }
 
-    finish_staged(journal, target, &staged, deleted_at, reason, did)
+    (
+        finish_staged(journal, target, &staged, deleted_at, reason, did),
+        true,
+    )
+}
+
+fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) {
+    if let Err(error) = bump_stream_marker(journal, &row.target.day) {
+        let path = health_marker_path(journal, &row.target.day, HealthMarkerKind::Stream);
+        let relative = path
+            .strip_prefix(journal)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        row.post_commit_failure = Some(PostCommitFailure {
+            entry: relative,
+            reason: format!(
+                "the retention mutation completed, but the day could not be queued for follow-up processing: {error}"
+            ),
+        });
+    }
 }
 
 /// Steps 3 to 6, from a staged directory. Shared with the recovery pass.
@@ -554,6 +602,7 @@ fn finish_staged(
             target: target.clone(),
             removed: Vec::new(),
             not_removed: failures,
+            post_commit_failure: None,
         };
     }
     if let Err(error) = sync_dir(journal, staged) {
@@ -600,6 +649,7 @@ fn finish_staged(
         target: target.clone(),
         removed,
         not_removed: unverified,
+        post_commit_failure: None,
     }
 }
 
@@ -653,9 +703,9 @@ pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, did: &st
                 let Ok(_lock) = hold_lock(journal.join(&live), LockOptions::default()) else {
                     continue;
                 };
-                outcome.targets.push(finish_staged(
-                    journal, &target, &staged, deleted_at, reason, did,
-                ));
+                let mut row = finish_staged(journal, &target, &staged, deleted_at, reason, did);
+                dirty_removed_day(journal, &mut row);
+                outcome.targets.push(row);
             }
         }
     }
@@ -898,7 +948,11 @@ mod tests {
     }
 
     fn populated(bed: &Bed, dir: &str) -> PathBuf {
-        let segment = bed.segment("20260805", "field.audio", dir);
+        populated_on(bed, "20260805", dir)
+    }
+
+    fn populated_on(bed: &Bed, day: &str, dir: &str) -> PathBuf {
+        let segment = bed.segment(day, "field.audio", dir);
         fs::write(segment.join("audio.flac"), b"raw").unwrap();
         fs::write(segment.join("audio.jsonl"), b"{}").unwrap();
         fs::write(segment.join("stream.json"), b"{}").unwrap();
@@ -932,6 +986,61 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec![TOMBSTONE_NAME.to_owned()]);
+    }
+
+    #[test]
+    fn segment_removal_dirties_each_mutated_day_and_no_untouched_day() {
+        let bed = Bed::new();
+        populated_on(&bed, "20260805", "070000_17");
+        populated_on(&bed, "20260806", "080000_17");
+        populated_on(&bed, "20260807", "090000_17");
+
+        let outcome = remove(
+            &bed,
+            &[
+                target("20260805", "field.audio", "070000_17"),
+                target("20260806", "field.audio", "080000_17"),
+            ],
+        );
+
+        assert!(!outcome.has_failures());
+        for day in ["20260805", "20260806"] {
+            let value: serde_json::Value = serde_json::from_slice(
+                &fs::read(
+                    bed.root
+                        .join("chronicle")
+                        .join(day)
+                        .join("health/stream.updated"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(value["generation"], 1, "{day}");
+        }
+        assert!(
+            !bed.root
+                .join("chronicle/20260807/health/stream.updated")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn segment_marker_failure_is_terminal_without_claiming_the_removal_rolled_back() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        let marker = bed.root.join("chronicle/20260805/health/stream.updated");
+        fs::create_dir_all(&marker).unwrap();
+
+        let outcome = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
+
+        assert!(outcome.has_failures());
+        let row = &outcome.targets[0];
+        assert!(row.not_removed.is_empty());
+        assert_eq!(row.removed.len(), 4);
+        let failure = row.post_commit_failure.as_ref().unwrap();
+        assert_eq!(failure.entry, "chronicle/20260805/health/stream.updated");
+        assert!(failure.reason.contains("retention mutation completed"));
+        assert_eq!(listing(&segment), vec![TOMBSTONE_NAME]);
     }
 
     /// The tombstone names every path that went.

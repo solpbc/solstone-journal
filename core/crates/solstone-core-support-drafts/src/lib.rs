@@ -15,7 +15,8 @@ use chrono::{DateTime, Local, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDel
 use regex::Regex;
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive, write_jsonl,
+    AtomicWriteError, AtomicWriteOptions, HealthMarkerKind, atomic_replace, bump_stream_marker,
+    health_marker_path, write_bytes_exclusive, write_jsonl,
 };
 use solstone_core_segment::{Kind, SegmentDir, StreamHints, advance_unbound_stream};
 use thiserror::Error;
@@ -94,6 +95,15 @@ pub enum SupportDraftError {
     #[error("atomic write {path}: {source}")]
     AtomicWrite {
         path: PathBuf,
+        source: solstone_core_journal_io::AtomicWriteError,
+    },
+    /// The draft write is durable, but its exact day could not be marked dirty.
+    #[error(
+        "support-draft content for {day} remains written, but stream marker advancement failed at {path}: {source}"
+    )]
+    StreamMarker {
+        path: PathBuf,
+        day: String,
         source: solstone_core_journal_io::AtomicWriteError,
     },
     /// Resolving the support-draft segment path failed.
@@ -306,7 +316,7 @@ fn append_validated_draft_event_at_local_time(
     let stored = Value::Object(stored);
 
     {
-        pause_at("draft-before-lock");
+        pause_at(journal, "draft-before-lock");
         let _guard = DRAFT_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -316,9 +326,8 @@ fn append_validated_draft_event_at_local_time(
         let segment_dir = SegmentDir::resolve(journal, &day, &segment, SUPPORT_DRAFTS_STREAM)
             .map_err(|source| SupportDraftError::SegmentPath { source })?;
         let draft_path = segment_dir.path().join("support-drafts.jsonl");
-        let existed = draft_path.exists();
         let mut events = read_events_file(&draft_path)?;
-        pause_at("draft-read-before-write");
+        pause_at(journal, "draft-read-before-write");
         events.push(stored.clone());
         write_jsonl(&draft_path, events, AtomicWriteOptions::default()).map_err(|source| {
             SupportDraftError::AtomicWrite {
@@ -326,7 +335,12 @@ fn append_validated_draft_event_at_local_time(
                 source,
             }
         })?;
-        if !existed {
+        bump_stream_marker(journal, &day).map_err(|source| SupportDraftError::StreamMarker {
+            path: health_marker_path(journal, &day, HealthMarkerKind::Stream),
+            day: day.clone(),
+            source,
+        })?;
+        if !segment_dir.path().join("stream.json").is_file() {
             advance_unbound_stream(
                 journal,
                 SUPPORT_DRAFTS_STREAM,
@@ -414,7 +428,7 @@ fn current_segment_key(
     timestamp: i64,
     event_time: NaiveDateTime,
 ) -> Result<(String, String), SupportDraftError> {
-    pause_at("draft-before-segment-selection");
+    pause_at(journal, "draft-before-segment-selection");
     let day = event_time.format("%Y%m%d").to_string();
     let mut existing = draft_segments(journal, &day)?;
     if existing.is_empty() {
@@ -587,25 +601,25 @@ fn read_events_file(path: &Path) -> Result<Vec<Value>, SupportDraftError> {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-type PauseHook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+type PauseHook = std::sync::Arc<dyn Fn(&Path, &str) + Send + Sync>;
 
 #[cfg(any(test, feature = "test-hooks"))]
 static PAUSE_HOOK: std::sync::OnceLock<Mutex<Option<PauseHook>>> = std::sync::OnceLock::new();
 
 #[cfg(any(test, feature = "test-hooks"))]
-fn pause_at(point: &str) {
+fn pause_at(journal: &Path, point: &str) {
     let hook = PAUSE_HOOK
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
     if let Some(hook) = hook {
-        hook(point);
+        hook(journal, point);
     }
 }
 
 #[cfg(not(any(test, feature = "test-hooks")))]
-fn pause_at(_: &str) {}
+fn pause_at(_: &Path, _: &str) {}
 
 #[cfg(test)]
 mod tests {
@@ -618,6 +632,7 @@ mod tests {
 
     use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone, Utc};
     use serde_json::{Map, Value, json};
+    use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 
     use super::{
         DRAFT_LOCK_DEPTH, PAUSE_HOOK, SUPPORT_DRAFTS_STREAM, SupportDraftError,
@@ -997,6 +1012,175 @@ mod tests {
     }
 
     #[test]
+    fn existing_segment_append_advances_the_exact_day_marker() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis()),
+            now,
+        )
+        .expect("first append");
+        append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis() + 1),
+            now,
+        )
+        .expect("existing segment append");
+
+        assert!(matches!(
+            read_health_marker(&journal.path, "20260815", HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 2
+        ));
+        assert!(
+            !journal
+                .path
+                .join("chronicle/20260816/health/stream.updated")
+                .exists()
+        );
+        assert_eq!(
+            fs::read_to_string(draft_path(&journal.path, "20260815", "100347_300"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn new_segment_retries_topology_after_state_advance_was_blocked() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        let state = journal.path.join("streams/support-drafts.json");
+        fs::create_dir_all(&state).expect("block stream state");
+
+        let error = append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis()),
+            now,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SupportDraftError::StreamAdvance { .. }));
+        assert!(draft_path(&journal.path, "20260815", "100347_300").is_file());
+        assert!(matches!(
+            read_health_marker(&journal.path, "20260815", HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+        ));
+
+        fs::remove_dir(&state).expect("unblock stream state");
+        append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis() + 1),
+            now,
+        )
+        .expect("retry completes topology");
+
+        let state: Value = serde_json::from_slice(&fs::read(state).unwrap()).unwrap();
+        assert_eq!(state["seq"], 1);
+        assert_eq!(state["last_day"], "20260815");
+        assert_eq!(state["last_segment"], "100347_300");
+        let topology: Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path
+                    .join("chronicle/20260815/support-drafts/100347_300/stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(topology["seq"], 1);
+        assert_eq!(topology["prev_day"], Value::Null);
+        assert_eq!(topology["prev_segment"], Value::Null);
+        assert_eq!(
+            fs::read_to_string(draft_path(&journal.path, "20260815", "100347_300"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn new_segment_retries_missing_topology_marker_without_seq_or_self_link_drift() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        let topology = journal
+            .path
+            .join("chronicle/20260815/support-drafts/100347_300/stream.json");
+        fs::create_dir_all(&topology).expect("block topology marker");
+
+        let error = append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis()),
+            now,
+        )
+        .unwrap_err();
+        assert!(matches!(error, SupportDraftError::StreamAdvance { .. }));
+        let partial_state: Value = serde_json::from_slice(
+            &fs::read(journal.path.join("streams/support-drafts.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(partial_state["seq"], 1);
+        assert_eq!(partial_state["last_segment"], "100347_300");
+
+        fs::remove_dir(&topology).expect("unblock topology marker");
+        append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis() + 1),
+            now,
+        )
+        .expect("retry completes the partial advance");
+
+        let final_state: Value = serde_json::from_slice(
+            &fs::read(journal.path.join("streams/support-drafts.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(final_state["seq"], 1);
+        let marker: Value = serde_json::from_slice(&fs::read(topology).unwrap()).unwrap();
+        assert_eq!(marker["seq"], 1);
+        assert_eq!(marker["prev_day"], Value::Null);
+        assert_eq!(marker["prev_segment"], Value::Null);
+    }
+
+    #[test]
+    fn marker_failure_is_typed_terminal_and_retains_the_draft() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        let marker = journal
+            .path
+            .join("chronicle/20260815/health/stream.updated");
+        fs::create_dir_all(&marker).expect("block stream marker");
+
+        let error = append_draft_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis()),
+            now,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            &error,
+            SupportDraftError::StreamMarker { path, day, .. }
+                if path == &marker && day == "20260815"
+        ));
+        assert!(error.to_string().contains("remains written"));
+        assert!(draft_path(&journal.path, "20260815", "100347_300").is_file());
+        assert!(!journal.path.join("streams/support-drafts.json").exists());
+    }
+
+    #[test]
     fn ac7_index_failure_is_logged_and_does_not_fail_append() {
         let journal = TestJournal::new();
         fs::write(journal.path.join("indexer"), "not a directory").expect("block indexer");
@@ -1173,9 +1357,13 @@ mod tests {
         let hook_entered = Arc::clone(&entered);
         let hook_released = Arc::clone(&released);
         let hook_paused = Arc::clone(&paused);
+        let hook_journal = journal.path.clone();
         let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
-        *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| {
-            if point == "draft-read-before-write" && !hook_paused.swap(true, Ordering::SeqCst) {
+        *hooks.lock().expect("hook lock") = Some(Arc::new(move |candidate, point| {
+            if candidate == hook_journal
+                && point == "draft-read-before-write"
+                && !hook_paused.swap(true, Ordering::SeqCst)
+            {
                 hook_entered.wait();
                 hook_released.wait();
             }
@@ -1233,31 +1421,37 @@ mod tests {
         let selection_outside_lock = Arc::new(AtomicBool::new(false));
         let hook_selection_outside_lock = Arc::clone(&selection_outside_lock);
         let (event_tx, event_rx) = mpsc::channel();
+        let hook_journal = journal.path.clone();
         let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
-        *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| match point {
-            "draft-before-lock" => {
-                if hook_lock_attempts.fetch_add(1, Ordering::SeqCst) == 1 {
-                    event_tx
-                        .send(Event::SecondAwaitingSelection)
-                        .expect("test receiver");
+        *hooks.lock().expect("hook lock") = Some(Arc::new(move |candidate, point| {
+            if candidate != hook_journal {
+                return;
+            }
+            match point {
+                "draft-before-lock" => {
+                    if hook_lock_attempts.fetch_add(1, Ordering::SeqCst) == 1 {
+                        event_tx
+                            .send(Event::SecondAwaitingSelection)
+                            .expect("test receiver");
+                    }
                 }
-            }
-            "draft-before-segment-selection" => {
-                if DRAFT_LOCK_DEPTH.load(Ordering::SeqCst) != 1 {
-                    hook_selection_outside_lock.store(true, Ordering::SeqCst);
-                    event_tx
-                        .send(Event::SelectionOutsideLock)
-                        .expect("test receiver");
+                "draft-before-segment-selection" => {
+                    if DRAFT_LOCK_DEPTH.load(Ordering::SeqCst) != 1 {
+                        hook_selection_outside_lock.store(true, Ordering::SeqCst);
+                        event_tx
+                            .send(Event::SelectionOutsideLock)
+                            .expect("test receiver");
+                    }
                 }
+                "draft-read-before-write"
+                    if !hook_selection_outside_lock.load(Ordering::SeqCst)
+                        && !hook_paused.swap(true, Ordering::SeqCst) =>
+                {
+                    event_tx.send(Event::FirstPaused).expect("test receiver");
+                    hook_released.wait();
+                }
+                _ => {}
             }
-            "draft-read-before-write"
-                if !hook_selection_outside_lock.load(Ordering::SeqCst)
-                    && !hook_paused.swap(true, Ordering::SeqCst) =>
-            {
-                event_tx.send(Event::FirstPaused).expect("test receiver");
-                hook_released.wait();
-            }
-            _ => {}
         }));
 
         let first_journal = Arc::clone(&journal);

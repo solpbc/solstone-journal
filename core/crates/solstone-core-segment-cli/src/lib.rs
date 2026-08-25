@@ -1190,6 +1190,13 @@ mod tests {
                 json!({"stream":"workstation","seq":6,"prev_day":"20260304","prev_segment":"090000_60","unknown":"kept"}),
             ),
         );
+        segment(
+            root.path(),
+            "20260308",
+            "unrelated",
+            "110000_60",
+            Some(json!({"stream":"unrelated","seq":1})),
+        );
         let state = stream_state(root.path(), "workstation", "20260304", "090000_60", 5);
         let identity_before: Value =
             serde_json::from_str(&fs::read_to_string(&state).unwrap()).unwrap();
@@ -1249,6 +1256,19 @@ mod tests {
             root.path()
                 .join("chronicle/20260305/health/stream.updated")
                 .is_file()
+        );
+        assert!(
+            root.path()
+                .join("chronicle/20260307/health/stream.updated")
+                .is_file(),
+            "the durably patched successor day must be dirty"
+        );
+        assert!(
+            !root
+                .path()
+                .join("chronicle/20260308/health/stream.updated")
+                .exists(),
+            "an untouched day must not be dirtied"
         );
         assert!(!db_path(root.path()).exists());
     }

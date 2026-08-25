@@ -257,30 +257,39 @@ pub fn publish_with_operations(
     operations: &dyn PublicationOperations,
 ) -> Result<PublicationRecord, PublishError> {
     let mut segments = Vec::with_capacity(input.segments.len());
+    let mut failed_streams = BTreeSet::new();
     for segment in input.segments {
-        let outcome = match operations.advance_stream(input.journal, segment) {
-            Ok(advance) => {
-                operations.emit_observed(
-                    input.journal,
-                    input.revision,
-                    &segment.day,
-                    &segment.segment,
-                    &segment.stream,
-                );
-                SegmentBindingOutcome::Bound {
-                    prev_day: advance.prev_day,
-                    prev_segment: advance.prev_segment,
-                    seq: advance.seq,
-                }
+        let outcome = if failed_streams.contains(&segment.stream) {
+            SegmentBindingOutcome::FailedAtAdvance {
+                error: "not attempted after an earlier topology failure in this stream".to_owned(),
             }
-            Err(UnboundStreamAdvanceError::Advance(error)) => {
-                SegmentBindingOutcome::FailedAtAdvance {
-                    error: error.to_string(),
+        } else {
+            match operations.advance_stream(input.journal, segment) {
+                Ok(advance) => {
+                    operations.emit_observed(
+                        input.journal,
+                        input.revision,
+                        &segment.day,
+                        &segment.segment,
+                        &segment.stream,
+                    );
+                    SegmentBindingOutcome::Bound {
+                        prev_day: advance.prev_day,
+                        prev_segment: advance.prev_segment,
+                        seq: advance.seq,
+                    }
                 }
-            }
-            Err(UnboundStreamAdvanceError::MarkerWrite { path, source }) => {
-                SegmentBindingOutcome::FailedAtMarkerWrite {
-                    error: format!("{}: {source}", path.display()),
+                Err(UnboundStreamAdvanceError::Advance(error)) => {
+                    failed_streams.insert(segment.stream.clone());
+                    SegmentBindingOutcome::FailedAtAdvance {
+                        error: error.to_string(),
+                    }
+                }
+                Err(UnboundStreamAdvanceError::MarkerWrite { path, source }) => {
+                    failed_streams.insert(segment.stream.clone());
+                    SegmentBindingOutcome::FailedAtMarkerWrite {
+                        error: format!("{}: {source}", path.display()),
+                    }
                 }
             }
         };
@@ -501,12 +510,15 @@ mod tests {
     }
 
     #[test]
-    fn continues_after_marker_failure_and_records_which_segment_failed() {
+    fn marker_failure_stops_later_advances_in_that_stream() {
         let temporary = tempfile::TempDir::new().unwrap();
+        let mut other_stream = segment("20260801", "120300_60");
+        other_stream.stream = "import.google".to_owned();
         let segments = vec![
             segment("20260801", "120000_60"),
             segment("20260801", "120100_60"),
             segment("20260801", "120200_60"),
+            other_stream,
         ];
         let fake = FakeOperations::with_advances(vec![
             advance(1),
@@ -526,8 +538,17 @@ mod tests {
             record.segments[1].outcome,
             SegmentBindingOutcome::FailedAtMarkerWrite { .. }
         ));
+        assert!(matches!(
+            &record.segments[2].outcome,
+            SegmentBindingOutcome::FailedAtAdvance { error }
+                if error.contains("not attempted")
+        ));
+        assert!(matches!(
+            record.segments[3].outcome,
+            SegmentBindingOutcome::Bound { .. }
+        ));
         assert_eq!(fake.observed.borrow().len(), 2);
-        assert_eq!(record.segments.len(), 3);
+        assert_eq!(record.segments.len(), 4);
     }
 
     #[test]
@@ -714,11 +735,14 @@ mod tests {
     }
 
     #[test]
-    fn advance_error_is_captured_without_aborting() {
+    fn advance_error_stops_only_that_stream() {
         let temporary = tempfile::TempDir::new().unwrap();
+        let mut other_stream = segment("20260801", "120200_60");
+        other_stream.stream = "import.google".to_owned();
         let segments = vec![
             segment("20260801", "120000_60"),
             segment("20260801", "120100_60"),
+            other_stream,
         ];
         let fake = FakeOperations::with_advances(vec![
             Err(UnboundStreamAdvanceError::Advance(
@@ -734,6 +758,10 @@ mod tests {
         ));
         assert!(matches!(
             record.segments[1].outcome,
+            SegmentBindingOutcome::FailedAtAdvance { .. }
+        ));
+        assert!(matches!(
+            record.segments[2].outcome,
             SegmentBindingOutcome::Bound { .. }
         ));
     }

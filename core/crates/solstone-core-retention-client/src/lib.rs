@@ -539,6 +539,7 @@ mod tests {
                 reason: "your retention settings don't release these originals yet. they aren't old enough.".to_owned(),
                 staged: None,
             }],
+            post_commit_failure: None,
         };
         let mut receipt_row = serde_json::to_value(row).unwrap();
         let removed = (0..ASSUMED_MAX_NAMES_PER_MARK)

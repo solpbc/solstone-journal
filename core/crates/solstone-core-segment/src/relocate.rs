@@ -103,6 +103,9 @@ pub struct RelocationOutcome {
     pub successor: Option<Result<(), RelocationError>>,
     /// The stream-tail repair.
     pub tail: RepairOutcome,
+    /// Chronicle days whose stream structure was durably changed by this
+    /// relocation. The caller advances health only for this exact set.
+    pub mutated_days: BTreeSet<String>,
 }
 
 /// Choose an unused segment key under `parent`, claiming nothing.
@@ -125,10 +128,16 @@ pub fn relocate_segment(
 ) -> Result<RelocationOutcome, RelocationRefusal> {
     move_directory(relocation)?;
     let destination = relocation.destination;
+    let mut mutated_days = BTreeSet::from([relocation.source.day.clone(), destination.day.clone()]);
     let events = rewrite_events(destination);
     let successor = relocation
         .successor
         .map(|end| patch_successor(end, &destination.day, &destination.segment));
+    if successor.as_ref().is_some_and(Result::is_ok)
+        && let Some(successor) = relocation.successor
+    {
+        mutated_days.insert(successor.day.clone());
+    }
     let tail = repair_stream_tail_from_markers(
         relocation.journal,
         relocation.stream,
@@ -143,6 +152,7 @@ pub fn relocate_segment(
         events,
         successor,
         tail,
+        mutated_days,
     })
 }
 

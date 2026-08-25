@@ -131,6 +131,55 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
             .join("chronicle/20260818/import.text/062652_5/conversation_transcript.jsonl")
             .is_file()
     );
+    let marker: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            journal
+                .path()
+                .join("chronicle/20260818/health/stream.updated"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(marker["generation"], 1);
+    assert!(
+        !journal
+            .path()
+            .join("chronicle/20260819/health/stream.updated")
+            .exists()
+    );
+}
+
+#[test]
+fn generic_text_marker_failure_is_nonzero_and_retains_created_content() {
+    let journal = tempfile::tempdir().unwrap();
+    let note = journal.path().join("note.md");
+    fs::write(&note, "a short imported note").unwrap();
+    let marker = journal
+        .path()
+        .join("chronicle/20260818/health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+
+    let result = run_at(
+        journal.path(),
+        &[
+            "--timestamp",
+            "20260818_062652",
+            note.to_str().expect("utf-8 note path"),
+        ],
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+
+    assert_ne!(result.exit_code, 0);
+    assert!(result.stdout.is_empty());
+    assert!(result.stderr.contains("could not advance stream marker"));
+    assert!(result.stderr.contains(&marker.display().to_string()));
+    assert!(
+        journal
+            .path()
+            .join("chronicle/20260818/import.text/062652_5/conversation_transcript.jsonl")
+            .is_file()
+    );
 }
 
 #[test]

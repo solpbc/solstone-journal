@@ -11,9 +11,16 @@ use std::time::Duration;
 
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
+use solstone_core_journal_io::{
+    DayMarkerPairStatus, PublishOutcome, bump_stream_marker, day_marker_pair_status,
+    publish_daily_marker_if_current,
+};
 use solstone_core_sense::{
     SenseDispatcher,
-    batch::{BatchError, BatchRequest, process_day_with_fixture_program},
+    batch::{
+        BatchError, BatchRequest, process_day_with_fixture_program,
+        process_day_with_fixture_program_and_timeout,
+    },
     dispatch::Outbound,
     service::run_until,
 };
@@ -148,6 +155,56 @@ async fn batch_processing_publishes_observed_to_a_real_callosum_socket() {
     server.stop().await;
 }
 
+#[tokio::test]
+async fn standalone_batch_completion_dirties_a_previously_completed_day() {
+    let root = tempfile::tempdir().expect("journal");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    std::fs::write(segment.join("audio.flac"), b"audio").expect("audio");
+    let admitted = bump_stream_marker(root.path(), "20260812").expect("stream marker");
+    assert_eq!(
+        publish_daily_marker_if_current(
+            root.path(),
+            "20260812",
+            admitted,
+            "raw-before-batch",
+            || Ok("raw-before-batch".to_owned()),
+        )
+        .expect("daily marker"),
+        PublishOutcome::Published(admitted)
+    );
+    assert_eq!(
+        day_marker_pair_status(root.path(), "20260812").expect("complete pair"),
+        DayMarkerPairStatus::Complete
+    );
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let request = BatchRequest {
+        day: "20260812".into(),
+        jobs: 1,
+        reprocess: None,
+        segment: Some("120000_2".into()),
+        stream: Some("default".into()),
+        dry_run: false,
+        verbose: false,
+        debug: false,
+    };
+    let journal = root.path().to_path_buf();
+    let handler = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler"));
+    tokio::task::spawn_blocking(move || {
+        process_day_with_fixture_program(&journal, &request, None, handler)
+    })
+    .await
+    .expect("batch task")
+    .expect("batch processing");
+
+    assert_eq!(
+        day_marker_pair_status(root.path(), "20260812").expect("dirty pair"),
+        DayMarkerPairStatus::Dirty
+    );
+    server.stop().await;
+}
+
 async fn run_fixture_batch(files: &[&str]) -> Result<(), BatchError> {
     let root = tempfile::tempdir().expect("journal");
     let segment = root.path().join("chronicle/20260812/default/120000_2");
@@ -201,6 +258,90 @@ async fn batch_mixed_ok_and_fail_returns_partial_tally() {
         matches!(result, Err(BatchError::Failed { failed: 1, ran: 2 })),
         "expected Failed {{ failed: 1, ran: 2 }}, got {result:?}"
     );
+}
+
+#[tokio::test]
+async fn standalone_batch_marker_failure_is_a_failed_run_after_output_mutation() {
+    let root = tempfile::tempdir().expect("journal");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    std::fs::write(segment.join("ok.flac"), b"audio").expect("audio");
+    let health = root.path().join("chronicle/20260812/health");
+    std::fs::create_dir_all(&health).expect("health");
+    std::fs::create_dir(health.join("stream.updated")).expect("block stream marker");
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let request = BatchRequest {
+        day: "20260812".into(),
+        jobs: 1,
+        reprocess: None,
+        segment: Some("120000_2".into()),
+        stream: Some("default".into()),
+        dry_run: false,
+        verbose: false,
+        debug: false,
+    };
+    let journal = root.path().to_path_buf();
+    let handler = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler"));
+    let result = tokio::task::spawn_blocking(move || {
+        process_day_with_fixture_program(&journal, &request, None, handler)
+    })
+    .await
+    .expect("batch task");
+
+    assert!(segment.join("ok.flac.handler").is_file());
+    assert!(
+        matches!(result, Err(BatchError::Failed { failed: 1, ran: 1 })),
+        "marker failure must fail the run, got {result:?}"
+    );
+    server.stop().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn batch_timeout_reaps_active_managed_process_tree_before_returning() {
+    let root = tempfile::tempdir().expect("journal");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    std::fs::write(segment.join("grandchild.webm"), b"screen").expect("screen");
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let request = BatchRequest {
+        day: "20260812".into(),
+        jobs: 1,
+        reprocess: None,
+        segment: Some("120000_2".into()),
+        stream: Some("default".into()),
+        dry_run: false,
+        verbose: false,
+        debug: false,
+    };
+    let timeout = Duration::from_secs(2);
+    let journal = root.path().to_path_buf();
+    let handler = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler"));
+    let result = tokio::task::spawn_blocking(move || {
+        process_day_with_fixture_program_and_timeout(
+            &journal,
+            &request,
+            None,
+            handler,
+            Some(timeout),
+        )
+    })
+    .await
+    .expect("batch task");
+
+    assert!(
+        matches!(result, Err(BatchError::TimedOut { timeout: actual }) if actual == timeout),
+        "expected typed aggregate timeout, got {result:?}"
+    );
+    let pid_file = segment.join("grandchild.webm.grandchild-pid");
+    let pid = std::fs::read_to_string(&pid_file).expect("active fixture wrote grandchild pid");
+    assert!(
+        !PathBuf::from(format!("/proc/{}", pid.trim())).exists(),
+        "batch timeout returned before the managed descendant was reaped"
+    );
+    server.stop().await;
 }
 
 #[tokio::test]

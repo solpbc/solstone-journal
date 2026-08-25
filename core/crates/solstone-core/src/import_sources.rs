@@ -9,7 +9,10 @@ use std::time::{Duration, SystemTime};
 
 use solstone_core_generate::OneShotClient;
 use solstone_core_import::cli_render::CliRun;
-use solstone_core_import::{ImportResult, NativePublicationOperations, RegistrySource, cli_render};
+use solstone_core_import::{
+    ImportResult, NativePublicationOperations, PublicationInput, PublicationOperations,
+    PublicationStatus, RegistrySource, cli_render, publish_with_operations,
+};
 use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
@@ -122,34 +125,86 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         ));
     }
     let wire = image::SystemWireClient;
-    match image::import_image(&dispatch.media, journal, &dispatch.timestamp, None, &wire) {
-        Ok(outcome) => render_result(
+    match image::import_image(
+        &dispatch.media,
+        journal,
+        &dispatch.timestamp,
+        None,
+        &NativePublicationOperations,
+        &wire,
+    ) {
+        Ok(outcome) => finish_image_import(
             dispatch.source,
-            ImportResult {
-                entries_written: 1,
-                entities_seeded: 0,
-                files_created: outcome
-                    .files_created
-                    .iter()
-                    .map(|path| path.display().to_string())
-                    .collect(),
-                errors: Vec::new(),
-                summary: "Imported 1 image".to_owned(),
-                hard_failures: Vec::new(),
-                segments: None,
-                date_range: None,
-                merge_summary: None,
-                principal_collision: None,
-                merge_log_path: None,
-                merge_staging_path: None,
-                raw_retention: None,
-            },
+            journal,
+            &dispatch.timestamp,
+            outcome,
+            &NativePublicationOperations,
         ),
         Err(error) => failure(format!(
             "{} import failed: {error}\n",
             dispatch.source.name()
         )),
     }
+}
+
+fn finish_image_import(
+    source: RegistrySource,
+    journal: &Path,
+    import_id: &str,
+    outcome: image::ImageImportResult,
+    publication: &dyn PublicationOperations,
+) -> CliRun {
+    let import_dir = journal.join("imports").join(import_id);
+    let files_created = outcome.files_created;
+    let segments = [outcome.created_segment];
+    let publication_result = publish_with_operations(
+        PublicationInput {
+            journal,
+            import_dir: Some(&import_dir),
+            import_id,
+            importer: "image",
+            revision: None,
+            segments: &segments,
+            files_created: &files_created,
+        },
+        publication,
+    );
+    let publication_failure = match publication_result {
+        Ok(record) if record.status == PublicationStatus::Failure => {
+            Some("one or more publication operations failed".to_owned())
+        }
+        Ok(_) => None,
+        Err(error) => Some(error.to_string()),
+    };
+    let segment_locations = segments
+        .iter()
+        .map(|segment| (segment.day.clone(), segment.segment.clone()))
+        .collect::<Vec<_>>();
+    let files_created = files_created
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    let mut result = ImportResult {
+        entries_written: 1,
+        entities_seeded: 0,
+        files_created,
+        errors: Vec::new(),
+        summary: "Imported 1 image".to_owned(),
+        hard_failures: Vec::new(),
+        segments: Some(segment_locations),
+        date_range: None,
+        merge_summary: None,
+        principal_collision: None,
+        merge_log_path: None,
+        merge_staging_path: None,
+        raw_retention: None,
+    };
+    if let Some(detail) = publication_failure {
+        let failure = format!("image publication failed ({detail})");
+        result.errors.push(failure.clone());
+        result.hard_failures.push(failure);
+    }
+    render_result(source, result)
 }
 
 fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
@@ -258,5 +313,150 @@ fn failure(stderr: String) -> CliRun {
         stdout: String::new(),
         stderr,
         exit_code: 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use solstone_core_import::CreatedSegment;
+    use solstone_core_import_sources::image::{DescriptionOutcome, ImageImportResult};
+    use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
+
+    use super::*;
+
+    const DAY: &str = "20260809";
+    const SEGMENT: &str = "090000_60";
+
+    fn image_outcome(journal: &Path) -> ImageImportResult {
+        let segment = journal
+            .join("chronicle")
+            .join(DAY)
+            .join("import.image")
+            .join(SEGMENT);
+        fs::create_dir_all(&segment).unwrap();
+        fs::create_dir_all(journal.join("imports/image-test")).unwrap();
+        fs::write(segment.join("original.png"), b"image").unwrap();
+        let transcript = segment.join("transcript.md");
+        fs::write(&transcript, b"# Image\n").unwrap();
+        ImageImportResult {
+            files_created: vec![transcript],
+            created_segment: CreatedSegment {
+                day: DAY.to_owned(),
+                segment: SEGMENT.to_owned(),
+                stream: "import.image".to_owned(),
+                hints: Default::default(),
+            },
+            days_affected: vec![DAY.to_owned()],
+            description: DescriptionOutcome::Unavailable {
+                reason: "fixture".to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn image_publication_advances_stream_and_dirties_the_day_before_success() {
+        let journal = tempfile::tempdir().unwrap();
+        let run = finish_image_import(
+            RegistrySource::Image,
+            journal.path(),
+            "image-test",
+            image_outcome(journal.path()),
+            &NativePublicationOperations,
+        );
+
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(
+            journal
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("import.image")
+                .join(SEGMENT)
+                .join("stream.json")
+                .is_file()
+        );
+        assert!(matches!(
+            read_health_marker(journal.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+        ));
+    }
+
+    #[test]
+    fn image_stream_publication_failure_is_terminal_and_recorded() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = image_outcome(journal.path());
+        fs::create_dir(
+            journal
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("import.image")
+                .join(SEGMENT)
+                .join("stream.json"),
+        )
+        .unwrap();
+
+        let run = finish_image_import(
+            RegistrySource::Image,
+            journal.path(),
+            "image-test",
+            outcome,
+            &NativePublicationOperations,
+        );
+
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("image publication failed"));
+        let record: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.path().join("imports/image-test/imported.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["status"], "failure");
+        assert_eq!(
+            record["segments"][0]["outcome"]["status"],
+            "failed_at_marker_write"
+        );
+    }
+
+    #[test]
+    fn image_day_marker_failure_is_terminal_after_content_publication() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = image_outcome(journal.path());
+        fs::create_dir_all(
+            journal
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("health/stream.updated"),
+        )
+        .unwrap();
+
+        let run = finish_image_import(
+            RegistrySource::Image,
+            journal.path(),
+            "image-test",
+            outcome,
+            &NativePublicationOperations,
+        );
+
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("image publication failed"));
+        assert!(
+            journal
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("import.image")
+                .join(SEGMENT)
+                .join("original.png")
+                .is_file()
+        );
+        let record: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.path().join("imports/image-test/imported.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["status"], "failure");
+        assert_eq!(record["day_markers"][0]["outcome"]["status"], "failed");
     }
 }

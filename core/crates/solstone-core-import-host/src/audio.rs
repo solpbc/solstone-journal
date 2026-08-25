@@ -15,12 +15,14 @@ use ffmpeg_next as ffmpeg;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_callosum::CallosumSocketConnection;
-use solstone_core_journal_io::{JsonWriteOptions, write_json};
+use solstone_core_journal_io::{
+    HealthMarkerKind, JsonWriteOptions, health_marker_path, write_json,
+};
 use solstone_core_processing_record::{
     predicate::{TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted},
     vocab,
 };
-use solstone_core_segment::{ImportSource, Kind, StreamHints};
+use solstone_core_segment::{ImportSource, Kind, StreamHints, touch_stream_health_marker};
 use solstone_core_system_health::sanitize_os_bytes_for_terminal_bounded;
 use tokio::time::{Instant, timeout};
 
@@ -462,7 +464,7 @@ where
         return Err(error);
     }
 
-    let record = AudioImportRecord {
+    let mut record = AudioImportRecord {
         schema: AUDIO_RECORD_SCHEMA.to_owned(),
         source_media: request.source_media.clone(),
         day: request.day.clone(),
@@ -479,6 +481,32 @@ where
     };
     let record_path =
         write_audio_import_record(&request.journal_root, &request.import_id, &record)?;
+
+    if let Err(error) = touch_stream_health_marker(&request.journal_root, &request.day) {
+        let reason = format!("could not advance stream marker after audio import: {error}");
+        record.abort = Some(AudioImportAbort {
+            chunk_index: None,
+            start_offset_seconds: None,
+            duration_seconds: None,
+            reason: reason.clone(),
+        });
+        record.wait = AudioWaitRecord::NotRequested;
+        let diagnostic_error =
+            write_audio_import_record(&request.journal_root, &request.import_id, &record)
+                .err()
+                .map(|error| {
+                    format!("; additionally could not persist the terminal record: {error}")
+                })
+                .unwrap_or_default();
+        return Err(ImportError::StreamMarkerWrite {
+            path: health_marker_path(
+                &request.journal_root,
+                &request.day,
+                HealthMarkerKind::Stream,
+            ),
+            message: format!("{reason}{diagnostic_error}"),
+        });
+    }
 
     for segment in &observing {
         (seams.emit_observing)(segment);
@@ -512,6 +540,7 @@ fn write_aborted_audio_import_record(
     dropped_chunks: Vec<DroppedAudioChunk>,
     abort: AudioImportAbort,
 ) -> Result<(), ImportError> {
+    let has_created_content = !created_segments.is_empty();
     let record = AudioImportRecord {
         schema: AUDIO_RECORD_SCHEMA.to_owned(),
         source_media: request.source_media.clone(),
@@ -523,7 +552,22 @@ fn write_aborted_audio_import_record(
         abort: Some(abort),
         wait: AudioWaitRecord::NotRequested,
     };
-    write_audio_import_record(&request.journal_root, &request.import_id, &record).map(|_| ())
+    write_audio_import_record(&request.journal_root, &request.import_id, &record)?;
+    if has_created_content {
+        touch_stream_health_marker(&request.journal_root, &request.day).map_err(|error| {
+            ImportError::StreamMarkerWrite {
+                path: health_marker_path(
+                    &request.journal_root,
+                    &request.day,
+                    HealthMarkerKind::Stream,
+                ),
+                message: format!(
+                    "could not advance stream marker after aborted audio import: {error}"
+                ),
+            }
+        })?;
+    }
+    Ok(())
 }
 
 /// Read the audio-owned durable record for one import, if it exists.

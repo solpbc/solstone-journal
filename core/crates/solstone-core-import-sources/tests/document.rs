@@ -401,7 +401,128 @@ fn ac9_document_publication_days_come_from_claim_not_misleading_path() {
 
     assert_ne!(expected_day, "20991231");
     assert_eq!(result.segments.as_ref().unwrap()[0].0, expected_day);
-    assert_eq!(publication.days(), vec![expected_day]);
+    assert_eq!(publication.days(), vec![expected_day.clone(), expected_day]);
+}
+
+#[test]
+fn document_marker_failure_is_terminal_and_retains_the_publication_record() {
+    let tree = TestTree::new();
+    let source = tree.pdf("marker-failure.pdf", b"source");
+    let worker = FakeWorker::new(vec![Ok(payload(vec![page(1, 50, 0.0, Some("raw"))]))]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::failing_marker("blocked marker");
+
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+
+    assert_eq!(result.entries_written, 1);
+    assert_eq!(result.hard_failures.len(), 1);
+    assert!(result.hard_failures[0].contains("document publication failed"));
+    assert!(result.errors.contains(&result.hard_failures[0]));
+    let record: Value = serde_json::from_slice(
+        &fs::read(tree.import_dir().join("imported.json")).expect("publication record"),
+    )
+    .unwrap();
+    assert_eq!(record["status"], "failure");
+    assert_eq!(record["day_markers"][0]["outcome"]["status"], "failed");
+    assert_eq!(
+        record["day_markers"][0]["outcome"]["error"],
+        "blocked marker"
+    );
+}
+
+#[test]
+fn document_original_is_dirtied_before_a_later_raster_install_failure() {
+    let tree = TestTree::new();
+    let source = tree.pdf("later-raster-failure.pdf", b"source");
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(1, 0, 0.0, None)])),
+        Ok(payload(vec![rendered_page(1)])),
+    ]);
+    let model = FakeModel::generated(["read text"]);
+    let publication = FakePublication::sabotage_first_raster();
+
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+
+    assert_eq!(result.entries_written, 0);
+    assert_eq!(publication.days().len(), 1);
+    let days = publication.days();
+    let day = &days[0];
+    let stream_dir = tree
+        .journal()
+        .join("chronicle")
+        .join(day)
+        .join("import.document");
+    let segment_dir = fs::read_dir(stream_dir)
+        .unwrap()
+        .next()
+        .expect("partial document segment")
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read(segment_dir.join("original.pdf")).unwrap(),
+        b"source"
+    );
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|error| error.contains("document import failed"))
+    );
+}
+
+#[test]
+fn document_install_marker_failure_is_typed_terminal_and_retains_original() {
+    let tree = TestTree::new();
+    let source = tree.pdf("install-marker-failure.pdf", b"source");
+    let worker = FakeWorker::new(vec![Ok(payload(vec![page(1, 50, 0.0, Some("raw"))]))]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::failing_install_marker("blocked install marker");
+
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+
+    assert_eq!(result.entries_written, 0);
+    assert_eq!(result.hard_failures.len(), 1);
+    assert!(result.hard_failures[0].contains("original PDF"));
+    assert!(result.hard_failures[0].contains("remains installed"));
+    assert!(!tree.import_dir().join("imported.json").exists());
+    let days = publication.days();
+    let day = &days[0];
+    let segment_dir = fs::read_dir(
+        tree.journal()
+            .join("chronicle")
+            .join(day)
+            .join("import.document"),
+    )
+    .unwrap()
+    .next()
+    .expect("partial document segment")
+    .unwrap()
+    .path();
+    assert_eq!(
+        fs::read(segment_dir.join("original.pdf")).unwrap(),
+        b"source"
+    );
 }
 
 #[cfg(unix)]
@@ -900,11 +1021,37 @@ fn generated(text: &'static str) -> GenerateResponse {
 #[derive(Default)]
 struct FakePublication {
     days: Mutex<Vec<String>>,
+    marker_failure: Option<String>,
+    marker_failure_at: Option<usize>,
+    sabotage_first_raster: bool,
 }
 
 impl FakePublication {
     fn days(&self) -> Vec<String> {
         self.days.lock().unwrap().clone()
+    }
+
+    fn failing_marker(detail: &str) -> Self {
+        Self {
+            marker_failure: Some(detail.to_owned()),
+            marker_failure_at: Some(2),
+            ..Self::default()
+        }
+    }
+
+    fn failing_install_marker(detail: &str) -> Self {
+        Self {
+            marker_failure: Some(detail.to_owned()),
+            marker_failure_at: Some(1),
+            ..Self::default()
+        }
+    }
+
+    fn sabotage_first_raster() -> Self {
+        Self {
+            sabotage_first_raster: true,
+            ..Self::default()
+        }
     }
 }
 
@@ -923,9 +1070,31 @@ impl PublicationOperations for FakePublication {
     fn rescan_file(&self, _: &Path, _: &Path) -> Result<RescanFileStatus, String> {
         Ok(RescanFileStatus::Declined)
     }
-    fn touch_stream_health_marker(&self, _: &Path, day: &str) -> Result<(), String> {
-        self.days.lock().unwrap().push(day.to_owned());
-        Ok(())
+    fn touch_stream_health_marker(&self, journal: &Path, day: &str) -> Result<(), String> {
+        let call = {
+            let mut days = self.days.lock().unwrap();
+            days.push(day.to_owned());
+            days.len()
+        };
+        if self.sabotage_first_raster && call == 1 {
+            let stream_dir = journal.join("chronicle").join(day).join("import.document");
+            let segment_dir = fs::read_dir(stream_dir)
+                .map_err(|error| error.to_string())?
+                .next()
+                .ok_or_else(|| "missing document segment".to_owned())?
+                .map_err(|error| error.to_string())?
+                .path();
+            fs::create_dir(segment_dir.join("pages/page-0001.png"))
+                .map_err(|error| error.to_string())?;
+        }
+        if self.marker_failure_at == Some(call) {
+            Err(self
+                .marker_failure
+                .clone()
+                .expect("configured marker failure has detail"))
+        } else {
+            Ok(())
+        }
     }
     fn emit_observed(&self, _: &Path, _: Option<&str>, _: &str, _: &str, _: &str) {}
     fn emit_enrichment_ready(

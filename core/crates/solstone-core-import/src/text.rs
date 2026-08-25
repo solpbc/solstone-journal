@@ -14,8 +14,8 @@ use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
 };
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, SegmentDeconflictError,
-    find_available_segment_with_occupied, write_jsonl,
+    AtomicWriteError, AtomicWriteOptions, HealthMarkerKind, SegmentDeconflictError,
+    bump_stream_marker, find_available_segment_with_occupied, health_marker_path, write_jsonl,
 };
 
 use crate::ModelDetectionError;
@@ -71,6 +71,11 @@ pub enum TextImportError {
         path: PathBuf,
         source: AtomicWriteError,
     },
+    StreamMarker {
+        path: PathBuf,
+        day: String,
+        source: AtomicWriteError,
+    },
     RawCopy {
         path: PathBuf,
         source: std::io::Error,
@@ -108,6 +113,11 @@ impl fmt::Display for TextImportError {
                 "generic text import requires a native segmentation adapter; nothing was imported",
             ),
             Self::Write { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::StreamMarker { path, day, source } => write!(
+                formatter,
+                "{}: generic text content for {day} remains written, but could not advance stream marker: {source}",
+                path.display()
+            ),
             Self::RawCopy { path, source } => write!(formatter, "{}: {source}", path.display()),
         }
     }
@@ -119,6 +129,7 @@ impl Error for TextImportError {
             Self::SourceRead { source, .. } => Some(source),
             Self::SegmentDeconflict(source) => Some(source),
             Self::Write { source, .. } => Some(source),
+            Self::StreamMarker { source, .. } => Some(source),
             Self::RawCopy { source, .. } => Some(source),
             Self::UnsupportedFormat { .. }
             | Self::RawFilename { .. }
@@ -201,6 +212,7 @@ pub fn process_transcript_with_wire(
         .ok_or_else(|| TextImportError::RawFilename {
             path: path.to_path_buf(),
         })?;
+    let (journal_root, day) = journal_marker_context(day_dir)?;
     stage_raw_source(day_dir, import_id, path, raw_filename)?;
     let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
         Ok(segments) => (segments, false),
@@ -289,11 +301,38 @@ pub fn process_transcript_with_wire(
             path: output.clone(),
             source,
         })?;
+        bump_stream_marker(journal_root, day).map_err(|source| TextImportError::StreamMarker {
+            path: health_marker_path(journal_root, day, HealthMarkerKind::Stream),
+            day: day.to_owned(),
+            source,
+        })?;
         occupied.insert(segment_key);
         created.push(output);
     }
 
     Ok(created)
+}
+
+fn journal_marker_context(day_dir: &Path) -> Result<(&Path, &str), TextImportError> {
+    let Some(journal_root) = day_dir.parent().and_then(Path::parent) else {
+        return Err(TextImportError::RawCopy {
+            path: day_dir.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "day directory has no journal root",
+            ),
+        });
+    };
+    let Some(day) = day_dir.file_name().and_then(|name| name.to_str()) else {
+        return Err(TextImportError::RawCopy {
+            path: day_dir.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "day directory has no UTF-8 day name",
+            ),
+        });
+    };
+    Ok((journal_root, day))
 }
 
 struct Segment {

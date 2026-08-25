@@ -8,13 +8,15 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
 use solstone_core_journal_io::{
-    DEFAULT_STREAM, PathOrDay, Segment, SegmentIdentityError, check_record_identities,
-    iter_segments,
+    DEFAULT_STREAM, PathOrDay, Segment, SegmentIdentityError, bump_stream_marker,
+    check_record_identities, iter_segments, sync_dir,
 };
 use solstone_core_processing_record::{
     MediaKind, media_kind, read_processing_record_header, should_reenter_analysis_output,
@@ -22,7 +24,7 @@ use solstone_core_processing_record::{
 use thiserror::Error;
 
 use crate::config::{read_config, resolve_concurrency};
-use crate::dispatch::{Outbound, SenseDispatcher};
+use crate::dispatch::{BatchMarkerPolicy, Outbound, SenseDispatcher};
 
 /// Existing output classes that can be deleted before a batch reprocess.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,8 +82,16 @@ pub enum BatchError {
         #[source]
         source: io::Error,
     },
+    #[error("reprocess removed {path}, but could not durably mark day {day} dirty: {detail}")]
+    PostDelete {
+        path: PathBuf,
+        day: String,
+        detail: String,
+    },
     #[error("batch callosum runtime unavailable")]
     Runtime,
+    #[error("sense batch timed out after {timeout:?}")]
+    TimedOut { timeout: Duration },
     #[error("{failed} failed of {ran} ran")]
     Failed { failed: usize, ran: usize },
     #[error("sense batch refused: {reason}")]
@@ -119,6 +129,53 @@ pub fn run_batch_with_environment(
     request: &BatchRequest,
     child_environment: &BTreeMap<OsString, OsString>,
 ) -> Result<(), BatchError> {
+    run_batch_with_environment_and_timeout(journal, request, child_environment, None)
+}
+
+/// Run one finite historical-day batch with scoped native-child environment
+/// and an optional aggregate deadline. A timeout stops the dispatcher and
+/// reaps its managed child processes before returning [`BatchError::TimedOut`].
+pub fn run_batch_with_environment_and_timeout(
+    journal: &Path,
+    request: &BatchRequest,
+    child_environment: &BTreeMap<OsString, OsString>,
+    timeout: Option<Duration>,
+) -> Result<(), BatchError> {
+    run_batch_with_environment_and_timeout_with_marker_policy(
+        journal,
+        request,
+        child_environment,
+        timeout,
+        BatchMarkerPolicy::AdvanceStream,
+    )
+}
+
+/// Run Sense as one phase enclosed by a whole-day lifecycle. The enclosing
+/// finalizer owns the single stream/daily marker transition for that attempt.
+pub fn run_batch_for_whole_day_with_environment_and_timeout(
+    journal: &Path,
+    request: &BatchRequest,
+    child_environment: &BTreeMap<OsString, OsString>,
+    timeout: Option<Duration>,
+) -> Result<(), BatchError> {
+    run_batch_with_environment_and_timeout_with_marker_policy(
+        journal,
+        request,
+        child_environment,
+        timeout,
+        BatchMarkerPolicy::EnclosedWholeDay,
+    )
+}
+
+fn run_batch_with_environment_and_timeout_with_marker_policy(
+    journal: &Path,
+    request: &BatchRequest,
+    child_environment: &BTreeMap<OsString, OsString>,
+    timeout: Option<Duration>,
+    marker_policy: BatchMarkerPolicy,
+) -> Result<(), BatchError> {
+    let deadline = timeout.map(BatchDeadline::new);
+    check_deadline(deadline)?;
     let day_dir = journal.join("chronicle").join(&request.day);
     if !day_dir.exists() {
         println!("Day directory not found: {}", day_dir.display());
@@ -131,6 +188,7 @@ pub fn run_batch_with_environment(
         request.segment.as_deref(),
         request.stream.as_deref(),
     ))?;
+    check_deadline(deadline)?;
 
     if let Some(reprocess) = request.reprocess {
         let deleted = delete_outputs(
@@ -141,6 +199,7 @@ pub fn run_batch_with_environment(
             request.stream.as_deref(),
             request.dry_run,
         )?;
+        check_deadline(deadline)?;
         if request.dry_run {
             if deleted.is_empty() {
                 println!("No files to delete");
@@ -168,6 +227,7 @@ pub fn run_batch_with_environment(
             request.stream.as_deref(),
             modality,
         )?;
+        check_deadline(deadline)?;
         print_dry_run(journal, &work);
         return Ok(());
     }
@@ -181,7 +241,14 @@ pub fn run_batch_with_environment(
         "Processing files from day {}{} with {} concurrent jobs",
         request.day, segment_message, request.jobs
     );
-    process_day_with_environment(journal, request, modality, child_environment)
+    process_day_with_environment(
+        journal,
+        request,
+        modality,
+        child_environment,
+        deadline,
+        marker_policy,
+    )
 }
 
 /// Install the finite-run signal path without changing the event service's
@@ -336,10 +403,51 @@ pub fn delete_outputs(
             }
             deleted.push(path.clone());
             if !dry_run {
+                let parent = path
+                    .parent()
+                    .and_then(|parent| parent.strip_prefix(journal).ok())
+                    .and_then(Path::to_str)
+                    .ok_or_else(|| BatchError::Unrepresentable {
+                        reason: format!(
+                            "reprocess output parent is not journal-relative UTF-8: {}",
+                            path.display()
+                        ),
+                    })?;
+                let day = day_dir
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| BatchError::Unrepresentable {
+                        reason: format!(
+                            "reprocess day directory has no UTF-8 day key: {}",
+                            day_dir.display()
+                        ),
+                    })?
+                    .to_owned();
                 fs::remove_file(&path).map_err(|source| BatchError::Delete {
                     path: path.clone(),
                     source,
                 })?;
+                // The unlink and its dirty transition precede every later
+                // fallible scan/deadline/dispatcher step. A failed marker is
+                // terminal, but cannot pretend the already-removed output was
+                // restored.
+                let sync = sync_dir(journal, parent).map_err(|error| error.to_string());
+                let marker = bump_stream_marker(journal, &day).map_err(|error| error.to_string());
+                if sync.is_err() || marker.is_err() {
+                    let mut details = Vec::new();
+                    if let Err(error) = sync {
+                        details.push(format!("output directory sync failed: {error}"));
+                    }
+                    if let Err(error) = marker {
+                        details.push(format!("stream marker write failed: {error}"));
+                    }
+                    return Err(BatchError::PostDelete {
+                        path,
+                        day,
+                        detail: details.join("; "),
+                    });
+                }
                 println!("Deleted: {}", path.display());
             }
         }
@@ -354,7 +462,14 @@ pub fn process_day(
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
 ) -> Result<(), BatchError> {
-    process_day_with_environment(journal, request, modality_filter, &BTreeMap::new())
+    process_day_with_environment(
+        journal,
+        request,
+        modality_filter,
+        &BTreeMap::new(),
+        None,
+        BatchMarkerPolicy::AdvanceStream,
+    )
 }
 
 fn process_day_with_environment(
@@ -362,6 +477,8 @@ fn process_day_with_environment(
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
     child_environment: &BTreeMap<OsString, OsString>,
+    deadline: Option<BatchDeadline>,
+    marker_policy: BatchMarkerPolicy,
 ) -> Result<(), BatchError> {
     process_day_with_dispatcher(
         journal,
@@ -375,8 +492,10 @@ fn process_day_with_environment(
                 outbound,
                 describe_workers,
                 child_environment.clone(),
+                marker_policy,
             )
         },
+        deadline,
     )
 }
 
@@ -389,6 +508,19 @@ pub fn process_day_with_fixture_program(
     modality_filter: Option<ReprocessKind>,
     program: PathBuf,
 ) -> Result<(), BatchError> {
+    process_day_with_fixture_program_and_timeout(journal, request, modality_filter, program, None)
+}
+
+#[cfg(feature = "test-stubs")]
+/// Dispatch a fixture-backed batch with an optional aggregate deadline.
+pub fn process_day_with_fixture_program_and_timeout(
+    journal: &Path,
+    request: &BatchRequest,
+    modality_filter: Option<ReprocessKind>,
+    program: PathBuf,
+    timeout: Option<Duration>,
+) -> Result<(), BatchError> {
+    let deadline = timeout.map(BatchDeadline::new);
     process_day_with_dispatcher(
         journal,
         request,
@@ -401,8 +533,10 @@ pub fn process_day_with_fixture_program(
                 outbound,
                 describe_workers,
                 program,
+                BatchMarkerPolicy::AdvanceStream,
             )
         },
+        deadline,
     )
 }
 
@@ -411,10 +545,12 @@ fn process_day_with_dispatcher<F>(
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
     make_dispatcher: F,
+    deadline: Option<BatchDeadline>,
 ) -> Result<(), BatchError>
 where
     F: FnOnce(mpsc::Sender<Outbound>, usize) -> SenseDispatcher,
 {
+    check_deadline(deadline)?;
     let day_dir = journal.join("chronicle").join(&request.day);
     let work = scan_unprocessed(
         journal,
@@ -423,6 +559,7 @@ where
         request.stream.as_deref(),
         modality_filter,
     )?;
+    check_deadline(deadline)?;
     if work.is_empty() {
         println!("No unprocessed files found in {}", day_dir.display());
         return Ok(());
@@ -457,7 +594,13 @@ where
             }
         })
         .collect::<Vec<_>>();
-    run_batch_dispatcher(journal, Arc::clone(&dispatcher), receiver, messages)?;
+    run_batch_dispatcher(
+        journal,
+        Arc::clone(&dispatcher),
+        receiver,
+        messages,
+        deadline,
+    )?;
     let (failed, ran) = dispatcher.tally.snapshot();
     if failed > 0 {
         return Err(BatchError::Failed { failed, ran });
@@ -471,29 +614,88 @@ fn run_batch_dispatcher(
     dispatcher: Arc<SenseDispatcher>,
     receiver: mpsc::Receiver<Outbound>,
     messages: Vec<CallosumEnvelope>,
+    deadline: Option<BatchDeadline>,
 ) -> Result<(), BatchError> {
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
     let dispatching = Arc::clone(&dispatcher);
-    tokio::runtime::Builder::new_multi_thread()
+    let timeout_limit = deadline.map(|value| value.limit);
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timeout_result = Arc::clone(&timed_out);
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("sense-batch")
         .build()
-        .map_err(|_| BatchError::Runtime)?
-        .block_on(crate::service::run_until(
-            connection,
-            dispatcher,
-            receiver,
-            async move {
-                let _ = tokio::task::spawn_blocking(move || {
-                    for message in messages {
-                        dispatching.handle(&message);
-                    }
-                    dispatching.wait_until_idle();
-                })
-                .await;
-            },
-        ));
+    {
+        Ok(runtime) => runtime,
+        Err(_) => {
+            dispatcher.stop_and_wait();
+            return Err(BatchError::Runtime);
+        }
+    };
+    runtime.block_on(crate::service::run_until(
+        connection,
+        dispatcher,
+        receiver,
+        async move {
+            let remaining = deadline.map(BatchDeadline::remaining);
+            let wait_until_idle = async move {
+                for message in messages {
+                    dispatching.handle(&message);
+                    tokio::task::yield_now().await;
+                }
+                while !dispatching.is_idle() {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            };
+            if let Some(remaining) = remaining {
+                if remaining.is_zero()
+                    || tokio::time::timeout(remaining, wait_until_idle)
+                        .await
+                        .is_err()
+                {
+                    timeout_result.store(true, Ordering::SeqCst);
+                }
+            } else {
+                wait_until_idle.await;
+            }
+        },
+    ));
+    if timed_out.load(Ordering::SeqCst) {
+        return Err(BatchError::TimedOut {
+            timeout: timeout_limit.expect("timed out batch has a limit"),
+        });
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct BatchDeadline {
+    limit: Duration,
+    started: Instant,
+}
+
+impl BatchDeadline {
+    fn new(limit: Duration) -> Self {
+        Self {
+            limit,
+            started: Instant::now(),
+        }
+    }
+
+    fn remaining(self) -> Duration {
+        self.limit.saturating_sub(self.started.elapsed())
+    }
+}
+
+fn check_deadline(deadline: Option<BatchDeadline>) -> Result<(), BatchError> {
+    if let Some(deadline) = deadline
+        && deadline.started.elapsed() >= deadline.limit
+    {
+        return Err(BatchError::TimedOut {
+            timeout: deadline.limit,
+        });
+    }
     Ok(())
 }
 
@@ -629,6 +831,8 @@ fn batch_describe_workers(config: &Map<String, Value>, jobs: i64) -> usize {
 mod tests {
     use std::fs;
 
+    use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
+
     use super::*;
 
     fn segment(root: &Path) -> PathBuf {
@@ -733,6 +937,64 @@ mod tests {
         };
         run_batch(temp.path(), &request).expect("dry run");
         assert!(output.exists());
+    }
+
+    #[test]
+    fn orphan_reprocess_deletion_dirties_day_without_a_worker_completion() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        let output = path.join("orphan_screen.jsonl");
+        fs::write(&output, "{}\n").expect("sidecar");
+        let request = BatchRequest {
+            day: "20260812".into(),
+            jobs: 1,
+            reprocess: Some(ReprocessKind::Screen),
+            segment: None,
+            stream: None,
+            dry_run: false,
+            verbose: false,
+            debug: false,
+        };
+
+        run_batch(temp.path(), &request).expect("orphan deletion completes");
+
+        assert!(!output.exists());
+        assert!(matches!(
+            read_health_marker(temp.path(), "20260812", HealthMarkerKind::Stream)
+                .expect("stream marker"),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+        ));
+    }
+
+    #[test]
+    fn marker_failure_after_reprocess_deletion_is_terminal_and_retains_the_deletion() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        let output = path.join("orphan_screen.jsonl");
+        fs::write(&output, "{}\n").expect("sidecar");
+        fs::create_dir_all(temp.path().join("chronicle/20260812/health/stream.updated"))
+            .expect("block stream marker");
+
+        let result = delete_outputs(
+            temp.path(),
+            &temp.path().join("chronicle/20260812"),
+            ReprocessKind::Screen,
+            None,
+            None,
+            false,
+        );
+
+        assert!(matches!(
+            result,
+            Err(BatchError::PostDelete { path, day, detail })
+                if path == output
+                    && day == "20260812"
+                    && detail.contains("stream marker write failed")
+        ));
+        assert!(
+            !output.exists(),
+            "terminal marker failure must not claim the deletion rolled back"
+        );
     }
 
     #[test]

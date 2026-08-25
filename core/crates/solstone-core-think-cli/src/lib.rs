@@ -16,6 +16,7 @@ mod dry_run;
 mod flush;
 mod gate;
 mod helpers;
+mod phase_process;
 mod run_log;
 mod segment;
 mod weekly;
@@ -255,7 +256,7 @@ where
                     i64::try_from(default_segment_workers).expect("worker count fits i64"),
                 ))
                 .expect("validated segment workers");
-            let result = segment::run_repair_batch(
+            let result = segment::run_repair_batch_with_activity(
                 &context,
                 segments.clone(),
                 parsed.refresh,
@@ -263,18 +264,7 @@ where
                 workers,
                 timeout,
                 skip_talents,
-            )
-            .map_err(|message| CliError::InvalidDay { message })?;
-            // Source-derived, not measured: thinking.py:594-634 and 4449-4456
-            // replay durable Sense output after the concurrent repair workers.
-            segment::replay_activity_state(
-                &context,
-                &mut run_log::RunLogWriter::open(&run_log::path(&day_dir, now_ms, "segments")),
-                &segments,
-                parsed.refresh,
-                parsed.jobs,
                 parsed.no_activity_prompts,
-                false,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
             return Ok(mode_outcome(result));
@@ -1485,12 +1475,40 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"deterministic","reason_code":"no_output"}
+{"event":"talent.fail","ts":2,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
         assert_eq!(repeated.terminal_units, repeated.applicable_units);
         assert_eq!(repeated.capped_units, repeated.applicable_units);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn deterministic_failure_below_its_cap_remains_eligible() {
+        let journal = tempdir().unwrap();
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
+        );
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "deterministic",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+
+        let result = daily::run(&context, &mut log, None, false, 2).unwrap();
+
+        assert_eq!(result.applicable_units.len(), 1);
+        assert!(result.capped_units.is_empty());
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
 
@@ -1945,6 +1963,13 @@ mod tests {
     #[test]
     fn daily_runs_the_whole_day_lifecycle_in_order() {
         let journal = tempdir().unwrap();
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"daily_schedule"}
+{"event":"talent.complete","ts":1,"mode":"daily","name":"schedule"}
+{"event":"talent.complete","ts":1,"mode":"daily","name":"morning_briefing"}"#,
+        );
         let _ = run_at(journal.path(), &[]);
         let events = sidecar_events(journal.path(), "20260813", "daily");
         assert_eq!(events[0]["event"], "run.start");

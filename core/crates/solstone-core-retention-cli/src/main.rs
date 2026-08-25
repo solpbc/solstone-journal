@@ -190,11 +190,7 @@ fn code_for(outcome: &Outcome) -> u8 {
     if outcome.halted.is_some() {
         return EXIT_HALTED;
     }
-    if outcome
-        .targets
-        .iter()
-        .any(|target| !target.not_removed.is_empty())
-    {
+    if outcome.has_failures() {
         return EXIT_REFUSED;
     }
     EXIT_OK

@@ -13,7 +13,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cap::CapResolver;
 use crate::catchup::{
-    DailyCatchupOutcome, record_daily_catchup_attempt, record_daily_catchup_outcome,
+    DailyCatchupAdmission, DailyCatchupOutcome, admit_daily_catchup,
+    record_daily_catchup_admission_failure, record_daily_catchup_outcome,
 };
 use crate::partition::Partition;
 use crate::process::{
@@ -176,6 +177,10 @@ type QueueProcessSpawner = Arc<
         + Sync,
 >;
 
+#[cfg(test)]
+type WorkerThreadSpawner =
+    Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>> + Send + Sync>;
+
 fn spawn_managed_queue_process(
     command: Vec<String>,
     options: SpawnOptions,
@@ -254,6 +259,8 @@ struct QueueInner {
     reaped: Condvar,
     worker_spawner: Mutex<QueueProcessSpawner>,
     #[cfg(test)]
+    worker_thread_spawner: Mutex<WorkerThreadSpawner>,
+    #[cfg(test)]
     worker_threads: Mutex<Vec<thread::JoinHandle<()>>>,
     #[cfg(test)]
     worker_threads_changed: Condvar,
@@ -308,6 +315,7 @@ struct QueuedEntry {
 struct Dispatch {
     submission: Submission,
     references: Vec<String>,
+    daily_catchup_admission: Option<DailyCatchupAdmission>,
 }
 
 struct ActiveEntry {
@@ -391,6 +399,10 @@ impl TaskQueue {
                 }),
                 reaped: Condvar::new(),
                 worker_spawner: Mutex::new(Arc::new(spawn_managed_queue_process)),
+                #[cfg(test)]
+                worker_thread_spawner: Mutex::new(Arc::new(|worker| {
+                    thread::Builder::new().spawn(worker)
+                })),
                 #[cfg(test)]
                 worker_threads: Mutex::new(Vec::new()),
                 #[cfg(test)]
@@ -698,6 +710,15 @@ impl TaskQueue {
     }
 
     #[cfg(test)]
+    fn set_worker_thread_spawner(&self, spawner: WorkerThreadSpawner) {
+        *self
+            .inner
+            .worker_thread_spawner
+            .lock()
+            .expect("queue worker-thread spawner lock poisoned") = spawner;
+    }
+
+    #[cfg(test)]
     fn join_test_workers(&self, expected: usize, timeout: Duration) -> Result<(), String> {
         let deadline = Instant::now() + timeout;
         let mut handles = self
@@ -807,33 +828,64 @@ fn admit_locked(
         Some(Dispatch {
             references: vec![submission.reference.clone()],
             submission,
+            daily_catchup_admission: None,
         }),
     )
 }
 
-fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
+fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
     let partition = dispatch.submission.partition.clone();
     let reference = dispatch.submission.reference.clone();
     let worker_inner = Arc::clone(&inner);
-    let rollback = dispatch.clone();
     if let Some(provenance) = &dispatch.submission.daily_catchup_provenance {
-        record_daily_catchup_attempt(
+        let started_at = unix_seconds_f64();
+        match admit_daily_catchup(
             &inner.options.journal_root,
             &provenance.day,
-            &provenance.reference,
-            unix_seconds_f64(),
-            provenance.admitted_generation,
-            &provenance.fingerprint,
-        );
+            &dispatch.submission.reference,
+            started_at,
+        ) {
+            Ok(admission) => dispatch.daily_catchup_admission = Some(admission),
+            Err(_) => {
+                record_daily_catchup_admission_failure(
+                    &inner.options.journal_root,
+                    &provenance.day,
+                    started_at,
+                );
+                record_completion(&inner, &dispatch, -1, "error".to_owned());
+                let next = finish_worker(
+                    &inner,
+                    &dispatch.submission.partition,
+                    &dispatch.submission.reference,
+                );
+                if let Some(next) = next {
+                    start_dispatch(inner, next);
+                }
+                return;
+            }
+        }
     }
-    let spawned = thread::Builder::new().spawn(move || {
+    let rollback = dispatch.clone();
+    let worker = move || {
         let _lease = WorkerLease {
             inner: worker_inner.clone(),
             partition,
             reference,
         };
         run_worker(worker_inner, dispatch);
-    });
+    };
+    #[cfg(test)]
+    let spawned = {
+        let spawner = Arc::clone(
+            &inner
+                .worker_thread_spawner
+                .lock()
+                .expect("queue worker-thread spawner lock poisoned"),
+        );
+        spawner(Box::new(worker))
+    };
+    #[cfg(not(test))]
+    let spawned = thread::Builder::new().spawn(worker);
     match spawned {
         Ok(handle) => {
             #[cfg(test)]
@@ -976,12 +1028,17 @@ fn record_completion(
         inner.reaped.notify_all();
         status
     };
-    if let Some(provenance) = &dispatch.submission.daily_catchup_provenance {
+    if let (Some(provenance), Some(admission)) = (
+        &dispatch.submission.daily_catchup_provenance,
+        &dispatch.daily_catchup_admission,
+    ) {
         let timed_out = status == TIMEOUT_EXIT_STATUS;
         record_daily_catchup_outcome(
             &inner.options.journal_root,
             &provenance.day,
-            provenance.admitted_generation,
+            &dispatch.submission.reference,
+            admission.generation,
+            &admission.fingerprint,
             DailyCatchupOutcome {
                 success: exit_code == 0 && !timed_out,
                 timed_out,
@@ -1048,6 +1105,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
                 Dispatch {
                     references: entry.references,
                     submission,
+                    daily_catchup_admission: None,
                 }
             });
         if state.queues.get(partition).is_some_and(VecDeque::is_empty) {
@@ -1168,11 +1226,12 @@ fn unix_seconds_f64() -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::sync::{Barrier, Condvar, mpsc};
 
     use super::*;
     use crate::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
-    use crate::request::{BusTaskRequest, TaskArgv};
+    use crate::request::{BusTaskRequest, DailyCatchupProvenance, TaskArgv};
 
     struct FixedCap(u64);
     impl CapResolver for FixedCap {
@@ -1508,6 +1567,7 @@ mod tests {
                 daily_catchup_provenance: None,
             },
             references: vec![reference.to_owned()],
+            daily_catchup_admission: None,
         }
     }
 
@@ -1543,6 +1603,31 @@ mod tests {
             queue_if_active_cmd_differs: false,
             daily_catchup_provenance: None,
         })
+    }
+
+    fn command_request(
+        command: &[&str],
+        reference: &str,
+        provenance: Option<DailyCatchupProvenance>,
+    ) -> ExecutionRequest {
+        ExecutionRequest::Bus(BusTaskRequest {
+            cmd: TaskArgv::from_wire(command.iter().map(|value| (*value).to_owned()).collect())
+                .expect("command"),
+            reference: reference.to_owned(),
+            day: provenance.as_ref().map(|value| value.day.clone()),
+            scheduler_name: None,
+            queue_if_active_cmd_differs: false,
+            daily_catchup_provenance: provenance,
+        })
+    }
+
+    #[derive(Default)]
+    struct RecordingEventSink(Mutex<Vec<TaskQueueEvent>>);
+
+    impl TaskQueueEventSink for RecordingEventSink {
+        fn emit(&self, event: TaskQueueEvent) {
+            self.0.lock().expect("recording sink").push(event);
+        }
     }
 
     #[test]
@@ -1769,6 +1854,346 @@ mod tests {
         assert_eq!(snapshot.tasks[0].reference, "follower");
         assert!(snapshot.queues.is_empty());
         release.wait();
+    }
+
+    #[test]
+    fn catchup_child_spawn_failure_records_one_primary_terminal_outcome() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let health = journal.path().join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health");
+        fs::write(
+            health.join("stream.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        )
+        .expect("stream marker");
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Failure])));
+        let provenance = DailyCatchupProvenance {
+            day: day.to_owned(),
+        };
+
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "catchup",
+                Some(provenance),
+            )),
+            SubmitOutcome::Dispatched,
+        );
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("catchup worker");
+
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let record = &state["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(record["attempts"], 1);
+        assert_eq!(record["active"], serde_json::Value::Null);
+        assert_eq!(record["last_outcome"], "error");
+        assert!(record["next_retry_at"].as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn queued_catchup_samples_primary_admission_and_retains_it_for_terminal_correlation() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let health = journal.path().join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health");
+        assert_eq!(
+            solstone_core_journal_io::bump_stream_marker(journal.path(), day)
+                .expect("initial generation"),
+            1
+        );
+        let first_arrived = Arc::new(Barrier::new(2));
+        let first_release = Arc::new(Barrier::new(2));
+        let catchup_arrived = Arc::new(Barrier::new(2));
+        let catchup_release = Arc::new(Barrier::new(2));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([
+            gated_plan(
+                Arc::clone(&first_arrived),
+                Arc::clone(&first_release),
+                Arc::clone(&cleanups),
+            ),
+            gated_plan(
+                Arc::clone(&catchup_arrived),
+                Arc::clone(&catchup_release),
+                cleanups,
+            ),
+        ])));
+        assert_eq!(
+            queue.submit(command_request(&["svc", "blocker"], "blocker", None)),
+            SubmitOutcome::Dispatched,
+        );
+        first_arrived.wait();
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "catchup",
+                Some(DailyCatchupProvenance {
+                    day: day.to_owned(),
+                }),
+            )),
+            SubmitOutcome::Queued,
+        );
+
+        let segment = journal.path().join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&segment).expect("segment");
+        fs::write(segment.join("chat.jsonl"), b"new while queued\n").expect("raw mutation");
+        assert_eq!(
+            solstone_core_journal_io::bump_stream_marker(journal.path(), day)
+                .expect("queued mutation generation"),
+            2
+        );
+        let admitted_fingerprint =
+            crate::catchup::read_raw_input_fingerprint(journal.path(), day).expect("fingerprint");
+        first_release.wait();
+        catchup_arrived.wait();
+
+        let active: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let active = &active["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(active["admitted_generation"], 2);
+        assert_eq!(active["fingerprint"], admitted_fingerprint);
+        assert_eq!(active["active"]["ref"], "catchup");
+
+        fs::write(
+            health.join("daily.updated"),
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1,
+                "generation": 2,
+                "fingerprint": admitted_fingerprint,
+            }))
+            .expect("daily marker"),
+        )
+        .expect("publish admitted generation");
+        assert_eq!(
+            solstone_core_journal_io::bump_stream_marker(journal.path(), day)
+                .expect("later dirty generation"),
+            3
+        );
+        catchup_release.wait();
+        queue
+            .join_test_workers(2, TEST_TRANSITION_TIMEOUT)
+            .expect("queue workers");
+
+        let terminal: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let terminal = &terminal["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(terminal["admitted_generation"], 2);
+        assert_eq!(terminal["last_outcome"], "completed");
+        assert_eq!(terminal["active"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn unreadable_primary_admission_records_terminal_backoff_without_spawning_child() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let health = journal.path().join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health");
+        fs::write(health.join("stream.updated"), b"malformed").expect("malformed marker");
+        let child_spawns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let spawn_count = Arc::clone(&child_spawns);
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(Arc::new(move |_, _, _| {
+            spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(SpawnError::EmptyCommand)
+        }));
+
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "catchup",
+                Some(DailyCatchupProvenance {
+                    day: day.to_owned(),
+                }),
+            )),
+            SubmitOutcome::Dispatched,
+        );
+        assert_eq!(
+            child_spawns.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "unreadable admission must fail before child spawn"
+        );
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let record = &state["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(record["active"], serde_json::Value::Null);
+        assert_eq!(record["last_outcome"], "error");
+        assert_eq!(record["reason_code"], "admission_unreadable");
+        assert!(record["next_retry_at"].as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn catchup_worker_thread_spawn_failure_records_terminal_outcome() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let health = journal.path().join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health");
+        fs::write(
+            health.join("stream.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        )
+        .expect("stream marker");
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_thread_spawner(Arc::new(|_| {
+            Err(io::Error::other("injected worker-thread spawn failure"))
+        }));
+        let provenance = DailyCatchupProvenance {
+            day: day.to_owned(),
+        };
+
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "catchup",
+                Some(provenance),
+            )),
+            SubmitOutcome::Dispatched,
+        );
+
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let record = &state["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(record["attempts"], 1);
+        assert_eq!(record["active"], serde_json::Value::Null);
+        assert_eq!(record["last_outcome"], "error");
+    }
+
+    #[test]
+    fn coalesced_follower_stops_without_owning_catchup_lifecycle() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let health = journal.path().join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health");
+        fs::write(
+            health.join("stream.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        )
+        .expect("stream marker");
+        let arrived = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sink = Arc::new(RecordingEventSink::default());
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: Some(Arc::clone(&sink) as Arc<dyn TaskQueueEventSink>),
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([
+            gated_plan(
+                Arc::clone(&arrived),
+                Arc::clone(&release),
+                Arc::clone(&cleanups),
+            ),
+            SpawnPlan::Process(FakeProcess::complete(2, cleanups)),
+        ])));
+        assert_eq!(
+            queue.submit(command_request(&["svc", "blocker"], "blocker", None)),
+            SubmitOutcome::Dispatched,
+        );
+        arrived.wait();
+        let provenance = DailyCatchupProvenance {
+            day: day.to_owned(),
+        };
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "primary",
+                Some(provenance),
+            )),
+            SubmitOutcome::Queued,
+        );
+        assert_eq!(
+            queue.submit(command_request(&["svc", "catchup"], "follower", None,)),
+            SubmitOutcome::Coalesced,
+        );
+        release.wait();
+        queue
+            .join_test_workers(2, TEST_TRANSITION_TIMEOUT)
+            .expect("queue workers");
+
+        let events = sink.0.lock().expect("recorded events");
+        let started = events
+            .iter()
+            .filter_map(|event| match event {
+                TaskQueueEvent::Started { reference, .. } => Some(reference.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let stopped = events
+            .iter()
+            .filter_map(|event| match event {
+                TaskQueueEvent::Stopped { reference, .. } => Some(reference.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(started.contains(&"primary"));
+        assert!(!started.contains(&"follower"));
+        assert!(stopped.contains(&"primary"));
+        assert!(stopped.contains(&"follower"));
+
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(crate::catchup::catchup_state_path(journal.path())).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let record = &state["entries"]
+            [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
+        assert_eq!(record["attempts"], 1);
+        assert_eq!(record["active"], serde_json::Value::Null);
     }
 
     #[test]

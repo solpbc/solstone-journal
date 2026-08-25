@@ -74,6 +74,7 @@ impl CortexBoundary for NativeCortexBoundary {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ThinkContext {
     pub(crate) journal: PathBuf,
     pub(crate) day: String,

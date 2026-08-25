@@ -755,6 +755,7 @@ mod tests {
                     reason: "the log entry could not be removed: permission denied".to_owned(),
                     staged: None,
                 }],
+                post_commit_failure: None,
             }],
             halted: None,
         };

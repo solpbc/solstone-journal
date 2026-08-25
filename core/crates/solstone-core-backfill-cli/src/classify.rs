@@ -134,6 +134,7 @@ const AUDIO: Modality = Modality {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Eligible {
+    pub(crate) day: String,
     pub(crate) path: PathBuf,
     pub(crate) original: Vec<u8>,
     pub(crate) replacement: Vec<u8>,
@@ -337,6 +338,7 @@ pub(crate) fn classify(
     replacement.push(b'\n');
     replacement.extend_from_slice(&original[header_end..]);
     Ok(Eligible {
+        day: day.to_owned(),
         path: candidate.path.clone(),
         original,
         replacement,

@@ -91,6 +91,16 @@ fn created(outcome: &AudioImportOutcome) -> &solstone_core_import_host::audio::A
     outcome.created()
 }
 
+fn stream_generation(request: &AudioImportRequest) -> u64 {
+    let marker = request
+        .journal_root
+        .join("chronicle")
+        .join(&request.day)
+        .join("health/stream.updated");
+    let value: Value = serde_json::from_slice(&fs::read(marker).unwrap()).unwrap();
+    value["generation"].as_u64().unwrap()
+}
+
 fn write_analyzed_processing_record(sidecar: &Path) {
     fs::write(
         sidecar,
@@ -391,6 +401,82 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
             .to_string()
         )
     );
+}
+
+#[tokio::test]
+async fn completed_audio_import_dirties_its_exact_day_before_success() {
+    let temp = TempDir::new().unwrap();
+    let request = request(&temp, "marker-complete");
+    let outcome = fake_import(
+        request.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, AudioImportOutcome::Complete(_)));
+    assert_eq!(stream_generation(&request), 1);
+    assert!(
+        !request
+            .journal_root
+            .join("chronicle/20260812/health/stream.updated")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn partial_audio_import_with_created_content_still_dirties_its_day() {
+    let temp = TempDir::new().unwrap();
+    let request = request(&temp, "marker-partial");
+    let outcome = fake_import(
+        request.clone(),
+        900.0,
+        Some(1),
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, AudioImportOutcome::Partial(_)));
+    assert_eq!(outcome.created().segments.len(), 2);
+    assert_eq!(stream_generation(&request), 1);
+}
+
+#[tokio::test]
+async fn audio_marker_failure_is_terminal_and_retains_content_and_diagnostic_record() {
+    let temp = TempDir::new().unwrap();
+    let request = request(&temp, "marker-failure");
+    let marker = request
+        .journal_root
+        .join("chronicle")
+        .join(&request.day)
+        .join("health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+    let emitted = Rc::new(RefCell::new(Vec::new()));
+
+    let result = fake_import(request.clone(), 120.0, None, emitted.clone()).await;
+
+    assert!(matches!(
+        result,
+        Err(ImportError::StreamMarkerWrite { path, .. }) if path == marker
+    ));
+    assert!(emitted.borrow().is_empty());
+    let record = read_audio_import_record(&request.journal_root, &request.import_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.created_segments.len(), 1);
+    assert!(record.created_segments[0].file_path.is_file());
+    assert!(
+        record
+            .abort
+            .as_ref()
+            .unwrap()
+            .reason
+            .contains("could not advance stream marker")
+    );
+    assert_eq!(record.wait, AudioWaitRecord::NotRequested);
 }
 
 #[tokio::test]

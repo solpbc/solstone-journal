@@ -187,6 +187,10 @@ pub enum ImportError {
         path: PathBuf,
         message: String,
     },
+    StreamMarkerWrite {
+        path: PathBuf,
+        message: String,
+    },
     AudioProcessingWait {
         detail: String,
     },
@@ -237,7 +241,8 @@ impl fmt::Display for ImportError {
             | Self::PathResolution { path, message }
             | Self::RelocationFailed { path, message }
             | Self::AudioRecordRead { path, message }
-            | Self::AudioRecordWrite { path, message } => {
+            | Self::AudioRecordWrite { path, message }
+            | Self::StreamMarkerWrite { path, message } => {
                 write!(formatter, "{}: {message}", path.display())
             }
             Self::AuditSinkFailed { message } => {

@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, bump_stream_marker};
 
 use crate::classify::Eligible;
 
@@ -44,6 +44,7 @@ pub(crate) enum CommitError {
     Changed,
     Read(String),
     Write(String),
+    Marker(String),
 }
 
 impl fmt::Display for CommitError {
@@ -52,16 +53,24 @@ impl fmt::Display for CommitError {
             Self::Changed => formatter.write_str("file changed after classification"),
             Self::Read(error) => write!(formatter, "could not re-read file: {error}"),
             Self::Write(error) => write!(formatter, "write failed: {error}"),
+            Self::Marker(error) => write!(formatter, "stream marker write failed: {error}"),
         }
     }
 }
 
-pub(crate) fn commit(item: &Eligible, writer: &dyn Writer) -> Result<(), CommitError> {
+pub(crate) fn commit(
+    journal: &Path,
+    item: &Eligible,
+    writer: &dyn Writer,
+) -> Result<(), CommitError> {
     let current = fs::read(&item.path).map_err(|error| CommitError::Read(error.to_string()))?;
     if current != item.original {
         return Err(CommitError::Changed);
     }
     writer
         .replace(&item.path, &item.replacement)
-        .map_err(CommitError::Write)
+        .map_err(CommitError::Write)?;
+    bump_stream_marker(journal, &item.day)
+        .map(|_| ())
+        .map_err(|error| CommitError::Marker(error.to_string()))
 }

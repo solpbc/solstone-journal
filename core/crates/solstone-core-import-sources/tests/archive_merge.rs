@@ -16,7 +16,9 @@ use solstone_core_import_sources::archive::{
     SegmentDispositionKind, merge_journal_archive,
 };
 use solstone_core_import_sources::{ArchiveSafetyPhase, ImportSourcesError};
-use solstone_core_journal_io::{LockOptions, hold_lock};
+use solstone_core_journal_io::{
+    HealthMarkerKind, HealthMarkerState, LockOptions, hold_lock, read_health_marker,
+};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -93,6 +95,67 @@ fn identical_retry_is_noop_and_different_segment_is_enumerated() {
     assert_eq!(
         fs::metadata(&archive).unwrap().modified().unwrap(),
         archive_mtime
+    );
+}
+
+#[test]
+fn archive_merge_dirties_exactly_the_days_with_published_segments() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (day, segment) in [("20260809", "090000_60"), ("20260810", "100000_60")] {
+        let path = source.join("chronicle").join(day).join(segment);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("audio.flac"), day.as_bytes()).unwrap();
+    }
+    fs::create_dir_all(target.join("chronicle/20260811/110000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/110000_60/audio.flac"),
+        b"untouched",
+    )
+    .unwrap();
+
+    let archive = archive_from(&source, &tree.path);
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    for day in ["20260809", "20260810"] {
+        assert!(matches!(
+            read_health_marker(&target, day, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+        ));
+    }
+    assert!(matches!(
+        read_health_marker(&target, "20260811", HealthMarkerKind::Stream).unwrap(),
+        HealthMarkerState::Absent
+    ));
+}
+
+#[test]
+fn archive_marker_failure_is_terminal_after_published_content_is_preserved() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    let segment = source.join("chronicle/20260809/090000_60");
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(segment.join("audio.flac"), b"published").unwrap();
+    fs::create_dir_all(target.join("chronicle/20260809/health/stream.updated")).unwrap();
+
+    let archive = archive_from(&source, &tree.path);
+    let error = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap_err();
+
+    match error {
+        ImportSourcesError::MergePublishFailed { detail } => {
+            assert!(detail.contains("stream marker update failed"), "{detail}");
+            assert!(
+                detail.contains("published content was not rolled back"),
+                "{detail}"
+            );
+        }
+        other => panic!("expected MergePublishFailed, got {other:?}"),
+    }
+    assert_eq!(
+        fs::read(target.join("chronicle/20260809/090000_60/audio.flac")).unwrap(),
+        b"published"
     );
 }
 

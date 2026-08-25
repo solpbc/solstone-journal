@@ -14,6 +14,7 @@ use solstone_core_generate::{
 use solstone_core_import::{
     TextImportError, TextWirePhase, WireClient, process_transcript_with_wire,
 };
+use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 
 struct RecordingWire {
     responses: RefCell<VecDeque<Result<GenerateResponse, ClientError>>>,
@@ -115,6 +116,15 @@ fn rows(path: &Path) -> Vec<Value> {
         .collect()
 }
 
+fn assert_stream_generation(day_dir: &Path, expected: u64) {
+    let journal = day_dir.parent().unwrap().parent().unwrap();
+    let day = day_dir.file_name().unwrap().to_str().unwrap();
+    assert!(matches!(
+        read_health_marker(journal, day, HealthMarkerKind::Stream).unwrap(),
+        HealthMarkerState::Versioned { marker, .. } if marker.generation == expected
+    ));
+}
+
 fn oracle_case(name: &str) -> Value {
     let oracle: Value = serde_json::from_str(include_str!("fixtures/text-oracles.json")).unwrap();
     oracle["cases"][name].clone()
@@ -203,6 +213,7 @@ fn ac1_out_of_order_raises_after_prior_write() {
         day.join("import.text/120000_300/conversation_transcript.jsonl")
             .exists()
     );
+    assert_stream_generation(&day, 1);
 }
 
 #[test]
@@ -221,6 +232,73 @@ fn ac1_audio_duration_too_short_raises_after_prior_writes() {
     assert!(
         day.join("import.text/120030_270/conversation_transcript.jsonl")
             .exists()
+    );
+    assert_stream_generation(&day, 2);
+}
+
+#[test]
+fn stream_marker_advances_before_a_later_segment_wire_failure() {
+    let (_temporary, source, day) = setup();
+    let wire = RecordingWire::new(vec![
+        generated(boundaries(&["12:00:00", "12:00:30"])),
+        generated(wrapper(
+            json!([{"start": "12:00:00", "text": "first"}]),
+            "",
+            "",
+        )),
+        Err(ClientError::Io("second conversion failed".to_owned())),
+    ]);
+
+    let error = run(&source, &day, &wire, None).unwrap_err();
+
+    assert!(matches!(
+        error,
+        TextImportError::Wire {
+            phase: TextWirePhase::SegmentJson,
+            ..
+        }
+    ));
+    assert!(
+        day.join("import.text/120000_30/conversation_transcript.jsonl")
+            .is_file()
+    );
+    assert_stream_generation(&day, 1);
+    assert!(
+        !day.parent()
+            .unwrap()
+            .join("20260312/health/stream.updated")
+            .exists()
+    );
+}
+
+#[test]
+fn marker_failure_is_typed_and_retains_the_written_segment() {
+    let (_temporary, source, day) = setup();
+    let marker = day.join("health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+    let wire = RecordingWire::new(vec![
+        generated(boundaries(&["12:00:00"])),
+        generated(wrapper(
+            json!([{"start": "12:00:00", "text": "first"}]),
+            "",
+            "",
+        )),
+    ]);
+
+    let error = run(&source, &day, &wire, None).unwrap_err();
+
+    assert!(matches!(
+        &error,
+        TextImportError::StreamMarker {
+            path,
+            day: failed_day,
+            ..
+        } if path == &marker && failed_day == "20260311"
+    ));
+    assert!(error.to_string().contains("remains written"));
+    assert!(
+        day.join("import.text/120000_5/conversation_transcript.jsonl")
+            .is_file()
     );
 }
 

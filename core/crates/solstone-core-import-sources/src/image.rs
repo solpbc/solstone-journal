@@ -16,7 +16,8 @@ use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
 };
 use solstone_core_import::{
-    CreatedSegment, ImportPreview, ManifestWriteRequest, hash_source, write_manifest,
+    CreatedSegment, ImportPreview, ManifestWriteRequest, PublicationOperations, hash_source,
+    write_manifest,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, create_directory_with_mode, install_file, segment_path, write_text,
@@ -66,6 +67,7 @@ pub enum ImageImportError {
     UndecodableSource { path: PathBuf, detail: String },
     Install { path: PathBuf, detail: String },
     JournalIo { path: PathBuf, detail: String },
+    StreamMarker { day: String, detail: String },
     Manifest { detail: String },
 }
 
@@ -99,6 +101,10 @@ impl fmt::Display for ImageImportError {
                     path.display()
                 )
             }
+            Self::StreamMarker { day, detail } => write!(
+                formatter,
+                "original image for {day} remains installed, but could not advance its stream marker: {detail}"
+            ),
             Self::Manifest { detail } => {
                 write!(formatter, "cannot write image import manifest: {detail}")
             }
@@ -163,6 +169,7 @@ pub fn import_image(
     journal_root: &Path,
     import_id: &str,
     mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
+    publication: &dyn PublicationOperations,
     wire: &dyn WireClient,
 ) -> Result<ImageImportResult, ImageImportError> {
     let (image, format, modified, source_bytes) = read_image(path)?;
@@ -193,7 +200,14 @@ pub fn import_image(
         .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
         .unwrap_or_default();
     let original_path = segment_dir.join(format!("original{extension}"));
-    install_source(path, &original_path, modified)?;
+    install_source(
+        path,
+        &original_path,
+        modified,
+        journal_root,
+        &day,
+        publication,
+    )?;
 
     // Python describes at images.py:113 before it creates the segment at :125;
     // tests/test_importer_images.py:152-166 consequently expect no artifacts on
@@ -412,6 +426,9 @@ fn install_source(
     source: &Path,
     destination: &Path,
     modified: SystemTime,
+    journal_root: &Path,
+    day: &str,
+    publication: &dyn PublicationOperations,
 ) -> Result<(), ImageImportError> {
     let parent = destination
         .parent()
@@ -457,6 +474,12 @@ fn install_source(
         path: destination.to_path_buf(),
         detail: error.to_string(),
     })?;
+    publication
+        .touch_stream_health_marker(journal_root, day)
+        .map_err(|detail| ImageImportError::StreamMarker {
+            day: day.to_owned(),
+            detail,
+        })?;
     File::open(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| ImageImportError::Install {

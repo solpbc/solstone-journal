@@ -48,11 +48,24 @@ struct State {
     stopping: bool,
 }
 
+/// Whether a completed Sense batch owns a stream-dirty transition.
+///
+/// This is deliberately separate from the batch event presentation flag: a
+/// standalone historical batch changes day content and must dirty the day,
+/// while the enclosing whole-day lifecycle publishes that transition itself.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum BatchMarkerPolicy {
+    #[default]
+    AdvanceStream,
+    EnclosedWholeDay,
+}
+
 /// Batch-only settings shared by dispatcher construction and native children.
 #[derive(Clone, Default)]
 struct BatchContext {
     describe_workers: Option<usize>,
     child_environment: BTreeMap<OsString, OsString>,
+    marker_policy: BatchMarkerPolicy,
 }
 
 /// Per-worker state that remains fixed for its lifetime.
@@ -65,6 +78,7 @@ struct WorkerContext {
     batch: BatchContext,
     program: Result<PathBuf, DispatcherResolveError>,
     tally: Arc<JobTally>,
+    cleanups: Arc<Mutex<Vec<thread::JoinHandle<()>>>>,
 }
 
 /// Per-run handler outcome counts. Incremented as `run_job` finishes, then
@@ -105,6 +119,7 @@ pub struct SenseDispatcher {
     outbound: mpsc::Sender<Outbound>,
     pools: HashMap<&'static str, Mutex<WorkerPool>>,
     workers: Mutex<Vec<thread::JoinHandle<()>>>,
+    cleanups: Arc<Mutex<Vec<thread::JoinHandle<()>>>>,
     admission: Admission,
     batch: BatchContext,
     pub(crate) tally: Arc<JobTally>,
@@ -174,6 +189,7 @@ impl SenseDispatcher {
         outbound: mpsc::Sender<Outbound>,
         describe_workers: usize,
         child_environment: BTreeMap<OsString, OsString>,
+        marker_policy: BatchMarkerPolicy,
     ) -> Self {
         Self::new_batch_inner(
             journal,
@@ -183,6 +199,7 @@ impl SenseDispatcher {
             BatchContext {
                 describe_workers: Some(describe_workers),
                 child_environment,
+                marker_policy,
             },
             resolve_program_from_current_exe(),
         )
@@ -197,6 +214,7 @@ impl SenseDispatcher {
         outbound: mpsc::Sender<Outbound>,
         describe_workers: usize,
         program: PathBuf,
+        marker_policy: BatchMarkerPolicy,
     ) -> Self {
         Self::new_batch_inner(
             journal,
@@ -206,6 +224,7 @@ impl SenseDispatcher {
             BatchContext {
                 describe_workers: Some(describe_workers),
                 child_environment: BTreeMap::new(),
+                marker_policy,
             },
             Ok(program),
         )
@@ -246,6 +265,7 @@ impl SenseDispatcher {
             stopping: false,
         }));
         let tally = Arc::new(JobTally::new());
+        let cleanups = Arc::new(Mutex::new(Vec::new()));
         let mut pools = HashMap::new();
         let mut worker_handles = Vec::new();
         for handler in HANDLERS {
@@ -270,6 +290,7 @@ impl SenseDispatcher {
                     batch: batch.clone(),
                     program: program.clone(),
                     tally: Arc::clone(&tally),
+                    cleanups: Arc::clone(&cleanups),
                 };
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
@@ -285,6 +306,7 @@ impl SenseDispatcher {
             outbound,
             pools,
             workers: Mutex::new(worker_handles),
+            cleanups,
             admission,
             batch,
             tally,
@@ -430,6 +452,7 @@ impl SenseDispatcher {
                     Some(&path),
                     Some(format!("{handler} pool unavailable")),
                     None,
+                    self.batch.marker_policy,
                 );
             }
         }
@@ -446,7 +469,7 @@ impl SenseDispatcher {
     }
 
     fn emit_observed(&self, key: &SegmentKey, note: Option<&str>) {
-        complete(
+        if !complete(
             &self.state,
             &self.outbound,
             &self.journal,
@@ -454,7 +477,10 @@ impl SenseDispatcher {
             None,
             None,
             note,
-        );
+            self.batch.marker_policy,
+        ) {
+            self.tally.failure();
+        }
     }
     pub fn status(&self) {
         let mut state = self.state.lock().expect("sense state");
@@ -480,22 +506,18 @@ impl SenseDispatcher {
         self.join_workers();
     }
 
-    pub(crate) fn wait_until_idle(&self) {
-        loop {
-            let idle = {
-                let state = self.state.lock().expect("sense state");
-                state.pending_files.is_empty() && state.segments.is_empty()
-            };
-            if idle {
-                return;
-            }
-            thread::sleep(Duration::from_millis(25));
-        }
+    pub(crate) fn is_idle(&self) -> bool {
+        let state = self.state.lock().expect("sense state");
+        state.pending_files.is_empty() && state.segments.is_empty()
     }
     fn join_workers(&self) {
         let workers = std::mem::take(&mut *self.workers.lock().expect("sense workers"));
         for worker in workers {
             let _ = worker.join();
+        }
+        let cleanups = std::mem::take(&mut *self.cleanups.lock().expect("sense cleanups"));
+        for cleanup in cleanups {
+            let _ = cleanup.join();
         }
     }
 }
@@ -573,6 +595,7 @@ fn run_job(
                 Some(&file),
                 Some(format!("{} {error}", job.item.handler)),
                 None,
+                worker_context.batch.marker_policy,
             );
             return;
         }
@@ -658,6 +681,7 @@ fn run_job(
             Some(&file),
             Some(format!("{} spawn failed", job.item.handler)),
             None,
+            worker_context.batch.marker_policy,
         );
         return;
     };
@@ -682,8 +706,7 @@ fn run_job(
     };
     let outcome = match exit {
         Some(PROVIDER_BLOCKED) => {
-            worker_context.tally.success();
-            complete(
+            let marker_succeeded = complete(
                 state,
                 outbound,
                 &worker_context.journal,
@@ -691,14 +714,19 @@ fn run_job(
                 Some(&file),
                 None,
                 None,
+                worker_context.batch.marker_policy,
             );
-            cleanup_async(process);
+            if marker_succeeded {
+                worker_context.tally.success();
+            } else {
+                worker_context.tally.failure();
+            }
+            cleanup_async(process, &worker_context.cleanups);
             return;
         }
         Some(0) => {
-            worker_context.tally.success();
             state.lock().expect("sense state").health.success();
-            complete(
+            let marker_succeeded = complete(
                 state,
                 outbound,
                 &worker_context.journal,
@@ -706,8 +734,14 @@ fn run_job(
                 Some(&file),
                 None,
                 None,
+                worker_context.batch.marker_policy,
             );
-            cleanup_async(process);
+            if marker_succeeded {
+                worker_context.tally.success();
+            } else {
+                worker_context.tally.failure();
+            }
+            cleanup_async(process, &worker_context.cleanups);
             return;
         }
         Some(code) => {
@@ -761,11 +795,12 @@ fn run_job(
         Some(&file),
         Some(outcome),
         None,
+        worker_context.batch.marker_policy,
     );
-    cleanup_async(process);
+    cleanup_async(process, &worker_context.cleanups);
 }
 
-fn cleanup_async(process: ManagedProcess) {
+fn cleanup_async(process: ManagedProcess, cleanups: &Arc<Mutex<Vec<thread::JoinHandle<()>>>>) {
     let handoff = Arc::new(Mutex::new(Some(process)));
     let cleanup_handoff = Arc::clone(&handoff);
     let spawned = thread::Builder::new()
@@ -775,7 +810,26 @@ fn cleanup_async(process: ManagedProcess) {
                 process.cleanup();
             }
         });
-    if spawned.is_err() {
+    if let Ok(cleanup) = spawned {
+        let finished = {
+            let mut cleanups = cleanups.lock().expect("sense cleanups");
+            let mut active = Vec::with_capacity(cleanups.len() + 1);
+            let mut finished = Vec::new();
+            for cleanup in std::mem::take(&mut *cleanups) {
+                if cleanup.is_finished() {
+                    finished.push(cleanup);
+                } else {
+                    active.push(cleanup);
+                }
+            }
+            active.push(cleanup);
+            *cleanups = active;
+            finished
+        };
+        for cleanup in finished {
+            let _ = cleanup.join();
+        }
+    } else {
         // terminate-then-cleanup is the Drop-equivalent path when the cleanup
         // thread cannot be spawned; terminate() reaps descendants before join.
         let mut process = handoff
@@ -857,6 +911,7 @@ fn icon(handler: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // One explicit call carries the full segment-completion boundary.
 fn complete(
     state: &Arc<Mutex<State>>,
     outbound: &mpsc::Sender<Outbound>,
@@ -865,7 +920,8 @@ fn complete(
     file: Option<&Path>,
     error: Option<String>,
     note: Option<&str>,
-) {
+    marker_policy: BatchMarkerPolicy,
+) -> bool {
     let completed = {
         let mut state = state.lock().expect("sense state");
         if let Some(file) = file {
@@ -875,7 +931,7 @@ fn complete(
         }
         let empty = {
             let Some(segment) = state.segments.get_mut(key) else {
-                return;
+                return true;
             };
             if let Some(error) = error {
                 segment.errors.push(error);
@@ -891,16 +947,24 @@ fn complete(
             None
         }
     };
-    if let Some(segment) = completed {
+    let mut marker_succeeded = true;
+    if let Some(mut segment) = completed {
+        if marker_policy == BatchMarkerPolicy::AdvanceStream
+            && let Err(error) =
+                solstone_core_journal_io::bump_stream_marker(journal, &segment.context.key.day)
+        {
+            marker_succeeded = false;
+            segment
+                .errors
+                .push(format!("stream marker update failed: {error}"));
+        }
         let _ = outbound.send(Outbound {
             tract: "observe",
             event: "observed",
             fields: events::observed(&segment, note),
         });
-        if !segment.context.batch {
-            let _ = solstone_core_journal_io::bump_stream_marker(journal, &segment.context.key.day);
-        }
     }
+    marker_succeeded
 }
 
 #[cfg(test)]
@@ -909,6 +973,9 @@ mod tests {
 
     use serde_json::json;
     use solstone_core_callosum::CallosumEnvelope;
+    use solstone_core_journal_io::{
+        HealthMarkerKind, HealthMarkerState, bump_stream_marker, read_health_marker,
+    };
     use solstone_core_system::process::Descendant;
 
     use super::*;
@@ -1116,7 +1183,16 @@ mod tests {
                 meta: None,
             }),
         );
-        complete(&state, &outbound, temp.path(), &key, None, Some("describe watchdog_timeout; process_tree_not_reaped reason=survived_sigkill survivors=1".into()), None);
+        complete(
+            &state,
+            &outbound,
+            temp.path(),
+            &key,
+            None,
+            Some("describe watchdog_timeout; process_tree_not_reaped reason=survived_sigkill survivors=1".into()),
+            None,
+            BatchMarkerPolicy::AdvanceStream,
+        );
         let observed = receiver
             .try_iter()
             .find(|event| event.event == "observed")
@@ -1151,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn live_completion_touches_stream_marker_but_batch_does_not() {
+    fn marker_policy_is_independent_of_batch_presentation() {
         let temp = tempfile::tempdir().expect("journal");
         let (outbound, _receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(State {
@@ -1182,6 +1258,7 @@ mod tests {
             None,
             None,
             Some("no handlers"),
+            BatchMarkerPolicy::AdvanceStream,
         );
         let marker = temp.path().join("chronicle/20260812/health/stream.updated");
         assert!(marker.is_file());
@@ -1208,8 +1285,135 @@ mod tests {
             None,
             None,
             Some("no handlers"),
+            BatchMarkerPolicy::AdvanceStream,
+        );
+        assert!(marker.is_file());
+        std::fs::remove_file(&marker).expect("remove batch marker");
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("default".into()),
+            segment: "whole-day".into(),
+        };
+        state.lock().expect("state").segments.insert(
+            key.clone(),
+            SegmentState::new(SegmentContext {
+                key: key.clone(),
+                observer: None,
+                batch: true,
+                meta: None,
+            }),
+        );
+        complete(
+            &state,
+            &outbound,
+            temp.path(),
+            &key,
+            None,
+            None,
+            Some("no handlers"),
+            BatchMarkerPolicy::EnclosedWholeDay,
         );
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn enclosed_whole_day_batch_does_not_advance_its_admitted_generation() {
+        let temp = tempfile::tempdir().expect("journal");
+        assert_eq!(
+            bump_stream_marker(temp.path(), "20260812").expect("admitted marker"),
+            1
+        );
+        let (outbound, _receiver) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State {
+            segments: HashMap::new(),
+            pending_files: HashSet::new(),
+            health: Health::default(),
+            stopping: false,
+        }));
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("default".into()),
+            segment: "whole-day".into(),
+        };
+        state.lock().expect("state").segments.insert(
+            key.clone(),
+            SegmentState::new(SegmentContext {
+                key: key.clone(),
+                observer: None,
+                batch: true,
+                meta: None,
+            }),
+        );
+
+        complete(
+            &state,
+            &outbound,
+            temp.path(),
+            &key,
+            None,
+            None,
+            Some("whole-day sense"),
+            BatchMarkerPolicy::EnclosedWholeDay,
+        );
+
+        assert!(matches!(
+            read_health_marker(temp.path(), "20260812", HealthMarkerKind::Stream)
+                .expect("stream marker"),
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+        ));
+    }
+
+    #[test]
+    fn live_completion_reports_stream_marker_failure() {
+        let temp = tempfile::tempdir().expect("journal");
+        let health = temp.path().join("chronicle/20260812/health");
+        std::fs::create_dir_all(health.parent().expect("chronicle day")).expect("chronicle day");
+        std::fs::write(&health, b"not a directory").expect("blocked health path");
+        let (outbound, receiver) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State {
+            segments: HashMap::new(),
+            pending_files: HashSet::new(),
+            health: Health::default(),
+            stopping: false,
+        }));
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("default".into()),
+            segment: "live".into(),
+        };
+        state.lock().expect("state").segments.insert(
+            key.clone(),
+            SegmentState::new(SegmentContext {
+                key: key.clone(),
+                observer: None,
+                batch: false,
+                meta: None,
+            }),
+        );
+
+        let marker_succeeded = complete(
+            &state,
+            &outbound,
+            temp.path(),
+            &key,
+            None,
+            None,
+            None,
+            BatchMarkerPolicy::AdvanceStream,
+        );
+        assert!(!marker_succeeded);
+
+        let observed = receiver
+            .try_iter()
+            .find(|event| event.event == "observed")
+            .expect("observed");
+        assert_eq!(observed.fields["error"], true);
+        assert!(
+            observed.fields["errors"][0]
+                .as_str()
+                .expect("marker failure")
+                .contains("stream marker update failed")
+        );
     }
 
     #[test]

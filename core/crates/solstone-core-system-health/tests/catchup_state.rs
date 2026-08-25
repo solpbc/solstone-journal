@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde_json::Value;
+use serde_json::{Value, json};
+use solstone_core_journal_io::{
+    PublishOutcome, bump_stream_marker, publish_daily_marker_if_current,
+};
 use solstone_core_system::catchup::{
-    SegmentRepairOutcome, record_daily_catchup_progress, record_segment_repair_attempt,
-    record_segment_repair_outcome,
+    DailyCatchupOutcome, SegmentRepairOutcome, read_raw_input_fingerprint,
+    record_daily_catchup_attempt, record_daily_catchup_outcome, record_daily_catchup_progress,
+    record_segment_repair_attempt, record_segment_repair_outcome,
 };
 
 const DAY: &str = "20250101";
@@ -47,4 +51,102 @@ fn catchup_writers_match_inlined_state() {
     .unwrap();
     let expected: Value = serde_json::from_str(EXPECTED_CATCHUP_STATE).unwrap();
     assert_eq!(actual, expected, "catchup-state.json after three writers");
+}
+
+#[test]
+fn daily_catchup_completion_keeps_admitted_marker_provenance_in_the_envelope() {
+    let native_root = tempfile::tempdir().unwrap();
+    seed_raw_day(native_root.path());
+    let fingerprint = read_raw_input_fingerprint(native_root.path(), DAY).unwrap();
+    let admitted_generation = bump_stream_marker(native_root.path(), DAY).unwrap();
+
+    record_daily_catchup_attempt(
+        native_root.path(),
+        DAY,
+        "supervisor-catchup-20250101",
+        10.0,
+        admitted_generation,
+        &fingerprint,
+    );
+    let pending: Value = serde_json::from_slice(
+        &std::fs::read(native_root.path().join("health/catchup-state.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        pending["entries"]["20250101:daily-catchup"]["active"],
+        json!({"ref": "supervisor-catchup-20250101", "started_at": 10.0})
+    );
+    assert_eq!(
+        pending["entries"]["20250101:daily-catchup"]["admitted_generation"],
+        admitted_generation
+    );
+    assert_eq!(
+        pending["entries"]["20250101:daily-catchup"]["fingerprint"],
+        fingerprint
+    );
+
+    assert_eq!(
+        publish_daily_marker_if_current(
+            native_root.path(),
+            DAY,
+            admitted_generation,
+            &fingerprint,
+            || read_raw_input_fingerprint(native_root.path(), DAY)
+                .map_err(|error| error.to_string()),
+        )
+        .unwrap(),
+        PublishOutcome::Published(admitted_generation)
+    );
+    assert!(record_daily_catchup_outcome(
+        native_root.path(),
+        DAY,
+        "supervisor-catchup-20250101",
+        admitted_generation,
+        &fingerprint,
+        DailyCatchupOutcome {
+            success: false,
+            timed_out: false,
+            timeout_seconds: None,
+            ended_at: 20.0,
+            exit_code: 7,
+            exit_status: "error".to_owned(),
+        },
+    ));
+
+    let actual: Value = serde_json::from_slice(
+        &std::fs::read(native_root.path().join("health/catchup-state.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        actual,
+        json!({
+            "version": 1,
+            "entries": {
+                "20250101:daily-catchup": {
+                    "active": null,
+                    "admitted_generation": admitted_generation,
+                    "attempts": 0,
+                    "bounded": false,
+                    "cleared": null,
+                    "command_kind": "daily-catchup",
+                    "consecutive_non_completion": 0,
+                    "daily_progress": null,
+                    "day": DAY,
+                    "entered_backoff_at": null,
+                    "exit_code": 7,
+                    "exit_reason": null,
+                    "exit_status": "error",
+                    "fingerprint": fingerprint,
+                    "last_attempt_at": 10.0,
+                    "last_outcome": "completed",
+                    "next_retry_at": 0,
+                    "notified_at": null,
+                    "reason_code": null,
+                    "remaining": null,
+                    "timeout_seconds": null,
+                }
+            }
+        }),
+        "terminal daily catchup envelope retains only maintained provenance and terminal fields"
+    );
 }

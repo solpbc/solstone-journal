@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumEnvelope;
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, day_path, read_health_marker};
+use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
@@ -36,7 +36,8 @@ use solstone_core_system::status_wire::{
 };
 use solstone_core_system::{
     catchup::{
-        CatchupError, days_with_expired_retry, eligible_catchup_days, read_raw_input_fingerprint,
+        CatchupError, days_with_expired_retry, eligible_catchup_days,
+        reconcile_stale_catchup_attempts,
     },
     queue::{SubmitOutcome, TaskQueue, TaskQueueStatusSnapshot},
 };
@@ -228,6 +229,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 state.last_retry_expiry_drain = tick;
             } else if let Err(error) = handle_retry_expiry_drain(
                 state.is_remote_mode,
+                processing_is_deferred(&state.journal),
                 &state.journal,
                 &state.queue,
                 &mut state.last_retry_expiry_drain,
@@ -407,8 +409,10 @@ pub(crate) fn handle_daily_tasks(
     Ok(true)
 }
 
+#[allow(clippy::too_many_arguments)] // The tick's clock/watermark seams remain explicitly injectable.
 fn handle_retry_expiry_drain(
     is_remote: bool,
+    is_deferred: bool,
     journal: &Path,
     queue: &TaskQueue,
     last_drain: &mut Instant,
@@ -416,7 +420,7 @@ fn handle_retry_expiry_drain(
     tick: Instant,
     now: SystemTime,
 ) -> Result<(), CatchupError> {
-    if is_remote {
+    if is_remote || is_deferred {
         return Ok(());
     }
     if tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL {
@@ -424,11 +428,38 @@ fn handle_retry_expiry_drain(
     }
     *last_drain = tick;
     let exclude = BTreeSet::from([today.format("%Y%m%d").to_string()]);
-    let force_days = days_with_expired_retry(journal, &exclude, now)?;
-    if !force_days.is_empty() {
-        run_catchup_drain(journal, queue, &exclude, &force_days, now)?;
+    let expired_days = days_with_expired_retry(journal, &exclude, now)?;
+    if !expired_days.is_empty() {
+        // Expiry wakes the ordinary automatic selector. It is not an owner
+        // force: dirty-day filtering, both catchup gates, and the four-day cap
+        // remain authoritative.
+        run_catchup_drain(journal, queue, &exclude, &[], now)?;
     }
     Ok(())
+}
+
+/// Reconcile durable crash leftovers, then make one normal automatic pass
+/// before the retry timer begins.  This is intentionally independent of the
+/// queue's transient worker history.
+pub(crate) fn initialize_catchup(
+    journal: &Path,
+    queue: &TaskQueue,
+    is_remote: bool,
+    no_daily: bool,
+    today: chrono::NaiveDate,
+    now: SystemTime,
+) -> Result<(), CatchupError> {
+    reconcile_stale_catchup_attempts(journal, now);
+    if is_remote || no_daily || processing_is_deferred(journal) {
+        return Ok(());
+    }
+    run_catchup_drain(
+        journal,
+        queue,
+        &BTreeSet::from([today.format("%Y%m%d").to_string()]),
+        &[],
+        now,
+    )
 }
 
 /// Submit one daily think task for each selected, eligible catchup day.
@@ -444,26 +475,10 @@ pub(crate) fn run_catchup_drain(
     }
     for day in eligible_catchup_days(journal, force_days, exclude, now)? {
         let reference = format!("supervisor-catchup-{day}");
-        let provenance = DailyCatchupProvenance {
-            day: day.clone(),
-            reference: reference.clone(),
-            admitted_generation: stream_marker_generation(journal, &day)?,
-            fingerprint: read_raw_input_fingerprint(journal, &day)?,
-        };
+        let provenance = DailyCatchupProvenance { day: day.clone() };
         let _ = submit_catchup_think(queue, daily_think_argv(&day), &day, reference, provenance);
     }
     Ok(())
-}
-
-fn stream_marker_generation(journal: &Path, day: &str) -> Result<u64, CatchupError> {
-    Ok(
-        match read_health_marker(journal, day, HealthMarkerKind::Stream)? {
-            HealthMarkerState::Versioned { marker, .. } => marker.generation,
-            HealthMarkerState::Absent
-            | HealthMarkerState::LegacyEmpty { .. }
-            | HealthMarkerState::MalformedNonEmpty { .. } => 0,
-        },
-    )
 }
 
 fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<String> {
@@ -1668,7 +1683,7 @@ mod tests {
         let bed = Bed::new("retry-expiry");
         bed.enable_thinking();
         for day in ["20260101", "20260103"] {
-            fs::create_dir_all(bed.root.join("chronicle").join(day)).expect("chronicle day");
+            bed.updated_day(day);
         }
         fs::create_dir_all(bed.root.join("health")).expect("health directory");
         fs::write(
@@ -1701,6 +1716,7 @@ mod tests {
 
         handle_retry_expiry_drain(
             false,
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1712,6 +1728,7 @@ mod tests {
         assert_eq!(pending(&queue), 0);
 
         handle_retry_expiry_drain(
+            false,
             false,
             &bed.root,
             &queue,
@@ -1725,6 +1742,7 @@ mod tests {
 
         handle_retry_expiry_drain(
             false,
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1737,7 +1755,104 @@ mod tests {
     }
 
     #[test]
-    fn retry_expiry_drain_is_a_remote_mode_noop() {
+    fn retry_expiry_wakes_the_newest_four_automatic_days_without_bypassing_the_cap() {
+        let bed = Bed::new("retry-expiry-cap");
+        bed.enable_thinking();
+        let days = [
+            "20260101", "20260102", "20260103", "20260104", "20260105", "20260106",
+        ];
+        let mut entries = Map::new();
+        for day in days {
+            bed.updated_day(day);
+            entries.insert(
+                format!("{day}:daily-catchup"),
+                json!({
+                    "day": day,
+                    "command_kind": "daily-catchup",
+                    "active": null,
+                    "next_retry_at": 10.0,
+                }),
+            );
+        }
+        fs::create_dir_all(bed.root.join("health")).expect("health directory");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({"version": 1, "entries": entries})).expect("retry state"),
+        )
+        .expect("write retry state");
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut last_drain = origin;
+
+        handle_retry_expiry_drain(
+            false,
+            false,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(7),
+            origin + RETRY_EXPIRY_INTERVAL,
+            UNIX_EPOCH + Duration::from_secs(10),
+        )
+        .expect("expired retry tick");
+
+        assert_eq!(pending(&queue), 4);
+    }
+
+    #[test]
+    fn retry_expiry_does_not_force_a_day_whose_marker_pair_is_already_clean() {
+        let bed = Bed::new("retry-expiry-clean");
+        bed.enable_thinking();
+        let health = bed.root.join("chronicle/20260101/health");
+        fs::create_dir_all(&health).expect("health directory");
+        fs::write(
+            health.join("stream.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        )
+        .expect("stream marker");
+        fs::write(
+            health.join("daily.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":"complete"}"#,
+        )
+        .expect("daily marker");
+        fs::create_dir_all(bed.root.join("health")).expect("catchup health");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260101:daily-catchup": {
+                        "day": "20260101",
+                        "command_kind": "daily-catchup",
+                        "active": null,
+                        "next_retry_at": 10.0,
+                    }
+                }
+            }))
+            .expect("retry state"),
+        )
+        .expect("write retry state");
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut last_drain = origin;
+
+        handle_retry_expiry_drain(
+            false,
+            false,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(2),
+            origin + RETRY_EXPIRY_INTERVAL,
+            UNIX_EPOCH + Duration::from_secs(10),
+        )
+        .expect("expired retry tick");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn retry_expiry_drain_is_a_remote_or_deferred_mode_noop() {
         let bed = Bed::new("retry-expiry-remote");
         bed.enable_thinking();
         fs::create_dir_all(bed.root.join("chronicle/20260101")).expect("chronicle day");
@@ -1764,6 +1879,7 @@ mod tests {
         let mut last_drain = origin;
         handle_retry_expiry_drain(
             true,
+            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -1775,6 +1891,79 @@ mod tests {
 
         assert_eq!(pending(&queue), 0);
         assert_eq!(last_drain, origin);
+
+        handle_retry_expiry_drain(
+            false,
+            true,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(2),
+            origin + RETRY_EXPIRY_INTERVAL,
+            UNIX_EPOCH + Duration::from_secs(10),
+        )
+        .expect("deferred retry tick");
+
+        assert_eq!(pending(&queue), 0);
+        assert_eq!(last_drain, origin);
+    }
+
+    #[test]
+    fn startup_reconciles_before_draining_dirty_days_and_excludes_today() {
+        let bed = Bed::new("startup-catchup");
+        bed.enable_thinking();
+        for day in ["20260101", "20260102", "20260103"] {
+            let health = bed.root.join("chronicle").join(day).join("health");
+            fs::create_dir_all(&health).expect("health directory");
+            fs::write(
+                health.join("stream.updated"),
+                br#"{"version":1,"generation":1,"fingerprint":null}"#,
+            )
+            .expect("stream marker");
+        }
+        fs::create_dir_all(bed.root.join("health")).expect("catchup health");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260101:daily-catchup": {
+                        "day": "20260101",
+                        "command_kind": "daily-catchup",
+                        "active": {"ref": "lost", "started_at": 1.0},
+                        "admitted_generation": 1,
+                        "fingerprint": solstone_core_system::catchup::read_raw_input_fingerprint(
+                            &bed.root,
+                            "20260101",
+                        )
+                        .unwrap(),
+                        "next_retry_at": 0.0,
+                    }
+                }
+            }))
+            .expect("catchup state"),
+        )
+        .expect("write catchup state");
+        let queue = queue(&bed.root);
+
+        initialize_catchup(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(3),
+            UNIX_EPOCH + Duration::from_secs(20),
+        )
+        .expect("startup catchup");
+
+        assert_eq!(pending(&queue), 1, "only fresh past-day dirtiness drains");
+        let state: Value = serde_json::from_slice(
+            &fs::read(bed.root.join("health/catchup-state.json")).expect("catchup state"),
+        )
+        .expect("catchup JSON");
+        let stale = &state["entries"]["20260101:daily-catchup"];
+        assert_eq!(stale["last_outcome"], "interrupted");
+        assert_eq!(stale["next_retry_at"], 620.0);
     }
 
     #[test]

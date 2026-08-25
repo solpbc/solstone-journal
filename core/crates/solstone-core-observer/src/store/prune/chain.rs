@@ -134,16 +134,17 @@ pub fn repair_stream_chain(
     stream: &str,
     deleted_markers: &BTreeMap<SegmentKey, StreamMarker>,
     dry_run: bool,
-) -> (Vec<Refusal>, u64) {
+) -> (Vec<Refusal>, u64, BTreeSet<String>) {
     let pruned = match pruned_records_by_stream(journal, stream) {
         Ok(map) => map,
-        Err(refusal) => return (vec![refusal], 0),
+        Err(refusal) => return (vec![refusal], 0, BTreeSet::new()),
     };
     let segments = stream_segments(journal, stream);
     let existing: BTreeSet<SegmentKey> = segments.keys().cloned().collect();
     let mut refusals = Vec::new();
     let mut repaired = 0u64;
-    for path in segments.values() {
+    let mut mutated_days = BTreeSet::new();
+    for (key, path) in &segments {
         let Some(marker) = read_segment_marker(path) else {
             continue;
         };
@@ -175,10 +176,22 @@ pub fn repair_stream_chain(
             prev_segment: target.as_ref().map(|target| target.1.clone()),
             seq: marker.seq,
         };
-        let _ = write_segment_marker(path, &repaired_marker);
-        repaired += 1;
+        match write_segment_marker(path, &repaired_marker) {
+            Ok(()) => {
+                repaired += 1;
+                mutated_days.insert(key.0.clone());
+            }
+            Err(error) => refusals.push(Refusal::new(
+                format!("{}/{stream}/{}", key.0, key.1),
+                "chain-repair-write",
+                Some("stream.json"),
+                format!(
+                    "successor chain repair could not be published: {error}; fix the filesystem error and rerun prune"
+                ),
+            )),
+        }
     }
-    (refusals, repaired)
+    (refusals, repaired, mutated_days)
 }
 
 /// Recompute a stream's registry tail after deletions, only when the

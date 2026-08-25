@@ -15,8 +15,8 @@ use solstone_core_backup::{
     record_restore_result,
 };
 use solstone_core_backup_runtime::{BackupServices, reason_for_returncode, run_restic};
-use solstone_core_journal_io::check_record_identities;
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments, segment_path};
+use solstone_core_journal_io::{bump_stream_marker, check_record_identities};
 use solstone_core_retention::{Target, resolve_offload};
 
 use crate::ledger::{
@@ -27,7 +27,7 @@ use crate::measurement::device_free_bytes;
 pub const RESTORE_RESERVE_BYTES: u64 = 1_000_000_000;
 pub const OFFLOAD_RESTORE_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const OFFLOAD_RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
-pub const OFFLOAD_RESTORE_REASONS: [&str; 15] = [
+pub const OFFLOAD_RESTORE_REASONS: [&str; 16] = [
     "auth_failed",
     "backup_not_ready",
     "failed",
@@ -41,6 +41,7 @@ pub const OFFLOAD_RESTORE_REASONS: [&str; 15] = [
     "rclone_unavailable",
     "segment_identity",
     "segment_missing",
+    "stream_marker_failed",
     "timeout",
     "verification_failed",
 ];
@@ -145,7 +146,7 @@ fn restore_segment(
     journal: &Path,
     services: &BackupServices<'_>,
     summary: &SegmentOffloadSummary,
-) -> (RestoreSegmentResult, bool) {
+) -> (RestoreSegmentResult, bool, Option<String>) {
     let directory = directory(journal, summary);
     let err = |reason: &str| RestoreSegmentResult {
         status: "error".into(),
@@ -160,7 +161,7 @@ fn restore_segment(
         bytes_restored: 0,
     };
     if !directory.is_dir() {
-        return (err("segment_missing"), true);
+        return (err("segment_missing"), true, None);
     }
     let absent = summary
         .files
@@ -173,10 +174,10 @@ fn restore_segment(
             get_destination(journal).ok().flatten(),
             get_keys(journal).ok().flatten(),
         ) else {
-            return (err("backup_not_ready"), true);
+            return (err("backup_not_ready"), true, None);
         };
         let Ok(env) = assemble_backend_env(&destination) else {
-            return (err("failed"), true);
+            return (err("failed"), true, None);
         };
         let env = env
             .into_iter()
@@ -184,7 +185,7 @@ fn restore_segment(
             .collect::<BTreeMap<_, _>>();
         let restic_path = match services.restic_path() {
             Ok(path) => path,
-            Err(reason) => return (err(&reason), true),
+            Err(reason) => return (err(&reason), true, None),
         };
         let mut args = vec![
             "restore".into(),
@@ -212,16 +213,36 @@ fn restore_segment(
             &[],
         ) {
             Ok(output) => output,
-            Err(_) => return (err("failed"), true),
+            Err(_) => return (err("failed"), true, None),
         };
         if output.returncode != 0 {
             rollback(&directory, &absent);
-            return (err(reason_for_returncode(output.returncode)), true);
+            return (err(reason_for_returncode(output.returncode)), true, None);
         }
     }
     if let Some(reason) = verify(&directory, &summary.files) {
         rollback(&directory, &absent);
-        return (err(reason), true);
+        return (err(reason), true, None);
+    }
+    if !absent.is_empty()
+        && let Err(error) = bump_stream_marker(journal, &summary.day)
+    {
+        return (
+            RestoreSegmentResult {
+                status: "error".into(),
+                reason: Some("stream_marker_failed".into()),
+                day: summary.day.clone(),
+                stream: summary.stream.clone(),
+                segment: summary.segment.clone(),
+                snapshot_id: summary.snapshot_id.clone(),
+                files_expected: summary.offloaded_file_count,
+                files_restored: summary.offloaded_file_count,
+                bytes_expected: summary.offloaded_bytes,
+                bytes_restored: summary.offloaded_bytes,
+            },
+            true,
+            Some(error.to_string()),
+        );
     }
     let names = summary
         .files
@@ -239,7 +260,7 @@ fn restore_segment(
     )
     .is_err()
     {
-        return (err("failed"), true);
+        return (err("failed"), true, None);
     };
     if append_restore_event(
         journal,
@@ -250,7 +271,7 @@ fn restore_segment(
     )
     .is_err()
     {
-        return (err("failed"), false);
+        return (err("failed"), false, None);
     };
     (
         RestoreSegmentResult {
@@ -266,6 +287,7 @@ fn restore_segment(
             bytes_restored: summary.offloaded_bytes,
         },
         true,
+        None,
     )
 }
 fn run(
@@ -313,9 +335,13 @@ fn run(
     }
     let mut details = vec![];
     let mut record_result = true;
+    let mut reason_detail = None;
     for segment in &selected {
-        let (detail, should_record) = restore_segment(journal, services, segment);
+        let (detail, should_record, detail_reason) = restore_segment(journal, services, segment);
         record_result &= should_record;
+        if reason_detail.is_none() {
+            reason_detail = detail_reason;
+        }
         let hard = detail.status == "error"
             && !matches!(
                 detail.reason.as_deref(),
@@ -361,18 +387,10 @@ fn run(
             .iter()
             .map(|segment| segment.offloaded_file_count)
             .sum(),
-        files_restored: details
-            .iter()
-            .filter(|detail| detail.status == "ok")
-            .map(|detail| detail.files_restored)
-            .sum(),
+        files_restored: details.iter().map(|detail| detail.files_restored).sum(),
         bytes_expected: expected,
-        bytes_restored: details
-            .iter()
-            .filter(|detail| detail.status == "ok")
-            .map(|detail| detail.bytes_restored)
-            .sum(),
-        reason_detail: None,
+        bytes_restored: details.iter().map(|detail| detail.bytes_restored).sum(),
+        reason_detail,
         details,
     };
     if record_result {
@@ -494,6 +512,39 @@ mod tests {
         }
     }
 
+    struct SuccessfulRestoreRunner {
+        bytes: &'static [u8],
+    }
+
+    impl ToolRunner for SuccessfulRestoreRunner {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            let args = request
+                .argv
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            if args.first().is_some_and(|arg| arg == "restore") {
+                let target = args
+                    .windows(2)
+                    .find(|args| args[0] == "--target")
+                    .map(|args| PathBuf::from(&args[1]))
+                    .expect("restore target");
+                for include in args
+                    .windows(2)
+                    .filter(|args| args[0] == "--include")
+                    .map(|args| args[1].trim_start_matches('/'))
+                {
+                    fs::write(target.join(include), self.bytes).unwrap();
+                }
+            }
+            Ok(ToolOutput {
+                returncode: 0,
+                stdout: vec![],
+                stderr: vec![],
+            })
+        }
+    }
+
     struct Http;
     impl HttpTransport for Http {
         fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
@@ -555,6 +606,23 @@ mod tests {
         }
     }
 
+    fn successful_restore_services<'a>(
+        runner: &'a SuccessfulRestoreRunner,
+        http: &'a Http,
+        clock: &'a TestClock,
+        maintenance: &'a Maintenance,
+    ) -> BackupServices<'a> {
+        BackupServices {
+            runner,
+            http,
+            clock,
+            restic_path: Some(Path::new("/fixture/bin/restic")),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: maintenance,
+        }
+    }
+
     fn digest(bytes: &[u8]) -> String {
         format!("{:x}", Sha256::digest(bytes))
     }
@@ -598,6 +666,102 @@ mod tests {
         RestoreRunner {
             calls: RefCell::new(vec![]),
         }
+    }
+
+    fn configure_test_repository(journal: &Path) {
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"backup":{"daily_key":"PASSWORDONLY","recovery_key":"0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ","destination":{"repository":"s3:bucket/prefix","backend":"s3","credentials":{"access_key_id":"ACCESSFIXTURE","secret_access_key":"BACKENDSECRET"}}}}"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn restored_media_dirties_each_exact_day_and_no_untouched_day() {
+        let journal = tempfile::tempdir().unwrap();
+        let restored = b"restored";
+        for (day, segment) in [("20260112", "120000_012"), ("20260113", "130000_013")] {
+            let directory = marked_segment(journal.path(), day, segment, restored);
+            fs::remove_file(directory.join("raw.webm")).unwrap();
+        }
+        fs::create_dir_all(journal.path().join("chronicle/20260114/140000_014")).unwrap();
+        configure_test_repository(journal.path());
+        let runner = SuccessfulRestoreRunner { bytes: restored };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_all_offload(
+            journal.path(),
+            &successful_restore_services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "ok", "{result:?}");
+        for day in ["20260112", "20260113"] {
+            let marker: Value = serde_json::from_slice(
+                &fs::read(
+                    journal
+                        .path()
+                        .join("chronicle")
+                        .join(day)
+                        .join("health/stream.updated"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(marker["generation"], 1, "{day}");
+        }
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260114/health/stream.updated")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn restore_marker_failure_is_terminal_with_restored_bytes_and_mark_retained() {
+        let journal = tempfile::tempdir().unwrap();
+        let restored = b"restored";
+        let segment = marked_segment(journal.path(), "20260115", "150000_015", restored);
+        fs::remove_file(segment.join("raw.webm")).unwrap();
+        let marker = journal
+            .path()
+            .join("chronicle/20260115/health/stream.updated");
+        fs::create_dir_all(&marker).unwrap();
+        configure_test_repository(journal.path());
+        let runner = SuccessfulRestoreRunner { bytes: restored };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_offload_day(
+            journal.path(),
+            &successful_restore_services(&runner, &http, &clock, &maintenance),
+            "20260115",
+        );
+
+        assert_eq!(result.status, "error", "{result:?}");
+        assert_eq!(result.reason.as_deref(), Some("stream_marker_failed"));
+        assert!(
+            result
+                .reason_detail
+                .as_deref()
+                .is_some_and(|detail| { detail.contains(&marker.display().to_string()) })
+        );
+        assert_eq!(result.files_restored, 1);
+        assert_eq!(result.bytes_restored, restored.len() as u64);
+        assert_eq!(fs::read(segment.join("raw.webm")).unwrap(), restored);
+        let register: solstone_core_retention::Register = serde_json::from_slice(
+            &fs::read(journal.path().join("health/retention-marks.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            register.marks.len(),
+            1,
+            "marker failure must precede resolution"
+        );
     }
 
     #[test]

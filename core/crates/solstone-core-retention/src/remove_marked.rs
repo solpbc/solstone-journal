@@ -134,6 +134,7 @@ fn remove_one(
             target: target.clone(),
             removed: Vec::new(),
             not_removed: Vec::new(),
+            post_commit_failure: None,
         });
         for name in not_approved {
             row.not_removed.push(NotRemoved {
@@ -311,6 +312,7 @@ fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
             reason: reason.to_owned(),
             staged: None,
         }],
+        post_commit_failure: None,
     }
 }
 

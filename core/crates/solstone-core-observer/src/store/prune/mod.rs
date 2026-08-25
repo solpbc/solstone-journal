@@ -153,20 +153,22 @@ fn repair_crash_leftovers(
     journal: &Path,
     days: &[String],
     stream: Option<&str>,
-) -> (Vec<Refusal>, u64) {
+) -> (Vec<Refusal>, u64, BTreeSet<String>) {
     let streams = match selected_streams(journal, days, stream) {
         Ok(streams) => streams,
-        Err(refusal) => return (vec![refusal], 0),
+        Err(refusal) => return (vec![refusal], 0, BTreeSet::new()),
     };
     let mut refusals = Vec::new();
     let mut repaired = 0u64;
+    let mut mutated_days = BTreeSet::new();
     for stream_name in streams {
-        let (stream_refusals, count) =
+        let (stream_refusals, count, stream_days) =
             chain::repair_stream_chain(journal, &stream_name, &Default::default(), false);
         refusals.extend(stream_refusals);
         repaired += count;
+        mutated_days.extend(stream_days);
     }
-    (refusals, repaired)
+    (refusals, repaired, mutated_days)
 }
 
 /// Plan or execute observer duplicate pruning. Dry-run is the default and
@@ -188,7 +190,8 @@ pub fn run_prune(
             result.refusals.push(refusal);
             return result;
         }
-        let (recovery_refusals, repaired) = repair_crash_leftovers(journal, days, stream);
+        let (recovery_refusals, repaired, repaired_days) =
+            repair_crash_leftovers(journal, days, stream);
         let mut result = plan::plan(journal, days, stream);
         result.execute = true;
         result.crash_repaired = repaired;
@@ -197,10 +200,16 @@ pub fn run_prune(
         refusals.extend(result.refusals);
         result.refusals = refusals;
         if recovery_found_refusals {
+            for day in &repaired_days {
+                if let Err(error) = solstone_core_segment::touch_stream_health_marker(journal, day)
+                {
+                    apply::report_marker_failure(&mut result, day, &error);
+                }
+            }
             return result;
         }
         let groups = std::mem::take(&mut result.groups);
-        apply::execute_plan(journal, &mut result, groups, now_ms);
+        apply::execute_plan(journal, &mut result, groups, now_ms, repaired_days);
         result
     } else {
         plan::plan(journal, days, stream)

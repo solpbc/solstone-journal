@@ -66,7 +66,7 @@ pub fn run(
         }
     };
     if options.commit {
-        commit_eligible(&mut report, writer, stderr);
+        commit_eligible(journal, &mut report, writer, stderr);
     }
 
     let _ = writeln!(
@@ -83,14 +83,27 @@ pub fn run(
 }
 
 pub(crate) fn commit_eligible(
+    journal: &Path,
     report: &mut classify::Report,
     writer: &dyn Writer,
     stderr: &mut dyn Write,
 ) {
     for item in &report.eligible {
-        if let Err(error) = commit::commit(item, writer) {
-            report.counts.move_stamp_to_write_failed();
-            let _ = writeln!(stderr, "Could not stamp {}: {error}", item.path.display());
+        match commit::commit(journal, item, writer) {
+            Ok(()) => {}
+            Err(commit::CommitError::Marker(error)) => {
+                report.counts.move_stamp_to_write_failed();
+                let _ = writeln!(
+                    stderr,
+                    "Stamped {}, but could not mark day {} updated: {error}",
+                    item.path.display(),
+                    item.day
+                );
+            }
+            Err(error) => {
+                report.counts.move_stamp_to_write_failed();
+                let _ = writeln!(stderr, "Could not stamp {}: {error}", item.path.display());
+            }
         }
     }
 }

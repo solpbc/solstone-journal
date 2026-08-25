@@ -582,6 +582,8 @@ mod tests {
                 assert!(
                     path.starts_with("chronicle/20260731/field/090000_300")
                         || path == Path::new("chronicle/20260731/field/090000_300.lock")
+                        || path == Path::new("chronicle/20260731/health/stream.updated")
+                        || path == Path::new("chronicle/20260731/health/stream.updated.lock")
                         || path.starts_with("config/actions"),
                     "unexpected journal mutation: {}",
                     path.display()
@@ -621,6 +623,12 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(names, vec!["tombstone.json"]);
+        assert!(
+            root.path()
+                .join("chronicle/20260731/health/stream.updated")
+                .is_file(),
+            "a committed deletion must dirty its day"
+        );
         assert_only_write_route_paths_changed(&before, &snapshot(root.path()));
         let rows = action_rows(root.path());
         let phases = rows

@@ -354,17 +354,18 @@ pub(crate) fn execute_plan(
     } else if verbose {
         stdout.push_str("  index not available, skipping reindex\n");
     }
-    for day in [&plan.source.day, &plan.destination.day] {
+    let mutated_days = outcome.mutated_days;
+    for day in &mutated_days {
         if let Err(error) = operations.touch_health(journal, day) {
             failures.push(&mut stderr, 6, "health-marker touch", error);
         }
     }
     stdout.push_str(&format!(
-        "  touched health markers: {}, {}\n",
-        plan.source.day, plan.destination.day
+        "  touched health markers: {}\n",
+        mutated_days.iter().cloned().collect::<Vec<_>>().join(", ")
     ));
     if verbose {
-        stdout.push_str("    think will re-run daily talents on both days\n");
+        stdout.push_str("    think will re-run daily talents on the touched days\n");
     }
     let results = checks(journal, &plan.destination);
     stdout.push('\n');

@@ -2891,8 +2891,8 @@ fn run_native_think_mode(context: &VerdictContext<'_>, argv: &[&str]) -> std::pr
 /// are the boundary under proof here.
 #[test]
 fn native_think_all_modes_produce_their_falsifying_observables_without_python() {
-    // Source-derived, not measured: thinking.py:4606 records this daily-only
-    // pre-phase before `run_daily_prompts`.
+    // The restored native whole-day operation records its Sense batch before
+    // segment repair and scheduled daily work.
     let daily = Harness::new();
     let context = daily.context();
     prove_poison_interpreters_live(&context);
@@ -2907,7 +2907,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
     assert!(
         think_mode_events(context.journal, "daily")
             .iter()
-            .any(|event| { event["event"] == "phase.start" && event["phase"] == "sense_repair" })
+            .any(|event| { event["event"] == "phase.start" && event["phase"] == "sense_batch" })
     );
 
     // Source-derived, not measured: thinking.py:2559-2957 processes a

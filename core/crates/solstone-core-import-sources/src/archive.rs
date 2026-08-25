@@ -30,6 +30,7 @@ use solstone_core_journal_io::{
     StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
     iter_segments, publish_staged_dir, write_bytes_exclusive,
 };
+use solstone_core_segment::touch_stream_health_marker;
 use solstone_core_transfer_manifest::{
     ExpectedMember, MANIFEST_NAME, TransferManifest, expected_members, parse_manifest,
     validate_expected_members,
@@ -2123,6 +2124,33 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
             format!("{error}; undo incomplete: {}", undo_failures.join("; "))
         };
         return Err(ImportSourcesError::MergePublishFailed { detail });
+    }
+    let published_days = state
+        .chronicle_units
+        .iter()
+        .filter_map(|unit| {
+            let mut components = unit.relative().split('/');
+            match (components.next(), components.next()) {
+                (Some("chronicle"), Some(day)) if is_eight_digit_day(day) => Some(day.to_owned()),
+                _ => None,
+            }
+        })
+        .collect::<BTreeSet<_>>();
+    let marker_failures = published_days
+        .into_iter()
+        .filter_map(|day| {
+            touch_stream_health_marker(target, &day)
+                .err()
+                .map(|error| format!("{day}: {error}"))
+        })
+        .collect::<Vec<_>>();
+    if !marker_failures.is_empty() {
+        return Err(ImportSourcesError::MergePublishFailed {
+            detail: format!(
+                "stream marker update failed after archive content was published: {}; published content was not rolled back",
+                marker_failures.join("; ")
+            ),
+        });
     }
     Ok(())
 }

@@ -946,12 +946,22 @@ pub(crate) async fn boot_and_tick(
         daily: DailyState {
             last_day: Some(chrono::Local::now().date_naive()),
         },
-        // The first supervise tick may immediately consider persisted retry
-        // watermarks. A subsequent catchup drain resets this watermark.
-        last_retry_expiry_drain: Instant::now() - tick::RETRY_EXPIRY_INTERVAL,
+        // Startup reconciliation/drain below seeds the retry watermark.
+        last_retry_expiry_drain: Instant::now(),
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
     };
+    if let Err(error) = tick::initialize_catchup(
+        &state.journal,
+        &state.queue,
+        state.is_remote_mode,
+        state.no_daily,
+        chrono::Local::now().date_naive(),
+        SystemTime::now(),
+    ) {
+        eprintln!("supervisor: startup catchup reconciliation failed: {error}");
+    }
+    state.last_retry_expiry_drain = Instant::now();
     let sync_conflict = tick::run(&mut state, &mut shutdown_signals).await;
     Ok(SupervisorOutcome {
         lifecycle,

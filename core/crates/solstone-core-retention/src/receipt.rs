@@ -76,6 +76,16 @@ pub struct NotRemoved {
     pub staged: Option<String>,
 }
 
+/// A durable removal completed, but a required follow-up publication did not.
+///
+/// This is deliberately separate from [`NotRemoved`]: the owner's content is
+/// already gone and must never be described as rolled back or refused.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PostCommitFailure {
+    pub entry: String,
+    pub reason: String,
+}
+
 /// The run itself stopped before reaching every target -- a lock timeout, an
 /// abort, a budget.
 ///
@@ -100,6 +110,8 @@ pub struct TargetOutcome {
     /// failing for different reasons in the same segment. Structured per-item
     /// results: one entry cannot discard a sibling's.
     pub not_removed: Vec<NotRemoved>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_commit_failure: Option<PostCommitFailure>,
 }
 
 /// One removal run. Always complete, whatever went wrong.
@@ -142,7 +154,7 @@ impl Outcome {
     pub fn has_failures(&self) -> bool {
         self.targets
             .iter()
-            .any(|target| !target.not_removed.is_empty())
+            .any(|target| !target.not_removed.is_empty() || target.post_commit_failure.is_some())
     }
 
     /// Every path this run removed, across all targets.
@@ -190,16 +202,19 @@ mod tests {
                     target: target("070000_17"),
                     removed: vec![RemovedPath::confirmed("a.flac".to_owned())],
                     not_removed: Vec::new(),
+                    post_commit_failure: None,
                 },
                 TargetOutcome {
                     target: target("070100_17"),
                     removed: Vec::new(),
                     not_removed: vec![failed("b.flac", "the file is a directory")],
+                    post_commit_failure: None,
                 },
                 TargetOutcome {
                     target: target("070200_17"),
                     removed: Vec::new(),
                     not_removed: vec![failed("c.flac", "permission denied reading the entry")],
+                    post_commit_failure: None,
                 },
             ],
             halted: None,
@@ -233,11 +248,13 @@ mod tests {
                     target: target("070000_17"),
                     removed: vec![RemovedPath::confirmed("a.flac".to_owned())],
                     not_removed: Vec::new(),
+                    post_commit_failure: None,
                 },
                 TargetOutcome {
                     target: target("070000_17"),
                     removed: Vec::new(),
                     not_removed: vec![failed("a.flac", "already removed")],
+                    post_commit_failure: None,
                 },
             ],
             halted: None,
@@ -260,6 +277,7 @@ mod tests {
                 failed("audio.flac", "permission denied reading the entry"),
                 failed("video.mp4", "the read failed part way through"),
             ],
+            post_commit_failure: None,
         };
         assert_eq!(outcome.not_removed.len(), 2);
         assert_ne!(outcome.not_removed[0].reason, outcome.not_removed[1].reason);
@@ -276,6 +294,7 @@ mod tests {
                 target: target("070000_17"),
                 removed: Vec::new(),
                 not_removed: vec![failed("a.flac", "the file is a directory")],
+                post_commit_failure: None,
             }],
             halted: Some(RunHalt {
                 reason: "another process holds this segment".to_owned(),

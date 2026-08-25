@@ -17,10 +17,11 @@ use chrono::Utc;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, append_jsonl, atomic_replace, contained_path, find_available_segment,
+    AtomicWriteOptions, append_jsonl, atomic_replace, bump_stream_marker, contained_path,
+    find_available_segment,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     path::{Component, Path},
 };
@@ -118,6 +119,22 @@ fn valid_segment_key(value: &str) -> bool {
         && duration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+fn dirty_segment_days(root: &Path, days: &BTreeSet<String>) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for day in days {
+        if let Err(error) = bump_stream_marker(root, day) {
+            failures.push(format!("{day}: {error}"));
+        }
+    }
+    if !failures.is_empty() {
+        return Err(format!(
+            "stream marker update failed after journal-source segment content was published: {}",
+            failures.join("; ")
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) async fn segments(
     State(app): State<AppState>,
     AxumPath(_): AxumPath<String>,
@@ -182,6 +199,7 @@ async fn segments_with_attempts(
     };
     let mut new = Map::new();
     let (mut copied, mut skipped, mut deconflicted) = (0, 0, 0);
+    let mut mutated_days = BTreeSet::new();
     let mut errors = Vec::new();
     for (idx, item) in items.iter().enumerate() {
         let result = (|| -> Result<(), String> {
@@ -263,6 +281,7 @@ async fn segments_with_attempts(
                     let file = contained(&app.root, &format!("{stream_relative}/{final_key}/{n}"))?;
                     atomic_replace(file, &payload[n], AtomicWriteOptions { mode: Some(0o600) })
                         .map_err(|e| e.to_string())?;
+                    mutated_days.insert(day.to_owned());
                 }
             }
             let mut rec = json!({"files":names.iter().map(|n|json!({"name":n,"sha256":hash(&payload[n]),"size":payload[n].len()})).collect::<Vec<_>>()});
@@ -323,6 +342,9 @@ async fn segments_with_attempts(
                 .extend(v.as_object().unwrap().clone());
         }
         if let Err(detail) = write_json(&path, &existing) {
+            let detail = dirty_segment_days(&app.root, &mutated_days)
+                .err()
+                .map_or(detail.clone(), |marker| format!("{detail}; {marker}"));
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "I couldn't save that import.",
@@ -335,10 +357,21 @@ async fn segments_with_attempts(
     if let Some(identity) = identity
         && let Err(detail) = record_received(&app.root, identity, "segments_received", written)
     {
+        let detail = dirty_segment_days(&app.root, &mutated_days)
+            .err()
+            .map_or(detail.clone(), |marker| format!("{detail}; {marker}"));
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
             "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = dirty_segment_days(&app.root, &mutated_days) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "stream_marker_failed",
             detail,
         );
     }
@@ -1162,6 +1195,33 @@ mod tests {
         segment_body_for("default", "120000_60", bytes)
     }
 
+    fn segment_batch_body(items: &[(&str, &str, &[u8])]) -> Body {
+        let boundary = "segment-boundary";
+        let metadata = json!({
+            "segments": items
+                .iter()
+                .map(|(day, key, _)| json!({
+                    "day": day,
+                    "stream": "default",
+                    "segment_key": key,
+                    "files": ["entry.jsonl"],
+                }))
+                .collect::<Vec<_>>()
+        })
+        .to_string();
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n"
+        );
+        for (index, (_, _, bytes)) in items.iter().enumerate() {
+            body.push_str(&format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"files_{index}\"; filename=\"entry.jsonl\"\r\nContent-Type: application/json\r\n\r\n{}\r\n",
+                String::from_utf8_lossy(bytes)
+            ));
+        }
+        body.push_str(&format!("--{boundary}--\r\n"));
+        Body::from(body)
+    }
+
     fn whole_tree_snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
         fn visit(root: &Path, path: &Path, snapshot: &mut BTreeMap<String, Vec<u8>>) {
             let relative = path.strip_prefix(root).unwrap().display().to_string();
@@ -1309,6 +1369,83 @@ mod tests {
             keys.len(),
             2,
             "deconfliction records both original and alternate keys"
+        );
+    }
+
+    #[tokio::test]
+    async fn segment_ingest_dirties_only_copied_and_deconflicted_days() {
+        use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
+
+        let root = phase_root("empty");
+        let existing = root.path().join("chronicle/20260802/default/120000_60");
+        fs::create_dir_all(&existing).unwrap();
+        fs::write(existing.join("entry.jsonl"), b"same\n").unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260804/default/140000_60")).unwrap();
+        fs::write(
+            root.path()
+                .join("chronicle/20260804/default/140000_60/entry.jsonl"),
+            b"untouched\n",
+        )
+        .unwrap();
+
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_batch_body(&[
+                ("20260801", "110000_60", b"new-one\n"),
+                ("20260802", "120000_60", b"same\n"),
+                ("20260803", "130000_60", b"new-three\n"),
+            ]),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(response["segments_received"], 2);
+        assert_eq!(response["segments_skipped"], 1);
+        for day in ["20260801", "20260803"] {
+            assert!(matches!(
+                read_health_marker(root.path(), day, HealthMarkerKind::Stream).unwrap(),
+                HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+            ));
+        }
+        for day in ["20260802", "20260804"] {
+            assert!(matches!(
+                read_health_marker(root.path(), day, HealthMarkerKind::Stream).unwrap(),
+                HealthMarkerState::Absent
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn segment_ingest_marker_failure_is_terminal_after_content_publication() {
+        let root = phase_root("empty");
+        fs::create_dir_all(root.path().join("chronicle/20260801/health/stream.updated")).unwrap();
+
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body(b"published\n"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{response}");
+        assert_eq!(response["reason_code"], "stream_marker_failed");
+        assert!(
+            response["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("stream marker update failed"))
+        );
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join("chronicle/20260801/default/120000_60/entry.jsonl")
+            )
+            .unwrap(),
+            b"published\n"
         );
     }
 

@@ -126,9 +126,6 @@ pub struct WireTaskRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DailyCatchupProvenance {
     pub day: String,
-    pub reference: String,
-    pub admitted_generation: u64,
-    pub fingerprint: String,
 }
 
 /// A decoded ordinary bus request. It cannot carry a schedule-only argv.

@@ -22,7 +22,7 @@ mod terminal;
 mod types;
 mod vocabulary;
 
-pub use backlog::read_backlog_view;
+pub use backlog::{daily_failure_capped, read_backlog_view};
 pub use catchup_state::{
     read_backoff_summary, read_segment_repair_attempted, read_segment_repair_summary,
 };

@@ -193,7 +193,9 @@ fn invoke_native_library_paths(journal: &std::path::Path) {
     record_daily_catchup_outcome(
         journal,
         "20260101",
+        "catchup",
         0,
+        "fingerprint",
         DailyCatchupOutcome {
             success: false,
             timed_out: false,

@@ -154,6 +154,9 @@ pub enum PublishOutcome {
     Published(u64),
     AlreadyCurrent(u64),
     Superseded(u64),
+    /// Raw input changed after this generation was admitted. The stream
+    /// generation was advanced while holding the shared stream lock.
+    InputChanged(u64),
 }
 
 /// A marker read, lock, or publication failure.
@@ -163,6 +166,7 @@ pub enum HealthMarkerError {
     Lock(LockError),
     Atomic(AtomicWriteError),
     Malformed { path: PathBuf },
+    Fingerprint { message: String },
 }
 
 impl std::fmt::Display for HealthMarkerError {
@@ -180,6 +184,12 @@ impl std::fmt::Display for HealthMarkerError {
             Self::Malformed { path } => {
                 write!(formatter, "health marker is malformed: {}", path.display())
             }
+            Self::Fingerprint { message } => {
+                write!(
+                    formatter,
+                    "health marker fingerprint read failed: {message}"
+                )
+            }
         }
     }
 }
@@ -190,7 +200,7 @@ impl std::error::Error for HealthMarkerError {
             Self::Io { source, .. } => Some(source),
             Self::Lock(error) => Some(error),
             Self::Atomic(error) => Some(error),
-            Self::Malformed { .. } => None,
+            Self::Malformed { .. } | Self::Fingerprint { .. } => None,
         }
     }
 }
@@ -232,7 +242,9 @@ pub fn bump_stream_marker(journal: &Path, day: &str) -> Result<u64, AtomicWriteE
     let _lock =
         hold_lock(&path, LockOptions::default()).map_err(|error| atomic_error(&path, error))?;
     let state = read_health_marker_path(&path).map_err(|error| atomic_error(&path, error))?;
-    let (generation, fingerprint) = state.generation_and_fingerprint().unwrap_or((0, None));
+    let (generation, fingerprint) = state
+        .generation_and_fingerprint()
+        .ok_or_else(|| atomic_error(&path, "refusing to replace malformed stream marker"))?;
     let next = generation
         .checked_add(1)
         .ok_or_else(|| atomic_error(&path, "stream marker generation overflow"))?;
@@ -252,6 +264,8 @@ pub fn publish_daily_marker_if_current(
     journal: &Path,
     day: &str,
     observed_generation: u64,
+    observed_fingerprint: &str,
+    read_current_fingerprint: impl FnOnce() -> Result<String, String>,
 ) -> Result<PublishOutcome, HealthMarkerError> {
     let stream_path = health_marker_path(journal, day, HealthMarkerKind::Stream);
     let daily_path = health_marker_path(journal, day, HealthMarkerKind::Daily);
@@ -263,24 +277,68 @@ pub fn publish_daily_marker_if_current(
     if generation != observed_generation {
         return Ok(PublishOutcome::Superseded(generation));
     }
-    if matches!(
-        read_health_marker_path(&daily_path)?,
-        HealthMarkerState::Versioned {
-            marker: HealthMarker {
-                generation: daily_generation,
-                ..
+    let current_fingerprint =
+        read_current_fingerprint().map_err(|message| HealthMarkerError::Fingerprint { message })?;
+    if current_fingerprint != observed_fingerprint {
+        let next = generation.checked_add(1).ok_or_else(|| {
+            HealthMarkerError::Atomic(atomic_error(
+                &stream_path,
+                "stream marker generation overflow",
+            ))
+        })?;
+        write_marker(
+            &stream_path,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: next,
+                fingerprint,
             },
-            ..
-        } if daily_generation == generation
-    ) {
-        return Ok(PublishOutcome::AlreadyCurrent(generation));
+        )?;
+        return Ok(PublishOutcome::InputChanged(next));
+    }
+    match read_health_marker_path(&daily_path)? {
+        HealthMarkerState::MalformedNonEmpty { .. } => {
+            return Err(HealthMarkerError::Malformed { path: daily_path });
+        }
+        HealthMarkerState::Versioned { marker, .. } if marker.generation == generation => {
+            if marker.fingerprint.as_deref() != Some(observed_fingerprint) {
+                // The raw input may have changed after the prior daily marker
+                // was published but before this invocation was admitted, with
+                // the corresponding dirty-writer generation bump lost.  The
+                // daily marker gives us the missing before-state.  Invalidate
+                // it under the same lock instead of leaving an equal-generation
+                // pair that readers would mistake for complete.
+                let next = generation.checked_add(1).ok_or_else(|| {
+                    HealthMarkerError::Atomic(atomic_error(
+                        &stream_path,
+                        "stream marker generation overflow",
+                    ))
+                })?;
+                write_marker(
+                    &stream_path,
+                    &HealthMarker {
+                        version: MARKER_VERSION,
+                        generation: next,
+                        fingerprint,
+                    },
+                )?;
+                return Ok(PublishOutcome::InputChanged(next));
+            }
+            return Ok(PublishOutcome::AlreadyCurrent(generation));
+        }
+        HealthMarkerState::Versioned { marker, .. } if marker.generation > generation => {
+            return Err(HealthMarkerError::Malformed { path: daily_path });
+        }
+        HealthMarkerState::Absent
+        | HealthMarkerState::LegacyEmpty { .. }
+        | HealthMarkerState::Versioned { .. } => {}
     }
     write_marker(
         &daily_path,
         &HealthMarker {
             version: MARKER_VERSION,
             generation,
-            fingerprint,
+            fingerprint: Some(observed_fingerprint.to_owned()),
         },
     )?;
     Ok(PublishOutcome::Published(generation))
@@ -315,17 +373,23 @@ pub fn day_marker_pair_status(
             DayMarkerPairStatus::Dirty
         });
     }
-    let (stream_generation, _) = stream
+    let (stream_generation, stream_fingerprint) = stream
         .generation_and_fingerprint()
         .expect("malformed marker checked");
-    let (daily_generation, _) = daily
+    let (daily_generation, daily_fingerprint) = daily
         .generation_and_fingerprint()
         .expect("malformed marker checked");
-    Ok(if stream_generation == daily_generation {
-        DayMarkerPairStatus::Complete
-    } else {
-        DayMarkerPairStatus::Dirty
-    })
+    let fingerprint_mismatch = matches!(
+        (&stream_fingerprint, &daily_fingerprint),
+        (Some(stream), Some(daily)) if stream != daily
+    );
+    Ok(
+        if stream_generation == daily_generation && !fingerprint_mismatch {
+            DayMarkerPairStatus::Complete
+        } else {
+            DayMarkerPairStatus::Dirty
+        },
+    )
 }
 
 fn read_health_marker_path(path: &Path) -> Result<HealthMarkerState, HealthMarkerError> {
@@ -382,6 +446,10 @@ mod tests {
 
     fn marker_path(root: &Path, kind: HealthMarkerKind) -> PathBuf {
         health_marker_path(root, DAY, kind)
+    }
+
+    fn stable_fingerprint() -> Result<String, String> {
+        Ok("raw-fingerprint".to_owned())
     }
 
     #[test]
@@ -442,6 +510,43 @@ mod tests {
     }
 
     #[test]
+    fn malformed_stream_marker_refuses_bump_without_changing_bytes() {
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        let malformed = b"not-json";
+        fs::write(&stream, malformed).unwrap();
+
+        assert!(bump_stream_marker(temporary.path(), DAY).is_err());
+        assert_eq!(fs::read(stream).unwrap(), malformed);
+    }
+
+    #[test]
+    fn malformed_or_future_daily_marker_refuses_publication_without_changing_bytes() {
+        for bytes in [
+            b"not-json".as_slice(),
+            br#"{"version":1,"generation":2,"fingerprint":null}"#.as_slice(),
+        ] {
+            let temporary = TempDir::new();
+            assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
+            let daily = marker_path(temporary.path(), HealthMarkerKind::Daily);
+            fs::write(&daily, bytes).unwrap();
+
+            assert!(
+                publish_daily_marker_if_current(
+                    temporary.path(),
+                    DAY,
+                    1,
+                    "raw-fingerprint",
+                    stable_fingerprint,
+                )
+                .is_err()
+            );
+            assert_eq!(fs::read(daily).unwrap(), bytes);
+        }
+    }
+
+    #[test]
     fn marker_without_fingerprint_is_malformed() {
         let temporary = TempDir::new();
         let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
@@ -460,7 +565,14 @@ mod tests {
         assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
         assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 2);
         assert_eq!(
-            publish_daily_marker_if_current(temporary.path(), DAY, 1).unwrap(),
+            publish_daily_marker_if_current(
+                temporary.path(),
+                DAY,
+                1,
+                "raw-fingerprint",
+                stable_fingerprint,
+            )
+            .unwrap(),
             PublishOutcome::Superseded(2)
         );
     }
@@ -475,13 +587,27 @@ mod tests {
         let first_start = Arc::clone(&start);
         let first = std::thread::spawn(move || {
             first_start.wait();
-            publish_daily_marker_if_current(&first_root, DAY, 1).unwrap()
+            publish_daily_marker_if_current(
+                &first_root,
+                DAY,
+                1,
+                "raw-fingerprint",
+                stable_fingerprint,
+            )
+            .unwrap()
         });
         let second_root = Arc::clone(&root);
         let second_start = Arc::clone(&start);
         let second = std::thread::spawn(move || {
             second_start.wait();
-            publish_daily_marker_if_current(&second_root, DAY, 1).unwrap()
+            publish_daily_marker_if_current(
+                &second_root,
+                DAY,
+                1,
+                "raw-fingerprint",
+                stable_fingerprint,
+            )
+            .unwrap()
         });
         start.wait();
         let outcomes = [first.join().unwrap(), second.join().unwrap()];
@@ -502,24 +628,141 @@ mod tests {
     }
 
     #[test]
-    fn real_stream_lock_serializes_a_bump_before_publish() {
+    fn real_stream_lock_serializes_an_adversarial_writer_and_finalizer() {
         let temporary = TempDir::new();
         assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
         let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
         let held = hold_lock(&stream, LockOptions::default()).unwrap();
-        let root = temporary.path().to_path_buf();
-        let ready = Arc::new(Barrier::new(2));
-        let worker_ready = Arc::clone(&ready);
-        let worker = std::thread::spawn(move || {
-            worker_ready.wait();
-            bump_stream_marker(&root, DAY).unwrap()
+        let root = Arc::new(temporary.path().to_path_buf());
+        let ready = Arc::new(Barrier::new(3));
+        let writer_root = Arc::clone(&root);
+        let writer_ready = Arc::clone(&ready);
+        let writer = std::thread::spawn(move || {
+            writer_ready.wait();
+            bump_stream_marker(&writer_root, DAY).unwrap()
+        });
+        let finalizer_root = Arc::clone(&root);
+        let finalizer_ready = Arc::clone(&ready);
+        let finalizer = std::thread::spawn(move || {
+            finalizer_ready.wait();
+            publish_daily_marker_if_current(
+                &finalizer_root,
+                DAY,
+                1,
+                "raw-fingerprint",
+                stable_fingerprint,
+            )
+            .unwrap()
         });
         ready.wait();
         drop(held);
-        assert_eq!(worker.join().unwrap(), 2);
+        assert_eq!(writer.join().unwrap(), 2);
+        match finalizer.join().unwrap() {
+            PublishOutcome::Published(1) => assert_eq!(
+                day_marker_pair_status(temporary.path(), DAY).unwrap(),
+                DayMarkerPairStatus::Dirty
+            ),
+            PublishOutcome::Superseded(2) => assert!(matches!(
+                read_health_marker(temporary.path(), DAY, HealthMarkerKind::Daily).unwrap(),
+                HealthMarkerState::Absent
+            )),
+            outcome => panic!("unexpected finalizer outcome: {outcome:?}"),
+        }
+    }
+
+    #[test]
+    fn raw_fingerprint_is_compared_while_holding_the_real_stream_lock() {
+        let temporary = TempDir::new();
+        assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
+        let raw = temporary.path().join("raw-input");
+        fs::write(&raw, "before").unwrap();
+        let root = Arc::new(temporary.path().to_path_buf());
+        let raw_for_finalizer = raw.clone();
+        let entered_comparison = Arc::new(Barrier::new(2));
+        let release_comparison = Arc::new(Barrier::new(2));
+        let finalizer_entered = Arc::clone(&entered_comparison);
+        let finalizer_release = Arc::clone(&release_comparison);
+        let finalizer = std::thread::spawn(move || {
+            publish_daily_marker_if_current(&root, DAY, 1, "before", move || {
+                // This callback is invoked only after the shared stream
+                // lock has been acquired. Let a raw writer race here.
+                finalizer_entered.wait();
+                finalizer_release.wait();
+                fs::read_to_string(&raw_for_finalizer).map_err(|error| error.to_string())
+            })
+            .unwrap()
+        });
+        entered_comparison.wait();
+        fs::write(&raw, "after").unwrap();
+        release_comparison.wait();
+
+        assert_eq!(finalizer.join().unwrap(), PublishOutcome::InputChanged(2));
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned {
+                marker: HealthMarker { generation: 2, .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Daily).unwrap(),
+            HealthMarkerState::Absent
+        ));
+    }
+
+    #[test]
+    fn stale_same_generation_daily_fingerprint_advances_the_dirty_generation() {
+        let temporary = TempDir::new();
+        assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
         assert_eq!(
-            publish_daily_marker_if_current(temporary.path(), DAY, 1).unwrap(),
-            PublishOutcome::Superseded(2)
+            publish_daily_marker_if_current(temporary.path(), DAY, 1, "before", || Ok(
+                "before".to_owned()
+            ),)
+            .unwrap(),
+            PublishOutcome::Published(1)
+        );
+
+        assert_eq!(
+            publish_daily_marker_if_current(temporary.path(), DAY, 1, "after", || Ok(
+                "after".to_owned()
+            ),)
+            .unwrap(),
+            PublishOutcome::InputChanged(2)
+        );
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Dirty
+        );
+    }
+
+    #[test]
+    fn same_generation_comparable_fingerprint_mismatch_is_dirty() {
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        let daily = marker_path(temporary.path(), HealthMarkerKind::Daily);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        write_marker(
+            &stream,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: 7,
+                fingerprint: Some("new".to_owned()),
+            },
+        )
+        .unwrap();
+        write_marker(
+            &daily,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: 7,
+                fingerprint: Some("old".to_owned()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Dirty
         );
     }
 }

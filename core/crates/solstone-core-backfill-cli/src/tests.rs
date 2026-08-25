@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, Utc};
 use serde_json::{Value, json};
+use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_processing_record::media::expected_handler;
 use solstone_core_processing_record::predicate::{TerminalProofOutcome, evaluate_terminal_proof};
 use solstone_core_processing_record::vocab::{
@@ -630,7 +631,7 @@ fn writer_failure_and_re_read_guard_are_independent() {
         plan(fixture.journal(), Some(&fixture.day), instant(), &mut sink).expect("fixture plan");
     assert_eq!(report.counts.write_failed, 0);
     fs::write(&fixture.screen, b"mutated after planning\n").expect("mutate real file");
-    commit_eligible(&mut report, &AtomicWriter, &mut sink);
+    commit_eligible(fixture.journal(), &mut report, &AtomicWriter, &mut sink);
     assert_eq!(report.counts.write_failed, 1);
     assert_eq!(exit_code(true, &report), 3);
     assert_eq!(
@@ -846,4 +847,103 @@ fn direct_only_commit_still_stamps() {
     assert_eq!(writer.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     let after = fs::read(&direct).expect("stamped sidecar");
     assert_ne!(after, before);
+}
+
+fn stream_generation(journal: &Path, day: &str) -> Option<u64> {
+    match read_health_marker(journal, day, HealthMarkerKind::Stream).expect("read stream marker") {
+        HealthMarkerState::Versioned { marker, .. } => Some(marker.generation),
+        HealthMarkerState::Absent => None,
+        state => panic!("unexpected stream marker state: {state:?}"),
+    }
+}
+
+#[test]
+fn commit_dirties_exact_rewritten_days_after_each_atomic_replacement() {
+    let temp = tempfile::tempdir().expect("temporary journal");
+    let journal = temp.path();
+    let first_day = "20990101";
+    let second_day = "20990102";
+    let untouched_day = "20990103";
+
+    for (day, key, stem) in [
+        (first_day, "080000_300", "first_screen"),
+        (first_day, "080100_300", "second_screen"),
+        (second_day, "090000_300", "third_screen"),
+    ] {
+        let segment = segment(journal, day, Some("alpha"), key);
+        write_sidecar(
+            &segment,
+            stem,
+            "mp4",
+            json!({"raw": format!("{stem}.mp4")}),
+            10,
+        );
+    }
+    fs::create_dir_all(journal.join("chronicle").join(untouched_day))
+        .expect("create untouched day");
+
+    let mut stdout = Cursor::new(Vec::new());
+    let mut stderr = Cursor::new(Vec::new());
+    let exit = run(
+        &args(&["--commit"]),
+        journal,
+        instant(),
+        &AtomicWriter,
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(stderr.get_ref()));
+    assert_eq!(stream_generation(journal, first_day), Some(2));
+    assert_eq!(stream_generation(journal, second_day), Some(1));
+    assert_eq!(stream_generation(journal, untouched_day), None);
+}
+
+#[test]
+fn marker_failure_is_terminal_after_retaining_the_rewritten_sidecar() {
+    let temp = tempfile::tempdir().expect("temporary journal");
+    let journal = temp.path();
+    let day = "20990101";
+    let segment = segment(journal, day, Some("alpha"), "080000_300");
+    let sidecar = write_sidecar(&segment, "screen", "mp4", json!({"raw": "screen.mp4"}), 10);
+    fs::create_dir_all(
+        journal
+            .join("chronicle")
+            .join(day)
+            .join("health")
+            .join("stream.updated"),
+    )
+    .expect("block stream marker with directory");
+
+    let mut stdout = Cursor::new(Vec::new());
+    let mut stderr = Cursor::new(Vec::new());
+    let exit = run(
+        &args(&["--commit", "--day", day]),
+        journal,
+        instant(),
+        &AtomicWriter,
+        &mut stdout,
+        &mut stderr,
+    );
+    let stdout = String::from_utf8(stdout.into_inner()).expect("stdout utf8");
+    let stderr = String::from_utf8(stderr.into_inner()).expect("stderr utf8");
+
+    assert_eq!(exit, 3, "stdout={stdout} stderr={stderr}");
+    assert!(stdout.contains("stamp_empty: 0\n"), "{stdout}");
+    assert!(stdout.contains("write_failed: 1\n"), "{stdout}");
+    assert!(
+        stderr.contains(&format!(
+            "Stamped {}, but could not mark day {day} updated:",
+            sidecar.display()
+        )),
+        "{stderr}"
+    );
+    let first_row = fs::read_to_string(&sidecar)
+        .expect("rewritten sidecar retained")
+        .lines()
+        .next()
+        .expect("header row")
+        .to_owned();
+    let header: Value = serde_json::from_str(&first_row).expect("header json");
+    assert!(header.get("_solstone_processing").is_some());
 }

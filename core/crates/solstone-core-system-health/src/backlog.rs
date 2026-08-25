@@ -239,7 +239,7 @@ fn capped_daily_summary(
 ) -> Option<CappedDailySummary> {
     let capped = failures
         .into_iter()
-        .filter(|(_, failure)| failure_capped(Some(&failure.reason_code), failure.count))
+        .filter(|(_, failure)| daily_failure_capped(&failure.reason_code, failure.count))
         .collect::<Vec<_>>();
     let count = capped.len();
     let ((unit, failure), _) = capped
@@ -609,19 +609,21 @@ fn state_severity(state: &str) -> usize {
     }
 }
 
-fn failure_capped(reason_code: Option<&str>, count: usize) -> bool {
+/// Return whether one daily deterministic failure reached its maintained cap.
+///
+/// Dispatch and completion folding share this predicate: the same cap that
+/// stops automatic retries makes the unit terminal-degraded for the day.
+pub fn daily_failure_capped(reason_code: &str, count: usize) -> bool {
     let cap = match reason_code {
-        Some("model_not_found" | "provider_request_rejected") => 1,
-        Some("schema_invalid") => 3,
-        Some(
-            "agent_stuck"
-            | "context_window_exceeded"
-            | "max_turns_exhausted"
-            | "no_output"
-            | "non_responsive"
-            | "token_budget_exceeded"
-            | "wall_clock_exceeded",
-        ) => 2,
+        "model_not_found" | "provider_request_rejected" => 1,
+        "schema_invalid" => 3,
+        "agent_stuck"
+        | "context_window_exceeded"
+        | "max_turns_exhausted"
+        | "no_output"
+        | "non_responsive"
+        | "token_budget_exceeded"
+        | "wall_clock_exceeded" => 2,
         _ => return false,
     };
     count >= cap

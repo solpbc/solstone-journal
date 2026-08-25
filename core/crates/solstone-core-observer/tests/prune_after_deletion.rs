@@ -11,6 +11,8 @@ use solstone_core_observer::store::record::ObserverRecord;
 use solstone_core_observer::store::write::save_observer;
 
 const DAY: &str = "20260101";
+const SUCCESSOR_DAY: &str = "20260103";
+const UNTOUCHED_DAY: &str = "20260104";
 const STREAM: &str = "workstation";
 
 struct Fixture {
@@ -134,16 +136,26 @@ fn a_pruned_segment_in_the_middle_of_a_chain_repairs_the_survivor_predecessor() 
         Some("090000_300"),
         b"same bytes",
     );
-    write_segment(
+    let downstream = write_segment(
         &fixture.root,
-        DAY,
+        SUCCESSOR_DAY,
         STREAM,
         "100000_300",
         3,
-        Some("090000_301"),
+        None,
         b"downstream",
     );
-    write_stream_state(&fixture.root, STREAM, DAY, "100000_300", 3);
+    write_marker(&downstream, STREAM, Some(DAY), Some("090000_301"), 3);
+    write_segment(
+        &fixture.root,
+        UNTOUCHED_DAY,
+        "unrelated",
+        "120000_300",
+        1,
+        None,
+        b"unrelated",
+    );
+    write_stream_state(&fixture.root, STREAM, SUCCESSOR_DAY, "100000_300", 3);
 
     let result = run_prune(&fixture.root, &[DAY.to_owned()], Some(STREAM), true, 1_000);
     assert!(
@@ -154,11 +166,9 @@ fn a_pruned_segment_in_the_middle_of_a_chain_repairs_the_survivor_predecessor() 
     assert_eq!(result.deleted.len(), 1);
     assert_eq!(result.chain_repaired, 1);
 
-    let downstream_marker: serde_json::Value = serde_json::from_slice(
-        &fs::read(segment_dir(&fixture.root, DAY, STREAM, "100000_300").join("stream.json"))
-            .expect("marker"),
-    )
-    .expect("json");
+    let downstream_marker: serde_json::Value =
+        serde_json::from_slice(&fs::read(downstream.join("stream.json")).expect("marker"))
+            .expect("json");
     assert_eq!(downstream_marker["prev_segment"], "090000_300");
     assert_eq!(downstream_marker["prev_day"], DAY);
     assert_eq!(
@@ -174,6 +184,27 @@ fn a_pruned_segment_in_the_middle_of_a_chain_repairs_the_survivor_predecessor() 
     .expect("json");
     assert_eq!(state["last_segment"], "100000_300");
     assert_eq!(state["seq"], 3);
+    assert!(
+        fixture
+            .root
+            .join(format!("chronicle/{DAY}/health/stream.updated"))
+            .is_file(),
+        "the deletion day must be dirty"
+    );
+    assert!(
+        fixture
+            .root
+            .join(format!("chronicle/{SUCCESSOR_DAY}/health/stream.updated"))
+            .is_file(),
+        "the durably repaired successor day must be dirty"
+    );
+    assert!(
+        !fixture
+            .root
+            .join(format!("chronicle/{UNTOUCHED_DAY}/health/stream.updated"))
+            .exists(),
+        "an untouched day must not be dirtied"
+    );
 }
 
 #[test]

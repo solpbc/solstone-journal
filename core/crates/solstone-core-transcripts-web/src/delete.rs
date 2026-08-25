@@ -144,6 +144,22 @@ fn terminal_detail(outcome: &Outcome) -> (&'static str, Value) {
     if let Some(halt) = &outcome.halted {
         return ("failed", json!({"reason":halt.reason}));
     }
+    let post_commit_failures = outcome
+        .targets
+        .iter()
+        .filter_map(|target| target.post_commit_failure.as_ref())
+        .map(|failure| json!({"entry":failure.entry,"reason":failure.reason}))
+        .collect::<Vec<_>>();
+    if !post_commit_failures.is_empty() {
+        let removed = outcome
+            .removed_paths()
+            .map(|path| path.as_str().to_owned())
+            .collect::<Vec<_>>();
+        return (
+            "failed",
+            json!({"removed":removed,"post_commit_failures":post_commit_failures}),
+        );
+    }
     let refused = outcome
         .targets
         .iter()
@@ -316,6 +332,7 @@ mod tests {
                     reason: "busy".into(),
                     staged: Some(".staged".into()),
                 }],
+                post_commit_failure: None,
             }],
             halted: None,
         };

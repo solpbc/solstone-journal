@@ -114,6 +114,12 @@ fn erase_location(journal: &Path) -> Receipt {
         .iter()
         .flat_map(|target| target.not_removed.iter().map(owner_issue))
         .collect();
+    not_removed.extend(outcome.targets.iter().filter_map(|target| {
+        target.post_commit_failure.as_ref().map(|failure| Issue {
+            what: failure.entry.clone(),
+            plain_reason: failure.reason.clone(),
+        })
+    }));
 
     let completed: Vec<&Selected> = selected
         .iter()
@@ -136,7 +142,7 @@ fn erase_location(journal: &Path) -> Receipt {
     // on disk, and one unit the client decodes as `originals`.
     let originals = segments;
     let tombstones = segments;
-    let any_failed = !not_removed.is_empty() || outcome.halted.is_some();
+    let any_failed = outcome.has_failures() || outcome.halted.is_some();
 
     let index = RetentionIndex::new(journal);
     let index_chunks = match door::notify_index(&index, &outcome) {

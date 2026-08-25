@@ -11,7 +11,8 @@ use solstone_core_talent_config::{TalentFilter, load_talent_configs};
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
-    ModeResult, PendingUse, dispatch, drain, excluded, grouped, merge_mode_result, runtime,
+    DEFAULT_THINK_TIMEOUT, DrainOutcome, ModeResult, PendingUse, dispatch,
+    drain_with_deadline_observed, excluded, failure_cause, grouped, merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -96,6 +97,7 @@ pub(crate) fn run(
                     )?;
                     drain_if_full(
                         context,
+                        log,
                         &runtime,
                         &mut pending,
                         &mut group_result,
@@ -117,6 +119,7 @@ pub(crate) fn run(
                 )?;
                 drain_if_full(
                     context,
+                    log,
                     &runtime,
                     &mut pending,
                     &mut group_result,
@@ -126,7 +129,7 @@ pub(crate) fn run(
         }
         merge(
             &mut group_result,
-            drain(context, &runtime, std::mem::take(&mut pending)),
+            drain_daily(context, log, &runtime, std::mem::take(&mut pending)),
         );
         let mut completed_fields = Map::new();
         completed_fields.insert("mode".to_owned(), Value::String("daily".to_owned()));
@@ -203,7 +206,12 @@ fn queue_daily(
         result.terminal_units.insert(unit);
         return Ok(());
     }
-    if !from_scratch && !retry && deterministic.contains_key(&failure_key) {
+    if !from_scratch
+        && !retry
+        && deterministic.get(&failure_key).is_some_and(|failure| {
+            solstone_core_system_health::daily_failure_capped(&failure.reason_code, failure.count)
+        })
+    {
         result.terminal_units.insert(unit.clone());
         result.capped_units.insert(unit);
         return Ok(());
@@ -233,6 +241,10 @@ fn queue_daily(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
+            fields.insert(
+                "reason_code".to_owned(),
+                Value::String("request_lost".to_owned()),
+            );
             log.log("talent.fail", context.now_ms, fields);
             result.failed += 1;
             result
@@ -240,6 +252,15 @@ fn queue_daily(
                 .push(label(&config.key, facet, "request_lost"));
         }
         Err(DispatchFailure::Unavailable) => {
+            log_daily_failure(
+                log,
+                context,
+                &config.key,
+                facet,
+                None,
+                "unavailable",
+                "unavailable",
+            );
             result.failed += 1;
             result.failed_names.push(label(&config.key, facet, "send"));
         }
@@ -267,14 +288,114 @@ fn log_skip(
 
 fn drain_if_full(
     context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
     runtime: &tokio::runtime::Runtime,
     pending: &mut Vec<PendingUse>,
     result: &mut ModeResult,
     max: i64,
 ) {
     if max != 0 && pending.len() as i64 >= max {
-        merge(result, drain(context, runtime, std::mem::take(pending)));
+        merge(
+            result,
+            drain_daily(context, log, runtime, std::mem::take(pending)),
+        );
     }
+}
+
+/// Daily completion folding is based on the durable health run-log rather than
+/// transient Cortex replies.  Record every dispatched unit's one terminal
+/// disposition before the lifecycle rereads that fold.
+fn drain_daily(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    runtime: &tokio::runtime::Runtime,
+    pending: Vec<PendingUse>,
+) -> ModeResult {
+    drain_with_deadline_observed(
+        context,
+        runtime,
+        pending,
+        Some(DEFAULT_THINK_TIMEOUT),
+        &mut |item, outcome| log_daily_terminal(log, context, item, outcome),
+    )
+}
+
+fn log_daily_terminal(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    item: &PendingUse,
+    outcome: DrainOutcome,
+) {
+    match outcome {
+        DrainOutcome::Finish => {
+            let mut fields = daily_terminal_fields(context, item, "finish");
+            log.log(
+                "talent.complete",
+                context.now_ms,
+                std::mem::take(&mut fields),
+            );
+        }
+        DrainOutcome::Fail(state) => {
+            let reason_code = failure_cause(&context.journal, &item.use_id, state);
+            log_daily_failure(
+                log,
+                context,
+                &item.name,
+                item.facet.as_deref(),
+                Some(&item.use_id),
+                state,
+                &reason_code,
+            );
+        }
+    }
+}
+
+fn log_daily_failure(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    name: &str,
+    facet: Option<&str>,
+    use_id: Option<&str>,
+    state: &str,
+    reason_code: &str,
+) {
+    let mut fields = daily_terminal_fields_for(context, name, facet, state);
+    if let Some(use_id) = use_id {
+        fields.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
+    }
+    fields.insert(
+        "reason_code".to_owned(),
+        Value::String(reason_code.to_owned()),
+    );
+    log.log("talent.fail", context.now_ms, fields);
+}
+
+fn daily_terminal_fields(
+    context: &ThinkContext,
+    item: &PendingUse,
+    state: &str,
+) -> Map<String, Value> {
+    let mut fields = daily_terminal_fields_for(context, &item.name, item.facet.as_deref(), state);
+    fields.insert("use_id".to_owned(), Value::String(item.use_id.clone()));
+    fields
+}
+
+fn daily_terminal_fields_for(
+    context: &ThinkContext,
+    name: &str,
+    facet: Option<&str>,
+    state: &str,
+) -> Map<String, Value> {
+    let mut fields = Map::from_iter([
+        ("mode".to_owned(), Value::String("daily".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("name".to_owned(), Value::String(name.to_owned())),
+        ("state".to_owned(), Value::String(state.to_owned())),
+    ]);
+    if let Some(facet) = facet {
+        fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
+    }
+    fields
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {

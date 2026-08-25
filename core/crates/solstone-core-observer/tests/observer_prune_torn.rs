@@ -146,3 +146,70 @@ fn execute_plan_clean_day_still_deletes() {
     );
     assert!(!candidate.is_dir());
 }
+
+#[test]
+fn crash_repair_marks_successful_days_even_when_a_sibling_stream_refuses() {
+    let root = tempfile::tempdir().expect("journal");
+    let repaired_stream = "alpha";
+    let refused_stream = "beta";
+    seed_observer_owning_stream(root.path(), "aaaaaaaa", repaired_stream);
+    seed_observer_owning_stream(root.path(), "bbbbbbbb", refused_stream);
+
+    let repaired = write_segment(
+        root.path(),
+        DAY,
+        repaired_stream,
+        "090000_301",
+        2,
+        Some("090000_300"),
+        b"repaired",
+    );
+    write_history(
+        root.path(),
+        "aaaaaaaa",
+        DAY,
+        &[json!({
+            "type": "pruned",
+            "ts": 1,
+            "segment": "090000_300",
+            "stream": repaired_stream,
+            "duplicate_of": "",
+        })],
+    );
+    let refused = write_segment(
+        root.path(),
+        DAY,
+        refused_stream,
+        "080000_301",
+        2,
+        Some("080000_300"),
+        b"refused",
+    );
+
+    let result = run_prune(root.path(), &[DAY.to_owned()], None, true, 1_000);
+
+    assert_eq!(result.crash_repaired, 1);
+    assert!(
+        result
+            .refusals
+            .iter()
+            .any(|refusal| refusal.gate == "chain-repair"),
+        "{:?}",
+        result.refusals
+    );
+    let repaired_marker: serde_json::Value =
+        serde_json::from_slice(&fs::read(repaired.join("stream.json")).unwrap()).unwrap();
+    assert_eq!(repaired_marker["prev_day"], serde_json::Value::Null);
+    assert_eq!(repaired_marker["prev_segment"], serde_json::Value::Null);
+    let refused_marker: serde_json::Value =
+        serde_json::from_slice(&fs::read(refused.join("stream.json")).unwrap()).unwrap();
+    assert_eq!(refused_marker["prev_segment"], "080000_300");
+    assert!(
+        root.path()
+            .join("chronicle")
+            .join(DAY)
+            .join("health/stream.updated")
+            .is_file(),
+        "the successful durable repair must dirty its day before the refusal returns"
+    );
+}

@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, DEFAULT_STREAM, FileLock, JsonWriteOptions, LockOptions,
-    MalformedPolicy, ReadError, Removed, hold_lock, path_lexists, read_json, remove_file,
-    write_bytes_exclusive, write_json,
+    MalformedPolicy, PathOrDay, ReadError, Removed, day_dirs, hold_lock, iter_segments,
+    path_lexists, read_json, remove_file, write_bytes_exclusive, write_json,
 };
 
 use crate::device::validate_did;
@@ -111,7 +111,7 @@ pub struct BoundStream {
     pub segment: SegmentDir,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct StreamMarker {
     stream: String,
     prev_day: Option<String>,
@@ -312,23 +312,176 @@ pub fn advance_unbound_stream(
         .map_err(|error| UnboundStreamAdvanceError::Advance(error.into()))?;
     let record =
         read_typed_stream_record(&state_path).map_err(UnboundStreamAdvanceError::Advance)?;
+    let marker_path = segment_dir.path.join("stream.json");
+    if let Some((advance, marker_missing)) =
+        replayable_unbound_advance(journal, stream, day, segment, record.as_ref(), &marker_path)
+            .map_err(UnboundStreamAdvanceError::Advance)?
+    {
+        if marker_missing {
+            write_stream_marker(&marker_path, stream, &advance)?;
+        }
+        return Ok(advance);
+    }
+    if let Some(record) = record.as_ref() {
+        ensure_unbound_head_marker(journal, stream, record)?;
+    }
     let (record, advance) = update_unbound_record(record, stream, day, segment, hints)
         .map_err(UnboundStreamAdvanceError::Advance)?;
     write_stream_record(&state_path, &record).map_err(UnboundStreamAdvanceError::Advance)?;
-    let marker_path = segment_dir.path.join("stream.json");
+    write_stream_marker(&marker_path, stream, &advance)?;
+    Ok(advance)
+}
+
+fn write_stream_marker(
+    marker_path: &Path,
+    stream: &str,
+    advance: &StreamAdvance,
+) -> Result<(), UnboundStreamAdvanceError> {
     let marker = StreamMarker {
         stream: stream.to_owned(),
         prev_day: advance.prev_day.clone(),
         prev_segment: advance.prev_segment.clone(),
         seq: advance.seq,
     };
-    write_json(&marker_path, &marker, JsonWriteOptions::default()).map_err(|source| {
+    write_json(marker_path, &marker, JsonWriteOptions::default()).map_err(|source| {
         UnboundStreamAdvanceError::MarkerWrite {
-            path: marker_path,
+            path: marker_path.to_path_buf(),
             source,
         }
-    })?;
-    Ok(advance)
+    })
+}
+
+/// Prove that the durable record head has its matching marker before moving the
+/// head to a different segment. This closes the state-first partial-publication
+/// window without changing the sequence or accepting a broken predecessor.
+fn ensure_unbound_head_marker(
+    journal: &Path,
+    stream: &str,
+    record: &StreamRecord,
+) -> Result<(), UnboundStreamAdvanceError> {
+    let (head_day, head_segment) = match (
+        record.seq,
+        record.last_day.as_deref(),
+        record.last_segment.as_deref(),
+    ) {
+        (0, None, None) => return Ok(()),
+        (0, _, _) | (_, None, _) | (_, _, None) => {
+            return Err(UnboundStreamAdvanceError::Advance(
+                SegmentError::StreamInput("stream record head is incomplete"),
+            ));
+        }
+        (_, Some(day), Some(segment)) => (day, segment),
+    };
+    let head = SegmentDir::resolve(journal, head_day, head_segment, stream)
+        .map_err(UnboundStreamAdvanceError::Advance)?;
+    let marker_path = head.path().join("stream.json");
+    let Some((advance, marker_missing)) = replayable_unbound_advance(
+        journal,
+        stream,
+        head_day,
+        head_segment,
+        Some(record),
+        &marker_path,
+    )
+    .map_err(UnboundStreamAdvanceError::Advance)?
+    else {
+        return Err(UnboundStreamAdvanceError::Advance(
+            SegmentError::StreamInput("stream record head could not be verified"),
+        ));
+    };
+    if marker_missing {
+        write_stream_marker(&marker_path, stream, &advance)?;
+    }
+    Ok(())
+}
+
+/// Return the already-published advance, or reconstruct the marker half of a
+/// state-first partial publication. The stream-record lock held by the caller
+/// makes this check and any following marker write one serialized operation.
+fn replayable_unbound_advance(
+    journal: &Path,
+    stream: &str,
+    day: &str,
+    segment: &str,
+    record: Option<&StreamRecord>,
+    marker_path: &Path,
+) -> Result<Option<(StreamAdvance, bool)>, SegmentError> {
+    let Some(record) = record.filter(|record| {
+        record.last_day.as_deref() == Some(day) && record.last_segment.as_deref() == Some(segment)
+    }) else {
+        return Ok(None);
+    };
+    if let Some(marker) = read_stream_marker(marker_path)? {
+        if marker.stream != stream || marker.seq != record.seq {
+            return Err(SegmentError::StreamInput(
+                "stream marker does not match the stream record head",
+            ));
+        }
+        return Ok(Some((
+            StreamAdvance {
+                prev_day: marker.prev_day,
+                prev_segment: marker.prev_segment,
+                seq: marker.seq,
+            },
+            false,
+        )));
+    }
+
+    let (prev_day, prev_segment) = if record.seq == 1 {
+        (None, None)
+    } else {
+        let (day, segment) = find_unbound_predecessor(journal, stream, record.seq - 1)?;
+        (Some(day), Some(segment))
+    };
+    Ok(Some((
+        StreamAdvance {
+            prev_day,
+            prev_segment,
+            seq: record.seq,
+        },
+        true,
+    )))
+}
+
+fn read_stream_marker(path: &Path) -> Result<Option<StreamMarker>, SegmentError> {
+    read_json(path, None::<StreamMarker>, MalformedPolicy::Raise).map_err(SegmentError::Read)
+}
+
+fn find_unbound_predecessor(
+    journal: &Path,
+    stream: &str,
+    sequence: u64,
+) -> Result<(String, String), SegmentError> {
+    let mut found = None;
+    for (day, _) in day_dirs(journal)? {
+        for segment in iter_segments(journal, PathOrDay::Day(&day))? {
+            if !segment.stream().matches(stream) {
+                continue;
+            }
+            let marker_path = segment.path().join("stream.json");
+            let Some(marker) = read_stream_marker(&marker_path)? else {
+                continue;
+            };
+            if marker.stream != stream || marker.seq != sequence {
+                continue;
+            }
+            let segment = segment
+                .name()
+                .to_str()
+                .ok_or(SegmentError::StreamInput(
+                    "stream predecessor segment name is not UTF-8",
+                ))?
+                .to_owned();
+            if found.replace((day.clone(), segment)).is_some() {
+                return Err(SegmentError::StreamInput(
+                    "stream predecessor sequence is ambiguous",
+                ));
+            }
+        }
+    }
+    found.ok_or(SegmentError::StreamInput(
+        "stream predecessor marker is missing",
+    ))
 }
 
 /// Look up the stream currently bound to `(did, source)`, if any content has
@@ -894,6 +1047,150 @@ mod tests {
         assert_eq!(state.last_segment.as_deref(), Some("120200_60"));
         assert!(state.did.is_none());
         assert!(state.source.is_none());
+    }
+
+    #[test]
+    fn unbound_retry_finishes_a_state_first_partial_without_advancing_again() {
+        let temporary = TempDir::new();
+        let first = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120000_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(first.seq, 1);
+
+        let second_marker = temporary
+            .path()
+            .join("chronicle/20260804/import.apple/120100_60/stream.json");
+        fs::create_dir_all(&second_marker).unwrap();
+        assert!(matches!(
+            advance_unbound_stream(
+                temporary.path(),
+                "import.apple",
+                "20260804",
+                "120100_60",
+                StreamHints::default(),
+            ),
+            Err(UnboundStreamAdvanceError::MarkerWrite { .. })
+        ));
+        let partial: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(partial.seq, 2);
+        assert_eq!(partial.last_segment.as_deref(), Some("120100_60"));
+
+        fs::remove_dir(&second_marker).unwrap();
+        let recovered = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120100_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(recovered.seq, 2);
+        assert_eq!(recovered.prev_day.as_deref(), Some("20260804"));
+        assert_eq!(recovered.prev_segment.as_deref(), Some("120000_60"));
+        let final_state: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(final_state.seq, 2, "recovery must not advance the head");
+        let marker: StreamMarker =
+            serde_json::from_slice(&fs::read(second_marker).unwrap()).unwrap();
+        assert_eq!(marker.seq, 2);
+        assert_eq!(marker.prev_day.as_deref(), Some("20260804"));
+        assert_eq!(marker.prev_segment.as_deref(), Some("120000_60"));
+
+        let repeated = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120100_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(repeated, recovered);
+        let repeated_state: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(repeated_state.seq, 2);
+    }
+
+    #[test]
+    fn unbound_different_target_repairs_the_partial_head_before_advancing() {
+        let temporary = TempDir::new();
+        let first = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120000_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(first.seq, 1);
+
+        let partial_marker = temporary
+            .path()
+            .join("chronicle/20260804/import.apple/120100_60/stream.json");
+        fs::create_dir_all(&partial_marker).unwrap();
+        assert!(matches!(
+            advance_unbound_stream(
+                temporary.path(),
+                "import.apple",
+                "20260804",
+                "120100_60",
+                StreamHints::default(),
+            ),
+            Err(UnboundStreamAdvanceError::MarkerWrite { .. })
+        ));
+
+        let next_marker = temporary
+            .path()
+            .join("chronicle/20260804/import.apple/120200_60/stream.json");
+        assert!(
+            advance_unbound_stream(
+                temporary.path(),
+                "import.apple",
+                "20260804",
+                "120200_60",
+                StreamHints::default(),
+            )
+            .is_err()
+        );
+        let still_partial: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(still_partial.seq, 2);
+        assert_eq!(still_partial.last_segment.as_deref(), Some("120100_60"));
+        assert!(!next_marker.exists());
+
+        fs::remove_dir(&partial_marker).unwrap();
+        let advanced = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120200_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(advanced.seq, 3);
+        assert_eq!(advanced.prev_day.as_deref(), Some("20260804"));
+        assert_eq!(advanced.prev_segment.as_deref(), Some("120100_60"));
+
+        let repaired: StreamMarker =
+            serde_json::from_slice(&fs::read(partial_marker).unwrap()).unwrap();
+        assert_eq!(repaired.seq, 2);
+        assert_eq!(repaired.prev_segment.as_deref(), Some("120000_60"));
+        let next: StreamMarker = serde_json::from_slice(&fs::read(next_marker).unwrap()).unwrap();
+        assert_eq!(next.seq, 3);
+        assert_eq!(next.prev_segment.as_deref(), Some("120100_60"));
     }
 
     #[test]

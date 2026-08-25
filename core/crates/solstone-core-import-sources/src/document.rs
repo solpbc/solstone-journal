@@ -26,7 +26,7 @@ use solstone_core_generate::{
 };
 use solstone_core_import::{
     CreatedSegment, ImportPreview, ImportResult, PublicationInput, PublicationOperations,
-    hash_source, publish_with_operations,
+    PublicationStatus, hash_source, publish_with_operations,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, create_directory_with_mode, install_file, write_jsonl, write_text,
@@ -699,13 +699,21 @@ pub fn import(
                 .iter()
                 .map(|warning| format!("{}: {warning}", display_name(source))),
         );
-        match install_artifacts(source, &segment_dir, &prepared) {
+        match install_artifacts(
+            source,
+            &segment_dir,
+            &prepared,
+            request.journal_root,
+            &claim.day,
+            publication,
+        ) {
             Ok(transcript) => files_created.push(transcript),
             Err(error) => {
-                errors.push(format!(
-                    "{}: document import failed ({error})",
-                    display_name(source)
-                ));
+                let failure = format!("{}: document import failed ({error})", display_name(source));
+                if error.is_marker_failure() {
+                    hard_failures.push(failure.clone());
+                }
+                errors.push(failure);
                 continue;
             }
         }
@@ -744,7 +752,7 @@ pub fn import(
     }
     if !created_segments.is_empty() {
         let paths = files_created.iter().map(PathBuf::from).collect::<Vec<_>>();
-        if let Err(error) = publish_with_operations(
+        match publish_with_operations(
             PublicationInput {
                 journal: request.journal_root,
                 import_dir: Some(request.import_dir),
@@ -756,7 +764,19 @@ pub fn import(
             },
             publication,
         ) {
-            errors.push(format!("document publication failed ({error})"));
+            Ok(record) if record.status == PublicationStatus::Failure => {
+                let failure =
+                    "document publication failed (one or more publication operations failed)"
+                        .to_owned();
+                errors.push(failure.clone());
+                hard_failures.push(failure);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let failure = format!("document publication failed ({error})");
+                errors.push(failure.clone());
+                hard_failures.push(failure);
+            }
         }
     }
     let days = created_segments
@@ -1300,19 +1320,55 @@ fn render_header(
     lines.join("\n")
 }
 
+#[derive(Debug)]
+enum ArtifactInstallError {
+    Write(String),
+    StreamMarker { day: String, detail: String },
+}
+
+impl ArtifactInstallError {
+    fn is_marker_failure(&self) -> bool {
+        matches!(self, Self::StreamMarker { .. })
+    }
+}
+
+impl fmt::Display for ArtifactInstallError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Write(detail) => formatter.write_str(detail),
+            Self::StreamMarker { day, detail } => write!(
+                formatter,
+                "original PDF for {day} remains installed, but could not advance its stream marker: {detail}"
+            ),
+        }
+    }
+}
+
 fn install_artifacts(
     source: &Path,
     segment_dir: &Path,
     prepared: &PreparedDocument,
-) -> Result<String, String> {
+    journal_root: &Path,
+    day: &str,
+    publication: &dyn PublicationOperations,
+) -> Result<String, ArtifactInstallError> {
     let pages_dir = segment_dir.join("pages");
-    create_document_artifact_directories(segment_dir, &pages_dir)?;
-    install_original_pdf(source, &segment_dir.join(ORIGINAL))?;
+    create_document_artifact_directories(segment_dir, &pages_dir)
+        .map_err(ArtifactInstallError::Write)?;
+    install_original_pdf(
+        source,
+        &segment_dir.join(ORIGINAL),
+        journal_root,
+        day,
+        publication,
+    )?;
     for (index, raster) in &prepared.rasters {
-        install_page_raster(raster, &pages_dir.join(page_name(*index)))?;
+        install_page_raster(raster, &pages_dir.join(page_name(*index)))
+            .map_err(ArtifactInstallError::Write)?;
     }
     let transcript = segment_dir.join(TRANSCRIPT);
-    write_document_transcript(&transcript, &prepared.transcript)?;
+    write_document_transcript(&transcript, &prepared.transcript)
+        .map_err(ArtifactInstallError::Write)?;
     Ok(transcript.display().to_string())
 }
 
@@ -1324,31 +1380,36 @@ fn create_document_artifact_directories(
     create_directory_with_mode(pages_dir, DIRECTORY_MODE).map_err(|error| error.to_string())
 }
 
-fn install_original_pdf(source: &Path, destination: &Path) -> Result<(), String> {
-    install_source_file(
-        source,
-        destination,
-        fs::metadata(source)
-            .and_then(|metadata| metadata.modified())
-            .map_err(|error| error.to_string())?,
-    )
+fn install_original_pdf(
+    source: &Path,
+    destination: &Path,
+    journal_root: &Path,
+    day: &str,
+    publication: &dyn PublicationOperations,
+) -> Result<(), ArtifactInstallError> {
+    let modified = fs::metadata(source)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
+    install_source_file_before_metadata(source, destination)
+        .map_err(ArtifactInstallError::Write)?;
+    publication
+        .touch_stream_health_marker(journal_root, day)
+        .map_err(|detail| ArtifactInstallError::StreamMarker {
+            day: day.to_owned(),
+            detail,
+        })?;
+    set_installed_modified_time(destination, modified).map_err(ArtifactInstallError::Write)
 }
 
 fn install_page_raster(source: &Path, destination: &Path) -> Result<(), String> {
-    install_source_file(
-        source,
-        destination,
-        fs::metadata(source)
-            .and_then(|metadata| metadata.modified())
-            .map_err(|error| error.to_string())?,
-    )
+    let modified = fs::metadata(source)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| error.to_string())?;
+    install_source_file_before_metadata(source, destination)?;
+    set_installed_modified_time(destination, modified)
 }
 
-fn install_source_file(
-    source: &Path,
-    destination: &Path,
-    modified: SystemTime,
-) -> Result<(), String> {
+fn install_source_file_before_metadata(source: &Path, destination: &Path) -> Result<(), String> {
     let parent = destination
         .parent()
         .ok_or_else(|| "destination has no parent".to_owned())?;
@@ -1362,7 +1423,10 @@ fn install_source_file(
             mode: Some(FILE_MODE),
         },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| error.to_string())
+}
+
+fn set_installed_modified_time(destination: &Path, modified: SystemTime) -> Result<(), String> {
     File::open(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| error.to_string())

@@ -674,6 +674,47 @@ pub(crate) fn run_repair_batch(
     Ok(aggregate.lock().expect("repair result lock").clone())
 }
 
+/// Run the maintained segment-batch operation through its activity-state tail.
+///
+/// Both the direct `--segments` surface and whole-day catchup use this seam so
+/// durable Sense output is replayed exactly once after every completed repair
+/// batch.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_repair_batch_with_activity(
+    context: &ThinkContext,
+    segments: Vec<(String, Option<String>)>,
+    refresh: bool,
+    max_concurrency: i64,
+    segment_workers: usize,
+    timeout: Option<Duration>,
+    skip_talents: Vec<String>,
+    no_activity_prompts: bool,
+) -> Result<ModeResult, String> {
+    let result = run_repair_batch(
+        context,
+        segments.clone(),
+        refresh,
+        max_concurrency,
+        segment_workers,
+        timeout,
+        skip_talents,
+    )?;
+    replay_activity_state(
+        context,
+        &mut RunLogWriter::open(&crate::run_log::path(
+            &context.day_dir,
+            context.now_ms,
+            "segments",
+        )),
+        &segments,
+        refresh,
+        max_concurrency,
+        no_activity_prompts,
+        false,
+    )?;
+    Ok(result)
+}
+
 /// Replay durable Sense output through the activity-state tail.
 ///
 /// Source-derived, not measured: `thinking.py:379-435` persists the state
