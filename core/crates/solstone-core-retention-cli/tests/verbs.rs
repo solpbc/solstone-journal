@@ -181,14 +181,15 @@ impl Drop for HeldLock {
 
 #[cfg(target_os = "macos")]
 fn start_lock_holder(sidecar: &Path, ready: &Path) -> Child {
-    Command::new("python3")
+    Command::new("/usr/bin/perl")
         .args([
-            "-c",
-            "import fcntl, pathlib, sys, time; lock = open(sys.argv[1], 'a'); \
-             fcntl.flock(lock, fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).touch(); time.sleep(60)",
+            "-e",
+            "use Fcntl qw(LOCK_EX); open my $lock, '>>', $ARGV[0] or die $!; \
+             flock($lock, LOCK_EX) or die $!; open my $ready, '>', $ARGV[1] or die $!; \
+             close $ready or die $!; sleep 60;",
         ])
-        .arg(&sidecar)
-        .arg(&ready)
+        .arg(sidecar)
+        .arg(ready)
         .spawn()
         .unwrap()
 }

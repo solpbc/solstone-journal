@@ -56,7 +56,18 @@ fn write_config(journal: &Path, contents: &str) {
     fs::write(config.join("journal.json"), contents).expect("write journal config");
 }
 
+fn write_legacy_manifest(journal: &Path) {
+    let health = journal.join("health");
+    fs::create_dir_all(&health).expect("create journal health directory");
+    fs::write(
+        health.join("setup-state.json"),
+        r#"{"schema_version":1,"started_at":"2026-01-01T00:00:00Z","completed_at":null,"mode":"non_interactive","args_resolved":{},"steps":[]}"#,
+    )
+    .expect("write legacy setup manifest");
+}
+
 fn owner_sentence(journal: &Path) -> String {
+    let journal = fs::canonicalize(journal).unwrap_or_else(|_| journal.to_path_buf());
     format!(
         "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         journal.join("config/journal.json").display()
@@ -84,6 +95,7 @@ fn config_journal_switch_reports_corrupt_current_but_creates_missing_target() {
     let missing_target = home.root.join("missing-target");
     write_config(&corrupt, "{bad json");
     write_config(&inactive, r#"{"setup": {}}"#);
+    write_legacy_manifest(&inactive);
 
     let refused = run_switch(&home, &corrupt, &corrupt_target);
     assert_eq!(refused.status.code(), Some(1));

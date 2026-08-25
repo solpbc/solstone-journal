@@ -489,6 +489,20 @@ enum RewriteError {
     Refusal(String),
     Install(String),
 }
+
+fn legacy_manifest_for_rewrite(
+    change: &JournalChange,
+) -> solstone_core_installation_identity::LegacyManifestEvidence {
+    // A switch keeps the current journal in place, whereas a move has already
+    // renamed it to the target before wrapper rewriting begins.
+    let journal = if change.current_path.exists() {
+        &change.current_path
+    } else {
+        &change.target_path
+    };
+    legacy_manifest_evidence(&manifest_path(journal))
+}
+
 fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
     let sol_alias = change.alias.clone();
     let journal_alias = sol_alias.with_file_name("journal");
@@ -533,7 +547,7 @@ fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
             RewriteError::Refusal(format!("journal config: journal path refused: {error}"))
         })?,
         journal_is_explicit: true,
-        legacy_manifest: legacy_manifest_evidence(&manifest_path(&change.target_path)),
+        legacy_manifest: legacy_manifest_for_rewrite(change),
         artifacts: gather_wrapper_artifact_evidence(&change.home_dir, &namespace),
     })
     .map_err(|error| {
@@ -1230,6 +1244,17 @@ mod tests {
                 (PathBuf::from("/restart/journal"), ServiceCommand::Start),
             ]
         );
+    }
+
+    #[test]
+    fn moved_legacy_manifest_remains_admission_evidence() {
+        let root = test_root("moved-legacy-manifest");
+        let c = move_change(&root);
+        fs::rename(&c.current_path, &c.target_path).expect("move legacy journal");
+        assert!(matches!(
+            legacy_manifest_for_rewrite(&c),
+            solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
+        ));
     }
 
     #[test]

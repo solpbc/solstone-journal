@@ -1007,8 +1007,9 @@ mod tests {
             );
             assert!(stderr.is_empty());
             assert!(
-                !home
-                    .join(".local/share/solstone/installation-identity")
+                !OwnerBase::at_home(home.clone(), PlatformTag::current())
+                    .expect("identity owner")
+                    .path()
                     .exists()
             );
         }
@@ -1060,8 +1061,9 @@ mod tests {
                 .contains("installation identity admission failed")
         );
         assert!(
-            !home
-                .join(".local/share/solstone/installation-identity")
+            !OwnerBase::at_home(home.clone(), PlatformTag::current())
+                .expect("identity owner")
+                .path()
                 .exists()
         );
     }
@@ -1110,8 +1112,10 @@ mod tests {
         assert!(stderr.is_empty());
         let root_token = root_token_from_path(&executable_dir).unwrap();
         let namespace = namespace_name(PlatformTag::current(), &root_token);
-        let record = home
-            .join(".local/share/solstone/installation-identity/v1/namespaces")
+        let record = OwnerBase::at_home(home.clone(), PlatformTag::current())
+            .expect("identity owner")
+            .path()
+            .join("namespaces")
             .join(namespace.as_hex())
             .join("record");
         assert!(
@@ -1170,8 +1174,10 @@ mod tests {
         setup(Some(&journal_one));
         let root_token = root_token_from_path(&executable_dir).unwrap();
         let namespace = namespace_name(PlatformTag::current(), &root_token);
-        let record_path = home
-            .join(".local/share/solstone/installation-identity/v1/namespaces")
+        let record_path = OwnerBase::at_home(home.clone(), PlatformTag::current())
+            .expect("identity owner")
+            .path()
+            .join("namespaces")
             .join(namespace.as_hex())
             .join("record");
         let first_bytes = fs::read(&record_path).unwrap();

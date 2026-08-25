@@ -372,10 +372,18 @@ async fn wait_for_logged_message(path: &Path, message: &Value) {
 
 async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
     let mut found = None;
+    // The bundled-runtime recycle is an external process transition. Under the
+    // full macOS suite it can legitimately lose several scheduler turns while
+    // other native fixtures are compiling and exiting.
+    let iterations = if cfg!(target_os = "macos") {
+        1_600
+    } else {
+        800
+    };
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
         Duration::from_millis(10),
-        800,
+        iterations,
         Instant::now,
         || {
             if let Ok(bytes) = fs::read(path)

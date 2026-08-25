@@ -123,6 +123,9 @@ where
                     break;
                 }
                 stream
+                    .set_nonblocking(false)
+                    .expect("blocking loopback client");
+                stream
                     .set_read_timeout(Some(IO_TIMEOUT))
                     .expect("bound loopback read");
                 stream

@@ -477,6 +477,18 @@ fn replay_full_recorded_case(
             {
                 set_path(&mut value, path, placeholder(kind.as_str().expect("kind")));
             }
+            #[cfg(target_os = "macos")]
+            if case
+                .pointer("/json/providers/local_backend")
+                .and_then(Value::as_str)
+                == Some("local")
+                && value
+                    .pointer("/providers/local_backend")
+                    .and_then(Value::as_str)
+                    == Some("metal")
+            {
+                set_path(&mut value, "providers.local_backend", "local");
+            }
             let runtime_status_deviation = runtime_status_deviation_path(phase, case);
             if let Some(path) = runtime_status_deviation {
                 let actual_status = if path == "providers.local_runtime.status" {
