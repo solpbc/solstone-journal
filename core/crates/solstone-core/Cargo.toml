@@ -162,6 +162,7 @@ nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
+solstone-core-grab = { workspace = true, features = ["test-hooks"] }
 rcgen.workspace = true
 rustls.workspace = true
 rusqlite.workspace = true

@@ -327,12 +327,22 @@ fn save_levels_preserve_decoded_pixels() {
             expected["json"],
             "save JSON {frame_ids}"
         );
-        let expected_pixels = expected["pixels"]
-            .as_array()
-            .expect("pixels array")
-            .iter()
-            .map(|value| value.as_str().expect("hex pixels").to_owned())
+        let ids = frame_ids
+            .split(',')
+            .map(|id| id.parse::<i64>().expect("fixture frame ID"))
             .collect::<Vec<_>>();
+        let expected_pixels = solstone_core_grab::test_hooks::decode_frames(
+            &fixture
+                .journal
+                .join("chronicle/20260809/work/120000_300/renamed.mp4"),
+            &ids,
+        )
+        .expect("decode fixture video")
+        .into_iter()
+        .map(|frame| {
+            hex_pixels(&frame.expect("fixture video contains requested frame").pixels)
+        })
+        .collect::<Vec<_>>();
         let actual_pixels = saved_paths(frame_ids, &out)
             .iter()
             .map(|path| hex_pixels(&decode_rgb8(path)))
