@@ -2,8 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, HashSet};
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{DefaultBodyLimit, Extension, FromRequest, Multipart, Request, State};
 use axum::http::StatusCode;
@@ -12,15 +14,15 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{
-    DeviceIngestEvent, DurableEvent, FileDescriptor, append_durable_event,
+    CallosumEnvelope, CallosumOneShotSender, DeviceIngestEvent, DurableEvent, FileDescriptor,
+    append_durable_event,
 };
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_ingest_contract::{CONNECTION_BODY_LIMIT, MAX_PART_BYTES};
 use solstone_core_ingest_resolve::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
-    IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
-    resolve_ingest,
+    IngestNotice, IngestNotifier, Resolution, apply_plan, quarantine_failed, resolve_ingest,
 };
 use solstone_core_observer::store::write::save_observer;
 use solstone_core_observer::system_now_ms;
@@ -46,13 +48,73 @@ pub(crate) struct IngestState {
     pub(crate) now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
+struct CallosumIngestNotifier {
+    sender: CallosumOneShotSender,
+}
+
+impl CallosumIngestNotifier {
+    fn new(journal_root: impl AsRef<Path>) -> Self {
+        Self {
+            sender: CallosumOneShotSender::new(
+                journal_root.as_ref().join("health/callosum.sock"),
+                Duration::from_secs(1),
+            ),
+        }
+    }
+}
+
+impl IngestNotifier for CallosumIngestNotifier {
+    fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let mut extra = Map::new();
+        extra.insert("day".to_owned(), Value::String(notice.day.to_owned()));
+        extra.insert("stream".to_owned(), Value::String(notice.stream.to_owned()));
+        extra.insert(
+            "segment".to_owned(),
+            Value::String(notice.segment.to_owned()),
+        );
+        extra.insert(
+            "files".to_owned(),
+            Value::Array(notice.files.iter().cloned().map(Value::String).collect()),
+        );
+        extra.insert("batch".to_owned(), Value::Bool(false));
+        if let Some(observer) = notice.observer {
+            extra.insert("observer".to_owned(), Value::String(observer.to_owned()));
+        }
+        extra.insert("meta".to_owned(), Value::Object(notice.meta.clone()));
+        let envelope = CallosumEnvelope {
+            tract: "observe".to_owned(),
+            event: "observing".to_owned(),
+            ts: None,
+            extra,
+        };
+        let mut line = serde_json::to_string(&envelope)?;
+        line.push('\n');
+        self.sender.send_line(&line)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+struct TestIngestNotifier;
+
+#[cfg(test)]
+impl IngestNotifier for TestIngestNotifier {
+    fn notify(&self, _notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        Ok(())
+    }
+}
+
 fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
     Arc::new(system_now_ms)
 }
 
 /// Build the mergeable linked-device segment-arrival routes.
 pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
-    api_router_with_notifier(journal_root, Arc::new(LoggingIngestNotifier))
+    let journal_root = journal_root.as_ref();
+    api_router_with_notifier(
+        journal_root,
+        Arc::new(CallosumIngestNotifier::new(journal_root)),
+    )
 }
 
 fn api_router_with_notifier(
@@ -86,8 +148,16 @@ fn api_router_with(
 
 // Crate-local: a public fallback would swallow the shell's unmatched surface on merge.
 #[allow(dead_code)]
+#[cfg(not(test))]
 pub(crate) fn router(journal_root: impl AsRef<Path>) -> Router {
     api_router(journal_root).fallback(not_found_fallback)
+}
+
+#[allow(dead_code)]
+#[cfg(test)]
+pub(crate) fn router(journal_root: impl AsRef<Path>) -> Router {
+    api_router_with_notifier(journal_root, Arc::new(TestIngestNotifier))
+        .fallback(not_found_fallback)
 }
 
 pub(crate) fn refusal(code: ReasonCode, status: StatusCode, detail: impl Into<String>) -> Response {
@@ -494,7 +564,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             );
         }
         Ok(ApplyPhase::Partial(partial)) => {
-            return append_partial_and_fail(did, &envelope, &bound.stream, partial);
+            return append_partial_and_fail(state, did, &envelope, &bound.stream, partial);
         }
         Err(_) => {
             return outcome_error(
@@ -506,11 +576,28 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
         }
     };
     let descriptors = descriptors(&envelope.files, &applied.files);
+    let announced_files = written_descriptors(&applied.files)
+        .into_iter()
+        .map(|file| file.written)
+        .collect::<Vec<_>>();
     let outcome = match applied.status {
         solstone_core_ingest_resolve::PlanStatus::Ok => "ok",
         solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
         solstone_core_ingest_resolve::PlanStatus::Duplicate => "duplicate",
     };
+    if !announced_files.is_empty() {
+        // A later custody failure intentionally leaves this day dirty.
+        if solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
+            .is_err()
+        {
+            return outcome_error(
+                "failed",
+                ReasonCode::StreamMarkerBumpFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot advance stream marker",
+            );
+        }
+    }
     if append_device_ingest(
         applied.segment.path(),
         did,
@@ -552,39 +639,43 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             "cannot advance stream",
         );
     }
-    if stamp_observer(
+    let observer = match stamp_observer(
         state,
         did,
         &envelope.day,
         &applied.landed_segment,
         applied.status,
-    )
-    .is_err()
-    {
-        return outcome_error(
-            "failed",
-            ReasonCode::ObserverStampFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot stamp observer receipt",
-        );
-    }
-    let notice = IngestNotice {
-        did,
-        source: &envelope.source,
-        day: &envelope.day,
-        stream: &bound.stream,
-        segment: &applied.landed_segment,
-        files: &applied.files,
-        meta: &envelope.meta,
+    ) {
+        Ok(observer) => observer,
+        Err(()) => {
+            return outcome_error(
+                "failed",
+                ReasonCode::ObserverStampFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot stamp observer receipt",
+            );
+        }
     };
-    if let Err(error) = state.notifier.notify(&notice) {
-        log::warn!("observer ingest notification failed: {error}");
-        return outcome_error(
-            "failed",
-            ReasonCode::NotifyFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot notify ingest listeners",
-        );
+    if !announced_files.is_empty() {
+        let notice = IngestNotice {
+            did,
+            observer: observer.as_deref(),
+            source: &envelope.source,
+            day: &envelope.day,
+            stream: &bound.stream,
+            segment: &applied.landed_segment,
+            files: &announced_files,
+            meta: &envelope.meta,
+        };
+        if let Err(error) = state.notifier.notify(&notice) {
+            log::warn!("observer ingest notification failed: {error}");
+            return outcome_error(
+                "failed",
+                ReasonCode::NotifyFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot notify ingest listeners",
+            );
+        }
     }
     let written_names: Vec<String> = descriptors
         .iter()
@@ -618,12 +709,28 @@ struct PartialApply {
 }
 
 fn append_partial_and_fail(
+    state: &IngestState,
     did: &str,
     envelope: &Envelope,
     stream: &str,
     partial: PartialApply,
 ) -> Response {
     let descriptors = written_descriptors(&partial.applied);
+    let announced_files = descriptors
+        .iter()
+        .map(|file| file.written.clone())
+        .collect::<Vec<_>>();
+    if !announced_files.is_empty()
+        && solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
+            .is_err()
+    {
+        return outcome_error(
+            "failed",
+            ReasonCode::StreamMarkerBumpFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot advance stream marker",
+        );
+    }
     if append_device_ingest(
         partial.segment.path(),
         did,
@@ -641,6 +748,21 @@ fn append_partial_and_fail(
             StatusCode::INTERNAL_SERVER_ERROR,
             "cannot append ingest event",
         );
+    }
+    if !announced_files.is_empty() {
+        let notice = IngestNotice {
+            did,
+            observer: None,
+            source: &envelope.source,
+            day: &envelope.day,
+            stream,
+            segment: &partial.landed_segment,
+            files: &announced_files,
+            meta: &envelope.meta,
+        };
+        if let Err(error) = state.notifier.notify(&notice) {
+            log::warn!("partial observer ingest notification failed: {error}");
+        }
     }
     outcome_error(
         "failed",
@@ -682,12 +804,13 @@ fn stamp_observer(
     day: &str,
     landed_segment: &str,
     status: solstone_core_ingest_resolve::PlanStatus,
-) -> Result<(), ()> {
+) -> Result<Option<String>, ()> {
     let mut observer = match resolve_device_observer(&state.journal_root, did) {
-        Ok(None) => return Ok(()),
+        Ok(None) => return Ok(None),
         Ok(Some(observer)) => observer,
         Err(_) => return Err(()),
     };
+    let name = observer.record.name().map(str::to_owned);
     let refresh = match status {
         solstone_core_ingest_resolve::PlanStatus::Duplicate => {
             observer.record.last_segment() != Some(landed_segment)
@@ -696,14 +819,15 @@ fn stamp_observer(
         | solstone_core_ingest_resolve::PlanStatus::Collision => true,
     };
     if !refresh {
-        return Ok(());
+        return Ok(name);
     }
     observer.record.set_last_segment(landed_segment.to_owned());
     observer.record.set_last_segment_day(day.to_owned());
     observer
         .record
         .set_last_segment_received_at((state.now_ms)());
-    save_observer(&state.journal_root, &observer.record).map_err(|_| ())
+    save_observer(&state.journal_root, &observer.record).map_err(|_| ())?;
+    Ok(name)
 }
 
 fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
@@ -839,21 +963,24 @@ fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &s
 mod tests {
     use std::fs;
     use std::path::Path;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
-    use serde_json::{Value, json};
+    use serde_json::{Map, Value, json};
     use sha2::Digest;
+    use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
     use solstone_core_convey_http::serve::{mux_builder, serve_connection};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
     use super::{
-        ApplyPhase, IngestState, MAX_PART_BYTES, api_router_with, api_router_with_notifier,
-        clear_before_apply_hook, resolve_and_apply, router, set_before_apply_hook, wall_clock_ms,
+        ApplyPhase, IngestState, MAX_PART_BYTES, api_router, api_router_with,
+        api_router_with_notifier, clear_before_apply_hook, resolve_and_apply, router,
+        set_before_apply_hook, wall_clock_ms,
     };
 
     const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -862,6 +989,13 @@ mod tests {
     struct SpyNotifier {
         calls: AtomicUsize,
         fail_next: AtomicBool,
+        notices: Mutex<Vec<SpyNotice>>,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct SpyNotice {
+        files: Vec<String>,
+        observer: Option<String>,
     }
 
     impl SpyNotifier {
@@ -869,6 +1003,7 @@ mod tests {
             Arc::new(Self {
                 calls: AtomicUsize::new(0),
                 fail_next: AtomicBool::new(false),
+                notices: Mutex::new(Vec::new()),
             })
         }
 
@@ -876,6 +1011,7 @@ mod tests {
             Arc::new(Self {
                 calls: AtomicUsize::new(0),
                 fail_next: AtomicBool::new(true),
+                notices: Mutex::new(Vec::new()),
             })
         }
     }
@@ -883,9 +1019,13 @@ mod tests {
     impl solstone_core_ingest_resolve::IngestNotifier for SpyNotifier {
         fn notify(
             &self,
-            _notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
+            notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             self.calls.fetch_add(1, Ordering::SeqCst);
+            self.notices.lock().unwrap().push(SpyNotice {
+                files: notice.files.to_vec(),
+                observer: notice.observer.map(str::to_owned),
+            });
             if self.fail_next.swap(false, Ordering::SeqCst) {
                 Err(Box::new(std::io::Error::other("bus unavailable")))
             } else {
@@ -1136,6 +1276,44 @@ mod tests {
         .unwrap()
     }
 
+    fn stream_marker_path(root: &Path, day: &str) -> std::path::PathBuf {
+        root.join("chronicle")
+            .join(day)
+            .join("health/stream.updated")
+    }
+
+    fn stream_marker_generation(root: &Path, day: &str) -> u64 {
+        serde_json::from_slice::<Value>(&fs::read(stream_marker_path(root, day)).unwrap()).unwrap()
+            ["generation"]
+            .as_u64()
+            .expect("stream marker generation")
+    }
+
+    async fn wait_for_callosum_client(server: &CallosumSocketServer) {
+        for _ in 0..50 {
+            if server.client_count() >= 1 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("callosum peer did not connect");
+    }
+
+    async fn next_observing(
+        peer: &mut CallosumSocketConnection,
+    ) -> solstone_core_callosum::CallosumEnvelope {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let message = peer.next_message().await.expect("callosum peer");
+                if message.tract == "observe" && message.event == "observing" {
+                    break message;
+                }
+            }
+        })
+        .await
+        .expect("observe.observing event")
+    }
+
     fn frozen_clock(start: i64) -> (Arc<AtomicI64>, Arc<dyn Fn() -> i64 + Send + Sync>) {
         let now = Arc::new(AtomicI64::new(start));
         let clock_now = now.clone();
@@ -1175,7 +1353,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         let state = IngestState {
             journal_root: root.clone(),
-            notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+            notifier: SpyNotifier::succeeding(),
             now_ms: wall_clock_ms(),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
@@ -1219,7 +1397,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         let state = IngestState {
             journal_root: root.clone(),
-            notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+            notifier: SpyNotifier::succeeding(),
             now_ms: wall_clock_ms(),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
@@ -1454,12 +1632,15 @@ mod tests {
         assert_eq!(first["last_segment_day"], "20260804");
         assert_eq!(first["last_segment"], "120000_1");
         assert_eq!(stream_record(&root, "desk")["seq"], 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
 
         now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        // All files are already held on retry, so it is not re-announced.
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
         let retry = observer_record(&root, "aaaaaaaa");
         assert_eq!(retry["last_segment_received_at"], stamp);
         assert_eq!(stream_record(&root, "desk")["seq"], 1);
@@ -1488,6 +1669,7 @@ mod tests {
         assert_eq!(body["reason_code"], "observer_stamp_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
         assert_eq!(stream_record(&root, "desk")["seq"], 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
         let first = observer_record(&root, "aaaaaaaa");
         assert!(
             first
@@ -1502,7 +1684,9 @@ mod tests {
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        // The recovering duplicate has no newly written content to announce.
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
         assert_eq!(stream_record(&root, "desk")["seq"], 1);
         let retry = observer_record(&root, "aaaaaaaa");
         assert_eq!(retry["last_segment_received_at"], FROZEN_NOW_MS + 60_000);
@@ -1700,7 +1884,16 @@ mod tests {
         clear_before_apply_hook();
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "journal_write_failed");
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        // The written prefix is announced despite the later partial failure.
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+        assert_eq!(
+            spy.notices.lock().unwrap().as_slice(),
+            [SpyNotice {
+                files: vec!["audio.flac".to_owned()],
+                observer: None,
+            }]
+        );
         let events =
             fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
                 .unwrap();
@@ -1748,6 +1941,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn partial_notice_keeps_reserved_meta_keys_nested() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let socket = root.join("health/callosum.sock");
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+        peer.start();
+        wait_for_callosum_client(&server).await;
+        let app = api_router(&root);
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let meta = json!({
+            "tract": "caller-tract",
+            "day": "caller-day",
+            "segment": "caller-segment",
+            "stream": "caller-stream",
+            "batch": "caller-batch",
+            "observer": "caller-observer",
+            "files": ["caller-file"],
+        });
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "meta": meta.clone(),
+            "files": [{"submitted":"audio.flac"},{"submitted":"notes.json"}],
+        });
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "journal_write_failed");
+
+        let notice = next_observing(&mut peer).await;
+        assert_eq!(notice.tract, "observe");
+        assert_eq!(notice.event, "observing");
+        assert_eq!(notice.extra["day"], "20260804");
+        assert_eq!(notice.extra["segment"], "120000_1");
+        assert_eq!(notice.extra["stream"], "device");
+        assert_eq!(notice.extra["files"], json!(["audio.flac"]));
+        assert_eq!(notice.extra["batch"], false);
+        assert!(!notice.extra.contains_key("observer"));
+        assert_eq!(notice.extra["meta"]["batch"], "caller-batch");
+        assert_eq!(notice.extra["meta"], meta);
+        peer.stop().await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
     async fn no_observer_skips_stamp_and_still_notifies() {
         let dir = root();
         let root = dir.path().to_path_buf();
@@ -1759,6 +2008,78 @@ mod tests {
         assert_eq!(body["status"], "ok");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
         assert!(!root.join("apps/observer/observers").exists());
+    }
+
+    #[tokio::test]
+    async fn production_router_sends_observing_to_callosum() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let socket = root.join("health/callosum.sock");
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+        peer.start();
+        wait_for_callosum_client(&server).await;
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        let app = api_router(&root);
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "mobile",
+            "meta": {"kind": "v3"},
+            "files": [{"submitted":"audio.flac"}],
+        });
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+
+        let notice = next_observing(&mut peer).await;
+        assert_eq!(notice.tract, "observe");
+        assert_eq!(notice.event, "observing");
+        assert_eq!(notice.extra["day"], "20260804");
+        assert_eq!(notice.extra["stream"], "desk");
+        assert_eq!(notice.extra["segment"], "120000_1");
+        assert_eq!(notice.extra["files"], json!(["audio.flac"]));
+        assert_eq!(notice.extra["batch"], false);
+        assert_eq!(notice.extra["observer"], "Desk");
+        assert_eq!(notice.extra["meta"], json!({"kind": "v3"}));
+        peer.stop().await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn mixed_written_and_already_held_files_bump_once_and_announce_only_written() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(&root, spy.clone());
+        let first = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, first, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+
+        let second = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+        let (status, body) = call_upload_files(
+            &app,
+            second,
+            &[("audio.flac", b"sound"), ("notes.json", b"notes")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(stream_marker_generation(&root, "20260804"), 2);
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            spy.notices.lock().unwrap().last().unwrap(),
+            &SpyNotice {
+                files: vec!["notes.json".to_owned()],
+                observer: None,
+            }
+        );
     }
 
     #[tokio::test]
@@ -1788,6 +2109,7 @@ mod tests {
             b"new"
         );
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert!(!stream_marker_path(&root, "20260804").exists());
         assert!(
             fs::read_dir(root.join("chronicle/20260804/device"))
                 .unwrap()
@@ -1808,6 +2130,37 @@ mod tests {
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "event_append_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+    }
+
+    #[tokio::test]
+    async fn malformed_stream_marker_fails_written_request_but_held_retry_does_not_repair_it() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let marker = stream_marker_path(&root, "20260804");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, b"not-json").unwrap();
+        let before = fs::read(&marker).unwrap();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(&root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_marker_bump_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert!(
+            !root
+                .join("chronicle/20260804/device/120000_1/events.jsonl")
+                .exists()
+        );
+        assert_eq!(fs::read(&marker).unwrap(), before);
+
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(fs::read(&marker).unwrap(), before);
     }
 
     #[tokio::test]

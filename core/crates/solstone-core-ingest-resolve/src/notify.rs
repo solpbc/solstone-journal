@@ -5,16 +5,15 @@ use std::error::Error;
 
 use serde_json::{Map, Value};
 
-use crate::AppliedFile;
-
 /// Ingest notice assembled by the wire layer after a successful apply.
 pub struct IngestNotice<'a> {
     pub did: &'a str,
+    pub observer: Option<&'a str>,
     pub source: &'a str,
     pub day: &'a str,
     pub stream: &'a str,
     pub segment: &'a str,
-    pub files: &'a [AppliedFile],
+    pub files: &'a [String],
     pub meta: &'a Map<String, Value>,
 }
 
@@ -24,21 +23,4 @@ pub struct IngestNotice<'a> {
 /// is unaffected.
 pub trait IngestNotifier: Send + Sync {
     fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>>;
-}
-
-/// Production placeholder until a Callosum producer is introduced.
-pub struct LoggingIngestNotifier;
-
-impl IngestNotifier for LoggingIngestNotifier {
-    fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        log::debug!(
-            "observer ingest accepted: did={}, stream={}, day={}, segment={}, files={}",
-            notice.did,
-            notice.stream,
-            notice.day,
-            notice.segment,
-            notice.files.len(),
-        );
-        Ok(())
-    }
 }
