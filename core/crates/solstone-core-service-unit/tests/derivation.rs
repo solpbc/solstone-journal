@@ -4,6 +4,9 @@
 use std::collections::BTreeMap;
 
 use plist::Value;
+use solstone_core_installation_identity::{
+    Generation, GuardFields, InstallationId, JournalToken, NamespaceName,
+};
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
 };
@@ -16,6 +19,18 @@ const RUNTIME_DIR: &str = "/opt/sol/bin";
 const LAUNCHER: &str = "/home/sol/.local/bin/journal";
 const PORT: &str = "5015";
 const JOURNAL: &str = "/srv/journal";
+
+fn guard() -> GuardFields {
+    GuardFields {
+        namespace: NamespaceName::parse(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap(),
+        id: InstallationId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+        generation: Generation::new(1).unwrap(),
+        journal_token: JournalToken::from_raw_absolute(b"/srv/journal".to_vec()).unwrap(),
+    }
+}
 
 fn render(
     env: &BTreeMap<String, String>,
@@ -67,7 +82,7 @@ fn log_paths(plist: &Value) -> (String, String) {
 
 #[test]
 fn one_input_at_a_time_changes_only_its_derived_field() {
-    let baseline_env = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let baseline_env = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
     let (baseline_plist, baseline_unit) = render(&baseline_env, LAUNCHER, PORT, JOURNAL);
 
     let (plist, unit) = render(&baseline_env, "/home/sol/a b/$journal", PORT, JOURNAL);
@@ -89,7 +104,7 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
     assert_eq!(unit.environment, baseline_unit.environment);
     assert_eq!(unit.log_paths, baseline_unit.log_paths);
 
-    let home_env = build_service_environment("/home/sol $ café", Some(PATH), RUNTIME_DIR);
+    let home_env = build_service_environment("/home/sol $ café", Some(PATH), RUNTIME_DIR, &guard());
     let (plist, unit) = render(&home_env, LAUNCHER, PORT, JOURNAL);
     assert_eq!(arguments(&plist), arguments(&baseline_plist));
     assert_eq!(environment(&plist)["HOME"], "/home/sol $ café");
@@ -125,21 +140,22 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
 
 #[test]
 fn path_inputs_change_only_path_construction() {
-    let baseline = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let baseline = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
     let (baseline_plist, baseline_unit) = render(&baseline, LAUNCHER, PORT, JOURNAL);
     let duplicate = build_service_environment(
         HOME,
         Some("/usr/bin:/opt/sol/bin:/usr/bin:/bin"),
         RUNTIME_DIR,
+        &guard(),
     );
-    let absent = build_service_environment(HOME, None, RUNTIME_DIR);
+    let absent = build_service_environment(HOME, None, RUNTIME_DIR, &guard());
     assert_eq!(duplicate["HOME"], baseline["HOME"]);
     assert!(!duplicate.contains_key("PYTHONUNBUFFERED"));
     assert!(!baseline.contains_key("PYTHONUNBUFFERED"));
     assert_eq!(duplicate["PATH"], "/opt/sol/bin:/usr/bin:/bin");
     assert_eq!(absent["PATH"], "/opt/sol/bin:/usr/local/bin:/usr/bin:/bin");
 
-    let alternate_runtime = build_service_environment(HOME, Some(PATH), "/runtime other");
+    let alternate_runtime = build_service_environment(HOME, Some(PATH), "/runtime other", &guard());
     assert_eq!(alternate_runtime["HOME"], baseline["HOME"]);
     assert!(!alternate_runtime.contains_key("PYTHONUNBUFFERED"));
     assert_eq!(alternate_runtime["PATH"], "/runtime other:/usr/bin:/bin");
@@ -157,7 +173,7 @@ fn path_inputs_change_only_path_construction() {
 
 #[test]
 fn default_unit_is_notify_and_does_not_export_pythonunbuffered() {
-    let environment = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let environment = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
     let unit = render_systemd_unit(&environment, LAUNCHER, PORT, JOURNAL).expect("valid render");
     assert!(unit.contains("Type=notify\n"));
     assert!(!unit.contains("PYTHONUNBUFFERED"));

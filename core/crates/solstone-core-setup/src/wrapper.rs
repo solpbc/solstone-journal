@@ -10,17 +10,18 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
+use solstone_core_installation_identity::{GuardFields, InstallationBinding, wrapper_guard_lines};
 
 use crate::args::canonicalize_or_normalize;
 
-pub const WRAPPER_MARKER: &str = "# managed-version: 7";
-pub const WRAPPER_VERSION: u8 = 7;
+pub const WRAPPER_MARKER: &str = "# managed-version: 8";
+pub const WRAPPER_VERSION: u8 = 8;
 const BACKUP_ATTEMPTS: u8 = 100;
 
 const WRAPPER_TEMPLATE: &str = r#"#!/bin/bash
 # {binary} — managed by 'journal config'. Edits will be overwritten.
-# managed-version: 7
-: "${SOLSTONE_JOURNAL:={journal}}"
+# managed-version: 8
+{guard}: "${SOLSTONE_JOURNAL:={journal}}"
 export SOLSTONE_JOURNAL
 SOL_BIN='{sol_bin}'
 # Warn when pyproject.toml or uv.lock is newer than .installed.
@@ -107,9 +108,10 @@ pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
 }
 
 #[must_use]
-pub fn render_wrapper(binary: &str, journal: &Path, sol_bin: &Path) -> String {
+pub fn render_wrapper(binary: &str, journal: &Path, sol_bin: &Path, guard: &GuardFields) -> String {
     WRAPPER_TEMPLATE
         .replace("{binary}", binary)
+        .replace("{guard}", &wrapper_guard_lines(guard))
         .replace("{journal}", &journal.to_string_lossy())
         .replace(
             "{sol_bin}",
@@ -316,7 +318,7 @@ fn restore_path(path: &Path, snapshot: &PathSnapshot) -> Result<(), WrapperError
     }
 }
 
-fn write_wrappers_atomically_with<F>(
+pub fn write_wrappers_atomically_with<F>(
     contents: &[(PathBuf, String)],
     mut replace: F,
 ) -> Result<(), WrapperError>
@@ -358,11 +360,11 @@ where
     attempt
 }
 
-fn write_wrappers_atomically(contents: &[(PathBuf, String)]) -> Result<(), WrapperError> {
+pub fn write_wrappers_atomically(contents: &[(PathBuf, String)]) -> Result<(), WrapperError> {
     write_wrappers_atomically_with(contents, |from, to| fs::rename(from, to))
 }
 
-fn wrapper_lock(home_dir: &Path) -> Result<Flock<File>, WrapperError> {
+pub fn wrapper_lock(home_dir: &Path) -> Result<Flock<File>, WrapperError> {
     let directory = home_dir.join(".local/bin");
     fs::create_dir_all(&directory)?;
     let file = OpenOptions::new()
@@ -389,9 +391,11 @@ pub fn validate_journal_path_for_wrapper(journal: &Path) -> Result<(), WrapperEr
 pub fn provision_wrappers(
     environment: &WrapperEnvironment,
     journal: &Path,
+    binding: &InstallationBinding,
 ) -> Result<WrapperPaths, WrapperError> {
     validate_journal_path_for_wrapper(journal)?;
     let paths = wrapper_paths(&environment.home_dir);
+    let guard = GuardFields::from_binding(binding);
     let _lock = wrapper_lock(&environment.home_dir)?;
     let states = [
         ("solstone", check_alias(environment, "solstone")?),
@@ -423,6 +427,7 @@ pub fn provision_wrappers(
                 "solstone",
                 journal,
                 &environment.executable_dir.join("solstone"),
+                &guard,
             ),
         ),
         (
@@ -431,6 +436,7 @@ pub fn provision_wrappers(
                 "journal",
                 journal,
                 &environment.executable_dir.join("journal"),
+                &guard,
             ),
         ),
     ])?;
@@ -560,6 +566,37 @@ pub fn ensure_user_bin_on_path(home_dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier, mpsc};
+    use std::thread;
+    use std::time::Duration;
+
+    fn binding() -> InstallationBinding {
+        InstallationBinding {
+            namespace: solstone_core_installation_identity::NamespaceName::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .expect("namespace"),
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .expect("id"),
+            generation: solstone_core_installation_identity::Generation::new(1)
+                .expect("generation"),
+            platform: solstone_core_installation_identity::PlatformTag::Linux,
+            root_token: solstone_core_installation_identity::RootToken::from_raw_absolute(
+                b"/install/wrapper".to_vec(),
+            )
+            .expect("root"),
+            journal_token: solstone_core_installation_identity::JournalToken::from_raw_absolute(
+                b"/journal".to_vec(),
+            )
+            .expect("journal"),
+        }
+    }
+
+    fn guard() -> GuardFields {
+        GuardFields::from_binding(&binding())
+    }
 
     fn root(name: &str) -> PathBuf {
         let path = PathBuf::from("/var/tmp")
@@ -582,13 +619,54 @@ mod tests {
             "solstone",
             Path::new("/journal"),
             Path::new("/a'quoted/.venv/bin/solstone"),
+            &guard(),
         );
         let parsed = parse_wrapper(&rendered).unwrap();
-        assert_eq!(parsed.version, 7);
+        assert_eq!(parsed.version, 8);
         assert_eq!(parsed.journal, "/journal");
         assert_eq!(
             parsed.sol_bin,
             PathBuf::from("/a'quoted/.venv/bin/solstone")
+        );
+        assert_eq!(
+            solstone_core_installation_identity::parse_wrapper_guard(&rendered)
+                .expect("parse wrapper guard"),
+            Some(guard())
+        );
+    }
+
+    #[test]
+    fn wrapper_base_parser_ignores_corrupted_guard_but_guard_parser_refuses_it() {
+        let rendered = render_wrapper(
+            "solstone",
+            Path::new("/journal"),
+            Path::new("/runtime/solstone"),
+            &guard(),
+        );
+        let corrupted = rendered.replace(
+            "# solstone-installation-id: 00112233445566778899aabbccddeeff",
+            "# solstone-installation-id: invalid",
+        );
+        assert!(parse_wrapper(&corrupted).is_some());
+        assert!(solstone_core_installation_identity::parse_wrapper_guard(&corrupted).is_err());
+    }
+
+    #[test]
+    fn v7_wrapper_has_no_identity_guard() {
+        let fields = guard();
+        let rendered = render_wrapper(
+            "solstone",
+            Path::new("/journal"),
+            Path::new("/runtime/solstone"),
+            &fields,
+        );
+        let legacy = rendered
+            .replace(WRAPPER_MARKER, "# managed-version: 7")
+            .replace(&wrapper_guard_lines(&fields), "");
+        assert_eq!(parse_wrapper(&legacy).expect("parse v7 wrapper").version, 7);
+        assert_eq!(
+            solstone_core_installation_identity::parse_wrapper_guard(&legacy),
+            Ok(None)
         );
     }
     #[test]
@@ -633,7 +711,7 @@ mod tests {
         let root = root("shell-char");
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
-        let error = provision_wrappers(&env, Path::new("/bad$journal")).unwrap_err();
+        let error = provision_wrappers(&env, Path::new("/bad$journal"), &binding()).unwrap_err();
         assert!(error.to_string().contains('$'));
         assert!(!wrapper_paths(&env.home_dir).solstone.exists());
     }
@@ -644,7 +722,7 @@ mod tests {
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
         symlink("/missing-target", wrapper_paths(&env.home_dir).solstone).unwrap();
-        provision_wrappers(&env, Path::new("/journal")).unwrap();
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
         let backup = fs::read_dir(env.backup_dir())
             .unwrap()
             .flatten()
@@ -691,7 +769,7 @@ mod tests {
         assert!(!expected.exists());
         fs::write(
             wrapper_paths(&environment.home_dir).solstone,
-            render_wrapper("solstone", Path::new("/journal"), &expected),
+            render_wrapper("solstone", Path::new("/journal"), &expected, &guard()),
         )
         .unwrap();
         assert_eq!(
@@ -715,10 +793,11 @@ mod tests {
                 "journal",
                 Path::new("/old"),
                 &env.executable_dir.join("journal"),
+                &guard(),
             ),
         )
         .unwrap();
-        provision_wrappers(&env, Path::new("/journal")).unwrap();
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
         let backups = fs::read_dir(env.backup_dir())
             .unwrap()
             .flatten()
@@ -741,7 +820,7 @@ mod tests {
             home_dir: absent_home,
             ..env.clone()
         };
-        provision_wrappers(&absent, Path::new("/journal")).unwrap();
+        provision_wrappers(&absent, Path::new("/journal"), &binding()).unwrap();
         assert_eq!(
             fs::read_dir(absent.backup_dir()).unwrap().flatten().count(),
             1
@@ -757,7 +836,7 @@ mod tests {
         let blocked = root.join("blocked-backups");
         fs::write(&blocked, "not a directory").unwrap();
         env.backup_dir = Some(blocked);
-        provision_wrappers(&env, Path::new("/journal")).unwrap();
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
         assert!(
             fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
                 .unwrap()
@@ -770,7 +849,7 @@ mod tests {
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::write(env.curdir.join(".git"), "gitdir: x").unwrap();
-        let paths = provision_wrappers(&env, Path::new("/journal")).unwrap();
+        let paths = provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
         assert!(!paths.solstone.exists() && !paths.journal.exists());
     }
     #[test]
@@ -784,7 +863,7 @@ mod tests {
         fs::write(env.executable_dir.join("journal"), "runtime").unwrap();
         let leftover = env.home_dir.join(".local/bin/sol");
         fs::write(&leftover, "macos-app-owned-or-foreign").unwrap();
-        provision_wrappers(&env, Path::new("/journal")).unwrap();
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
         assert_eq!(
             fs::read_to_string(&leftover).unwrap(),
             "macos-app-owned-or-foreign"
@@ -855,6 +934,59 @@ mod tests {
         assert_eq!(
             fs::metadata(&file).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+    }
+
+    #[test]
+    fn wrapper_lock_blocks_a_second_descriptor_until_the_first_write_lease_releases() {
+        let root = root("lock-contention");
+        let home = root.join("home");
+        let paths = wrapper_paths(&home);
+        fs::create_dir_all(paths.solstone.parent().unwrap()).unwrap();
+        fs::write(&paths.solstone, "old-solstone").unwrap();
+        fs::write(&paths.journal, "old-journal").unwrap();
+
+        let first_lock = wrapper_lock(&home).expect("first distinct file descriptor lock");
+        let rendezvous = Arc::new(Barrier::new(2));
+        let (attempt_tx, attempt_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker_home = home.clone();
+        let worker_paths = paths.clone();
+        let worker_rendezvous = Arc::clone(&rendezvous);
+        let worker = thread::spawn(move || {
+            // The barrier is the rendezvous immediately before the separate
+            // descriptor attempts its OS-level exclusive flock.
+            worker_rendezvous.wait();
+            attempt_tx.send(()).expect("tell owner about lock attempt");
+            let _second_lock = wrapper_lock(&worker_home).expect("second descriptor lock");
+            write_wrappers_atomically(&[
+                (worker_paths.solstone, "new-solstone".into()),
+                (worker_paths.journal, "new-journal".into()),
+            ])
+            .expect("write after lock release");
+            done_tx.send(()).expect("tell owner about completed write");
+        });
+
+        rendezvous.wait();
+        attempt_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("worker reached its lock attempt");
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        assert_eq!(fs::read_to_string(&paths.solstone).unwrap(), "old-solstone");
+        assert_eq!(fs::read_to_string(&paths.journal).unwrap(), "old-journal");
+
+        drop(first_lock);
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second writer completed after release");
+        worker.join().expect("worker thread");
+        assert_eq!(fs::read_to_string(&paths.solstone).unwrap(), "new-solstone");
+        assert_eq!(fs::read_to_string(&paths.journal).unwrap(), "new-journal");
+        assert!(
+            fs::read_dir(paths.solstone.parent().unwrap())
+                .unwrap()
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().contains(".tmp-"))
         );
     }
     #[test]

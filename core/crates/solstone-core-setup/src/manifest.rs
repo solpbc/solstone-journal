@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use solstone_core_installation_identity::LegacyManifestEvidence;
 
 static TEMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -50,6 +51,25 @@ pub fn manifest_path(journal_path: &Path) -> PathBuf {
 pub fn read_manifest(path: &Path) -> Option<SetupManifest> {
     let bytes = fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+/// Classifies legacy schema-v1 manifest evidence without changing the tolerant
+/// reader used by existing setup state consumers.
+#[must_use]
+pub fn legacy_manifest_evidence(path: &Path) -> LegacyManifestEvidence {
+    match fs::read(path) {
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            LegacyManifestEvidence::Absent
+        }
+        Err(_) => LegacyManifestEvidence::Unreadable,
+        Ok(_) if read_manifest(path).is_some() => LegacyManifestEvidence::ValidProviderlessSchemaV1,
+        Ok(_) => LegacyManifestEvidence::Malformed,
+    }
 }
 
 /// Index the last record for each externally supplied step name.
@@ -138,8 +158,8 @@ fn create_temp_file(parent: &Path) -> io::Result<(PathBuf, File)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SCHEMA_VERSION, SetupManifest, can_skip, manifest_path, prior_steps, read_manifest,
-        write_manifest,
+        SCHEMA_VERSION, SetupManifest, can_skip, legacy_manifest_evidence, manifest_path,
+        prior_steps, read_manifest, write_manifest,
     };
     use serde_json::{Map, json};
     use std::fs;
@@ -227,6 +247,28 @@ mod tests {
         fs::write(&blocker, "blocker").unwrap();
         write_manifest(&blocker.join("setup-state.json"), &manifest());
         assert_eq!(fs::read_to_string(blocker).unwrap(), "blocker");
+    }
+
+    #[test]
+    fn legacy_manifest_evidence_preserves_read_tolerance_and_error_classes() {
+        let root = root("legacy-evidence");
+        let missing = root.join("missing.json");
+        assert_eq!(
+            legacy_manifest_evidence(&missing),
+            solstone_core_installation_identity::LegacyManifestEvidence::Absent
+        );
+        let valid = root.join("valid.json");
+        write_manifest(&valid, &manifest());
+        assert_eq!(
+            legacy_manifest_evidence(&valid),
+            solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
+        );
+        let malformed = root.join("malformed.json");
+        fs::write(&malformed, "{").unwrap();
+        assert_eq!(
+            legacy_manifest_evidence(&malformed),
+            solstone_core_installation_identity::LegacyManifestEvidence::Malformed
+        );
     }
 
     #[test]
