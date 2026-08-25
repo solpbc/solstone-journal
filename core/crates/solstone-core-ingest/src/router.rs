@@ -750,9 +750,13 @@ fn append_partial_and_fail(
         );
     }
     if !announced_files.is_empty() {
+        let observer = resolve_device_observer(&state.journal_root, did)
+            .ok()
+            .flatten()
+            .and_then(|observer| observer.record.name().map(str::to_owned));
         let notice = IngestNotice {
             did,
-            observer: None,
+            observer: observer.as_deref(),
             source: &envelope.source,
             day: &envelope.day,
             stream,
@@ -2019,6 +2023,7 @@ mod tests {
     async fn partial_notice_keeps_reserved_meta_keys_nested() {
         let dir = root();
         let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
         let socket = root.join("health/callosum.sock");
         let server = CallosumSocketServer::bind(&socket).await.unwrap();
         let mut peer = CallosumSocketConnection::new(&socket, Map::new());
@@ -2030,6 +2035,7 @@ mod tests {
         });
         let meta = json!({
             "tract": "caller-tract",
+            "event": "caller-event",
             "day": "caller-day",
             "segment": "caller-segment",
             "stream": "caller-stream",
@@ -2061,10 +2067,11 @@ mod tests {
         assert_eq!(notice.event, "observing");
         assert_eq!(notice.extra["day"], "20260804");
         assert_eq!(notice.extra["segment"], "120000_1");
-        assert_eq!(notice.extra["stream"], "device");
+        assert_eq!(notice.extra["stream"], "desk");
         assert_eq!(notice.extra["files"], json!(["audio.flac"]));
         assert_eq!(notice.extra["batch"], false);
-        assert!(!notice.extra.contains_key("observer"));
+        assert_eq!(notice.extra["observer"], "Desk");
+        assert_eq!(notice.extra["meta"]["event"], "caller-event");
         assert_eq!(notice.extra["meta"]["batch"], "caller-batch");
         assert_eq!(notice.extra["meta"], meta);
         peer.stop().await;
@@ -2236,6 +2243,45 @@ mod tests {
         assert_eq!(body["status"], "duplicate");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
         assert_eq!(fs::read(&marker).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn malformed_stream_marker_refuses_partial_custody_and_notification() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let marker = stream_marker_path(&root, "20260804");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, b"not-json").unwrap();
+        let before = fs::read(&marker).unwrap();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(&root, spy.clone());
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_marker_bump_failed");
+        assert_eq!(fs::read(&marker).unwrap(), before);
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"sound");
+        assert!(!segment.join("events.jsonl").exists());
     }
 
     #[tokio::test]
