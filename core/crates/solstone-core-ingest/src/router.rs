@@ -1941,6 +1941,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn partial_notify_failure_keeps_journal_write_failed() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let spy = SpyNotifier::fail_next();
+        let app = api_router_with_notifier(&root, spy.clone());
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "journal_write_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+        let events =
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
+        let event: Value = serde_json::from_str(events.lines().next().unwrap()).unwrap();
+        let names: Vec<&str> = event["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["written"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["audio.flac"]);
+    }
+
+    #[tokio::test]
+    async fn partial_append_failure_leaves_day_dirty_without_notification() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(&root, spy.clone());
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "event_append_failed");
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn partial_notice_keeps_reserved_meta_keys_nested() {
         let dir = root();
         let root = dir.path().to_path_buf();

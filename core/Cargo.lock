@@ -4079,7 +4079,6 @@ name = "solstone-core-ingest-resolve"
 version = "2.0.0"
 dependencies = [
  "chrono",
- "log",
  "serde",
  "serde_json",
  "sha2",

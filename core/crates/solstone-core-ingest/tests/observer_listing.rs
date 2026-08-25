@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
+use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 use solstone_core_ingest::api_router;
 use tower::ServiceExt;
@@ -66,6 +67,12 @@ fn fixture(label: &str) -> PathBuf {
         b"other device fixture media",
     );
     root
+}
+
+async fn callosum_server(root: &Path) -> CallosumSocketServer {
+    CallosumSocketServer::bind(root.join("health/callosum.sock"))
+        .await
+        .expect("callosum server")
 }
 
 fn files_in_tree(directory: &Path) -> Vec<PathBuf> {
@@ -506,6 +513,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
 #[tokio::test]
 async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
     let root = root("zero-observer");
+    let server = callosum_server(&root).await;
     let app = api_router(&root);
     upload(&app, DID_A, "150000_60", "native.flac", b"native").await;
     let (status, zero) =
@@ -557,6 +565,7 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
     let detail = many["detail"].as_str().expect("detail");
     assert!(detail.contains("observer revoke <prefix>"));
     assert!(detail.contains("aaaaaaaa") && detail.contains("cccccccc"));
+    server.stop().await;
     let _ = fs::remove_dir_all(root);
 }
 
@@ -614,6 +623,7 @@ async fn ac5_history_tears_refuse_and_remain_device_scoped() {
 #[tokio::test]
 async fn ac1_all_days_manifest_degrades_a_torn_day() {
     let root = fixture("all-days-degrade");
+    let server = callosum_server(&root).await;
     let app = api_router(&root);
     upload_on_day(&app, DID_A, "20260805", "120000_60", "later.flac", b"later").await;
     let torn = history_path(&root, "aaaaaaaa");
@@ -636,6 +646,7 @@ async fn ac1_all_days_manifest_degrades_a_torn_day() {
         request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(day["reason_code"], "observer_history_torn");
+    server.stop().await;
     let _ = fs::remove_dir_all(root);
 }
 
@@ -660,6 +671,7 @@ async fn ac5_existing_unreadable_history_refuses_loudly() {
 #[tokio::test]
 async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let root = fixture("merge");
+    let server = callosum_server(&root).await;
     let app = api_router(&root);
     let first = upload(&app, DID_A, "160000_60", "native.flac", b"native").await;
     let landed = first["segment"]
@@ -756,18 +768,21 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         "present",
         "event status is stat-only"
     );
+    server.stop().await;
     let _ = fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn native_write_conflicting_with_history_attestation_refuses_ambiguous() {
     let root = fixture("history-sha-conflict");
+    let server = callosum_server(&root).await;
     let app = api_router(&root);
     upload(&app, DID_A, "120200_60", "gone.flac", b"conflicting-bytes").await;
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["reason_code"], "ambiguous_segment_file_name");
+    server.stop().await;
     let _ = fs::remove_dir_all(root);
 }
 
