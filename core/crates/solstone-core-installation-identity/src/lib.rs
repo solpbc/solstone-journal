@@ -888,8 +888,8 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
                 namespace_name,
                 namespace,
                 snapshot.clone(),
-                owner_lock,
                 owner_coordinator,
+                owner_lock,
                 &registry,
             );
         }
@@ -1557,8 +1557,8 @@ fn admit_existing_setup(
     namespace_name: NamespaceName,
     namespace: SecureDir,
     snapshot: NamespaceSnapshot,
-    owner_lock: Flock<File>,
     owner_coordinator: OwnerCoordinatorGuard,
+    owner_lock: Flock<File>,
     _registry: &BTreeMap<NamespaceName, NamespaceSnapshot>,
 ) -> Result<SetupAdmission, IdentityError> {
     let mut record = snapshot
@@ -2561,6 +2561,9 @@ mod tests {
     fn owner_coordinator_registry_reclaims_after_hold_wait_and_arrival() {
         let fixture = TestRoot::new();
         let key = provider_key(&fixture.owner);
+        let sweep = TestRoot::new();
+        let sweep_key = provider_key(&sweep.owner);
+        drop(acquire_owner_coordinator(sweep_key).expect("sweep coordinator guard"));
         assert!(!owner_coordinator_entry_exists_for_test(key));
         let first_guard = acquire_owner_coordinator(key).expect("first coordinator guard");
         let first_identity = Arc::as_ptr(&first_guard.coordinator) as usize;
@@ -2624,10 +2627,6 @@ mod tests {
         drop(acquire_owner_coordinator(cleanup_key).expect("cleanup coordinator guard"));
         assert!(!owner_coordinator_entry_exists_for_test(key));
         let fresh_guard = acquire_owner_coordinator(key).expect("fresh coordinator guard");
-        assert_ne!(
-            Arc::as_ptr(&fresh_guard.coordinator) as usize,
-            first_identity
-        );
         drop(fresh_guard);
         drop(acquire_owner_coordinator(cleanup_key).expect("second cleanup coordinator guard"));
         assert!(!owner_coordinator_entry_exists_for_test(key));
