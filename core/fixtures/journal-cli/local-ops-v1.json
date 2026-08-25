@@ -109,7 +109,7 @@
     {
       "path": ["facet", "doctor"],
       "owner": "journal-direct",
-      "grammar": "journal facet doctor [--fix]",
+      "grammar": "journal facet doctor [--fix [--merge] | --merge --fix]",
       "reads_stdin": false,
       "retired_spellings": ["sol call journal facet doctor"],
       "default_declaration": {"title": "${TITLE_CASE_SLUG}", "description": "", "color": "#667eea", "emoji": "📦"},
@@ -119,7 +119,11 @@
         "report without writing by default",
         "with --fix publish the default declaration and its facet_heal audit entry in the Rust-owned append-only logs/facet-heals.jsonl as one recoverable transaction under the facet mutation lock",
         "the repair transaction uses a synced manifest with staged declaration, audit payload, transaction id, and phase; the next facet mutation rolls back a pre-commit crash or finishes an idempotent post-commit audit append before doing new work",
-        "after repairs print the exact follow-up: Run 'journal indexer --rescan-full' to refresh the index."
+        "after repairs print the exact follow-up: Run 'journal indexer --rescan-full' to refresh the index.",
+        "--merge requires --fix; it lowercases orphan slugs, removes ., _, and -, groups variants in sorted raw-slug order, elects the first raw slug as destination, and folds remaining members in that same order",
+        "--fix --merge adopts each elected destination before merging its variants, reports every source-to-destination fold, and leaves singleton orphan repair behavior unchanged",
+        "plain regular-file collisions retain the already-staged copy and report the incoming member, relative path, and retained member",
+        "a failed destination adoption or rolled-back member merge does not stop later independent groups or singleton orphan adoption"
       ],
       "cases": [
         {
@@ -142,6 +146,39 @@
           "expected_stdout": "",
           "expected_stderr": "journal facet doctor: repair transaction failed\n",
           "expected_absent": ["${JOURNAL}/facets/field-notes/facet.json"]
+        },
+        {
+          "name": "report_variant_groups",
+          "argv": ["facet", "doctor"],
+          "stdin": "",
+          "fixture": "name_variant_orphans",
+          "expected_exit": 0,
+          "expected_stdout": "Orphan facets:\n- field-notes\n- field.notes\n- field_notes\n3 orphan facet(s) found. Run with --fix to register them.\n\nName-variant groups:\n- field-notes, field.notes, field_notes -> field-notes\nRun with --fix --merge to collapse name variants before registering them.\n",
+          "expected_stderr": "",
+          "expected_tree_unchanged": ["${JOURNAL}"]
+        },
+        {
+          "name": "fix_merge_collapses_name_variants",
+          "argv": ["facet", "doctor", "--fix", "--merge"],
+          "stdin": "",
+          "fixture": "name_variant_orphans",
+          "expected_exit": 0,
+          "expected_stdout": "Merged orphan facets:\n- field.notes -> field-notes\n- field_notes -> field-notes\n\nRegular-file collisions:\n- field_notes -> field-notes: news/collision.md (kept field.notes)\n\nAdopted orphan facets:\n- field-notes\n\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n",
+          "expected_stderr": "",
+          "expected_absent": ["${JOURNAL}/facets/field.notes", "${JOURNAL}/facets/field_notes"],
+          "expected_file": "facets/field-notes/news/collision.md",
+          "expected_file_bytes": "from-dot\n",
+          "expected_index_rebuild_count": 2
+        },
+        {
+          "name": "merge_requires_fix",
+          "argv": ["facet", "doctor", "--merge"],
+          "stdin": "",
+          "fixture": "one_orphan_facet",
+          "expected_exit": 64,
+          "expected_stdout": "",
+          "expected_stderr": "journal facet doctor: --merge requires --fix\n",
+          "expected_tree_unchanged": ["${JOURNAL}"]
         }
       ]
     },

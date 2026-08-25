@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(not(target_os = "ios"))]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
@@ -731,11 +730,22 @@ fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
 }
 
 fn facet_doctor(args: &[OsString]) -> Outcome {
-    let fix = match args {
-        [] => false,
-        [arg] if arg == OsStr::new("--fix") => true,
+    let (fix, merge) = match args {
+        [] => (false, false),
+        [arg] if arg == OsStr::new("--fix") => (true, false),
+        [first, second]
+            if (first == OsStr::new("--fix") && second == OsStr::new("--merge"))
+                || (first == OsStr::new("--merge") && second == OsStr::new("--fix")) =>
+        {
+            (true, true)
+        }
+        [arg] if arg == OsStr::new("--merge") => {
+            return usage("facet doctor", "--merge requires --fix");
+        }
         [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
-            return success("Usage: journal facet doctor [--fix]\n".to_owned());
+            return success(
+                "Usage: journal facet doctor [--fix [--merge] | --merge --fix]\n".to_owned(),
+            );
         }
         _ => return usage("facet doctor", "unexpected argument"),
     };
@@ -759,6 +769,21 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
             "{} orphan facet(s) found. Run with --fix to register them.\n",
             orphans.len()
         ));
+        let groups = group_orphan_facets(&orphans);
+        let variants = groups
+            .values()
+            .filter(|members| members.len() > 1)
+            .collect::<Vec<_>>();
+        if !variants.is_empty() {
+            stdout.push_str("\nName-variant groups:\n");
+            for members in variants {
+                let destination = &members[0];
+                stdout.push_str(&format!("- {} -> {destination}\n", members.join(", ")));
+            }
+            stdout.push_str(
+                "Run with --fix --merge to collapse name variants before registering them.\n",
+            );
+        }
         return success(stdout);
     }
     let _lock = match hold_facet_trust_lock(&journal) {
@@ -772,42 +797,25 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
     if orphans.is_empty() {
         return success("No orphan facets found.\n".to_owned());
     }
+    if merge {
+        #[cfg(not(target_os = "ios"))]
+        {
+            return facet_doctor_fix_merge(&journal, &orphans);
+        }
+        #[cfg(target_os = "ios")]
+        {
+            return failure(
+                "facet doctor",
+                "facet merging unavailable on iOS",
+                EXIT_UNAVAILABLE,
+            );
+        }
+    }
     let transaction = transaction_id();
-    let audit = journal.join("logs/facet-heals.jsonl");
     let mut repaired = Vec::new();
     for slug in &orphans {
-        let title = title_case_slug(slug);
-        let declaration = journal.join("facets").join(slug).join("facet.json");
-        let body = match serde_json::to_vec_pretty(&json!({
-            "title": title,
-            "description": "",
-            "color": "#667eea",
-            "emoji": "📦"
-        })) {
-            Ok(mut body) => {
-                body.push(b'\n');
-                body
-            }
-            Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
-        };
-        if let Err(error) = write_bytes_exclusive(
-            &declaration,
-            &body,
-            AtomicWriteOptions { mode: Some(0o600) },
-        ) {
-            return failure("facet doctor", &error.to_string(), EXIT_IO);
-        }
-        if let Err(error) = append_jsonl(
-            &audit,
-            &json!({
-                "transaction_id": transaction,
-                "facet": slug,
-                "action": "facet_heal",
-                "params": {"title": title}
-            }),
-        ) {
-            let _ = fs::remove_file(&declaration);
-            return failure("facet doctor", &error.to_string(), EXIT_IO);
+        if let Err(error) = adopt_orphan_facet(&journal, slug, &transaction) {
+            return failure("facet doctor", &error, EXIT_IO);
         }
         repaired.push(slug);
     }
@@ -820,6 +828,175 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
         orphans.len()
     ));
     success(stdout)
+}
+
+fn adopt_orphan_facet(journal: &Path, slug: &str, transaction: &str) -> Result<(), String> {
+    let title = title_case_slug(slug);
+    let declaration = journal.join("facets").join(slug).join("facet.json");
+    let mut body = serde_json::to_vec_pretty(&json!({
+        "title": title,
+        "description": "",
+        "color": "#667eea",
+        "emoji": "📦"
+    }))
+    .map_err(|error| error.to_string())?;
+    body.push(b'\n');
+    write_bytes_exclusive(
+        &declaration,
+        &body,
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())?;
+    let audit = journal.join("logs/facet-heals.jsonl");
+    if let Err(error) = append_jsonl(
+        &audit,
+        &json!({
+            "transaction_id": transaction,
+            "facet": slug,
+            "action": "facet_heal",
+            "params": {"title": title}
+        }),
+    ) {
+        let _ = fs::remove_file(&declaration);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+fn normalized_orphan_slug(slug: &str) -> String {
+    slug.bytes()
+        .filter(|byte| !matches!(byte, b'.' | b'_' | b'-'))
+        .map(|byte| byte.to_ascii_lowercase() as char)
+        .collect()
+}
+
+fn group_orphan_facets(orphans: &[String]) -> BTreeMap<String, Vec<String>> {
+    let mut groups = BTreeMap::new();
+    for slug in orphans {
+        groups
+            .entry(normalized_orphan_slug(slug))
+            .or_insert_with(Vec::new)
+            .push(slug.clone());
+    }
+    groups
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
+    let transaction = transaction_id();
+    let groups = group_orphan_facets(orphans);
+    let mut merged = Vec::new();
+    let mut collisions = Vec::new();
+    let mut adopted = Vec::new();
+    let mut failed = Vec::new();
+    let mut failed_orphans = 0;
+    let mut committed_failures = Vec::new();
+
+    for members in groups.values() {
+        // Sorted slug identity, not filesystem metadata, determines the destination and fold order.
+        let destination = &members[0];
+        if let Err(error) = adopt_orphan_facet(journal, destination, &transaction) {
+            let unmerged = members[1..].join(", ");
+            let detail = if unmerged.is_empty() {
+                format!("{destination} (adoption failed: {error})")
+            } else {
+                format!("{destination} (adoption failed: {error}; {unmerged} were not merged)")
+            };
+            failed.push(detail);
+            failed_orphans += members.len();
+            continue;
+        }
+        adopted.push(destination.clone());
+        let mut retained_origins = BTreeMap::<PathBuf, String>::new();
+        for source in &members[1..] {
+            // --merge is the caller's explicit consent for each derived merge audit record.
+            match facet_merge_transaction_in_journal(journal, source, destination, true) {
+                Err(outcome) => {
+                    failed.push(format!(
+                        "{source} -> {destination} (merge failed before commit: {})",
+                        outcome_diagnostic(&outcome)
+                    ));
+                    failed_orphans += 1;
+                }
+                Ok(commit) => {
+                    for path in &commit.report.regular_file_collisions {
+                        let retained = retained_origins
+                            .get(path)
+                            .cloned()
+                            .unwrap_or_else(|| destination.clone());
+                        collisions.push(format!(
+                            "{source} -> {destination}: {} (kept {retained})",
+                            path.display()
+                        ));
+                    }
+                    for path in commit.report.copied_regular_files {
+                        retained_origins.insert(path, source.clone());
+                    }
+                    merged.push(format!("{source} -> {destination}"));
+                    if let Some(outcome) = commit.post_commit_failure {
+                        committed_failures.push(format!(
+                            "{source} -> {destination} ({})",
+                            outcome_diagnostic(&outcome)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut stdout = String::new();
+    append_facet_doctor_section(&mut stdout, "Merged orphan facets", &merged);
+    append_facet_doctor_section(&mut stdout, "Regular-file collisions", &collisions);
+    append_facet_doctor_section(&mut stdout, "Adopted orphan facets", &adopted);
+    append_facet_doctor_section(&mut stdout, "Failed orphan facets", &failed);
+    append_facet_doctor_section(
+        &mut stdout,
+        "Committed merge maintenance failures",
+        &committed_failures,
+    );
+    if !stdout.is_empty() {
+        stdout.push('\n');
+    }
+    let repaired = adopted.len() + merged.len();
+    if failed_orphans == 0 && committed_failures.is_empty() {
+        stdout.push_str(&format!(
+            "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+        ));
+        return success(stdout);
+    }
+    stdout.push_str(&format!(
+        "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'journal indexer --rescan-full' to refresh the index.\n"
+    ));
+    Outcome::LocalFailure {
+        stdout,
+        stderr: "journal facet doctor: one or more orphan facet repairs failed\n".to_owned(),
+        exit: EXIT_IO,
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn append_facet_doctor_section(stdout: &mut String, heading: &str, entries: &[String]) {
+    if entries.is_empty() {
+        return;
+    }
+    if !stdout.is_empty() {
+        stdout.push('\n');
+    }
+    stdout.push_str(heading);
+    stdout.push_str(":\n");
+    for entry in entries {
+        stdout.push_str(&format!("- {entry}\n"));
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn outcome_diagnostic(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::LocalFailure { stderr, .. } | Outcome::ProcessFailure { stderr, .. } => {
+            stderr.trim().to_owned()
+        }
+        _ => "facet merge failed".to_owned(),
+    }
 }
 
 #[cfg(target_os = "ios")]
@@ -878,23 +1055,51 @@ fn facet_merge_in_journal(
     destination: &str,
     consent: bool,
 ) -> Outcome {
+    match facet_merge_transaction_in_journal(journal, source, destination, consent) {
+        Err(outcome) => outcome,
+        Ok(FacetMergeCommit {
+            post_commit_failure: Some(outcome),
+            ..
+        }) => outcome,
+        Ok(FacetMergeCommit {
+            post_commit_failure: None,
+            ..
+        }) => success(format!(
+            "Merged '{source}' into '{destination}'. Index rebuild completed.\n"
+        )),
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+struct FacetMergeCommit {
+    report: FacetTreeMergeReport,
+    post_commit_failure: Option<Outcome>,
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_transaction_in_journal(
+    journal: &Path,
+    source: &str,
+    destination: &str,
+    consent: bool,
+) -> Result<FacetMergeCommit, Outcome> {
     let source_path = journal.join("facets").join(source);
     let destination_path = journal.join("facets").join(destination);
     if let Err(error) = require_real_directory(&source_path) {
-        return failure("facet merge", &error, EXIT_DATA);
+        return Err(failure("facet merge", &error, EXIT_DATA));
     }
     if let Err(error) = require_real_directory(&destination_path) {
-        return failure("facet merge", &error, EXIT_DATA);
+        return Err(failure("facet merge", &error, EXIT_DATA));
     }
     let _lock = match hold_facet_trust_lock(journal) {
         Ok(lock) => lock,
-        Err(error) => return failure("facet merge", &error.to_string(), EXIT_IO),
+        Err(error) => return Err(failure("facet merge", &error.to_string(), EXIT_IO)),
     };
     if let Err(error) = require_real_directory(&source_path) {
-        return failure("facet merge", &error, EXIT_DATA);
+        return Err(failure("facet merge", &error, EXIT_DATA));
     }
     if let Err(error) = require_real_directory(&destination_path) {
-        return failure("facet merge", &error, EXIT_DATA);
+        return Err(failure("facet merge", &error, EXIT_DATA));
     }
     let transaction = transaction_id();
     let facets = journal.join("facets");
@@ -902,32 +1107,35 @@ fn facet_merge_in_journal(
     let backup = facets.join(format!(".facet-merge-{transaction}.dest"));
     let source_backup = facets.join(format!(".facet-merge-{transaction}.source"));
     if let Err(error) = require_missing(&backup).and_then(|()| require_missing(&source_backup)) {
-        return failure("facet merge", &error, EXIT_IO);
+        return Err(failure("facet merge", &error, EXIT_IO));
     }
     if let Err(error) = create_private_dir_exclusive(&stage) {
-        return failure("facet merge", &error.to_string(), EXIT_IO);
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
     if let Err(error) = copy_tree(&destination_path, &stage, true) {
         let _ = fs::remove_dir_all(&stage);
-        return failure("facet merge", &error, EXIT_IO);
+        return Err(failure("facet merge", &error, EXIT_IO));
     }
-    if let Err(error) = merge_tree(&source_path, &stage) {
-        let _ = fs::remove_dir_all(&stage);
-        return failure("facet merge", &error, EXIT_IO);
-    }
+    let report = match merge_tree(&source_path, &stage) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&stage);
+            return Err(failure("facet merge", &error, EXIT_IO));
+        }
+    };
     if let Err(error) = fs::rename(&destination_path, &backup) {
         let _ = fs::remove_dir_all(&stage);
-        return failure("facet merge", &error.to_string(), EXIT_IO);
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
     if let Err(error) = fs::rename(&stage, &destination_path) {
         let _ = fs::rename(&backup, &destination_path);
-        return failure("facet merge", &error.to_string(), EXIT_IO);
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
     if let Err(error) = fs::rename(&source_path, &source_backup) {
         let _ = fs::rename(&destination_path, &stage);
         let _ = fs::rename(&backup, &destination_path);
         let _ = fs::remove_dir_all(&stage);
-        return failure("facet merge", &error.to_string(), EXIT_IO);
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
     let mut params = json!({"source": source, "dest": destination});
     if consent {
@@ -936,25 +1144,33 @@ fn facet_merge_in_journal(
     if let Err(error) = append_action_log(journal, None, "cli", "user", "facet_merge", params) {
         let rollback =
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
-        return transaction_failure("facet merge", &error.to_string(), rollback);
+        return Err(transaction_failure(
+            "facet merge",
+            &error.to_string(),
+            rollback,
+        ));
     }
     if let Err(error) = remove_tree_pair(&backup, &source_backup) {
-        return failure(
-            "facet merge",
-            &format!("merge committed but backup cleanup failed: {error}"),
-            EXIT_IO,
-        );
+        return Ok(FacetMergeCommit {
+            report,
+            post_commit_failure: Some(failure(
+                "facet merge",
+                &format!("merge committed but backup cleanup failed: {error}"),
+                EXIT_IO,
+            )),
+        });
     }
-    match scan_journal(journal, true) {
-        Ok(_) => success(format!(
-            "Merged '{source}' into '{destination}'. Index rebuild completed.\n"
-        )),
-        Err(error) => failure(
+    let post_commit_failure = scan_journal(journal, true).err().map(|error| {
+        failure(
             "facet merge",
             &format!("merge committed but index rebuild failed: {error}"),
             EXIT_FAILED,
-        ),
-    }
+        )
+    });
+    Ok(FacetMergeCommit {
+        report,
+        post_commit_failure,
+    })
 }
 
 fn news_write(args: &[OsString]) -> Outcome {
@@ -1123,15 +1339,27 @@ mod facet_merge_tests {
     }
 
     #[test]
-    fn facet_merge_leaves_legacy_convey_config_byte_identical() {
+    fn facet_merge_leaves_legacy_config_and_destination_file_collision_byte_identical() {
         let journal = TempJournal::new();
         let config = journal.path().join("config/convey.json");
         let before = fs::read(&config).expect("convey config before merge");
+        fs::write(journal.path().join("facets/source/collision.md"), b"source")
+            .expect("source collision");
+        fs::write(
+            journal.path().join("facets/destination/collision.md"),
+            b"destination",
+        )
+        .expect("destination collision");
 
         let outcome = facet_merge_in_journal(journal.path(), "source", "destination", false);
 
         assert!(matches!(outcome, Outcome::LocalSuccess { .. }));
         assert_eq!(fs::read(config).expect("convey config after merge"), before);
+        assert_eq!(
+            fs::read(journal.path().join("facets/destination/collision.md"))
+                .expect("destination collision after merge"),
+            b"destination"
+        );
         assert!(!journal.path().join("facets/source").exists());
         assert!(
             journal
@@ -1233,7 +1461,30 @@ fn contains_content(path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
-fn copy_tree(source: &Path, destination: &Path, include_declaration: bool) -> Result<(), String> {
+fn copy_tree(
+    source: &Path,
+    destination: &Path,
+    include_declaration: bool,
+) -> Result<Vec<PathBuf>, String> {
+    let mut copied_regular_files = Vec::new();
+    copy_tree_into(
+        source,
+        destination,
+        include_declaration,
+        Path::new(""),
+        &mut copied_regular_files,
+    )?;
+    copied_regular_files.sort();
+    Ok(copied_regular_files)
+}
+
+fn copy_tree_into(
+    source: &Path,
+    destination: &Path,
+    include_declaration: bool,
+    relative: &Path,
+    copied_regular_files: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     create_private_dir(destination).map_err(|error| error.to_string())?;
     let mut entries = fs::read_dir(source)
         .map_err(|error| error.to_string())?
@@ -1244,14 +1495,23 @@ fn copy_tree(source: &Path, destination: &Path, include_declaration: bool) -> Re
         if !include_declaration && entry.file_name() == OsStr::new("facet.json") {
             continue;
         }
+        let name = entry.file_name();
         let kind = entry.file_type().map_err(|error| error.to_string())?;
-        let target = destination.join(entry.file_name());
+        let target = destination.join(&name);
+        let child_relative = relative.join(&name);
         if kind.is_dir() {
-            copy_tree(&entry.path(), &target, include_declaration)?;
+            copy_tree_into(
+                &entry.path(),
+                &target,
+                include_declaration,
+                &child_relative,
+                copied_regular_files,
+            )?;
         } else if kind.is_file() {
             let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
             write_bytes_exclusive(&target, &bytes, AtomicWriteOptions { mode: Some(0o600) })
                 .map_err(|error| error.to_string())?;
+            copied_regular_files.push(child_relative);
         } else {
             return Err(format!("unsafe facet entry: {}", entry.path().display()));
         }
@@ -1259,7 +1519,26 @@ fn copy_tree(source: &Path, destination: &Path, include_declaration: bool) -> Re
     Ok(())
 }
 
-fn merge_tree(source: &Path, destination: &Path) -> Result<(), String> {
+#[derive(Default)]
+struct FacetTreeMergeReport {
+    copied_regular_files: Vec<PathBuf>,
+    regular_file_collisions: Vec<PathBuf>,
+}
+
+fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport, String> {
+    let mut report = FacetTreeMergeReport::default();
+    merge_tree_into(source, destination, Path::new(""), &mut report)?;
+    report.copied_regular_files.sort();
+    report.regular_file_collisions.sort();
+    Ok(report)
+}
+
+fn merge_tree_into(
+    source: &Path,
+    destination: &Path,
+    relative: &Path,
+    report: &mut FacetTreeMergeReport,
+) -> Result<(), String> {
     let mut entries = fs::read_dir(source)
         .map_err(|error| error.to_string())?
         .collect::<Result<Vec<_>, _>>()
@@ -1269,12 +1548,21 @@ fn merge_tree(source: &Path, destination: &Path) -> Result<(), String> {
         if entry.file_name() == OsStr::new("facet.json") {
             continue;
         }
+        let name = entry.file_name();
         let kind = entry.file_type().map_err(|error| error.to_string())?;
-        let target = destination.join(entry.file_name());
+        let target = destination.join(&name);
+        let child_relative = relative.join(&name);
         if kind.is_dir() {
             match existing_path_kind(&target)? {
-                Some(ExistingPathKind::Directory) => merge_tree(&entry.path(), &target)?,
-                None => copy_tree(&entry.path(), &target, true)?,
+                Some(ExistingPathKind::Directory) => {
+                    merge_tree_into(&entry.path(), &target, &child_relative, report)?;
+                }
+                None => {
+                    let copied = copy_tree(&entry.path(), &target, true)?;
+                    report
+                        .copied_regular_files
+                        .extend(copied.into_iter().map(|path| child_relative.join(path)));
+                }
                 Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
             }
         } else if kind.is_file() {
@@ -1287,6 +1575,7 @@ fn merge_tree(source: &Path, destination: &Path) -> Result<(), String> {
                         AtomicWriteOptions { mode: Some(0o600) },
                     )
                     .map_err(|error| error.to_string())?;
+                    report.copied_regular_files.push(child_relative);
                 }
                 Some(ExistingPathKind::RegularFile)
                     if entry.path().extension() == Some(OsStr::new("jsonl")) =>
@@ -1298,7 +1587,9 @@ fn merge_tree(source: &Path, destination: &Path) -> Result<(), String> {
                 {
                     merge_json_object(&target, &entry.path())?;
                 }
-                Some(ExistingPathKind::RegularFile) => {}
+                Some(ExistingPathKind::RegularFile) => {
+                    report.regular_file_collisions.push(child_relative);
+                }
                 Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
             }
         } else {
