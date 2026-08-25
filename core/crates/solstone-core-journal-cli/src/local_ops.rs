@@ -886,7 +886,7 @@ fn facet_merge_in_journal(
     if let Err(error) = require_real_directory(&destination_path) {
         return failure("facet merge", &error, EXIT_DATA);
     }
-    let _lock = match hold_facet_trust_lock(&journal) {
+    let _lock = match hold_facet_trust_lock(journal) {
         Ok(lock) => lock,
         Err(error) => return failure("facet merge", &error.to_string(), EXIT_IO),
     };
@@ -933,7 +933,7 @@ fn facet_merge_in_journal(
     if consent {
         params["consent"] = Value::Bool(true);
     }
-    if let Err(error) = append_action_log(&journal, None, "cli", "user", "facet_merge", params) {
+    if let Err(error) = append_action_log(journal, None, "cli", "user", "facet_merge", params) {
         let rollback =
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
         return transaction_failure("facet merge", &error.to_string(), rollback);
@@ -945,7 +945,7 @@ fn facet_merge_in_journal(
             EXIT_IO,
         );
     }
-    match scan_journal(&journal, true) {
+    match scan_journal(journal, true) {
         Ok(_) => success(format!(
             "Merged '{source}' into '{destination}'. Index rebuild completed.\n"
         )),
