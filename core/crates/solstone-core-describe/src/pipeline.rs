@@ -26,6 +26,7 @@ use crate::{ConveyFiducialMask, WinnowConfig};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
+const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug)]
 pub enum RunError {
@@ -421,7 +422,7 @@ fn run_decoded(
         }
     };
     let selected = selected.into_iter().collect::<HashSet<_>>();
-    let mut detection_disabled = false;
+    let mut detection_disabled = None;
     for row in categorized {
         let mut result =
             json!({"frame_id":row.frame_id,"timestamp":row.timestamp,"requests":row.requests});
@@ -437,10 +438,15 @@ fn run_decoded(
             final_rows.push(result);
             continue;
         };
-        if let Some(detections) =
-            maybe_detect(&mut detection_disabled, analysis, &row.png, options.journal)
-        {
-            result["detections"] = detections;
+        match maybe_detect(&mut detection_disabled, analysis, &row.png, options.journal) {
+            Ok(Some(detections)) => result["detections"] = detections,
+            Ok(None) => {}
+            Err(detail) => {
+                result["detection_error"] = json!({
+                    "reason_code": "rfdetr-unavailable",
+                    "detail": detail,
+                });
+            }
         }
         if !selected.contains(&row.frame_id) {
             result["enhanced"] = json!(false);
@@ -778,22 +784,25 @@ fn verdict(decode_failed: bool, failures: bool) -> (&'static str, &'static str) 
 }
 
 fn maybe_detect(
-    disabled: &mut bool,
+    disabled: &mut Option<String>,
     analysis: &Value,
     png: &[u8],
     journal: &Path,
-) -> Option<Value> {
-    if *disabled {
-        return None;
+) -> Result<Option<Value>, String> {
+    let Some(gate) = detect::screen_gate(analysis) else {
+        return Ok(None);
+    };
+    if let Some(detail) = disabled.as_ref() {
+        return Err(detail.clone());
     }
-    let gate = detect::screen_gate(analysis)?;
     let result = detect::detect(png, journal)
-        .and_then(|result| detect::detections_block(&result, "screen", &gate));
+        .and_then(|result| detect::detections_block(&result, "screen", &gate))
+        .map_err(|_| RFDETR_UNAVAILABLE_DETAIL.to_owned());
     match result {
-        Ok(result) => Some(result),
-        Err(_) => {
-            *disabled = true;
-            None
+        Ok(result) => Ok(Some(result)),
+        Err(detail) => {
+            *disabled = Some(detail.clone());
+            Err(detail)
         }
     }
 }

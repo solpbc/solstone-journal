@@ -174,6 +174,7 @@ pub fn resolve_rfdetr_asset(filename: &str) -> Result<PathBuf, RfdetrInstallErro
         std::env::current_exe()
             .ok()
             .and_then(|path| path.parent().map(Path::to_path_buf)),
+        cfg!(debug_assertions),
     )
 }
 
@@ -181,18 +182,23 @@ fn resolve_rfdetr_asset_from(
     filename: &str,
     manifest_dir: &Path,
     executable_parent: Option<PathBuf>,
+    allow_development_fallback: bool,
 ) -> Result<PathBuf, RfdetrInstallError> {
-    for ancestor in manifest_dir.ancestors() {
-        let candidate = ancestor.join("core/models/assets/rfdetr").join(filename);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
     if let Some(parent) = executable_parent {
         for ancestor in parent.ancestors() {
             let candidate = ancestor
                 .join("lib/solstone_journal_models/assets/rfdetr")
                 .join(filename);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+    // Development binaries retain an absolute manifest directory. Release
+    // packages must never let a build-host checkout mask a missing payload.
+    if allow_development_fallback {
+        for ancestor in manifest_dir.ancestors() {
+            let candidate = ancestor.join("core/models/assets/rfdetr").join(filename);
             if candidate.is_file() {
                 return Ok(candidate);
             }
@@ -674,6 +680,7 @@ mod tests {
                 "fixture",
                 &root.path().join("core/crates/solstone-core-local"),
                 None,
+                true,
             )
             .unwrap(),
             development
@@ -690,9 +697,36 @@ mod tests {
                 "fixture",
                 &root.path().join("unrelated"),
                 Some(root.path().join("bin")),
+                false,
             )
             .unwrap(),
             installed
+        );
+
+        // A build-host checkout must not mask a missing or wrong release payload.
+        fs::write(&development, b"development").unwrap();
+        assert_eq!(
+            resolve_rfdetr_asset_from(
+                "fixture",
+                &root.path().join("core/crates/solstone-core-local"),
+                Some(root.path().join("bin")),
+                false,
+            )
+            .unwrap(),
+            installed
+        );
+
+        fs::remove_file(&installed).unwrap();
+        assert_eq!(
+            resolve_rfdetr_asset_from(
+                "fixture",
+                &root.path().join("core/crates/solstone-core-local"),
+                Some(root.path().join("bin")),
+                false,
+            )
+            .unwrap_err()
+            .reason_code,
+            "bundled_payload_missing"
         );
     }
     #[test]

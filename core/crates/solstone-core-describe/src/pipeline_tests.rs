@@ -386,6 +386,44 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
 }
 
 #[test]
+fn synthetic_screen_detection_failure_is_recorded_for_each_eligible_frame() {
+    let test = TestRun::new("screen-detection-failure");
+    let factory = ScriptedFactory::new(|request| {
+        if request.context == "observe.describe.frame" {
+            generated(request, category("media", "none", true))
+        } else {
+            default_response(request)
+        }
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1, 2]))
+        .expect("detector failure remains a row-level processing result");
+
+    let rows = test.rows();
+    for row in &rows[1..] {
+        assert_eq!(row["detection_error"]["reason_code"], "rfdetr-unavailable");
+        assert!(
+            row["detection_error"]["detail"]
+                .as_str()
+                .is_some_and(|detail| !detail.is_empty())
+        );
+        assert!(row.get("detections").is_none());
+    }
+    assert_eq!(
+        rows[1]["detection_error"]["detail"], rows[2]["detection_error"]["detail"],
+        "later eligible frames retain the first detector failure"
+    );
+
+    let unqualified = TestRun::new("unqualified-detection");
+    run_decoded(
+        unqualified.options(false, Vec::new()),
+        &ScriptedFactory::new(default_response),
+        decoded(&[1]),
+    )
+    .expect("unqualified frame completes without invoking the detector");
+    assert!(unqualified.rows()[1].get("detection_error").is_none());
+}
+
+#[test]
 fn synthetic_decode_retries_and_latches_row_failures() {
     let retry = TestRun::new("retry");
     let factory = ScriptedFactory::new(|request| match request.context.as_str() {
