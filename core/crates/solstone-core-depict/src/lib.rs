@@ -43,6 +43,7 @@ const MODEL_NAME: &str = "rfdetr-nano-f16";
 const THRESHOLD: f64 = 0.25;
 const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -60,6 +61,7 @@ pub enum DepictError {
         blocking: bool,
         reason_code: Option<String>,
     },
+    Detection(String),
     Metadata(String),
     Output(String),
 }
@@ -70,6 +72,7 @@ impl DepictError {
             Self::Help | Self::Usage(_) => "malformed-request",
             Self::Image(_) => "image-invalid",
             Self::Wire { .. } => "generate-wire-failed",
+            Self::Detection(_) => "detector-unavailable",
             Self::Metadata(_) => "metadata-invalid",
             Self::Output(_) => "output-unwritable",
         }
@@ -89,6 +92,7 @@ impl DepictError {
             Self::Usage(detail)
             | Self::Image(detail)
             | Self::Wire { detail, .. }
+            | Self::Detection(detail)
             | Self::Metadata(detail)
             | Self::Output(detail) => detail,
         }
@@ -97,18 +101,24 @@ impl DepictError {
     pub fn blocking(&self) -> bool {
         match self {
             Self::Wire { blocking, .. } => *blocking,
-            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
-                false
-            }
+            Self::Help
+            | Self::Usage(_)
+            | Self::Image(_)
+            | Self::Detection(_)
+            | Self::Metadata(_)
+            | Self::Output(_) => false,
         }
     }
 
     pub fn reason_code(&self) -> Option<&str> {
         match self {
             Self::Wire { reason_code, .. } => reason_code.as_deref(),
-            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
-                None
-            }
+            Self::Help
+            | Self::Usage(_)
+            | Self::Image(_)
+            | Self::Detection(_)
+            | Self::Metadata(_)
+            | Self::Output(_) => None,
         }
     }
 }
@@ -166,17 +176,13 @@ pub struct SystemDetector;
 
 impl Detector for SystemDetector {
     fn detect(&self, full_png: &[u8]) -> Result<Option<Value>, String> {
-        let Some(journal) = current_journal_path() else {
-            return Ok(None);
-        };
-        let Some((binary, model)) = rfdetr_paths_at(&journal, env::consts::OS, env::consts::ARCH)?
-        else {
-            return Ok(None);
-        };
-        let temporary = DetectorTempDir::new()?;
+        let journal = current_journal_path().ok_or_else(rfdetr_unavailable)?;
+        let (binary, model) = rfdetr_paths_at(&journal, env::consts::OS, env::consts::ARCH)
+            .map_err(|_| rfdetr_unavailable())?;
+        let temporary = DetectorTempDir::new().map_err(|_| rfdetr_unavailable())?;
         let input = temporary.path.join("input.png");
         let output = temporary.path.join("output.json");
-        fs::write(&input, full_png).map_err(|error| error.to_string())?;
+        fs::write(&input, full_png).map_err(|_| rfdetr_unavailable())?;
         let mut process = Command::new(binary)
             .args(["detect", "--model"])
             .arg(model)
@@ -188,14 +194,21 @@ impl Detector for SystemDetector {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|error| error.to_string())?;
-        if !wait_for_child(&mut process, RFDETR_TIMEOUT)?.success() {
-            return Err("rfdetr-cli detect failed".to_owned());
+            .map_err(|_| rfdetr_unavailable())?;
+        if !wait_for_child(&mut process, RFDETR_TIMEOUT)
+            .map_err(|_| rfdetr_unavailable())?
+            .success()
+        {
+            return Err(rfdetr_unavailable());
         }
-        let parsed = serde_json::from_slice(&fs::read(output).map_err(|error| error.to_string())?)
-            .map_err(|error| error.to_string())?;
+        let parsed = serde_json::from_slice(&fs::read(output).map_err(|_| rfdetr_unavailable())?)
+            .map_err(|_| rfdetr_unavailable())?;
         Ok(Some(parsed))
     }
+}
+
+fn rfdetr_unavailable() -> String {
+    RFDETR_UNAVAILABLE_DETAIL.to_owned()
 }
 
 fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
@@ -244,11 +257,9 @@ fn rfdetr_paths_at(
     journal: &Path,
     os_name: &str,
     arch: &str,
-) -> Result<Option<(PathBuf, PathBuf)>, String> {
+) -> Result<(PathBuf, PathBuf), String> {
     let (os_name, arch) = canonical_host_pair(os_name, arch);
-    let Some(key) = rfdetr_artifact_key(os_name, arch) else {
-        return Ok(None);
-    };
+    let key = rfdetr_artifact_key(os_name, arch).ok_or_else(rfdetr_unavailable)?;
     rfdetr_paths_from_install_check(check_rfdetr_model(journal, os_name, arch), journal, key)
 }
 
@@ -256,21 +267,10 @@ fn rfdetr_paths_from_install_check(
     result: Result<RfdetrInstallRecord, RfdetrInstallError>,
     journal: &Path,
     key: &str,
-) -> Result<Option<(PathBuf, PathBuf)>, String> {
+) -> Result<(PathBuf, PathBuf), String> {
     match result {
-        Ok(RfdetrInstallRecord::Installed) => {
-            Ok(Some((binary_path(journal, key), model_path(journal))))
-        }
-        Ok(RfdetrInstallRecord::PlatformUnavailable) => Ok(None),
-        Err(error)
-            if matches!(
-                error.reason_code.as_str(),
-                "sidecar_missing" | "sidecar_mismatch"
-            ) =>
-        {
-            Ok(None)
-        }
-        Err(error) => Err(format!("RF-DETR {}: {error}", error.reason_code)),
+        Ok(RfdetrInstallRecord::Installed) => Ok((binary_path(journal, key), model_path(journal))),
+        Ok(RfdetrInstallRecord::PlatformUnavailable) | Err(_) => Err(rfdetr_unavailable()),
     }
 }
 
@@ -416,10 +416,10 @@ pub fn run_with_clients(
             Ok(block) => {
                 entry.insert("detections".to_owned(), block);
             }
-            Err(error) => eprintln!("native depict: detection output omitted: {error}"),
+            Err(_) => return Err(DepictError::Detection(rfdetr_unavailable())),
         },
         Ok(None) => {}
-        Err(error) => eprintln!("native depict: detection omitted: {error}"),
+        Err(error) => return Err(DepictError::Detection(error)),
     }
     write_jsonl(
         &output_path,
@@ -678,6 +678,12 @@ mod tests {
             ))
         }
     }
+    struct MalformedDetector;
+    impl Detector for MalformedDetector {
+        fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
+            Ok(Some(json!({"image": {"width": 4}})))
+        }
+    }
 
     fn fixture_image() -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
@@ -694,8 +700,8 @@ mod tests {
     fn native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts() {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(
-            rfdetr_paths_at(root.path(), "linux", "x86_64").unwrap(),
-            None
+            rfdetr_paths_at(root.path(), "linux", "x86_64").unwrap_err(),
+            RFDETR_UNAVAILABLE_DETAIL
         );
 
         for key in ["linux-cpu-x64", "linux-cpu-arm64", "macos-metal-arm64"] {
@@ -704,7 +710,6 @@ mod tests {
                 root.path(),
                 key,
             )
-            .unwrap()
             .unwrap();
             assert_eq!(paths.0, binary_path(root.path(), key));
             assert_eq!(paths.1, model_path(root.path()));
@@ -768,8 +773,7 @@ mod tests {
             KEY,
         )
         .unwrap_err();
-        assert!(error.contains("sha256_mismatch"));
-        assert!(error.contains(MODEL_FILE));
+        assert_eq!(error, RFDETR_UNAVAILABLE_DETAIL);
     }
 
     #[test]
@@ -1012,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn wire_failures_do_not_write_and_detection_is_fail_open() {
+    fn wire_and_detector_failures_do_not_write() {
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         assert!(matches!(
@@ -1020,18 +1024,18 @@ mod tests {
             Err(DepictError::Wire { .. })
         ));
         assert!(!output.exists());
+        assert!(matches!(
+            run_with_clients(&image, false, &SuccessWire, &BrokenDetector),
+            Err(DepictError::Detection(detail)) if detail == "unavailable"
+        ));
+        assert!(!output.exists());
+        assert!(matches!(
+            run_with_clients(&image, false, &SuccessWire, &MalformedDetector),
+            Err(DepictError::Detection(detail)) if detail == RFDETR_UNAVAILABLE_DETAIL
+        ));
+        assert!(!output.exists());
         assert_eq!(
-            run_with_clients(&image, false, &SuccessWire, &BrokenDetector).unwrap(),
-            RunOutcome::Written
-        );
-        let rows: Vec<Value> = fs::read_to_string(&output)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        assert!(rows[1].get("detections").is_none());
-        assert_eq!(
-            run_with_clients(&image, true, &SuccessWire, &CannedDetector).unwrap(),
+            run_with_clients(&image, false, &SuccessWire, &CannedDetector).unwrap(),
             RunOutcome::Written
         );
         let rows: Vec<Value> = fs::read_to_string(&output)
@@ -1084,6 +1088,7 @@ mod tests {
                 blocking: false,
                 reason_code: None,
             },
+            DepictError::Detection("x".to_owned()),
             DepictError::Metadata("x".to_owned()),
             DepictError::Output("x".to_owned()),
         ] {

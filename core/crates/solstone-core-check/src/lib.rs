@@ -46,6 +46,7 @@ pub struct CheckInputs {
     pub version: String,
     #[serde(default)]
     pub ced: CedCheckInput,
+    #[serde(default)]
     pub rfdetr: RfdetrCheckInput,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -58,11 +59,15 @@ pub enum CedCheckInput {
         cause: CedDegradedCause,
     },
 }
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum RfdetrCheckInput {
+    #[default]
+    Omit,
     Ready,
-    Degraded { cause: RfdetrDegradedCause },
+    Degraded {
+        cause: RfdetrDegradedCause,
+    },
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlatformInput {
@@ -418,7 +423,9 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         if let Some(ced) = ced_check(inputs) {
             checks.push(ced);
         }
-        checks.push(rfdetr_check(inputs));
+        if let Some(rfdetr) = rfdetr_check(inputs) {
+            checks.push(rfdetr);
+        }
         return CheckReport {
             platform,
             overall: overall(&checks),
@@ -433,7 +440,9 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     if let Some(ced) = ced_check(inputs) {
         checks.push(ced);
     }
-    checks.push(rfdetr_check(inputs));
+    if let Some(rfdetr) = rfdetr_check(inputs) {
+        checks.push(rfdetr);
+    }
     CheckReport {
         platform,
         overall: overall(&checks),
@@ -455,16 +464,23 @@ fn ced_check(inputs: &CheckInputs) -> Option<Check> {
         )),
     }
 }
-fn rfdetr_check(inputs: &CheckInputs) -> Check {
+fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
     match &inputs.rfdetr {
-        RfdetrCheckInput::Ready => check("rfdetr", Severity::Ok, RFDETR_READY_DETAIL, None, None),
-        RfdetrCheckInput::Degraded { .. } => check(
+        RfdetrCheckInput::Omit => None,
+        RfdetrCheckInput::Ready => Some(check(
+            "rfdetr",
+            Severity::Ok,
+            RFDETR_READY_DETAIL,
+            None,
+            None,
+        )),
+        RfdetrCheckInput::Degraded { .. } => Some(check(
             "rfdetr",
             Severity::Blocked,
             RFDETR_UNAVAILABLE_GUIDANCE,
             None,
             None,
-        ),
+        )),
     }
 }
 fn mac_memory(memory: &MemoryInput) -> Check {
@@ -775,7 +791,7 @@ mod tests {
     #[test]
     fn ready_rfdetr_is_ok_and_does_not_change_overall() {
         let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Ready);
-        let rfdetr = rfdetr_check(&inputs);
+        let rfdetr = rfdetr_check(&inputs).expect("ready RF-DETR check");
         assert_eq!(rfdetr.severity, Severity::Ok);
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
     }
@@ -788,7 +804,7 @@ mod tests {
             RfdetrDegradedCause::Unrunnable,
         ] {
             let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
-            let rfdetr = rfdetr_check(&inputs);
+            let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
             assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
             assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
         }
@@ -803,7 +819,10 @@ mod tests {
             RfdetrCheckInput::Ready,
         );
         assert_eq!(
-            overall(&[ced_check(&inputs).unwrap(), rfdetr_check(&inputs)]),
+            overall(&[
+                ced_check(&inputs).unwrap(),
+                rfdetr_check(&inputs).expect("ready RF-DETR check"),
+            ]),
             Severity::Warning
         );
     }

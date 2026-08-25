@@ -728,12 +728,9 @@ impl Harness {
         copy_executable(&dispatcher_source, &dispatcher);
         std::os::unix::fs::symlink(&dispatcher, sibling_dir.join("journal"))
             .expect("link journal command to dispatcher sibling");
-        copy_executable(&core_source, &sibling_dir.join("solstone-core"));
-        copy_executable(&depict_source, &sibling_dir.join("solstone-core-depict"));
-        copy_executable(
-            &describe_source,
-            &sibling_dir.join("solstone-core-describe"),
-        );
+        copy_executable(core_source, &sibling_dir.join("solstone-core"));
+        copy_executable(depict_source, &sibling_dir.join("solstone-core-depict"));
+        copy_executable(describe_source, &sibling_dir.join("solstone-core-describe"));
         let speakers_helper = sibling_dir.join("solstone-core-speakers-analyze");
         fs::write(&speakers_helper, "#!/bin/sh\nexit 1\n")
             .expect("write speakers-analyze placeholder");

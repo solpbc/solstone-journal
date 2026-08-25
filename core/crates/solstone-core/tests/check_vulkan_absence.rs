@@ -39,6 +39,7 @@ fn inputs(probe_ok: bool) -> CheckInputs {
         gpu_evaluation_error: None,
         version: "x".into(),
         ced: solstone_core_check::CedCheckInput::Omit,
+        rfdetr: solstone_core_check::RfdetrCheckInput::Ready,
     }
 }
 #[test]

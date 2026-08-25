@@ -44,6 +44,7 @@ use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::ced_readiness::{
     CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
 };
+use solstone_core_local::install::rfdetr_readiness::{RfdetrReadiness, evaluate_rfdetr_readiness};
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
     install_parakeet_with_lease, lease, pins, rfdetr_install, status,
@@ -54,6 +55,25 @@ use crate::{
     EXIT_DATAERR, EXIT_IOERR, EXIT_TEMPFAIL, EXIT_UNAVAILABLE, EXIT_USAGE,
     eprint_journal_path_error, resolve_process_journal_path,
 };
+
+fn rfdetr_ready_record(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    record: rfdetr_install::RfdetrInstallRecord,
+) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError> {
+    match evaluate_rfdetr_readiness(journal, os_name, arch) {
+        RfdetrReadiness::Ready { .. } => Ok(record),
+        RfdetrReadiness::Unsupported { .. } => {
+            Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
+        }
+        RfdetrReadiness::Degraded { detail, .. } => Err(rfdetr_install::RfdetrInstallError::new(
+            "unrunnable",
+            detail,
+            69,
+        )),
+    }
+}
 
 const OBSERVE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const OBSERVE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
@@ -244,9 +264,11 @@ where
             rfdetr: Box::new(|journal, os_name, arch, action| match action {
                 InstallerAction::Check => {
                     rfdetr_install::check_rfdetr_model(journal, os_name, arch)
+                        .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record))
                 }
                 InstallerAction::Install { force } => {
                     rfdetr_install::install_rfdetr(journal, os_name, arch, force)
+                        .and_then(|record| rfdetr_ready_record(journal, os_name, arch, record))
                 }
             }),
             coreml: Box::new(|home_dir, config, action| match action {
@@ -1013,6 +1035,20 @@ mod tests {
                 "parakeet install: unsupported platform macos/aarch64; supported: darwin/arm64, linux/x86_64"
             ]
         );
+    }
+
+    #[test]
+    fn rfdetr_install_record_requires_a_launchable_supported_payload() {
+        let journal = tempfile::tempdir().unwrap();
+        let error = rfdetr_ready_record(
+            journal.path(),
+            "linux",
+            "x86_64",
+            rfdetr_install::RfdetrInstallRecord::Installed,
+        )
+        .expect_err("a supported host with no launchable payload is not ready");
+        assert_eq!(error.reason_code, "unrunnable");
+        assert_eq!(error.exit_code, 69);
     }
 
     #[test]
