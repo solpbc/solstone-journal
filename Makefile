@@ -16,7 +16,7 @@ export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -27,6 +27,10 @@ VENV_BIN := $(VENV)/bin
 VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
+GIT ?= git
+SCP ?= scp
+SSH ?= ssh
+WIN_REMOTE_HOST ?=
 
 # Native binaries for the dev and sandbox targets. The wheel used to install
 # these into the venv; the distribution tree ships them, and a development
@@ -321,6 +325,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
+	require-win-remote-host sync-win-host win-host-ci \
 	check-rust-vad-analyze-test build-sandbox-processing check-rust-sandbox-processing-build check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
 	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
@@ -887,6 +892,19 @@ check-rust-windows:
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(WINDOWS_TARGET)" || { echo "Rust target $(WINDOWS_TARGET) is required for the Windows gate; run rustup target add $(WINDOWS_TARGET)" >&2; exit 1; }
 	cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-windows-crosscheck --locked --offline -- core/ci/windows-crosscheck.toml
+
+# Native Windows transport. The public repo carries the exact-tree bundle,
+# source binding, and native runner; the box-local bootstrap lives outside this
+# repo because it contains appliance paths. This target is intentionally not a
+# ci-full prerequisite: it requires a real Windows host and is operator-run.
+require-win-remote-host:
+	@test -n "$(WIN_REMOTE_HOST)" || { echo "WIN_REMOTE_HOST is required (user@host)" >&2; exit 1; }
+
+sync-win-host: require-win-remote-host
+	@WIN_REMOTE_HOST="$(WIN_REMOTE_HOST)" GIT="$(GIT)" SCP="$(SCP)" sh scripts/sync-win-host.sh
+
+win-host-ci: require-win-remote-host
+	@WIN_REMOTE_HOST="$(WIN_REMOTE_HOST)" GIT="$(GIT)" SCP="$(SCP)" SSH="$(SSH)" sh scripts/win-host-ci.sh
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)

@@ -1419,3 +1419,192 @@ fn service_legacy_evidence_command_graph_is_selectable_and_resolves_staging_root
     );
     assert_eq!(String::from_utf8_lossy(&resolved.stdout).trim(), staged);
 }
+
+fn windows_transport_fixture(name: &str) -> TempDir {
+    let temp = TempDir::new(name);
+    let scripts = temp.path.join("scripts");
+    fs::create_dir(&scripts).expect("create transport fixture scripts");
+    write_executable(
+        &scripts.join("check-win-sync-tree.sh"),
+        include_str!("../../../../scripts/check-win-sync-tree.sh"),
+    );
+    write_executable(
+        &scripts.join("sync-win-host.sh"),
+        include_str!("../../../../scripts/sync-win-host.sh"),
+    );
+    fs::create_dir(temp.path.join("core")).expect("create fixture core directory");
+    fs::write(temp.path.join("core/Cargo.lock"), b"version = 4\n")
+        .expect("write fixture Cargo.lock");
+    for arguments in [
+        &["init", "-q"][..],
+        &["config", "user.name", "transport fixture"][..],
+        &["config", "user.email", "transport@example.invalid"][..],
+        &[
+            "add",
+            "core/Cargo.lock",
+            "scripts/check-win-sync-tree.sh",
+            "scripts/sync-win-host.sh",
+        ][..],
+        &["commit", "-q", "-m", "fixture"][..],
+    ] {
+        let output = Command::new("git")
+            .args(arguments)
+            .current_dir(&temp.path)
+            .output()
+            .expect("run fixture Git command");
+        assert!(
+            output.status.success(),
+            "fixture git {arguments:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    temp
+}
+
+fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
+    let shim = temp.path.join(".git/scp-shim");
+    let log = temp.path.join(".git/scp.log");
+    write_executable(
+        &shim,
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_SCP_LOG\"\n",
+    );
+    (shim, log)
+}
+
+#[test]
+fn windows_native_sync_refuses_untracked_inputs_before_transfer() {
+    let temp = windows_transport_fixture("windows-native-sync-untracked");
+    let (scp, scp_log) = write_transport_scp_shim(&temp);
+    fs::write(
+        temp.path.join("untracked.txt"),
+        b"must not disappear from bundle",
+    )
+    .expect("write untracked fixture");
+
+    let output = Command::new("sh")
+        .arg("scripts/sync-win-host.sh")
+        .current_dir(&temp.path)
+        .env("WIN_REMOTE_HOST", "fake@example.invalid")
+        .env("SCP", &scp)
+        .env("SOLSTONE_SCP_LOG", &scp_log)
+        .output()
+        .expect("run untracked-input Windows sync fixture");
+    assert!(
+        !output.status.success(),
+        "untracked input passed Windows sync"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("untracked non-ignored files would be omitted"));
+    assert!(stderr.contains("untracked.txt"));
+    assert!(!scp_log.exists(), "refused sync invoked scp");
+    assert!(
+        !temp
+            .path
+            .join("target/win-host-ci-source-binding.json")
+            .exists(),
+        "refused sync left an authoritative-looking binding"
+    );
+}
+
+#[test]
+fn windows_native_sync_binds_and_transfers_the_exact_dirty_tree() {
+    let temp = windows_transport_fixture("windows-native-sync-dirty-tree");
+    let (scp, scp_log) = write_transport_scp_shim(&temp);
+    let dirty_lock = b"version = 4\n# dirty snapshot control\n";
+    fs::write(temp.path.join("core/Cargo.lock"), dirty_lock).expect("dirty fixture Cargo.lock");
+
+    let output = Command::new("sh")
+        .arg("scripts/sync-win-host.sh")
+        .current_dir(&temp.path)
+        .env("WIN_REMOTE_HOST", "fake@example.invalid")
+        .env("SCP", &scp)
+        .env("SOLSTONE_SCP_LOG", &scp_log)
+        .output()
+        .expect("run dirty-tree Windows sync fixture");
+    assert!(
+        output.status.success(),
+        "dirty tracked tree failed Windows sync:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("SYNC_WIN_HOST_OK"));
+
+    let binding_path = temp.path.join("target/win-host-ci-source-binding.json");
+    let binding: serde_json::Value =
+        serde_json::from_slice(&fs::read(&binding_path).expect("read Windows source binding"))
+            .expect("parse Windows source binding");
+    assert_eq!(binding["schema"], "solstone.journal.win-source-binding.v1");
+    let snapshot = binding["commit"].as_str().expect("binding commit");
+    assert_eq!(snapshot.len(), 40);
+    let bundled_lock = Command::new("git")
+        .args(["show", &format!("{snapshot}:core/Cargo.lock")])
+        .current_dir(&temp.path)
+        .output()
+        .expect("read bundled Cargo.lock");
+    assert!(bundled_lock.status.success());
+    assert_eq!(bundled_lock.stdout, dirty_lock);
+
+    let scp_calls = fs::read_to_string(&scp_log).expect("read scp calls");
+    assert_eq!(
+        scp_calls.lines().count(),
+        2,
+        "unexpected scp calls: {scp_calls}"
+    );
+    assert!(scp_calls.contains("fake@example.invalid:sjbuild.bundle"));
+    assert!(scp_calls.contains("fake@example.invalid:journal-win-host-ci-source-binding.json"));
+    let ref_probe = Command::new("git")
+        .args(["show-ref", "--verify", "refs/heads/__sjwsync"])
+        .current_dir(&temp.path)
+        .output()
+        .expect("probe temporary sync ref");
+    assert!(
+        !ref_probe.status.success(),
+        "successful sync left refs/heads/__sjwsync behind"
+    );
+}
+
+#[test]
+fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
+    let root = repo_root();
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
+    let sync = fs::read_to_string(root.join("scripts/sync-win-host.sh"))
+        .expect("read Windows sync script");
+    let driver = fs::read_to_string(root.join("scripts/win-host-ci.sh"))
+        .expect("read Windows driver script");
+    let runner = fs::read_to_string(root.join("scripts/win-ci.cmd")).expect("read Windows runner");
+
+    assert!(makefile.contains("win-host-ci: require-win-remote-host"));
+    assert!(makefile.contains("sh scripts/win-host-ci.sh"));
+    for token in [
+        "refs/heads/__sjwsync",
+        "sjbuild.bundle",
+        "journal-win-host-ci-source-binding.json",
+        "ControlPath=/tmp/sj-%r@%h:%p",
+    ] {
+        assert!(
+            sync.contains(token) || driver.contains(token),
+            "Windows transport lost isolated token {token}"
+        );
+    }
+    assert!(driver.contains("solstone-journal-win-host-ci.lock"));
+    assert!(driver.contains("C:\\\\sol\\\\sj-ci.cmd"));
+    assert!(runner.contains(
+        "cargo build --manifest-path core\\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config"
+    ));
+    assert!(runner.contains(
+        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-config --lib"
+    ));
+    assert_eq!(
+        runner
+            .matches("call :verify_source_binding || exit /b 1")
+            .count(),
+        2,
+        "Windows runner must verify the exact source both before and after native work"
+    );
+    assert!(runner.contains(
+        "journal-core unit portability filesystem I/O archive Callosum identity supervisor"
+    ));
+    assert!(runner.contains("packaging install sign smoke and NTFS/ReFS evidence not run"));
+    assert!(!sync.contains("swbuild.bundle"));
+    assert!(!driver.contains("C:\\\\sol\\\\sw-ci.cmd"));
+}

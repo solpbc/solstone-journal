@@ -139,6 +139,7 @@ Verified against `Makefile`. Grouped by use.
 | `make test-cov` / `test-integration` / `test-performance` / `test-app` / `test-only` / `coverage` / `watch` | Gone with the Python suite. Use `make ci` or `make ci-full`. |
 | `make ci` | Efficient Rust-only routine gate: formatting, topology validation, library/binary Clippy, and serialized library/binary unit tests. It does not run Cargo integration-test targets or heavyweight native/platform/policy legs. |
 | `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
+| `WIN_REMOTE_HOST=user@host make win-host-ci` | Transfer an exact, source-bound snapshot to the configured Windows build host and run the first native MSVC journal substrate gate. A pass covers builds of `solstone-core-journal` and `solstone-core-journal-config` plus the config crate's unit tests; the success line lists the Windows behavior this gate has not run. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
 
@@ -147,6 +148,12 @@ During the Rust-conversion freeze, use the narrowest applicable
 An operator runs `make ci-full` on the exact final-tree SHA for full host
 evidence. These paths are enforced by the
 [`ci_gate_purity` contract tests](core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs).
+The native Windows rail is operator-run and deliberately separate from
+`ci-full`. `make win-host-ci` refuses untracked, non-ignored files, binds the
+transferred Git snapshot to the workspace lockfile digest, and reports success
+only after the remote checkout acknowledges both values. Treat the runner's explicit
+not-run list as the evidence boundary; a transport pass is not filesystem,
+Callosum, packaging, install, signing, or smoke evidence.
 The focused Python Make targets are frozen; run the Python suite directly when
 it is needed.
 Do not rerun an unchanged failure merely to seek green.
