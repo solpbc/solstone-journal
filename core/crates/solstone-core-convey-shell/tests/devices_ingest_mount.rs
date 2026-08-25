@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
+use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
@@ -331,6 +332,9 @@ async fn corrupt_post_ingest_is_settings_repair_plain_text() {
 #[tokio::test]
 async fn python_era_fixture_posts_through_the_composed_shell_onto_laptop() {
     let journal = established_python_era();
+    let callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
     let app = router(journal.path().to_path_buf());
     let (content_type, body) = fresh_upload();
     let (status, _, bytes) = call(
@@ -377,4 +381,5 @@ async fn python_era_fixture_posts_through_the_composed_shell_onto_laptop() {
             path.display()
         );
     }
+    callosum.stop().await;
 }
