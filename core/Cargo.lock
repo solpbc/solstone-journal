@@ -3095,6 +3095,7 @@ dependencies = [
  "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
@@ -4089,6 +4090,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-installation-identity"
+version = "2.0.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "nix",
+ "sha2",
+]
+
+[[package]]
 name = "solstone-core-journal"
 version = "2.0.0"
 dependencies = [
@@ -4509,6 +4519,7 @@ dependencies = [
  "base64 0.22.1",
  "plist",
  "serde_json",
+ "solstone-core-installation-identity",
  "solstone-core-service-legacy-evidence",
  "unicode-general-category",
 ]
@@ -4560,6 +4571,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-check",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
