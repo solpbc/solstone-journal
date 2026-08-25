@@ -200,6 +200,12 @@ impl SessionIo for SpawnedChild {
 fn kill_group(pgid: Pid) -> io::Result<()> {
     match killpg(pgid, Signal::SIGKILL) {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        // Darwin reports EPERM for an empty process group whose leader has
+        // already exited. Do not hide EPERM while that leader is still live.
+        #[cfg(target_os = "macos")]
+        Err(Errno::EPERM) if matches!(nix::unistd::getpgid(Some(pgid)), Err(Errno::ESRCH)) => {
+            Ok(())
+        }
         Err(err) => Err(io::Error::from(err)),
     }
 }
