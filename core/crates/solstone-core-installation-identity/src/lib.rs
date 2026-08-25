@@ -1146,7 +1146,7 @@ fn open_or_create_child_dir(
             )
             .map_err(|error| nix_error("set storage directory mode", error))?;
             let directory = open_child_dir(parent, name, exact_mode)?;
-            set_mode(&directory.file, 0o700)?;
+            set_mode(&directory.file, Mode::from_bits_truncate(0o700))?;
             verify_directory(&directory.file, true)?;
             parent.sync()?;
             Ok(directory)
@@ -1183,7 +1183,7 @@ fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityE
     )
     .map_err(|error| nix_error("open storage file", error))?;
     let file = File::from(fd);
-    set_mode(&file, 0o600)?;
+    set_mode(&file, Mode::from_bits_truncate(0o600))?;
     verify_regular(&file, true)?;
     Ok(file)
 }
@@ -1239,7 +1239,7 @@ fn create_or_lock_marker(namespace: &SecureDir) -> Result<Flock<File>, IdentityE
     )
     .map_err(|error| nix_error("create adoption marker", error))?;
     let mut file = File::from(fd);
-    set_mode(&file, 0o600)?;
+    set_mode(&file, Mode::from_bits_truncate(0o600))?;
     verify_regular(&file, true)?;
     file.write_all(MARKER_BYTES)
         .map_err(|source| io_error("write adoption marker", source))?;
@@ -1560,7 +1560,7 @@ fn write_stage(
         Err(error) => return Err(nix_error("create record stage", error)),
     };
     let mut file = File::from(fd);
-    set_mode(&file, 0o600)?;
+    set_mode(&file, Mode::from_bits_truncate(0o600))?;
     verify_regular(&file, true)?;
     let result = (|| {
         file.write_all(&bytes)
@@ -1839,9 +1839,8 @@ fn verify_regular(file: &File, exact_mode: bool) -> Result<(), IdentityError> {
     Ok(())
 }
 
-fn set_mode(file: &File, mode: u32) -> Result<(), IdentityError> {
-    fchmod(file, Mode::from_bits_truncate(mode))
-        .map_err(|error| nix_error("set storage mode", error))
+fn set_mode(file: &File, mode: Mode) -> Result<(), IdentityError> {
+    fchmod(file, mode).map_err(|error| nix_error("set storage mode", error))
 }
 
 fn validate_absolute_token(bytes: &[u8], label: &'static str) -> Result<(), IdentityError> {
