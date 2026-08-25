@@ -733,25 +733,26 @@ define run-registry-cargo
 	test -n "$(CI_PACKAGE)" || { echo "CI_PACKAGE is required" >&2; exit 2; }; \
 	run_cargo() { \
 		if [ -n "$(CI_FEATURES)" ]; then \
-			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) --features "$(CI_FEATURES)" -- --test-threads=1; \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" --features "$(CI_FEATURES)" -- --test-threads=1; \
 		else \
-			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) -- --test-threads=1; \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" -- --test-threads=1; \
 		fi; \
 	}; \
+	run_action() { $(1); }; \
 	case "$(CI_RUNTIME)" in \
-		none) run_cargo ;; \
-		onnx) $(REQUIRE_ONNX_HOST_RUNTIME); $(VAD_ANALYZE_HOST_ORT_ENV) run_cargo ;; \
-		pdf) $(REQUIRE_PDF_HOST_RUNTIME); SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" run_cargo ;; \
+		none) run_action ;; \
+		onnx) $(REQUIRE_ONNX_HOST_RUNTIME); $(VAD_ANALYZE_HOST_ORT_ENV) run_action ;; \
+		pdf) $(REQUIRE_PDF_HOST_RUNTIME); SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" run_action ;; \
 		*) echo "unknown CI_RUNTIME '$(CI_RUNTIME)'" >&2; exit 2 ;; \
 	esac
 endef
 
 check-rust-registry-suite:
 	@test -n "$(CI_TARGET)" || { echo "CI_TARGET is required" >&2; exit 2; }
-	$(call run-registry-cargo,-p "$(CI_PACKAGE)" --test "$(CI_TARGET)")
+	$(call run-registry-cargo,run_cargo -p "$(CI_PACKAGE)" --test "$(CI_TARGET)")
 
 check-rust-registry-package:
-	$(call run-registry-cargo,-p "$(CI_PACKAGE)" --lib --bins)
+	$(call run-registry-cargo,CI_PACKAGE="$(CI_PACKAGE)" CI_FEATURES="$(CI_FEATURES)" scripts/check_rust_registry_package.sh "$(RUST_MANIFEST)")
 
 check-rust-test:
 	@$(REQUIRE_CARGO)
