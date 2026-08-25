@@ -64,6 +64,9 @@ fn accept_exact(listener: &UnixListener, expected: &[u8]) {
         .expect("make the already-ready accept bounded");
     let (mut stream, _) = listener.accept().expect("accept queued request");
     stream
+        .set_nonblocking(false)
+        .expect("make accepted request stream blocking");
+    stream
         .set_read_timeout(Some(IO_DEADLINE))
         .expect("bound request read");
     let mut received = Vec::new();

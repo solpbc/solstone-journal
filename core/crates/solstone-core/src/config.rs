@@ -11,6 +11,10 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+#[cfg(feature = "test-hooks")]
+use std::thread;
+#[cfg(feature = "test-hooks")]
+use std::time::Duration;
 
 use solstone_core_cli::{ConfigAction, ConfigCommand, ConfigJournalOptions};
 use solstone_core_journal::{
@@ -532,13 +536,15 @@ fn acquire_wrapper_lock(lock: fs::File) -> io::Result<nix::fcntl::Flock<fs::File
 
 #[cfg(feature = "test-hooks")]
 pub(crate) fn run_wrapper_write_test_child(args: &[std::ffi::OsString]) -> Option<ExitCode> {
-    if args
-        .first()
-        .is_none_or(|argument| argument != "__wrapper-write")
-    {
-        return None;
+    match args.first() {
+        Some(argument) if argument == "__wrapper-write" => {
+            Some(execute_wrapper_write_test_child(&args[1..]))
+        }
+        Some(argument) if argument == "__wrapper-hold-lock" => {
+            Some(execute_wrapper_lock_holder_test_child(&args[1..]))
+        }
+        _ => None,
     }
-    Some(execute_wrapper_write_test_child(&args[1..]))
 }
 
 #[cfg(feature = "test-hooks")]
@@ -567,6 +573,41 @@ fn execute_wrapper_write_test_child(args: &[std::ffi::OsString]) -> ExitCode {
             eprintln!("{error}");
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+fn execute_wrapper_lock_holder_test_child(args: &[std::ffi::OsString]) -> ExitCode {
+    if args.len() != 1 {
+        eprintln!("__wrapper-hold-lock requires <lock-path>");
+        return ExitCode::from(2);
+    }
+    let lock_path = Path::new(&args[0]);
+    let lock = match fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path)
+    {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(1);
+        }
+    };
+    let _lock = match nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive) {
+        Ok(lock) => lock,
+        Err((_, error)) => {
+            eprintln!("{error}");
+            return ExitCode::from(1);
+        }
+    };
+    let mut stdout = io::stdout();
+    if writeln!(stdout, "locked").is_err() || stdout.flush().is_err() {
+        return ExitCode::from(1);
+    }
+    loop {
+        thread::sleep(Duration::from_secs(60));
     }
 }
 

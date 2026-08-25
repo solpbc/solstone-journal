@@ -65,7 +65,7 @@ impl ReapOnDrop {
             let read = BufReader::new(stderr).read_line(&mut line);
             let _ = sender.send((read, line));
         });
-        let (read, line) = match receiver.recv_timeout(Duration::from_secs(2)) {
+        let (read, line) = match receiver.recv_timeout(Duration::from_secs(8)) {
             Ok(result) => result,
             Err(error) => {
                 let _ = self.child().kill();
@@ -102,6 +102,61 @@ impl Drop for ReapOnDrop {
     }
 }
 
+struct LockHolder(Option<Child>);
+
+impl LockHolder {
+    fn spawn(lock_path: &Path) -> Self {
+        let child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .arg("__wrapper-hold-lock")
+            .arg(lock_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn wrapper lock holder");
+        Self(Some(child))
+    }
+
+    fn wait_until_locked(&mut self) {
+        let child = self.0.as_mut().expect("lock holder still held");
+        let stdout = child.stdout.take().expect("piped lock holder stdout");
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let reader = thread::spawn(move || {
+            let mut line = String::new();
+            let read = BufReader::new(stdout).read_line(&mut line);
+            let _ = sender.send((read, line));
+        });
+        let (read, line) = match receiver.recv_timeout(Duration::from_secs(8)) {
+            Ok(result) => result,
+            Err(error) => {
+                self.stop();
+                let _ = reader.join();
+                panic!("lock holder did not report readiness before the deadline: {error}");
+            }
+        };
+        reader.join().expect("lock holder reader joins");
+        if read.expect("read lock holder readiness") == 0 {
+            panic!(
+                "lock holder exited before readiness: {:?}",
+                self.0.as_mut().expect("lock holder still held").try_wait()
+            );
+        }
+        assert_eq!(line.trim_end(), "locked");
+    }
+
+    fn stop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+impl Drop for LockHolder {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 fn assert_unwritten_wrapper(path: &Path, old: &[u8]) {
     assert_eq!(fs::read(path).expect("read wrapper"), old);
 }
@@ -129,14 +184,8 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
     fs::write(&sol, b"old sol bytes").expect("seed sol");
     fs::write(&journal, b"old journal bytes").expect("seed journal");
 
-    let lock_file = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(bin.join(".sol.lock"))
-        .expect("open wrapper lock");
-    let held = nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusive)
-        .expect("hold exclusive wrapper lock");
+    let mut held = LockHolder::spawn(&bin.join(".sol.lock"));
+    held.wait_until_locked();
 
     let mut child = ReapOnDrop::spawn(&bin, &target);
     let contended = child.contention_line();
@@ -144,7 +193,7 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
     assert_unwritten_wrapper(&sol, b"old sol bytes");
     assert_unwritten_wrapper(&journal, b"old journal bytes");
 
-    drop(held);
+    held.stop();
     let output = child.wait();
     assert!(
         output.status.success(),
