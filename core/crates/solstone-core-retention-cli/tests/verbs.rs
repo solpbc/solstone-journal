@@ -179,17 +179,36 @@ impl Drop for HeldLock {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn start_lock_holder(sidecar: &Path, ready: &Path) -> Child {
+    Command::new("python3")
+        .args([
+            "-c",
+            "import fcntl, pathlib, sys, time; lock = open(sys.argv[1], 'a'); \
+             fcntl.flock(lock, fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).touch(); time.sleep(60)",
+        ])
+        .arg(&sidecar)
+        .arg(&ready)
+        .spawn()
+        .unwrap()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn start_lock_holder(sidecar: &Path, ready: &Path) -> Child {
+    Command::new("flock")
+        .args(["--exclusive", "--no-fork"])
+        .arg(sidecar)
+        .args(["sh", "-c", "touch \"$1\"; exec sleep 60", "sh"])
+        .arg(ready)
+        .spawn()
+        .unwrap()
+}
+
 fn hold_lock(path: &Path) -> HeldLock {
     let file_name = path.file_name().unwrap().to_string_lossy();
     let sidecar = path.with_file_name(format!("{file_name}.lock"));
     let ready = sidecar.with_extension("held");
-    let mut child = Command::new("flock")
-        .args(["--exclusive", "--no-fork"])
-        .arg(&sidecar)
-        .args(["sh", "-c", "touch \"$1\"; exec sleep 60", "sh"])
-        .arg(&ready)
-        .spawn()
-        .unwrap();
+    let mut child = start_lock_holder(&sidecar, &ready);
     for _attempt in 0..100 {
         if ready.exists() {
             return HeldLock { child, ready };

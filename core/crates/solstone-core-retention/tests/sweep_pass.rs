@@ -19,6 +19,8 @@
               production verbs, and they fired here, which is them working"
 )]
 
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
@@ -186,10 +188,9 @@ fn the_default_policy_proposes_nothing_at_all() {
     teardown(&bed);
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn unrepresentable_segments_are_named_in_the_plan() {
-    use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
     let bed = Bed::new("unrepresentable");
