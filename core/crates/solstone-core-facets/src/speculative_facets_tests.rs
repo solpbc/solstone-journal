@@ -188,7 +188,7 @@ fn aggregation_keeps_the_first_three_samples_in_segment_order() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn non_utf8_sample_is_kept_and_marked_unrepresentable() {
     use std::ffi::OsStr;
@@ -222,7 +222,7 @@ fn non_utf8_sample_is_kept_and_marked_unrepresentable() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn unrepresentable_sample_is_visible_after_representable_cap() {
     use std::ffi::OsStr;

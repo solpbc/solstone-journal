@@ -768,6 +768,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn prevalidate_rejects_case_variant_stream_before_writes() {
         let temporary = TempDir::new();
