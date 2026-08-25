@@ -4884,6 +4884,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-processing-record",
  "tempfile",
  "thiserror 2.0.20",
 ]

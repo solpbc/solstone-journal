@@ -1408,6 +1408,48 @@ mod tests {
     }
 
     #[test]
+    fn sense_media_projection_does_not_withhold_same_generation_completion() {
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        let segment = journal.path().join("chronicle").join(DAY).join("090000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let raw = b"raw audio bytes";
+        fs::write(segment.join("audio.wav"), raw).unwrap();
+        assert_eq!(bump_stream_marker(journal.path(), DAY).unwrap(), 1);
+        let scope = completion_scope(journal.path(), 1);
+
+        fs::write(
+            segment.join("audio.jsonl"),
+            format!(
+                "{{\"raw\":\"audio.wav\",\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":{}}}}}\n{{\"start\":\"09:00:00\",\"text\":\"derived\"}}\n",
+                raw.len()
+            ),
+        )
+        .unwrap();
+
+        let mut log = log(journal.path());
+        let mut total = succeeded_phase("all");
+        let mut events = 0;
+        maybe_finalize_completion(
+            &context,
+            &mut log,
+            scope,
+            &complete_daily(),
+            &BTreeSet::new(),
+            None,
+            &mut total,
+            |_, _, _| {
+                events += 1;
+                true
+            },
+        );
+
+        assert_eq!(marker_generation(journal.path()), Some(1));
+        assert_eq!(events, 1);
+        assert_eq!(total.failed, 0);
+    }
+
+    #[test]
     fn every_required_phase_failure_short_circuits_later_phases() {
         for failed_index in 0..REQUIRED_PHASES.len() {
             let journal = tempdir().unwrap();

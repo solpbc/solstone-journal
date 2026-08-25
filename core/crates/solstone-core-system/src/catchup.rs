@@ -16,6 +16,7 @@ use solstone_core_journal_io::{
     PathError, PathOrDay, day_dirs, day_marker_pair_status, hold_lock, iter_segments,
     read_health_marker, write_json,
 };
+use solstone_core_processing_record::{expected_handler, read_processing_record_header, vocab};
 use thiserror::Error;
 
 pub const MAX_UPDATED_CATCHUP: usize = 4;
@@ -812,7 +813,7 @@ pub fn read_raw_input_fingerprint(journal: &Path, day: &str) -> Result<String, C
                     segment.path().display()
                 )));
             };
-            let marker = if is_raw_hashed(&name) {
+            let marker = if is_raw_hashed(&name) && !is_processing_projection(&path) {
                 sha256_file(&path)?
             } else if is_sized_media(&path) {
                 format!("size:{}", metadata(&path)?.len())
@@ -958,6 +959,70 @@ fn is_raw_hashed(name: &str) -> bool {
             .any(|suffix| name.ends_with(suffix))
         || (name.starts_with("monitor_")
             && (name.ends_with("_diff.json") || name.ends_with("_diff_box.json")))
+}
+
+/// Distinguish a server-authored media analysis sidecar from a legacy raw
+/// JSONL input that happens to use the same filename.
+///
+/// A processing record alone is not authority to exclude content from the
+/// raw-input fingerprint. The record must name the canonical schema and a
+/// handler whose same-stem media sibling has the exact recorded input size.
+/// Any unreadable or incomplete evidence remains fingerprinted as raw.
+fn is_processing_projection(path: &Path) -> bool {
+    if path.extension().and_then(|value| value.to_str()) != Some("jsonl")
+        || !fs::symlink_metadata(path)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false)
+    {
+        return false;
+    }
+    let Some(record) = read_processing_record_header(path) else {
+        return false;
+    };
+    if record.get("schema").and_then(Value::as_str) != Some(vocab::SCHEMA) {
+        return false;
+    }
+    let Some(handler) = record.get("handler").and_then(Value::as_str) else {
+        return false;
+    };
+    if !matches!(
+        record.get("state").and_then(Value::as_str),
+        Some(vocab::STATE_ANALYZED | vocab::STATE_EMPTY | vocab::STATE_FAILED)
+    ) {
+        return false;
+    }
+    let Some(input_size) = record.get("input_size").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(stem) = path.file_stem() else {
+        return false;
+    };
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let Ok(siblings) = fs::read_dir(parent) else {
+        return false;
+    };
+    siblings.filter_map(Result::ok).any(|entry| {
+        let sibling = entry.path();
+        if sibling == path
+            || sibling.file_stem() != Some(stem)
+            || !entry
+                .file_type()
+                .map(|file_type| file_type.is_file())
+                .unwrap_or(false)
+        {
+            return false;
+        }
+        let Some(extension) = sibling.extension().and_then(|value| value.to_str()) else {
+            return false;
+        };
+        expected_handler(extension) == Some(handler)
+            && entry
+                .metadata()
+                .map(|metadata| metadata.len() == input_size)
+                .unwrap_or(false)
+    })
 }
 
 fn is_sized_media(path: &Path) -> bool {
@@ -1783,6 +1848,143 @@ mod tests {
         assert!(is_raw_hashed("chat.jsonl"));
         assert!(is_raw_hashed("capture_audio.jsonl"));
         assert!(is_raw_hashed("monitor_12_diff_box.json"));
+    }
+
+    #[test]
+    fn server_media_projections_do_not_redirty_their_own_raw_fingerprint() {
+        for (case, media, sidecar, handler) in [
+            (
+                "audio",
+                "audio.wav",
+                "audio.jsonl",
+                vocab::HANDLER_TRANSCRIBE,
+            ),
+            (
+                "screen",
+                "screen.webm",
+                "screen.jsonl",
+                vocab::HANDLER_DESCRIBE,
+            ),
+            (
+                "legacy-suffix",
+                "mic_audio.flac",
+                "mic_audio.jsonl",
+                vocab::HANDLER_TRANSCRIBE,
+            ),
+        ] {
+            let bed = Bed::new(case);
+            let raw = b"raw media bytes";
+            bed.segment_file("20260101", "120000_1", media, raw);
+            let before =
+                read_raw_input_fingerprint(&bed.root, "20260101").expect("raw fingerprint");
+
+            let derived = format!(
+                "{{\"raw\":\"{media}\",\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"analyzed\",\"handler\":\"{handler}\",\"input_size\":{}}}}}\n{{\"start\":\"12:00:00\",\"text\":\"derived\"}}\n",
+                vocab::SCHEMA,
+                raw.len()
+            );
+            bed.segment_file("20260101", "120000_1", sidecar, derived.as_bytes());
+
+            let path = bed.root.join("chronicle/20260101/120000_1").join(sidecar);
+            assert!(is_processing_projection(&path), "{case}");
+            assert_eq!(
+                read_raw_input_fingerprint(&bed.root, "20260101").expect("stable fingerprint"),
+                before,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn processing_shaped_jsonl_without_exact_media_authority_remains_raw() {
+        let bed = Bed::new("projection-fail-closed");
+        let sidecar = format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":9}}}}\n",
+            vocab::SCHEMA
+        );
+        bed.segment_file("20260101", "120000_1", "audio.jsonl", sidecar.as_bytes());
+        let path = bed.root.join("chronicle/20260101/120000_1/audio.jsonl");
+        assert!(!is_processing_projection(&path));
+        assert_eq!(
+            read_raw_input_fingerprint(&bed.root, "20260101").expect("fingerprint"),
+            digest(
+                compact_ascii_entries(&[(
+                    "120000_1/audio.jsonl".to_owned(),
+                    digest(sidecar.as_bytes()),
+                )])
+                .as_bytes()
+            )
+        );
+
+        bed.segment_file("20260101", "120000_1", "audio.wav", b"wrong size");
+        assert!(!is_processing_projection(&path));
+    }
+
+    #[test]
+    fn non_jsonl_incomplete_and_wrong_handler_records_remain_raw() {
+        let bed = Bed::new("projection-shape");
+        let raw = b"raw media bytes";
+        bed.segment_file("20260101", "120000_1", "audio.wav", raw);
+        let processing = format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":{}}}}}\n",
+            vocab::SCHEMA,
+            raw.len()
+        );
+        bed.segment_file("20260101", "120000_1", "audio.json", processing.as_bytes());
+        assert!(!is_processing_projection(
+            &bed.root.join("chronicle/20260101/120000_1/audio.json")
+        ));
+
+        let incomplete = format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"handler\":\"transcribe\",\"input_size\":{}}}}}\n",
+            vocab::SCHEMA,
+            raw.len()
+        );
+        bed.segment_file("20260101", "120000_1", "audio.jsonl", incomplete.as_bytes());
+        assert!(!is_processing_projection(
+            &bed.root.join("chronicle/20260101/120000_1/audio.jsonl")
+        ));
+
+        bed.segment_file("20260101", "120000_1", "screen.webm", raw);
+        let wrong_handler = format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"failed\",\"handler\":\"transcribe\",\"input_size\":{}}}}}\n",
+            vocab::SCHEMA,
+            raw.len()
+        );
+        bed.segment_file(
+            "20260101",
+            "120000_1",
+            "screen.jsonl",
+            wrong_handler.as_bytes(),
+        );
+        assert!(!is_processing_projection(
+            &bed.root.join("chronicle/20260101/120000_1/screen.jsonl")
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_projection_or_media_authority_remains_raw() {
+        use std::os::unix::fs::symlink;
+
+        let bed = Bed::new("projection-symlinks");
+        let segment = bed.root.join("chronicle/20260101/120000_1");
+        fs::create_dir_all(&segment).unwrap();
+        let raw = b"raw media bytes";
+        fs::write(segment.join("source.bin"), raw).unwrap();
+        symlink("source.bin", segment.join("audio.wav")).unwrap();
+        let derived = format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"empty\",\"handler\":\"transcribe\",\"input_size\":{}}}}}\n",
+            vocab::SCHEMA,
+            raw.len()
+        );
+        fs::write(segment.join("actual.jsonl"), &derived).unwrap();
+        symlink("actual.jsonl", segment.join("audio.jsonl")).unwrap();
+        assert!(!is_processing_projection(&segment.join("audio.jsonl")));
+
+        fs::remove_file(segment.join("audio.jsonl")).unwrap();
+        fs::write(segment.join("audio.jsonl"), derived).unwrap();
+        assert!(!is_processing_projection(&segment.join("audio.jsonl")));
     }
 
     #[test]
