@@ -431,7 +431,7 @@ fn main() -> ExitCode {
         Ok(Command::NavigateFacetRetired(option)) => {
             eprint!("{NAVIGATE_USAGE}");
             eprintln!(
-                "journal navigate: error: {option} is no longer supported; facet selection is workspace-local — use the app's own facet URL/query parameter"
+                "journal navigate: error: {option} is no longer supported. Put facet selection in the destination URL; for example, /app/entities?facet=work."
             );
             ExitCode::from(2)
         }

@@ -260,6 +260,8 @@ fn navigate_facet_options_are_rejected_before_callosum() {
     let output = harness.run(&["navigate", "/app/work", "--facet=work"], true);
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("facet selection is workspace-local"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains(
+        "Put facet selection in the destination URL; for example, /app/entities?facet=work."
+    ));
     assert_python_was_not_invoked(&harness.poison_marker);
 }

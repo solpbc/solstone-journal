@@ -103,7 +103,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             parsed.action = Some(take_value(args, index, "--action")?.to_string());
         } else if let Some(option) = retired_facet_option(token) {
             return Err(format!(
-                "{option} is no longer supported; facet selection is workspace-local — use the app's own facet URL/query parameter"
+                "{option} is no longer supported. Put facet selection in --action; for example, --action /app/entities?facet=work."
             ));
         } else if let Some(value) = token.strip_prefix("--app=") {
             parsed.app = Some(value.to_string());
@@ -407,7 +407,9 @@ mod tests {
 
             assert_eq!(output.exit, 2, "{values:?}");
             assert!(
-                output.stderr.contains("facet selection is workspace-local"),
+                output.stderr.contains(
+                    "Put facet selection in --action; for example, --action /app/entities?facet=work."
+                ),
                 "{values:?}: {}",
                 output.stderr
             );

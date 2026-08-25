@@ -112,7 +112,9 @@ fn navigate_preserves_gate_and_parser_ordering() {
             "{args:?}"
         );
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("facet selection is workspace-local")
+            String::from_utf8_lossy(&output.stderr).contains(
+                "Put facet selection in the destination URL; for example, /app/entities?facet=work."
+            )
         );
     }
 }
