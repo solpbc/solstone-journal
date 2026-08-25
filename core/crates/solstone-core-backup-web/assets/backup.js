@@ -305,6 +305,7 @@
     refusedReason: null,
     dismissedRefusal: false,
     fieldError: false,
+    pendingPrepare: null,
   };
 
   const root = document.querySelector('[data-backup-root]');
@@ -590,6 +591,9 @@
   async function cancelHostedRestoreAttempt(options) {
     const settings = options || {};
     const capability = hostedRestoreAttempt.capability;
+    if (!capability && hostedRestoreAttempt.stage === 'preparing' && hostedRestoreAttempt.pendingPrepare) {
+      hostedRestoreAttempt.pendingPrepare.cancelled = true;
+    }
     if (capability) {
       try {
         const payload = await postJson('/app/backup/restore-hosted/cancel', { capability });
@@ -686,6 +690,7 @@
     }
 
     let popup;
+    let pendingPrepare = null;
     try {
       popup = window.open('', '_blank');
     } catch (err) {
@@ -708,13 +713,29 @@
         return;
       }
       hostedRestoreAttempt.stage = 'preparing';
+      pendingPrepare = { cancelled: false };
+      hostedRestoreAttempt.pendingPrepare = pendingPrepare;
       setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
       renderHostedRestoreAttempt();
       const prepared = await postJson('/app/backup/restore-hosted/prepare');
       if (!prepared || typeof prepared.capability !== 'string' || prepared.capability === '') {
         throw { reason_code: 'restore_prepare_invalid_capability' };
       }
+      if (pendingPrepare.cancelled) {
+        if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
+          hostedRestoreAttempt.pendingPrepare = null;
+        }
+        try {
+          await postJson('/app/backup/restore-hosted/cancel', { capability: prepared.capability });
+        } catch (_err) {
+          // A resolved or expired lease is already clean server-side.
+        }
+        return;
+      }
       if (hostedRestoreAttempt.stage !== 'preparing') return;
+      if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
+        hostedRestoreAttempt.pendingPrepare = null;
+      }
       hostedRestoreAttempt.capability = prepared.capability;
       renderHostedRestoreAttempt();
 
@@ -761,6 +782,9 @@
       applyPayload(activated);
       pollUntilTerminal();
     } catch (err) {
+      if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
+        hostedRestoreAttempt.pendingPrepare = null;
+      }
       if (hostedRestoreAttempt.stage !== 'idle') await failHostedRestoreAttempt(err);
     }
   }

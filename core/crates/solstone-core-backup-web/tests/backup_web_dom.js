@@ -479,6 +479,34 @@ asyncCase('rapid hosted restore clicks issue one prepare request', async () => {
   resolvePrepare(response({ capability: 'capability' }));
 });
 
+asyncCase('switching restore lanes cancels a prepare lease received after cancellation', async () => {
+  let resolvePrepare;
+  const harness = createHarness({
+    respond(call) {
+      if (call.url === '/app/backup/restore-hosted/prepare') {
+        return new Promise((resolve) => { resolvePrepare = resolve; });
+      }
+      if (call.url === '/app/backup/restore-hosted/cancel') return response(status());
+      if (call.url === '/app/backup/offload/status') return response({ success: true, offload: {}, days: [] });
+      if (call.url === '/app/backup/status') return response(status());
+      throw new Error('unexpected fetch ' + call.url);
+    },
+  });
+  await ready(harness);
+  selectOperated(harness);
+  setKey(harness, 'recovery key');
+  click(harness.primary);
+  await settle();
+  click(harness.byoLane);
+  await settle();
+  resolvePrepare(response({ capability: 'late-capability' }));
+  await settle();
+  const cancel = harness.calls.find((call) => call.url === '/app/backup/restore-hosted/cancel');
+  assert.ok(cancel);
+  assert.deepStrictEqual(JSON.parse(cancel.request.body), { capability: 'late-capability' });
+  assert.ok(!harness.byo.hidden && harness.operated.hidden);
+});
+
 asyncCase('cancelling after key submission stops before arm', async () => {
   const harness = createHarness({
     respond(call) {
@@ -648,6 +676,30 @@ asyncCase('hosted recovery-key ARIA separates local validation from C3 failures'
   assert.strictEqual(harness.key.getAttribute('aria-errormessage'), null);
   assert.strictEqual(harness.key.getAttribute('aria-describedby'), harness.heading.id);
   assert.strictEqual(harness.root.querySelectorAll('[role="status"]').length, 1);
+});
+
+asyncCase('server invalid_key marks the hosted recovery key invalid', async () => {
+  const harness = createHarness({
+    respond(call) {
+      if (call.url === '/app/backup/restore-hosted/prepare') return response({ capability: 'capability' });
+      if (call.url === '/app/backup/restore-hosted/key') return response({ reason_code: 'invalid_key' }, 400);
+      if (call.url === '/app/backup/restore-hosted/cancel') return response(status());
+      if (call.url === '/app/backup/status') return response(status());
+      if (call.url === '/app/backup/offload/status') return response({ success: true, offload: {}, days: [] });
+      throw new Error('unexpected fetch ' + call.url);
+    },
+  });
+  await ready(harness);
+  selectOperated(harness);
+  setKey(harness, 'recovery key');
+  click(harness.primary);
+  await settle(32);
+  assert.strictEqual(harness.key.getAttribute('aria-invalid'), 'true');
+  assert.strictEqual(harness.key.getAttribute('aria-errormessage'), harness.outcome.id);
+  assert.strictEqual(
+    harness.outcome.textContent,
+    'that recovery key didn\'t unlock the backup. re-enter the key from your saved copy.',
+  );
 });
 
 asyncCase('primary remains disabled through an in-flight attempt', async () => {
