@@ -265,8 +265,7 @@ fn rfdetr_paths_from_install_check(
         Err(error)
             if matches!(
                 error.reason_code.as_str(),
-                "sidecar_missing"
-                    | "sidecar_mismatch"
+                "sidecar_missing" | "sidecar_mismatch"
             ) =>
         {
             Ok(None)
