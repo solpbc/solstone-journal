@@ -76,129 +76,35 @@
     });
   }
 
-  function formatTitle(template, title) {
-    return String(template || '').split('{title}').join(String(title || ''));
-  }
-
-  function findById(root, id) {
-    if (!root) return null;
-    if (typeof root.getElementById === 'function') return root.getElementById(id);
-    if (typeof root.querySelector === 'function') return root.querySelector(`#${id}`);
-    return null;
-  }
-
-  function documentFor(root) {
-    return root?.ownerDocument || global.document || null;
-  }
-
-  function createEl(doc, tag, className = '') {
-    const el = doc.createElement(tag);
-    if (className) el.className = className;
-    return el;
-  }
-
-  function clear(el) {
-    if (!el) return;
-    if (typeof el.replaceChildren === 'function') {
-      el.replaceChildren();
-      return;
-    }
-    while (el.firstChild && typeof el.removeChild === 'function') {
-      el.removeChild(el.firstChild);
-    }
-    el.textContent = '';
-  }
-
-  function setFacetColor(container, color) {
-    if (!container || !color) return;
-    if (container.style && typeof container.style.setProperty === 'function') {
-      container.style.setProperty('--facet-color', color);
-    } else if (container.style) {
-      container.style['--facet-color'] = color;
-    }
-  }
-
-  function renderFacetDetail(root, facet, copy) {
-    const doc = documentFor(root);
-    const container = findById(root, 'settings-facet-detail-view') || root;
-    if (!doc || !container) return null;
+  function renderFacetDetailPage(root, facet) {
+    const container = root?.getElementById?.('settings-facet-detail-view')
+      || root?.querySelector?.('#settings-facet-detail-view');
+    if (!container) return null;
 
     const config = facet?.config && typeof facet.config === 'object' ? facet.config : {};
     const slug = String(facet?.facet || facet?.name || '');
     const title = String(config.title || slug);
     const color = String(config.color || '');
-    const emoji = String(config.emoji || '');
     const muted = Boolean(config.muted);
+    const heading = container.querySelector('#facetDetailHeading');
+    const swatch = container.querySelector('#facetDetailSwatch');
+    const muteAction = container.querySelector('#facetMuteAction');
 
-    clear(container);
-    container.className = 'facet-detail-page';
     container.setAttribute('aria-labelledby', 'facetDetailHeading');
-    container.hidden = false;
-    setFacetColor(container, color);
-
-    const hiddenHeading = createEl(doc, 'h1', 'visually-hidden');
-    hiddenHeading.textContent = 'settings';
-    container.appendChild(hiddenHeading);
-
-    const back = createEl(doc, 'a', 'facet-detail-back');
-    back.href = '/app/settings#facets';
-    back.textContent = copy.FACET_DETAIL_TERTIARY_ESCAPE || '';
-    container.appendChild(back);
-
-    const heading = createEl(doc, 'h2', 'facet-detail-heading');
-    heading.id = 'facetDetailHeading';
-    heading.textContent = formatTitle(copy.FACET_DETAIL_SUCCESS_HEADING, title);
-    container.appendChild(heading);
-
-    const meta = createEl(doc, 'div', 'facet-detail-meta');
-    if (emoji) {
-      const emojiEl = createEl(doc, 'span', 'facet-detail-emoji');
-      emojiEl.setAttribute('aria-hidden', 'true');
-      emojiEl.textContent = emoji;
-      meta.appendChild(emojiEl);
+    if (container.style && typeof container.style.setProperty === 'function') {
+      container.style.setProperty('--facet-color', color);
+    } else if (container.style) {
+      container.style['--facet-color'] = color;
     }
-    if (color) {
-      const swatch = createEl(doc, 'span', 'facet-detail-swatch');
+    if (heading) heading.textContent = title;
+    if (swatch) {
       swatch.style.backgroundColor = color;
-      swatch.setAttribute('aria-label', `${title} color`);
-      meta.appendChild(swatch);
+      swatch.hidden = !color;
     }
-    if (muted) {
-      const mutedEl = createEl(doc, 'span', 'facet-detail-muted');
-      mutedEl.textContent = 'muted';
-      meta.appendChild(mutedEl);
+    if (muteAction) {
+      muteAction.textContent = muted ? 'unmute' : 'mute';
+      muteAction.setAttribute('aria-label', `${muted ? 'unmute' : 'mute'} ${title}`);
     }
-    container.appendChild(meta);
-
-    const value = createEl(doc, 'p', 'facet-detail-copy');
-    value.textContent = formatTitle(copy.FACET_DETAIL_VALUE_FRAMING, title);
-    container.appendChild(value);
-
-    const actions = createEl(doc, 'div', 'facet-detail-actions');
-    const primary = createEl(doc, 'a', 'facet-detail-action facet-detail-action--primary');
-    primary.href = '/app/entities/';
-    primary.dataset.facetSlug = slug;
-    primary.id = 'facetDetailPrimary';
-    primary.textContent = formatTitle(copy.FACET_DETAIL_PRIMARY_CTA, title);
-    primary.addEventListener('click', () => {
-      if (!slug) return;
-      const expires = new Date();
-      expires.setFullYear(expires.getFullYear() + 1);
-      doc.cookie = `selectedFacet=${slug}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
-    });
-    actions.appendChild(primary);
-
-    const secondary = createEl(doc, 'a', 'facet-detail-action facet-detail-action--secondary');
-    secondary.href = '/app/settings#facets';
-    secondary.textContent = copy.FACET_DETAIL_SECONDARY_CTA || '';
-    actions.appendChild(secondary);
-
-    const tertiary = createEl(doc, 'a', 'facet-detail-action facet-detail-action--tertiary');
-    tertiary.href = '/app/settings';
-    tertiary.textContent = copy.FACET_DETAIL_TERTIARY_ESCAPE || '';
-    actions.appendChild(tertiary);
-
-    container.appendChild(actions);
     return container;
   }
 
@@ -206,9 +112,8 @@
     applyCopy,
     applyCopyAttr,
     buildStreamOverridesDrawerProps,
-    formatTitle,
     redactionRulesLine,
-    renderFacetDetail,
+    renderFacetDetailPage,
     resolve,
     streamOverridesLine,
     visionCategoriesLine,
