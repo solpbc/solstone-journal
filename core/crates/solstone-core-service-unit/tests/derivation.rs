@@ -2,10 +2,15 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use plist::Value;
 use solstone_core_installation_identity::{
-    Generation, GuardFields, InstallationId, JournalToken, NamespaceName,
+    Generation, GuardFields, IdentityError, InstallationId, JournalToken, NamespaceName, OwnerBase,
+    PlatformTag, RootToken, load_installation_binding,
 };
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
@@ -19,6 +24,33 @@ const RUNTIME_DIR: &str = "/opt/sol/bin";
 const LAUNCHER: &str = "/home/sol/.local/bin/journal";
 const PORT: &str = "5015";
 const JOURNAL: &str = "/srv/journal";
+
+static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct TempRoot(PathBuf);
+
+impl TempRoot {
+    fn new() -> Self {
+        let root = PathBuf::from(format!(
+            "/var/tmp/solstone-core-service-unit-identity-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).expect("create test root");
+        fs::create_dir(root.join("home")).expect("create test home");
+        Self(root)
+    }
+
+    fn home(&self) -> PathBuf {
+        self.0.join("home")
+    }
+}
+
+impl Drop for TempRoot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 fn guard() -> GuardFields {
     GuardFields {
@@ -177,4 +209,20 @@ fn default_unit_is_notify_and_does_not_export_pythonunbuffered() {
     let unit = render_systemd_unit(&environment, LAUNCHER, PORT, JOURNAL).expect("valid render");
     assert!(unit.contains("Type=notify\n"));
     assert!(!unit.contains("PYTHONUNBUFFERED"));
+}
+
+#[test]
+fn load_binding_is_callable_without_setup_admission() {
+    let fixture = TempRoot::new();
+    let owner = OwnerBase::at_home(fixture.home(), PlatformTag::current()).expect("owner base");
+    let root =
+        RootToken::from_raw_absolute(b"/service-unit/unadopted".to_vec()).expect("root token");
+
+    let result = load_installation_binding(&owner, &root);
+
+    assert!(matches!(
+        result,
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound
+    ));
+    assert!(!owner.path().exists());
 }

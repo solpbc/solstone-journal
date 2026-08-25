@@ -873,7 +873,7 @@ fn local_status(
     let configured = matches!(endpoint, LocalEndpointResolution::Byo(_));
     match endpoint {
         LocalEndpointResolution::Bundled if selected => {
-            let availability = local::availability(journal, local::default_model());
+            let availability = local::provider_status_availability(journal, local::default_model());
             if !availability["binary_present"].as_bool().unwrap_or(false) {
                 issues.push("binary_missing");
             }

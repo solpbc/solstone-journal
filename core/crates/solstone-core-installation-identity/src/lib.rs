@@ -439,9 +439,8 @@ impl GuardFields {
     }
 }
 
-/// A non-cloneable owner-then-namespace lease.
 #[derive(Debug)]
-pub struct NamespaceLease {
+struct NamespaceLease {
     _owner_lock: Flock<File>,
     _marker_lock: Flock<File>,
     _namespace: SecureDir,
@@ -457,6 +456,8 @@ pub enum IdentityError {
     InvalidInput(&'static str),
     UnsafeState(&'static str),
     AdmissionRefused(&'static str),
+    /// An existing identity record is not in the adopted lifecycle state.
+    NotAdopted(&'static str),
     Record(RecordError),
     Guard(GuardError),
 }
@@ -467,7 +468,8 @@ impl fmt::Display for IdentityError {
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
             Self::InvalidInput(message)
             | Self::UnsafeState(message)
-            | Self::AdmissionRefused(message) => formatter.write_str(message),
+            | Self::AdmissionRefused(message)
+            | Self::NotAdopted(message) => formatter.write_str(message),
             Self::Record(error) => error.fmt(formatter),
             Self::Guard(error) => error.fmt(formatter),
         }
@@ -811,37 +813,47 @@ pub fn parse_service_guard_environment(
     }))
 }
 
-/// Acquires the fixed owner-wide then namespace lock order for an existing,
-/// marker-backed namespace. This is primarily useful for operations that have
-/// already identified their target record.
-pub fn acquire_owner_then_namespace(
+/// Loads the adopted installation binding for an existing owner/root without
+/// modifying identity storage.
+///
+/// The owner lock serializes record changes while the namespace is read. The
+/// adoption-marker lock is then acquired as a secondary validation before the
+/// binding is returned.
+pub fn load_installation_binding(
     owner: &OwnerBase,
-    namespace: &NamespaceName,
-) -> Result<NamespaceLease, IdentityError> {
-    let provider = open_provider(owner, true)?;
-    let owner_lock = lock_owner(&provider)?;
-    let namespaces = open_child_dir(&provider, "namespaces", true)?;
-    let namespace = open_child_dir(&namespaces, &namespace.as_hex(), true)?;
-    let snapshot = read_namespace(&namespace, namespace_name_from_dir(&namespace)?)?;
+    root_token: &RootToken,
+) -> Result<InstallationBinding, IdentityError> {
+    let namespace_name = namespace_name(owner.platform(), root_token);
+    let provider = open_provider(owner, false)?;
+    let owner_lock = lock_existing_owner(&provider)?;
+    let namespace = open_namespace(&provider, &namespace_name, false)?;
+    let snapshot = read_namespace(&namespace, namespace_name.clone())?;
     let record = snapshot
         .record
         .ok_or(IdentityError::UnsafeState("namespace record is missing"))?;
-    if record.state == LifecycleState::Prepared && !snapshot.marker {
-        return Err(IdentityError::UnsafeState(
-            "prepared record has no adoption marker",
-        ));
+    match record.state {
+        LifecycleState::Prepared => {
+            return Err(IdentityError::NotAdopted(
+                "installation identity record is prepared",
+            ));
+        }
+        LifecycleState::Tombstoned => {
+            return Err(IdentityError::NotAdopted(
+                "installation identity record is tombstoned",
+            ));
+        }
+        LifecycleState::Adopted => {}
     }
-    if !snapshot.marker {
-        return Err(IdentityError::UnsafeState(
-            "committed record has no adoption marker",
+    if record.platform != owner.platform() || record.root_token != *root_token {
+        return Err(IdentityError::AdmissionRefused(
+            "record does not bind the requested root",
         ));
     }
     let marker_lock = lock_existing_marker(&namespace)?;
-    Ok(NamespaceLease {
-        _owner_lock: owner_lock,
-        _marker_lock: marker_lock,
-        _namespace: namespace,
-    })
+    let binding = InstallationBinding::from_record(namespace_name, &record);
+    drop(marker_lock);
+    drop(owner_lock);
+    Ok(binding)
 }
 
 /// Admits setup and returns a lease held across all following setup mutations.
@@ -1190,6 +1202,12 @@ fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityE
 
 fn lock_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
     let file = open_or_create_file(provider, "owner.lock")?;
+    Flock::lock(file, FlockArg::LockExclusive)
+        .map_err(|(_, error)| nix_error("lock owner registry", error))
+}
+
+fn lock_existing_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
+    let file = open_existing_file(provider, "owner.lock", true)?;
     Flock::lock(file, FlockArg::LockExclusive)
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
@@ -1778,16 +1796,6 @@ fn open_existing_file_os(
     Ok(file)
 }
 
-fn namespace_name_from_dir(namespace: &SecureDir) -> Result<NamespaceName, IdentityError> {
-    let name = namespace
-        .path
-        .file_name()
-        .ok_or(IdentityError::UnsafeState("namespace has no name"))?
-        .to_str()
-        .ok_or(IdentityError::UnsafeState("namespace name is not UTF-8"))?;
-    NamespaceName::parse(name)
-}
-
 fn generate_id() -> Result<InstallationId, IdentityError> {
     let mut bytes = [0_u8; 16];
     fill(&mut bytes).map_err(|error| {
@@ -1984,10 +1992,27 @@ fn hit(_: FaultPoint) -> Result<(), IdentityError> {
 }
 
 #[cfg(test)]
+struct ParkGate {
+    arrived: std::sync::Barrier,
+    release: std::sync::Barrier,
+}
+
+#[cfg(test)]
+impl ParkGate {
+    fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            arrived: std::sync::Barrier::new(2),
+            release: std::sync::Barrier::new(2),
+        })
+    }
+}
+
+#[cfg(test)]
 #[derive(Clone)]
 struct TestControl {
     fail: Option<FaultPoint>,
     rendezvous: Option<(FaultPoint, std::sync::Arc<std::sync::Barrier>)>,
+    park: Option<(FaultPoint, std::sync::Arc<ParkGate>)>,
 }
 
 #[cfg(test)]
@@ -2000,12 +2025,18 @@ fn hit(point: FaultPoint) -> Result<(), IdentityError> {
         std::sync::Mutex::new(TestControl {
             fail: None,
             rendezvous: None,
+            park: None,
         })
     });
-    let (fail, rendezvous) = {
+    let (fail, rendezvous, park) = {
         let guard = control.lock().expect("test fault control poisoned");
-        (guard.fail, guard.rendezvous.clone())
+        (guard.fail, guard.rendezvous.clone(), guard.park.clone())
     };
+    if let Some((target, gate)) = park.filter(|(target, _)| *target == point) {
+        let _ = target;
+        gate.arrived.wait();
+        gate.release.wait();
+    }
     if let Some((target, barrier)) = rendezvous.filter(|(target, _)| *target == point) {
         let _ = target;
         barrier.wait();
@@ -2025,11 +2056,21 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::{Arc, Barrier, Mutex, OnceLock};
     use std::thread;
+    use std::time::Duration;
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     static TEST_SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum TreeEntry {
+        Directory { mode: u32 },
+        File { mode: u32, bytes: Option<Vec<u8>> },
+        Symlink { mode: u32, target: PathBuf },
+        Other { mode: u32 },
+    }
 
     struct UmaskGuard(Mode);
 
@@ -2108,12 +2149,14 @@ mod tests {
                 Mutex::new(TestControl {
                     fail: None,
                     rendezvous: None,
+                    park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = None;
         control.rendezvous = None;
+        control.park = None;
     }
 
     fn fail_at(point: FaultPoint) {
@@ -2122,12 +2165,14 @@ mod tests {
                 Mutex::new(TestControl {
                     fail: None,
                     rendezvous: None,
+                    park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = Some(point);
         control.rendezvous = None;
+        control.park = None;
     }
 
     fn rendezvous_at(point: FaultPoint, barrier: Arc<Barrier>) {
@@ -2136,12 +2181,32 @@ mod tests {
                 Mutex::new(TestControl {
                     fail: None,
                     rendezvous: None,
+                    park: None,
                 })
             })
             .lock()
             .expect("test control");
         control.fail = None;
         control.rendezvous = Some((point, barrier));
+        control.park = None;
+    }
+
+    fn park_at(point: FaultPoint) -> Arc<ParkGate> {
+        let gate = ParkGate::new();
+        let mut control = TEST_CONTROL
+            .get_or_init(|| {
+                Mutex::new(TestControl {
+                    fail: None,
+                    rendezvous: None,
+                    park: None,
+                })
+            })
+            .lock()
+            .expect("test control");
+        control.fail = None;
+        control.rendezvous = None;
+        control.park = Some((point, gate.clone()));
+        gate
     }
 
     fn read_record(path: &Path) -> IdentityRecord {
@@ -2150,6 +2215,56 @@ mod tests {
 
     fn mode(path: &Path) -> u32 {
         fs::metadata(path).expect("stat path").permissions().mode() & 0o777
+    }
+
+    fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {
+        fn visit(root: &Path, path: &Path, snapshot: &mut BTreeMap<PathBuf, TreeEntry>) {
+            let metadata = fs::symlink_metadata(path).expect("snapshot metadata");
+            let relative = path
+                .strip_prefix(root)
+                .expect("snapshot path is relative")
+                .to_path_buf();
+            let mode = metadata.permissions().mode() & 0o777;
+            let file_type = metadata.file_type();
+            if file_type.is_dir() {
+                snapshot.insert(relative, TreeEntry::Directory { mode });
+                if let Ok(entries) = fs::read_dir(path) {
+                    let mut entries = entries
+                        .map(|entry| entry.expect("snapshot directory entry"))
+                        .collect::<Vec<_>>();
+                    entries.sort_by_key(|entry| entry.file_name());
+                    for entry in entries {
+                        visit(root, &entry.path(), snapshot);
+                    }
+                }
+            } else if file_type.is_file() {
+                snapshot.insert(
+                    relative,
+                    TreeEntry::File {
+                        mode,
+                        bytes: fs::read(path).ok(),
+                    },
+                );
+            } else if file_type.is_symlink() {
+                snapshot.insert(
+                    relative,
+                    TreeEntry::Symlink {
+                        mode,
+                        target: fs::read_link(path).expect("snapshot symlink target"),
+                    },
+                );
+            } else {
+                snapshot.insert(relative, TreeEntry::Other { mode });
+            }
+        }
+
+        let mut snapshot = BTreeMap::new();
+        visit(root, root, &mut snapshot);
+        snapshot
+    }
+
+    fn assert_tree_unchanged(root: &Path, before: BTreeMap<PathBuf, TreeEntry>) {
+        assert_eq!(snapshot_tree(root), before);
     }
 
     #[test]
@@ -2183,6 +2298,385 @@ mod tests {
         assert_eq!(mode(&namespace.join("adoption.marker")), 0o600);
         assert_eq!(mode(&fixture.owner.path().join("owner.lock")), 0o600);
         assert!(record_bytes.len() <= MAX_RECORD_BYTES);
+    }
+
+    #[test]
+    fn load_returns_the_admitted_binding_without_mutating_storage() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/load", b"/journal/load")).expect("admit");
+        let expected = admission.binding().clone();
+        drop(admission);
+        let root = RootToken::from_raw_absolute(b"/install/load".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let loaded = load_installation_binding(&fixture.owner, &root).expect("load binding");
+
+        assert_eq!(loaded, expected);
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_an_absent_provider_without_creation() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root =
+            RootToken::from_raw_absolute(b"/install/absent-provider".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(!fixture.owner.path().exists());
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_an_absent_namespace_without_creation() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/present", b"/journal/present")).expect("admit");
+        drop(admission);
+        let root = RootToken::from_raw_absolute(b"/install/absent-namespace".to_vec())
+            .expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(
+            !fixture
+                .namespace_path(b"/install/absent-namespace")
+                .exists()
+        );
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_missing_owner_lock_without_creation() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/missing-lock", b"/journal/missing-lock"))
+                .expect("admit");
+        drop(admission);
+        let owner_lock = fixture.owner.path().join("owner.lock");
+        fs::remove_file(&owner_lock).expect("remove owner lock");
+        let root =
+            RootToken::from_raw_absolute(b"/install/missing-lock".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(!owner_lock.exists());
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_wrong_mode_owner_lock_without_repairing_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/wrong-lock-mode", b"/journal/wrong-lock-mode"))
+                .expect("admit");
+        drop(admission);
+        let owner_lock = fixture.owner.path().join("owner.lock");
+        fs::set_permissions(&owner_lock, fs::Permissions::from_mode(0o644))
+            .expect("make owner lock mode wrong");
+        let root =
+            RootToken::from_raw_absolute(b"/install/wrong-lock-mode".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::UnsafeState(_))));
+        assert_eq!(mode(&owner_lock), 0o644);
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_namespace_without_a_record_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root =
+            RootToken::from_raw_absolute(b"/install/missing-record".to_vec()).expect("root token");
+        let namespace_name = namespace_name(PlatformTag::Linux, &root);
+        let provider = open_provider(&fixture.owner, true).expect("provider");
+        let namespace = open_namespace(&provider, &namespace_name, true).expect("namespace");
+        drop(namespace);
+        drop(provider);
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::UnsafeState("namespace record is missing"))
+        ));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_committed_record_without_a_marker_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/missing-marker", b"/journal/missing-marker"))
+                .expect("admit");
+        drop(admission);
+        let namespace = fixture.namespace_path(b"/install/missing-marker");
+        fs::remove_file(namespace.join("adoption.marker")).expect("remove marker");
+        let root =
+            RootToken::from_raw_absolute(b"/install/missing-marker".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::UnsafeState(_))));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_prepared_record_without_locking_its_missing_marker() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let request = fixture.request(b"/install/prepared", b"/journal/prepared");
+        fail_at(FaultPoint::MarkerCreation);
+        assert!(admit_setup(request).is_err());
+        clear_control();
+        let root = RootToken::from_raw_absolute(b"/install/prepared".to_vec()).expect("root token");
+        let namespace = fixture.namespace_path(b"/install/prepared");
+        assert!(!namespace.join("adoption.marker").exists());
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::NotAdopted(_))));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_tombstoned_record_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission = admit_setup(fixture.request(b"/install/tombstone", b"/journal/tombstone"))
+            .expect("admit");
+        drop(admission);
+        let root =
+            RootToken::from_raw_absolute(b"/install/tombstone".to_vec()).expect("root token");
+        admit_clean_uninstall(CleanUninstallRequest {
+            owner: fixture.owner.clone(),
+            root_token: root.clone(),
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .expect("clean uninstall admission")
+        .commit_tombstone()
+        .expect("tombstone");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::NotAdopted(_))));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_corrupt_record_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/corrupt", b"/journal/corrupt")).expect("admit");
+        drop(admission);
+        let namespace = fixture.namespace_path(b"/install/corrupt");
+        fs::write(namespace.join("record"), b"not a canonical record\n").expect("corrupt record");
+        let root = RootToken::from_raw_absolute(b"/install/corrupt".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::Record(_))));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_refuses_a_record_bound_to_another_root_or_platform() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission = admit_setup(fixture.request(b"/install/mismatch", b"/journal/mismatch"))
+            .expect("admit");
+        drop(admission);
+        let namespace = fixture.namespace_path(b"/install/mismatch");
+        let mut record = read_record(&namespace.join("record"));
+        record.platform = PlatformTag::Macos;
+        record.root_token =
+            RootToken::from_raw_absolute(b"/install/other".to_vec()).expect("other root token");
+        fs::write(
+            namespace.join("record"),
+            encode_record(&record).expect("encode mismatched record"),
+        )
+        .expect("write mismatched record");
+        let root = RootToken::from_raw_absolute(b"/install/mismatch".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::AdmissionRefused(_))));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_symlinked_owner_lock_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/symlink", b"/journal/symlink")).expect("admit");
+        drop(admission);
+        let owner_lock = fixture.owner.path().join("owner.lock");
+        fs::remove_file(&owner_lock).expect("remove owner lock");
+        std::os::unix::fs::symlink("record", &owner_lock).expect("symlink owner lock");
+        let root = RootToken::from_raw_absolute(b"/install/symlink".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::Io { .. })));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_a_wrong_mode_record_without_repairing_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission = admit_setup(
+            fixture.request(b"/install/wrong-record-mode", b"/journal/wrong-record-mode"),
+        )
+        .expect("admit");
+        drop(admission);
+        let record = fixture
+            .namespace_path(b"/install/wrong-record-mode")
+            .join("record");
+        fs::set_permissions(&record, fs::Permissions::from_mode(0o644))
+            .expect("make record mode wrong");
+        let root = RootToken::from_raw_absolute(b"/install/wrong-record-mode".to_vec())
+            .expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(result, Err(IdentityError::UnsafeState(_))));
+        assert_eq!(mode(&record), 0o644);
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_rejects_an_unreadable_record_without_mutating_it() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let admission =
+            admit_setup(fixture.request(b"/install/unreadable", b"/journal/unreadable"))
+                .expect("admit");
+        drop(admission);
+        let record = fixture
+            .namespace_path(b"/install/unreadable")
+            .join("record");
+        fs::set_permissions(&record, fs::Permissions::from_mode(0o000))
+            .expect("make record unreadable");
+        let root =
+            RootToken::from_raw_absolute(b"/install/unreadable".to_vec()).expect("root token");
+        let before = snapshot_tree(&fixture.root);
+
+        let result = load_installation_binding(&fixture.owner, &root);
+
+        assert!(matches!(
+            result,
+            Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::PermissionDenied
+        ));
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn load_waits_for_an_owner_locked_adopted_replacement() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let root =
+            RootToken::from_raw_absolute(b"/install/locked-update".to_vec()).expect("root token");
+        let admission = admit_setup(fixture.request(b"/install/locked-update", b"/journal/one"))
+            .expect("initial admission");
+        drop(admission);
+        let gate = park_at(FaultPoint::AdoptedReplace);
+        let writer_request = fixture.request(b"/install/locked-update", b"/journal/two");
+        let (writer_tx, writer_rx) = mpsc::channel();
+        let writer = thread::spawn(move || {
+            let admission = admit_setup(writer_request).expect("writer admission");
+            let binding = admission.binding().clone();
+            drop(admission);
+            writer_tx.send(binding).expect("writer result");
+        });
+        gate.arrived.wait();
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (reader_tx, reader_rx) = mpsc::channel();
+        let reader_owner = fixture.owner.clone();
+        let reader_root = root.clone();
+        let reader = thread::spawn(move || {
+            started_tx.send(()).expect("reader started");
+            reader_tx
+                .send(load_installation_binding(&reader_owner, &reader_root))
+                .expect("reader result");
+        });
+        started_rx.recv().expect("reader start signal");
+        let early = reader_rx.recv_timeout(Duration::from_millis(100));
+        let reader_was_blocked = matches!(&early, Err(RecvTimeoutError::Timeout));
+        gate.release.wait();
+
+        let writer_binding = writer_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("writer completion");
+        let reader_binding = match early {
+            Err(RecvTimeoutError::Timeout) => reader_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("reader completion")
+                .expect("reader binding"),
+            Ok(result) => result.expect("reader binding before writer release"),
+            Err(RecvTimeoutError::Disconnected) => panic!("reader disconnected"),
+        };
+        writer.join().expect("writer thread");
+        reader.join().expect("reader thread");
+        clear_control();
+
+        assert!(reader_was_blocked);
+        assert_eq!(reader_binding, writer_binding);
+        assert_eq!(
+            reader_binding.journal_token.to_path_buf(),
+            PathBuf::from("/journal/two")
+        );
     }
 
     #[test]

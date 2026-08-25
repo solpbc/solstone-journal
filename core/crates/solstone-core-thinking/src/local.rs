@@ -63,8 +63,19 @@ pub fn availability(journal: &Path, model: &str) -> Value {
             })
         })
     } else {
-        inspect_local_installed(journal, model)
+        inspect_local(input)
     };
+    availability_payload(model, readiness)
+}
+
+/// Read the bundled-local artifacts for the provider-status projection without
+/// running host discovery. The explicit availability route remains the caller
+/// that performs a current host check.
+pub fn provider_status_availability(journal: &Path, model: &str) -> Value {
+    availability_payload(model, inspect_local_installed(journal, model))
+}
+
+fn availability_payload(model: &str, readiness: Value) -> Value {
     let host = &readiness["host"];
     let artifacts = &readiness["artifacts"];
     let readiness_status = readiness["status"].as_str().unwrap_or("");
