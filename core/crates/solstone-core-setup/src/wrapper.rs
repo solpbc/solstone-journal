@@ -566,6 +566,7 @@ pub fn ensure_user_bin_on_path(home_dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Deref;
     use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
     use std::time::Duration;
@@ -598,12 +599,34 @@ mod tests {
         GuardFields::from_binding(&binding())
     }
 
-    fn root(name: &str) -> PathBuf {
-        let path = PathBuf::from("/var/tmp")
-            .join(format!("solstone-wrapper-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        path
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(name: &str) -> Self {
+            let path = PathBuf::from("/var/tmp")
+                .join(format!("solstone-wrapper-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(name: &str) -> TestRoot {
+        TestRoot::new(name)
     }
     fn environment(root: &Path) -> WrapperEnvironment {
         WrapperEnvironment {

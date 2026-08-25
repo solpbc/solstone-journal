@@ -515,6 +515,7 @@ mod tests {
     };
     use std::collections::VecDeque;
     use std::ffi::OsString;
+    use std::ops::Deref;
 
     fn plan() -> CleanUninstallPlan {
         let binding = solstone_core_installation_identity::InstallationBinding {
@@ -560,12 +561,34 @@ mod tests {
             })
         }
     }
-    fn root(name: &str) -> PathBuf {
-        let root =
-            PathBuf::from("/var/tmp").join(format!("solstone-clean-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        root
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(name: &str) -> Self {
+            let root = PathBuf::from("/var/tmp")
+                .join(format!("solstone-clean-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+    }
+
+    impl Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(name: &str) -> TestRoot {
+        TestRoot::new(name)
     }
     fn args(values: &[&str]) -> SetupArgs {
         parse_args_at(

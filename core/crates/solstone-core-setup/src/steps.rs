@@ -218,6 +218,8 @@ pub struct SetupContext<'a> {
     pub check_report_builder: &'a dyn CheckReportBuilder,
     /// Holds the owner-wide and namespace leases across every mutating setup step.
     pub installation_admission: Option<SetupAdmission>,
+    /// Guard-drifted artifacts that must be reconciled even after a prior successful step.
+    pub identity_guard_repair_steps: Vec<StepName>,
 }
 
 impl<'a> SetupContext<'a> {
@@ -610,7 +612,9 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         }
         context.emit(EventType::StepStarted, started_fields);
         let result = if let Some(prior_step) = prior.get(spec.name.as_str()) {
-            if can_skip(Some(prior_step)) {
+            if can_skip(Some(prior_step))
+                && !context.identity_guard_repair_steps.contains(&spec.name)
+            {
                 let paths = prior_step
                     .get("paths")
                     .and_then(Value::as_array)
@@ -2257,6 +2261,7 @@ mod tests {
                     .expect("test setup admission"),
                 )
             },
+            identity_guard_repair_steps: Vec::new(),
         }
     }
     #[test]

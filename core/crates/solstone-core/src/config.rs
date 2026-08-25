@@ -900,6 +900,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::ops::Deref;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -931,14 +932,36 @@ mod tests {
         }
     }
 
-    fn test_root(label: &str) -> PathBuf {
-        let root = PathBuf::from("/var/tmp").join(format!(
-            "config-{label}-{}-{}",
-            std::process::id(),
-            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&root).unwrap();
-        root
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(label: &str) -> Self {
+            let root = PathBuf::from("/var/tmp").join(format!(
+                "config-{label}-{}-{}",
+                std::process::id(),
+                TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+    }
+
+    impl Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_root(label: &str) -> TestRoot {
+        TestRoot::new(label)
     }
 
     fn move_change(root: &Path) -> JournalChange {

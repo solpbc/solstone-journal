@@ -8,10 +8,11 @@ use std::fs;
 use std::path::Path;
 
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, GuardFields, NamespaceName, parse_service_guard_environment,
-    parse_wrapper_guard,
+    ArtifactBindingEvidence, GuardFields, InstallationBinding, NamespaceName,
+    parse_service_guard_environment, parse_wrapper_guard,
 };
 
+use crate::events::StepName;
 use crate::steps::service_artifact_path;
 use crate::wrapper::{parse_wrapper, wrapper_paths};
 
@@ -22,10 +23,46 @@ const SERVICE_GUARD_KEYS: [&str; 4] = [
     "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
 ];
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum PresentArtifact {
     Unguarded,
     Guarded(GuardFields),
+}
+
+/// Setup artifact evidence plus the guard-bearing artifacts that may need repair.
+#[derive(Debug)]
+pub struct SetupArtifactEvidence {
+    artifacts: ArtifactBindingEvidence,
+    wrapper_guards: Vec<GuardFields>,
+    service_guard: Option<GuardFields>,
+}
+
+impl SetupArtifactEvidence {
+    #[must_use]
+    pub fn artifacts(&self) -> &ArtifactBindingEvidence {
+        &self.artifacts
+    }
+
+    #[must_use]
+    pub fn repair_steps(&self, binding: &InstallationBinding) -> Vec<StepName> {
+        let expected = GuardFields::from_binding(binding);
+        let mut steps = Vec::new();
+        if self
+            .wrapper_guards
+            .iter()
+            .any(|guard| guard.same_identity(&expected) && guard != &expected)
+        {
+            steps.push(StepName::Wrapper);
+        }
+        if self
+            .service_guard
+            .as_ref()
+            .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
+        {
+            steps.push(StepName::Service);
+        }
+        steps
+    }
 }
 
 /// Classifies the current solstone wrapper only. `journal config journal` uses
@@ -47,21 +84,51 @@ pub fn gather_artifact_evidence(
     home_dir: &Path,
     expected_namespace: &NamespaceName,
 ) -> ArtifactBindingEvidence {
+    gather_setup_artifact_evidence(home_dir, expected_namespace).artifacts
+}
+
+/// Classifies setup artifacts and retains guarded artifacts for targeted repair.
+pub fn gather_setup_artifact_evidence(
+    home_dir: &Path,
+    expected_namespace: &NamespaceName,
+) -> SetupArtifactEvidence {
     let wrapper_paths = wrapper_paths(home_dir);
     let solstone = read_wrapper(&wrapper_paths.solstone);
     let journal = read_wrapper(&wrapper_paths.journal);
     let service = service_artifact_path(home_dir)
         .map(|path| read_service(&path))
         .unwrap_or(Ok(None));
-    let artifacts = match (solstone, journal, service) {
-        (Ok(solstone), Ok(journal), Ok(service)) => solstone
-            .into_iter()
-            .chain(journal)
-            .chain(service)
-            .collect::<Vec<_>>(),
-        _ => return ArtifactBindingEvidence::Malformed,
+    let (solstone, journal, service) = match (solstone, journal, service) {
+        (Ok(solstone), Ok(journal), Ok(service)) => (solstone, journal, service),
+        _ => {
+            return SetupArtifactEvidence {
+                artifacts: ArtifactBindingEvidence::Malformed,
+                wrapper_guards: Vec::new(),
+                service_guard: None,
+            };
+        }
     };
-    classify(Ok(artifacts), expected_namespace)
+    let wrapper_guards = [&solstone, &journal]
+        .into_iter()
+        .filter_map(|artifact| match artifact {
+            Some(PresentArtifact::Guarded(guard)) => Some(guard.clone()),
+            _ => None,
+        })
+        .collect();
+    let service_guard = match &service {
+        Some(PresentArtifact::Guarded(guard)) => Some(guard.clone()),
+        _ => None,
+    };
+    let artifacts = solstone
+        .into_iter()
+        .chain(journal)
+        .chain(service)
+        .collect::<Vec<_>>();
+    SetupArtifactEvidence {
+        artifacts: classify(Ok(artifacts), expected_namespace),
+        wrapper_guards,
+        service_guard,
+    }
 }
 
 fn read_wrapper(path: &Path) -> Result<Option<PresentArtifact>, ()> {
@@ -117,7 +184,7 @@ fn classify(
         return ArtifactBindingEvidence::Ambiguous;
     };
     let first = guards[0];
-    if guards.iter().any(|guard| *guard != first) {
+    if guards.iter().any(|guard| !guard.same_identity(first)) {
         return ArtifactBindingEvidence::Ambiguous;
     }
     if first.namespace != *expected_namespace {
@@ -220,6 +287,26 @@ mod tests {
                 "{content}\nEnvironment=SOLSTONE_INSTALLATION_ID=x"
             ))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn journal_token_drift_for_one_identity_remains_guarded() {
+        let original = fields();
+        let changed = GuardFields {
+            journal_token: JournalToken::from_raw_absolute(b"/changed-journal".to_vec())
+                .expect("changed journal"),
+            ..original.clone()
+        };
+        assert_eq!(
+            classify(
+                Ok(vec![
+                    PresentArtifact::Guarded(original.clone()),
+                    PresentArtifact::Guarded(changed),
+                ]),
+                &original.namespace,
+            ),
+            ArtifactBindingEvidence::Guarded(original)
         );
     }
 }

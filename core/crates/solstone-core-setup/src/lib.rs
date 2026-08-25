@@ -23,8 +23,8 @@ use clean_uninstall::{
     CleanUninstallContext, clean_uninstall_confirmation_lines, clean_uninstall_has_managed_paths,
     clean_uninstall_refusal, run_clean_uninstall,
 };
-use events::{EventSink, JsonlEmitter};
-use identity_evidence::gather_artifact_evidence;
+use events::{EventSink, JsonlEmitter, StepName};
+use identity_evidence::{gather_artifact_evidence, gather_setup_artifact_evidence};
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession, IdentityError,
@@ -67,6 +67,11 @@ impl ExistingJournalPrompt for TerminalPrompt {
             "y" | "yes"
         ))
     }
+}
+
+struct SetupIdentityAdmission {
+    admission: SetupAdmission,
+    repair_steps: Vec<StepName>,
 }
 
 fn terminal_confirm() -> bool {
@@ -145,14 +150,14 @@ fn admit_setup_identity(
     executable_dir: &std::path::Path,
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
-) -> Result<SetupAdmission, IdentityError> {
+) -> Result<SetupIdentityAdmission, IdentityError> {
     let root = resolve_identity_root(executable_dir, project_root);
     let root_token = root_token_from_path(&root)?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
-    let artifacts = gather_artifact_evidence(home_dir, &namespace);
+    let artifacts = gather_setup_artifact_evidence(home_dir, &namespace);
     let manifest = legacy_manifest_evidence(&manifest_path(&resolved.journal_path));
     if !home_dir.exists()
-        && matches!(artifacts, ArtifactBindingEvidence::Fresh)
+        && matches!(artifacts.artifacts(), ArtifactBindingEvidence::Fresh)
         && matches!(
             manifest,
             solstone_core_installation_identity::LegacyManifestEvidence::Absent
@@ -163,13 +168,18 @@ fn admit_setup_identity(
             source,
         })?;
     }
-    admit_setup(SetupAdmissionRequest {
+    let admission = admit_setup(SetupAdmissionRequest {
         owner: OwnerBase::at_home(home_dir.to_path_buf(), PlatformTag::current())?,
         root_token,
         journal_token: journal_token_from_path(&resolved.journal_path)?,
         journal_is_explicit: matches!(resolved.journal_source.as_str(), "cli" | "env"),
         legacy_manifest: manifest,
-        artifacts,
+        artifacts: artifacts.artifacts().clone(),
+    })?;
+    let repair_steps = artifacts.repair_steps(admission.binding());
+    Ok(SetupIdentityAdmission {
+        admission,
+        repair_steps,
     })
 }
 
@@ -220,6 +230,35 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
     current_dir: PathBuf,
     stdin_is_tty: bool,
     stdout_is_tty: bool,
+    seams: Seams,
+    stdout: &mut W,
+    stderr: &mut E,
+) -> ExitCode {
+    run_owner_setup_with_io_with_resolution_env(
+        args,
+        home_dir,
+        executable_dir,
+        current_dir,
+        env::var("SOLSTONE_JOURNAL").ok(),
+        env::var("JOURNAL_VARIANT").ok(),
+        stdin_is_tty,
+        stdout_is_tty,
+        seams,
+        stdout,
+        stderr,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
+    args: SetupArgs,
+    home_dir: PathBuf,
+    executable_dir: PathBuf,
+    current_dir: PathBuf,
+    journal_env: Option<String>,
+    journal_variant_env: Option<String>,
+    stdin_is_tty: bool,
+    stdout_is_tty: bool,
     mut seams: Seams,
     stdout: &mut W,
     stderr: &mut E,
@@ -239,8 +278,8 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
     let resolution = ResolutionContext {
         home_dir: home_dir.clone(),
         current_dir: current_dir.clone(),
-        journal_env: env::var("SOLSTONE_JOURNAL").ok(),
-        journal_variant_env: env::var("JOURNAL_VARIANT").ok(),
+        journal_env,
+        journal_variant_env,
         is_source_checkout,
     };
     if args.clean_uninstall {
@@ -321,15 +360,18 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
     let resolved = resolve_setup(&args, &resolution);
     let mode = resolve_mode(&args, stdin_is_tty, stdout_is_tty);
     let mut effective_resolved = resolved.clone();
-    let admission = if resolved.should_short_circuit() {
-        None
+    let (admission, identity_guard_repair_steps) = if resolved.should_short_circuit() {
+        (None, Vec::new())
     } else {
-        let admission =
+        let identity_admission =
             match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
                 Ok(admission) => admission,
                 Err(error) => return report_identity_failure(args.jsonl, stdout, stderr, &error),
             };
-        let effective_journal = admission.effective_journal().to_path_buf();
+        let effective_journal = identity_admission
+            .admission
+            .effective_journal()
+            .to_path_buf();
         if effective_journal != effective_resolved.journal_path {
             effective_resolved.journal_path = effective_journal.clone();
             if let Some(serde_json::Value::Object(journal)) =
@@ -338,7 +380,10 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
                 journal.insert("value".into(), serde_json::json!(effective_journal));
             }
         }
-        Some(admission)
+        (
+            Some(identity_admission.admission),
+            identity_admission.repair_steps,
+        )
     };
     if !args.jsonl && resolved.should_short_circuit() {
         let plan_context = SetupContext {
@@ -364,6 +409,7 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
             is_macos: cfg!(target_os = "macos"),
             check_report_builder: seams.check_report_builder.as_ref(),
             installation_admission: None,
+            identity_guard_repair_steps: Vec::new(),
         };
         for line in render_plan(&plan_context, args.dry_run) {
             let _ = writeln!(stdout, "{line}");
@@ -398,6 +444,7 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
             is_macos: cfg!(target_os = "macos"),
             check_report_builder: seams.check_report_builder.as_ref(),
             installation_admission: admission,
+            identity_guard_repair_steps,
         };
         run_setup(&mut context, &step_specs())
     };
@@ -487,9 +534,22 @@ pub fn run_owner_setup_native(args: SetupArgs) -> ExitCode {
 mod tests {
     use super::*;
     use crate::args::parse_args_at;
-    use crate::steps::{CommandOutput, CommandRequest};
+    use crate::identity_evidence::{gather_artifact_evidence, gather_wrapper_artifact_evidence};
+    use crate::manifest::{SetupManifest, write_manifest};
+    use crate::steps::{CommandOutput, CommandRequest, service_artifact_path};
+    use crate::wrapper::{
+        WrapperEnvironment, provision_wrappers, wrapper_lock, wrapper_paths,
+        write_wrappers_atomically_with,
+    };
+    use solstone_core_installation_identity::{
+        ArtifactBindingEvidence, GuardFields, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_setup, journal_token_from_path, namespace_name,
+        root_token_from_path,
+    };
     use std::collections::VecDeque;
     use std::fs;
+    use std::io;
+    use std::ops::Deref;
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -503,6 +563,69 @@ mod tests {
                 stderr: String::new(),
                 timed_out: false,
             }))
+        }
+    }
+
+    struct ServiceArtifactRunner {
+        artifact_path: PathBuf,
+    }
+
+    impl ServiceArtifactRunner {
+        fn new(artifact_path: PathBuf) -> Self {
+            Self { artifact_path }
+        }
+    }
+
+    impl CommandRunner for ServiceArtifactRunner {
+        fn run(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
+            if request
+                .args
+                .first()
+                .is_some_and(|argument| argument == "service")
+                && request
+                    .args
+                    .get(1)
+                    .is_some_and(|argument| argument == "install")
+            {
+                let mut lines = Vec::new();
+                for (argument, key) in [
+                    (
+                        "--installation-namespace",
+                        "SOLSTONE_INSTALLATION_NAMESPACE",
+                    ),
+                    ("--installation-id", "SOLSTONE_INSTALLATION_ID"),
+                    (
+                        "--installation-generation",
+                        "SOLSTONE_INSTALLATION_GENERATION",
+                    ),
+                    (
+                        "--installation-journal-token",
+                        "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
+                    ),
+                ] {
+                    let value = request
+                        .args
+                        .iter()
+                        .position(|value| value == argument)
+                        .and_then(|index| request.args.get(index + 1))
+                        .ok_or_else(|| format!("missing {argument} from service install"))?;
+                    lines.push(format!("Environment=\"{key}={value}\""));
+                }
+                fs::create_dir_all(
+                    self.artifact_path
+                        .parent()
+                        .expect("service artifact parent"),
+                )
+                .map_err(|error| error.to_string())?;
+                fs::write(&self.artifact_path, lines.join("\n"))
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: "{}".into(),
+                stderr: String::new(),
+                timed_out: false,
+            })
         }
     }
 
@@ -547,6 +670,34 @@ mod tests {
         }
     }
 
+    struct HealthyService;
+    impl ServiceOps for HealthyService {
+        fn is_installed(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<bool, String> {
+            Ok(true)
+        }
+        fn health_check(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<bool, String> {
+            Ok(true)
+        }
+        fn restart(
+            &mut self,
+            _runner: &mut dyn CommandRunner,
+            _journal: &Path,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+        fn up(&mut self, _runner: &mut dyn CommandRunner, _journal: &Path) -> Result<i32, String> {
+            Ok(0)
+        }
+    }
+
     struct Check;
     impl CheckReportBuilder for Check {
         fn local_provider_blocked(&self, _journal: &Path) -> bool {
@@ -576,14 +727,36 @@ mod tests {
         }
     }
 
-    fn root(name: &str) -> PathBuf {
-        let root = PathBuf::from("/var/tmp").join(format!(
-            "solstone-core-setup-lib-{name}-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        root.canonicalize().unwrap()
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(name: &str) -> Self {
+            let root = PathBuf::from("/var/tmp").join(format!(
+                "solstone-core-setup-lib-{name}-{}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).unwrap();
+            Self(root.canonicalize().unwrap())
+        }
+    }
+
+    impl Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(name: &str) -> TestRoot {
+        TestRoot::new(name)
     }
 
     fn parsed(values: &[String], current_dir: &Path) -> SetupArgs {
@@ -776,7 +949,7 @@ mod tests {
             args,
             home.clone(),
             executable_dir,
-            root.clone(),
+            root.to_path_buf(),
             false,
             false,
             seams(vec![CommandOutput {
@@ -823,7 +996,7 @@ mod tests {
                     args,
                     home.clone(),
                     executable_dir,
-                    root.clone(),
+                    root.to_path_buf(),
                     false,
                     false,
                     seams(Vec::new()),
@@ -864,7 +1037,7 @@ mod tests {
             args,
             home.clone(),
             executable_dir,
-            root,
+            root.to_path_buf(),
             false,
             false,
             Seams {
@@ -925,7 +1098,7 @@ mod tests {
                 args,
                 home.clone(),
                 executable_dir.clone(),
-                root,
+                root.to_path_buf(),
                 false,
                 false,
                 seams(vec![doctor]),
@@ -950,10 +1123,6 @@ mod tests {
 
     #[test]
     fn entrypoint_preserves_an_implicit_journal_and_updates_an_explicit_one() {
-        assert!(
-            std::env::var_os("SOLSTONE_JOURNAL").is_none(),
-            "this resolution test requires no process journal override"
-        );
         let root = root("identity-journal-source");
         let home = root.join("home");
         let executable_dir = root.join("bin");
@@ -975,11 +1144,13 @@ mod tests {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             assert_eq!(
-                run_owner_setup_with_io(
+                run_owner_setup_with_io_with_resolution_env(
                     parsed(&values, &root),
                     home.clone(),
                     executable_dir.clone(),
-                    root.clone(),
+                    root.to_path_buf(),
+                    None,
+                    None,
                     false,
                     false,
                     seams(vec![CommandOutput {
@@ -1043,6 +1214,233 @@ mod tests {
             implicit_bytes
                 .split(|byte| *byte == b'\n')
                 .find(|line| line.starts_with(b"checksum="))
+        );
+    }
+
+    #[test]
+    fn plain_setup_repairs_the_service_guard_after_a_config_journal_change() {
+        let root = root("identity-service-drift");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let journal_one = root.join("journal-one");
+        let journal_two = root.join("journal-two");
+        fs::create_dir_all(&executable_dir).expect("create executable directory");
+        let service_path = service_artifact_path(&home).expect("linux service artifact");
+
+        let initial_args = parsed(
+            &[
+                "--yes".into(),
+                "--journal".into(),
+                journal_one.display().to_string(),
+                "--skip-models".into(),
+                "--skip-skills".into(),
+                "--skip-brain".into(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            run_owner_setup_with_io_with_resolution_env(
+                initial_args,
+                home.clone(),
+                executable_dir.clone(),
+                root.to_path_buf(),
+                None,
+                None,
+                false,
+                false,
+                Seams {
+                    runner: Box::new(ServiceArtifactRunner::new(service_path.clone())),
+                    service_ops: Box::new(HealthyService),
+                    check_report_builder: Box::new(Check),
+                    already_keeps_journal_probe: no_probe,
+                    prompt: Box::new(Prompt),
+                    confirm_clean_uninstall: Box::new(|| true),
+                },
+                &mut stdout,
+                &mut stderr,
+            ),
+            ExitCode::SUCCESS
+        );
+        assert!(stderr.is_empty());
+
+        let root_token = root_token_from_path(&executable_dir).expect("root token");
+        let namespace = namespace_name(PlatformTag::current(), &root_token);
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).expect("owner");
+        let updated = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token: root_token.clone(),
+            journal_token: journal_token_from_path(&journal_two).expect("second journal token"),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
+        })
+        .expect("config-equivalent explicit admission");
+        let expected = GuardFields::from_binding(updated.binding());
+        provision_wrappers(
+            &WrapperEnvironment {
+                home_dir: home.clone(),
+                curdir: executable_dir.clone(),
+                executable_dir: executable_dir.clone(),
+                backup_dir: Some(root.join("backups")),
+            },
+            &journal_two,
+            updated.binding(),
+        )
+        .expect("config-equivalent wrapper rewrite");
+        drop(updated);
+
+        let paths = wrapper_paths(&home);
+        let mut prior = SetupManifest::initial(
+            "2026-01-01T00:00:00Z".into(),
+            "non_interactive".into(),
+            serde_json::Map::new(),
+        );
+        prior.completed_at = Some("2026-01-01T00:00:01Z".into());
+        prior.steps.extend([
+            serde_json::json!({
+                "name":"wrapper",
+                "status":"ok",
+                "paths":[paths.solstone.clone(), paths.journal.clone()],
+            }),
+            serde_json::json!({
+                "name":"service",
+                "status":"ok",
+                "paths":[service_path.clone()],
+            }),
+        ]);
+        write_manifest(&manifest_path(&journal_two), &prior);
+
+        let plain_args = parsed(
+            &[
+                "--yes".into(),
+                "--skip-models".into(),
+                "--skip-skills".into(),
+                "--skip-brain".into(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            run_owner_setup_with_io_with_resolution_env(
+                plain_args,
+                home.clone(),
+                executable_dir,
+                root.to_path_buf(),
+                None,
+                None,
+                false,
+                false,
+                Seams {
+                    runner: Box::new(ServiceArtifactRunner::new(service_path)),
+                    service_ops: Box::new(HealthyService),
+                    check_report_builder: Box::new(Check),
+                    already_keeps_journal_probe: no_probe,
+                    prompt: Box::new(Prompt),
+                    confirm_clean_uninstall: Box::new(|| true),
+                },
+                &mut stdout,
+                &mut stderr,
+            ),
+            ExitCode::SUCCESS
+        );
+        assert!(stderr.is_empty());
+        assert_eq!(
+            gather_artifact_evidence(&home, &namespace),
+            ArtifactBindingEvidence::Guarded(expected)
+        );
+    }
+
+    #[test]
+    fn wrapper_write_failure_after_an_explicit_journal_update_is_retryable() {
+        let root = root("identity-wrapper-retry");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let journal_one = root.join("journal-one");
+        let journal_two = root.join("journal-two");
+        fs::create_dir_all(&home).expect("create home directory");
+        fs::create_dir_all(&executable_dir).expect("create executable directory");
+        let root_token = root_token_from_path(&executable_dir).expect("root token");
+        let namespace = namespace_name(PlatformTag::current(), &root_token);
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).expect("owner");
+        let environment = WrapperEnvironment {
+            home_dir: home.clone(),
+            curdir: executable_dir.clone(),
+            executable_dir: executable_dir.clone(),
+            backup_dir: Some(root.join("backups")),
+        };
+
+        let initial = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token: root_token.clone(),
+            journal_token: journal_token_from_path(&journal_one).expect("first journal token"),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .expect("initial admission");
+        provision_wrappers(&environment, &journal_one, initial.binding())
+            .expect("initial wrapper write");
+        drop(initial);
+
+        let updated = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token: root_token.clone(),
+            journal_token: journal_token_from_path(&journal_two).expect("second journal token"),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
+        })
+        .expect("explicit admission before wrapper write");
+        let updated_guard = GuardFields::from_binding(updated.binding());
+        let paths = wrapper_paths(&home);
+        let _lock = wrapper_lock(&home).expect("wrapper lock");
+        assert!(
+            write_wrappers_atomically_with(
+                &[
+                    (
+                        paths.solstone.clone(),
+                        crate::wrapper::render_wrapper(
+                            "solstone",
+                            &journal_two,
+                            &executable_dir.join("solstone"),
+                            &updated_guard,
+                        ),
+                    ),
+                    (
+                        paths.journal.clone(),
+                        crate::wrapper::render_wrapper(
+                            "journal",
+                            &journal_two,
+                            &executable_dir.join("journal"),
+                            &updated_guard,
+                        ),
+                    ),
+                ],
+                |_from, _to| Err(io::Error::other("injected wrapper replacement failure")),
+            )
+            .is_err()
+        );
+        drop(_lock);
+        drop(updated);
+
+        let retry = admit_setup(SetupAdmissionRequest {
+            owner,
+            root_token,
+            journal_token: journal_token_from_path(&journal_two).expect("retry journal token"),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: gather_wrapper_artifact_evidence(&home, &namespace),
+        })
+        .expect("same-identity wrapper drift is retryable");
+        assert_eq!(GuardFields::from_binding(retry.binding()), updated_guard);
+        provision_wrappers(&environment, &journal_two, retry.binding())
+            .expect("retry rewrites wrappers");
+        assert_eq!(
+            gather_wrapper_artifact_evidence(&home, &namespace),
+            ArtifactBindingEvidence::Guarded(updated_guard)
         );
     }
 }

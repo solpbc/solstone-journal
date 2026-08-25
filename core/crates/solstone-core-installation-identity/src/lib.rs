@@ -307,7 +307,7 @@ pub enum ArtifactBindingEvidence {
     Fresh,
     /// Previously managed artifacts exist but predate identity guard fields.
     LegacyUnguarded,
-    /// Every present guard agrees with this identity binding.
+    /// Every present guard agrees on the installation identity; journal selection may lag.
     Guarded(GuardFields),
     /// A managed-looking artifact is bound to another installation.
     Foreign,
@@ -418,6 +418,17 @@ impl GuardFields {
             generation: binding.generation,
             journal_token: binding.journal_token.clone(),
         }
+    }
+
+    /// Returns whether two guards bind the same installation, apart from journal selection.
+    pub fn same_identity(&self, other: &Self) -> bool {
+        self.namespace == other.namespace
+            && self.id == other.id
+            && self.generation == other.generation
+    }
+
+    fn matches_identity(&self, binding: &InstallationBinding) -> bool {
+        self.same_identity(&Self::from_binding(binding))
     }
 
     fn matches(&self, binding: &InstallationBinding) -> bool {
@@ -1508,7 +1519,7 @@ fn validate_existing_evidence(
 ) -> Result<(), IdentityError> {
     match artifacts {
         ArtifactBindingEvidence::Fresh | ArtifactBindingEvidence::LegacyUnguarded => Ok(()),
-        ArtifactBindingEvidence::Guarded(fields) if fields.matches(binding) => Ok(()),
+        ArtifactBindingEvidence::Guarded(fields) if fields.matches_identity(binding) => Ok(()),
         ArtifactBindingEvidence::Guarded(_) | ArtifactBindingEvidence::Foreign => Err(
             IdentityError::AdmissionRefused("artifact guard does not match the admitted root"),
         ),
@@ -2511,6 +2522,13 @@ mod tests {
                 .expect("journal"),
         };
         let fields = GuardFields::from_binding(&binding);
+        let changed_journal = GuardFields {
+            journal_token: JournalToken::from_raw_absolute(b"/journal/changed".to_vec())
+                .expect("changed journal"),
+            ..fields.clone()
+        };
+        assert_ne!(fields, changed_journal);
+        assert!(fields.same_identity(&changed_journal));
         let wrapper = wrapper_guard_lines(&fields);
         assert_eq!(
             parse_wrapper_guard(&wrapper).expect("parse wrapper"),
