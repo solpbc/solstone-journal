@@ -112,6 +112,9 @@ fn serve_recording(
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     stream
+                        .set_nonblocking(false)
+                        .expect("make recording request stream blocking");
+                    stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .expect("set request read timeout");
                     let request = read_recorded_request(&mut stream);
