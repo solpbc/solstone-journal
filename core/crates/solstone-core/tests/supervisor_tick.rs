@@ -32,13 +32,24 @@ use await_outcome::{
 
 struct TempJournal(PathBuf);
 
+fn temporary_root() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from("/var/tmp")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::env::temp_dir()
+    }
+}
+
 impl TempJournal {
     fn new() -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-supervisor-tick-{stamp}"));
+        let root = temporary_root().join(format!("solstone-core-supervisor-tick-{stamp}"));
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -769,21 +780,18 @@ fn ac3_no_schedule_skips_invalid_schedule_state_and_reaches_readiness() {
         fs::read(&disabled_scheduler).expect("disabled schedule state"),
         b"[]"
     );
-    let outcome = await_outcome(
-        WaitPolarity::Negative,
-        Duration::from_millis(10),
-        200,
-        Instant::now,
-        || {
-            if scheduled_marker.exists() {
-                PollState::Pending
-            } else {
-                PollState::Held
-            }
-        },
-        thread::sleep,
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        assert!(
+            !scheduled_marker.exists(),
+            "--no-schedule ran a scheduled command"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        !scheduled_marker.exists(),
+        "--no-schedule ran a scheduled command"
     );
-    panic_for_wait("--no-schedule ran a scheduled command", outcome);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
