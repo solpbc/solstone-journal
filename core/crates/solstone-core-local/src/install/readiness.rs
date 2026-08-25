@@ -120,6 +120,13 @@ pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
                             pins::vulkan_identity(&key)?,
                         ))
                     }
+                    Some("metal") => {
+                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                        Some((
+                            root.join("bin").join(&key).join(release),
+                            pins::vulkan_identity(&key)?,
+                        ))
+                    }
                     _ => None,
                 },
             )

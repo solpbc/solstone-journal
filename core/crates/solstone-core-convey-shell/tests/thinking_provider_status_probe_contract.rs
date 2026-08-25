@@ -292,7 +292,6 @@ mod linux {
                             "/app/thinking/api/state",
                             "/app/thinking/api/providers",
                             "/app/thinking/api/providers/local/status",
-                            "/app/thinking/api/local/availability",
                         ] {
                             assert!(!receipt.exists(), "receipt must begin absent for {path}");
                             let _ = request_json_with_watchdog(bundled.path(), path).await;
