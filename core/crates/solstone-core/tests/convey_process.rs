@@ -186,6 +186,26 @@ fn wait_until_ready(port: u16, child: &mut ChildGuard) {
     wait_until_status(port, child, "/api/shell", 200);
 }
 
+fn wait_for_port_file(path: &std::path::Path, expected: &[u8]) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match fs::read(path) {
+            Ok(contents) if contents == expected => return,
+            Ok(contents) => assert!(
+                Instant::now() < deadline,
+                "convey wrote an unexpected port file: {contents:?}"
+            ),
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => panic!("convey port file could not be read: {error}"),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "convey did not write its port file"
+        );
+        sleep(Duration::from_millis(20));
+    }
+}
+
 fn wait_until_status(port: u16, child: &mut ChildGuard, path: &str, expected: u16) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -257,9 +277,9 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
         .status,
         200
     );
-    assert_eq!(
-        fs::read(journal.0.join("health/convey.port")).expect("port file reads"),
-        port.to_string().into_bytes()
+    wait_for_port_file(
+        &journal.0.join("health/convey.port"),
+        &port.to_string().into_bytes(),
     );
 
     child.terminate();
