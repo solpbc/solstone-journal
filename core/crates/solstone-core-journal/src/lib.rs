@@ -257,6 +257,39 @@ pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> O
         .or_else(|| executable_dir.parent().and_then(is_layout_install_root))
 }
 
+/// Resolves the stable on-disk installation identity root for an executable.
+///
+/// A checkout uses its checkout root. A versioned shipped install deliberately
+/// uses the directory that owns `current`, not the version selected by that
+/// symlink, so an update or downgrade preserves the installation identity.
+/// Other layouts retain the ordinary installation-root meaning.
+pub fn resolve_identity_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
+    resolve_checkout_root_from_executable_dir(executable_dir)
+        .or_else(|| versioned_prefix_from_executable_dir(executable_dir))
+        .or_else(|| resolve_installation_root_from_executable_dir(executable_dir))
+}
+
+fn versioned_prefix_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
+    let current = executable_dir.parent()?;
+    if executable_dir.file_name()? != OsStr::new("bin")
+        || current.file_name()? != OsStr::new("current")
+    {
+        return None;
+    }
+    let prefix = current.parent()?;
+    if !fs::symlink_metadata(current).ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let target = fs::read_link(current).ok()?;
+    let target = if target.is_absolute() {
+        target
+    } else {
+        prefix.join(target)
+    };
+    (target.parent()?.file_name()? == OsStr::new("versions") && target.is_dir())
+        .then(|| prefix.to_path_buf())
+}
+
 /// Why [`resolve_installation_root_from_executable_dir`] returned `None`.
 ///
 /// Reuses the same three candidate predicates as the resolver. The text is for
@@ -678,6 +711,57 @@ mod tests {
         );
         assert_eq!(payload_root_in_checkout(&checkout), Some(payload));
         fs::remove_dir_all(root).expect("cleanup installation helpers");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn identity_root_uses_a_versioned_prefix_across_current_switches() {
+        use std::os::unix::fs::symlink;
+
+        let root = unique_temp("identity-versioned-prefix");
+        let prefix = root.join("prefix");
+        let versions = prefix.join("versions");
+        let first = versions.join("1.0.0-aaaaaaaa");
+        let second = versions.join("0.9.0-bbbbbbbb");
+        fs::create_dir_all(first.join("bin")).expect("create first version");
+        fs::create_dir_all(second.join("bin")).expect("create second version");
+        symlink("versions/1.0.0-aaaaaaaa", prefix.join("current")).expect("link current first");
+
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&prefix.join("current/bin")),
+            Some(prefix.clone())
+        );
+        fs::remove_file(prefix.join("current")).expect("remove current first");
+        symlink("versions/0.9.0-bbbbbbbb", prefix.join("current")).expect("link current second");
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&prefix.join("current/bin")),
+            Some(prefix.clone()),
+            "downgrades retain the stable prefix"
+        );
+        fs::remove_file(prefix.join("current")).expect("remove current second");
+        symlink("versions/1.0.0-aaaaaaaa", prefix.join("current")).expect("link current retry");
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&prefix.join("current/bin")),
+            Some(prefix.clone()),
+            "retries retain the stable prefix"
+        );
+        fs::remove_dir_all(root).expect("cleanup versioned prefix");
+    }
+
+    #[test]
+    fn identity_root_uses_the_checkout_root() {
+        let root = unique_temp("identity-checkout-root");
+        let checkout = root.join("checkout");
+        let executable_dir = checkout.join(".venv/bin");
+        fs::create_dir_all(&executable_dir).expect("create checkout bin");
+        fs::create_dir_all(checkout.join(".git")).expect("create checkout git marker");
+        fs::write(checkout.join("pyproject.toml"), "").expect("write checkout marker");
+        write_layout_anchors(&checkout.join(CHECKOUT_PAYLOAD_ROOT));
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&executable_dir),
+            resolve_checkout_root_from_executable_dir(&executable_dir)
+        );
+        fs::remove_dir_all(root).expect("cleanup checkout root");
     }
 
     fn write_layout_anchors(share: &Path) {
