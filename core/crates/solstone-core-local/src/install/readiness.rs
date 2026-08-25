@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{lease, local_backend_choice, manifest, pins, status};
 
@@ -92,6 +92,54 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
         .map(|value| serde_json::to_value(value).unwrap())
         .unwrap_or(Value::Null);
     json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_root.join("llama-server"),"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
+}
+
+/// Read the installed local artifacts selected by the current install target
+/// without probing host hardware.
+pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
+    let root = pins::cache_root(journal);
+    let key = pins::platform_key();
+    let binary_installed =
+        status::read_status(journal, "local")
+            .ok()
+            .and_then(|install| install.target_fingerprint_json)
+            .and_then(|fingerprint| serde_json::from_str::<Value>(&fingerprint).ok())
+            .and_then(
+                |target| match target.get("backend").and_then(Value::as_str) {
+                    Some("cuda") => {
+                        let (_, digest, _) = pins::cuda_pin(&key)?;
+                        Some((
+                            root.join("cuda").join(&key).join(digest),
+                            pins::cuda_identity(&key)?,
+                        ))
+                    }
+                    Some("vulkan") => {
+                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                        Some((
+                            root.join("bin").join(&key).join(release),
+                            pins::vulkan_identity(&key)?,
+                        ))
+                    }
+                    _ => None,
+                },
+            )
+            .is_some_and(|(binary_root, identity)| {
+                manifest::prove_manifest(&manifest::artifact_manifest_path(&binary_root), &identity)
+                    ["status"]
+                    == "ready"
+            });
+    let model_root = root.join("models").join(model_id.replace('/', "__"));
+    let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
+    let model_installed = manifest::prove_manifest(
+        &manifest::artifact_manifest_path(&model_root),
+        &model_identity,
+    )["status"]
+        == "ready";
+
+    json!({
+        "host":{"platform_supported":pins::vulkan_pin(&key).is_some()},
+        "artifacts":{"binary_installed":binary_installed,"model_installed":model_installed},
+    })
 }
 
 pub fn inspect_parakeet(input: Map<String, Value>) -> Value {

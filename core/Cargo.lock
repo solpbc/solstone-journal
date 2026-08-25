@@ -3532,6 +3532,7 @@ dependencies = [
  "spl-core",
  "spl-home",
  "spl-transport",
+ "temp-env",
  "tempfile",
  "time",
  "tokio",

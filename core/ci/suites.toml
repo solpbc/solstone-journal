@@ -2263,6 +2263,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::thinking_provider_status_probe_contract"
+package = "solstone-core-convey-shell"
+target = "thinking_provider_status_probe_contract"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-cortex-client::cortex_client_claim_transport"
 package = "solstone-core-cortex-client"
 target = "cortex_client_claim_transport"
@@ -4010,6 +4024,19 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-local::local_readiness_probe_contract"
+package = "solstone-core-local"
+target = "local_readiness_probe_contract"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
