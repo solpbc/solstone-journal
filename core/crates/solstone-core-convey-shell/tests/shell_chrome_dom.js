@@ -445,7 +445,7 @@ function createHarness(options = {}) {
   launcher.style.position = 'fixed';
   addStaticElement(document, 'div', { id: 'status-instrument' });
   addStaticElement(document, 'div', { id: 'status-pane', class: 'status-pane' });
-  addStaticElement(document, 'main', { id: 'main-content' });
+  addStaticElement(document, 'main', { id: 'main-content', tabindex: '-1' });
 
   const windowListeners = {};
   const window = {
@@ -775,6 +775,7 @@ asyncCase('converted workspace mounts normally', async () => {
 
   await harness.boot();
 
+  assert.strictEqual(harness.document.querySelector('#main-content').getAttribute('tabindex'), '-1');
   assert.strictEqual(harness.document.querySelector('#main-content').innerHTML, workspace);
   assert.strictEqual(mounted.appName, 'home');
   assert.strictEqual(mounted.url, '/app/home/workspace');

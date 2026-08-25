@@ -115,7 +115,7 @@
       {
         "body": {
           "byte_length": 8085,
-          "digest": "9e76e44e65021cb07f5b5c208eacee521d5d34263a1c9dd19429632bf66b44d5"
+          "digest": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255"
         },
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
