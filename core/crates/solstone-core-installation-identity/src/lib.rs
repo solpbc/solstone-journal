@@ -2142,7 +2142,7 @@ enum FaultPoint {
 
 #[cfg(test)]
 thread_local! {
-    static OWNER_FILE_LOCK_ATTEMPTS: std::cell::Cell<usize> = std::cell::Cell::new(0);
+    static OWNER_FILE_LOCK_ATTEMPTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
