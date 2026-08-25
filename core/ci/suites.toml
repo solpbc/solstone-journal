@@ -2153,6 +2153,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::full_speakers_corpus"
+package = "solstone-core-convey-shell"
+target = "full_speakers_corpus"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::restart_protocol"
 package = "solstone-core-convey-shell"
 target = "restart_protocol"
@@ -2226,6 +2240,20 @@ runtime = "none"
 id = "solstone-core-convey-shell::shell_chrome_dom"
 package = "solstone-core-convey-shell"
 target = "shell_chrome_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::shell_global_facet_contract_dom"
+package = "solstone-core-convey-shell"
+target = "shell_global_facet_contract_dom"
 set = "component"
 areas = ["services"]
 platforms = ["linux", "macos"]
@@ -2611,6 +2639,20 @@ areas = ["import"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-import-web::import_workspace_dom"
+package = "solstone-core-import-web"
+target = "import_workspace_dom"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"

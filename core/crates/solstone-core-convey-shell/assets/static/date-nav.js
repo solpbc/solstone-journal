@@ -985,15 +985,6 @@
     }
   }
 
-  function handleFacetSwitch(event) {
-    // Re-tint heat for the newly selected facet: date-nav apps with facets
-    // enabled (chat, activities, sol) refetch index and month stats here.
-    state.facet = event.detail?.facet || null;
-    state.monthCache.clear();
-    fetchIndex(true).then(() => {
-      if (state.open) renderPanel();
-    });
-  }
 
   function mountContentDateNav(shell, appName) {
     const app = getApp(shell, appName);
@@ -1025,7 +1016,6 @@
     state.root.addEventListener('click', handleRootClick, { signal: mountAbort.signal });
     state.root.addEventListener('keydown', handleGridKeydown, { signal: mountAbort.signal });
     document.addEventListener('click', handleDocumentClick, { signal: mountAbort.signal });
-    window.addEventListener('facet.switch', handleFacetSwitch, { signal: mountAbort.signal });
     fetchIndex(true).then(() => {
       updateLabels();
       if (state.open) renderPanel();

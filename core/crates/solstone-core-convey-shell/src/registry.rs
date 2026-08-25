@@ -18,7 +18,6 @@ pub struct AppDefinition {
     pub rail_group: Option<RailGroup>,
     pub rail_rank: u8,
     pub date_nav: Option<DateNav>,
-    pub facets_enabled: bool,
     pub has_background: bool,
     pub converted: bool,
 }
@@ -85,7 +84,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
                 none: "no activities",
             },
         }),
-        facets_enabled: false,
         has_background: false,
         converted: false,
     },
@@ -99,7 +97,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -113,7 +110,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: Some(content_date_nav("reading", "readings", "no readings")),
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -127,7 +123,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -141,7 +136,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Primary),
         rail_rank: 3,
         date_nav: None,
-        facets_enabled: true,
         has_background: false,
         converted: true,
     },
@@ -155,7 +149,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -169,7 +162,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Primary),
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -183,7 +175,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Management),
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -197,7 +188,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -215,7 +205,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
             "newsletters",
             "no newsletters",
         )),
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -229,7 +218,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Primary),
         rail_rank: 2,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -243,7 +231,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Management),
         rail_rank: 1,
         date_nav: None,
-        facets_enabled: true,
         has_background: false,
         converted: true,
     },
@@ -257,7 +244,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -271,7 +257,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -285,7 +270,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        facets_enabled: false,
         has_background: true,
         converted: true,
     },
@@ -299,7 +283,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Primary),
         rail_rank: 4,
         date_nav: None,
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -313,7 +296,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: Some(RailGroup::Primary),
         rail_rank: 1,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
-        facets_enabled: false,
         has_background: true,
         converted: true,
     },
@@ -327,7 +309,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
-        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -336,8 +317,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
 #[derive(Debug, Clone, Serialize)]
 pub struct ShellPayload {
     pub apps: Vec<ShellApp>,
-    pub facets: Vec<serde_json::Value>,
-    pub selected_facet: Option<serde_json::Value>,
     pub settings: ShellSettings,
     pub version: &'static str,
 }
@@ -347,7 +326,6 @@ pub struct ShellApp {
     pub app_bar: bool,
     pub background_url: Option<String>,
     pub date_nav: Option<DateNav>,
-    pub facets_enabled: bool,
     pub icon: &'static str,
     pub icon_svg: Option<String>,
     pub label: &'static str,
@@ -384,7 +362,6 @@ pub fn shell_payload() -> ShellPayload {
                     .has_background
                     .then(|| format!("/app/{}/background", app.name)),
                 date_nav: app.date_nav,
-                facets_enabled: app.facets_enabled,
                 icon: app.icon,
                 icon_svg: icons.get(app.lucide_icon).cloned(),
                 label: app.label,
@@ -396,8 +373,6 @@ pub fn shell_payload() -> ShellPayload {
                 workspace_url: format!("/app/{}/workspace", app.name),
             })
             .collect(),
-        facets: Vec::new(),
-        selected_facet: None,
         settings: ShellSettings {
             reporting_enabled: true,
         },
@@ -453,15 +428,6 @@ mod tests {
     }
 
     #[test]
-    fn facets_enabled_apps_are_entities_and_settings_at_this_checkpoint() {
-        let enabled = APP_REGISTRY
-            .iter()
-            .filter(|app| app.facets_enabled)
-            .map(|app| app.name)
-            .collect::<BTreeSet<_>>();
-        assert_eq!(enabled, BTreeSet::from(["entities", "settings"]));
-    }
-
     #[test]
     fn devices_is_removed_from_the_registry() {
         assert!(!APP_REGISTRY.iter().any(|app| app.name == "devices"));

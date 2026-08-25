@@ -632,8 +632,8 @@
     ],
     "empty": [
       {
-        "body_bytes": 8202,
-        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
+        "body_bytes": 8085,
+        "body_sha256": "9e76e44e65021cb07f5b5c208eacee521d5d34263a1c9dd19429632bf66b44d5",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -868,8 +868,8 @@
         "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
       },
       {
-        "body_bytes": 8202,
-        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
+        "body_bytes": 8085,
+        "body_sha256": "9e76e44e65021cb07f5b5c208eacee521d5d34263a1c9dd19429632bf66b44d5",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1267,8 +1267,8 @@
     ],
     "populated": [
       {
-        "body_bytes": 8202,
-        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
+        "body_bytes": 8085,
+        "body_sha256": "9e76e44e65021cb07f5b5c208eacee521d5d34263a1c9dd19429632bf66b44d5",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1604,8 +1604,8 @@
         "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
       },
       {
-        "body_bytes": 8202,
-        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
+        "body_bytes": 8085,
+        "body_sha256": "9e76e44e65021cb07f5b5c208eacee521d5d34263a1c9dd19429632bf66b44d5",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",

@@ -418,7 +418,7 @@ fn main() -> ExitCode {
             }
         },
         Ok(Command::Observer(command)) => run_observer(command),
-        Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
+        Ok(Command::Navigate { path }) => navigate::run(path),
         Ok(Command::NavigateHelp) => {
             print!("{NAVIGATE_HELP}");
             ExitCode::SUCCESS
@@ -426,6 +426,13 @@ fn main() -> ExitCode {
         Ok(Command::NavigateUsage) => {
             eprint!("{NAVIGATE_USAGE}");
             eprintln!("journal navigate: error: invalid arguments");
+            ExitCode::from(2)
+        }
+        Ok(Command::NavigateFacetRetired(option)) => {
+            eprint!("{NAVIGATE_USAGE}");
+            eprintln!(
+                "journal navigate: error: {option} is no longer supported; facet selection is workspace-local — use the app's own facet URL/query parameter"
+            );
             ExitCode::from(2)
         }
         Ok(Command::Identity(command)) => identity::run(command),

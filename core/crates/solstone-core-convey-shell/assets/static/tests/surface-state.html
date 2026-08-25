@@ -7,7 +7,6 @@
   .pass { color: #166534; }
   .fail { color: #b91c1c; }
 </style>
-<div class="facet-bar"><button class="status-icon"></button><div class="facet-pills-container"></div></div>
 <nav class="menu-bar"><ul class="menu-items"></ul></nav>
 <div id="notification-center"></div>
 <div id="first-paint"><div class="surface-state surface-state--loading"></div></div>
@@ -16,9 +15,6 @@
 <div id="refresh-last-known"><div>Loaded content</div></div>
 <div id="results"></div>
 <script>
-  window.facetsData = [];
-  window.selectedFacet = null;
-  window.appFacetCounts = {};
   window.CONVEY_COPY = {
     RELOAD_HINT: 'reload to try again.',
     REPORT_DEFAULT_SUBJECT: 'convey error',

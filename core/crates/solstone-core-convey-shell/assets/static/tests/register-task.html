@@ -7,14 +7,10 @@
   .pass { color: #166534; }
   .fail { color: #b91c1c; }
 </style>
-<div class="facet-bar"><div class="facet-pills-container"></div></div>
 <div id="status-instrument"><button class="status-icon"></button></div>
 <div id="notification-center"></div>
 <div id="results"></div>
 <script>
-  window.facetsData = [];
-  window.selectedFacet = null;
-  window.appFacetCounts = {};
   window.marked = { parse(value) { return value; } };
   window.DOMPurify = { sanitize(value) { return value; } };
 </script>

@@ -148,16 +148,16 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 ### `notification` - In-app notification display
 **Source:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (client-side listener; any service can emit)
 **Events:** any (event name is not interpreted)
-**Key fields:** `title` (string), `message` (string), `icon` (string, Lucide icon name), `action` (string, URL path), `facet` (string), `autoDismiss` (number, ms), `app` (string, app name)
+**Key fields:** `title` (string), `message` (string), `icon` (string, Lucide icon name), `action` (string, URL path), `autoDismiss` (number, ms), `app` (string, app name)
 **Defaults:** `app` → "system", `icon` → "mailbox", `title` → "Notification" (applied by `AppServices.notifications.show()`)
 **Purpose:** Forward Callosum events directly to the browser notification UI — any service can trigger an in-app notification card by emitting to this tract
 
 ### `navigate` - Browser navigation control
 **Source:** `journal navigate` (`solstone-core-journal-cli`)
 **Events:** `request`
-**Key fields:** `path` (string, URL path), `facet` (string, facet name) — at least one required
+**Key fields:** `path` (string, URL path)
 **Consumer:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (built-in listener)
-**Purpose:** Navigate the browser to a URL path and/or switch to a facet — facet-only triggers `selectFacet()` without page reload, path triggers full page load, path+facet sets facet cookie before navigating
+**Purpose:** Navigate the browser to a URL path. Workspace-local facet selection stays in that workspace's URL/query contract.
 
 ---
 

@@ -511,6 +511,7 @@ fn malformed_navigate_invocations_exit_2_with_their_own_usage() {
     for args in [
         ["navigate", "--nonsense"].as_slice(),
         ["navigate", "/a", "/b"].as_slice(),
+        ["navigate"].as_slice(),
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(args)
@@ -555,7 +556,7 @@ fn navigate_help_is_served_not_treated_as_a_usage_error() {
             stdout.starts_with("usage: journal navigate"),
             "{args:?} did not print navigate help: {stdout}"
         );
-        assert!(stdout.contains("-f FACET, --facet FACET"), "{stdout}");
+        assert!(!stdout.contains("facet"), "{stdout}");
         assert!(stdout.contains("positional arguments:"), "{stdout}");
         assert!(
             stdout

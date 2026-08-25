@@ -362,10 +362,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn curation_api_is_reachable_while_curation_workspace_remains_unconverted() {
+    async fn curation_api_is_reachable_through_the_converted_curation_workspace() {
         let journal = Journal::established();
         journal.seed_facet_candidate();
-        // Curation deliberately has no converted workspace; its shared facet-store API arrives via entities.
+        // Curation is a converted workspace whose facet-store API is shared with entities.
         let (status, _headers, body) =
             routed(&journal, "GET", "/app/curation/api/facet/candidates", b"").await;
         assert_eq!(status, StatusCode::OK);

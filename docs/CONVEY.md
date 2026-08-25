@@ -20,14 +20,13 @@ Read it before touching any workspace, shell chrome, or shared client helper.
 
 ### Shell chrome
 
-The canonical static shell has dedicated rail, dock, launcher, status
-instrument, and facet-strip slots. `shell_boot.js` renders the rail, dock, and
-grouped launcher from `/api/shell`; it relocates the status instrument and
-only unhides the in-flow facet strip for apps with `facets_enabled`. The
-launcher is a body-level modal dialog so the shared modal-layer focus and
-inert behavior applies. The rail uses non-null `rail_group`/`rail_rank`; the
-launcher uses `launcher_group`/`launcher_rank` and contains every registered
-app exactly once.
+The canonical static shell has dedicated rail, dock, launcher, and status
+instrument slots. `shell_boot.js` renders the rail, dock, grouped launcher,
+and status instrument from `/api/shell`. The launcher is a body-level modal
+dialog so the shared modal-layer focus and inert behavior applies. The rail
+uses non-null `rail_group`/`rail_rank`; the launcher uses
+`launcher_group`/`launcher_rank` and contains every registered app exactly
+once. Facet selection belongs to the workspace that owns it.
 
 ### HTTP API conventions
 

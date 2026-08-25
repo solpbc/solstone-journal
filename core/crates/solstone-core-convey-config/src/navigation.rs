@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, JsonWriteOptions, LockOptions, MalformedPolicy, atomic_replace, hold_lock,
-    path_lexists, read_json, write_json,
+    JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, read_json, write_json,
 };
 
 const DEFAULT_RAIL_APPS: [&str; 8] = [
@@ -51,13 +49,6 @@ impl std::fmt::Display for ConveyConfigError {
     }
 }
 impl std::error::Error for ConveyConfigError {}
-
-#[derive(Debug, Clone)]
-pub struct ConveyUpdate {
-    pub path: PathBuf,
-    pub original: Vec<u8>,
-    pub replacement: Vec<u8>,
-}
 
 pub fn seed_default_app_navigation(
     journal: &Path,
@@ -138,92 +129,6 @@ pub fn drop_services_navigation(
     })
 }
 
-pub fn rename_facet_references(journal: &Path, old_name: &str, new_name: &str) {
-    let _ = mutate_existing(journal, |root| replace_facet(root, old_name, new_name));
-}
-pub fn clear_facet_references(journal: &Path, name: &str) {
-    let _ = mutate_existing(journal, |root| clear_facet(root, name));
-}
-
-pub fn prepare_remove_facet_references(
-    journal: &Path,
-    source: &str,
-) -> Result<Option<ConveyUpdate>, ConveyConfigError> {
-    let path = config_path(journal);
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) if metadata.file_type().is_file() => metadata,
-        Ok(_) => {
-            return Err(ConveyConfigError::Io(format!(
-                "unsafe convey config: {}",
-                path.display()
-            )));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(ConveyConfigError::Io(error.to_string())),
-    };
-    if metadata.len() > 4 * 1024 * 1024 {
-        return Err(ConveyConfigError::Malformed(
-            "convey config is unexpectedly large".to_owned(),
-        ));
-    }
-    let original = fs::read(&path).map_err(|error| ConveyConfigError::Io(error.to_string()))?;
-    let mut value: Value = serde_json::from_slice(&original)
-        .map_err(|error| ConveyConfigError::Malformed(error.to_string()))?;
-    let Some(root) = value.as_object_mut() else {
-        return Err(ConveyConfigError::Malformed(
-            "convey config must be a JSON object".to_owned(),
-        ));
-    };
-    let Some(facets) = root.get_mut("facets").and_then(Value::as_object_mut) else {
-        return Ok(None);
-    };
-    let mut changed = false;
-    if facets.get("selected").and_then(Value::as_str) == Some(source) {
-        facets.insert("selected".to_owned(), Value::Null);
-        changed = true;
-    }
-    if let Some(order) = facets.get_mut("order") {
-        let Some(items) = order.as_array_mut() else {
-            return Err(ConveyConfigError::Malformed(
-                "convey facets.order must be an array".to_owned(),
-            ));
-        };
-        let before = items.len();
-        items.retain(|item| item.as_str() != Some(source));
-        changed |= before != items.len();
-    }
-    if !changed {
-        return Ok(None);
-    }
-    let mut replacement = serde_json::to_vec_pretty(&value)
-        .map_err(|error| ConveyConfigError::Malformed(error.to_string()))?;
-    replacement.push(b'\n');
-    Ok(Some(ConveyUpdate {
-        path,
-        original,
-        replacement,
-    }))
-}
-
-pub fn publish_update(update: &ConveyUpdate) -> Result<(), ConveyConfigError> {
-    atomic_replace(
-        &update.path,
-        &update.replacement,
-        AtomicWriteOptions { mode: Some(0o600) },
-    )
-    .map_err(|error| ConveyConfigError::Io(error.to_string()))
-}
-
-/// Restore the exact bytes captured before a facet-merge configuration update.
-pub fn restore_update(update: &ConveyUpdate) -> Result<(), ConveyConfigError> {
-    atomic_replace(
-        &update.path,
-        &update.original,
-        AtomicWriteOptions { mode: Some(0o600) },
-    )
-    .map_err(|error| ConveyConfigError::Io(error.to_string()))
-}
-
 fn mutate(
     journal: &Path,
     transform: impl FnOnce(&mut Map<String, Value>) -> bool,
@@ -258,58 +163,14 @@ fn mutate(
     }
     Ok(ConveyConfigMigrationReport { changed })
 }
-fn mutate_existing(
-    journal: &Path,
-    transform: impl FnOnce(&mut Map<String, Value>) -> bool,
-) -> Result<(), ConveyConfigError> {
-    let path = config_path(journal);
-    if !path_lexists(&path).map_err(|error| ConveyConfigError::Io(error.to_string()))? {
-        return Ok(());
-    };
-    let _ = mutate(journal, transform)?;
-    Ok(())
-}
 fn config_path(journal: &Path) -> PathBuf {
     journal.join("config/convey.json")
-}
-fn replace_facet(root: &mut Map<String, Value>, old: &str, new: &str) -> bool {
-    let Some(facets) = root.get_mut("facets").and_then(Value::as_object_mut) else {
-        return false;
-    };
-    let mut changed = false;
-    if facets.get("selected").and_then(Value::as_str) == Some(old) {
-        facets.insert("selected".to_owned(), Value::String(new.to_owned()));
-        changed = true;
-    }
-    if let Some(order) = facets.get_mut("order").and_then(Value::as_array_mut) {
-        for item in order {
-            if item.as_str() == Some(old) {
-                *item = Value::String(new.to_owned());
-                changed = true;
-            }
-        }
-    }
-    changed
-}
-fn clear_facet(root: &mut Map<String, Value>, name: &str) -> bool {
-    let Some(facets) = root.get_mut("facets").and_then(Value::as_object_mut) else {
-        return false;
-    };
-    let mut changed = false;
-    if facets.get("selected").and_then(Value::as_str) == Some(name) {
-        facets.insert("selected".to_owned(), Value::String(String::new()));
-        changed = true;
-    }
-    if let Some(order) = facets.get_mut("order").and_then(Value::as_array_mut) {
-        let before = order.len();
-        order.retain(|value| value.as_str() != Some(name));
-        changed |= before != order.len();
-    }
-    changed
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use tempfile::tempdir;
     #[test]

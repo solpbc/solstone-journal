@@ -523,14 +523,7 @@
   }, {}));
 
   addListenerRecord('navigate', createListenerRecord(function(msg) {
-    if (msg.facet && !msg.path) {
-      window.selectFacet && window.selectFacet(msg.facet);
-    } else if (msg.path) {
-      if (msg.facet) {
-        var expires = new Date();
-        expires.setFullYear(expires.getFullYear() + 1);
-        document.cookie = 'selectedFacet=' + msg.facet + '; expires=' + expires.toUTCString() + '; path=/; SameSite=Lax';
-      }
+    if (msg.path) {
       window.location.href = msg.path;
     }
   }, {}));

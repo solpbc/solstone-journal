@@ -19,7 +19,7 @@ Use this recipe on a fresh or sandbox journal to verify the facet-detail and Nee
    - secondary action: `create another facet`
    - tertiary action: `back to settings`
 6. Click the primary action and confirm the browser lands on `/app/entities/`.
-7. Confirm the `selectedFacet` cookie is set to the new slug.
+7. Confirm the Settings workspace keeps its local facet selection in its own URL/query state.
 8. Return to `/app/settings#facets` and confirm the facet appears in the all-facets list with a link to `/app/settings/facets/<slug>`.
 
 ## Informational Needs You Item Path

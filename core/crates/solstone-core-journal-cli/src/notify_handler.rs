@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 
-const HELP: &str = "usage: journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--facet FACET] [--app APP]\n                  [--badge BADGE] [--auto-dismiss AUTO_DISMISS] [--no-dismiss]\n                  [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --facet FACET         facet context\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
+const HELP: &str = "usage: journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--app APP] [--badge BADGE]\n                  [--auto-dismiss AUTO_DISMISS] [--no-dismiss] [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
 const FAILURE: &str = "Failed to send notification (is callosum running?)\n";
 
 #[must_use]
@@ -42,7 +42,6 @@ struct ParsedArgs {
     icon: Option<String>,
     event: String,
     action: Option<String>,
-    facet: Option<String>,
     app: Option<String>,
     badge: Option<String>,
     auto_dismiss: Option<i64>,
@@ -59,7 +58,6 @@ impl Default for ParsedArgs {
             icon: None,
             event: "show".to_string(),
             action: None,
-            facet: None,
             app: None,
             badge: None,
             auto_dismiss: None,
@@ -103,11 +101,10 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         } else if token == "--action" {
             index += 1;
             parsed.action = Some(take_value(args, index, "--action")?.to_string());
-        } else if let Some(value) = token.strip_prefix("--facet=") {
-            parsed.facet = Some(value.to_string());
-        } else if token == "--facet" {
-            index += 1;
-            parsed.facet = Some(take_value(args, index, "--facet")?.to_string());
+        } else if let Some(option) = retired_facet_option(token) {
+            return Err(format!(
+                "{option} is no longer supported; facet selection is workspace-local — use the app's own facet URL/query parameter"
+            ));
         } else if let Some(value) = token.strip_prefix("--app=") {
             parsed.app = Some(value.to_string());
         } else if token == "--app" {
@@ -171,9 +168,6 @@ fn notification_line(parsed: &ParsedArgs) -> String {
     if let Some(value) = parsed.action.as_deref() {
         fields.push(json_field("action", JsonValue::String(value)));
     }
-    if let Some(value) = parsed.facet.as_deref() {
-        fields.push(json_field("facet", JsonValue::String(value)));
-    }
     if let Some(value) = parsed.app.as_deref() {
         fields.push(json_field("app", JsonValue::String(value)));
     }
@@ -187,6 +181,14 @@ fn notification_line(parsed: &ParsedArgs) -> String {
         fields.push(json_field("dismissible", JsonValue::Bool(false)));
     }
     format!("{{{}}}\n", fields.join(", "))
+}
+
+fn retired_facet_option(token: &str) -> Option<&'static str> {
+    if token == "--facet" || token.starts_with("--facet=") {
+        Some("--facet")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,8 +286,8 @@ mod tests {
         let output = run_notify_case(&["--help"], None);
 
         assert_eq!(output, CommandOutput::success(HELP));
-        assert_eq!(HELP.len(), 1021);
         assert!(HELP.ends_with('\n'));
+        assert!(!HELP.contains("facet"));
     }
 
     #[test]
@@ -366,8 +368,6 @@ mod tests {
                 "custom",
                 "--action",
                 "/open",
-                "--facet",
-                "work",
                 "--app",
                 "alerts",
                 "--badge",
@@ -386,13 +386,33 @@ mod tests {
         assert_eq!(output.exit, 0);
         assert_eq!(
             sink.recorded(),
-            vec!["{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"facet\": \"work\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n".to_string()]
+            vec!["{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n".to_string()]
         );
         let line = &sink.recorded()[0];
         assert!(line.contains("\"autoDismiss\": 3000"));
         assert!(!line.contains("\"autoDismiss\": \"3000\""));
         assert!(line.contains("\"dismissible\": false"));
         assert!(!line.contains("\"dismissible\": true"));
+        assert!(!line.contains("\"facet\""));
+    }
+
+    #[test]
+    fn facet_options_are_rejected_before_a_notification_is_sent() {
+        for values in [
+            &["--facet", "work", "hello"][..],
+            &["--facet=work", "hello"][..],
+        ] {
+            let sink = RecordingNotificationSink::new();
+            let output = run_notify_case(values, Some(&sink));
+
+            assert_eq!(output.exit, 2, "{values:?}");
+            assert!(
+                output.stderr.contains("facet selection is workspace-local"),
+                "{values:?}: {}",
+                output.stderr
+            );
+            assert!(sink.recorded().is_empty(), "{values:?}");
+        }
     }
 
     #[test]
@@ -465,6 +485,8 @@ mod tests {
     fn malformed_args_follow_native_full_help_error_shape() {
         for (args, message) in [
             (vec!["--bogus", "hello"], "unrecognized arguments: --bogus"),
+            (vec!["-f", "hello"], "unrecognized arguments: -f"),
+            (vec!["-fwork", "hello"], "unrecognized arguments: -fwork"),
             (
                 vec!["--auto-dismiss", "nope", "hello"],
                 "argument --auto-dismiss: invalid int value: 'nope'",

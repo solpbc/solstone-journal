@@ -366,37 +366,36 @@ function addStaticElement(document, tagName, attributes = {}) {
 function shellFixture(options = {}) {
   const groups = [
     ['your_journal', [
-      ['home', 'home', 'primary', 0, false],
-      ['timeline', 'timeline', 'primary', 1, false],
-      ['transcripts', 'transcripts', null, 0, false],
-      ['speakers', 'speakers', null, 0, false],
-      ['body', 'body', null, 0, false],
-      ['news', 'newsletters', null, 0, false],
+      ['home', 'home', 'primary', 0],
+      ['timeline', 'timeline', 'primary', 1],
+      ['transcripts', 'transcripts', null, 0],
+      ['speakers', 'speakers', null, 0],
+      ['body', 'body', null, 0],
+      ['news', 'newsletters', null, 0],
     ]],
     ['understand', [
-      ['search', 'search', 'primary', 2, false],
-      ['entities', 'entities', 'primary', 3, true],
-      ['thinking', 'thinking', 'primary', 4, false],
-      ['stats', 'stats', null, 0, false],
-      ['curation', 'curation', null, 0, false],
-      ['activities', 'activities', null, 0, false],
+      ['search', 'search', 'primary', 2],
+      ['entities', 'entities', 'primary', 3],
+      ['thinking', 'thinking', 'primary', 4],
+      ['stats', 'stats', null, 0],
+      ['curation', 'curation', null, 0],
+      ['activities', 'activities', null, 0],
     ]],
     ['manage', [
-      ['import', 'import', 'management', 0, true],
-      ['network', 'network', null, 0, false],
-      ['backup', 'backup', null, 0, false],
-      ['health', 'health', null, 0, false],
-      ['support', 'support', null, 0, false],
-      ['settings', 'settings', 'management', 1, true],
+      ['import', 'import', 'management', 0],
+      ['network', 'network', null, 0],
+      ['backup', 'backup', null, 0],
+      ['health', 'health', null, 0],
+      ['support', 'support', null, 0],
+      ['settings', 'settings', 'management', 1],
     ]],
   ];
-  const apps = groups.flatMap(([launcherGroup, rows]) => rows.map(([name, label, railGroup, railRank, facetsEnabled], launcherRank) => ({
+  const apps = groups.flatMap(([launcherGroup, rows]) => rows.map(([name, label, railGroup, railRank], launcherRank) => ({
     app_bar: '',
     background_url: options.boot && (name === 'support' || name === 'timeline')
       ? '/app/' + name + '/background'
       : null,
     date_nav: false,
-    facets_enabled: facetsEnabled,
     icon: name,
     icon_svg: '',
     label,
@@ -446,7 +445,6 @@ function createHarness(options = {}) {
   launcher.style.position = 'fixed';
   addStaticElement(document, 'div', { id: 'status-instrument' });
   addStaticElement(document, 'div', { id: 'status-pane', class: 'status-pane' });
-  addStaticElement(document, 'nav', { id: 'facet-strip', class: 'facet-bar', hidden: '' });
   addStaticElement(document, 'main', { id: 'main-content' });
 
   const windowListeners = {};
@@ -529,7 +527,7 @@ function createHarness(options = {}) {
   }
   const bootSource = read('shell_boot.js').replace(
     /\s*boot\(\);\s*\}\)\(\);\s*$/,
-    '\n  window.__shellChrome = { renderAppRail, renderAppDock, renderAppLauncher, renderFacetStrip, renderStatusInstrument, installLauncherInteractions };\n'
+    '\n  window.__shellChrome = { renderAppRail, renderAppDock, renderAppLauncher, renderStatusInstrument, installLauncherInteractions };\n'
       + (options.boot ? '  window.__shellBoot = boot;\n' : '')
       + '})();\n',
   );
@@ -554,7 +552,6 @@ function renderChrome(harness, currentAppName) {
   harness.chrome.renderAppRail(harness.shell, currentAppName);
   harness.chrome.renderAppDock(harness.shell, currentAppName);
   harness.chrome.renderAppLauncher(harness.shell, currentAppName);
-  harness.chrome.renderFacetStrip(harness.shell, app);
   harness.chrome.renderStatusInstrument();
   harness.chrome.installLauncherInteractions();
 }
@@ -702,15 +699,6 @@ testCase('status instrument target', () => {
   assert.strictEqual(icon.getAttribute('aria-controls'), 'status-pane');
 });
 
-testCase('facet strip conditional visibility', () => {
-  const facetsEnabled = createHarness();
-  renderChrome(facetsEnabled, 'entities');
-  assert.ok(!facetsEnabled.document.querySelector('#facet-strip').hidden);
-
-  const facetsDisabled = createHarness();
-  renderChrome(facetsDisabled, 'home');
-  assert.ok(facetsDisabled.document.querySelector('#facet-strip').hidden);
-});
 
 asyncCase('unconverted workspace keeps its unavailable notice after boot', async () => {
   const harness = createHarness({

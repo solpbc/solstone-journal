@@ -31,24 +31,19 @@ server.
 
 ## Shell boot sequence
 
-1. Static shell parses with raw-hidden `#app-launcher` and `#facet-strip`, plus
-   `#app-rail`, `#app-dock`, and `#status-instrument` slots. The launcher is a
-   direct body child; the facet strip is an in-flow sibling immediately before
-   `<main>`.
+1. Static shell parses with `#app-launcher`, `#app-rail`, `#app-dock`, and
+   `#status-instrument` slots. The launcher is a direct body child.
 2. `GET /api/shell` returns the app registry and shell state. `shell_boot.js`
    calls `renderAppRail`, `renderAppDock`, `renderAppLauncher`,
-   `renderFacetStrip`, `renderStatusInstrument`, and
-   `installLauncherInteractions`. Only a `facets_enabled` current app unhides
-   the facet strip.
+   `renderStatusInstrument`, and `installLauncherInteractions`.
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its
    events.
 
-Facet selection persists in the `selectedFacet` cookie (client-owned); the
-day, where an app is day-scoped, lives in the URL path
-(`/app/{name}/{YYYYMMDD}`). Both are client-derived — the server never embeds
-them in HTML.
+Facet selection is workspace-local and uses the owning workspace's URL/query
+contract. The day, where an app is day-scoped, lives in the URL path
+(`/app/{name}/{YYYYMMDD}`). The server never embeds workspace state in HTML.
 
 ## `GET /api/shell` (contract sketch)
 
@@ -61,7 +56,6 @@ them in HTML.
       "label": "home",
       "icon": "🏠",
       "icon_svg": "<svg …>",
-      "facets_enabled": true,
       "date_nav": false,
       "app_bar": true,
       "launcher_group": "your_journal",
@@ -72,16 +66,14 @@ them in HTML.
       "background_url": null
     }
   ],
-  "facets": [{ "name": "work", "title": "Work", "color": "#4A90D9" }],
-  "selected_facet": "work",
   "settings": { "reporting_enabled": true }
 }
 ```
 
 Notes:
 
-- Each app has 13 fields: `app_bar`, `background_url`, `date_nav`,
-  `facets_enabled`, `icon`, `icon_svg`, `label`, `launcher_group`,
+- Each app has 12 fields: `app_bar`, `background_url`, `date_nav`, `icon`,
+  `icon_svg`, `label`, `launcher_group`,
   `launcher_rank`, `name`, `rail_group`, `rail_rank`, and `workspace_url`.
   The grouped launcher sorts by launcher group/rank. The pinned rail is the
   independent non-null rail group/rank projection; it is not a persisted

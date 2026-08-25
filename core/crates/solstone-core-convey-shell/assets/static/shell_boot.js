@@ -111,27 +111,8 @@
     }
   }
 
-  function applyBodyState(shell, app, day) {
+  function applyBodyState(app) {
     document.title = `${app.label} - journal`;
-    const facetBar = document.querySelector('.facet-bar');
-    if (facetBar) {
-      facetBar.classList.toggle('facets-disabled', !app.facets_enabled);
-    }
-
-    const existing = document.getElementById('facet-theme');
-    if (existing) existing.remove();
-    if (!app.facets_enabled || !shell.selected_facet) return;
-    const facet = (shell.facets || []).find((item) => item.name === shell.selected_facet);
-    if (!facet || !facet.color) return;
-    const style = document.createElement('style');
-    style.id = 'facet-theme';
-    style.textContent =
-      ':root {' +
-      `--facet-color: ${facet.color};` +
-      `--facet-bg: ${facet.color}1a;` +
-      `--facet-border: ${facet.color};` +
-      '}';
-    document.head.appendChild(style);
   }
 
   function appsByRank(shell, groupField, rankField, group) {
@@ -248,12 +229,6 @@
     });
   }
 
-  function renderFacetStrip(shell, app) {
-    const facetStrip = document.getElementById('facet-strip');
-    if (!facetStrip || !app.facets_enabled) return;
-    facetStrip.removeAttribute('hidden');
-  }
-
   function renderStatusInstrument() {
     const instrument = document.getElementById('status-instrument');
     if (!instrument || instrument.querySelector('.status-icon')) return;
@@ -331,10 +306,7 @@
     });
   }
 
-  function seedGlobals(shell, app) {
-    window.facetsData = shell.facets || [];
-    window.selectedFacet = app.facets_enabled ? shell.selected_facet : null;
-    window.appFacetCounts = {};
+  function seedGlobals(shell) {
     window.CONVEY_SETTINGS = {
       reportingEnabled: shell.settings?.reporting_enabled !== false
     };
@@ -364,14 +336,13 @@
       if (!app) {
         throw new Error('Unknown app');
       }
-      seedGlobals(shell, app);
+      seedGlobals(shell);
       renderAppRail(shell, app.name);
       renderAppDock(shell, app.name);
       renderAppLauncher(shell, app.name);
-      renderFacetStrip(shell, app);
       renderStatusInstrument();
       installLauncherInteractions();
-      applyBodyState(shell, app, context.day);
+      applyBodyState(app);
       window.resolveSolShellReady(shell);
 
       for (const backgroundApp of shell.apps || []) {

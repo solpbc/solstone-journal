@@ -197,14 +197,7 @@ fn navigate_help_runs_natively() {
 
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for token in [
-        "usage: journal navigate",
-        "-h",
-        "--help",
-        "-f",
-        "--facet",
-        "PATH",
-    ] {
+    for token in ["usage: journal navigate", "-h", "--help", "PATH"] {
         assert!(stdout.contains(token), "missing {token:?} from {stdout:?}");
     }
     assert_python_was_not_invoked(&harness.poison_marker);
@@ -247,16 +240,26 @@ fn facet_candidates_happy_path_runs_natively() {
 }
 
 #[test]
-fn navigate_happy_path_runs_natively() {
+fn navigate_path_only_happy_path_runs_natively() {
     let harness = Harness::new();
     let listener = harness.notification_listener();
-    let output = harness.run(&["navigate", "/app/work", "--facet", "work"], true);
+    let output = harness.run(&["navigate", "/app/work"], true);
 
     assert_eq!(output.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&output.stdout).starts_with("Navigate: "));
     assert_python_was_not_invoked(&harness.poison_marker);
     assert_eq!(
         notification(&listener),
-        json!({"tract": "navigate", "event": "request", "path": "/app/work", "facet": "work"})
+        json!({"tract": "navigate", "event": "request", "path": "/app/work"})
     );
+}
+
+#[test]
+fn navigate_facet_options_are_rejected_before_callosum() {
+    let harness = Harness::new();
+    let output = harness.run(&["navigate", "/app/work", "--facet=work"], true);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("facet selection is workspace-local"));
+    assert_python_was_not_invoked(&harness.poison_marker);
 }

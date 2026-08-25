@@ -15,7 +15,7 @@ use solstone_core_entity::{
 
 use crate::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, create_facet,
-    list_facet_entity_directories, read_activity_file, read_facet_declaration,
+    delete_facet, list_facet_entity_directories, read_activity_file, read_facet_declaration,
     read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
     read_todo_file, rename_facet, repair_facet_entity_links,
     repair_facet_entity_links_journal_wide, save_facet_entity_link, set_facet_muted, update_facet,
@@ -318,14 +318,10 @@ fn facet_entity_link_retarget_does_not_move_or_orphan_observations() {
 fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "old-facet");
-    write_json(
-        temporary.path(),
-        "config/convey.json",
-        &json!({
-            "facets": {"selected": "old-facet", "order": ["other", "old-facet"]},
-            "unrelated": {"preserved": true}
-        }),
-    );
+    let convey_path = temporary.path().join("config/convey.json");
+    fs::create_dir_all(convey_path.parent().unwrap()).unwrap();
+    let convey_bytes = br#"{ "facets": { "selected": "old-facet", "order": "malformed" }, "unrelated": { "preserved": true } }"#.to_vec();
+    fs::write(&convey_path, &convey_bytes).unwrap();
     let scope = json!({"kind": "facet", "facet": "old-facet"});
     let observation = AmbiguityObservation {
         scope: scope.clone(),
@@ -385,13 +381,23 @@ fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
             .unwrap()
             .is_some()
     );
-    let config: Value = serde_json::from_str(
-        &fs::read_to_string(temporary.path().join("config/convey.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(config["facets"]["selected"], "new-facet");
-    assert_eq!(config["facets"]["order"], json!(["other", "new-facet"]));
-    assert_eq!(config["unrelated"], json!({"preserved": true}));
+    assert_eq!(fs::read(convey_path).unwrap(), convey_bytes);
+}
+
+#[test]
+fn delete_facet_leaves_legacy_convey_selection_bytes_untouched() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "old-facet");
+    let convey_path = temporary.path().join("config/convey.json");
+    fs::create_dir_all(convey_path.parent().unwrap()).unwrap();
+    let convey_bytes =
+        br#"{ "facets": { "selected": "old-facet", "order": { "malformed": true } } }"#.to_vec();
+    fs::write(&convey_path, &convey_bytes).unwrap();
+
+    assert!(delete_facet(temporary.path(), "old-facet").unwrap());
+
+    assert!(!temporary.path().join("facets/old-facet").exists());
+    assert_eq!(fs::read(convey_path).unwrap(), convey_bytes);
 }
 
 #[test]

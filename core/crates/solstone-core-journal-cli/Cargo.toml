@@ -15,7 +15,6 @@ solstone-core-journal-io = { workspace = true }
 solstone-core-callosum = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
 solstone-core-facets = { workspace = true }
-solstone-core-convey-config = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]

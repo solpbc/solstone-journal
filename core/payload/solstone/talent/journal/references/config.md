@@ -40,16 +40,14 @@ This configuration helps meeting extraction identify the owner as a participant,
 
 ## Convey configuration
 
-The separate `config/convey.json` file stores UI/UX personalization (facet/app ordering, selected facet). All fields optional:
+The separate `config/convey.json` file stores optional app navigation personalization. Workspace-local facet selection is not stored here.
 
 ```json
 {
-  "facets": {"order": ["work", "personal"], "selected": "work"},
   "apps": {"order": ["home", "activities", "entities"]}
 }
 ```
 
-- `facets.order` – Custom facet ordering. `facets.selected` – Currently selected facet (auto-synced with browser).
 - `apps.order` – Custom app ordering in menu bar.
 
 ## Retention configuration

@@ -30,6 +30,11 @@ required-features = ["test-hooks"]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
 
+# Cargo auto-discovery is disabled; this frozen-corpus target proves the speakers surface makes no writes.
+[[test]]
+name = "full_speakers_corpus"
+path = "tests/full_speakers_corpus.rs"
+
 [[test]]
 name = "restart_protocol"
 path = "tests/restart_protocol.rs"
@@ -59,6 +64,11 @@ path = "tests/network_pairing_dom.rs"
 [[test]]
 name = "shell_chrome_dom"
 path = "tests/shell_chrome_dom.rs"
+
+# Cargo auto-discovery is disabled; this custom Node target drives global shell action handlers.
+[[test]]
+name = "shell_global_facet_contract_dom"
+path = "tests/shell_global_facet_contract_dom.rs"
 
 [lints]
 workspace = true

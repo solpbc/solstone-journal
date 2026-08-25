@@ -53,41 +53,18 @@ fn navigate_without_gate_override(journal: &Path, args: &[&str], spawned: bool) 
 }
 
 #[test]
-fn navigate_sends_the_flattened_request_after_the_gate() {
+fn navigate_sends_a_path_only_request_after_the_gate() {
     let journal = tempfile::tempdir().expect("journal");
     let listener = notification_listener(journal.path());
 
-    let output = navigate(journal.path(), &["/app/work", "--facet", "work"]);
+    let output = navigate(journal.path(), &["/app/work"]);
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stderr, b"");
-    assert_eq!(output.stdout, b"Navigate: /app/work [work]\n");
+    assert_eq!(output.stdout, b"Navigate: /app/work\n");
     assert_eq!(
         notification(&listener),
-        json!({"tract": "navigate", "event": "request", "path": "/app/work", "facet": "work"})
+        json!({"tract": "navigate", "event": "request", "path": "/app/work"})
     );
-}
-
-#[test]
-fn navigate_omits_unsupplied_request_keys() {
-    for (args, stdout, expected) in [
-        (
-            ["/app/work"].as_slice(),
-            b"Navigate: /app/work\n".as_slice(),
-            json!({"tract": "navigate", "event": "request", "path": "/app/work"}),
-        ),
-        (
-            ["--facet", "work"].as_slice(),
-            b"Navigate: [work]\n".as_slice(),
-            json!({"tract": "navigate", "event": "request", "facet": "work"}),
-        ),
-    ] {
-        let journal = tempfile::tempdir().expect("journal");
-        let listener = notification_listener(journal.path());
-        let output = navigate(journal.path(), args);
-        assert_eq!(output.status.code(), Some(0), "{args:?}");
-        assert_eq!(output.stdout, stdout, "{args:?}");
-        assert_eq!(notification(&listener), expected, "{args:?}");
-    }
 }
 
 #[test]
@@ -107,61 +84,35 @@ fn navigate_preserves_gate_and_parser_ordering() {
     assert_eq!(spawned.stderr, b"");
 
     let no_args = navigate(journal.path(), &[]);
-    assert_eq!(no_args.status.code(), Some(1));
+    assert_eq!(no_args.status.code(), Some(2));
     assert_eq!(no_args.stdout, b"");
-    assert_eq!(no_args.stderr, b"Error: provide a path and/or --facet\n");
+    assert!(String::from_utf8_lossy(&no_args.stderr).starts_with("usage: journal navigate"));
 
     let malformed = navigate_without_gate_override(journal.path(), &["--nonsense"], false);
     assert_eq!(malformed.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&malformed.stderr).starts_with("usage: journal navigate"));
 
-    for (args, path) in [
-        (["--facet", "work", "/app/work"].as_slice(), "/app/work"),
-        (["/app/work", "--facet", "work"].as_slice(), "/app/work"),
-        (["--facet=work", "/a"].as_slice(), "/a"),
-        (["-fwork", "/a"].as_slice(), "/a"),
-    ] {
-        let journal = tempfile::tempdir().expect("journal");
-        let listener = notification_listener(journal.path());
-        let output = navigate(journal.path(), args);
-        assert_eq!(output.status.code(), Some(0), "{args:?}");
-        assert_eq!(
-            output.stdout,
-            format!("Navigate: {path} [work]\n").as_bytes(),
-            "{args:?}"
-        );
-        assert_eq!(
-            notification(&listener),
-            json!({"tract": "navigate", "event": "request", "path": path, "facet": "work"}),
-            "{args:?}"
-        );
-    }
-}
-
-#[test]
-fn navigate_empty_values_reach_the_post_gate_guard_without_sending() {
     for args in [
-        ["--facet", ""].as_slice(),
-        [""].as_slice(),
-        ["--"].as_slice(),
+        ["--facet", "work", "/app/work"].as_slice(),
+        ["/app/work", "--facet=work"].as_slice(),
+        ["-f", "work", "/app/work"].as_slice(),
+        ["/app/work", "-fwork"].as_slice(),
     ] {
         let journal = tempfile::tempdir().expect("journal");
         let listener = notification_listener(journal.path());
         listener.set_nonblocking(true).expect("set nonblocking");
         let output = navigate(journal.path(), args);
-        assert_eq!(output.status.code(), Some(1), "{args:?}");
-        assert_eq!(output.stdout, b"", "{args:?}");
-        assert_eq!(
-            output.stderr, b"Error: provide a path and/or --facet\n",
-            "{args:?}"
-        );
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert_eq!(
             listener
                 .accept()
-                .expect_err("the guard must not connect")
+                .expect_err("rejected navigate must not connect")
                 .kind(),
             std::io::ErrorKind::WouldBlock,
             "{args:?}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("facet selection is workspace-local")
         );
     }
 }

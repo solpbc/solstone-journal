@@ -3,7 +3,7 @@
 .settings-wrap {
   font-family: system-ui, -apple-system, sans-serif;
   display: flex;
-  min-height: calc(100vh - var(--facet-bar-height, 60px) - 40px);
+  min-height: calc(100vh - 60px - 40px);
   max-width: 1200px;
   margin: 0 auto;
   padding: 1em;
@@ -25,9 +25,9 @@
   position: sticky;
   top: 1em;
   align-self: flex-start;
-  max-height: calc(100vh - var(--facet-bar-height, 60px) - 3em);
+  max-height: calc(100vh - 60px - 3em);
   overflow-y: auto;
-  border-right: 1px solid var(--facet-border, #e5e0db);
+  border-right: 1px solid var(--hairline);
   padding-right: 0.75rem;
 }
 
@@ -36,7 +36,7 @@
 }
 
 .settings-nav-group + .settings-nav-group {
-  border-top: 1px solid var(--facet-border, #e5e0db);
+  border-top: 1px solid var(--hairline);
   padding-top: 0.75rem;
 }
 
@@ -146,7 +146,7 @@
   font-size: 0.85em;
   margin-bottom: 1em;
   padding-bottom: 0.75em;
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-bottom: 1px solid var(--hairline);
   line-height: 1.4;
 }
 
@@ -158,7 +158,7 @@
   padding: 14px 4px;
   text-decoration: none;
   color: inherit;
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-bottom: 1px solid var(--hairline);
   cursor: pointer;
 }
 .sapp:last-child {
@@ -229,7 +229,7 @@
 .settings-field select {
   width: 100%;
   padding: 0.7em 0.85em;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   font-size: 0.95em;
   font-family: inherit;
@@ -296,7 +296,7 @@
 .settings-disclosure {
   margin-top: 0.75em;
   padding: 0.85em;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   background: #fff;
 }
@@ -893,13 +893,13 @@ input:checked + .slider:before {
 /* Activity log */
 .log-panel {
   background: #fafafa;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
 }
 
 .log-header {
   padding: 0.75em 1em;
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-bottom: 1px solid var(--hairline);
   font-weight: 600;
   font-size: 0.9em;
   color: #555;
@@ -973,7 +973,7 @@ input:checked + .slider:before {
 .log-more {
   padding: 0.5em 1em;
   text-align: center;
-  border-top: 1px solid var(--facet-border, #e5e0db);
+  border-top: 1px solid var(--hairline);
 }
 
 .log-more-btn {
@@ -1414,7 +1414,7 @@ input:checked + .slider:before {
 
 /* Activities section */
 .activities-section {
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -1425,7 +1425,7 @@ input:checked + .slider:before {
   justify-content: space-between;
   padding: 0.75em 1em;
   background: #f8f8f8;
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .activities-title {
@@ -1766,7 +1766,7 @@ button:focus:not(:focus-visible) {
 
 .settings-summary-card {
   background: #fafafa;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 1em 1.25em;
   margin-bottom: 1.5em;
@@ -1866,7 +1866,7 @@ button:focus:not(:focus-visible) {
 .settings-danger-section {
   margin-top: 2em;
   padding-top: 1.5em;
-  border-top: 1px solid var(--facet-border, #e5e0db);
+  border-top: 1px solid var(--hairline);
 }
 
 .facet-detail-page {
@@ -1931,7 +1931,7 @@ button:focus:not(:focus-visible) {
 
 .facet-list-row {
   align-items: center;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   color: inherit;
   display: flex;
@@ -2013,7 +2013,7 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-detail-tabs {
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-bottom: 1px solid var(--hairline);
   display: flex;
   gap: 0.25rem;
   margin-bottom: 1.25rem;

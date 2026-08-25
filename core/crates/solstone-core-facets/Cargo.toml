@@ -19,7 +19,6 @@ solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
-solstone-core-convey-config.workspace = true
 
 [features]
 test-hooks = []

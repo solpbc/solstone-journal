@@ -436,10 +436,10 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
         fs::read(journal.join("facets/dest/news/20260807.md")).unwrap(),
         b"source-only\n"
     );
-    let convey: Value =
-        serde_json::from_slice(&fs::read(journal.join("config/convey.json")).unwrap()).unwrap();
-    assert_eq!(convey["facets"]["selected"], Value::Null);
-    assert_eq!(convey["facets"]["order"], serde_json::json!(["dest"]));
+    assert_eq!(
+        fs::read(journal.join("config/convey.json")).unwrap(),
+        b"{\"facets\":{\"selected\":\"source\",\"order\":[\"dest\",\"source\"]}}\n"
+    );
     assert_sentinel_untouched(&sentinel);
 }
 
@@ -685,8 +685,6 @@ fn journal_identity_notify_reuses_the_native_handler_and_socket_protocol() {
             "custom",
             "--action",
             "/open",
-            "--facet",
-            "work",
             "--app",
             "alerts",
             "--badge",
@@ -709,7 +707,7 @@ fn journal_identity_notify_reuses_the_native_handler_and_socket_protocol() {
         received
             .join()
             .expect("notification listener should finish"),
-        "{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"facet\": \"work\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n"
+        "{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n"
     );
     assert_sentinel_untouched(&sentinel);
 }

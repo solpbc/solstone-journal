@@ -1,6 +1,6 @@
 /**
  * App System Styles
- * Styles for the app.html template system (facet bar and shared chrome)
+ * Styles for the app.html template system and shared chrome.
  */
 
 /* ========================================
@@ -12,10 +12,6 @@
 }
 
 /* Assign transition names to persistent structural elements */
-.facet-bar {
-  view-transition-name: facet-bar;
-}
-
 #app-rail {
   view-transition-name: app-rail;
 }
@@ -45,8 +41,6 @@
 }
 
 /* Keep structural elements stable (no animation) */
-::view-transition-old(facet-bar),
-::view-transition-new(facet-bar),
 ::view-transition-old(app-rail),
 ::view-transition-new(app-rail),
 ::view-transition-old(corner-tags),
@@ -68,11 +62,8 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Default theme (when no facet is selected) */
+/* Shared shell tokens. */
 :root {
-  --facet-color: #b06a1a;
-  --facet-bg: transparent;
-  --facet-border: var(--hairline);
   /* Semantic status palette — observer is the first consumer. */
   --status-active: var(--success);
   --status-stale: var(--warn);
@@ -80,7 +71,6 @@ html {
   --status-inactive: var(--ink-faint);
 
   /* Layout dimensions */
-  --facet-bar-height: 64px;
   --app-rail-width: 72px;
   --app-dock-height: 64px;
   --status-instrument-inset: 20px;
@@ -89,7 +79,7 @@ html {
   --status-pane-width: 280px;
 
   /* Z-index hierarchy (increasing order) */
-  --z-bars: 100;          /* Facet bar, rail, dock */
+  --z-bars: 100;          /* Rail and dock */
   --z-modals: 200;        /* Modal overlays */
   --z-notifications: 300; /* Notifications, status pane, error log */
   --z-tags: 400;          /* Corner tags - topmost layer */
@@ -145,46 +135,6 @@ body.has-managed-dialog .workspace {
   .workspace-content-wide {
     padding: 1rem;
   }
-}
-
-/* In-flow facet strip */
-/* A hidden strip reserves nothing. `display: flex` below otherwise beats the UA
-   `[hidden] { display: none }` rule, which reserved an empty 64px band on every
-   app without facet controls. */
-.facet-bar[hidden] {
-  display: none;
-}
-
-.facet-bar {
-  position: relative;
-  margin-left: var(--app-rail-width);
-  background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
-  z-index: var(--z-bars);
-  min-height: var(--facet-bar-height);
-  padding: 14px 16px 12px 16px;
-  overflow: visible;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* Border as pseudo-element for selective positioning */
-.facet-bar::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--facet-border, #e5e0db);
-  transition: background-color 0.3s ease;
-  pointer-events: none;
-}
-
-/* When status pane open, stop border before it */
-body:has(.status-pane.visible) .facet-bar::after {
-  right: var(--status-pane-width);
 }
 
 /* The instrument is the mark AND its state label, laid out as one row and
@@ -249,8 +199,8 @@ body:has(.status-pane.visible) .facet-bar::after {
   right: var(--status-instrument-inset);
   width: var(--status-pane-width);
   background: white;
-  border-left: 1px solid var(--facet-border, #e5e0db);
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-left: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
   border-radius: 12px;
   /* Shadow only on left and bottom - offset down to avoid top bleed */
   box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.1);
@@ -273,7 +223,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: var(--facet-bg, transparent);
+  background: transparent;
   border-radius: 12px;
   pointer-events: none;
   z-index: -1;
@@ -319,8 +269,8 @@ body:has(.status-pane.visible) .facet-bar::after {
   left: calc(var(--app-rail-width) + var(--chrome-gap));
   width: min(520px, calc(100vw - 24px));
   background: white;
-  border-right: 1px solid var(--facet-border, #e5e0db);
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
   border-radius: 12px;
   box-shadow: 4px 4px 8px -2px rgba(0, 0, 0, 0.1);
   z-index: var(--z-notifications);
@@ -611,71 +561,14 @@ body:has(.status-pane.visible) .facet-bar::after {
   opacity: 0.8;
 }
 
-.facet-bar .facet-pills-container {
-  flex: 1;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
-  overflow-x: clip;
-  overflow-y: visible;
-  min-width: 0;  /* Allow container to shrink below content size */
-}
-
-@media (max-width: 768px) {
-  .facet-bar .facet-pills-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;  /* Beats the base center by source order */
-    gap: 8px;
-  }
-
-  .facet-bar {
-    padding-inline: 8px;
-    gap: 8px;
-  }
-
-  /* Mobile: pills keep their content width so the row overflows and scrolls
-     instead of compressing. Wins the unconditional .facet-pill flex-shrink: 1
-     below by specificity, since that rule is later in source. */
-  .facet-bar .facet-pills-container .facet-pill {
-    flex-shrink: 0;
-    min-inline-size: 44px;
-    padding-inline: 6px;
-  }
-
-  /* Leave enough trailing scroll room for a selected pill's heavier label. */
-  .facet-bar .facet-pills-container::after {
-    content: "";
-    flex: 0 0 8px;
-  }
-
-  /* The row scrolls (pills keep content width, above). While there is more of it to the
-     right, fade the trailing edge so a clipped pill reads as "there is more" instead of as
-     the status mark covering it. A mask, not a gradient cover: the ground here is
-     .facet-bar's --facet-bg tint composited over --paper, so no cover colour can match it,
-     while a mask fades to whatever is actually behind. */
-  .facet-bar .facet-pills-container.scroll-fade-end {
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
-    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
-  }
-
-  /* Never let the fade sit over a keyboard focus ring (WCAG 2.4.11). Arrowing along the
-     toolbar parks the focused pill flush against the trailing edge. */
-  .facet-bar .facet-pills-container.scroll-fade-end:focus-within {
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-}
-
 /* App rail, dock, and launcher */
 #app-rail {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--app-rail-width);
   padding: 12px 8px;
-  background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
-  border-right: 1px solid var(--facet-border, #e5e0db);
+  background: var(--paper);
+  border-right: 1px solid var(--hairline);
   box-shadow: 1px 0 3px rgba(0, 0, 0, 0.04);
   z-index: calc(var(--z-bars) + 1);
   display: flex;
@@ -719,8 +612,8 @@ body:has(.status-pane.visible) .facet-bar::after {
 .app-launcher-toggle.is-current,
 .app-rail-link.is-current,
 .app-dock-link.is-current {
-  background: color-mix(in srgb, var(--facet-color) 18%, transparent);
-  color: var(--facet-color);
+  background: color-mix(in srgb, var(--orange-ink) 18%, transparent);
+  color: var(--orange-ink);
   position: relative;
 }
 
@@ -736,7 +629,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   height: 24px;
   transform: translateY(-50%);
   border-radius: 0 2px 2px 0;
-  background: var(--facet-color);
+  background: var(--orange-ink);
 }
 
 .app-chrome-icon {
@@ -774,7 +667,7 @@ body:has(.status-pane.visible) .facet-bar::after {
 .app-rail-divider {
   align-self: stretch;
   height: 1px;
-  background: var(--facet-border, #e5e0db);
+  background: var(--hairline);
   margin: 4px 0;
 }
 
@@ -801,7 +694,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   max-height: min(720px, 100%);
   overflow-y: auto;
   padding: 20px;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   background: var(--paper);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
@@ -845,7 +738,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   min-height: 44px;
   margin-top: 6px;
   padding: 8px 10px;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
   background: white;
   color: inherit;
@@ -877,7 +770,7 @@ body:has(.status-pane.visible) .facet-bar::after {
 
 .app-launcher-app a:hover,
 .app-launcher-app a[aria-current="page"] {
-  background: color-mix(in srgb, var(--facet-color) 12%, transparent);
+  background: color-mix(in srgb, var(--orange-ink) 12%, transparent);
 }
 
 .app-launcher-empty {
@@ -902,8 +795,8 @@ body:has(.status-pane.visible) .facet-bar::after {
     left: 0;
     height: var(--app-dock-height);
     padding: 8px;
-    background: linear-gradient(var(--facet-bg, transparent), var(--facet-bg, transparent)), var(--paper);
-    border-top: 1px solid var(--facet-border, #e5e0db);
+    background: var(--paper);
+    border-top: 1px solid var(--hairline);
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
     z-index: calc(var(--z-bars) + 1);
     display: grid;
@@ -936,7 +829,6 @@ body:has(.status-pane.visible) .facet-bar::after {
     line-height: 1.2;
   }
 
-  .facet-bar,
   .workspace {
     margin-left: 0;
   }
@@ -956,226 +848,6 @@ body:has(.status-pane.visible) .facet-bar::after {
   }
 }
 
-.facet-pill {
-  appearance: none;
-  font-family: inherit;
-  color: inherit;
-  line-height: inherit;
-  display: flex;
-  align-items: center;
-  padding: 8px 16px;
-  border-radius: 20px;
-  background: var(--pill-bg-rest, #f5f5f5);
-  border: 1px solid var(--facet-border, #e5e0db);
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 500;
-  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
-  user-select: none;
-  position: relative;
-  min-width: 0;        /* Allow pill to shrink below content size */
-  flex-shrink: 1;      /* Allow shrinking when space is tight */
-}
-
-.facet-pill .label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;        /* Can shrink to zero width */
-  flex-shrink: 1;
-  user-select: none;
-  pointer-events: none;
-}
-
-/* Dim unselected pills when a facet is selected */
-.facet-pill:not(.selected) {
-  opacity: 0.85;
-}
-
-.facet-pills-container:not(:has(.selected)) .facet-pill {
-  opacity: 1;
-}
-
-/* "all" label - muted caption before first pill in all-mode */
-.facet-all-label {
-  font-size: 12px;
-  color: #999;
-  text-transform: lowercase;
-  letter-spacing: 0.04em;
-  padding: 0 6px 0 0;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
-}
-
-/* Hide "all" label when a facet is selected (CSS backup for JS toggle) */
-.facet-pills-container:has(.selected) .facet-all-label {
-  display: none;
-}
-
-/* Empty state: no facets configured */
-.facet-empty-state {
-  font-size: 12px;
-  color: #999;
-  white-space: nowrap;
-  user-select: none;
-  padding: 0 4px;
-}
-
-.facet-empty-create {
-  background: none;
-  border: none;
-  color: #777;
-  cursor: pointer;
-  text-decoration: underline;
-  font-size: inherit;
-  font-family: inherit;
-  padding: 0;
-}
-
-.facet-empty-create:hover {
-  color: #555;
-}
-
-.facet-pill:hover {
-  opacity: 1;
-  border-color: var(--pill-color, #999);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  background: var(--pill-bg, #f5f5f5);
-}
-
-.facet-pill.selected:hover {
-  background: color-mix(in srgb, var(--pill-color, var(--orange)) 22%, var(--paper));
-  opacity: 1;
-  border-color: var(--pill-color, var(--orange));
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-.facet-pill.selected {
-  opacity: 1;
-  background: color-mix(in srgb, var(--pill-color, var(--orange)) 14%, var(--paper));
-  color: var(--ink);
-  border-color: var(--pill-color, var(--orange));
-  font-weight: 600;
-}
-
-.facet-pill .emoji-container {
-  position: relative;
-  font-size: 24px;
-  line-height: 1;
-  margin-top: 1px;
-  margin-right: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  user-select: none;
-  pointer-events: none;
-  flex-shrink: 0;      /* Never shrink the emoji */
-}
-
-.facet-pill .emoji {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  line-height: 0;
-  user-select: none;
-  pointer-events: none;
-}
-
-.facet-pill .emoji svg {
-  display: block;
-  color: inherit;
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  flex-shrink: 0;
-}
-
-.facet-pill .emoji svg * {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-}
-
-.facet-pill .facet-badge {
-  position: absolute;
-  bottom: -3px;
-  right: -5px;
-  min-width: 16px;
-  height: 16px;
-  font-size: 11px;
-  font-weight: 600;
-  background: #ef4444;
-  color: white;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
-  line-height: 1;
-  user-select: none;
-  pointer-events: none;
-  box-shadow: 0 0 0 2px white;
-  animation: badge-pop 0.2s ease;
-}
-
-.status-icon .quiet-notif-badge {
-  position: absolute;
-  bottom: -2px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
-  padding: 0 3px;
-  font-size: 11px;
-  font-weight: 600;
-  background: #ef4444;
-  color: white;
-  box-shadow: 0 0 0 2px white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  user-select: none;
-  animation: badge-pop 0.2s ease;
-}
-
-/* Drag-and-drop states */
-.facet-pill:active:not(.dragging) {
-  transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-}
-
-.facet-pill.dragging {
-  opacity: 0.5;
-  cursor: grabbing;
-  transform: scale(1.05) rotate(2deg);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.2);
-  z-index: calc(var(--z-bars) + 1); /* Above bars, below modals */
-  transition: none; /* Disable transitions while dragging */
-}
-
-.facet-pill.drag-over {
-  /* Subtle indicator only - actual reordering happens via DOM manipulation */
-  transform: scale(0.95);
-}
-
-/* Apps without facet support - all pills identical, no selection */
-.facet-bar.facets-disabled .facet-pill {
-  pointer-events: none;
-  cursor: default;
-  opacity: 0.55;
-  filter: grayscale(0.4);
-}
-
 /* Notification Center */
 .notification-center {
   position: fixed;
@@ -1192,7 +864,7 @@ body:has(.status-pane.visible) .facet-bar::after {
 /* Notification Card */
 .notification-card {
   background: white;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   padding: 12px;
@@ -1451,7 +1123,7 @@ a.notification-card:active {
   width: 100%;
   box-sizing: border-box;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
   font: inherit;
 }
@@ -1527,7 +1199,7 @@ a.notification-card:active {
   position: absolute;
   width: 16px;
   height: 16px;
-  background: var(--facet-color);
+  background: var(--orange-ink);
   mask-size: contain;
   -webkit-mask-size: contain;
   image-rendering: pixelated;
@@ -1538,167 +1210,6 @@ a.notification-card:active {
 .corner-tag-tr { top: 0; right: 0; mask-image: url('tags/tag-7.png'); -webkit-mask-image: url('tags/tag-7.png'); }
 .corner-tag-bl { bottom: 32px; left: 0; mask-image: url('tags/tag-4.png'); -webkit-mask-image: url('tags/tag-4.png'); }
 .corner-tag-br { bottom: 32px; right: 0; mask-image: url('tags/tag-2.png'); -webkit-mask-image: url('tags/tag-2.png'); }
-
-/* ========================================
- * Facet Add Button
- * Plus button to create new facets
- * ======================================== */
-.facet-add-pill {
-  appearance: none;
-  font-family: inherit;
-  color: inherit;
-  line-height: inherit;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: transparent;
-  border: 2px dashed #ccc;
-  cursor: pointer;
-  font-size: 20px;
-  color: #999;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.facet-add-pill:hover {
-  border-color: var(--facet-color, #b06a1a);
-  color: var(--facet-color, #b06a1a);
-  background: var(--facet-bg, rgba(176, 106, 26, 0.1));
-  transform: scale(1.1);
-}
-
-.facet-add-pill:active {
-  transform: scale(0.95);
-}
-
-/* ========================================
- * Facet Create Modal
- * Simple modal for creating new facets
- * ======================================== */
-.facet-create-modal {
-  display: none;
-  position: fixed;
-  z-index: var(--z-modals);
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-}
-
-.facet-create-modal.visible {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.facet-create-content {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-
-.facet-create-content h3 {
-  margin: 0 0 20px 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-}
-
-.facet-create-field {
-  margin-bottom: 16px;
-}
-
-.facet-create-field label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #555;
-  margin-bottom: 6px;
-}
-
-.facet-create-field input {
-  width: 100%;
-  padding: 11px 13px;
-  border: 1px solid var(--facet-border, #e5e0db);
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.2s;
-}
-
-.facet-create-field input:focus {
-  outline: none;
-  border-color: var(--facet-color, #b06a1a);
-}
-
-.facet-create-slug {
-  font-size: 13px;
-  color: #888;
-  margin-top: 6px;
-  font-family: monospace;
-}
-
-.facet-create-slug.has-slug::before {
-  content: "→ ";
-}
-
-.facet-create-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.facet-create-buttons button {
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.facet-create-cancel {
-  background: #f5f5f5;
-  border: 1px solid var(--facet-border, #e5e0db);
-  color: #666;
-}
-
-.facet-create-cancel:hover {
-  background: #e5e5e5;
-}
-
-.facet-create-submit {
-  background: var(--orange);
-  border: none;
-  color: var(--ink);
-}
-
-.facet-create-submit:hover {
-  opacity: 0.9;
-}
-
-.facet-create-submit:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-
-.facet-create-error {
-  color: #dc2626;
-  font-size: 13px;
-  margin-top: 8px;
-  display: none;
-}
-
-.facet-create-error.visible {
-  display: block;
-}
 
 /* Button reset for a11y-converted controls */
 button.status-icon,
@@ -1730,31 +1241,7 @@ button.close {
     animation-iteration-count: 1 !important;
   }
 
-  .facet-pill:hover {
-    transform: none;
-  }
-
-  .facet-pill:active:not(.dragging) {
-    transform: none;
-  }
-
-  .facet-pill.dragging {
-    transform: none;
-  }
-
-  .facet-pill.drag-over {
-    transform: none;
-  }
-
-  .facet-add-pill:hover {
-    transform: none;
-  }
-
   a.notification-card:hover {
-    transform: none;
-  }
-
-  .facet-add-pill:active {
     transform: none;
   }
 
@@ -1772,15 +1259,11 @@ button.close {
 }
 
 /* Focus-visible states for keyboard navigation */
-.facet-pill:focus-visible,
-.facet-add-pill:focus-visible,
 #status-instrument .status-icon:focus-visible,
-.facet-create-submit:focus-visible,
-.facet-create-cancel:focus-visible,
 .notification-card:focus-visible,
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--orange-ink);
   outline-offset: 2px;
 }
 
@@ -1874,12 +1357,12 @@ a:focus-visible {
 }
 
 .surface-state-action > button:focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--orange-ink);
   outline-offset: 2px;
 }
 
 .surface-state-action > a:not([class]) {
-  color: var(--facet-color, #2563eb);
+  color: var(--orange-ink);
   text-decoration: none;
   font-weight: 500;
 }
@@ -1889,7 +1372,7 @@ a:focus-visible {
 }
 
 .surface-state-action > a:not([class]):focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--orange-ink);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -1931,7 +1414,7 @@ a:focus-visible {
 
 .surface-state-action-row > button:focus-visible,
 .surface-state-action-row > a:focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--orange-ink);
   outline-offset: 2px;
 }
 
@@ -1947,7 +1430,7 @@ a:focus-visible {
   width: 24px;
   height: 24px;
   border: 3px solid #e5e7eb;
-  border-top-color: var(--facet-color, #b06a1a);
+  border-top-color: var(--orange-ink);
   border-radius: 50%;
   animation: surface-state-spin 0.8s linear infinite;
 }
@@ -1976,7 +1459,7 @@ a:focus-visible {
 .surface-state-detail summary {
   width: fit-content;
   margin: 0 auto 6px;
-  color: var(--facet-color, #92400e);
+  color: var(--orange-ink);
   cursor: pointer;
 }
 
@@ -1985,7 +1468,7 @@ a:focus-visible {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--facet-color, #92400e);
+  color: var(--orange-ink);
   font: inherit;
   cursor: pointer;
 }
@@ -2087,14 +1570,6 @@ body.presentation-mode #app-dock,
 body.presentation-mode #status-instrument,
 body.presentation-mode .status-pane {
   display: none;
-}
-
-body.presentation-mode .facet-bar {
-  font-size: 1.05rem;
-}
-body.presentation-mode .facet-pills-container .facet-pill {
-  font-size: 1rem;
-  padding: 6px 14px;
 }
 
 /* Minor: surface-state empty/error blocks read at distance. */

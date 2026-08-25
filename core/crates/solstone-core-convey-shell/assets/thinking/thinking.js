@@ -1659,9 +1659,6 @@
     $('thinkingRunsDate')?.addEventListener('change', (event) => navigateThinkingRunsDay(0, runsDayFromInput(event.target.value)));
     $('thinkingRunsFacet')?.addEventListener('change', (event) => {
       setRunsFacet(event.target.value, Boolean(event.target.value));
-      const expires = new Date();
-      expires.setFullYear(expires.getFullYear() + 1);
-      document.cookie = `selectedFacet=${state.runsFacet}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
       const route = parseThinkingHash();
       if (route?.kind === 'runs') {
         const next = currentThinkingRunsRoute(route);

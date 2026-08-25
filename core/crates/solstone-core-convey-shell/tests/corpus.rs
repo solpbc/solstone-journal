@@ -240,35 +240,32 @@ fn apply_permanent_starred_removal_divergence(expected: &mut Value) {
     }
 }
 
-/// Permanent documented divergence, introduced 2026-08-24, with no expiry
-/// condition: the frozen corpus records the reference shell's facet strip for
-/// Activities, Import, and Search, while the native chrome now enables facets
-/// only for Entities and Settings. The corpus CANNOT be regenerated -- its
-/// generator needs a runnable reference tree and this wave removes it -- so
-/// the fixture is a frozen record and the divergence is absorbed here instead.
-/// Because this cannot expire, narrowness is the safeguard: it flips only the
-/// three named rows. Never generalize this into a rule over facet-enabled apps,
-/// and never retire it.
-fn apply_permanent_facets_enabled_divergence(expected: &mut Value) {
-    let apps = expected["apps"]
-        .as_array_mut()
+/// The frozen corpus predates removal of the global shell facet contract.
+/// Validate every frozen field before removing it, so the final equality check
+/// proves the native shell no longer publishes the contract.
+fn apply_permanent_global_facet_contract_removal_divergence(expected: &mut Value) {
+    let root = expected.as_object_mut().expect("frozen shell is an object");
+    assert!(
+        matches!(root.remove("facets"), Some(Value::Array(_))),
+        "frozen shell contains an array facets field"
+    );
+    assert!(
+        matches!(
+            root.remove("selected_facet"),
+            Some(Value::Null | Value::String(_))
+        ),
+        "frozen shell contains a null or string selected_facet field"
+    );
+    let apps = root
+        .get_mut("apps")
+        .and_then(Value::as_array_mut)
         .expect("shell apps are an array");
-    for name in ["activities", "import", "search"] {
-        let matches: Vec<_> = apps.iter_mut().filter(|app| app["name"] == name).collect();
-        assert_eq!(
-            matches.len(),
-            1,
-            "frozen shell contains exactly one {name} app"
-        );
-        let app = matches.into_iter().next().expect("matching app exists");
-        assert_eq!(
-            app["facets_enabled"],
-            Value::Bool(true),
-            "frozen shell {name} app enables facets"
-        );
+    for app in apps {
         app.as_object_mut()
             .expect("shell app is an object")
-            .insert("facets_enabled".to_owned(), Value::Bool(false));
+            .remove("facets_enabled")
+            .filter(Value::is_boolean)
+            .expect("frozen shell app contains boolean facets_enabled");
     }
 }
 
@@ -335,55 +332,61 @@ fn permanent_starred_removal_divergence_requires_starred_on_every_app_row() {
 }
 
 #[test]
-fn permanent_facets_enabled_divergence_requires_all_three_enabled_target_rows() {
-    for name in ["activities", "import", "search"] {
-        let enabled = || {
-            json!({
-                "apps": [
-                    {"name": "activities", "facets_enabled": true},
-                    {"name": "import", "facets_enabled": true},
-                    {"name": "search", "facets_enabled": true}
-                ]
-            })
-        };
-        let mut missing = enabled();
-        missing["apps"]
-            .as_array_mut()
-            .expect("apps are an array")
-            .retain(|app| app["name"] != name);
-        let mut disabled = enabled();
-        disabled["apps"]
-            .as_array_mut()
-            .expect("apps are an array")
-            .iter_mut()
-            .find(|app| app["name"] == name)
-            .expect("named app exists")["facets_enabled"] = Value::Bool(false);
-        let mut duplicate = enabled();
-        let app = duplicate["apps"]
-            .as_array()
-            .expect("apps are an array")
-            .iter()
-            .find(|app| app["name"] == name)
-            .expect("named app exists")
-            .clone();
-        duplicate["apps"]
-            .as_array_mut()
-            .expect("apps are an array")
-            .push(app);
-
-        for (case, mut expected) in [
-            ("missing", missing),
-            ("disabled", disabled),
-            ("duplicate", duplicate),
-        ] {
+fn global_facet_contract_divergence_rejects_missing_or_malformed_fields_before_row_removal() {
+    let fixture = || {
+        json!({
+            "facets": [],
+            "selected_facet": null,
+            "apps": [
+                {"name": "home", "facets_enabled": false},
+                {"name": "sol", "facets_enabled": true}
+            ]
+        })
+    };
+    for name in ["home", "sol"] {
+        for value in [None, Some(Value::String("true".to_owned()))] {
+            let mut expected = fixture();
+            let app = expected["apps"]
+                .as_array_mut()
+                .expect("apps are an array")
+                .iter_mut()
+                .find(|app| app["name"] == name)
+                .expect("named app exists")
+                .as_object_mut()
+                .expect("app object");
+            match value {
+                Some(value) => {
+                    app.insert("facets_enabled".to_owned(), value);
+                }
+                None => {
+                    app.remove("facets_enabled");
+                }
+            }
             assert!(
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    apply_permanent_facets_enabled_divergence(&mut expected);
+                    apply_permanent_global_facet_contract_removal_divergence(&mut expected);
                 }))
                 .is_err(),
-                "{case} {name} target row must fail the narrow divergence"
+                "{name} must be validated before later row removal"
             );
         }
+    }
+    for (field, malformed) in [
+        ("facets", Value::Bool(false)),
+        ("selected_facet", Value::Array(Vec::new())),
+    ] {
+        let mut expected = fixture();
+        expected
+            .as_object_mut()
+            .expect("shell object")
+            .insert(field.to_owned(), malformed);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                apply_permanent_global_facet_contract_removal_divergence(&mut expected);
+            }))
+            .is_err(),
+            "malformed {field} must fail"
+        );
     }
 }
 
@@ -598,13 +601,13 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     serde_json::from_slice(&body).expect("JSON response parses");
                 let mut expected = expected_json.clone();
                 if phase == "established" && path == "/api/shell" {
+                    apply_permanent_global_facet_contract_removal_divergence(&mut expected);
                     apply_permanent_devices_shell_divergence(&mut expected);
                     apply_permanent_reflections_drop_divergence(&mut expected);
                     apply_permanent_tokens_removal_divergence(&mut expected);
                     apply_permanent_sol_removal_divergence(&mut expected);
                     apply_permanent_chat_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
-                    apply_permanent_facets_enabled_divergence(&mut expected);
                     strip_permanent_launcher_metadata_from_actual(&mut actual);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
@@ -654,8 +657,8 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     assert!(shell.get("chat_bar").is_none());
     assert_eq!(apps.len(), 18);
     for app in apps {
-        // `starred` was removed; launcher and rail metadata add four fields.
-        assert_eq!(app.as_object().unwrap().len(), 13);
+        // `starred` and the global facet capability were removed; launcher and rail metadata add four fields.
+        assert_eq!(app.as_object().unwrap().len(), 12);
         assert!(app["icon_svg"].is_string());
     }
     let backgrounds: Vec<_> = apps

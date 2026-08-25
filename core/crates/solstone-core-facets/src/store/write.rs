@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_convey_config::{clear_facet_references, rename_facet_references};
 use solstone_core_journal_io::{JsonWriteOptions, path_lexists, remove_dir_all, write_json};
 
 use crate::hold_facet_trust_lock;
@@ -48,14 +47,13 @@ pub fn create_facet(
     save_facet_declaration(journal_root, facet_dir, &Value::Object(declaration))
 }
 
-/// Delete a facet and clear its convey selection/order when applicable.
+/// Delete a facet directory when its declaration exists.
 pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
     let path = declaration_path(journal_root, facet_dir)?;
     if read_facet_declaration(journal_root, facet_dir)?.is_none() {
         return Ok(false);
     }
-    clear_facet_references(journal_root, facet_dir);
     remove_dir_all(journal_root, &format!("facets/{facet_dir}"))
         .map_err(FacetWriteError::EntityLinkRemoval)?;
     let _ = path;
@@ -227,7 +225,6 @@ pub fn rename_facet(
         new_path: new_path.clone(),
         source,
     })?;
-    rename_facet_references(journal_root, old_name, new_name);
     Ok(FacetRenameResult {
         old_name: old_name.to_owned(),
         new_name: new_name.to_owned(),

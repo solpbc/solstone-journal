@@ -7,8 +7,8 @@ Convey apps are native. There is no `solstone/apps/` plugin directory and no
 
 Register the app in
 `core/crates/solstone-core-convey-shell/src/registry.rs` (`APP_REGISTRY`).
-That table is the metadata `app.json` used to carry: name, icon, label, date
-nav, facets.
+That table is the metadata `app.json` used to carry: name, icon, label, and
+date navigation.
 
 The HTTP surface is a `*-web` crate (`solstone-core-health-web`,
 `solstone-core-home-web`, …) or assets under
@@ -21,8 +21,8 @@ Framework-level shell changes live in [CONVEY.md](CONVEY.md).
 
 ## Shell chrome metadata
 
-`/api/shell` exposes each registry row as a 13-field `ShellApp`: `app_bar`,
-`background_url`, `date_nav`, `facets_enabled`, `icon`, `icon_svg`, `label`,
+`/api/shell` exposes each registry row as a 12-field `ShellApp`: `app_bar`,
+`background_url`, `date_nav`, `icon`, `icon_svg`, `label`,
 `launcher_group`, `launcher_rank`, `name`, `rail_group`, `rail_rank`, and
 `workspace_url`. There is no starred-app state.
 

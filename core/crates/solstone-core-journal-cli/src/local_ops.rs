@@ -19,9 +19,6 @@ use std::path::{Path, PathBuf};
 use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use solstone_core_convey_config::{
-    prepare_remove_facet_references, publish_update, restore_update,
-};
 use solstone_core_facets::{append_action_log, hold_facet_trust_lock, write_news_file};
 #[cfg(not(target_os = "ios"))]
 use solstone_core_import_sources::ImportSourcesError;
@@ -871,6 +868,16 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
+    facet_merge_in_journal(&journal, source, destination, consent)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_in_journal(
+    journal: &Path,
+    source: &str,
+    destination: &str,
+    consent: bool,
+) -> Outcome {
     let source_path = journal.join("facets").join(source);
     let destination_path = journal.join("facets").join(destination);
     if let Err(error) = require_real_directory(&source_path) {
@@ -908,13 +915,6 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         let _ = fs::remove_dir_all(&stage);
         return failure("facet merge", &error, EXIT_IO);
     }
-    let convey_update = match prepare_remove_facet_references(&journal, source) {
-        Ok(update) => update,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&stage);
-            return failure("facet merge", &error.to_string(), EXIT_DATA);
-        }
-    };
     if let Err(error) = fs::rename(&destination_path, &backup) {
         let _ = fs::remove_dir_all(&stage);
         return failure("facet merge", &error.to_string(), EXIT_IO);
@@ -929,24 +929,13 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         let _ = fs::remove_dir_all(&stage);
         return failure("facet merge", &error.to_string(), EXIT_IO);
     }
-    if let Some(update) = &convey_update
-        && let Err(error) = publish_update(update)
-    {
-        let rollback =
-            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
-        return transaction_failure("facet merge", &error.to_string(), rollback);
-    }
     let mut params = json!({"source": source, "dest": destination});
     if consent {
         params["consent"] = Value::Bool(true);
     }
     if let Err(error) = append_action_log(&journal, None, "cli", "user", "facet_merge", params) {
-        let config_rollback = convey_update.as_ref().map(|update| {
-            restore_update(update).map_err(|rollback_error| rollback_error.to_string())
-        });
-        let tree_rollback =
+        let rollback =
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
-        let rollback = config_rollback.transpose().and(tree_rollback);
         return transaction_failure("facet merge", &error.to_string(), rollback);
     }
     if let Err(error) = remove_tree_pair(&backup, &source_backup) {
@@ -1056,6 +1045,129 @@ fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>)
             &format!("transaction failed ({primary}); rollback also failed ({rollback_error})"),
             EXIT_IO,
         ),
+    }
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod facet_merge_tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use solstone_core_facets::hold_facet_trust_lock;
+
+    use super::{Outcome, facet_merge_in_journal};
+
+    static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
+
+    struct TempJournal(PathBuf);
+
+    impl TempJournal {
+        fn new() -> Self {
+            let sequence = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+            let path = PathBuf::from("/var/tmp").join(format!(
+                "solstone-core-journal-cli-facet-merge-{}-{}",
+                std::process::id(),
+                sequence
+            ));
+            fs::create_dir_all(path.join("facets/source")).expect("source facet");
+            fs::create_dir_all(path.join("facets/destination")).expect("destination facet");
+            fs::create_dir_all(path.join("config")).expect("config directory");
+            fs::write(path.join("facets/source/source.txt"), b"source").expect("source tree");
+            fs::write(
+                path.join("facets/destination/destination.txt"),
+                b"destination",
+            )
+            .expect("destination tree");
+            fs::write(
+                path.join("config/convey.json"),
+                br#"{ "facets": { "selected": "source", "order": "malformed" } }"#,
+            )
+            .expect("legacy convey config");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn tree_bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn visit(root: &Path, directory: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(directory).expect("read tree") {
+                let entry = entry.expect("tree entry");
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(root, &path, files);
+                } else {
+                    files.insert(
+                        path.strip_prefix(root)
+                            .expect("relative tree path")
+                            .to_path_buf(),
+                        fs::read(path).expect("tree bytes"),
+                    );
+                }
+            }
+        }
+
+        let mut files = BTreeMap::new();
+        visit(root, root, &mut files);
+        files
+    }
+
+    #[test]
+    fn facet_merge_leaves_legacy_convey_config_byte_identical() {
+        let journal = TempJournal::new();
+        let config = journal.path().join("config/convey.json");
+        let before = fs::read(&config).expect("convey config before merge");
+
+        let outcome = facet_merge_in_journal(journal.path(), "source", "destination", false);
+
+        assert!(matches!(outcome, Outcome::LocalSuccess { .. }));
+        assert_eq!(fs::read(config).expect("convey config after merge"), before);
+        assert!(!journal.path().join("facets/source").exists());
+        assert!(
+            journal
+                .path()
+                .join("facets/destination/source.txt")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn facet_merge_action_log_failure_restores_trees_and_config_without_staging() {
+        let journal = TempJournal::new();
+        fs::write(journal.path().join("config/actions"), b"block action log")
+            .expect("action log conflict");
+        drop(hold_facet_trust_lock(journal.path()).expect("seed trust lock"));
+        let before = tree_bytes(journal.path());
+
+        let outcome = facet_merge_in_journal(journal.path(), "source", "destination", false);
+
+        assert!(matches!(outcome, Outcome::LocalFailure { .. }));
+        assert_eq!(tree_bytes(journal.path()), before);
+        let leftovers = fs::read_dir(journal.path().join("facets"))
+            .expect("facet directory")
+            .map(|entry| {
+                entry
+                    .expect("facet entry")
+                    .file_name()
+                    .into_string()
+                    .expect("utf8")
+            })
+            .filter(|name| name.starts_with(".facet-merge-"))
+            .collect::<Vec<_>>();
+        assert!(
+            leftovers.is_empty(),
+            "staging artifacts remain: {leftovers:?}"
+        );
     }
 }
 
