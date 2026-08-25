@@ -46,8 +46,11 @@ CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)
 # workspace debuginfo output. The built-in dev profile name stays unchanged,
 # preserving the existing debug/ paths and cross-step reuse.
 CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
-$(CI_CARGO_ENV_TARGETS): override export CARGO_INCREMENTAL := 0
-$(CI_CARGO_ENV_TARGETS): override export CARGO_PROFILE_DEV_DEBUG := 0
+ifneq ($(strip $(filter $(CI_CARGO_ENV_TARGETS),$(MAKECMDGOALS))),)
+export CARGO_INCREMENTAL CARGO_PROFILE_DEV_DEBUG
+endif
+$(CI_CARGO_ENV_TARGETS): override CARGO_INCREMENTAL := 0
+$(CI_CARGO_ENV_TARGETS): override CARGO_PROFILE_DEV_DEBUG := 0
 FFMPEG_SOURCE_ARCHIVE := $(CURDIR)/target/ffmpeg-source-cache/ffmpeg.tar.gz
 ONNX_RUNTIME_ARCHIVE_DIR := $(CURDIR)/target/speakers-analyze-runtime-cache
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
