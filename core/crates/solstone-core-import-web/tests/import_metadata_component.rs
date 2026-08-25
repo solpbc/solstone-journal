@@ -11,15 +11,23 @@ use nix::unistd::Pid;
 use solstone_core_import_web::{MetadataCommandOutcome, MetadataCommandPlan, run_metadata_command};
 
 const STUB: &str = env!("CARGO_BIN_EXE_solstone-import-web-metadata-stub");
-const AUTHORED_TIMEOUT: Duration = Duration::from_millis(100);
+const COMPLETION_TIMEOUT: Duration = Duration::from_secs(1);
+const STALL_TIMEOUT: Duration = Duration::from_millis(100);
 const AUTHORED_STDOUT: &[u8] = br#"[{"CreateDate":"2026:08:01 12:34:56"}]"#;
 
 fn plan(args: impl IntoIterator<Item = impl Into<OsString>>) -> MetadataCommandPlan {
+    plan_with_timeout(args, COMPLETION_TIMEOUT)
+}
+
+fn plan_with_timeout(
+    args: impl IntoIterator<Item = impl Into<OsString>>,
+    timeout: Duration,
+) -> MetadataCommandPlan {
     MetadataCommandPlan {
         program: STUB.into(),
         args: args.into_iter().map(Into::into).collect(),
         path: "photo.jpg".into(),
-        timeout: AUTHORED_TIMEOUT,
+        timeout,
     }
 }
 
@@ -51,7 +59,10 @@ fn unavailable_is_non_zero_exit() {
 fn stall_times_out_after_marker_and_is_reaped() {
     let dir = tempfile::TempDir::new().unwrap();
     let marker = dir.path().join("started");
-    let outcome = run_metadata_command(&plan(["stall".into(), marker.as_os_str().to_os_string()]));
+    let outcome = run_metadata_command(&plan_with_timeout(
+        ["stall".into(), marker.as_os_str().to_os_string()],
+        STALL_TIMEOUT,
+    ));
     assert_eq!(outcome, MetadataCommandOutcome::TimedOut);
     let pid = fs::read_to_string(&marker)
         .expect("the child writes its PID before stalling")
