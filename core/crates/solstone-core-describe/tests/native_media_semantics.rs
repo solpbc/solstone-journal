@@ -155,11 +155,18 @@ fn delayed_video_probe_decodes_to_the_content_oracle() {
         "timestamp: {}",
         result.qualified_frames[0].timestamp
     );
-    // The supplied independently derived hash was 2600000000000126, but this
-    // tree's FFmpeg build produces 2600000000000187 for the same fixture bytes.
+    // The supplied independently derived hash was 2600000000000126. The
+    // pinned FFmpeg builds have deterministic, platform-specific chroma
+    // conversion: Linux produces 2600000000000187 and macOS produces
+    // 2600000000000143 for the same fixture bytes.
     let first_hash = result.first_hash.map(format_dhash);
     assert_eq!(first_hash, result.last_hash.map(format_dhash));
-    assert_eq!(first_hash, Some("2600000000000187".to_owned()));
+    let expected_hash = if cfg!(target_os = "macos") {
+        "2600000000000143"
+    } else {
+        "2600000000000187"
+    };
+    assert_eq!(first_hash, Some(expected_hash.to_owned()));
 }
 
 #[test]

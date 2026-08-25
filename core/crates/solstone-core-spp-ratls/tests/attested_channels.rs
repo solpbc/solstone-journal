@@ -394,6 +394,9 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
             }
         };
         socket
+            .set_nonblocking(false)
+            .expect("make accepted gateway connection blocking");
+        socket
             .set_read_timeout(Some(IO_TIMEOUT))
             .expect("read timeout");
         socket

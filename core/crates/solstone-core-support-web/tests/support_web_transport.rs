@@ -299,6 +299,9 @@ where
                     break;
                 }
                 stream
+                    .set_nonblocking(false)
+                    .expect("make accepted fake connection blocking");
+                stream
                     .set_read_timeout(Some(IO_TIMEOUT))
                     .expect("bound fake read");
                 stream
@@ -669,7 +672,20 @@ fn config_environment_case_child() {
     );
     let root = PathBuf::from(std::env::var(CONFIG_ROOT).expect("config child root"));
     let receipt = PathBuf::from(std::env::var(CONFIG_RECEIPT).expect("config child receipt"));
-    let environment = std::env::vars().collect::<BTreeMap<_, _>>();
+    let environment = {
+        #[cfg(target_os = "macos")]
+        {
+            // macOS injects this process metadata after `env_clear`; it is not
+            // inherited from the driver and is outside this fixture's allowlist.
+            std::env::vars()
+                .filter(|(name, _)| name != "__CF_USER_TEXT_ENCODING")
+                .collect::<BTreeMap<_, _>>()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::env::vars().collect::<BTreeMap<_, _>>()
+        }
+    };
     let expected_environment = config_case_environment(&case, &root, &receipt);
     assert_eq!(
         environment, expected_environment,
