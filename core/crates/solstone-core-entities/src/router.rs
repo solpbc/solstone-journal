@@ -4325,7 +4325,7 @@ fn parse_entity_search_query(
     Ok(EntitySearchParams {
         query: normalize_entity_search_value(query.query),
         entity_type: normalize_entity_search_value(query.entity_type),
-        facet: normalize_entity_search_value(query.facet),
+        facet: normalize_entity_search_value(query.facet).map(|facet| facet.to_lowercase()),
         since,
         limit: usize::try_from(limit).unwrap_or_default(),
     })
@@ -4371,17 +4371,42 @@ fn entity_search_failure_response(failure: EntitySearchFailure) -> Response {
     }
 }
 
-fn eligible_entity_records(records: Vec<Value>) -> Vec<Value> {
-    records
+fn eligible_entity_records(
+    root: &Path,
+    records: Vec<Value>,
+) -> Result<Vec<Value>, EntitySearchFailure> {
+    let mut truthy_detached = HashSet::new();
+    for facet in solstone_core_facets::list_facet_directories(root)
+        .map_err(|_| EntitySearchFailure::IndexStale)?
+    {
+        for entity in
+            solstone_core_facets::list_scoped_facet_entities_tolerant(root, &facet, true, true)
+                .map_err(|_| EntitySearchFailure::IndexStale)?
+        {
+            if json_truthy(entity.relationship.get("detached")) {
+                truthy_detached.insert((entity.entity_dir, facet.clone()));
+            }
+        }
+    }
+
+    Ok(records
         .into_iter()
         .filter(|record| !json_truthy(record.get("blocked")))
         .map(|mut record| {
+            let entity_id = entity_record_id(&record).unwrap_or_default().to_owned();
             if let Some(facets) = record.get_mut("facets").and_then(Value::as_array_mut) {
-                facets.retain(|facet| !json_truthy(facet.get("detached")));
+                facets.retain(|facet| {
+                    let name = facet
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    !json_truthy(facet.get("detached"))
+                        && !truthy_detached.contains(&(entity_id.clone(), name.to_owned()))
+                });
             }
             record
         })
-        .collect()
+        .collect())
 }
 
 fn entity_record_id(record: &Value) -> Option<&str> {
@@ -4540,8 +4565,9 @@ fn entity_search_work(
     entity_search_degradation_failure(coverage_response.degraded.as_ref())?;
 
     let eligible = eligible_entity_records(
+        root,
         assemble_journal_entity_records(root, None).map_err(|_| EntitySearchFailure::IndexStale)?,
-    );
+    )?;
     let eligible_ids: BTreeSet<_> = eligible
         .iter()
         .filter_map(entity_record_id)

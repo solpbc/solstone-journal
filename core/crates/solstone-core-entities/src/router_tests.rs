@@ -523,6 +523,58 @@ async fn entity_search_combines_index_agents_and_applies_filters() {
     .await;
     assert_eq!(status, 200);
     assert_eq!(search_item_ids(&since), vec!["dora"]);
+
+    let (status, uppercase_facet_since) = call(
+        journal.path(),
+        "/app/entities/api/search?type=Person&facet=WORK&since=20260105",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(uppercase_facet_since, since);
+}
+
+#[tokio::test]
+async fn entity_search_excludes_truthy_detached_facet_relationships() {
+    let journal = Journal::new();
+    seed_search_entity(journal.path(), "ada", "Ada", "Person", &[]);
+    seed_search_facet(
+        journal.path(),
+        "work",
+        "ada",
+        "detachedrelationship",
+        &["detachedtag"],
+    );
+    write(
+        journal.path(),
+        "facets/work/entities/ada/entity.json",
+        json!({
+            "entity_id":"ada",
+            "description":"detachedrelationship",
+            "tags":["detachedtag"],
+            "last_seen":"20260105",
+            "detached":"yes",
+        }),
+    );
+    scan_search_journal(journal.path());
+
+    let (status, listing) = call(journal.path(), "/app/entities/api/search").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&listing), vec!["ada"]);
+    assert_eq!(listing["items"][0]["description"], "");
+    assert_eq!(listing["items"][0]["facets"], json!([]));
+
+    let (status, facet_filtered) =
+        call(journal.path(), "/app/entities/api/search?facet=work").await;
+    assert_eq!(status, 200);
+    assert_eq!(facet_filtered, json!({"items":[]}));
+
+    let (status, searched) = call(
+        journal.path(),
+        "/app/entities/api/search?query=detachedrelationship&facet=work",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(searched, json!({"items":[]}));
 }
 
 #[tokio::test]
