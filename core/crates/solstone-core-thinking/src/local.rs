@@ -18,7 +18,7 @@ use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpo
 use solstone_core_local::install::{
     lease::is_held,
     metal_candidate,
-    readiness::inspect_local,
+    readiness::{inspect_local, inspect_local_installed},
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -63,7 +63,7 @@ pub fn availability(journal: &Path, model: &str) -> Value {
             })
         })
     } else {
-        inspect_local(input)
+        inspect_local_installed(journal, model)
     };
     let host = &readiness["host"];
     let artifacts = &readiness["artifacts"];

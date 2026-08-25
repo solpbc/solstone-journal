@@ -55,3 +55,9 @@ required-features = ["test-hooks"]
 name = "local_installer_process"
 path = "tests/local_installer_process.rs"
 required-features = ["test-hooks"]
+
+# This target isolates process-global PATH mutation needed to verify the
+# production nvidia-smi subprocess boundary.
+[[test]]
+name = "local_readiness_probe_contract"
+path = "tests/local_readiness_probe_contract.rs"

@@ -39,6 +39,12 @@ path = "tests/restart_protocol.rs"
 name = "thinking_sol_reads"
 path = "tests/thinking_sol_reads.rs"
 
+# Cargo auto-discovery is disabled, and this target isolates process-global
+# PATH mutation needed to verify Thinking reads never reach nvidia-smi.
+[[test]]
+name = "thinking_provider_status_probe_contract"
+path = "tests/thinking_provider_status_probe_contract.rs"
+
 [[test]]
 name = "thinking_runs_contracts"
 path = "tests/thinking_runs_contracts.rs"
@@ -156,6 +162,7 @@ serde_json.workspace = true
 filetime = "0.2.29"
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 tempfile = "3.24.0"
+temp-env = "0.3.6"
 rcgen.workspace = true
 rustls.workspace = true
 sha2.workspace = true
