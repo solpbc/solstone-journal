@@ -416,7 +416,7 @@ async function main() {
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
-  assert.strictEqual(requests[firstDayRequest], '/app/thinking/api/talents/20260101', 'first day request leaves facet to the cookie');
+  assert.strictEqual(requests[firstDayRequest], '/app/thinking/api/talents/20260101', 'first day request has no facet when none is selected');
   assert.strictEqual(nodes.get('thinkingRunsSummary').children[0].textContent, '0 runs', 'day summary includes the run total');
   const facetControl = nodes.get('thinkingRunsFacet');
   assert.strictEqual(
@@ -427,7 +427,7 @@ async function main() {
   facetControl.value = 'work';
   facetControl.emit('change');
   await settle();
-  assert.strictEqual(document.cookie.includes('selectedFacet=work'), true, 'explicit facet persists selectedFacet cookie');
+  assert.strictEqual(document.cookie, undefined, 'explicit facet selection no longer writes a selectedFacet cookie');
   assert.strictEqual(window.location.hash, '#runs/20260101?facet=work', 'explicit facet is encoded in the Runs hash');
   assert(requests.includes('/app/thinking/api/talents/20260101?facet=work'), 'explicit facet is sent after selection');
 

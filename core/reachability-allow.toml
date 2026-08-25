@@ -6,5 +6,6 @@
 # normal or build edge. dev-dependencies never confer reachability.
 
 [allow]
+solstone-core-convey-config = "retains pre-existing seed_default_app_navigation/pin_curation_navigation/drop_services_navigation navigation-list APIs that were already uncalled by any product path before the global facet contract removal; the crate lost its only real caller when the facet-reference maintenance functions (rename/clear/prepare_remove/publish/restore) were deleted as part of that removal"
 solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shipped product path depends on it"
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"
