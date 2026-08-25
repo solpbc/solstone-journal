@@ -14,7 +14,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use solstone_core_cli::ServiceAction;
+use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
+use solstone_core_installation_identity::{GuardFields, parse_service_guard_environment};
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
 };
@@ -86,8 +87,16 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
     let platform = platform()?;
     let home = discover_binary_home().map_err(|error| format!("service home: {error:?}"))?;
     match action {
-        ServiceAction::Install { port } => {
-            install(platform, &home, port.canonical_decimal()).map(ExitCode::from)
+        ServiceAction::Install {
+            port,
+            installation_guard,
+        } => {
+            let guard = installation_guard
+                .ok_or_else(|| {
+                    "service install requires installation identity arguments".to_owned()
+                })
+                .and_then(parse_installation_guard)?;
+            install(platform, &home, port.canonical_decimal(), &guard).map(ExitCode::from)
         }
         ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
         ServiceAction::Start => start(platform, &home).map(ExitCode::from),
@@ -123,7 +132,32 @@ fn unit_path(platform: Platform, home: &Path) -> PathBuf {
     }
 }
 
-fn install(platform: Platform, home: &Path, port: &str) -> Result<u8, String> {
+fn parse_installation_guard(
+    arguments: ServiceInstallationGuardArguments,
+) -> Result<GuardFields, String> {
+    let environment = BTreeMap::from([
+        (
+            "SOLSTONE_INSTALLATION_NAMESPACE".to_owned(),
+            arguments.namespace,
+        ),
+        ("SOLSTONE_INSTALLATION_ID".to_owned(), arguments.id),
+        (
+            "SOLSTONE_INSTALLATION_GENERATION".to_owned(),
+            arguments.generation,
+        ),
+        (
+            "SOLSTONE_INSTALLATION_JOURNAL_TOKEN".to_owned(),
+            arguments.journal_token,
+        ),
+    ]);
+    parse_service_guard_environment(&environment)
+        .map_err(|error| {
+            format!("service install: invalid installation identity arguments: {error}")
+        })?
+        .ok_or_else(|| "service install requires installation identity arguments".to_owned())
+}
+
+fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> Result<u8, String> {
     let _lock = service_lock(home)?;
     let journal = resolve_process_journal_path()
         .map_err(|_| "service install: could not resolve journal".to_owned())?
@@ -160,6 +194,7 @@ fn install(platform: Platform, home: &Path, port: &str) -> Result<u8, String> {
         path_text(home)?,
         std::env::var("PATH").ok().as_deref(),
         path_text(&runtime_dir)?,
+        guard,
     );
     let bytes = match platform {
         Platform::Linux => render_systemd_unit(
@@ -596,6 +631,10 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
                     | "OPENAI_API_KEY"
                     | "PLAUD_ACCESS_TOKEN"
                     | "REVAI_ACCESS_TOKEN"
+                    | "SOLSTONE_INSTALLATION_NAMESPACE"
+                    | "SOLSTONE_INSTALLATION_ID"
+                    | "SOLSTONE_INSTALLATION_GENERATION"
+                    | "SOLSTONE_INSTALLATION_JOURNAL_TOKEN"
             ) || environment.insert(name, value).is_some()
             {
                 return false;
@@ -623,6 +662,7 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
         && systemd_unit_exec_matches(exec, launcher)
         && environment.contains_key("HOME")
         && environment.contains_key("PATH")
+        && service_guard_is_valid(&environment)
         && environment
             .get("PYTHONUNBUFFERED")
             .is_none_or(|value| *value == "1")
@@ -646,6 +686,21 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
             .is_none_or(|value| *value == "4096")
         && singleton.get("WantedBy") == Some(&"default.target")
         && systemd_logs_are_managed(&singleton)
+}
+
+fn service_guard_is_valid(environment: &BTreeMap<&str, &str>) -> bool {
+    let mut guard = BTreeMap::new();
+    for name in [
+        "SOLSTONE_INSTALLATION_NAMESPACE",
+        "SOLSTONE_INSTALLATION_ID",
+        "SOLSTONE_INSTALLATION_GENERATION",
+        "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
+    ] {
+        if let Some(value) = environment.get(name) {
+            guard.insert(name.to_owned(), (*value).to_owned());
+        }
+    }
+    parse_service_guard_environment(&guard).is_ok()
 }
 
 fn systemd_unit_exec_matches(value: &str, launcher: &Path) -> bool {
@@ -744,6 +799,10 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
         "OPENAI_API_KEY",
         "PLAUD_ACCESS_TOKEN",
         "REVAI_ACCESS_TOKEN",
+        "SOLSTONE_INSTALLATION_NAMESPACE",
+        "SOLSTONE_INSTALLATION_ID",
+        "SOLSTONE_INSTALLATION_GENERATION",
+        "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
     ]);
     let keep_alive = dict.get("KeepAlive").and_then(plist::Value::as_dictionary);
     let limits = dict
@@ -756,6 +815,7 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
         && env_keys.is_some_and(|keys| {
             keys.is_subset(&allowed_env) && keys.contains("HOME") && keys.contains("PATH")
         })
+        && environment.is_some_and(launchd_service_guard_is_valid)
         && environment
             .and_then(|env| env.get("PYTHONUNBUFFERED"))
             .is_none_or(|value| value == &plist::Value::String("1".to_owned()))
@@ -767,6 +827,24 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
                 && value.get("NumberOfFiles") == Some(&plist::Value::Integer(4096_i64.into()))
         })
         && launchd_logs_are_managed(dict)
+}
+
+fn launchd_service_guard_is_valid(environment: &plist::Dictionary) -> bool {
+    let mut guard = BTreeMap::new();
+    for name in [
+        "SOLSTONE_INSTALLATION_NAMESPACE",
+        "SOLSTONE_INSTALLATION_ID",
+        "SOLSTONE_INSTALLATION_GENERATION",
+        "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
+    ] {
+        if let Some(value) = environment.get(name) {
+            let Some(value) = value.as_string() else {
+                return false;
+            };
+            guard.insert(name.to_owned(), value.to_owned());
+        }
+    }
+    parse_service_guard_environment(&guard).is_ok()
 }
 
 fn launchd_keep_alive_is_managed(
@@ -1581,6 +1659,36 @@ fn safe(value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn guarded_environment() -> BTreeMap<String, String> {
+        let mut environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/owner".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let guard = parse_service_guard_environment(&BTreeMap::from([
+            (
+                "SOLSTONE_INSTALLATION_NAMESPACE".to_owned(),
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+            ),
+            (
+                "SOLSTONE_INSTALLATION_ID".to_owned(),
+                "0123456789abcdef0123456789abcdef".to_owned(),
+            ),
+            (
+                "SOLSTONE_INSTALLATION_GENERATION".to_owned(),
+                "1".to_owned(),
+            ),
+            (
+                "SOLSTONE_INSTALLATION_JOURNAL_TOKEN".to_owned(),
+                "2f6a6f75726e616c".to_owned(),
+            ),
+        ]))
+        .unwrap()
+        .unwrap();
+        environment.extend(solstone_core_installation_identity::service_guard_environment(&guard));
+        environment
+    }
+
     #[test]
     fn unit_truth_accepts_current_renderers_and_rejects_extensions() {
         let environment = BTreeMap::from([
@@ -1628,6 +1736,49 @@ mod tests {
         assert!(launchd_managed(&plist, launcher, LABEL));
         let hostile_launcher = Path::new("/tmp/foreign/journal");
         assert!(!launchd_managed(&plist, hostile_launcher, LABEL));
+    }
+
+    #[test]
+    fn guarded_units_are_managed_only_with_a_complete_valid_guard() {
+        let environment = guarded_environment();
+        let launcher = Path::new("/home/owner/.local/bin/journal");
+        let systemd = render_systemd_unit(
+            &environment,
+            path_text(launcher).unwrap(),
+            "5015",
+            "/srv/journal",
+        )
+        .unwrap();
+        assert!(systemd_managed(systemd.as_bytes(), launcher));
+        assert!(!systemd_managed(
+            systemd
+                .replace(
+                    "Environment=SOLSTONE_INSTALLATION_ID=0123456789abcdef0123456789abcdef\n",
+                    "",
+                )
+                .as_bytes(),
+            launcher,
+        ));
+        let plist = render_launchd_plist(
+            &environment,
+            path_text(launcher).unwrap(),
+            "5015",
+            "/srv/journal",
+        )
+        .unwrap();
+        assert!(launchd_managed(&plist, launcher, LABEL));
+        let mut partial = plist::Value::from_reader_xml(plist.as_slice()).unwrap();
+        partial
+            .as_dictionary_mut()
+            .unwrap()
+            .get_mut("EnvironmentVariables")
+            .unwrap()
+            .as_dictionary_mut()
+            .unwrap()
+            .remove("SOLSTONE_INSTALLATION_ID");
+        let mut partial_bytes = Vec::new();
+        partial.to_writer_xml(&mut partial_bytes).unwrap();
+        assert!(!launchd_managed(&partial_bytes, launcher, LABEL));
     }
 
     #[test]

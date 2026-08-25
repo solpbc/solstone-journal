@@ -133,10 +133,6 @@ fn install_logger() {
 fn main() -> ExitCode {
     install_logger();
     let args: Vec<_> = env::args_os().skip(1).collect();
-    #[cfg(feature = "test-hooks")]
-    if let Some(code) = config::run_wrapper_write_test_child(&args) {
-        return code;
-    }
     match evaluate_args(&args) {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));

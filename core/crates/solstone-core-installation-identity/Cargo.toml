@@ -1,0 +1,19 @@
+[package]
+name = "solstone-core-installation-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+# Required, not cosmetic: wildcards = "deny" in deny.toml requires every
+# workspace crate to opt out of publication until it has a reviewed package plan.
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+getrandom.workspace = true
+sha2.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["dir"] }

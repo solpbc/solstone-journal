@@ -869,6 +869,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-installation-identity"
+package = "solstone-core-installation-identity"
+set = "component"
+areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-journal-cli"
 package = "solstone-core-journal-cli"
 set = "component"
@@ -1767,19 +1778,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core::wrapper_write_lock_component"
-package = "solstone-core"
-target = "wrapper_write_lock_component"
-set = "component"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

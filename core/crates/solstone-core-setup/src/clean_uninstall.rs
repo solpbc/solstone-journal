@@ -6,6 +6,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use solstone_core_installation_identity::{
+    ArtifactBindingEvidence, CleanUninstallPlan, GuardFields,
+};
+
 use crate::args::SetupArgs;
 use crate::steps::{CommandRequest, CommandRunner, service_artifact_path};
 use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
@@ -45,6 +49,8 @@ pub struct CleanUninstallContext<'a> {
     pub home_dir: PathBuf,
     pub config_path: PathBuf,
     pub manifest_path: PathBuf,
+    pub plan: CleanUninstallPlan,
+    pub artifact_evidence: ArtifactBindingEvidence,
     pub curdir: PathBuf,
     pub executable_dir: PathBuf,
     pub yes: bool,
@@ -143,12 +149,20 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
     lines.extend([
         format!(
             "  [{:<7}] config: {}",
-            marker(&context.config_path),
+            if context.plan.remove_owner_config {
+                marker(&context.config_path)
+            } else {
+                "retain"
+            },
             context.config_path.display()
         ),
         format!(
             "  [{:<7}] manifest: {}",
-            marker(&context.manifest_path),
+            if context.plan.remove_journal_manifest {
+                marker(&context.manifest_path)
+            } else {
+                "retain"
+            },
             context.manifest_path.display()
         ),
         String::new(),
@@ -170,8 +184,14 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
         service_artifact_path(&context.home_dir),
         Some(wrappers.solstone),
         Some(wrappers.journal),
-        Some(context.config_path.clone()),
-        Some(context.manifest_path.clone()),
+        context
+            .plan
+            .remove_owner_config
+            .then(|| context.config_path.clone()),
+        context
+            .plan
+            .remove_journal_manifest
+            .then(|| context.manifest_path.clone()),
     ]
     .iter()
     .flatten()
@@ -227,6 +247,14 @@ fn remove_service(
     context: &mut CleanUninstallContext<'_>,
     path: Option<PathBuf>,
 ) -> CleanUninstallStepResult {
+    if !artifact_evidence_matches_plan(context) {
+        return result(
+            "service",
+            CleanUninstallState::Skipped,
+            path,
+            Some("service or wrapper guard does not match this installation, not removing".into()),
+        );
+    }
     let existed = path.as_ref().is_some_and(|path| present(path));
     let output = context.runner.run(&CommandRequest {
         program: context.executable_dir.join("journal"),
@@ -262,6 +290,42 @@ fn remove_wrappers(
     context: &CleanUninstallContext<'_>,
     paths: &(PathBuf, PathBuf),
 ) -> CleanUninstallStepResult {
+    if !artifact_evidence_matches_plan(context) {
+        return result(
+            "wrapper",
+            CleanUninstallState::Skipped,
+            Some(paths.0.clone()),
+            Some("wrapper guard does not match this installation, not removing".into()),
+        );
+    }
+    if matches!(
+        &context.artifact_evidence,
+        ArtifactBindingEvidence::Guarded(_)
+    ) {
+        let existed = present(&paths.0) || present(&paths.1);
+        for path in [&paths.0, &paths.1] {
+            if present(path)
+                && let Err(error) = fs::remove_file(path)
+            {
+                return result(
+                    "wrapper",
+                    CleanUninstallState::Failed,
+                    Some(path.clone()),
+                    Some(error.to_string()),
+                );
+            }
+        }
+        return result(
+            "wrapper",
+            if existed {
+                CleanUninstallState::Removed
+            } else {
+                CleanUninstallState::AlreadyAbsent
+            },
+            Some(paths.0.clone()),
+            None,
+        );
+    }
     let existed = present(&paths.0) || present(&paths.1);
     let environment = WrapperEnvironment {
         home_dir: context.home_dir.clone(),
@@ -316,6 +380,32 @@ fn remove_wrappers(
             Some(paths.0.clone()),
             Some(format!("unexpected alias state: {state:?}")),
         ),
+    }
+}
+
+fn artifact_evidence_matches_plan(context: &CleanUninstallContext<'_>) -> bool {
+    match &context.artifact_evidence {
+        ArtifactBindingEvidence::Fresh => true,
+        ArtifactBindingEvidence::Guarded(fields) => {
+            *fields == GuardFields::from_binding(&context.plan.binding)
+        }
+        ArtifactBindingEvidence::LegacyUnguarded
+        | ArtifactBindingEvidence::Foreign
+        | ArtifactBindingEvidence::Malformed
+        | ArtifactBindingEvidence::Ambiguous => false,
+    }
+}
+
+fn remove_if_last(name: &'static str, path: PathBuf, remove: bool) -> CleanUninstallStepResult {
+    if remove {
+        remove_path(name, path)
+    } else {
+        result(
+            name,
+            CleanUninstallState::Skipped,
+            Some(path),
+            Some("retained for another adopted installation".into()),
+        )
     }
 }
 
@@ -375,8 +465,16 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
     let results = vec![
         service_result,
         remove_wrappers(context, &(wrappers.solstone, wrappers.journal)),
-        remove_path("config", context.config_path.clone()),
-        remove_path("manifest", context.manifest_path.clone()),
+        remove_if_last(
+            "config",
+            context.config_path.clone(),
+            context.plan.remove_owner_config,
+        ),
+        remove_if_last(
+            "manifest",
+            context.manifest_path.clone(),
+            context.plan.remove_journal_manifest,
+        ),
     ];
     let counts = |state| {
         results
@@ -406,8 +504,48 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
 mod tests {
     use super::*;
     use crate::args::parse_args_at;
+    use crate::identity_evidence::gather_artifact_evidence;
+    use crate::manifest::manifest_path;
+    use crate::user_config::{config_path, write_user_config};
+    use crate::wrapper::{render_wrapper, wrapper_paths};
+    use solstone_core_installation_identity::{
+        CleanUninstallRequest, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_clean_uninstall, admit_setup, journal_token_from_path,
+        root_token_from_path,
+    };
     use std::collections::VecDeque;
     use std::ffi::OsString;
+    use std::ops::Deref;
+
+    fn plan() -> CleanUninstallPlan {
+        let binding = solstone_core_installation_identity::InstallationBinding {
+            namespace: solstone_core_installation_identity::NamespaceName::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .expect("namespace"),
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .expect("id"),
+            generation: solstone_core_installation_identity::Generation::new(1)
+                .expect("generation"),
+            platform: solstone_core_installation_identity::PlatformTag::Linux,
+            root_token: solstone_core_installation_identity::RootToken::from_raw_absolute(
+                b"/install/clean".to_vec(),
+            )
+            .expect("root"),
+            journal_token: solstone_core_installation_identity::JournalToken::from_raw_absolute(
+                b"/journal".to_vec(),
+            )
+            .expect("journal"),
+        };
+        CleanUninstallPlan {
+            binding,
+            remove_owner_config: true,
+            remove_journal_manifest: true,
+            already_tombstoned: false,
+        }
+    }
 
     struct Runner(VecDeque<i32>);
     impl CommandRunner for Runner {
@@ -423,12 +561,34 @@ mod tests {
             })
         }
     }
-    fn root(name: &str) -> PathBuf {
-        let root =
-            PathBuf::from("/var/tmp").join(format!("solstone-clean-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        root
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(name: &str) -> Self {
+            let root = PathBuf::from("/var/tmp")
+                .join(format!("solstone-clean-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+    }
+
+    impl Deref for TestRoot {
+        type Target = Path;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn root(name: &str) -> TestRoot {
+        TestRoot::new(name)
     }
     fn args(values: &[&str]) -> SetupArgs {
         parse_args_at(
@@ -462,6 +622,8 @@ mod tests {
             home_dir: root.join("home"),
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
             yes: false,
@@ -496,6 +658,8 @@ mod tests {
             home_dir: home,
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
             yes: false,
@@ -521,6 +685,8 @@ mod tests {
             home_dir: home,
             config_path: root.join("config.toml"),
             manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
             yes: true,
@@ -565,6 +731,7 @@ mod tests {
         fs::create_dir_all(home.join(".local/bin")).unwrap();
         let runtime = root.join("bin");
         fs::create_dir_all(&runtime).unwrap();
+        let guard = GuardFields::from_binding(&plan().binding);
         for binary in ["solstone", "journal"] {
             fs::write(
                 home.join(".local/bin").join(binary),
@@ -572,6 +739,7 @@ mod tests {
                     binary,
                     Path::new("/journal"),
                     &runtime.join(binary),
+                    &guard,
                 ),
             )
             .unwrap();
@@ -593,6 +761,8 @@ mod tests {
             home_dir: home.clone(),
             config_path: config.clone(),
             manifest_path: manifest.clone(),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: runtime,
             yes: true,
@@ -641,6 +811,256 @@ mod tests {
     }
 
     #[test]
+    fn matching_guarded_wrappers_are_removed_even_when_their_binary_is_no_longer_current() {
+        let root = root("guarded-wrapper");
+        let home = root.join("home");
+        let runtime = root.join("new-bin");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::create_dir_all(&runtime).unwrap();
+        let guard = GuardFields::from_binding(&plan().binding);
+        for binary in ["solstone", "journal"] {
+            fs::write(
+                home.join(".local/bin").join(binary),
+                crate::wrapper::render_wrapper(
+                    binary,
+                    Path::new("/journal"),
+                    &root.join("old-bin").join(binary),
+                    &guard,
+                ),
+            )
+            .unwrap();
+        }
+        let mut runner = Runner(VecDeque::from([0]));
+        let mut confirm = || true;
+        let mut context = CleanUninstallContext {
+            journal_path: root.join("journal"),
+            home_dir: home.clone(),
+            config_path: root.join("config.toml"),
+            manifest_path: root.join("journal/health/setup-state.json"),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Guarded(guard),
+            curdir: root.join("repo"),
+            executable_dir: runtime,
+            yes: true,
+            stdin_is_tty: false,
+            confirm: &mut confirm,
+            runner: &mut runner,
+        };
+        let outcome = run_clean_uninstall(&mut context);
+        assert_eq!(outcome.exit_code, 0);
+        assert!(!home.join(".local/bin/solstone").exists());
+        assert!(!home.join(".local/bin/journal").exists());
+    }
+
+    fn setup_request(
+        owner: OwnerBase,
+        install_root: &Path,
+        journal: &Path,
+    ) -> SetupAdmissionRequest {
+        SetupAdmissionRequest {
+            owner,
+            root_token: root_token_from_path(install_root).expect("root token"),
+            journal_token: journal_token_from_path(journal).expect("journal token"),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        }
+    }
+
+    fn clean_context<'a>(
+        home: &Path,
+        root: &Path,
+        plan: CleanUninstallPlan,
+        artifact_evidence: ArtifactBindingEvidence,
+        runner: &'a mut Runner,
+        confirm: &'a mut dyn FnMut() -> bool,
+    ) -> CleanUninstallContext<'a> {
+        let journal_path = plan.binding.journal_token.to_path_buf();
+        CleanUninstallContext {
+            manifest_path: manifest_path(&journal_path),
+            journal_path,
+            home_dir: home.to_path_buf(),
+            config_path: config_path(home),
+            plan,
+            artifact_evidence,
+            curdir: root.to_path_buf(),
+            executable_dir: root.join("bin"),
+            yes: true,
+            stdin_is_tty: false,
+            confirm,
+            runner,
+        }
+    }
+
+    #[test]
+    fn two_roots_clean_in_either_order_preserving_foreign_wrappers_and_shared_state() {
+        for (same_journal, first_is_a) in [false, true].into_iter().flat_map(|same_journal| {
+            [true, false].map(move |first_is_a| (same_journal, first_is_a))
+        }) {
+            let name = match (same_journal, first_is_a) {
+                (false, true) => "different-a-first",
+                (false, false) => "different-b-first",
+                (true, true) => "shared-a-first",
+                (true, false) => "shared-b-first",
+            };
+            let root = root(name);
+            let home = root.join("home");
+            let install_a = root.join("install-a");
+            let install_b = root.join("install-b");
+            let journal_a = root.join("journal-a");
+            let journal_b = if same_journal {
+                journal_a.clone()
+            } else {
+                root.join("journal-b")
+            };
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&install_a).unwrap();
+            fs::create_dir_all(&install_b).unwrap();
+            let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).unwrap();
+            let binding_a = admit_setup(setup_request(owner.clone(), &install_a, &journal_a))
+                .unwrap()
+                .binding()
+                .clone();
+            let binding_b = admit_setup(setup_request(owner.clone(), &install_b, &journal_b))
+                .unwrap()
+                .binding()
+                .clone();
+            assert_ne!(binding_a.namespace, binding_b.namespace);
+            assert_ne!(binding_a.id, binding_b.id);
+
+            let manifest_a = manifest_path(&journal_a);
+            let manifest_b = manifest_path(&journal_b);
+            fs::create_dir_all(manifest_a.parent().unwrap()).unwrap();
+            fs::write(&manifest_a, "manifest-a").unwrap();
+            if manifest_b != manifest_a {
+                fs::create_dir_all(manifest_b.parent().unwrap()).unwrap();
+                fs::write(&manifest_b, "manifest-b").unwrap();
+            }
+            write_user_config(&config_path(&home), &journal_b.to_string_lossy()).unwrap();
+
+            let (first, second) = if first_is_a {
+                (&binding_a, &binding_b)
+            } else {
+                (&binding_b, &binding_a)
+            };
+            let first_manifest = manifest_path(&first.journal_token.to_path_buf());
+            let second_manifest = manifest_path(&second.journal_token.to_path_buf());
+            let paths = wrapper_paths(&home);
+            fs::create_dir_all(paths.solstone.parent().unwrap()).unwrap();
+            let second_guard = GuardFields::from_binding(second);
+            let second_solstone = render_wrapper(
+                "solstone",
+                &second.journal_token.to_path_buf(),
+                &root.join("bin/solstone"),
+                &second_guard,
+            );
+            let second_journal = render_wrapper(
+                "journal",
+                &second.journal_token.to_path_buf(),
+                &root.join("bin/journal"),
+                &second_guard,
+            );
+            fs::write(&paths.solstone, &second_solstone).unwrap();
+            fs::write(&paths.journal, &second_journal).unwrap();
+
+            let first_evidence = gather_artifact_evidence(&home, &first.namespace);
+            assert_eq!(first_evidence, ArtifactBindingEvidence::Foreign);
+            let first_session = admit_clean_uninstall(CleanUninstallRequest {
+                owner: owner.clone(),
+                root_token: first.root_token.clone(),
+                artifacts: first_evidence.clone(),
+            })
+            .expect("an unambiguous guard for the other root is preserved, not refused");
+            let first_plan = first_session.plan().clone();
+            assert!(!first_plan.remove_owner_config);
+            assert_eq!(first_plan.remove_journal_manifest, !same_journal);
+            let mut first_runner = Runner(VecDeque::new());
+            let mut confirm = || true;
+            let first_outcome = run_clean_uninstall(&mut clean_context(
+                &home,
+                &root,
+                first_plan,
+                first_evidence,
+                &mut first_runner,
+                &mut confirm,
+            ));
+            assert_eq!(first_outcome.exit_code, 0);
+            assert_eq!(first_outcome.results[1].state, CleanUninstallState::Skipped);
+            first_session.commit_tombstone().unwrap();
+
+            assert_eq!(
+                fs::read_to_string(&paths.solstone).unwrap(),
+                second_solstone
+            );
+            assert_eq!(fs::read_to_string(&paths.journal).unwrap(), second_journal);
+            assert!(config_path(&home).exists());
+            assert!(
+                second_manifest.exists(),
+                "the other root's manifest must survive"
+            );
+            assert_eq!(first_manifest.exists(), same_journal);
+
+            let second_evidence = gather_artifact_evidence(&home, &second.namespace);
+            assert_eq!(
+                second_evidence,
+                ArtifactBindingEvidence::Guarded(GuardFields::from_binding(second))
+            );
+            let second_session = admit_clean_uninstall(CleanUninstallRequest {
+                owner: owner.clone(),
+                root_token: second.root_token.clone(),
+                artifacts: second_evidence.clone(),
+            })
+            .expect("remaining root admission");
+            let second_plan = second_session.plan().clone();
+            assert!(second_plan.remove_owner_config);
+            assert!(second_plan.remove_journal_manifest);
+            let mut second_runner = Runner(VecDeque::from([0]));
+            let mut confirm = || true;
+            let second_outcome = run_clean_uninstall(&mut clean_context(
+                &home,
+                &root,
+                second_plan.clone(),
+                second_evidence,
+                &mut second_runner,
+                &mut confirm,
+            ));
+            assert_eq!(second_outcome.exit_code, 0);
+            second_session.commit_tombstone().unwrap();
+
+            assert!(!paths.solstone.exists());
+            assert!(!paths.journal.exists());
+            assert!(!config_path(&home).exists());
+            assert!(!manifest_b.exists());
+            assert!(!manifest_a.exists());
+
+            let retry = admit_clean_uninstall(CleanUninstallRequest {
+                owner,
+                root_token: second.root_token.clone(),
+                artifacts: ArtifactBindingEvidence::Fresh,
+            })
+            .expect("a completed uninstall is idempotently admissible");
+            assert!(retry.plan().already_tombstoned);
+            assert_eq!(
+                retry.plan().binding.generation,
+                second_plan.binding.generation
+            );
+            let mut retry_runner = Runner(VecDeque::new());
+            let mut confirm = || true;
+            let retry_outcome = run_clean_uninstall(&mut clean_context(
+                &home,
+                &root,
+                retry.plan().clone(),
+                ArtifactBindingEvidence::Fresh,
+                &mut retry_runner,
+                &mut confirm,
+            ));
+            assert_eq!(retry_outcome.exit_code, 0);
+            assert!(retry_outcome.results.is_empty());
+            retry.commit_tombstone().unwrap();
+        }
+    }
+
+    #[test]
     fn confirmation_inventory_marks_managed_paths_and_preserves_owner_data() {
         let root = root("confirmation");
         let home = root.join("home");
@@ -656,6 +1076,8 @@ mod tests {
             home_dir: home.clone(),
             config_path: config.clone(),
             manifest_path: manifest.clone(),
+            plan: plan(),
+            artifact_evidence: ArtifactBindingEvidence::Fresh,
             curdir: root.join("repo"),
             executable_dir: root.join("bin"),
             yes: false,

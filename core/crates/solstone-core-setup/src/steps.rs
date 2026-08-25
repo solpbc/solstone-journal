@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_check::{Severity, gather_host_inputs};
+use solstone_core_installation_identity::{GuardFields, SetupAdmission, service_guard_environment};
 use solstone_core_journal_config::get_journal_config_path;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_journal_io::LockOptions;
@@ -215,6 +216,10 @@ pub struct SetupContext<'a> {
     pub already_keeps_journal_probe: fn(&SetupContext<'_>) -> Result<bool, String>,
     pub is_macos: bool,
     pub check_report_builder: &'a dyn CheckReportBuilder,
+    /// Holds the owner-wide and namespace leases across every mutating setup step.
+    pub installation_admission: Option<SetupAdmission>,
+    /// Guard-drifted artifacts that must be reconciled even after a prior successful step.
+    pub identity_guard_repair_steps: Vec<StepName>,
 }
 
 impl<'a> SetupContext<'a> {
@@ -607,7 +612,9 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         }
         context.emit(EventType::StepStarted, started_fields);
         let result = if let Some(prior_step) = prior.get(spec.name.as_str()) {
-            if can_skip(Some(prior_step)) {
+            if can_skip(Some(prior_step))
+                && !context.identity_guard_repair_steps.contains(&spec.name)
+            {
                 let paths = prior_step
                     .get("paths")
                     .and_then(Value::as_array)
@@ -1456,7 +1463,15 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         backup_dir: context.wrapper_backup_dir.clone(),
     };
     let paths = wrapper_paths(&context.home_dir);
-    match provision_wrappers(&environment, &context.journal_path) {
+    match provision_wrappers(
+        &environment,
+        &context.journal_path,
+        context
+            .installation_admission
+            .as_ref()
+            .expect("setup identity admission precedes mutating wrapper step")
+            .binding(),
+    ) {
         Ok(_) => {
             narrate(context, &ensure_user_bin_on_path(&context.home_dir));
             Ok(StepResult::new(
@@ -1529,6 +1544,14 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     let paths = service_artifact_path(&context.home_dir)
         .into_iter()
         .collect::<Vec<_>>();
+    let guard = GuardFields::from_binding(
+        context
+            .installation_admission
+            .as_ref()
+            .expect("setup admission is retained through service provisioning")
+            .binding(),
+    );
+    let service_guard = service_guard_environment(&guard);
     let output = context
         .runner
         .run(&CommandRequest {
@@ -1538,6 +1561,14 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 "install".into(),
                 "--port".into(),
                 context.args.port.to_string(),
+                "--installation-namespace".into(),
+                service_guard["SOLSTONE_INSTALLATION_NAMESPACE"].clone(),
+                "--installation-id".into(),
+                service_guard["SOLSTONE_INSTALLATION_ID"].clone(),
+                "--installation-generation".into(),
+                service_guard["SOLSTONE_INSTALLATION_GENERATION"].clone(),
+                "--installation-journal-token".into(),
+                service_guard["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"].clone(),
             ],
             timeout_seconds: None,
         })
@@ -1983,6 +2014,10 @@ mod tests {
     use crate::events::{EventSink, EventType};
     use crate::manifest::manifest_path;
     use crate::user_config::config_path;
+    use solstone_core_installation_identity::{
+        ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+    };
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ffi::OsString;
@@ -2209,6 +2244,24 @@ mod tests {
             already_keeps_journal_probe: no_probe,
             is_macos: false,
             check_report_builder: &NOOP_CHECK,
+            installation_admission: {
+                let identity_root = root.join("repo");
+                fs::create_dir_all(&identity_root).expect("create identity root");
+                Some(
+                    admit_setup(SetupAdmissionRequest {
+                        owner: OwnerBase::at_home(home.to_path_buf(), PlatformTag::Linux)
+                            .expect("owner base"),
+                        root_token: root_token_from_path(&identity_root).expect("root token"),
+                        journal_token: journal_token_from_path(&resolved.journal_path)
+                            .expect("journal token"),
+                        journal_is_explicit: true,
+                        legacy_manifest: LegacyManifestEvidence::Absent,
+                        artifacts: ArtifactBindingEvidence::Fresh,
+                    })
+                    .expect("test setup admission"),
+                )
+            },
+            identity_guard_repair_steps: Vec::new(),
         }
     }
     #[test]

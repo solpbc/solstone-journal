@@ -95,6 +95,10 @@ pub enum ErrorCode {
     JournalDirInvalid,
     #[serde(rename = "journal_existing_blocked")]
     JournalExistingBlocked,
+    #[serde(rename = "installation_identity_refused")]
+    InstallationIdentityRefused,
+    #[serde(rename = "installation_identity_unavailable")]
+    InstallationIdentityUnavailable,
     #[serde(rename = "service_up_failed")]
     ServiceUpFailed,
     #[serde(rename = "setup_unhandled_exception")]
