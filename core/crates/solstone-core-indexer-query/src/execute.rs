@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
@@ -71,6 +71,12 @@ pub fn coverage(journal: &Path) -> Result<CoverageResponse, IndexAccessError> {
     let mut coverage = connection.coverage()?;
     coverage.degraded = connection.index_degraded()?;
     Ok(coverage)
+}
+
+/// Return the canonical entity IDs represented by indexed entity-search rows.
+pub fn indexed_entity_ids(journal: &Path) -> Result<BTreeSet<String>, IndexAccessError> {
+    let mut connection = open_read_only(journal)?;
+    connection.indexed_entity_ids()
 }
 
 fn search_on_connection(
@@ -435,6 +441,27 @@ impl QueryConnection {
             .map_err(|error| self.classify(error))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| self.classify(error))
+    }
+
+    fn indexed_entity_ids(&mut self) -> Result<BTreeSet<String>, IndexAccessError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT DISTINCT path FROM chunks \
+                 WHERE agent='entity' AND path LIKE 'entity_search:%' \
+                 ORDER BY path ASC",
+            )
+            .map_err(|error| self.classify(error))?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| self.classify(error))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| self.classify(error))?;
+        Ok(paths
+            .into_iter()
+            .filter_map(|path| path.strip_prefix("entity_search:").map(str::to_owned))
+            .filter(|entity_id| !entity_id.is_empty())
+            .collect())
     }
 
     fn coverage(&mut self) -> Result<CoverageResponse, IndexAccessError> {

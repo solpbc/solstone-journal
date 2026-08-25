@@ -12,7 +12,8 @@ use crate::store_tests::{
 };
 use crate::{
     DetectedEntityInput, FacetEntityWriteError, delete_detected_entity,
-    iter_detected_entity_names_since, load_detected_entities_recent, read_detected_entities,
+    iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
+    load_detected_entities_recent, read_detected_entities, read_detected_entity_names_strict,
     save_detected_entity, update_detected_entity, upsert_detection_segment,
 };
 
@@ -150,6 +151,39 @@ fn detected_reader_skips_malformed_rows_and_fills_missing_ids() {
     let rows = read_detected_entities(temporary.path(), "scope", "20260101").unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["id"], "alice");
+}
+
+#[test]
+fn strict_detected_reader_preserves_valid_row_order_and_rejects_bad_rows() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    let path = temporary
+        .path()
+        .join("facets/scope/entities/20260101.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        "\n{\"type\":\"Person\",\"name\":\"Ada\"}\n{\"type\":\"Tool\",\"name\":\"Beacon\"}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        read_detected_entity_names_strict(temporary.path(), "scope", "20260101").unwrap(),
+        vec!["Ada", "Beacon"]
+    );
+
+    for contents in [
+        "not json\n",
+        "[]\n",
+        "{\"type\":\"x\",\"name\":\"Ada\"}\n",
+        "{\"type\":\"Person\"}\n",
+        "{\"type\":\"Person\",\"name\":\"  \"}\n",
+    ] {
+        fs::write(&path, contents).unwrap();
+        assert!(
+            read_detected_entity_names_strict(temporary.path(), "scope", "20260101").is_err(),
+            "{contents:?} must fail strictly"
+        );
+    }
 }
 
 #[test]
@@ -535,6 +569,44 @@ fn names_since_keeps_one_tuple_per_day() {
     );
     assert_eq!(
         iter_detected_entity_names_since(temporary.path(), "20260101").unwrap(),
+        vec![
+            (
+                "Alice".to_owned(),
+                "scope".to_owned(),
+                "20260101".to_owned()
+            ),
+            (
+                "Alice".to_owned(),
+                "scope".to_owned(),
+                "20260102".to_owned()
+            ),
+        ]
+    );
+    assert_eq!(
+        iter_detected_entity_names_since_strict(temporary.path(), "20260101", None).unwrap(),
+        vec![
+            (
+                "Alice".to_owned(),
+                "scope".to_owned(),
+                "20260101".to_owned()
+            ),
+            (
+                "Alice".to_owned(),
+                "scope".to_owned(),
+                "20260102".to_owned()
+            ),
+        ]
+    );
+
+    create_test_facet(temporary.path(), "other");
+    let malformed = temporary
+        .path()
+        .join("facets/other/entities/20260101.jsonl");
+    fs::create_dir_all(malformed.parent().unwrap()).unwrap();
+    fs::write(malformed, "not json\n").unwrap();
+    assert_eq!(
+        iter_detected_entity_names_since_strict(temporary.path(), "20260101", Some("scope"),)
+            .unwrap(),
         vec![
             (
                 "Alice".to_owned(),

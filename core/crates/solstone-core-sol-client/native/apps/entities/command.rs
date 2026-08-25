@@ -12,6 +12,12 @@ use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 const EDGE_INDEX_UNAVAILABLE_MESSAGE: &str = "I couldn't read your connections because the index hasn't been built yet. Run `journal indexer --rebuild-edges` to build it.";
 const ENTITY_BUSY_MESSAGE: &str =
     "I couldn't update that entity right now because it was busy. Try again in a moment.";
+const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str =
+    "I couldn't read detected entity activity. Run `journal doctor` and try again.";
+const ENTITY_SEARCH_INDEX_BUSY_MESSAGE: &str =
+    "I couldn't search your entities while indexing is in progress. Retry once it finishes.";
+const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str = "I couldn't search your entities because the index is stale. Run `journal indexer --rescan-full` and try again.";
+const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "I couldn't search your entities because the index is unavailable. Run `journal indexer --reset --rescan-full` and try again.";
 const ENTITY_HISTORY_BASE_ROUTE: &str = "/app/entities/api/journal";
 
 #[must_use]
@@ -1270,6 +1276,18 @@ fn entity_error(error: ClientError, entity: Option<&str>, type_: Option<&str>) -
     match error {
         ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
         _ if error.reason_code() == Some("entity_busy") => stderr(ENTITY_BUSY_MESSAGE),
+        _ if error.reason_code() == Some("entity_search_index_unavailable") => {
+            stderr(ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE)
+        }
+        _ if error.reason_code() == Some("entity_search_index_busy") => {
+            stderr(ENTITY_SEARCH_INDEX_BUSY_MESSAGE)
+        }
+        _ if error.reason_code() == Some("entity_search_index_stale") => {
+            stderr(ENTITY_SEARCH_INDEX_STALE_MESSAGE)
+        }
+        _ if error.reason_code() == Some("entity_search_activity_unavailable") => {
+            stderr(ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE)
+        }
         _ if error.reason_code() == Some("invalid_entity_type") && type_.is_some() => {
             stderr(format!(
                 "Error: Invalid entity type '{}'.",
@@ -1895,4 +1913,42 @@ fn strip_parenthetical(value: &str) -> String {
         }
     }
     output.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rejected(reason_code: &str) -> ClientError {
+        ClientError::ReasonRejected {
+            status: 503,
+            error: "search refused".to_owned(),
+            reason_code: Some(reason_code.to_owned()),
+            detail: None,
+            payload: Box::new(Value::Null),
+        }
+    }
+
+    #[test]
+    fn entity_search_errors_have_specific_recovery_messages() {
+        for (reason_code, message) in [
+            (
+                "entity_search_index_unavailable",
+                ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE,
+            ),
+            ("entity_search_index_busy", ENTITY_SEARCH_INDEX_BUSY_MESSAGE),
+            (
+                "entity_search_index_stale",
+                ENTITY_SEARCH_INDEX_STALE_MESSAGE,
+            ),
+            (
+                "entity_search_activity_unavailable",
+                ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE,
+            ),
+        ] {
+            let output = entity_error(rejected(reason_code), None, None);
+            assert_eq!(output.stderr, format!("{message}\n"), "{reason_code}");
+            assert_eq!(output.exit, 1, "{reason_code}");
+        }
+    }
 }

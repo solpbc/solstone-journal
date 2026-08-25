@@ -39,6 +39,34 @@ pub fn read_detected_entities(
     facet_dir: &str,
     day: &str,
 ) -> Result<Vec<Value>, FacetEntityWriteError> {
+    read_detected_entities_with_mode(
+        journal_root,
+        facet_dir,
+        day,
+        DetectedEntityReadMode::Tolerant,
+    )
+}
+
+pub(super) fn read_detected_entities_strict(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
+    read_detected_entities_with_mode(journal_root, facet_dir, day, DetectedEntityReadMode::Strict)
+}
+
+#[derive(Clone, Copy)]
+enum DetectedEntityReadMode {
+    Tolerant,
+    Strict,
+}
+
+fn read_detected_entities_with_mode(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+    mode: DetectedEntityReadMode,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
     let path = detected_path(journal_root, facet_dir, day)?;
     if !path_lexists(&path).map_err(|error| FacetEntityWriteError::FacetStore(error.into()))? {
         return Ok(Vec::new());
@@ -48,31 +76,82 @@ pub fn read_detected_entities(
     }
     let contents = read_text(&path, String::new())
         .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+    parse_detected_entity_rows(&contents, mode)
+}
+
+fn parse_detected_entity_rows(
+    contents: &str,
+    mode: DetectedEntityReadMode,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
     let mut rows = Vec::new();
-    for parsed in contents
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(Value::is_object)
-    {
-        let mut row = parsed.clone();
-        let object = row.as_object_mut().expect("object filter retained objects");
+    for (index, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed = match serde_json::from_str::<Value>(line) {
+            Ok(parsed) => parsed,
+            Err(_) if matches!(mode, DetectedEntityReadMode::Tolerant) => continue,
+            Err(error) => return Err(strict_row_error(index + 1, "invalid JSON", error)),
+        };
+        let Some(object) = parsed.as_object() else {
+            if matches!(mode, DetectedEntityReadMode::Tolerant) {
+                continue;
+            }
+            return Err(strict_row_error(
+                index + 1,
+                "record is not an object",
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "not an object"),
+            ));
+        };
+        let mut row = Value::Object(object.clone());
+        let object = row
+            .as_object_mut()
+            .expect("cloned object remains an object");
         let entity_type = object
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or_default();
         if !is_valid_entity_type(entity_type) {
-            continue;
+            if matches!(mode, DetectedEntityReadMode::Tolerant) {
+                continue;
+            }
+            return Err(strict_row_error(
+                index + 1,
+                "record has an invalid entity type",
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid entity type"),
+            ));
+        }
+        let name = object.get("name").and_then(Value::as_str);
+        if matches!(mode, DetectedEntityReadMode::Strict)
+            && !name.is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(strict_row_error(
+                index + 1,
+                "record has a missing or blank name",
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "missing or blank name"),
+            ));
         }
         if !object.get("id").is_some_and(Value::is_string) {
-            let name = object
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            object.insert("id".to_owned(), Value::String(entity_slug(name)));
+            object.insert(
+                "id".to_owned(),
+                Value::String(entity_slug(name.unwrap_or_default())),
+            );
         }
         rows.push(row);
     }
     Ok(rows)
+}
+
+fn strict_row_error(
+    line_number: usize,
+    reason: &str,
+    source: impl std::error::Error + Send + Sync + 'static,
+) -> FacetEntityWriteError {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("detected entity row {line_number} {reason}: {source}"),
+    )
+    .into()
 }
 
 /// Reconcile one segment's kept detections into the facet/day detected store.

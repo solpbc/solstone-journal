@@ -325,15 +325,6 @@ mod tests {
     #[tokio::test]
     async fn unported_entity_plates_and_assist_keep_their_reference_refusals() {
         let journal = Journal::established();
-        for path in ["/app/entities/api/search?query=x"] {
-            let (status, _headers, body) = routed(&journal, "GET", path, b"").await;
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{path}");
-            assert_eq!(
-                json_body(&body)["reason_code"],
-                "index_plate_not_ported",
-                "{path}"
-            );
-        }
         for path in [
             "/app/entities/api/network?entity=x",
             "/app/entities/api/history?entity=x",

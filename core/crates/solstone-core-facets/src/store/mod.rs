@@ -52,7 +52,8 @@ pub use detected_entities::{
 #[cfg(test)]
 pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
 pub use detected_entity_activity::{
-    iter_detected_entity_names_since, load_detected_entities_recent,
+    iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
+    load_detected_entities_recent, read_detected_entity_names_strict,
 };
 pub use error::{
     FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError,

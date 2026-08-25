@@ -11,10 +11,12 @@ use std::time::Duration;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use chrono::Local;
+use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_entity::{AmbiguityObservation, record_ambiguity_observation};
+use solstone_core_indexer_store::{db::db_path, scan::scan_journal};
 use tower::ServiceExt;
 
 // Criterion 3 named correctness pins:
@@ -68,6 +70,62 @@ fn seed_facet_entity(root: &Path, facet: &str, id: &str) {
         &format!("facets/{facet}/entities/{id}/entity.json"),
         json!({"entity_id":id}),
     );
+}
+
+fn seed_search_entity(root: &Path, id: &str, name: &str, entity_type: &str, aka: &[&str]) {
+    write(
+        root,
+        &format!("entities/{id}/entity.json"),
+        json!({"id":id,"name":name,"type":entity_type,"aka":aka}),
+    );
+}
+
+fn seed_search_facet(root: &Path, facet: &str, id: &str, description: &str, tags: &[&str]) {
+    write(
+        root,
+        &format!("facets/{facet}/facet.json"),
+        json!({"title":facet}),
+    );
+    write(
+        root,
+        &format!("facets/{facet}/entities/{id}/entity.json"),
+        json!({"entity_id":id,"description":description,"tags":tags,"last_seen":"20260105"}),
+    );
+}
+
+fn seed_search_detected(root: &Path, facet: &str, day: &str, rows: &[Value]) {
+    let contents = rows
+        .iter()
+        .map(|row| serde_json::to_string(row).unwrap() + "\n")
+        .collect::<String>();
+    write_raw(
+        root,
+        &format!("facets/{facet}/entities/{day}.jsonl"),
+        contents.as_bytes(),
+    );
+}
+
+fn scan_search_journal(root: &Path) {
+    scan_journal(root, true).expect("scan search journal");
+}
+
+fn set_search_index_building(root: &Path) {
+    let connection = Connection::open(db_path(root)).expect("open search index");
+    connection
+        .execute(
+            "UPDATE index_build_state SET state='building' WHERE id=1",
+            [],
+        )
+        .expect("mark search index building");
+}
+
+fn search_item_ids(body: &Value) -> Vec<&str> {
+    body["items"]
+        .as_array()
+        .expect("search items")
+        .iter()
+        .map(|item| item["entity_id"].as_str().expect("entity id"))
+        .collect()
 }
 fn seed_divergent(root: &Path, relationship: Value, identity: Value) {
     write(root, "entities/dir-b/entity.json", identity);
@@ -342,7 +400,7 @@ fn assert_no_success_envelope(route: &str, body: &Value) {
 }
 
 #[tokio::test]
-async fn index_plate_routes_validate_pagination_before_refusing_as_unported() {
+async fn index_plate_routes_validate_pagination_before_search_index_checks() {
     let journal = Journal::new();
     for route in ["network", "history", "overview"] {
         assert_oracle_refusal(
@@ -382,9 +440,329 @@ async fn index_plate_routes_validate_pagination_before_refusing_as_unported() {
             "/app/entities/api/search?limit=not-an-integer",
         )
         .await,
-        "index_plate_not_ported",
-        501,
+        "entity_search_index_unavailable",
+        503,
     );
+}
+
+#[tokio::test]
+async fn entity_search_combines_index_agents_and_applies_filters() {
+    let journal = Journal::new();
+    seed_search_entity(
+        journal.path(),
+        "ada",
+        "Ada Lovelace",
+        "Person",
+        &["Enchantress"],
+    );
+    seed_search_entity(journal.path(), "dora", "Dora", "Person", &[]);
+    seed_search_facet(
+        journal.path(),
+        "work",
+        "ada",
+        "Solves complexity puzzles",
+        &["compiler"],
+    );
+    seed_search_facet(
+        journal.path(),
+        "personal",
+        "ada",
+        "Keeps poetry notes",
+        &["poetry"],
+    );
+    seed_search_facet(
+        journal.path(),
+        "work",
+        "dora",
+        "Tracks exploration",
+        &["field"],
+    );
+    seed_search_detected(
+        journal.path(),
+        "work",
+        "20260105",
+        &[json!({"type":"Person","name":"Dora","description":"nightwatch mention"})],
+    );
+    scan_search_journal(journal.path());
+
+    for query in ["Ada", "Enchantress", "complexity", "compiler"] {
+        let (status, body) = call(
+            journal.path(),
+            &format!("/app/entities/api/search?query={query}"),
+        )
+        .await;
+        assert_eq!(status, 200, "{query}");
+        assert_eq!(search_item_ids(&body), vec!["ada"], "{query}");
+    }
+    let (status, detected) =
+        call(journal.path(), "/app/entities/api/search?query=nightwatch").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&detected), vec!["dora"]);
+
+    let (status, deduplicated) = call(journal.path(), "/app/entities/api/search?query=Dora").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&deduplicated), vec!["dora"]);
+
+    let (status, filtered) = call(
+        journal.path(),
+        "/app/entities/api/search?query=Ada&type=Person&facet=work",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&filtered), vec!["ada"]);
+    assert_eq!(
+        filtered["items"][0]["description"],
+        "Solves complexity puzzles"
+    );
+    assert_eq!(filtered["items"][0]["facets"], json!(["work"]));
+
+    let (status, since) = call(
+        journal.path(),
+        "/app/entities/api/search?type=Person&facet=work&since=20260105",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&since), vec!["dora"]);
+
+    let (status, uppercase_facet_since) = call(
+        journal.path(),
+        "/app/entities/api/search?type=Person&facet=WORK&since=20260105",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(uppercase_facet_since, since);
+}
+
+#[tokio::test]
+async fn entity_search_excludes_truthy_detached_facet_relationships() {
+    let journal = Journal::new();
+    seed_search_entity(journal.path(), "ada", "Ada", "Person", &[]);
+    seed_search_facet(
+        journal.path(),
+        "work",
+        "ada",
+        "detachedrelationship",
+        &["detachedtag"],
+    );
+    write(
+        journal.path(),
+        "facets/work/entities/ada/entity.json",
+        json!({
+            "entity_id":"ada",
+            "description":"detachedrelationship",
+            "tags":["detachedtag"],
+            "last_seen":"20260105",
+            "detached":"yes",
+        }),
+    );
+    scan_search_journal(journal.path());
+
+    let (status, listing) = call(journal.path(), "/app/entities/api/search").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&listing), vec!["ada"]);
+    assert_eq!(listing["items"][0]["description"], "");
+    assert_eq!(listing["items"][0]["facets"], json!([]));
+
+    let (status, facet_filtered) =
+        call(journal.path(), "/app/entities/api/search?facet=work").await;
+    assert_eq!(status, 200);
+    assert_eq!(facet_filtered, json!({"items":[]}));
+
+    let (status, searched) = call(
+        journal.path(),
+        "/app/entities/api/search?query=detachedrelationship&facet=work",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(searched, json!({"items":[]}));
+}
+
+#[tokio::test]
+async fn entity_search_no_query_ordering_and_limit_compatibility() {
+    let journal = Journal::new();
+    for index in 0..21 {
+        let name = format!("Entity {index:02}");
+        seed_search_entity(
+            journal.path(),
+            &format!("entity-{index:02}"),
+            &name,
+            "Person",
+            &[],
+        );
+    }
+    scan_search_journal(journal.path());
+
+    let (status, defaulted) = call(journal.path(), "/app/entities/api/search").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&defaulted).len(), 20);
+    assert_eq!(search_item_ids(&defaulted)[0], "entity-00");
+
+    let (status, fallback) = call(
+        journal.path(),
+        "/app/entities/api/search?limit=not-a-number",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&fallback).len(), 20);
+
+    let (status, bounded) = call(journal.path(), "/app/entities/api/search?limit=1").await;
+    assert_eq!(status, 200);
+    assert_eq!(search_item_ids(&bounded), vec!["entity-00"]);
+
+    assert_oracle_refusal(
+        "entity_search:invalid-since",
+        call(journal.path(), "/app/entities/api/search?since=not-a-day").await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn entity_search_refuses_unavailable_busy_stale_and_activity_evidence() {
+    let unavailable = Journal::new();
+    assert_oracle_refusal(
+        "entity_search:unavailable",
+        call(unavailable.path(), "/app/entities/api/search?query=needle").await,
+        "entity_search_index_unavailable",
+        503,
+    );
+    assert_oracle_refusal(
+        "entity_search:untokenizable-still-checks-index",
+        call(
+            unavailable.path(),
+            "/app/entities/api/search?query=%F0%9F%93%85",
+        )
+        .await,
+        "entity_search_index_unavailable",
+        503,
+    );
+
+    let busy = Journal::new();
+    seed_search_entity(busy.path(), "busy", "Busy", "Person", &[]);
+    scan_search_journal(busy.path());
+    set_search_index_building(busy.path());
+    assert_oracle_refusal(
+        "entity_search:busy",
+        call(busy.path(), "/app/entities/api/search").await,
+        "entity_search_index_busy",
+        503,
+    );
+
+    let current_missing_from_index = Journal::new();
+    seed_search_entity(
+        current_missing_from_index.path(),
+        "indexed",
+        "Indexed",
+        "Person",
+        &[],
+    );
+    scan_search_journal(current_missing_from_index.path());
+    seed_search_entity(
+        current_missing_from_index.path(),
+        "current",
+        "Current",
+        "Person",
+        &[],
+    );
+    assert_oracle_refusal(
+        "entity_search:current-missing-from-index",
+        call(
+            current_missing_from_index.path(),
+            "/app/entities/api/search",
+        )
+        .await,
+        "entity_search_index_stale",
+        503,
+    );
+
+    let indexed_missing_from_current = Journal::new();
+    seed_search_entity(
+        indexed_missing_from_current.path(),
+        "indexed",
+        "Indexed",
+        "Person",
+        &[],
+    );
+    scan_search_journal(indexed_missing_from_current.path());
+    fs::remove_file(
+        indexed_missing_from_current
+            .path()
+            .join("entities/indexed/entity.json"),
+    )
+    .unwrap();
+    assert_oracle_refusal(
+        "entity_search:indexed-missing-from-current",
+        call(
+            indexed_missing_from_current.path(),
+            "/app/entities/api/search",
+        )
+        .await,
+        "entity_search_index_stale",
+        503,
+    );
+
+    let activity = Journal::new();
+    seed_search_entity(activity.path(), "ada", "Ada", "Person", &[]);
+    seed_search_detected(
+        activity.path(),
+        "work",
+        "20260105",
+        &[json!({"type":"Person","name":"Ada","description":"valid"})],
+    );
+    scan_search_journal(activity.path());
+    write_raw(
+        activity.path(),
+        "facets/work/entities/20260105.jsonl",
+        b"not json\n",
+    );
+    assert_oracle_refusal(
+        "entity_search:activity-unavailable",
+        call(activity.path(), "/app/entities/api/search?since=20260105").await,
+        "entity_search_activity_unavailable",
+        503,
+    );
+}
+
+#[tokio::test]
+async fn entity_search_reports_healthy_empty_results_and_recovers_after_merge_rescan() {
+    let empty = Journal::new();
+    seed_search_entity(empty.path(), "ada", "Ada", "Person", &[]);
+    scan_search_journal(empty.path());
+    let (status, response) = call(empty.path(), "/app/entities/api/search?query=unmatched").await;
+    assert_eq!(status, 200);
+    assert_eq!(response, json!({"items":[]}));
+
+    let merged = Journal::new();
+    seed_search_entity(merged.path(), "source", "Source", "Person", &["Source"]);
+    seed_search_entity(merged.path(), "target", "Target", "Person", &[]);
+    scan_search_journal(merged.path());
+    seed_open_merge_candidate(merged.path()).await;
+    let (status, accepted) = post(
+        merged.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(accepted["status"], "accepted");
+
+    assert_oracle_refusal(
+        "entity_search:accepted-merge-before-rescan",
+        call(merged.path(), "/app/entities/api/search?query=Source").await,
+        "entity_search_index_stale",
+        503,
+    );
+
+    scan_search_journal(merged.path());
+    for query in ["Source", "Target"] {
+        let (status, response) = call(
+            merged.path(),
+            &format!("/app/entities/api/search?query={query}"),
+        )
+        .await;
+        assert_eq!(status, 200, "{query}");
+        assert_eq!(search_item_ids(&response), vec!["target"], "{query}");
+    }
 }
 
 fn save_person(root: &Path, dir: &str, name: &str) {
