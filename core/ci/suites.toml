@@ -4137,6 +4137,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-settings-web::facets_dom"
+package = "solstone-core-settings-web"
+target = "facets_dom"
+set = "component"
+areas = ["home"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-cortex::cortex_child_supervisor"
 package = "solstone-core-cortex"
 target = "cortex_child_supervisor"
