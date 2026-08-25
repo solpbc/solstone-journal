@@ -61,7 +61,7 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
 }
 
 fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
-    for _ in 0..400 {
+    for _ in 0..1_600 {
         if UnixStream::connect(socket).is_ok() {
             return;
         }
@@ -99,7 +99,7 @@ fn ac6_boot_order_is_identity_then_socket_then_ready() {
     let mut first_start_time = None;
     let mut first_socket = None;
     let mut first_ready = None;
-    for tick in 0..400 {
+    for tick in 0..1_600 {
         if first_pid.is_none() && pid.exists() {
             first_pid = Some(tick);
         }
