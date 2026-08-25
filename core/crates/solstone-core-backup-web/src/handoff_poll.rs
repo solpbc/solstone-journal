@@ -60,11 +60,23 @@ impl Drop for PollLease {
 
 pub(crate) fn spawn(deps: BackupWebDeps, nonce: String, generation: u64) {
     if validation::require_configured_portal_base(&deps.portal_base).is_err() {
-        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        operation::finish(
+            &deps.operations,
+            generation,
+            "error",
+            Some("failed".into()),
+            None,
+        );
         return;
     }
     let Some(lease) = PollLease::try_acquire(&deps.handoff_poll_lease) else {
-        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        operation::finish(
+            &deps.operations,
+            generation,
+            "error",
+            Some("failed".into()),
+            None,
+        );
         return;
     };
     let poll_deps = deps.clone();
@@ -80,6 +92,7 @@ pub(crate) fn spawn(deps: BackupWebDeps, nonce: String, generation: u64) {
                 generation,
                 "error",
                 Some("failed".into()),
+                None,
             );
         }
     });
@@ -214,6 +227,7 @@ fn finish_error(deps: &BackupWebDeps, generation: u64, reason: &str) {
         generation,
         "error",
         Some(reason.to_owned()),
+        None,
     );
 }
 

@@ -2,8 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 // Status pane toggle logic
-(function(){
-  const statusIcon = document.querySelector('.facet-bar .status-icon');
+window.whenShellReady(() => {
+  const statusIcon = document.querySelector('#status-instrument .status-icon');
   const statusPane = document.querySelector('.status-pane');
   const statusConsoleLink = document.getElementById('status-pane-console-link');
   const liveRegion = document.getElementById('status-live-region');
@@ -15,10 +15,10 @@
   window.updateStatusLabel = function() {
     if (!statusIcon) return;
     const label = window.appEvents?.statusLabel || 'connecting';
-    const expanded = statusIcon.getAttribute('aria-expanded') === 'true';
-    statusIcon.setAttribute('aria-label',
-      'system status: ' + label + ', ' + (expanded ? 'expanded' : 'collapsed'));
+    statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
+    const visibleLabel = document.querySelector('#status-instrument .status-label');
+    if (visibleLabel) visibleLabel.textContent = label;
     if (liveRegion) liveRegion.textContent = label;
   };
 
@@ -547,4 +547,4 @@
   window.addEventListener('diagnostic-console-updated', updateDiagnosticConsoleLink);
   // Initial update
   setTimeout(updateStatusPane, 100);
-})();
+});

@@ -225,7 +225,7 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     assert_eq!(speakers.status, 200);
     assert_eq!(
         format!("{:x}", Sha256::digest(&speakers.body)),
-        "fd6a69438a6e29f898945f39609ae7e2f0460b663ff2060673d5184fb523c18f"
+        "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a"
     );
 
     let shell_v4 = request(SocketAddr::from(([127, 0, 0, 1], port)), "/api/shell")

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -74,7 +74,6 @@ impl TalentRoots {
 pub(crate) async fn api_talents_day(
     AxumPath(day): AxumPath<String>,
     Query(query): Query<BTreeMap<String, String>>,
-    headers: HeaderMap,
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(roots): Extension<Arc<TalentRoots>>,
 ) -> Response {
@@ -86,10 +85,7 @@ pub(crate) async fn api_talents_day(
             StatusCode::BAD_REQUEST,
         );
     }
-    let facet = query
-        .get("facet")
-        .cloned()
-        .or_else(|| selected_facet(&headers));
+    let facet = query.get("facet").cloned();
     let overrides = match journal_config(&journal.0) {
         Ok(config) => config
             .get("talent_overrides")
@@ -362,14 +358,6 @@ fn facets(journal: &Path) -> BTreeMap<String, Value> {
                 })
         })
         .collect()
-}
-
-fn selected_facet(headers: &HeaderMap) -> Option<String> {
-    let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
-    cookie.split(';').find_map(|part| {
-        let (name, value) = part.trim().split_once('=')?;
-        (name == "selectedFacet" && !value.is_empty()).then(|| value.to_owned())
-    })
 }
 
 fn uses_for_day(journal: &Path, day: &str, facet_filter: Option<&str>) -> Vec<Value> {

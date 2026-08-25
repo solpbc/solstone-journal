@@ -669,19 +669,6 @@
         return;
       }
       el.innerHTML = markdown(raw);
-      if (key === 'reading') {
-        el.querySelectorAll('li').forEach(function (li) {
-          const strong = li.querySelector('strong');
-          if (!strong) return;
-          const facetName = strong.textContent.trim();
-          const link = document.createElement('a');
-          link.href = '/app/search?agent=news&facet=' + encodeURIComponent(facetName);
-          link.textContent = li.textContent;
-          link.className = 'pulse-reading-link';
-          li.textContent = '';
-          li.appendChild(link);
-        });
-      }
     });
   }
 

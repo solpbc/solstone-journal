@@ -45,13 +45,12 @@ The separate `config/convey.json` file stores UI/UX personalization (facet/app o
 ```json
 {
   "facets": {"order": ["work", "personal"], "selected": "work"},
-  "apps": {"order": ["home", "activities", "entities"], "starred": ["home", "entities"]}
+  "apps": {"order": ["home", "activities", "entities"]}
 }
 ```
 
 - `facets.order` – Custom facet ordering. `facets.selected` – Currently selected facet (auto-synced with browser).
 - `apps.order` – Custom app ordering in menu bar.
-- `apps.starred` – Apps to show in the quick-access starred section.
 
 ## Retention configuration
 

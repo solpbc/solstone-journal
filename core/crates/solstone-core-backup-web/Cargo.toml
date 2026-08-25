@@ -33,6 +33,7 @@ tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 solstone-core-convey-shell.workspace = true
+solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-support"] }
 
 [[test]]
 name = "backup_web_callosum_transport"

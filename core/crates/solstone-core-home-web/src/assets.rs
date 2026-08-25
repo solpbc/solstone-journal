@@ -41,7 +41,7 @@ fn asset(bytes: &'static [u8], content_type: &'static str) -> Response<Body> {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{REMOVALS_JS, WORKSPACE_SUFFIX};
+    use super::{HOME_JS, REMOVALS_JS, WORKSPACE_SUFFIX};
 
     fn removal_copy() -> Vec<(&'static str, &'static str)> {
         let source = std::str::from_utf8(REMOVALS_JS).expect("removal card source is UTF-8");
@@ -76,6 +76,14 @@ mod tests {
             include_bytes!("../assets/workspace.html").ends_with(WORKSPACE_SUFFIX),
             "the shipped home workspace must end with the removal card script line"
         );
+    }
+
+    #[test]
+    fn reading_briefing_entries_do_not_construct_search_anchors() {
+        let source = std::str::from_utf8(HOME_JS).expect("home source is UTF-8");
+        assert!(!source.contains("/app/search"));
+        assert!(!source.contains("pulse-reading-link"));
+        assert!(!source.contains("document.createElement('a')"));
     }
 
     #[test]

@@ -21,6 +21,7 @@ pub struct Operation {
     pub kind: String,
     pub phase: String,
     pub reason_code: Option<String>,
+    pub recording_failure: Option<String>,
     pub portal_url: Option<String>,
 }
 
@@ -67,6 +68,7 @@ fn expire_hosted_wait_in_place(slot: &mut Slot) {
     }
     slot.view.phase = "error".into();
     slot.view.reason_code = Some("expired".into());
+    slot.view.recording_failure = None;
     slot.view.portal_url = None;
     slot.nonce = None;
     slot.restore_key = None;
@@ -120,6 +122,7 @@ pub fn begin(
         kind: kind.to_owned(),
         phase: running_phase(kind).to_owned(),
         reason_code: None,
+        recording_failure: None,
         portal_url,
     };
     *guard = Some(Slot {
@@ -137,6 +140,7 @@ pub fn finish(
     generation: u64,
     phase: impl Into<String>,
     reason_code: Option<String>,
+    recording_failure: Option<String>,
 ) {
     let mut guard = slot.lock().expect("operation slot lock");
     let Some(current) = guard.as_mut() else {
@@ -147,6 +151,7 @@ pub fn finish(
     }
     current.view.phase = phase.into();
     current.view.reason_code = reason_code;
+    current.view.recording_failure = recording_failure;
     current.view.portal_url = None;
     current.nonce = None;
     current.restore_key = None;
@@ -155,6 +160,37 @@ pub fn finish(
 pub struct Terminal {
     pub phase: String,
     pub reason_code: Option<String>,
+    pub recording_failure: Option<String>,
+}
+
+impl Terminal {
+    pub fn done() -> Self {
+        Self::phase("done", None)
+    }
+
+    pub fn error(reason_code: impl Into<String>) -> Self {
+        Self::phase("error", Some(reason_code.into()))
+    }
+
+    pub fn phase(phase: impl Into<String>, reason_code: Option<String>) -> Self {
+        Self {
+            phase: phase.into(),
+            reason_code,
+            recording_failure: None,
+        }
+    }
+
+    pub fn restore(
+        phase: impl Into<String>,
+        reason_code: Option<String>,
+        recording_failure: Option<String>,
+    ) -> Self {
+        Self {
+            phase: phase.into(),
+            reason_code,
+            recording_failure,
+        }
+    }
 }
 
 pub fn spawn_worker<F>(slot: SharedOperationSlot, generation: u64, work: F)
@@ -166,11 +202,15 @@ where
     // restic/broker, and resolve_operational_tools runs here so POST returns before
     // restic install.
     thread::spawn(move || {
-        let terminal = panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or(Terminal {
-            phase: "error".into(),
-            reason_code: Some("failed".into()),
-        });
-        finish(&slot, generation, terminal.phase, terminal.reason_code);
+        let terminal = panic::catch_unwind(AssertUnwindSafe(work))
+            .unwrap_or_else(|_| Terminal::error("failed"));
+        finish(
+            &slot,
+            generation,
+            terminal.phase,
+            terminal.reason_code,
+            terminal.recording_failure,
+        );
     });
 }
 
@@ -230,11 +270,11 @@ pub fn match_handoff(
 }
 
 pub fn mark_needs_subscription(slot: &SharedOperationSlot, generation: u64) {
-    finish(slot, generation, "needs_subscription", None);
+    finish(slot, generation, "needs_subscription", None, None);
 }
 
 pub fn mark_expired(slot: &SharedOperationSlot, generation: u64) {
-    finish(slot, generation, "error", Some("expired".into()));
+    finish(slot, generation, "error", Some("expired".into()), None);
 }
 
 pub fn generation_of(slot: &SharedOperationSlot) -> Option<u64> {

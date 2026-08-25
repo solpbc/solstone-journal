@@ -4,6 +4,8 @@
 (function () {
   window.CONVEY_COPY = Object.freeze({
     RELOAD_HINT: "reload to try again.",
+    APP_NOT_CONVERTED_HEADING: "{app} isn't available in the browser yet.",
+    APP_NOT_CONVERTED_DESC: "nothing is wrong on your end. this screen hasn't been built.",
     UNKNOWN_ERROR: "something went wrong and i don't have a reason for it. reload to try again.",
     LOG_READ_FAILED: "i couldn't read that log. reload to try again.",
     ACTION_RECONNECT: "reconnect",

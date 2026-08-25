@@ -87,7 +87,7 @@
 
   // Mark status icon as error state (red with glow)
   function markError() {
-    const statusIcon = document.querySelector('.facet-bar .status-icon');
+    const statusIcon = document.querySelector('#status-instrument .status-icon');
     if (statusIcon) {
       statusIcon.classList.add('error');
     }

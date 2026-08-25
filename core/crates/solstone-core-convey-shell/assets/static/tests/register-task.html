@@ -7,16 +7,8 @@
   .pass { color: #166534; }
   .fail { color: #b91c1c; }
 </style>
-<div class="facet-bar"><button class="status-icon"></button><div class="facet-pills-container"></div></div>
-<nav class="menu-bar">
-  <ul class="menu-items">
-    <li class="menu-item" data-app-name="support" data-starred="false">
-      <a class="menu-item-link" href="#"><span class="icon">S</span><span class="label">Support</span></a>
-      <button class="star-toggle" type="button" aria-pressed="false">☆</button>
-      <button class="drag-handle" type="button">↕</button>
-    </li>
-  </ul>
-</nav>
+<div class="facet-bar"><div class="facet-pills-container"></div></div>
+<div id="status-instrument"><button class="status-icon"></button></div>
 <div id="notification-center"></div>
 <div id="results"></div>
 <script>
@@ -78,13 +70,12 @@
     await wait(0);
     await settle(task.runNow());
     await settle(task.runNow());
-    const menuItem = document.querySelector('.menu-item[data-app-name="support"]');
-    assert('three failures add failing pip', menuItem.classList.contains('menu-item-bg-failing'));
+    assert('three failures mark task failing', task.getHealth().failing === true);
     assert('failing transition shows one notification', notifications.length === 1 && notifications[0].title === 'support background task');
 
     await task.runNow();
     const successHealth = task.getHealth();
-    assert('success clears failing pip', !menuItem.classList.contains('menu-item-bg-failing'));
+    assert('success clears failing state', successHealth.failing === false);
     assert('success resets health counters', successHealth.consecutiveFailures === 0 && successHealth.lastSuccessAt !== null && successHealth.failing === false);
 
     await task.runNow();

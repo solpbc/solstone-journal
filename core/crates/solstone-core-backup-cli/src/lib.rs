@@ -13,10 +13,15 @@ use solstone_core_backup::{
     generate_and_store_keys, generate_daily_key, get_backup_config, get_destination, get_keys,
     save_hosted_binding, set_destination, set_enabled, set_recovery_key_confirmed, status_view,
 };
+use solstone_core_backup_runtime::restore::{
+    RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
+    RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
+};
 use solstone_core_backup_runtime::{
-    BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance, PruneResult,
-    ResticKeyError, RestoreResult, RotationResult, SystemToolRunner, TeardownResult,
-    ToolInstallDirs, ToolRunner, UreqHttpTransport, ensure_restic, record_backup_error,
+    BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance,
+    NativeRestoreRecorder, PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome,
+    RestoreRecorder, RotationResult, SystemToolRunner, TeardownResult, ToolInstallDirs, ToolRunner,
+    UreqHttpTransport, ensure_restic, publish_restore_outcome, record_backup_error,
     resolve_operational_tools, restore_journal, rotate_recovery_key, run_backup, run_prune,
     teardown_backup, validate_destination,
 };
@@ -50,6 +55,7 @@ impl std::fmt::Debug for CliRun {
 
 pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
     let http = UreqHttpTransport;
+    let recorder = NativeRestoreRecorder;
     run_cli_with_deps(
         args,
         journal,
@@ -57,6 +63,7 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
         &UreqByteDownload,
         &http,
         ToolInstallDirs::default(),
+        &recorder,
     )
 }
 
@@ -67,6 +74,7 @@ fn run_cli_with_deps(
     downloader: &dyn ByteDownload,
     http: &dyn HttpTransport,
     dirs: ToolInstallDirs<'_>,
+    recorder: &dyn RestoreRecorder,
 ) -> CliRun {
     let clock = ProductionClock;
     let maintenance = NativeJournalMaintenance;
@@ -80,7 +88,7 @@ fn run_cli_with_deps(
         journal_maintenance: &maintenance,
     };
     match classify_tool_resolution(args) {
-        None => run_cli_with(args, journal, &placeholder),
+        None => run_cli_with(args, journal, &placeholder, recorder),
         Some(append_only) => {
             match resolve_operational_tools(runner, downloader, journal, append_only, dirs) {
                 Ok(tools) => {
@@ -89,9 +97,9 @@ fn run_cli_with_deps(
                         rclone_path: tools.rclone_path.as_deref(),
                         ..placeholder
                     };
-                    run_cli_with(args, journal, &services)
+                    run_cli_with(args, journal, &services, recorder)
                 }
-                Err(reason) => format_resolution_error(args, journal, &clock, &reason),
+                Err(reason) => format_resolution_error(args, journal, &clock, recorder, &reason),
             }
         }
     }
@@ -101,6 +109,7 @@ fn format_resolution_error(
     args: &[String],
     journal: &Path,
     clock: &dyn Clock,
+    recorder: &dyn RestoreRecorder,
     reason: &str,
 ) -> CliRun {
     let args = normalize_global_flags(args);
@@ -110,13 +119,27 @@ fn format_resolution_error(
             status: "error".into(),
             error_reason: Some(reason.to_owned()),
         }),
-        Some("restore") => restore_result(RestoreResult {
-            status: "error".into(),
-            reason_code: Some(reason.to_owned()),
-            integrity_ok: false,
-            resumable: false,
-            bytes_restored: None,
-        }),
+        Some("restore") => {
+            let json_output = restore_options(&args[1..]).expect("classified restore options");
+            restore_result(
+                publish_restore_outcome(
+                    journal,
+                    clock,
+                    recorder,
+                    RestoreDraft {
+                        status: "error".into(),
+                        reason_code: Some(reason.to_owned()),
+                        integrity_ok: false,
+                        resumable: false,
+                        files_expected: None,
+                        files_restored: None,
+                        bytes_expected: None,
+                        bytes_restored: None,
+                    },
+                ),
+                json_output,
+            )
+        }
         Some("recovery-key") => recovery_key_rotate_result(RotationResult {
             status: "error".into(),
             reason_code: Some(reason.to_owned()),
@@ -176,7 +199,7 @@ fn classify_tool_resolution(args: &[String]) -> Option<bool> {
     match command.as_str() {
         "run" if no_positionals(rest) => Some(true),
         "prune" if no_positionals(rest) => Some(false),
-        "restore" if no_positionals(rest) => Some(false),
+        "restore" => restore_options(rest).map(|_| false),
         "recovery-key" => {
             let (options, positionals) = split_terminator(rest);
             match options {
@@ -228,7 +251,12 @@ impl Clock for ProductionClock {
     }
 }
 
-fn run_cli_with(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+fn run_cli_with(
+    args: &[String],
+    journal: &Path,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+) -> CliRun {
     let args = normalize_global_flags(args);
     if has_help(&args) {
         return success(usage_for_scope(&args).to_owned());
@@ -245,7 +273,7 @@ fn run_cli_with(args: &[String], journal: &Path, services: &BackupServices<'_>) 
         "prune" if no_positionals(rest) => backup_prune(journal, services),
         "offload" => offload_command(rest, journal, services),
         "off" => off_command(rest, journal, services),
-        "restore" if no_positionals(rest) => restore(journal, services),
+        "restore" => restore_command(rest, journal, services, recorder),
         _ => usage_error(&args.join(" ")),
     }
 }
@@ -596,19 +624,44 @@ fn destination_from_payload(payload: &Map<String, Value>) -> Result<Destination,
     })
 }
 
-fn restore(journal: &Path, services: &BackupServices<'_>) -> CliRun {
+fn restore_options(args: &[String]) -> Option<bool> {
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() {
+        return None;
+    }
+    match options {
+        [] => Some(false),
+        [option] if option == "--json" => Some(true),
+        _ => None,
+    }
+}
+
+fn restore_command(
+    args: &[String],
+    journal: &Path,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+) -> CliRun {
+    let Some(json_output) = restore_options(args) else {
+        return usage_error(&format!("restore {}", args.join(" ")));
+    };
     let payload = match read_stdin_json() {
         Ok(payload) => payload,
         Err(message) => return runtime_error(message),
     };
-    restore_from_payload(&payload, |destination, recovery_key| {
-        restore_journal(journal, services, destination, recovery_key)
-    })
+    restore_from_payload(
+        &payload,
+        |destination, recovery_key| {
+            restore_journal(journal, services, recorder, destination, recovery_key)
+        },
+        json_output,
+    )
 }
 
 fn restore_from_payload(
     payload: &Map<String, Value>,
-    restore: impl FnOnce(Destination, &str) -> solstone_core_backup_runtime::RestoreResult,
+    restore: impl FnOnce(Destination, &str) -> RestoreOutcome,
+    json_output: bool,
 ) -> CliRun {
     let destination = match destination_from_payload(payload) {
         Ok(destination) => destination,
@@ -622,30 +675,87 @@ fn restore_from_payload(
     let Some(recovery_key) = recovery_key else {
         return runtime_error("Missing recovery_key.".into());
     };
-    restore_result(restore(destination, recovery_key))
+    restore_result(restore(destination, recovery_key), json_output)
 }
 
-fn restore_result(result: solstone_core_backup_runtime::RestoreResult) -> CliRun {
-    let reason = result.reason_code.as_deref().unwrap_or("failed");
+fn restore_counter_text(result: &RestoreOutcome) -> String {
+    let display =
+        |value: Option<u64>| value.map_or_else(|| "unknown".to_owned(), |value| value.to_string());
+    format!(
+        "files_expected={}, files_restored={}, bytes_expected={}, bytes_restored={}",
+        display(result.files_expected),
+        display(result.files_restored),
+        display(result.bytes_expected),
+        display(result.bytes_restored),
+    )
+}
+
+fn restore_json(result: &RestoreOutcome) -> Value {
+    json!({
+        "status": result.status,
+        "reason_code": result.reason_code,
+        "recording_failure": result.recording_failure,
+        "integrity_ok": result.integrity_ok,
+        "resumable": result.resumable,
+        "files_expected": result.files_expected,
+        "files_restored": result.files_restored,
+        "bytes_expected": result.bytes_expected,
+        "bytes_restored": result.bytes_restored,
+    })
+}
+
+fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
+    if json_output {
+        let mut output = render_json(Ok::<_, String>(restore_json(&result)));
+        if result.status != "ok" {
+            output.exit_code = 1;
+        }
+        return output;
+    }
+    let counters = restore_counter_text(&result);
+    let reason = result.reason_code.as_deref();
     match result.status.as_str() {
         "ok" => success(format!(
-            "Restore complete: {} bytes, integrity_ok={}, resumable={}.\n",
-            result.bytes_restored.unwrap_or(0),
+            "Restore complete: {counters}, integrity_ok={}, resumable={}.\n",
             python_bool(result.integrity_ok),
             python_bool(result.resumable),
         )),
         "degraded" => {
-            let detail = if reason == "integrity_unverified" {
-                "integrity verification could not run (the repository was busy or timed out)"
-            } else {
-                "integrity verification failed — the backup copy may be damaged"
+            let detail = match reason {
+                Some(RESTORE_REASON_INTEGRITY_UNVERIFIED) => {
+                    "integrity verification could not run (the repository was busy or timed out)"
+                }
+                Some(RESTORE_REASON_INTEGRITY_FAILED) => {
+                    "integrity verification failed — the backup copy may be damaged"
+                }
+                Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING) => {
+                    "restore summary was missing or malformed"
+                }
+                _ => "restore completed with degraded evidence",
             };
             runtime_error(format!(
-                "Restored {} bytes and saved the recovery key, but {detail} (reason_code={reason}).",
-                result.bytes_restored.unwrap_or(0),
+                "Restore completed: {counters}; {detail} (reason_code={}).",
+                reason.unwrap_or("unknown"),
             ))
         }
-        _ => runtime_error(format!("Restore failed: {reason}.")),
+        _ if reason == Some(RESTORE_REASON_RESTORE_RECORD_FAILED)
+            && result.recording_failure.as_deref()
+                == Some(RESTORE_REASON_RESTORE_RECORD_FAILED) =>
+        {
+            runtime_error(format!(
+                "Restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."
+            ))
+        }
+        _ => match (reason, result.recording_failure.as_deref()) {
+            (Some(reason), Some(recording_failure)) => runtime_error(format!(
+                "Restore failed: {reason}; {counters}. Recording the result also failed (recording_failure={recording_failure})."
+            )),
+            (Some(reason), None) => runtime_error(format!("Restore failed: {reason}; {counters}.")),
+            (None, Some(recording_failure)) => runtime_error(format!(
+                "Restore failed: {counters}. Recording the result also failed (recording_failure={recording_failure})."
+            )),
+            (None, None) => runtime_error(format!("Restore failed: {counters}.")),
+        },
     }
 }
 
@@ -1104,6 +1214,10 @@ mod tests {
         ToolOutput, ToolRequest, ToolRunner,
     };
 
+    fn run_cli_with(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+        super::run_cli_with(args, journal, services, &NativeRestoreRecorder)
+    }
+
     struct UnusedRunner;
 
     impl ToolRunner for UnusedRunner {
@@ -1218,6 +1332,18 @@ mod tests {
 
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("backup maintenance is not reached")
+        }
+    }
+
+    struct SuccessfulMaintenance;
+
+    impl JournalMaintenance for SuccessfulMaintenance {
+        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Ok(())
+        }
+
+        fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Ok(())
         }
     }
 
@@ -1833,57 +1959,161 @@ mod tests {
 
     #[test]
     fn restore_requires_a_recovery_key_and_uses_exact_owner_messages() {
+        let recorder = solstone_core_backup_runtime::test_support::RestoreRecorderSpy::new();
         for recovery_key in [Value::Null, Value::String("   ".into())] {
             let mut input = s3_payload();
             input.insert("recovery_key".into(), recovery_key);
-            let output = restore_from_payload(&input, |_, _| {
-                panic!("missing recovery key must not restore")
-            });
+            let output = restore_from_payload(
+                &input,
+                |_, _| panic!("missing recovery key must not restore"),
+                false,
+            );
             assert_eq!(output.stderr, "Error: Missing recovery_key.\n");
         }
+        assert!(
+            recorder.calls().is_empty(),
+            "request validation is unrecorded"
+        );
+
+        let outcome = |status: &str, reason_code: Option<&str>, counters: Option<u64>| {
+            publish_restore_outcome(
+                Path::new("/unused"),
+                &FixedClock,
+                &recorder,
+                RestoreDraft {
+                    status: status.into(),
+                    reason_code: reason_code.map(str::to_owned),
+                    integrity_ok: false,
+                    resumable: false,
+                    files_expected: counters,
+                    files_restored: counters,
+                    bytes_expected: counters,
+                    bytes_restored: counters,
+                },
+            )
+        };
         let mut input = s3_payload();
         input.insert(
             "recovery_key".into(),
             Value::String(" recovery-key ".into()),
         );
-        let trimmed = restore_from_payload(&input, |_, recovery_key| {
-            assert_eq!(recovery_key, "recovery-key");
-            solstone_core_backup_runtime::RestoreResult {
-                status: "error".into(),
-                reason_code: Some("failed".into()),
-                integrity_ok: false,
-                resumable: false,
-                bytes_restored: None,
-            }
-        });
-        assert_eq!(trimmed.stderr, "Error: Restore failed: failed.\n");
-        let base =
-            |status: &str, reason_code: Option<&str>| solstone_core_backup_runtime::RestoreResult {
-                status: status.into(),
-                reason_code: reason_code.map(str::to_owned),
-                integrity_ok: false,
-                resumable: false,
-                bytes_restored: Some(42),
-            };
-        assert_eq!(
-            restore_result(base("error", Some("timeout"))).stderr,
-            "Error: Restore failed: timeout.\n"
+        let trimmed = restore_from_payload(
+            &input,
+            |_, recovery_key| {
+                assert_eq!(recovery_key, "recovery-key");
+                outcome("error", Some("timeout"), None)
+            },
+            false,
         );
         assert_eq!(
-            restore_result(base("degraded", Some("integrity_unverified"))).stderr,
-            "Error: Restored 42 bytes and saved the recovery key, but integrity verification could not run (the repository was busy or timed out) (reason_code=integrity_unverified).\n"
+            trimmed.stderr,
+            "Error: Restore failed: timeout; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
         );
         assert_eq!(
-            restore_result(base("degraded", Some("integrity_failed"))).stderr,
-            "Error: Restored 42 bytes and saved the recovery key, but integrity verification failed — the backup copy may be damaged (reason_code=integrity_failed).\n"
+            restore_result(outcome("error", Some("timeout"), Some(42)), false).stderr,
+            "Error: Restore failed: timeout; files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42.\n"
         );
-        let mut ok = base("ok", None);
+        assert_eq!(
+            restore_result(
+                outcome("degraded", Some("integrity_unverified"), Some(42)),
+                false,
+            )
+            .stderr,
+            "Error: Restore completed: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; integrity verification could not run (the repository was busy or timed out) (reason_code=integrity_unverified).\n"
+        );
+        assert_eq!(
+            restore_result(
+                outcome("degraded", Some("integrity_failed"), Some(42)),
+                false
+            )
+            .stderr,
+            "Error: Restore completed: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; integrity verification failed — the backup copy may be damaged (reason_code=integrity_failed).\n"
+        );
+        let mut ok = outcome("ok", None, Some(42));
         ok.integrity_ok = true;
         ok.resumable = true;
         assert_eq!(
-            restore_result(ok).stdout,
-            "Restore complete: 42 bytes, integrity_ok=True, resumable=True.\n"
+            restore_result(ok, false).stdout,
+            "Restore complete: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42, integrity_ok=True, resumable=True.\n"
         );
+        let summary_missing = outcome("degraded", Some("restore_summary_missing"), None);
+        assert_eq!(
+            restore_result(summary_missing, false).stderr,
+            "Error: Restore completed: files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown; restore summary was missing or malformed (reason_code=restore_summary_missing).\n"
+        );
+    }
+
+    #[test]
+    fn restore_json_uses_the_shared_argv_fixture_and_records_one_attempt() {
+        let journal = tempfile::tempdir().expect("journal");
+        let keys = generate_and_store_keys(journal.path()).expect("keys");
+        let runner = solstone_core_backup_runtime::test_support::ArgvResticFixture::new(
+            "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/journal\"]}]",
+            ToolOutput {
+                returncode: 0,
+                stdout: b"[{\"message_type\":\"summary\",\"total_files\":4,\"files_restored\":4,\"total_bytes\":12,\"bytes_restored\":12}]".to_vec(),
+                stderr: vec![],
+            },
+            ToolOutput {
+                returncode: 0,
+                stdout: vec![],
+                stderr: vec![],
+            },
+        );
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let maintenance = SuccessfulMaintenance;
+        let services = BackupServices {
+            runner: &runner,
+            http: &http,
+            clock: &clock,
+            restic_path: Some(Path::new("/fixture/restic")),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: &maintenance,
+        };
+        let recorder = solstone_core_backup_runtime::test_support::RestoreRecorderSpy::new();
+        let mut input = s3_payload();
+        input.insert("recovery_key".into(), Value::String(keys.recovery_key));
+
+        let output = restore_from_payload(
+            &input,
+            |destination, recovery_key| {
+                restore_journal(
+                    journal.path(),
+                    &services,
+                    &recorder,
+                    destination,
+                    recovery_key,
+                )
+            },
+            true,
+        );
+
+        assert_eq!(output.exit_code, 0);
+        let rendered: Value = serde_json::from_str(&output.stdout).expect("restore json");
+        assert_eq!(rendered["status"], "ok");
+        assert_eq!(rendered["reason_code"], Value::Null);
+        assert_eq!(rendered["recording_failure"], Value::Null);
+        assert_eq!(rendered["files_expected"], 4);
+        assert_eq!(rendered["bytes_restored"], 12);
+        assert_eq!(recorder.calls().len(), 1);
+        assert_eq!(
+            runner.calls(),
+            vec![
+                vec!["snapshots".into(), "--json".into()],
+                vec![
+                    "restore".into(),
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:/journal"
+                        .into(),
+                    "--target".into(),
+                    journal.path().display().to_string(),
+                    "--json".into(),
+                ],
+                vec!["check".into()],
+            ]
+        );
+        assert!(runner.refusals().is_empty());
     }
 
     #[test]
@@ -2186,6 +2416,25 @@ mod resolution_tests {
     };
     use solstone_core_backup_runtime::{HttpTransport, ToolInstallDirs, ToolOutput, ToolRequest};
     use std::cell::{Cell, RefCell};
+
+    fn run_cli_with_deps(
+        args: &[String],
+        journal: &Path,
+        runner: &dyn ToolRunner,
+        downloader: &dyn ByteDownload,
+        http: &dyn HttpTransport,
+        dirs: ToolInstallDirs<'_>,
+    ) -> CliRun {
+        super::run_cli_with_deps(
+            args,
+            journal,
+            runner,
+            downloader,
+            http,
+            dirs,
+            &NativeRestoreRecorder,
+        )
+    }
     use std::ffi::OsString;
     use std::fs;
     use std::io;

@@ -210,6 +210,262 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "observer");
 }
 
+/// Permanent documented divergence, introduced 2026-08-24, with no expiry
+/// condition: the frozen corpus preserves the deleted reference's per-app
+/// `starred` preference, while the native shell has no backing route for it.
+/// The corpus CANNOT be regenerated -- its generator needs a runnable
+/// reference tree and this wave removes it -- so the fixture is a frozen
+/// record and the divergence is absorbed here instead. Because this cannot
+/// expire, narrowness is the safeguard: it removes exactly the obsolete key
+/// from every frozen app row. Never generalize this into a rule over app
+/// fields, and never retire it.
+fn apply_permanent_starred_removal_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    let starred_count = apps
+        .iter()
+        .filter(|app| app.get("starred").is_some_and(Value::is_boolean))
+        .count();
+    assert_eq!(
+        starred_count,
+        apps.len(),
+        "frozen shell contains boolean starred on every app row"
+    );
+    for app in apps {
+        app.as_object_mut()
+            .expect("shell app is an object")
+            .remove("starred")
+            .expect("frozen shell app contains starred");
+    }
+}
+
+/// Permanent documented divergence, introduced 2026-08-24, with no expiry
+/// condition: the frozen corpus records the reference shell's facet strip for
+/// Activities, Import, and Search, while the native chrome now enables facets
+/// only for Entities and Settings. The corpus CANNOT be regenerated -- its
+/// generator needs a runnable reference tree and this wave removes it -- so
+/// the fixture is a frozen record and the divergence is absorbed here instead.
+/// Because this cannot expire, narrowness is the safeguard: it flips only the
+/// three named rows. Never generalize this into a rule over facet-enabled apps,
+/// and never retire it.
+fn apply_permanent_facets_enabled_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    for name in ["activities", "import", "search"] {
+        let matches: Vec<_> = apps.iter_mut().filter(|app| app["name"] == name).collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "frozen shell contains exactly one {name} app"
+        );
+        let app = matches.into_iter().next().expect("matching app exists");
+        assert_eq!(
+            app["facets_enabled"],
+            Value::Bool(true),
+            "frozen shell {name} app enables facets"
+        );
+        app.as_object_mut()
+            .expect("shell app is an object")
+            .insert("facets_enabled".to_owned(), Value::Bool(false));
+    }
+}
+
+fn strip_permanent_launcher_metadata_from_actual(actual: &mut Value) {
+    let apps = actual["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    for app in apps {
+        let object = app.as_object_mut().expect("shell app is an object");
+        let name = object
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("<unnamed>");
+
+        let launcher_group = object
+            .get("launcher_group")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("actual shell app {name} has no string launcher_group"));
+        assert!(
+            matches!(launcher_group, "your_journal" | "understand" | "manage"),
+            "actual shell app {name} has invalid launcher_group {launcher_group:?}"
+        );
+        assert!(
+            object.get("launcher_rank").is_some_and(Value::is_u64),
+            "actual shell app {name} has no non-negative integer launcher_rank"
+        );
+        match object.get("rail_group") {
+            Some(Value::Null) => {}
+            Some(Value::String(group)) if matches!(group.as_str(), "primary" | "management") => {}
+            Some(Value::String(group)) => {
+                panic!("actual shell app {name} has invalid rail_group {group:?}")
+            }
+            Some(_) => panic!("actual shell app {name} has no string or null rail_group"),
+            None => panic!("actual shell app {name} has no rail_group"),
+        }
+        assert!(
+            object.get("rail_rank").is_some_and(Value::is_u64),
+            "actual shell app {name} has no non-negative integer rail_rank"
+        );
+
+        for field in ["launcher_group", "launcher_rank", "rail_group", "rail_rank"] {
+            object
+                .remove(field)
+                .expect("validated launcher metadata exists");
+        }
+    }
+}
+
+#[test]
+fn permanent_starred_removal_divergence_requires_starred_on_every_app_row() {
+    let mut expected = json!({
+        "apps": [
+            {"name": "home", "starred": false},
+            {"name": "search"}
+        ]
+    });
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            apply_permanent_starred_removal_divergence(&mut expected);
+        }))
+        .is_err(),
+        "missing starred must fail the narrow divergence"
+    );
+}
+
+#[test]
+fn permanent_facets_enabled_divergence_requires_all_three_enabled_target_rows() {
+    for name in ["activities", "import", "search"] {
+        let enabled = || {
+            json!({
+                "apps": [
+                    {"name": "activities", "facets_enabled": true},
+                    {"name": "import", "facets_enabled": true},
+                    {"name": "search", "facets_enabled": true}
+                ]
+            })
+        };
+        let mut missing = enabled();
+        missing["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .retain(|app| app["name"] != name);
+        let mut disabled = enabled();
+        disabled["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .iter_mut()
+            .find(|app| app["name"] == name)
+            .expect("named app exists")["facets_enabled"] = Value::Bool(false);
+        let mut duplicate = enabled();
+        let app = duplicate["apps"]
+            .as_array()
+            .expect("apps are an array")
+            .iter()
+            .find(|app| app["name"] == name)
+            .expect("named app exists")
+            .clone();
+        duplicate["apps"]
+            .as_array_mut()
+            .expect("apps are an array")
+            .push(app);
+
+        for (case, mut expected) in [
+            ("missing", missing),
+            ("disabled", disabled),
+            ("duplicate", duplicate),
+        ] {
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    apply_permanent_facets_enabled_divergence(&mut expected);
+                }))
+                .is_err(),
+                "{case} {name} target row must fail the narrow divergence"
+            );
+        }
+    }
+}
+
+#[test]
+fn permanent_launcher_metadata_divergence_validates_and_strips_only_metadata() {
+    let app = || {
+        json!({
+            "name": "home",
+            "starred": false,
+            "launcher_group": "your_journal",
+            "launcher_rank": 0,
+            "rail_group": "primary",
+            "rail_rank": 0
+        })
+    };
+
+    let mut actual = json!({
+        "apps": [
+            app(),
+            {
+                "name": "body",
+                "other_key": "unchanged",
+                "launcher_group": "your_journal",
+                "launcher_rank": 4,
+                "rail_group": null,
+                "rail_rank": 0
+            }
+        ]
+    });
+    strip_permanent_launcher_metadata_from_actual(&mut actual);
+    assert_eq!(
+        actual,
+        json!({
+            "apps": [
+                {"name": "home", "starred": false},
+                {"name": "body", "other_key": "unchanged"}
+            ]
+        }),
+        "metadata stripping preserves all other app keys"
+    );
+
+    for (case, mut actual) in [
+        (
+            "missing field",
+            json!({"apps": [{
+                "name": "home",
+                "launcher_group": "your_journal",
+                "launcher_rank": 0,
+                "rail_group": "primary"
+            }]}),
+        ),
+        (
+            "wrong type",
+            json!({"apps": [{
+                "name": "home",
+                "launcher_group": "your_journal",
+                "launcher_rank": "0",
+                "rail_group": "primary",
+                "rail_rank": 0
+            }]}),
+        ),
+        (
+            "unknown group",
+            json!({"apps": [{
+                "name": "home",
+                "launcher_group": "other",
+                "launcher_rank": 0,
+                "rail_group": "primary",
+                "rail_rank": 0
+            }]}),
+        ),
+    ] {
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                strip_permanent_launcher_metadata_from_actual(&mut actual);
+            }))
+            .is_err(),
+            "{case} launcher metadata must fail validation"
+        );
+    }
+}
+
 fn journal_for_phase(phase: &str) -> TempDir {
     let journal = TempDir::new(phase);
     match phase {
@@ -347,6 +603,9 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_tokens_removal_divergence(&mut expected);
                     apply_permanent_sol_removal_divergence(&mut expected);
                     apply_permanent_chat_removal_divergence(&mut expected);
+                    apply_permanent_starred_removal_divergence(&mut expected);
+                    apply_permanent_facets_enabled_divergence(&mut expected);
+                    strip_permanent_launcher_metadata_from_actual(&mut actual);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
@@ -395,7 +654,8 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     assert!(shell.get("chat_bar").is_none());
     assert_eq!(apps.len(), 18);
     for app in apps {
-        assert_eq!(app.as_object().unwrap().len(), 10);
+        // `starred` was removed; launcher and rail metadata add four fields.
+        assert_eq!(app.as_object().unwrap().len(), 13);
         assert!(app["icon_svg"].is_string());
     }
     let backgrounds: Vec<_> = apps
@@ -415,12 +675,13 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     assert_eq!(refusal["reason_code"], "app_not_converted");
     assert_eq!(refusal["app"], "activities");
 
-    let (status, content_type, _, body) = get(router(journal.0.clone()), "/app/activities/").await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-    assert_eq!(content_type, "application/json");
-    let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
-    assert_eq!(refusal["reason_code"], "app_not_converted");
-    assert_eq!(refusal["app"], "activities");
+    let shell = include_bytes!("../assets/static/shell.html");
+    for path in ["/app/activities/", "/app/activities"] {
+        let (status, content_type, _, body) = get(router(journal.0.clone()), path).await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{path}");
+        assert_eq!(content_type, "text/html; charset=utf-8", "{path}");
+        assert_eq!(body, shell, "{path}");
+    }
 }
 
 #[tokio::test]
@@ -568,8 +829,12 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
             !status.is_success(),
             "{path} returned a success status for an unconverted app: {status}"
         );
-        let refusal: Value = serde_json::from_slice(&body)
-            .unwrap_or_else(|_| panic!("{path} refusal parses as JSON"));
-        assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+        // On 2026-08-24, the `/` tail moved to the shell HTML navigation response
+        // while the workspace tail retained its JSON fragment refusal.
+        if path.ends_with("/workspace") || path.ends_with("/background") {
+            let refusal: Value = serde_json::from_slice(&body)
+                .unwrap_or_else(|_| panic!("{path} refusal parses as JSON"));
+            assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+        }
     }
 }

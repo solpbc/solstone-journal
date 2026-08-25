@@ -80,13 +80,12 @@ validates.
 
 `imports/health-dedupe.sqlite` is derived state, not source history. It is
 excluded by the existing `*.sqlite*` backup rule and rebuilt atomically from
-the immutable bundles. Restore runs this rebuild before saving recovery state
-or reporting success; a torn or invalid native bundle fails the restore rather
+the immutable bundles. Restore runs this rebuild before saving destination,
+recovery-key, or recovery-confirmation state or reporting success; a torn or
+invalid native bundle records a `body_rebuild_failed` restore outcome rather
 than returning an empty body history. The `*.sqlite*` exclude list is pinned
 by `solstone-core-backup-runtime`'s `excludes_are_exact_and_keep_durable_health`.
-Restore-does-not-publish-after-rebuild-fail is
-`rebuild_failure_short_circuits_before_any_publication` in
-`solstone-core-backup-runtime/src/restore.rs`. Torn native history is refused
+Torn native history is refused
 by `body_rebuild_command_emits_machine_result_and_refuses_torn_native_history`
 in `core/crates/solstone-core/tests/body_rebuild.rs`. Rebuild reconstructs
 Apple and Oura rows in

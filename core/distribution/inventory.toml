@@ -184,6 +184,7 @@ source = "core/models/assets/wespeaker-resnet34-256.onnx"
 dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
 digest_const = "WESPEAKER_RESNET34_SHA256"
+digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
@@ -192,6 +193,7 @@ source = "core/models/assets/pyannote-segmentation-3.0.onnx"
 dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
 digest_const = "PYANNOTE_SEGMENTATION_SHA256"
+digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
@@ -200,6 +202,43 @@ source = "core/models/assets/silero_vad_v6.onnx"
 dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
 digest_const = "SILERO_VAD_V6_SHA256"
+digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz"
+mode = 0o644
+digest_const = "RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+targets = ["linux-x86_64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz"
+mode = 0o644
+digest_const = "RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+targets = ["linux-aarch64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
+mode = 0o644
+digest_const = "RFDETR_ENGINE_MACOS_METAL_ARM64_TARBALL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "model-asset"
+source = "core/models/assets/rfdetr/rfdetr-nano-f16.gguf"
+dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"
+mode = 0o644
+digest_const = "RFDETR_MODEL_SHA256"
+digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]

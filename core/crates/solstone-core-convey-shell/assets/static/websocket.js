@@ -198,7 +198,7 @@
     {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label": "attention"},
     {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-attention", "label": "a device hasn't reached your journal"},
     {"ws": "*", "capture": "no_observers", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
-    {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "active"},
+    {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "going in"},
     {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "can't confirm"}
   ];
 
@@ -232,7 +232,7 @@
 
   function renderStatusMark() {
     if (!statusIcon) {
-      statusIcon = document.querySelector('.facet-bar .status-icon');
+      statusIcon = document.querySelector('#status-instrument .status-icon');
     }
     if (!statusIcon) return;
 
@@ -270,7 +270,7 @@
 
   function updateStatusIcon(state) {
     if (!statusIcon) {
-      statusIcon = document.querySelector('.facet-bar .status-icon');
+      statusIcon = document.querySelector('#status-instrument .status-icon');
     }
 
     const previousState = connectionState;

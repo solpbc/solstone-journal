@@ -24,6 +24,31 @@
     }
   }
 
+  function copyTemplate(key, fallback, app) {
+    const template = window.CONVEY_COPY?.[key] || fallback;
+    return template.replaceAll('{app}', app);
+  }
+
+  function renderAppNotConverted(target, app) {
+    if (typeof window.SurfaceState?.empty !== 'function') {
+      return false;
+    }
+    target.innerHTML = window.SurfaceState.empty({
+      heading: copyTemplate(
+        'APP_NOT_CONVERTED_HEADING',
+        "{app} isn't available in the browser yet.",
+        app
+      ),
+      desc: copyTemplate(
+        'APP_NOT_CONVERTED_DESC',
+        "nothing is wrong on your end. this screen hasn't been built.",
+        app
+      ),
+      headingLevel: 'h1'
+    });
+    return true;
+  }
+
   function cloneScript(script) {
     const clone = document.createElement('script');
     for (const attr of script.attributes) {
@@ -78,6 +103,22 @@
     try {
       const response = await fetch(url, { credentials: 'same-origin' });
       if (!response.ok) {
+        if (response.status === 501) {
+          let refusal = null;
+          try {
+            refusal = await response.json();
+          } catch (_) {
+            // Non-JSON 501 responses retain the generic failure path below.
+          }
+          if (
+            refusal?.reason_code === 'app_not_converted' &&
+            typeof refusal.app === 'string' &&
+            refusal.app &&
+            renderAppNotConverted(target, refusal.app)
+          ) {
+            return;
+          }
+        }
         throw new Error(`Request failed (HTTP ${response.status})`);
       }
       const html = await response.text();

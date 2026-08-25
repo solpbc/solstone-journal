@@ -32,7 +32,7 @@ pub use state::{
 pub(crate) const OFFLOAD_STATUSES: [&str; 4] = ["ok", "skipped", "stalled", "error"];
 pub(crate) const VERIFICATION_STATUSES: [&str; 3] = ["ok", "skipped", "error"];
 pub(crate) const RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
-pub(crate) const RESTORE_SCOPES: [&str; 2] = ["day", "all"];
+pub(crate) const RESTORE_SCOPES: [&str; 3] = ["day", "all", "journal"];
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct BackupKeys {

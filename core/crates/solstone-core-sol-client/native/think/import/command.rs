@@ -16,7 +16,7 @@ use crate::transport::{
 
 const IMPORT_API: &str = "/app/import/api";
 const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `journal importer`.";
-const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--facet FACET] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--deterministic-only] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
+const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--deterministic-only] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
 pub fn import_top_level(ctx: CommandContext<'_>) -> CommandOutput {
@@ -47,7 +47,6 @@ struct ParsedArgs {
     media: Option<String>,
     extra: Vec<String>,
     timestamp: Option<String>,
-    facet: Option<String>,
     setting: Option<String>,
     source: Option<String>,
     force: bool,
@@ -103,10 +102,6 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             parsed.timestamp = Some(value.to_string());
         } else if token == "--timestamp" {
             parsed.timestamp = Some(take_value(args, &mut index, "--timestamp")?);
-        } else if let Some(value) = token.strip_prefix("--facet=") {
-            parsed.facet = Some(value.to_string());
-        } else if token == "--facet" {
-            parsed.facet = Some(take_value(args, &mut index, "--facet")?);
         } else if let Some(value) = token.strip_prefix("--setting=") {
             parsed.setting = Some(value.to_string());
         } else if token == "--setting" {
@@ -332,7 +327,6 @@ fn save_media(
 fn save_data(parsed: &ParsedArgs, client_item_id: &str) -> Vec<(String, String)> {
     let mut data = Vec::new();
     data.push(("client_item_id".to_string(), client_item_id.to_string()));
-    push_payload_value(&mut data, "facet", parsed.facet.as_deref());
     push_payload_value(&mut data, "setting", parsed.setting.as_deref());
     push_payload_value(&mut data, "source_hint", parsed.source.as_deref());
     if parsed.deterministic_only {
@@ -609,6 +603,14 @@ mod tests {
     }
 
     #[test]
+    fn facet_is_rejected_while_setting_remains_a_supported_option() {
+        let parsed = parse_args(&string_args(&["media.txt", "--setting", "office"]))
+            .expect("setting parses");
+        assert_eq!(parsed.setting.as_deref(), Some("office"));
+        assert!(parse_args(&string_args(&["media.txt", "--facet", "work"])).is_err());
+    }
+
+    #[test]
     fn local_file_uses_multipart_upload_with_generated_client_item_id() {
         let mut fixtures = HashMap::new();
         fixtures.insert(PathBuf::from("/tmp/sample.txt"), b"hello".to_vec());
@@ -628,10 +630,6 @@ mod tests {
                         FormField {
                             name: "client_item_id".to_string(),
                             value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                        },
-                        FormField {
-                            name: "facet".to_string(),
-                            value: "work".to_string(),
                         },
                         FormField {
                             name: "setting".to_string(),
@@ -681,8 +679,6 @@ mod tests {
         let output = run_import_case(
             &[
                 "/tmp/sample.txt",
-                "--facet",
-                " work ",
                 "--setting",
                 " office ",
                 "--source",

@@ -175,13 +175,13 @@
       "why": "invalid day deep link returns an empty 404"
     },
     {
-      "body_bytes": 8624,
-      "body_sha256": "fd6a69438a6e29f898945f39609ae7e2f0460b663ff2060673d5184fb523c18f",
+        "body_bytes": 8202,
+        "body_sha256": "d9589aa697c8943401f5440f4e90c2883969d894c7827afe79a4c2184e5c410a",
       "body_sha256_basis": "raw-body",
       "headers": {
         "Cache-Control": "public, max-age=300",
         "Content-Disposition": "inline; filename=shell.html",
-        "Content-Length": "8624",
+        "Content-Length": "8293",
         "Content-Type": "text/html; charset=utf-8"
       },
       "method": "GET",

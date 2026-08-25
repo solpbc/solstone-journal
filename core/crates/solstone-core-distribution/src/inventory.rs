@@ -261,6 +261,7 @@ pub enum Entry {
         dest: String,
         mode: u32,
         digest_const: String,
+        digest_source: String,
         targets: Vec<String>,
     },
     OnnxRuntime {
@@ -678,6 +679,19 @@ mod tests {
     }
 
     #[test]
+    fn model_assets_require_an_explicit_digest_source() {
+        let missing = COMMITTED.replacen(
+            "digest_source = \"core/crates/solstone-core-transcribe/src/model_assets.rs\"\n",
+            "",
+            1,
+        );
+        let error = toml_edit::de::from_str::<Inventory>(&missing)
+            .expect_err("model assets without a digest source are rejected")
+            .to_string();
+        assert!(error.contains("digest_source"), "{error}");
+    }
+
+    #[test]
     fn the_committed_macos_target_declares_its_own_field_set_and_no_linux_one() {
         let inventory = committed();
         let target = inventory
@@ -766,18 +780,26 @@ mod tests {
     fn every_admitted_binary_and_payload_ships_on_macos_too() {
         // "The same distribution tree" is the contract, so the macOS target's
         // dest set must equal the Linux one exactly, minus a named, documented
-        // set of deliberately platform-exclusive entries. A drift in the
-        // shared set — a binary Linux ships and macOS does not, or the
-        // reverse — is what this asserts against; MACOS_ONLY is not an escape
-        // hatch for that, it is the one standing exception.
+        // set of deliberately target-exclusive entries. A drift in the shared
+        // set — a binary Linux ships and macOS does not, or the reverse — is
+        // what this asserts against; the exception lists are not an escape
+        // hatch for that, only explicitly distinct target payloads belong in
+        // them.
         //
         // bin/parakeet-helper is that exception: it is the CoreML subprocess
         // helper the macOS parakeet backend spawns (parakeet_coreml.rs).
         // Linux's parakeet backend (parakeet_cpp.rs) connects over HTTP to a
         // separately-managed parakeet-cpp server that this inventory does not
         // admit at all — there is no Linux binary for this to match, by
-        // design, not by drift.
-        const MACOS_ONLY: &[&str] = &["bin/parakeet-helper"];
+        // design, not by drift. The RF-DETR engine archives are likewise
+        // target-specific payloads: each target receives its own archive.
+        const MACOS_ONLY: &[&str] = &[
+            "bin/parakeet-helper",
+            "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        ];
+        const LINUX_ONLY: &[&str] = &[
+            "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+        ];
         let inventory = committed();
         let dests_for = |id: &str| {
             inventory
@@ -787,12 +809,18 @@ mod tests {
                 .map(|entry| entry_fields(entry).0[0].to_owned())
                 .collect::<BTreeSet<_>>()
         };
-        let linux = dests_for("linux-x86_64");
+        let mut linux = dests_for("linux-x86_64");
         let mut macos = dests_for("macos-arm64");
         for exception in MACOS_ONLY {
             assert!(
                 macos.remove(*exception),
                 "{exception} is declared as a macOS-only exception but is not admitted for macos-arm64"
+            );
+        }
+        for exception in LINUX_ONLY {
+            assert!(
+                linux.remove(*exception),
+                "{exception} is declared as a Linux-only exception but is not admitted for linux-x86_64"
             );
         }
         assert!(!linux.is_empty());

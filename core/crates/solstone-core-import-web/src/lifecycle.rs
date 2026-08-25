@@ -370,7 +370,6 @@ fn summary(metadata: &ImportMetadata) -> Value {
         "timestamp": metadata.get("user_timestamp").cloned().unwrap_or(Value::String(String::new())),
         "client_item_id": metadata.get("client_item_id").cloned().unwrap_or(Value::String(String::new())),
         "source": metadata.get("source").cloned().unwrap_or_else(|| json!("text")),
-        "facet": metadata.get("facet").cloned().unwrap_or(Value::Null),
         "setting": metadata.get("setting").cloned().unwrap_or(Value::Null),
         "recommended_action": "start",
         "metadata": {
@@ -553,10 +552,6 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
         (
             "mime_type".to_owned(),
             mime_type.map_or(Value::Null, Value::String),
-        ),
-        (
-            "facet".to_owned(),
-            clean_optional(data.get("facet")).map_or(Value::Null, Value::String),
         ),
         (
             "setting".to_owned(),
@@ -927,7 +922,6 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     }
     let mut changed = Map::new();
     for key in [
-        "facet",
         "setting",
         "original_filename",
         "mime_type",
@@ -939,7 +933,7 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
         if !data.get(key).is_some() {
             continue;
         }
-        let value = if matches!(key, "facet" | "setting" | "source_hint" | "observer_handle") {
+        let value = if matches!(key, "setting" | "source_hint" | "observer_handle") {
             clean_optional(data.get(key)).map_or(Value::Null, Value::String)
         } else if key == "client" {
             client_bag(data.get(key))
@@ -1001,13 +995,6 @@ fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) 
         path.to_owned(),
         timestamp.to_owned(),
     ];
-    if let Some(facet) = metadata
-        .get("facet")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        cmd.extend(["--facet".to_owned(), facet.to_owned()]);
-    }
     if let Some(setting) = metadata
         .get("setting")
         .and_then(Value::as_str)
@@ -1179,9 +1166,18 @@ mod tests {
             ("source_hash".to_owned(), json!(source_hash)),
             ("source".to_owned(), json!("wrong-source")),
             ("source_hint".to_owned(), json!("right-source")),
-            ("facet".to_owned(), json!("work")),
             ("setting".to_owned(), json!("notes")),
         ])
+    }
+
+    #[test]
+    fn summary_omits_legacy_facet_and_keeps_setting() {
+        let mut legacy = metadata("/client/file.txt".to_owned(), "hash");
+        legacy.insert("facet".to_owned(), json!("work"));
+
+        let result = super::summary(&legacy);
+        assert!(result.get("facet").is_none());
+        assert_eq!(result["setting"], json!("notes"));
     }
 
     async fn response_json(response: Response) -> (StatusCode, Value) {
@@ -1630,8 +1626,6 @@ mod tests {
                 "importer",
                 "/client/echoed/path.txt",
                 "ts",
-                "--facet",
-                "work",
                 "--setting",
                 "notes",
                 "--source",

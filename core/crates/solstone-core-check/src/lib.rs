@@ -15,6 +15,10 @@ use solstone_core_local::install::ced_readiness::{
     CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedDegradedCause, CedReadiness,
     evaluate_ced_readiness,
 };
+use solstone_core_local::install::rfdetr_readiness::{
+    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrDegradedCause, RfdetrReadiness,
+    evaluate_rfdetr_readiness,
+};
 use solstone_core_local::{
     VulkanDevice, cpu_placement_suffix, discrete_hardware_gpu_count, is_discrete, select_device,
 };
@@ -42,6 +46,7 @@ pub struct CheckInputs {
     pub version: String,
     #[serde(default)]
     pub ced: CedCheckInput,
+    pub rfdetr: RfdetrCheckInput,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -52,6 +57,12 @@ pub enum CedCheckInput {
     Degraded {
         cause: CedDegradedCause,
     },
+}
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum RfdetrCheckInput {
+    Ready,
+    Degraded { cause: RfdetrDegradedCause },
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlatformInput {
@@ -288,6 +299,10 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
             ced_input_from(evaluate_ced_readiness(journal, os, arch))
         },
+        rfdetr: {
+            let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+            rfdetr_input_from(evaluate_rfdetr_readiness(journal, os, arch))
+        },
     }
 }
 fn ced_input_from(readiness: CedReadiness) -> CedCheckInput {
@@ -295,6 +310,15 @@ fn ced_input_from(readiness: CedReadiness) -> CedCheckInput {
         CedReadiness::Ready { .. } => CedCheckInput::Ready,
         CedReadiness::Degraded { cause, .. } => CedCheckInput::Degraded { cause },
         CedReadiness::Unsupported { .. } => CedCheckInput::Omit,
+    }
+}
+fn rfdetr_input_from(readiness: RfdetrReadiness) -> RfdetrCheckInput {
+    match readiness {
+        RfdetrReadiness::Ready { .. } => RfdetrCheckInput::Ready,
+        RfdetrReadiness::Degraded { cause, .. } => RfdetrCheckInput::Degraded { cause },
+        RfdetrReadiness::Unsupported { .. } => RfdetrCheckInput::Degraded {
+            cause: RfdetrDegradedCause::Absent,
+        },
     }
 }
 fn check(
@@ -394,6 +418,7 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         if let Some(ced) = ced_check(inputs) {
             checks.push(ced);
         }
+        checks.push(rfdetr_check(inputs));
         return CheckReport {
             platform,
             overall: overall(&checks),
@@ -408,6 +433,7 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     if let Some(ced) = ced_check(inputs) {
         checks.push(ced);
     }
+    checks.push(rfdetr_check(inputs));
     CheckReport {
         platform,
         overall: overall(&checks),
@@ -427,6 +453,18 @@ fn ced_check(inputs: &CheckInputs) -> Option<Check> {
             None,
             None,
         )),
+    }
+}
+fn rfdetr_check(inputs: &CheckInputs) -> Check {
+    match &inputs.rfdetr {
+        RfdetrCheckInput::Ready => check("rfdetr", Severity::Ok, RFDETR_READY_DETAIL, None, None),
+        RfdetrCheckInput::Degraded { .. } => check(
+            "rfdetr",
+            Severity::Blocked,
+            RFDETR_UNAVAILABLE_GUIDANCE,
+            None,
+            None,
+        ),
     }
 }
 fn mac_memory(memory: &MemoryInput) -> Check {
@@ -701,6 +739,75 @@ pub fn human_output(report: &CheckReport) -> String {
 mod tests {
     use super::*;
 
+    fn check_inputs(ced: CedCheckInput, rfdetr: RfdetrCheckInput) -> CheckInputs {
+        CheckInputs {
+            platform: PlatformInput {
+                os: "Linux".into(),
+                os_version: "x".into(),
+                arch: "x86_64".into(),
+            },
+            memory: MemoryInput {
+                total_bytes: Some(16 * GIB),
+                available_bytes: Some(16 * GIB),
+            },
+            disk: DiskInput::Ok {
+                free_bytes: 20 * GIB,
+            },
+            journal_path: "/journal".into(),
+            nvidia: NvidiaInput {
+                detected: false,
+                vram_mib: None,
+                tiering_memory_mib: None,
+                memory_source: "unavailable".into(),
+            },
+            vulkan: VulkanInput {
+                probe_ok: true,
+                devices: vec![],
+            },
+            render_nodes_present_but_inaccessible: false,
+            gpu_evaluation_error: None,
+            version: "x".into(),
+            ced,
+            rfdetr,
+        }
+    }
+
+    #[test]
+    fn ready_rfdetr_is_ok_and_does_not_change_overall() {
+        let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Ready);
+        let rfdetr = rfdetr_check(&inputs);
+        assert_eq!(rfdetr.severity, Severity::Ok);
+        assert_eq!(overall(&[rfdetr]), Severity::Ok);
+    }
+
+    #[test]
+    fn degraded_rfdetr_blocks_for_every_cause() {
+        for cause in [
+            RfdetrDegradedCause::Absent,
+            RfdetrDegradedCause::IntegrityInvalid,
+            RfdetrDegradedCause::Unrunnable,
+        ] {
+            let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
+            let rfdetr = rfdetr_check(&inputs);
+            assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
+            assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
+        }
+    }
+
+    #[test]
+    fn ced_warning_stays_independent_from_ready_rfdetr() {
+        let inputs = check_inputs(
+            CedCheckInput::Degraded {
+                cause: CedDegradedCause::Absent,
+            },
+            RfdetrCheckInput::Ready,
+        );
+        assert_eq!(
+            overall(&[ced_check(&inputs).unwrap(), rfdetr_check(&inputs)]),
+            Severity::Warning
+        );
+    }
+
     #[test]
     fn nvidia_linux_still_recommends_the_cpu_journal_package() {
         let inputs = CheckInputs {
@@ -731,6 +838,7 @@ mod tests {
             gpu_evaluation_error: None,
             version: "x".into(),
             ced: CedCheckInput::Omit,
+            rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);
         assert_eq!(report.recommended_package, Some("solstone-journal"));
@@ -767,6 +875,7 @@ mod tests {
             gpu_evaluation_error: None,
             version: "x".into(),
             ced: CedCheckInput::Omit,
+            rfdetr: RfdetrCheckInput::Ready,
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
     }
@@ -814,6 +923,7 @@ mod tests {
             gpu_evaluation_error: None,
             version: "x".into(),
             ced: CedCheckInput::Omit,
+            rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);
         assert_eq!(

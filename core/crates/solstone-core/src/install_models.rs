@@ -31,18 +31,11 @@ fn ced_download_disclosure() -> String {
     )
 }
 
-/// The native rf-detr installer resolves both artifacts through the catalog's
-/// `origin_key` against a single-element host allowlist, revalidated per
-/// redirect hop -- so naming upstream hosts here would name parties this path
-/// never contacts, on the surface whose whole job is to say where bytes come
-/// from.
-///
-/// The source notice names those upstream projects for attribution purposes,
-/// but the owner-facing disclosure must describe the endpoint this install path
-/// actually contacts.
-fn rfdetr_download_disclosure() -> String {
+/// RF-DETR assets are verified from the release tree, so this disclosure must
+/// describe the bundled payload rather than an upstream or mirror endpoint.
+fn rfdetr_bundled_asset_disclosure() -> String {
     format!(
-        "rf-detr assets: downloading the rf-detr.cpp {} engine (Apache-2.0) and the RF-DETR nano GGUF weights (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.",
+        "rf-detr assets: verifying the bundled rf-detr.cpp {} engine (Apache-2.0) and RF-DETR nano GGUF weights (Apache-2.0). see THIRD_PARTY_NOTICES.md.",
         rfdetr_install::ENGINE_VERSION
     )
 }
@@ -408,7 +401,7 @@ where
             }
         };
         if !ready {
-            provider_stdout.push(rfdetr_download_disclosure());
+            provider_stdout.push(rfdetr_bundled_asset_disclosure());
             if let Err(error) = (providers.rfdetr)(
                 &journal,
                 &host.os_name,
@@ -818,7 +811,7 @@ fn ready_line(path: &Path) -> String {
 
 #[cfg(test)]
 mod disclosure_tests {
-    use super::{ced_download_disclosure, rfdetr_download_disclosure};
+    use super::{ced_download_disclosure, rfdetr_bundled_asset_disclosure};
     use solstone_core_local::install::coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE;
 
     /// Every artifact this verb fetches resolves through one primitive with a
@@ -826,10 +819,9 @@ mod disclosure_tests {
     /// third-party host. Asserting the origin IS named would pass on a sentence
     /// that named all three.
     #[test]
-    fn native_download_disclosures_name_no_host_but_our_origin() {
+    fn native_download_disclosures_name_only_the_fetching_origin() {
         for line in [
             ced_download_disclosure().as_str(),
-            rfdetr_download_disclosure().as_str(),
             PARAKEET_COREML_DOWNLOAD_DISCLOSURE,
         ] {
             assert!(line.contains("updates.solstone.app"), "{line}");
@@ -837,6 +829,9 @@ mod disclosure_tests {
                 assert!(!line.contains(third_party), "{line} names {third_party}");
             }
         }
+        let rfdetr = rfdetr_bundled_asset_disclosure();
+        assert!(rfdetr.contains("verifying the bundled"));
+        assert!(!rfdetr.contains("downloading"));
     }
 }
 
@@ -1021,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn rfdetr_not_ready_supported_host_discloses_download() {
+    fn rfdetr_not_ready_supported_host_discloses_bundled_assets() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
@@ -1048,7 +1043,7 @@ mod tests {
             |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
-        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(outcome.stdout.contains(&rfdetr_bundled_asset_disclosure()));
         assert!(
             outcome
                 .stdout
@@ -1058,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn rfdetr_check_on_installed_model_has_no_download_disclosure() {
+    fn rfdetr_check_on_installed_model_has_no_bundled_asset_disclosure() {
         let journal = tempfile::tempdir().unwrap();
         seed_ready_ced(journal.path(), "darwin", "arm64");
         let outcome = run_inner_with_test!(
@@ -1086,7 +1081,7 @@ mod tests {
             |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
-        assert!(!outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(!outcome.stdout.contains(&rfdetr_bundled_asset_disclosure()));
     }
 
     #[test]
@@ -1113,7 +1108,7 @@ mod tests {
             |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
-        assert!(!outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(!outcome.stdout.contains(&rfdetr_bundled_asset_disclosure()));
         assert_eq!(actions, vec![InstallerAction::Check]);
     }
 
@@ -1147,7 +1142,7 @@ mod tests {
             |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
-        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(outcome.stdout.contains(&rfdetr_bundled_asset_disclosure()));
     }
 
     #[test]
@@ -1185,7 +1180,7 @@ mod tests {
             |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
-        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(outcome.stdout.contains(&rfdetr_bundled_asset_disclosure()));
     }
 
     #[test]

@@ -44,6 +44,59 @@ fn write_config(journal: &tempfile::TempDir, bytes: &[u8]) -> std::path::PathBuf
     path
 }
 
+#[cfg(unix)]
+#[test]
+fn restore_process_reports_tool_resolution_failure_without_pinning_restic_version() {
+    let journal = tempfile::tempdir().expect("journal");
+    let home = tempfile::tempdir().expect("home");
+    let missing_bundle = home.path().join("missing-restic.bz2");
+    let input = r#"{"recovery_key":"0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ","repository":"s3:unreachable.example.invalid/journal","backend":"s3","credentials":{"access_key_id":"access","secret_access_key":"secret"}}"#;
+    let restore = |args: &[&str]| {
+        let mut child = command(&journal, args)
+            .env("HOME", home.path())
+            .env("SOLSTONE_RESTIC_BUNDLE", &missing_bundle)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("restore starts");
+        child
+            .stdin
+            .take()
+            .expect("restore stdin")
+            .write_all(input.as_bytes())
+            .expect("restore input");
+        child.wait_with_output().expect("restore completes")
+    };
+
+    let human = restore(&["restore"]);
+    assert_eq!(human.status.code(), Some(1));
+    assert!(human.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(human.stderr).expect("human error"),
+        "Error: Restore failed: restic_unavailable; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
+    );
+
+    let json = restore(&["restore", "--json"]);
+    assert_eq!(json.status.code(), Some(1));
+    assert!(json.stderr.is_empty());
+    let rendered: Value = serde_json::from_slice(&json.stdout).expect("restore JSON");
+    assert_eq!(
+        rendered,
+        json!({
+            "bytes_expected": null,
+            "bytes_restored": null,
+            "files_expected": null,
+            "files_restored": null,
+            "integrity_ok": false,
+            "reason_code": "restic_unavailable",
+            "recording_failure": null,
+            "resumable": false,
+            "status": "error",
+        })
+    );
+}
+
 #[test]
 fn status_is_read_only_and_usage_is_backup_owned() {
     let journal = tempfile::tempdir().expect("journal");

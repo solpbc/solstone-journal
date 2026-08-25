@@ -311,16 +311,17 @@ pub fn record_restore_result(
     if !RESTORE_SCOPES.contains(&scope) {
         return Err(BackupError::InvalidRestoreScope);
     }
-    if [
-        &segments_selected,
-        &segments_restored,
-        &files_expected,
-        &files_restored,
-        &bytes_expected,
-        &bytes_restored,
-    ]
-    .iter()
-    .any(|value| !is_nonnegative_integer(Some(value)))
+    if [&segments_selected, &segments_restored]
+        .iter()
+        .any(|value| !is_nonnegative_integer(Some(value)))
+        || [
+            &files_expected,
+            &files_restored,
+            &bytes_expected,
+            &bytes_restored,
+        ]
+        .iter()
+        .any(|value| !is_nonnegative_integer_or_null(Some(value)))
     {
         return Err(BackupError::InvalidRestoreCounters);
     }
@@ -442,6 +443,9 @@ fn is_nonnegative_integer(value: Option<&Value>) -> bool {
     value
         .and_then(Value::as_i64)
         .is_some_and(|value| value >= 0)
+}
+fn is_nonnegative_integer_or_null(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::Null)) || is_nonnegative_integer(value)
 }
 fn is_positive_or_null(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Null))
@@ -879,6 +883,48 @@ mod tests {
                 });
             }
         }
+    }
+
+    #[test]
+    fn record_restore_allows_null_journal_file_counters_but_not_segment_counters() {
+        let journal = journal();
+        write_config(journal.path(), json!({"backup": {}}));
+        record_restore_result(
+            journal.path(),
+            "degraded",
+            json!(7),
+            json!("restore_summary_missing"),
+            "journal",
+            Value::Null,
+            json!(0),
+            json!(0),
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+        )
+        .unwrap();
+        let restored = &get_backup_config(journal.path()).unwrap()["last_restore"];
+        assert_eq!(restored["scope"], "journal");
+        assert_eq!(restored["files_expected"], Value::Null);
+        assert_eq!(restored["bytes_restored"], Value::Null);
+
+        assert_rejection_preserves_config(&journal, || {
+            record_restore_result(
+                journal.path(),
+                "error",
+                json!(8),
+                json!("restore_failed"),
+                "journal",
+                Value::Null,
+                Value::Null,
+                json!(0),
+                Value::Null,
+                Value::Null,
+                Value::Null,
+                Value::Null,
+            )
+        });
     }
 
     #[cfg(unix)]

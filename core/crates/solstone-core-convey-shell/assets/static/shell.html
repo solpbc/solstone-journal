@@ -46,9 +46,8 @@
   <script src="/static/shell_boot.js" defer></script>
 </head>
 <body>
-<script src="/static/menu_state.js"></script>
 <script src="/static/presentation_mode.js"></script>
-<a href="#main-content" class="skip-link">skip to content</a>
+<a href="#main-content" class="skip-link">skip to workspace</a>
 <div class="corner-tags" aria-hidden="true">
   <div class="corner-tag corner-tag-tl" aria-hidden="true"></div>
   <div class="corner-tag corner-tag-tr" aria-hidden="true"></div>
@@ -56,21 +55,15 @@
   <div class="corner-tag corner-tag-br" aria-hidden="true"></div>
 </div>
 
-<nav class="menu-bar" aria-label="app navigation">
-  <ul class="menu-items"></ul>
-  <button class="menu-expander" type="button" aria-label="show all apps" aria-expanded="false">›</button>
-</nav>
-
-<nav class="facet-bar" aria-label="facets">
-  <button id="hamburger" aria-label="toggle navigation" aria-expanded="false">☰</button>
-  <div class="facet-pills-container"></div>
-  <button class="status-icon" aria-expanded="false" aria-controls="status-pane" aria-label="system status: connecting"><img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true"><span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span></button>
-  <span id="status-live-region" role="status" class="visually-hidden"></span>
-</nav>
+<nav id="app-rail" class="app-rail" aria-label="journal apps"></nav>
+<nav id="app-dock" class="app-dock" aria-label="journal apps"></nav>
+<div id="app-launcher" role="dialog" aria-modal="true" aria-label="find a journal app" hidden inert></div>
+<div id="status-instrument"></div>
 
 <aside id="status-pane" class="status-pane" tabindex="-1" aria-label="status">
   <div class="status-pane-content">
     <h3 id="status-sentence">connecting&hellip;</h3>
+    <p>new material is going into your journal</p>
     <div class="status-pane-detail" style="display: flex; flex-direction: column; gap: 4px;">
       <span id="status-detail"></span>
     </div>
@@ -128,6 +121,10 @@
 </aside>
 
 <div class="notification-center" id="notification-center" role="log" aria-live="polite" aria-label="notifications"></div>
+
+<nav id="facet-strip" class="facet-bar" aria-label="facets" hidden>
+  <div class="facet-pills-container"></div>
+</nav>
 
 <main id="main-content" class="workspace">
   <div class="surface-state surface-state--loading" role="status" aria-busy="true">

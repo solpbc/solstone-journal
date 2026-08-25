@@ -22,3 +22,4 @@ solstone-core-offload.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"
+solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-support"] }

@@ -3195,6 +3195,7 @@ name = "solstone-core-backup-runtime"
 version = "2.0.0"
 dependencies = [
  "bzip2-rs",
+ "chrono",
  "getrandom 0.3.4",
  "hmac",
  "md5",
@@ -3205,6 +3206,7 @@ dependencies = [
  "sha2",
  "solstone-core-artifact-download",
  "solstone-core-backup",
+ "solstone-core-backup-runtime",
  "solstone-core-body-rebuild",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",

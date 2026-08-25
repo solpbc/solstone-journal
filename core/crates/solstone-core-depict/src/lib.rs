@@ -265,10 +265,7 @@ fn rfdetr_paths_from_install_check(
         Err(error)
             if matches!(
                 error.reason_code.as_str(),
-                "sidecar_missing"
-                    | "sidecar_mismatch"
-                    | "unsupported_platform"
-                    | "artifact_registry_mismatch"
+                "sidecar_missing" | "sidecar_mismatch"
             ) =>
         {
             Ok(None)
@@ -570,12 +567,14 @@ mod tests {
     use super::*;
     use image::{ImageBuffer, Rgb};
     use sha2::{Digest, Sha256};
-    use solstone_core_assets::{Artifact, Backend, Platform};
     use solstone_core_generate::{
         GeneratedResponse, ProtocolError, ReasonCode, ReasonCodeValue, RefusedResponse,
         decode_one_shot_response, decode_protocol_error,
     };
-    use solstone_core_local::install::test_hooks::check_rfdetr_model_with_fixture_artifacts;
+    use solstone_core_local::install::{
+        rfdetr_install::{EngineSpec, ModelSpec},
+        test_hooks::check_rfdetr_model_with_fixture_artifacts,
+    };
 
     fn generated(text: &str) -> GenerateResponse {
         GenerateResponse::Generated(Box::new(GeneratedResponse {
@@ -712,7 +711,7 @@ mod tests {
         }
 
         const KEY: &str = "linux-cpu-x64";
-        const ENGINE_VERSION: &str = "fixture-engine-version";
+        const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
         const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
         const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
         const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
@@ -723,31 +722,15 @@ mod tests {
         let model_bytes = b"model weights";
         let model_sha256: &'static str =
             Box::leak(format!("{:x}", Sha256::digest(model_bytes)).into_boxed_str());
-        let engine = Artifact {
-            unit: "rfdetr-engine",
-            version: ENGINE_VERSION,
-            filename: "fixture-rfdetr-engine.tar.gz",
-            sha256: engine_sha256,
-            size_bytes: engine_bytes.len() as u64,
-            upstream_url: "https://example.invalid/fixture-rfdetr-engine.tar.gz",
-            origin_key: "test/rfdetr-engine",
-            artifact_key: Some(KEY),
-            platform: Some(Platform::LinuxX64),
-            backend: Some(Backend::Cpu),
-            extracted_binary_sha256: Some(engine_sha256),
+        let engine = EngineSpec {
+            filename: "fixture-engine.tar.gz",
+            tarball_sha256: engine_sha256,
+            tarball_size: engine_bytes.len() as u64,
+            binary_sha256: engine_sha256,
         };
-        let model = Artifact {
-            unit: "rfdetr-model",
-            version: MODEL_REVISION,
-            filename: MODEL_FILE,
+        let model = ModelSpec {
             sha256: model_sha256,
-            size_bytes: model_bytes.len() as u64,
-            upstream_url: "https://example.invalid/rfdetr-nano-f16.gguf",
-            origin_key: "test/rfdetr-model",
-            artifact_key: None,
-            platform: None,
-            backend: None,
-            extracted_binary_sha256: None,
+            size: model_bytes.len() as u64,
         };
         let binary = binary_path(root.path(), KEY);
         let model_file = model_path(root.path());
@@ -763,7 +746,7 @@ mod tests {
             json!({
                 "artifact_key": KEY,
                 "engine_version": ENGINE_VERSION,
-                "engine_sha256": engine.sha256,
+                "engine_sha256": engine.tarball_sha256,
                 "model_file": MODEL_FILE,
                 "model_repo": MODEL_REPO,
                 "model_revision": MODEL_REVISION,

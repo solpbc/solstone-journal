@@ -13,10 +13,29 @@ pub struct AppDefinition {
     pub icon: &'static str,
     pub label: &'static str,
     pub lucide_icon: &'static str,
+    pub launcher_group: AppLauncherGroup,
+    pub launcher_rank: u8,
+    pub rail_group: Option<RailGroup>,
+    pub rail_rank: u8,
     pub date_nav: Option<DateNav>,
     pub facets_enabled: bool,
     pub has_background: bool,
     pub converted: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppLauncherGroup {
+    YourJournal,
+    Understand,
+    Manage,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RailGroup {
+    Primary,
+    Management,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -53,6 +72,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📅",
         label: "activities",
         lucide_icon: "calendar-days",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 5,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: Some(DateNav {
             allow_future: true,
             step: None,
@@ -62,7 +85,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
                 none: "no activities",
             },
         }),
-        facets_enabled: true,
+        facets_enabled: false,
         has_background: false,
         converted: false,
     },
@@ -71,6 +94,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🛡️",
         label: "backup",
         lucide_icon: "history",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 2,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -81,6 +108,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🫀",
         label: "body",
         lucide_icon: "heart-pulse",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 4,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: Some(content_date_nav("reading", "readings", "no readings")),
         facets_enabled: false,
         has_background: false,
@@ -91,6 +122,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "✨",
         label: "curation",
         lucide_icon: "wand-sparkles",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 4,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -101,6 +136,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📇",
         label: "entities",
         lucide_icon: "contact",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 1,
+        rail_group: Some(RailGroup::Primary),
+        rail_rank: 3,
         date_nav: None,
         facets_enabled: true,
         has_background: false,
@@ -111,6 +150,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🩺",
         label: "health",
         lucide_icon: "stethoscope",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 3,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -121,6 +164,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🏠",
         label: "home",
         lucide_icon: "house",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 0,
+        rail_group: Some(RailGroup::Primary),
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -131,8 +178,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📥",
         label: "import",
         lucide_icon: "import",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 0,
+        rail_group: Some(RailGroup::Management),
+        rail_rank: 0,
         date_nav: None,
-        facets_enabled: true,
+        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -141,6 +192,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🔗",
         label: "network",
         lucide_icon: "network",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 1,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -151,6 +206,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📰",
         label: "newsletters",
         lucide_icon: "newspaper",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 5,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: Some(content_date_nav(
             "newsletter",
             "newsletters",
@@ -165,8 +224,12 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🔍",
         label: "search",
         lucide_icon: "search",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 0,
+        rail_group: Some(RailGroup::Primary),
+        rail_rank: 2,
         date_nav: None,
-        facets_enabled: true,
+        facets_enabled: false,
         has_background: false,
         converted: true,
     },
@@ -175,6 +238,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "⚙️",
         label: "settings",
         lucide_icon: "settings",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 5,
+        rail_group: Some(RailGroup::Management),
+        rail_rank: 1,
         date_nav: None,
         facets_enabled: true,
         has_background: false,
@@ -185,6 +252,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🎙️",
         label: "speakers",
         lucide_icon: "mic-vocal",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 3,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
         facets_enabled: false,
         has_background: false,
@@ -195,6 +266,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📊",
         label: "stats",
         lucide_icon: "chart-column",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 3,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -205,6 +280,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🛟",
         label: "support",
         lucide_icon: "life-buoy",
+        launcher_group: AppLauncherGroup::Manage,
+        launcher_rank: 4,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: None,
         facets_enabled: false,
         has_background: true,
@@ -215,6 +294,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🧠",
         label: "thinking",
         lucide_icon: "brain",
+        launcher_group: AppLauncherGroup::Understand,
+        launcher_rank: 2,
+        rail_group: Some(RailGroup::Primary),
+        rail_rank: 4,
         date_nav: None,
         facets_enabled: false,
         has_background: false,
@@ -225,6 +308,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "🕰️",
         label: "timeline",
         lucide_icon: "calendar-range",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 1,
+        rail_group: Some(RailGroup::Primary),
+        rail_rank: 1,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
         facets_enabled: false,
         has_background: true,
@@ -235,6 +322,10 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         icon: "📜",
         label: "transcripts",
         lucide_icon: "scroll-text",
+        launcher_group: AppLauncherGroup::YourJournal,
+        launcher_rank: 2,
+        rail_group: None,
+        rail_rank: 0,
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
         facets_enabled: false,
         has_background: false,
@@ -260,8 +351,11 @@ pub struct ShellApp {
     pub icon: &'static str,
     pub icon_svg: Option<String>,
     pub label: &'static str,
+    pub launcher_group: AppLauncherGroup,
+    pub launcher_rank: u8,
     pub name: &'static str,
-    pub starred: bool,
+    pub rail_group: Option<RailGroup>,
+    pub rail_rank: u8,
     pub workspace_url: String,
 }
 
@@ -294,8 +388,11 @@ pub fn shell_payload() -> ShellPayload {
                 icon: app.icon,
                 icon_svg: icons.get(app.lucide_icon).cloned(),
                 label: app.label,
+                launcher_group: app.launcher_group,
+                launcher_rank: app.launcher_rank,
                 name: app.name,
-                starred: false,
+                rail_group: app.rail_group,
+                rail_rank: app.rail_rank,
                 workspace_url: format!("/app/{}/workspace", app.name),
             })
             .collect(),
@@ -310,7 +407,7 @@ pub fn shell_payload() -> ShellPayload {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeSet, fs};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -353,6 +450,16 @@ mod tests {
                 .iter()
                 .any(|app| app.name == "network" && app.converted)
         );
+    }
+
+    #[test]
+    fn facets_enabled_apps_are_entities_and_settings_at_this_checkpoint() {
+        let enabled = APP_REGISTRY
+            .iter()
+            .filter(|app| app.facets_enabled)
+            .map(|app| app.name)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(enabled, BTreeSet::from(["entities", "settings"]));
     }
 
     #[test]

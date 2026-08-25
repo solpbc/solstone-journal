@@ -10,6 +10,9 @@ pub mod windows_crosscheck;
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
+#[path = "contracts/convey_shell_assets.rs"]
+mod convey_shell_assets;
+#[cfg(test)]
 #[path = "contracts/distribution_install_archive_refusals.rs"]
 mod distribution_install_archive_refusals;
 #[cfg(test)]
