@@ -282,13 +282,28 @@ function createHarness() {
   const requests = [];
   const facets = initialFacets();
   const windowListeners = {};
+  const historyEntries = [''];
+  let historyIndex = 0;
   const window = {
     document,
     Element,
     AppServices: { escapeHtml(value) { return String(value); } },
     SurfaceState: { loading() { return ''; }, error() { return ''; } },
     location: { href: '/app/settings/', pathname: '/app/settings/', hash: '' },
-    history: { replaceState(_state, _title, next) { window.location.hash = String(next); } },
+    history: {
+      pushState(_state, _title, next) {
+        historyEntries.splice(historyIndex + 1);
+        historyEntries.push(String(next));
+        historyIndex = historyEntries.length - 1;
+        window.location.hash = historyEntries[historyIndex];
+      },
+      back() {
+        if (historyIndex === 0) return;
+        historyIndex -= 1;
+        window.location.hash = historyEntries[historyIndex];
+        for (const listener of windowListeners.hashchange || []) listener(event('hashchange'));
+      },
+    },
     setTimeout,
     clearTimeout,
     requestAnimationFrame(callback) { callback(); },
@@ -341,6 +356,7 @@ function createHarness() {
   window.window = window;
   const context = vm.createContext({
     window, document, Element, console, URL, fetch: fetchMock, setTimeout, clearTimeout,
+    history: window.history,
     requestAnimationFrame: window.requestAnimationFrame,
   });
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'settings.js'), 'utf8'), context, { filename: 'settings.js' });
@@ -392,6 +408,31 @@ async function testCase(name, fn) {
     assert.ok(empty);
     assert.ok(empty.textContent.includes('without needing two journals'));
     assert.strictEqual(harness.document.querySelectorAll('#facetsList .facets-list-empty button').length, 1);
+  });
+
+  await testCase('settings tabs preserve browser history', async () => {
+    const harness = createHarness();
+    const guide = harness.document.querySelector('.settings-nav-item[data-section="guide"]');
+    const facets = harness.document.querySelector('.settings-nav-item[data-section="facets"]');
+    await click(facets);
+    assert.strictEqual(harness.window.location.hash, '#facets');
+    assert.strictEqual(facets.getAttribute('aria-selected'), 'true');
+    await click(facets);
+    harness.window.history.back();
+    await settle();
+    assert.strictEqual(harness.window.location.hash, '');
+    assert.strictEqual(guide.getAttribute('aria-selected'), 'true');
+    await click(facets);
+    await click(guide);
+    assert.strictEqual(harness.window.location.hash, '#guide');
+    harness.window.history.back();
+    await settle();
+    assert.strictEqual(harness.window.location.hash, '#facets');
+    assert.strictEqual(facets.getAttribute('aria-selected'), 'true');
+    harness.window.history.back();
+    await settle();
+    assert.strictEqual(harness.window.location.hash, '');
+    assert.strictEqual(guide.getAttribute('aria-selected'), 'true');
   });
 
   await testCase('AC2 rendered row drives detail bootstrap and lazy tabs', async () => {

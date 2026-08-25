@@ -3059,7 +3059,10 @@ function switchSection(sectionId, updateHash = true, loadSection = true) {
 
   // Update URL hash
   if (updateHash) {
-    history.replaceState(null, '', '#' + sectionId);
+    const nextHash = '#' + sectionId;
+    if (window.location.hash !== nextHash) {
+      history.pushState(null, '', nextHash);
+    }
   }
 
 }
@@ -3302,6 +3305,8 @@ window.addEventListener('hashchange', () => {
   const hash = window.location.hash.slice(1);
   if (hash && VALID_SECTIONS.includes(hash)) {
     switchSection(hash, false);
+  } else if (!hash) {
+    switchSection('guide', false);
   }
 });
 
