@@ -267,8 +267,6 @@ fn rfdetr_paths_from_install_check(
                 error.reason_code.as_str(),
                 "sidecar_missing"
                     | "sidecar_mismatch"
-                    | "unsupported_platform"
-                    | "artifact_registry_mismatch"
             ) =>
         {
             Ok(None)
