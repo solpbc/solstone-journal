@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "8f6d2ddaf44118f1b591b8dca817fa4ee3b1e806f04fee3124cb4820b1dd7180";
+const LOCAL_OPS_SHA256: &str = "2a03cbc345a870b2167d3e3f1b4f9948bf689e275194c7d7df52dc025d51bb52";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -134,6 +134,41 @@ fn run_journal_with_input(args: &[&str], path: &Path, journal: &Path, input: &[u
 fn seed_journal(root: &Path) {
     for directory in ["chronicle", "entities", "facets", "imports"] {
         fs::create_dir_all(root.join(directory)).expect("seed journal directory");
+    }
+}
+
+fn seed_name_variant_orphans(root: &Path, order: &[&str], reverse_mtimes: bool) {
+    seed_journal(root);
+    for (index, slug) in order.iter().enumerate() {
+        let facet = root.join("facets").join(slug);
+        fs::create_dir_all(facet.join("news")).expect("seed variant orphan");
+        match *slug {
+            "field-notes" => {
+                fs::write(facet.join("news/destination.md"), b"destination\n")
+                    .expect("write destination content");
+            }
+            "field.notes" => {
+                fs::write(facet.join("news/collision.md"), b"from-dot\n")
+                    .expect("write dot content");
+            }
+            "field_notes" => {
+                fs::write(facet.join("news/collision.md"), b"from-underscore\n")
+                    .expect("write underscore content");
+            }
+            _ => panic!("unknown variant slug: {slug}"),
+        }
+        let offset = if reverse_mtimes {
+            order.len() - index
+        } else {
+            index
+        };
+        fs::File::open(&facet)
+            .expect("open variant facet directory")
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(UNIX_EPOCH + Duration::from_secs(1_000 + offset as u64)),
+            )
+            .expect("set variant facet mtime");
     }
 }
 
@@ -384,6 +419,16 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     );
     assert!(!orphan.join("facet.json").exists());
 
+    let merge_requires_fix =
+        run_journal_with_journal(&["facet", "doctor", "--merge"], Some(&path), &journal);
+    assert_eq!(merge_requires_fix.status.code(), Some(64));
+    assert_eq!(merge_requires_fix.stdout, b"");
+    assert_eq!(
+        merge_requires_fix.stderr,
+        b"journal facet doctor: --merge requires --fix\n"
+    );
+    assert!(!orphan.join("facet.json").exists());
+
     fs::write(orphan.join("facet.json"), b"{\"title\":\"Field Notes\"}\n")
         .expect("declare news facet");
     let markdown = b"# Today\n\nKept byte-for-byte.\n";
@@ -431,6 +476,10 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
         "{}",
         String::from_utf8_lossy(&merge.stderr)
     );
+    assert_eq!(
+        merge.stdout,
+        b"Merged 'source' into 'dest'. Index rebuild completed.\n"
+    );
     assert!(!journal.join("facets/source").exists());
     assert_eq!(
         fs::read(journal.join("facets/dest/news/20260807.md")).unwrap(),
@@ -440,6 +489,193 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
         fs::read(journal.join("config/convey.json")).unwrap(),
         b"{\"facets\":{\"selected\":\"source\",\"order\":[\"dest\",\"source\"]}}\n"
     );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_facet_doctor_plain_fix_keeps_name_variants_separate() {
+    let temp = TempDir::new("journal-facet-doctor-plain-fix");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+    seed_name_variant_orphans(
+        &journal,
+        &["field_notes", "field.notes", "field-notes"],
+        true,
+    );
+
+    let output = run_journal_with_journal(&["facet", "doctor", "--fix"], Some(&path), &journal);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.stdout,
+        b"Repaired orphan facets:\n- field-notes\n- field.notes\n- field_notes\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+    );
+    assert_eq!(output.stderr, b"");
+    for slug in ["field-notes", "field.notes", "field_notes"] {
+        let facet = journal.join("facets").join(slug);
+        assert!(facet.is_dir(), "{slug} directory remains");
+        assert!(
+            facet.join("facet.json").is_file(),
+            "{slug} declaration exists"
+        );
+    }
+    let heals = fs::read_to_string(journal.join("logs/facet-heals.jsonl"))
+        .expect("read facet heal audit")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("parse facet heal audit"))
+        .collect::<Vec<_>>();
+    assert_eq!(heals.len(), 3);
+    assert!(heals.iter().all(|record| record["action"] == "facet_heal"));
+    assert!(
+        !journal.join("config/actions").exists(),
+        "plain --fix must not emit facet_merge audit records"
+    );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures() {
+    let temp = TempDir::new("journal-facet-doctor-merge");
+    let (path, sentinel) = poison_path(&temp);
+    let first = temp.path.join("first");
+    let second = temp.path.join("second");
+    seed_name_variant_orphans(
+        &first,
+        &["field-notes", "field.notes", "field_notes"],
+        false,
+    );
+    seed_name_variant_orphans(
+        &second,
+        &["field_notes", "field.notes", "field-notes"],
+        true,
+    );
+
+    let expected = b"Merged orphan facets:\n- field.notes -> field-notes\n- field_notes -> field-notes\n\nRegular-file collisions:\n- field_notes -> field-notes: news/collision.md (kept field.notes)\n\nAdopted orphan facets:\n- field-notes\n\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n";
+    let first_output = run_journal_with_journal(
+        &["facet", "doctor", "--fix", "--merge"],
+        Some(&path),
+        &first,
+    );
+    let second_output = run_journal_with_journal(
+        &["facet", "doctor", "--merge", "--fix"],
+        Some(&path),
+        &second,
+    );
+    for (journal, output) in [(&first, &first_output), (&second, &second_output)] {
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stdout, expected);
+        assert_eq!(output.stderr, b"");
+        assert!(journal.join("facets/field-notes/facet.json").exists());
+        assert!(!journal.join("facets/field.notes").exists());
+        assert!(!journal.join("facets/field_notes").exists());
+        assert_eq!(
+            fs::read(journal.join("facets/field-notes/news/collision.md"))
+                .expect("read retained collision"),
+            b"from-dot\n"
+        );
+
+        let action_records = fs::read_dir(journal.join("config/actions"))
+            .expect("read action log directory")
+            .flat_map(|entry| {
+                fs::read_to_string(entry.expect("action log entry").path())
+                    .expect("read action log")
+                    .lines()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .map(|line| serde_json::from_str::<Value>(&line).expect("parse action log"))
+            .filter(|record| record["action"] == "facet_merge")
+            .collect::<Vec<_>>();
+        assert_eq!(action_records.len(), 2);
+        assert!(
+            action_records
+                .iter()
+                .all(|record| record["params"]["consent"] == true)
+        );
+    }
+    assert_eq!(first_output.stdout, second_output.stdout);
+
+    let merge_failure = temp.path.join("merge-failure");
+    seed_journal(&merge_failure);
+    let destination = merge_failure.join("facets/bad-notes");
+    fs::create_dir_all(destination.join("news")).expect("seed failed merge destination");
+    fs::write(destination.join("news/collision"), b"destination\n")
+        .expect("write failed merge destination");
+    let source = merge_failure.join("facets/bad_notes");
+    fs::create_dir_all(source.join("news/collision")).expect("seed failed merge source");
+    fs::write(source.join("news/collision/source.md"), b"source\n")
+        .expect("write failed merge source");
+    let singleton = merge_failure.join("facets/solo");
+    fs::create_dir_all(singleton.join("news")).expect("seed singleton orphan");
+    fs::write(singleton.join("news/solo.md"), b"solo\n").expect("write singleton orphan");
+
+    let merge_failure_output = run_journal_with_journal(
+        &["facet", "doctor", "--fix", "--merge"],
+        Some(&path),
+        &merge_failure,
+    );
+    assert_eq!(merge_failure_output.status.code(), Some(74));
+    let merge_failure_stdout = String::from_utf8(merge_failure_output.stdout).expect("stdout");
+    assert!(merge_failure_stdout.contains("Adopted orphan facets:\n- bad-notes\n- solo\n"));
+    assert!(merge_failure_stdout.contains("Failed orphan facets:\n- bad_notes -> bad-notes (merge failed before commit: journal facet merge: unsafe facet entry:"));
+    assert!(merge_failure_stdout.contains("2 orphan facet(s) repaired; 1 orphan facet(s) failed."));
+    assert_eq!(
+        merge_failure_output.stderr,
+        b"journal facet doctor: one or more orphan facet repairs failed\n"
+    );
+    assert!(destination.join("facet.json").exists());
+    assert!(!source.join("facet.json").exists());
+    assert_eq!(
+        fs::read(source.join("news/collision/source.md")).expect("read failed source"),
+        b"source\n"
+    );
+    assert!(singleton.join("facet.json").exists());
+
+    let adoption_failure = temp.path.join("adoption-failure");
+    seed_journal(&adoption_failure);
+    let blocked_destination = adoption_failure.join("facets/blocked-notes");
+    fs::create_dir_all(blocked_destination.join("news")).expect("seed blocked destination");
+    fs::write(
+        blocked_destination.join("news/destination.md"),
+        b"destination\n",
+    )
+    .expect("write blocked destination");
+    let blocked_source = adoption_failure.join("facets/blocked_notes");
+    fs::create_dir_all(blocked_source.join("news")).expect("seed blocked source");
+    fs::write(blocked_source.join("news/source.md"), b"source\n").expect("write blocked source");
+    let independent = adoption_failure.join("facets/independent");
+    fs::create_dir_all(independent.join("news")).expect("seed independent orphan");
+    fs::write(independent.join("news/independent.md"), b"independent\n")
+        .expect("write independent orphan");
+    fs::set_permissions(&blocked_destination, fs::Permissions::from_mode(0o500))
+        .expect("make destination read-only");
+
+    let adoption_failure_output = run_journal_with_journal(
+        &["facet", "doctor", "--merge", "--fix"],
+        Some(&path),
+        &adoption_failure,
+    );
+    fs::set_permissions(&blocked_destination, fs::Permissions::from_mode(0o700))
+        .expect("restore destination permissions");
+    assert_eq!(adoption_failure_output.status.code(), Some(74));
+    let adoption_failure_stdout =
+        String::from_utf8(adoption_failure_output.stdout).expect("adoption failure stdout");
+    assert!(adoption_failure_stdout.contains("Adopted orphan facets:\n- independent\n"));
+    assert!(
+        adoption_failure_stdout
+            .contains("Failed orphan facets:\n- blocked-notes (adoption failed:")
+    );
+    assert!(adoption_failure_stdout.contains("blocked_notes were not merged)"));
+    assert!(
+        adoption_failure_stdout.contains("1 orphan facet(s) repaired; 2 orphan facet(s) failed.")
+    );
+    assert_eq!(
+        adoption_failure_output.stderr,
+        b"journal facet doctor: one or more orphan facet repairs failed\n"
+    );
+    assert!(!blocked_destination.join("facet.json").exists());
+    assert!(!blocked_source.join("facet.json").exists());
+    assert!(independent.join("facet.json").exists());
     assert_sentinel_untouched(&sentinel);
 }
 
