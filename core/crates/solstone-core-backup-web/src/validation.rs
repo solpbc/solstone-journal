@@ -13,6 +13,21 @@ pub(crate) enum HandoffFieldError {
     InvalidValue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefusedReason {
+    NoHostedBackup,
+    HostedBackupExpired,
+}
+
+impl RefusedReason {
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::NoHostedBackup => "no_hosted_backup",
+            Self::HostedBackupExpired => "hosted_backup_expired",
+        }
+    }
+}
+
 pub fn object(
     body: &Bytes,
     missing_reason: fn(&str) -> Response,
@@ -56,6 +71,19 @@ pub(crate) fn hosted_binding(
         prefix: nonempty_string(object, "prefix")?,
         broker_token: nonempty_string(object, "broker_token")?,
     })
+}
+
+pub(crate) fn refused_reason(
+    object: &Map<String, Value>,
+) -> Result<RefusedReason, HandoffFieldError> {
+    if object.len() != 2 || object.get("status").and_then(Value::as_str) != Some("refused") {
+        return Err(HandoffFieldError::InvalidValue);
+    }
+    match object.get("reason_code").and_then(Value::as_str) {
+        Some("no_hosted_backup") => Ok(RefusedReason::NoHostedBackup),
+        Some("hosted_backup_expired") => Ok(RefusedReason::HostedBackupExpired),
+        _ => Err(HandoffFieldError::InvalidValue),
+    }
 }
 
 fn canonical_origin(value: &str) -> Option<String> {
@@ -397,6 +425,46 @@ mod tests {
                 require_configured_portal_base(base),
                 Err(HandoffFieldError::InvalidValue),
                 "{base}"
+            );
+        }
+    }
+
+    #[test]
+    fn refused_reason_requires_the_exact_refused_envelope() {
+        let valid = Map::from_iter([
+            ("status".into(), json!("refused")),
+            ("reason_code".into(), json!("no_hosted_backup")),
+        ]);
+        assert_eq!(refused_reason(&valid), Ok(RefusedReason::NoHostedBackup));
+
+        let expired = Map::from_iter([
+            ("status".into(), json!("refused")),
+            ("reason_code".into(), json!("hosted_backup_expired")),
+        ]);
+        assert_eq!(
+            refused_reason(&expired),
+            Ok(RefusedReason::HostedBackupExpired)
+        );
+
+        for invalid in [
+            Map::from_iter([(String::from("status"), json!("refused"))]),
+            Map::from_iter([
+                ("status".into(), json!("approved")),
+                ("reason_code".into(), json!("no_hosted_backup")),
+            ]),
+            Map::from_iter([
+                ("status".into(), json!("refused")),
+                ("reason_code".into(), json!("unknown")),
+            ]),
+            Map::from_iter([
+                ("status".into(), json!("refused")),
+                ("reason_code".into(), json!("no_hosted_backup")),
+                ("extra".into(), json!(true)),
+            ]),
+        ] {
+            assert_eq!(
+                refused_reason(&invalid),
+                Err(HandoffFieldError::InvalidValue)
             );
         }
     }

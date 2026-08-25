@@ -18,7 +18,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Barrier, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
 
@@ -888,6 +888,7 @@ fn engine_deps(
         portal_base: crate::test_support::PORTAL_BASE.into(),
         version: "test",
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
+        restore_prepare: crate::restore_prepare::new_shared(),
     }
 }
 
@@ -1387,6 +1388,26 @@ fn assert_enable_portal_url(url: &str) {
     );
 }
 
+fn assert_restore_portal_url(url: &str) {
+    let relative = url.strip_prefix("https://services.solstone.app").unwrap();
+    let (path, query) = relative.split_once('?').unwrap();
+    assert_eq!(path, "/enable/backup");
+    let pairs = query
+        .split('&')
+        .map(|pair| pair.split_once('=').unwrap())
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs.get("intent"), Some(&"restore"));
+    assert!(!pairs.contains_key("instance"));
+    let nonce = pairs.get("nonce").copied().unwrap();
+    assert_eq!(nonce.len(), solstone_core_handoff_nonce::NONCE_LENGTH_CHARS);
+    assert!(
+        nonce
+            .bytes()
+            .all(|byte| solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte))
+    );
+}
+
 #[tokio::test]
 async fn enable_hosted_returns_portal_url() {
     let root = crate::test_support::root("healthy");
@@ -1519,29 +1540,29 @@ async fn unbound_restore_hosted_returns_portal_and_restoring_phase() {
         root.path().to_path_buf(),
         Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
     );
-    let (status, body) = post_json(
-        &deps,
-        "/app/backup/restore-hosted",
-        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-    )
-    .await;
-    assert_eq!(status, 200);
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    assert_restore_portal_url(keyed["portal_url"].as_str().unwrap());
+    let armed = arm_unbound_restore(&deps, &capability).await;
+    assert_eq!(armed["operation"]["kind"], "restore_hosted");
+    assert_eq!(armed["operation"]["phase"], "restoring");
+    let body = activate_unbound_restore(&deps, &capability).await;
     assert_eq!(body["operation"]["kind"], "restore_hosted");
     assert_eq!(body["operation"]["phase"], "restoring");
-    assert_enable_portal_url(body["operation"]["portal_url"].as_str().unwrap());
+    assert_restore_portal_url(body["operation"]["portal_url"].as_str().unwrap());
     drain_hosted_wait(&deps).await;
 }
 
 #[tokio::test]
-async fn restore_hosted_missing_key_is_still_400() {
+async fn unbound_restore_hosted_requires_prepare_flow() {
     let root = crate::test_support::root("healthy");
     let (deps, _restic) = prepared(
         root.path().to_path_buf(),
         Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
     );
     let (status, body) = post_json(&deps, "/app/backup/restore-hosted", Some(json!({}))).await;
-    assert_eq!(status, 400);
-    assert_eq!(body["reason_code"], "missing_required_field");
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_hosted_prepare_required");
 }
 
 #[tokio::test]
@@ -1929,6 +1950,657 @@ fn portal_nonce(body: &Value) -> String {
         .next()
         .unwrap()
         .to_owned()
+}
+
+async fn prepare_unbound_restore(deps: &crate::BackupWebDeps) -> String {
+    let (status, body) = post_json(deps, "/app/backup/restore-hosted/prepare", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["expires_in_seconds"], 15);
+    body["capability"].as_str().unwrap().to_owned()
+}
+
+async fn key_unbound_restore(deps: &crate::BackupWebDeps, capability: &str) -> Value {
+    let (status, body) = post_json(
+        deps,
+        "/app/backup/restore-hosted/key",
+        Some(json!({
+            "capability": capability,
+            "recovery_key": crate::test_support::RECOVERY_KEY,
+        })),
+    )
+    .await;
+    assert_eq!(status, 200);
+    body
+}
+
+async fn arm_unbound_restore(deps: &crate::BackupWebDeps, capability: &str) -> Value {
+    let (status, body) = post_json(
+        deps,
+        "/app/backup/restore-hosted/arm",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    body
+}
+
+async fn activate_unbound_restore(deps: &crate::BackupWebDeps, capability: &str) -> Value {
+    let (status, body) = post_json(
+        deps,
+        "/app/backup/restore-hosted/activate",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    body
+}
+
+fn assert_handoff_state_cleared(deps: &crate::BackupWebDeps) {
+    let guard = deps.operations.lock().expect("operation slot lock");
+    let slot = guard.as_ref().expect("operation slot");
+    assert!(slot.view.portal_url.is_none());
+    assert!(slot.nonce.is_none());
+    assert!(slot.restore_key.is_none());
+}
+
+fn refused_poll_response(reason_code: &str) -> HttpResponse {
+    HttpResponse {
+        status: 200,
+        headers: vec![],
+        body: serde_json::to_vec(&json!({
+            "status": "refused",
+            "reason_code": reason_code,
+        }))
+        .unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn restore_prepare_does_not_allocate_an_enable_instance_id() {
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+
+    crate::operation::reset_instance_allocations();
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    assert_eq!(crate::operation::instance_allocations(), 0);
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    let enabled_root = crate::test_support::root("healthy");
+    let (enabled_deps, _restic) = prepared(
+        enabled_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    crate::operation::reset_instance_allocations();
+    let (status, _) = post_json(&enabled_deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(crate::operation::instance_allocations(), 1);
+    drain_hosted_wait(&enabled_deps).await;
+}
+
+#[tokio::test]
+async fn restore_prepare_rejects_duplicate_prepares_and_reuses_an_expired_lease() {
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let (_, status_body) = get_status_json(&deps).await;
+    assert!(!status_body.to_string().contains(&capability));
+    let (status, body) = post_json(&deps, "/app/backup/restore-hosted/prepare", None).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_unavailable");
+
+    crate::restore_prepare::backdate_restore_prepare_issued_at(
+        &deps.restore_prepare,
+        crate::handoff_poll::HANDOFF_POLL_TIMEOUT + Duration::from_secs(1),
+    );
+    let replacement = prepare_unbound_restore(&deps).await;
+    assert_ne!(replacement, capability);
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": replacement})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(crate::operation::current(&deps.operations).is_none());
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/key",
+        Some(json!({
+            "capability": replacement,
+            "recovery_key": crate::test_support::RECOVERY_KEY,
+        })),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_invalid_capability");
+}
+
+#[tokio::test]
+async fn restore_prepare_key_is_single_use_and_generation_bound() {
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let barrier = Arc::new(Barrier::new(3));
+    let first = {
+        let deps = deps.clone();
+        let capability = capability.clone();
+        let barrier = barrier.clone();
+        std::thread::spawn(move || {
+            barrier.wait();
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(post_json(
+                    &deps,
+                    "/app/backup/restore-hosted/key",
+                    Some(json!({
+                        "capability": capability,
+                        "recovery_key": crate::test_support::RECOVERY_KEY,
+                    })),
+                ))
+        })
+    };
+    let second = {
+        let deps = deps.clone();
+        let capability = capability.clone();
+        let barrier = barrier.clone();
+        std::thread::spawn(move || {
+            barrier.wait();
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(post_json(
+                    &deps,
+                    "/app/backup/restore-hosted/key",
+                    Some(json!({
+                        "capability": capability,
+                        "recovery_key": crate::test_support::RECOVERY_KEY,
+                    })),
+                ))
+        })
+    };
+    barrier.wait();
+    let mut statuses = [first.join().unwrap().0, second.join().unwrap().0];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409]);
+    assert_eq!(
+        crate::operation::current(&deps.operations)
+            .as_ref()
+            .map(|operation| operation.kind.as_str()),
+        Some("restore_hosted")
+    );
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let competing = crate::operation::begin(&deps.operations, "rotate", None, None, None).unwrap();
+    crate::operation::finish(&deps.operations, competing.generation, "done", None, None);
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/key",
+        Some(json!({
+            "capability": capability,
+            "recovery_key": crate::test_support::RECOVERY_KEY,
+        })),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_generation_changed");
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+}
+
+#[tokio::test]
+async fn restore_prepare_arm_activate_and_cancel_enforce_the_lifecycle() {
+    let root = crate::test_support::root("fresh");
+    let http = Arc::new(HttpScript::default());
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        http.clone(),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/arm",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_wrong_stage");
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    let _ = wait_poll_get(&http).await;
+    assert_eq!(poll_gets(&http).len(), 1);
+
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": "foreign"})),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_invalid_capability");
+    let (status, cancelled) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(cancelled["operation"]["phase"], "error");
+    assert_eq!(cancelled["operation"]["reason_code"], "cancelled");
+    assert_handoff_state_cleared(&deps);
+    assert_eq!(credentials_posts(&http), 0);
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_invalid_capability");
+}
+
+#[tokio::test]
+async fn restore_prepare_cancellation_and_expiry_clear_deferred_restore_state() {
+    for stage in ["keyed", "armed"] {
+        let root = crate::test_support::root("fresh");
+        let http = Arc::new(HttpScript::default());
+        let deps = engine_deps(
+            root.path().to_path_buf(),
+            Arc::new(ScriptRunner::with_outputs(vec![])),
+            http.clone(),
+            None,
+        );
+        let capability = prepare_unbound_restore(&deps).await;
+        let _ = key_unbound_restore(&deps, &capability).await;
+        if stage == "armed" {
+            let _ = arm_unbound_restore(&deps, &capability).await;
+        }
+        let (status, body) = post_json(
+            &deps,
+            "/app/backup/restore-hosted/cancel",
+            Some(json!({"capability": capability})),
+        )
+        .await;
+        assert_eq!(status, 200, "{stage}");
+        assert_eq!(body["operation"]["reason_code"], "cancelled", "{stage}");
+        assert_handoff_state_cleared(&deps);
+        assert!(poll_gets(&http).is_empty(), "{stage}");
+        assert_eq!(credentials_posts(&http), 0, "{stage}");
+    }
+
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    crate::restore_prepare::backdate_restore_prepare_issued_at(
+        &deps.restore_prepare,
+        crate::handoff_poll::HANDOFF_POLL_TIMEOUT + Duration::from_secs(1),
+    );
+    let (_, expired) = get_status_json(&deps).await;
+    assert_eq!(expired["operation"]["phase"], "error");
+    assert_eq!(expired["operation"]["reason_code"], "expired");
+    assert_handoff_state_cleared(&deps);
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/activate",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_invalid_capability");
+}
+
+#[tokio::test]
+async fn hosted_restore_refused_poll_outcomes_clear_handoff_state_without_restore_work() {
+    for reason_code in ["no_hosted_backup", "hosted_backup_expired"] {
+        let root = crate::test_support::root("fresh");
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+        let http = Arc::new(
+            HttpScript::default().with_poll_responses(vec![Ok(refused_poll_response(reason_code))]),
+        );
+        let deps = engine_deps(
+            root.path().to_path_buf(),
+            runner.clone(),
+            http.clone(),
+            None,
+        );
+        let capability = prepare_unbound_restore(&deps).await;
+        let _ = key_unbound_restore(&deps, &capability).await;
+        let _ = arm_unbound_restore(&deps, &capability).await;
+        let done = activate_unbound_restore(&deps, &capability).await;
+        let done = if done["operation"]["phase"] == "refused" {
+            done
+        } else {
+            wait_terminal(&deps).await
+        };
+        assert_eq!(done["operation"]["phase"], "refused", "{reason_code}");
+        assert_eq!(
+            done["operation"]["reason_code"], reason_code,
+            "{reason_code}"
+        );
+        assert_handoff_state_cleared(&deps);
+        assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+        assert_eq!(credentials_posts(&http), 0, "{reason_code}");
+        assert_eq!(runner.calls.lock().unwrap().len(), 0, "{reason_code}");
+    }
+}
+
+#[tokio::test]
+async fn refused_handoff_validation_is_shared_by_poll_and_local_transport() {
+    for malformed in [
+        json!({"status": "refused"}),
+        json!({"status": "refused", "reason_code": "unknown"}),
+        json!({"reason_code": "no_hosted_backup"}),
+        json!({"status": "refused", "reason_code": "no_hosted_backup", "extra": true}),
+    ] {
+        let root = crate::test_support::root("fresh");
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+        let http = Arc::new(
+            HttpScript::default().with_poll_responses(vec![Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&malformed).unwrap(),
+            })]),
+        );
+        let deps = engine_deps(
+            root.path().to_path_buf(),
+            runner.clone(),
+            http.clone(),
+            None,
+        );
+        let capability = prepare_unbound_restore(&deps).await;
+        let _ = key_unbound_restore(&deps, &capability).await;
+        let _ = arm_unbound_restore(&deps, &capability).await;
+        let _ = activate_unbound_restore(&deps, &capability).await;
+        let done = wait_terminal(&deps).await;
+        assert_eq!(done["operation"]["phase"], "error");
+        assert_eq!(done["operation"]["reason_code"], "failed");
+        assert_handoff_state_cleared(&deps);
+        assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+        assert_eq!(credentials_posts(&http), 0);
+        assert_eq!(runner.calls.lock().unwrap().len(), 0);
+    }
+
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let nonce = keyed["portal_url"]
+        .as_str()
+        .unwrap()
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let (status, accepted) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(json!({
+            "nonce": nonce,
+            "status": "refused",
+            "reason_code": "no_hosted_backup",
+        })),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(accepted["operation"]["phase"], "refused");
+    assert_eq!(accepted["operation"]["reason_code"], "no_hosted_backup");
+    assert_handoff_state_cleared(&deps);
+
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let nonce = keyed["portal_url"]
+        .as_str()
+        .unwrap()
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(json!({
+            "nonce": nonce,
+            "status": "refused",
+            "reason_code": "no_hosted_backup",
+            "extra": true,
+        })),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "invalid_request_value");
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(done["operation"]["reason_code"], "failed");
+    assert_handoff_state_cleared(&deps);
+}
+
+#[tokio::test]
+async fn malformed_refused_handoff_with_wrong_nonce_leaves_live_restore_unchanged() {
+    let root = crate::test_support::root("fresh");
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        Arc::new(HttpScript::default()),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let expected = crate::operation::current(&deps.operations).expect("live restore");
+    assert_eq!(expected.kind, "restore_hosted");
+    assert_eq!(expected.phase, "restoring");
+    assert!(expected.portal_url.is_some());
+
+    for malformed in [
+        json!({"status": "refused"}),
+        json!({"status": "refused", "reason_code": "unknown"}),
+        json!({"reason_code": "no_hosted_backup"}),
+        json!({"status": "refused", "reason_code": "no_hosted_backup", "extra": true}),
+    ] {
+        let mut request = malformed;
+        request
+            .as_object_mut()
+            .unwrap()
+            .insert("nonce".into(), json!("not-the-real-nonce"));
+        let (status, body) = post_json(&deps, "/app/backup/handoff", Some(request)).await;
+        assert_eq!(status, 400);
+        assert_eq!(body["reason_code"], "invalid_operation_for_state");
+        assert_eq!(
+            crate::operation::current(&deps.operations),
+            Some(expected.clone())
+        );
+    }
+}
+
+#[tokio::test]
+async fn restore_handoff_needs_subscription_can_retry_with_a_new_generation() {
+    let root = crate::test_support::root("fresh");
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let runner = Arc::new(ScriptRunner::with_outputs(restore_outputs()));
+    let http = Arc::new(
+        HttpScript::with_responses(vec![Ok(credentials_response())]).with_poll_responses(vec![
+            Ok(needs_subscription_poll_body(
+                "https://services.solstone.app/services/backup",
+            )),
+            Ok(approved_poll_response()),
+        ]),
+    );
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        runner.clone(),
+        http.clone(),
+        Some(restic.path().to_path_buf()),
+    );
+    let first_capability = prepare_unbound_restore(&deps).await;
+    let first_keyed = key_unbound_restore(&deps, &first_capability).await;
+    let _ = arm_unbound_restore(&deps, &first_capability).await;
+    let _ = activate_unbound_restore(&deps, &first_capability).await;
+    let first = wait_terminal(&deps).await;
+    assert_eq!(first["operation"]["phase"], "needs_subscription");
+    assert_eq!(first["operation"]["reason_code"], Value::Null);
+    assert_handoff_state_cleared(&deps);
+    assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+    assert_eq!(credentials_posts(&http), 0);
+    assert_eq!(runner.calls.lock().unwrap().len(), 0);
+
+    let second_capability = prepare_unbound_restore(&deps).await;
+    let second_keyed = key_unbound_restore(&deps, &second_capability).await;
+    assert_ne!(first_keyed["portal_url"], second_keyed["portal_url"]);
+    let _ = arm_unbound_restore(&deps, &second_capability).await;
+    let _ = activate_unbound_restore(&deps, &second_capability).await;
+    let second = wait_terminal(&deps).await;
+    assert_eq!(second["operation"]["phase"], "done");
+    assert_eq!(
+        solstone_core_backup::load_hosted_binding(root.path()),
+        Some(crate::test_support::hosted_binding())
+    );
+    assert_eq!(credentials_posts(&http), 1);
+
+    let malformed_root = crate::test_support::root("fresh");
+    let mut malformed = serde_json::from_slice::<Value>(
+        &needs_subscription_poll_body("https://services.solstone.app/services/backup").body,
+    )
+    .unwrap();
+    malformed.as_object_mut().unwrap().remove("subscribe_url");
+    let malformed_http = Arc::new(HttpScript::default().with_poll_responses(vec![Ok(
+        HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&malformed).unwrap(),
+        },
+    )]));
+    let malformed_runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+    let malformed_deps = engine_deps(
+        malformed_root.path().to_path_buf(),
+        malformed_runner.clone(),
+        malformed_http.clone(),
+        None,
+    );
+    let capability = prepare_unbound_restore(&malformed_deps).await;
+    let _ = key_unbound_restore(&malformed_deps, &capability).await;
+    let _ = arm_unbound_restore(&malformed_deps, &capability).await;
+    let _ = activate_unbound_restore(&malformed_deps, &capability).await;
+    let malformed_done = wait_terminal(&malformed_deps).await;
+    assert_eq!(malformed_done["operation"]["phase"], "error");
+    assert_eq!(malformed_done["operation"]["reason_code"], "failed");
+    assert_handoff_state_cleared(&malformed_deps);
+    assert!(solstone_core_backup::load_hosted_binding(malformed_root.path()).is_none());
+    assert_eq!(credentials_posts(&malformed_http), 0);
+    assert_eq!(malformed_runner.calls.lock().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn bound_and_byo_restore_bypass_hosted_handoff_transport() {
+    let bound_root = crate::test_support::hosted_bound_root();
+    let bound_restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(bound_restic.path());
+    let bound_http = Arc::new(HttpScript::with_responses(vec![Ok(credentials_response())]));
+    let bound_deps = engine_deps(
+        bound_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(restore_outputs())),
+        bound_http.clone(),
+        Some(bound_restic.path().to_path_buf()),
+    );
+    let (status, _) = post_json(
+        &bound_deps,
+        "/app/backup/restore-hosted",
+        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let bound_done = wait_terminal(&bound_deps).await;
+    assert_eq!(bound_done["operation"]["phase"], "done");
+    assert!(poll_gets(&bound_http).is_empty());
+
+    let byo_root = crate::test_support::root("fresh");
+    let byo_restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(byo_restic.path());
+    let byo_http = Arc::new(HttpScript::default());
+    let byo_deps = engine_deps(
+        byo_root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(restore_outputs())),
+        byo_http.clone(),
+        Some(byo_restic.path().to_path_buf()),
+    );
+    let (status, _) = post_json(&byo_deps, "/app/backup/restore", Some(restore_body())).await;
+    assert_eq!(status, 200);
+    let byo_done = wait_terminal(&byo_deps).await;
+    assert_eq!(byo_done["operation"]["phase"], "done");
+    assert!(poll_gets(&byo_http).is_empty());
 }
 
 fn credentials_posts(http: &HttpScript) -> usize {
@@ -2932,14 +3604,20 @@ async fn hosted_poll_restore_uses_slot_recovery_key() {
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
-    let (status, started) = post_json(
-        &deps,
-        "/app/backup/restore-hosted",
-        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let nonce = portal_nonce(&started);
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    let nonce = keyed["portal_url"]
+        .as_str()
+        .unwrap()
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
     assert_eq!(done["mode"], "operated");
@@ -2949,6 +3627,23 @@ async fn hosted_poll_restore_uses_slot_recovery_key() {
     );
     assert_eq!(done["recovery_key_confirmed"], true);
     assert!(done["destination"]["repository"].as_str().is_some());
+    assert_eq!(
+        solstone_core_backup::load_hosted_binding(root.path()),
+        Some(crate::test_support::hosted_binding())
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            fs::metadata(root.path().join("backup/hosted/binding.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
     let rendered = done.to_string();
     assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
     assert!(!rendered.contains("broker-token-secret"));
@@ -2985,12 +3680,10 @@ async fn hosted_poll_restore_failure_records_without_publishing_destination_or_r
         http,
         Some(restic.path().to_path_buf()),
     );
-    let _ = post_json(
-        &deps,
-        "/app/backup/restore-hosted",
-        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-    )
-    .await;
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "error");
     assert_ne!(done["operation"]["phase"], "degraded");
@@ -3359,14 +4052,20 @@ async fn hosted_poll_watchdog_expiry_is_proven_by_direct_slot_lock_not_observati
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
-    let (status, started) = post_json(
-        &deps,
-        "/app/backup/restore-hosted",
-        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let nonce = portal_nonce(&started);
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    let nonce = keyed["portal_url"]
+        .as_str()
+        .unwrap()
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
     hold.wait_started();
     let expected_poll = exact_poll_url(&nonce);
     let gets = poll_gets(&http);
@@ -3918,15 +4617,21 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
             http.clone(),
             Some(restic.path().to_path_buf()),
         );
-        let (status, started) = post_json(
-            &deps,
-            "/app/backup/restore-hosted",
-            Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-        )
-        .await;
-        assert_eq!(status, 200);
+        let capability = prepare_unbound_restore(&deps).await;
+        let keyed = key_unbound_restore(&deps, &capability).await;
+        let _ = arm_unbound_restore(&deps, &capability).await;
+        let _ = activate_unbound_restore(&deps, &capability).await;
         if handoff_locally {
-            let nonce = portal_nonce(&started);
+            let nonce = keyed["portal_url"]
+                .as_str()
+                .unwrap()
+                .split("nonce=")
+                .nth(1)
+                .unwrap()
+                .split('&')
+                .next()
+                .unwrap()
+                .to_owned();
             let (status, _) = post_json(
                 &deps,
                 "/app/backup/handoff",
@@ -4009,14 +4714,20 @@ async fn handoff_restore_composition_nonce_one_use_and_command_order() {
         http,
         Some(restic.path().to_path_buf()),
     );
-    let (status, started) = post_json(
-        &deps,
-        "/app/backup/restore-hosted",
-        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let nonce = portal_nonce(&started);
+    let capability = prepare_unbound_restore(&deps).await;
+    let keyed = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    let nonce = keyed["portal_url"]
+        .as_str()
+        .unwrap()
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
     let (status, _) = post_json(
         &deps,
         "/app/backup/handoff",

@@ -6,11 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
+use std::{cell::Cell, thread_local};
+
 use axum::http::StatusCode;
 use axum::response::Response;
 use serde::Serialize;
 
-use crate::response;
+use crate::{response, validation::RefusedReason};
 
 pub const HANDOFF_TTL: Duration = Duration::from_secs(30 * 60);
 
@@ -36,6 +39,11 @@ pub struct Slot {
 }
 
 pub type SharedOperationSlot = Arc<Mutex<Option<Slot>>>;
+
+#[cfg(test)]
+thread_local! {
+    static INSTANCE_ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+}
 
 pub fn new_slot() -> SharedOperationSlot {
     Arc::new(Mutex::new(None))
@@ -215,9 +223,29 @@ where
 }
 
 pub fn mint_hex() -> Result<String, getrandom::Error> {
+    #[cfg(test)]
+    INSTANCE_ALLOCATIONS.with(|count| count.set(count.get().saturating_add(1)));
+    mint_hex_from_csprng()
+}
+
+pub fn mint_capability() -> Result<String, getrandom::Error> {
+    mint_hex_from_csprng()
+}
+
+fn mint_hex_from_csprng() -> Result<String, getrandom::Error> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes)?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[cfg(test)]
+pub fn reset_instance_allocations() {
+    INSTANCE_ALLOCATIONS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub fn instance_allocations() -> usize {
+    INSTANCE_ALLOCATIONS.with(Cell::get)
 }
 
 pub fn portal_url(base: &str, nonce: &str, instance: &str) -> String {
@@ -225,6 +253,13 @@ pub fn portal_url(base: &str, nonce: &str, instance: &str) -> String {
     // Convey route. Keep this URL absolute so the browser does not target this journal.
     format!(
         "{}/enable/backup?nonce={nonce}&instance={instance}",
+        base.trim_end_matches('/')
+    )
+}
+
+pub fn restore_portal_url(base: &str, nonce: &str) -> String {
+    format!(
+        "{}/enable/backup?nonce={nonce}&intent=restore",
         base.trim_end_matches('/')
     )
 }
@@ -273,8 +308,32 @@ pub fn mark_needs_subscription(slot: &SharedOperationSlot, generation: u64) {
     finish(slot, generation, "needs_subscription", None, None);
 }
 
+pub fn mark_refused(slot: &SharedOperationSlot, generation: u64, reason: RefusedReason) {
+    finish(
+        slot,
+        generation,
+        "refused",
+        Some(reason.code().into()),
+        None,
+    );
+}
+
 pub fn mark_expired(slot: &SharedOperationSlot, generation: u64) {
     finish(slot, generation, "error", Some("expired".into()), None);
+}
+
+pub fn mark_cancelled(slot: &SharedOperationSlot, generation: u64) {
+    finish(slot, generation, "error", Some("cancelled".into()), None);
+}
+
+pub fn nonce_for_generation(slot: &SharedOperationSlot, generation: u64) -> Option<String> {
+    let guard = slot.lock().expect("operation slot lock");
+    let current = guard.as_ref()?;
+    (current.generation == generation
+        && !is_terminal(&current.view.phase)
+        && current.view.kind == "restore_hosted")
+        .then(|| current.nonce.clone())
+        .flatten()
 }
 
 pub fn generation_of(slot: &SharedOperationSlot) -> Option<u64> {
@@ -294,7 +353,7 @@ pub fn backdate_started(slot: &SharedOperationSlot, age: Duration) {
 
 #[cfg(test)]
 mod tests {
-    use super::portal_url;
+    use super::{portal_url, restore_portal_url};
 
     fn parse_portal_url(url: &str) -> (&str, &str, &str, Vec<(&str, &str)>) {
         let (scheme, remainder) = url.split_once("://").expect("scheme separator");
@@ -340,5 +399,16 @@ mod tests {
 
         assert_ne!(path, "/enable/backup");
         assert_eq!(path, "/enable/spb");
+    }
+
+    #[test]
+    fn restore_portal_url_uses_restore_intent_without_instance() {
+        let nonce = "alpha-nonce-1";
+        let url = restore_portal_url("http://portal.example.test:8123/", nonce);
+
+        let (_, _, path, query_pairs) = parse_portal_url(&url);
+
+        assert_eq!(path, "/enable/backup");
+        assert_eq!(query_pairs, vec![("intent", "restore"), ("nonce", nonce)]);
     }
 }

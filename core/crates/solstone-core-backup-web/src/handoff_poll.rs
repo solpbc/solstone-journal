@@ -13,7 +13,7 @@ use solstone_core_backup_runtime::hosted_runtime::HttpError;
 use solstone_core_backup_runtime::{HttpRequest, HttpResponse};
 
 use crate::operation::{self, SharedOperationSlot};
-use crate::validation;
+use crate::validation::{self, RefusedReason};
 use crate::{BackupWebDeps, persist_and_consume_hosted};
 
 pub const HANDOFF_POLL_TIMEOUT: Duration = Duration::from_secs(15);
@@ -23,6 +23,7 @@ pub const HANDOFF_WATCHDOG_TICK: Duration = Duration::from_millis(100);
 enum HandoffPollOutcome {
     Approved(HostedBinding),
     NeedsSubscription,
+    Refused(RefusedReason),
 }
 
 enum LiveWait {
@@ -156,6 +157,10 @@ fn poll_loop(deps: &BackupWebDeps, nonce: &str, generation: u64) {
                     apply_needs_subscription(deps, nonce, generation);
                     return;
                 }
+                Ok(HandoffPollOutcome::Refused(reason)) => {
+                    apply_refused(deps, nonce, generation, reason);
+                    return;
+                }
                 Err(()) => {
                     finish_error(deps, generation, "failed");
                     return;
@@ -265,6 +270,20 @@ fn apply_needs_subscription(deps: &BackupWebDeps, nonce: &str, generation: u64) 
     }
 }
 
+fn apply_refused(deps: &BackupWebDeps, nonce: &str, generation: u64, reason: RefusedReason) {
+    match live_wait(&deps.operations, generation) {
+        LiveWait::Gone => return,
+        LiveWait::Expired => {
+            operation::mark_expired(&deps.operations, generation);
+            return;
+        }
+        LiveWait::Live { .. } => {}
+    }
+    if operation::match_handoff(&deps.operations, nonce).is_ok() {
+        operation::mark_refused(&deps.operations, generation, reason);
+    }
+}
+
 fn parse_poll_body(body: &[u8], portal_base: &str) -> Result<HandoffPollOutcome, ()> {
     let value = serde_json::from_slice::<Value>(body).map_err(|_| ())?;
     let object = value.as_object().ok_or(())?;
@@ -279,6 +298,9 @@ fn parse_poll_body(body: &[u8], portal_base: &str) -> Result<HandoffPollOutcome,
             validation::require_https_portal_url(&url, portal_base).map_err(|_| ())?;
             Ok(HandoffPollOutcome::NeedsSubscription)
         }
+        Some("refused") => Ok(HandoffPollOutcome::Refused(
+            validation::refused_reason(object).map_err(|_| ())?,
+        )),
         _ => Err(()),
     }
 }
@@ -361,6 +383,39 @@ mod tests {
         value.as_object_mut().unwrap().remove("bucket");
         let body = serde_json::to_vec(&value).unwrap();
         assert!(parse_poll_body(&body, crate::test_support::PORTAL_BASE).is_err());
+    }
+
+    #[test]
+    fn refused_poll_outcomes_require_the_shared_exact_envelope() {
+        for (reason_code, expected) in [
+            ("no_hosted_backup", RefusedReason::NoHostedBackup),
+            ("hosted_backup_expired", RefusedReason::HostedBackupExpired),
+        ] {
+            let body = serde_json::to_vec(&json!({
+                "status": "refused",
+                "reason_code": reason_code,
+            }))
+            .unwrap();
+            assert!(matches!(
+                parse_poll_body(&body, crate::test_support::PORTAL_BASE),
+                Ok(HandoffPollOutcome::Refused(reason)) if reason == expected
+            ));
+        }
+
+        for body in [
+            json!({"status": "refused"}),
+            json!({"status": "refused", "reason_code": "unknown"}),
+            json!({"reason_code": "no_hosted_backup"}),
+            json!({"status": "refused", "reason_code": "no_hosted_backup", "extra": true}),
+        ] {
+            assert!(
+                parse_poll_body(
+                    &serde_json::to_vec(&body).unwrap(),
+                    crate::test_support::PORTAL_BASE
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

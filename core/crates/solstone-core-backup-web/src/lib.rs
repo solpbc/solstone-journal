@@ -44,11 +44,13 @@ mod keys;
 mod measurement;
 mod operation;
 mod response;
+mod restore_prepare;
 mod status;
 mod validation;
 
 use measurement::SharedMeasurementCache;
 use operation::{SharedOperationSlot, Terminal};
+use restore_prepare::SharedRestorePrepare;
 
 #[derive(Clone)]
 pub struct BackupWebDeps {
@@ -66,6 +68,7 @@ pub struct BackupWebDeps {
     pub portal_base: String,
     pub version: &'static str,
     pub handoff_poll_lease: Arc<AtomicBool>,
+    pub(crate) restore_prepare: SharedRestorePrepare,
 }
 
 struct ProductionClock;
@@ -100,6 +103,7 @@ impl BackupWebDeps {
             portal_base: "https://services.solstone.app".into(),
             version: env!("CARGO_PKG_VERSION"),
             handoff_poll_lease: Arc::new(AtomicBool::new(false)),
+            restore_prepare: restore_prepare::new_shared(),
         }
     }
 
@@ -139,6 +143,11 @@ pub(crate) fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let teardown = deps.clone();
     let restore = deps.clone();
     let restore_hosted = deps.clone();
+    let restore_hosted_prepare = deps.clone();
+    let restore_hosted_key = deps.clone();
+    let restore_hosted_arm = deps.clone();
+    let restore_hosted_activate = deps.clone();
+    let restore_hosted_cancel = deps.clone();
     let offload_restore = deps.clone();
     let handoff = deps;
     Router::new()
@@ -215,6 +224,26 @@ pub(crate) fn routes_with_deps(deps: BackupWebDeps) -> Router {
             post(move |body| restore_hosted_route(restore_hosted.clone(), body)),
         )
         .route(
+            "/app/backup/restore-hosted/prepare",
+            post(move || restore_hosted_prepare_route(restore_hosted_prepare.clone())),
+        )
+        .route(
+            "/app/backup/restore-hosted/key",
+            post(move |body| restore_hosted_key_route(restore_hosted_key.clone(), body)),
+        )
+        .route(
+            "/app/backup/restore-hosted/arm",
+            post(move |body| restore_hosted_arm_route(restore_hosted_arm.clone(), body)),
+        )
+        .route(
+            "/app/backup/restore-hosted/activate",
+            post(move |body| restore_hosted_activate_route(restore_hosted_activate.clone(), body)),
+        )
+        .route(
+            "/app/backup/restore-hosted/cancel",
+            post(move |body| restore_hosted_cancel_route(restore_hosted_cancel.clone(), body)),
+        )
+        .route(
             "/app/backup/offload/restore",
             post(move |body| offload_restore_route(offload_restore.clone(), body)),
         )
@@ -225,6 +254,7 @@ pub(crate) fn routes_with_deps(deps: BackupWebDeps) -> Router {
 }
 
 fn status_response(deps: &BackupWebDeps) -> axum::response::Response {
+    restore_prepare::reconcile(&deps.restore_prepare, &deps.operations);
     status::status(&deps.journal_root, &deps.operations)
         .map(response::success)
         .unwrap_or_else(|_| internal_error())
@@ -638,6 +668,14 @@ fn mint_portal(deps: &BackupWebDeps) -> Result<(String, String, String), axum::r
     Ok((nonce, instance, url))
 }
 
+pub(crate) fn mint_restore_portal(
+    deps: &BackupWebDeps,
+) -> Result<(String, String), axum::response::Response> {
+    let nonce = solstone_core_handoff_nonce::mint_nonce().map_err(|_| internal_error())?;
+    let url = operation::restore_portal_url(&deps.portal_base, &nonce);
+    Ok((nonce, url))
+}
+
 async fn enable_hosted_backup(deps: BackupWebDeps) -> axum::response::Response {
     if let Err(error) = hosted_preconditions(&deps.journal_root) {
         return error;
@@ -867,6 +905,14 @@ async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
 }
 
 async fn restore_hosted_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
+    let Some(binding) = load_hosted_binding(&deps.journal_root) else {
+        return response::error(
+            axum::http::StatusCode::CONFLICT,
+            "This journal must start its hosted restore handoff first.",
+            "restore_hosted_prepare_required",
+            "use the hosted restore prepare flow",
+        );
+    };
     let payload = match validation::object(&body, response::missing) {
         Ok(value) => value,
         Err(error) => return error,
@@ -875,39 +921,109 @@ async fn restore_hosted_route(deps: BackupWebDeps, body: Bytes) -> axum::respons
         Ok(value) => value,
         Err(error) => return error,
     };
-    if let Some(binding) = load_hosted_binding(&deps.journal_root) {
-        let started = match operation::begin(
-            &deps.operations,
-            "restore_hosted",
-            None,
-            None,
-            Some(recovery_key.clone()),
-        ) {
-            Ok(started) => started,
-            Err(error) => return error,
-        };
-        let worker = deps.clone();
-        operation::spawn_worker(deps.operations.clone(), started.generation, move || {
-            bound_restore_hosted(&worker, binding, &recovery_key)
-        });
-        return status_response(&deps);
-    }
-    let (nonce, _instance, url) = match mint_portal(&deps) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
     let started = match operation::begin(
         &deps.operations,
         "restore_hosted",
-        Some(url),
-        Some(nonce.clone()),
-        Some(recovery_key),
+        None,
+        None,
+        Some(recovery_key.clone()),
     ) {
         Ok(started) => started,
         Err(error) => return error,
     };
-    handoff_poll::spawn(deps.clone(), nonce, started.generation);
+    let worker = deps.clone();
+    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+        bound_restore_hosted(&worker, binding, &recovery_key)
+    });
     status_response(&deps)
+}
+
+async fn restore_hosted_prepare_route(deps: BackupWebDeps) -> axum::response::Response {
+    if load_hosted_binding(&deps.journal_root).is_some() {
+        return response::error(
+            axum::http::StatusCode::CONFLICT,
+            "This journal already has a hosted backup binding.",
+            "restore_hosted_prepare_unbound_only",
+            "",
+        );
+    }
+    match restore_prepare::prepare(&deps.restore_prepare, &deps.operations) {
+        Ok(prepared) => response::success(json!({
+            "capability": prepared.capability,
+            "expires_in_seconds": handoff_poll::HANDOFF_POLL_TIMEOUT.as_secs(),
+        })),
+        Err(error) => error,
+    }
+}
+
+async fn restore_hosted_key_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
+    let payload = match validation::object(&body, response::missing) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let capability = match validation::required_string(&payload, "capability") {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let recovery_key = match validation::required_string(&payload, "recovery_key") {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match restore_prepare::key(
+        &deps.restore_prepare,
+        &deps.operations,
+        &capability,
+        recovery_key,
+        || mint_restore_portal(&deps),
+    ) {
+        Ok(keyed) => response::success(json!({"portal_url": keyed.portal_url})),
+        Err(error) => error,
+    }
+}
+
+async fn restore_hosted_arm_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
+    let capability = match restore_prepare_capability(&body) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match restore_prepare::arm(&deps.restore_prepare, &deps.operations, &capability) {
+        Ok(()) => status_response(&deps),
+        Err(error) => error,
+    }
+}
+
+async fn restore_hosted_activate_route(
+    deps: BackupWebDeps,
+    body: Bytes,
+) -> axum::response::Response {
+    let capability = match restore_prepare_capability(&body) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match restore_prepare::activate(&deps.restore_prepare, &deps.operations, &capability) {
+        Ok(restore_prepare::Activation::Spawn { nonce, generation }) => {
+            handoff_poll::spawn(deps.clone(), nonce, generation);
+            status_response(&deps)
+        }
+        Ok(restore_prepare::Activation::AlreadyActivated) => status_response(&deps),
+        Err(error) => error,
+    }
+}
+
+async fn restore_hosted_cancel_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
+    let capability = match restore_prepare_capability(&body) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match restore_prepare::cancel(&deps.restore_prepare, &deps.operations, &capability) {
+        Ok(()) => status_response(&deps),
+        Err(error) => error,
+    }
+}
+
+fn restore_prepare_capability(body: &Bytes) -> Result<String, axum::response::Response> {
+    let payload = validation::object(body, response::missing)?;
+    validation::required_string(&payload, "capability")
 }
 
 fn bound_restore_hosted(
@@ -997,6 +1113,50 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         Ok(value) => value,
         Err(error) => return error,
     };
+    if payload.get("status").and_then(Value::as_str) == Some("refused")
+        || payload.contains_key("reason_code")
+    {
+        let _ = match operation::match_handoff(&deps.operations, &nonce) {
+            Ok(matched) => matched,
+            Err(operation::HandoffError::Expired) => {
+                if let Some(generation) = operation::generation_of(&deps.operations) {
+                    operation::mark_expired(&deps.operations, generation);
+                }
+                return response::error(
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "I couldn't take that action in the current state.",
+                    "expired",
+                    "",
+                );
+            }
+            Err(operation::HandoffError::Invalid) => {
+                return response::error(
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "I couldn't take that action in the current state.",
+                    "invalid_operation_for_state",
+                    "",
+                );
+            }
+        };
+        let generation = operation::generation_of(&deps.operations).unwrap_or(0);
+        let mut refused_payload = payload.clone();
+        let _ = refused_payload.remove("nonce");
+        let reason = match validation::refused_reason(&refused_payload) {
+            Ok(reason) => reason,
+            Err(error) => {
+                operation::finish(
+                    &deps.operations,
+                    generation,
+                    "error",
+                    Some("failed".into()),
+                    None,
+                );
+                return handoff_field_response(error);
+            }
+        };
+        operation::mark_refused(&deps.operations, generation, reason);
+        return status_response(&deps);
+    }
     let matched = match operation::match_handoff(&deps.operations, &nonce) {
         Ok(matched) => matched,
         Err(operation::HandoffError::Expired) => {
