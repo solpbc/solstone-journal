@@ -49,7 +49,8 @@ fn assert_identity_unchanged(path: &Path, before: (u64, u64, u32, u64)) {
 #[allow(clippy::disallowed_methods)]
 fn final_object_kinds_are_classified_without_open_read_or_replacement() {
     let temporary = TempDir::new("final-object-kinds");
-    let parent = temporary.path().join("output");
+    let root = fs::canonicalize(temporary.path()).expect("canonicalize temporary root");
+    let parent = root.join("output");
     fs::create_dir(&parent).expect("create output parent");
 
     let regular = parent.join("regular.zip");
@@ -60,7 +61,7 @@ fn final_object_kinds_are_classified_without_open_read_or_replacement() {
     assert!(matches!(
         acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
             regular.clone(),
-            temporary.path().to_path_buf(),
+            root.clone(),
         )),
         Err(ExplicitTargetError::Collision { .. })
     ));
@@ -77,7 +78,7 @@ fn final_object_kinds_are_classified_without_open_read_or_replacement() {
     assert!(matches!(
         acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
             directory.clone(),
-            temporary.path().to_path_buf(),
+            root.clone(),
         )),
         Err(ExplicitTargetError::UnsafeTarget {
             kind: "directory",
@@ -92,7 +93,7 @@ fn final_object_kinds_are_classified_without_open_read_or_replacement() {
     assert!(matches!(
         acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
             link.clone(),
-            temporary.path().to_path_buf(),
+            root.clone(),
         )),
         Err(ExplicitTargetError::UnsafeTarget {
             kind: "symlink",
@@ -105,10 +106,7 @@ fn final_object_kinds_are_classified_without_open_read_or_replacement() {
     let listener = UnixListener::bind(&socket).expect("create socket final object");
     let socket_before = inode_identity(&socket);
     assert!(matches!(
-        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
-            socket.clone(),
-            temporary.path().to_path_buf(),
-        )),
+        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(socket.clone(), root,)),
         Err(ExplicitTargetError::UnsafeTarget { kind: "socket", .. })
     ));
     assert_identity_unchanged(&socket, socket_before);

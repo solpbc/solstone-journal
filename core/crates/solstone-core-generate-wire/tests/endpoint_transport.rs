@@ -4,13 +4,12 @@
 //! Real loopback transport facts that cannot be scripted through EndpointTransport.
 
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use serde_json::{Map, Value, json};
-use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_generate_wire::{
     EndpointFailure, EndpointResult, EndpointRuntime, endpoint_generate,
@@ -88,22 +87,40 @@ fn write_http_json(stream: &mut std::net::TcpStream, body: &str) {
 }
 
 fn read_request(stream: &mut std::net::TcpStream) {
+    let mut request = Vec::new();
     let mut buffer = [0_u8; 4096];
-    let _ = stream.read(&mut buffer);
+    loop {
+        let Ok(read) = stream.read(&mut buffer) else {
+            return;
+        };
+        if read == 0 {
+            return;
+        }
+        request.extend_from_slice(&buffer[..read]);
+        let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let header = String::from_utf8_lossy(&request[..header_end]);
+        let content_length = header
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+            .unwrap_or_default();
+        if request.len() >= header_end + 4 + content_length {
+            return;
+        }
+    }
 }
 
 #[test]
-fn reserved_port_connect_is_endpoint_unreachable() {
-    let reservation = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-        .expect("create refusal reservation");
-    reservation
-        .bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, 0)).into())
-        .expect("bind refusal reservation");
-    let address = reservation
-        .local_addr()
-        .expect("reservation address")
-        .as_socket()
-        .expect("IP reservation");
+fn accepted_then_closed_is_endpoint_unreachable() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("unreachable listener");
+    let address = listener.local_addr().expect("unreachable address");
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept unreachable client");
+        drop(stream);
+    });
     let journal = journal_path();
     let result = endpoint_generate(
         &request(Some(0.2)),
@@ -118,7 +135,7 @@ fn reserved_port_connect_is_endpoint_unreachable() {
             reason_code: Some("local_endpoint_unreachable".into()),
         })
     );
-    drop(reservation);
+    server.join().expect("join unreachable server");
     let _ = std::fs::remove_dir_all(journal);
 }
 
