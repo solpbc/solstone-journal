@@ -163,6 +163,7 @@ impl Drop for LocalStub {
 }
 
 fn handle_local_request(mut stream: TcpStream, state: Arc<StubState>) {
+    stream.set_nonblocking(false).unwrap();
     let mut request = Vec::new();
     let mut chunk = [0_u8; 8192];
     loop {
