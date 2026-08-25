@@ -312,7 +312,7 @@ trait HelperSupervisor {
 
 struct LiveHelper {
     authority: LaunchAuthority,
-    pgid: rustix::process::Pid,
+    reaped_exit: Option<i32>,
     timeout: Duration,
     stdout_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
     stderr_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
@@ -320,16 +320,10 @@ struct LiveHelper {
 
 impl HelperSupervisor for LiveHelper {
     fn observe_without_reap(&mut self) -> io::Result<bool> {
-        retry_interrupted(|| {
-            rustix::process::waitid(
-                rustix::process::WaitId::Pid(self.pgid),
-                rustix::process::WaitIdOptions::EXITED
-                    | rustix::process::WaitIdOptions::NOHANG
-                    | rustix::process::WaitIdOptions::NOWAIT,
-            )
-            .map(|status| status.is_some())
-            .map_err(io::Error::from)
-        })
+        if self.reaped_exit.is_none() {
+            self.reaped_exit = self.authority.poll()?;
+        }
+        Ok(self.reaped_exit.is_some())
     }
 
     fn kill_group(&mut self) -> io::Result<()> {
@@ -344,6 +338,9 @@ impl HelperSupervisor for LiveHelper {
     }
 
     fn reap_root(&mut self) -> io::Result<ExitStatus> {
+        if let Some(exit_code) = self.reaped_exit.take() {
+            return Ok(exit_status_from_code(exit_code));
+        }
         retry_interrupted(|| self.authority.wait().map(exit_status_from_code))
     }
 
@@ -385,15 +382,9 @@ fn run_helper(
         Box::new(terminate_helper_child),
     )
     .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
-    let Some(pgid) = i32::try_from(authority.pid())
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-    else {
-        return Err(HelperRunError::Wait("invalid child pid".to_owned()));
-    };
     let mut session = LiveHelper {
         authority,
-        pgid,
+        reaped_exit: None,
         timeout,
         stdout_reader: None,
         stderr_reader: None,

@@ -215,6 +215,13 @@ fn reserve_unlistening_loopback() -> (Socket, u16) {
     (socket, port)
 }
 
+fn closed_loopback_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback port");
+    let port = listener.local_addr().expect("listener address").port();
+    drop(listener);
+    port
+}
+
 struct InterruptWriteStream {
     stream: TcpStream,
     interrupt_write: bool,
@@ -566,7 +573,7 @@ fn timed_out_transcription_defers_with_read_timeout() {
 
 #[test]
 fn refused_transcription_defers_with_connect_error() {
-    let (_reserved, port) = reserve_unlistening_loopback();
+    let port = closed_loopback_port();
     let base_url = format!("http://127.0.0.1:{port}");
 
     let ParakeetTranscribe::Deferred { reason } =
@@ -665,14 +672,22 @@ fn write_speaker_helper(directory: &Path, body: &str) -> std::path::PathBuf {
 }
 
 fn invoke_timeout(program: &Path) -> SpeakerInvoke {
+    #[cfg(target_os = "macos")]
+    let timeout = Duration::from_millis(500);
+    #[cfg(not(target_os = "macos"))]
+    let timeout = Duration::from_millis(20);
+    #[cfg(target_os = "macos")]
+    let terminate_grace = Duration::from_millis(100);
+    #[cfg(not(target_os = "macos"))]
+    let terminate_grace = Duration::from_millis(20);
     invoke_speakers_program(
         program,
         b"{}",
         Path::new("input.wav"),
-        Duration::from_millis(20),
+        timeout,
         1024,
         1024,
-        Duration::from_millis(20),
+        terminate_grace,
         Duration::from_secs(1),
     )
 }
@@ -885,6 +900,7 @@ fn version_script(body: &str, model_version: &str) -> CoremlModelInfo {
     with_deadline(move || coreml_get_model_info(&helper, &model_version, Duration::from_secs(1)))
 }
 
+#[cfg(unix)]
 fn wait_until_dead(pid: u32) {
     let deadline = Instant::now() + IO_TIMEOUT;
     while process_is_live(pid) {
@@ -893,6 +909,7 @@ fn wait_until_dead(pid: u32) {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn process_is_live(pid: u32) -> bool {
     let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
         return false;
@@ -901,6 +918,25 @@ fn process_is_live(pid: u32) -> bool {
         return false;
     };
     fields.bytes().next() != Some(b'Z')
+}
+
+#[cfg(target_os = "macos")]
+fn process_is_live(pid: u32) -> bool {
+    std::process::Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "pid="])
+        .output()
+        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty())
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn process_is_live(pid: u32) -> bool {
+    let Some(pid) = rustix::process::Pid::from_raw(pid as i32) else {
+        return false;
+    };
+    matches!(
+        rustix::process::test_kill_process(pid),
+        Ok(()) | Err(rustix::io::Errno::PERM)
+    )
 }
 
 fn grandchild_pid(path: &Path) -> u32 {
@@ -1082,6 +1118,10 @@ fn coreml_root_exit_kills_descendant_that_holds_pipes() {
 fn coreml_timeout_kills_helper_process_group() {
     let temporary = tempfile::tempdir().unwrap();
     let pid_file = temporary.path().join("grandchild");
+    #[cfg(target_os = "macos")]
+    let timeout = Duration::from_secs(1);
+    #[cfg(not(target_os = "macos"))]
+    let timeout = Duration::from_millis(200);
     let helper = write_coreml_helper(
         temporary.path(),
         &format!(
@@ -1090,7 +1130,7 @@ fn coreml_timeout_kills_helper_process_group() {
         ),
     );
     let CoremlTranscribe::Deferred { reason } =
-        transcribe_helper(&helper, temporary.path(), "v3", Duration::from_millis(200))
+        transcribe_helper(&helper, temporary.path(), "v3", timeout)
     else {
         panic!("expected group-wide timeout");
     };

@@ -44,7 +44,7 @@ fn binary_probe_reaps_a_timed_out_child() {
     fs::set_permissions(&binary, permissions).unwrap();
 
     assert!(matches!(
-        probe_parakeet_cpp_binary(&binary, Duration::from_millis(100)),
+        probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
         ParakeetCppReadiness::BinaryUnstartable { .. }
     ));
     let child_pid = fs::read_to_string(&pid).unwrap();

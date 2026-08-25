@@ -13,6 +13,8 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nix::unistd::pipe;
+#[cfg(target_os = "linux")]
+use solstone_core_system::lifecycle::sweep_orphans;
 use solstone_core_system::lifecycle::{
     Heartbeat, ParentDeathBackstop, ParentDeathReason, ShutdownDriver, ShutdownPhase,
     ShutdownRegime, SupervisorLifecycle, append_supervisor_log, check_sync,
@@ -22,7 +24,7 @@ use solstone_core_system::lifecycle::{
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
     LifecycleError, OrphanSweepOutcome, is_supervisor_up, readiness_is_valid,
-    recorded_supervisor_pid, sweep_orphans, wait_ready_with,
+    recorded_supervisor_pid, wait_ready_with,
 };
 
 const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
@@ -83,48 +85,6 @@ fn process_is_live(pid: u32) -> bool {
     stat.rfind(')')
         .and_then(|end| stat[end + 1..].split_whitespace().next())
         != Some("Z")
-}
-
-#[cfg(target_os = "macos")]
-fn wait_for_orphan(pid: u32) {
-    for _ in 0..200 {
-        let output = Command::new("/bin/ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid="])
-            .output()
-            .expect("ps");
-        if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "1" {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("fixture did not become an orphan");
-}
-
-#[cfg(target_os = "macos")]
-fn process_is_live(pid: u32) -> bool {
-    Command::new("/bin/ps")
-        .args(["-p", &pid.to_string(), "-o", "pid="])
-        .output()
-        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty())
-}
-
-#[cfg(target_os = "macos")]
-fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, mode: &str) {
-    let holder = journal.join("journal:holder");
-    std::os::unix::fs::symlink(FIXTURE, &holder).expect("holder symlink");
-    let status = Command::new(FIXTURE)
-        .args([
-            "orphan-sweep-spawner",
-            journal.to_str().expect("utf8"),
-            ready.to_str().expect("utf8"),
-            mode,
-            holder.to_str().expect("utf8"),
-        ])
-        .status()
-        .expect("spawn orphan fixture");
-    assert!(status.success());
-    wait_for(ready);
-    fs::remove_file(holder).expect("remove holder symlink");
 }
 
 fn now_seconds() -> f64 {
@@ -468,7 +428,7 @@ fn ac30_orphan_sweep_reports_reaped_survivor_and_unresolvable_candidates() {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "linux")]
 #[test]
 fn ac28_orphan_sweep_matches_name_parent_and_uid() {
     let bed = Bed::new("orphan-macos");

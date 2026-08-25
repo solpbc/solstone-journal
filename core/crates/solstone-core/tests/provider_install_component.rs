@@ -77,7 +77,15 @@ fn real_asset_gate_reports_wespeaker_digest_mismatch_before_installing() {
     )
     .unwrap();
     let output = Command::new(CORE)
-        .args(["install-models", "--variant", "cpu"])
+        .args([
+            "install-models",
+            "--variant",
+            if cfg!(target_os = "macos") {
+                "coreml"
+            } else {
+                "cpu"
+            },
+        ])
         .env("SOLSTONE_JOURNAL", journal.path())
         .env("SOLSTONE_TRANSCRIBE_MODEL_ASSETS_DIR", assets.path())
         .output()

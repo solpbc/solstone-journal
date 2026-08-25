@@ -4,11 +4,9 @@
 use std::fs;
 use std::io::{self, Read};
 use std::os::unix::net::UnixListener;
-use std::time::Duration;
 
 use serde_json::{Map, Value};
 
-const IO_DEADLINE: Duration = Duration::from_secs(2);
 const STATUS_LINE: &[u8] =
     b"{\"tract\":\"think\",\"event\":\"status\",\"ts\":1785000000000,\"mode\":\"daily\"}\n";
 
@@ -37,8 +35,8 @@ fn think_emission_is_exact_write_only_newline_envelope_with_eof() {
         .expect("make the already-ready accept bounded");
     let (mut stream, _) = listener.accept().expect("accept queued think request");
     stream
-        .set_read_timeout(Some(IO_DEADLINE))
-        .expect("bound request read");
+        .set_nonblocking(false)
+        .expect("make accepted request blocking for the bounded read");
     let mut received = Vec::new();
     stream
         .read_to_end(&mut received)

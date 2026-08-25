@@ -237,7 +237,8 @@ fn ac18_daily_writer_creates_the_two_relative_operational_log_symlinks() {
 fn ac16_exit_descriptions_and_catchup_status_are_exact() {
     assert_eq!(describe_exit(0), "exit 0");
     assert_eq!(describe_exit(-15), "exit -15 / SIGTERM");
-    assert_eq!(describe_exit(-10), "exit -10 / SIGUSR1");
+    let usr1 = -(nix::sys::signal::Signal::SIGUSR1 as i32);
+    assert_eq!(describe_exit(usr1), format!("exit {usr1} / SIGUSR1"));
     assert_eq!(describe_exit(-999), "exit -999 / signal 999");
     assert_eq!(exit_status_for_code(0), "ok");
     assert_eq!(exit_status_for_code(66), "empty");
