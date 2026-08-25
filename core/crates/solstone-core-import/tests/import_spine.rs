@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -97,7 +99,7 @@ fn directory_hash_follows_file_links_but_not_directory_links() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn directory_hash_refuses_the_first_non_utf8_relative_entry_deterministically() {
     use std::os::unix::ffi::OsStringExt;
@@ -425,7 +427,7 @@ fn force_without_metadata_audits_file_links_in_component_order() {
     assert!(files.iter().all(|file| file["hash"].is_string()));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn force_inventory_refuses_a_non_utf8_entry_without_removing_it() {
     use std::os::unix::ffi::OsStringExt;
