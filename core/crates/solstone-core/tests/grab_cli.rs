@@ -340,7 +340,11 @@ fn save_levels_preserve_decoded_pixels() {
         .expect("decode fixture video")
         .into_iter()
         .map(|frame| {
-            hex_pixels(&frame.expect("fixture video contains requested frame").pixels)
+            hex_pixels(
+                &frame
+                    .expect("fixture video contains requested frame")
+                    .pixels,
+            )
         })
         .collect::<Vec<_>>();
         let actual_pixels = saved_paths(frame_ids, &out)

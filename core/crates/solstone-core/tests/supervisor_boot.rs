@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::io::Read;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -14,13 +15,24 @@ use super::supervisor_guard::SupervisorGuard;
 
 struct TempJournal(PathBuf);
 
+fn temporary_root() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from("/var/tmp")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::env::temp_dir()
+    }
+}
+
 impl TempJournal {
     fn new() -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-supervisor-{stamp}"));
+        let root = temporary_root().join(format!("solstone-core-supervisor-{stamp}"));
         fs::create_dir_all(root.join("config")).expect("journal config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -115,8 +127,13 @@ fn ac6_boot_order_is_identity_then_socket_then_ready() {
         if first_ready.is_some() {
             break;
         }
-        if child.try_wait().expect("supervisor status").is_some() {
-            panic!("supervisor exited during boot");
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = child.stderr.take() {
+                pipe.read_to_string(&mut stderr)
+                    .expect("read supervisor stderr");
+            }
+            panic!("supervisor exited during boot: {status}; stderr: {stderr}");
         }
         thread::sleep(Duration::from_millis(5));
     }
