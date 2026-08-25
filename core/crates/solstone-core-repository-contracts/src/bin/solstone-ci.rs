@@ -125,7 +125,14 @@ impl Selectors {
 }
 
 fn parse_selectors(
+    args: impl Iterator<Item = String>,
+) -> Result<(Selectors, Option<PathBuf>), String> {
+    parse_selectors_with_environment(args, environment_value)
+}
+
+fn parse_selectors_with_environment(
     mut args: impl Iterator<Item = String>,
+    mut environment: impl FnMut(&str) -> Result<Option<String>, String>,
 ) -> Result<(Selectors, Option<PathBuf>), String> {
     let mut selectors = Selectors::default();
     let mut receipt = None;
@@ -154,15 +161,31 @@ fn parse_selectors(
             _ => return Err(format!("unknown option {flag}")),
         }
     }
-    extend_environment_selector(&mut selectors.sets, "SOLSTONE_CI_SETS", "--sets")?;
-    extend_environment_selector(&mut selectors.areas, "SOLSTONE_CI_AREAS", "--areas")?;
+    extend_environment_selector(
+        &mut selectors.sets,
+        "SOLSTONE_CI_SETS",
+        "--sets",
+        &mut environment,
+    )?;
+    extend_environment_selector(
+        &mut selectors.areas,
+        "SOLSTONE_CI_AREAS",
+        "--areas",
+        &mut environment,
+    )?;
     extend_environment_selector(
         &mut selectors.packages,
         "SOLSTONE_CI_PACKAGES",
         "--packages",
+        &mut environment,
     )?;
-    extend_environment_selector(&mut selectors.targets, "SOLSTONE_CI_TARGETS", "--targets")?;
-    if let Some(value) = environment_value("SOLSTONE_CI_RECEIPT")?
+    extend_environment_selector(
+        &mut selectors.targets,
+        "SOLSTONE_CI_TARGETS",
+        "--targets",
+        &mut environment,
+    )?;
+    if let Some(value) = environment("SOLSTONE_CI_RECEIPT")?
         && receipt.replace(PathBuf::from(value)).is_some()
     {
         return Err("receipt path was supplied by both argument and environment".to_owned());
@@ -187,8 +210,9 @@ fn extend_environment_selector(
     destination: &mut BTreeSet<String>,
     variable: &str,
     flag: &str,
+    environment: &mut impl FnMut(&str) -> Result<Option<String>, String>,
 ) -> Result<(), String> {
-    if let Some(value) = environment_value(variable)? {
+    if let Some(value) = environment(variable)? {
         extend_csv(destination, &value, flag)?;
     }
     Ok(())
@@ -1143,10 +1167,28 @@ mod tests {
 
     #[test]
     fn explicit_receipt_override_remains_authoritative() {
-        let (_, receipt) =
-            parse_selectors(["--receipt".to_owned(), "custom/receipt.json".to_owned()].into_iter())
-                .expect("explicit receipt parses");
+        let (_, receipt) = parse_selectors_with_environment(
+            ["--receipt".to_owned(), "custom/receipt.json".to_owned()].into_iter(),
+            |_| Ok(None),
+        )
+        .expect("explicit receipt parses");
         assert_eq!(receipt, Some(PathBuf::from("custom/receipt.json")));
+    }
+
+    #[test]
+    fn receipt_conflict_between_argument_and_environment_is_rejected() {
+        let error = parse_selectors_with_environment(
+            ["--receipt".to_owned(), "custom/receipt.json".to_owned()].into_iter(),
+            |variable| {
+                Ok((variable == "SOLSTONE_CI_RECEIPT")
+                    .then_some("environment/receipt.json".to_owned()))
+            },
+        )
+        .expect_err("duplicate receipt source must fail");
+        assert_eq!(
+            error,
+            "receipt path was supplied by both argument and environment"
+        );
     }
 
     #[test]

@@ -148,7 +148,8 @@ fn seed_screen_probe(root: &std::path::Path) {
     std::fs::create_dir_all(&entity).expect("create principal");
     std::fs::write(
         entity.join("entity.json"),
-        json!({"id":"principal","name":"Synthetic","is_principal":true}).to_string(),
+        json!({"id":"principal","name":"Synthetic","type":"Person","is_principal":true})
+            .to_string(),
     )
     .expect("write principal");
     std::fs::write(

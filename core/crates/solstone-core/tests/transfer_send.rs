@@ -247,7 +247,7 @@ fn day_range_limits_transfer_send_to_the_selected_segments_area() {
     fixture.add_segment_for_day(
         "20260204",
         "audio",
-        "120000_30",
+        "120100_30",
         &[("payload.json", b"next day")],
     );
     let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
@@ -265,7 +265,13 @@ fn day_range_limits_transfer_send_to_the_selected_segments_area() {
         .arg(fixture.path())
         .output()
         .expect("run transfer send with range");
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        stdout(&output),
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(stdout(&output).contains("segments: 2 sent"));
     assert_eq!(peer.ingest_requests().len(), 2);
     assert!(peer.requests().iter().all(|request| {

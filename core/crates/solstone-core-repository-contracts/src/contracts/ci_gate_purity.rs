@@ -266,7 +266,7 @@ fn every_supervisor_race_test_is_named_in_rust_race_gate() {
 fn make_ci_full_serializes_workspace_tests_that_compete_for_host_resources() {
     let makefile = makefile_text(&repo_root());
     assert!(
-        makefile.contains("cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) -- --test-threads=1"),
+        makefile.contains("cargo test --manifest-path $(RUST_MANIFEST) --locked --offline \"$$@\" -- --test-threads=1"),
         "registry entries must serialize their individual test harnesses"
     );
     assert!(

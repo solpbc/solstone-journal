@@ -10,9 +10,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zip::write::SimpleFileOptions;
 
@@ -128,6 +129,67 @@ impl Drop for Harness {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+struct AudioProcessingCompleter {
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl AudioProcessingCompleter {
+    fn start(journal: &Path) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let chronicle = journal.join("chronicle");
+        let worker = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(35);
+            while !worker_stop.load(Ordering::Acquire) && Instant::now() < deadline {
+                if let Some(audio) = find_named_file(&chronicle, "imported_audio.m4a") {
+                    let input_size = fs::metadata(&audio).expect("imported audio metadata").len();
+                    fs::write(
+                        audio.with_extension("jsonl"),
+                        format!(
+                            "{{\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":{input_size}}}}}\n"
+                        ),
+                    )
+                    .expect("write completed processing record");
+                    return;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        Self {
+            stop,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Drop for AudioProcessingCompleter {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.worker
+            .take()
+            .expect("processing completer worker")
+            .join()
+            .expect("processing completer worker panicked");
+    }
+}
+
+fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
+    let Ok(entries) = fs::read_dir(root) else {
+        return None;
+    };
+    entries.filter_map(Result::ok).find_map(|entry| {
+        let path = entry.path();
+        if path.file_name().is_some_and(|file_name| file_name == name) {
+            Some(path)
+        } else if path.is_dir() {
+            find_named_file(&path, name)
+        } else {
+            None
+        }
+    })
 }
 
 fn executable(path: &Path) {
@@ -267,6 +329,15 @@ fn path(path: &Path) -> String {
 }
 
 fn assert_case(harness: &Harness, mode: &str, case: &Case) {
+    let _processing = case
+        .args
+        .iter()
+        .any(|argument| {
+            Path::new(argument)
+                .extension()
+                .is_some_and(|extension| extension == "m4a")
+        })
+        .then(|| AudioProcessingCompleter::start(&harness.journal));
     let _rescan_listener = case
         .args
         .windows(2)

@@ -473,7 +473,16 @@ fn journal_for_phase(phase: &str) -> TempDir {
     let journal = TempDir::new(phase);
     match phase {
         "unestablished" => {}
-        "established" => journal.write_config(br#"{"setup":{"completed_at":1767225600}}"#),
+        "established" => {
+            journal.write_config(br#"{"setup":{"completed_at":1767225600}}"#);
+            let principal = journal.0.join("entities/principal");
+            fs::create_dir_all(&principal).expect("principal directory creates");
+            fs::write(
+                principal.join("entity.json"),
+                br#"{"id":"principal","name":"Corpus Owner","type":"Person","is_principal":true}"#,
+            )
+            .expect("principal identity writes");
+        }
         "corrupt" => journal.write_config(br#"{"setup":{"completed_at":17672256"#),
         _ => panic!("unknown corpus phase {phase}"),
     }

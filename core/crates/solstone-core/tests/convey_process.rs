@@ -283,30 +283,18 @@ fn convey_reports_an_occupied_port() {
 }
 
 #[test]
-fn convey_corrupt_config_returns_owner_message_on_documents_and_json_api() {
+fn convey_corrupt_config_exits_before_serving_the_owner_message() {
     let journal = TempJournal::corrupt("corrupt-session");
     let expected = journal.owner_sentence();
     let port = free_port();
-    let mut child = spawn_convey(port, &journal);
-    wait_until_status(port, &mut child, "/", 500);
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
-
-    let document = request(address, "/").expect("corrupt document responds");
-    assert_eq!(document.status, 500);
-    assert!(
-        document.content_type.starts_with("text/plain"),
-        "{}",
-        document.content_type
-    );
-    assert_eq!(String::from_utf8_lossy(&document.body), expected);
-
-    let api = request(address, "/api/shell").expect("corrupt JSON API responds");
-    assert_eq!(api.status, 500);
-    assert!(api.content_type.contains("application/json"));
-    let body: Value = serde_json::from_slice(&api.body).expect("API body is JSON");
-    assert_eq!(body["reason_code"], "corrupt_config");
-    assert_eq!(body["detail"], expected);
-    child.terminate();
+    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["convey", "--port", &port.to_string(), "--journal"])
+        .arg(&journal.0)
+        .output()
+        .expect("convey command runs");
+    assert_eq!(output.status.code(), Some(75));
+    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), expected);
 }
 
 #[test]

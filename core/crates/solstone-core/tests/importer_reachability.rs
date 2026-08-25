@@ -8,7 +8,10 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use solstone_core_segment::SUPERVISOR_MESSAGE;
@@ -678,6 +681,8 @@ fn run_case(
                 .writes_journal_state()
                 .then(|| TempDir::new().expect("pristine journal"));
             let target_journal = isolated_journal.as_ref().unwrap_or(journal);
+            let _processing = matches!(invocation, Invocation::GenericAudio)
+                .then(|| AudioProcessingCompleter::start(target_journal.path()));
             let _rescan = matches!(
                 invocation,
                 Invocation::Structured {
@@ -900,6 +905,51 @@ fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
     })
 }
 
+struct AudioProcessingCompleter {
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl AudioProcessingCompleter {
+    fn start(journal: &Path) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let chronicle = journal.join("chronicle");
+        let worker = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(35);
+            while !worker_stop.load(Ordering::Acquire) && Instant::now() < deadline {
+                if let Some(audio) = find_named_file(&chronicle, "imported_audio.m4a") {
+                    let input_size = fs::metadata(&audio).expect("imported audio metadata").len();
+                    fs::write(
+                        audio.with_extension("jsonl"),
+                        format!(
+                            "{{\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":{input_size}}}}}\n"
+                        ),
+                    )
+                    .expect("write completed processing record");
+                    return;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        Self {
+            stop,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Drop for AudioProcessingCompleter {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.worker
+            .take()
+            .expect("processing completer worker")
+            .join()
+            .expect("processing completer worker panicked");
+    }
+}
+
 #[test]
 fn list_importers_json_uses_the_grammar_fixture_as_its_oracle() {
     let journal = TempDir::new().expect("journal");
@@ -1040,6 +1090,7 @@ fn generic_force_bypasses_the_wired_manifest_deduplication() {
 
     let mut forced = vec!["--force".to_owned()];
     forced.extend(args);
+    let _processing = AudioProcessingCompleter::start(journal.path());
     let imported = run_in_column(SupervisorColumn::GatePassed, &forced, &journal);
     assert_eq!(imported.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&imported.stdout).contains("Generic audio import complete:"));
