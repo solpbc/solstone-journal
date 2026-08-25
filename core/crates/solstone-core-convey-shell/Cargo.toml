@@ -30,11 +30,6 @@ required-features = ["test-hooks"]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
 
-# Cargo auto-discovery is disabled; this frozen-corpus target proves the speakers surface makes no writes.
-[[test]]
-name = "full_speakers_corpus"
-path = "tests/full_speakers_corpus.rs"
-
 [[test]]
 name = "restart_protocol"
 path = "tests/restart_protocol.rs"

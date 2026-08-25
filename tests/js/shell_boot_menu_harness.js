@@ -48,7 +48,7 @@ class FakeElement {
   }
 }
 
-function makeDocument(menuItems, facetBar) {
+function makeDocument(menuItems) {
   const body = new FakeElement();
   const head = new FakeElement();
   return {
@@ -63,7 +63,6 @@ function makeDocument(menuItems, facetBar) {
     },
     querySelector(selector) {
       if (selector === '.menu-bar .menu-items') return menuItems;
-      if (selector === '.facet-bar') return facetBar;
       return null;
     },
   };
@@ -84,7 +83,6 @@ async function main() {
     'utf8'
   );
   const menuItems = new FakeElement();
-  const facetBar = new FakeElement();
   let shellReady = false;
   const mounted = [];
   const shell = {
@@ -121,7 +119,7 @@ async function main() {
     selected_facet: null,
     settings: { reporting_enabled: true },
   };
-  const document = makeDocument(menuItems, facetBar);
+  const document = makeDocument(menuItems);
   const window = {
     document,
     location: { pathname: '/app/home/' },

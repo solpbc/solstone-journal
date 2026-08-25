@@ -382,7 +382,7 @@ pub fn shell_payload() -> ShellPayload {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, fs};
+    use std::fs;
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -427,7 +427,6 @@ mod tests {
         );
     }
 
-    #[test]
     #[test]
     fn devices_is_removed_from_the_registry() {
         assert!(!APP_REGISTRY.iter().any(|app| app.name == "devices"));

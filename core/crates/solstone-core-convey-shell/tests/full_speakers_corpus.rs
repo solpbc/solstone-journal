@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[allow(dead_code)]
-#[path = "support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::collections::BTreeMap;
 use std::fs;

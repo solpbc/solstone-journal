@@ -744,7 +744,6 @@ function makeDocument() {
   const document = new FakeDocument();
   document.body.innerHTML = `
     <nav class="menu-bar"><ul class="menu-items"></ul></nav>
-    <nav class="facet-bar"></nav>
     <aside id="diagnostic-console">
       <h3 id="diagnostic-console-title"></h3>
       <div class="diagnostic-console-tabs"></div>

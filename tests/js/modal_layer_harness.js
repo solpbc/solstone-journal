@@ -431,17 +431,17 @@ function dialog(document, attrs = {}) {
 function shell(document) {
   const skip = el(document, 'a', { id: 'skip-link', href: '#main-content' });
   const menu = el(document, 'nav', { id: 'menu-bar' });
-  const facet = el(document, 'nav', { id: 'facet-bar' });
+  const chrome = el(document, 'nav', { id: 'shell-chrome' });
   const notifications = el(document, 'div', { id: 'notification-center' });
   const workspace = el(document, 'main', { id: 'main-content', class: 'workspace' });
   const report = dialog(document, { class: 'modal report-error-modal', styleDisplay: 'block' });
   document.body.appendChild(skip);
   document.body.appendChild(menu);
-  document.body.appendChild(facet);
+  document.body.appendChild(chrome);
   document.body.appendChild(notifications);
   document.body.appendChild(workspace);
   document.body.appendChild(report);
-  return { skip, menu, facet, notifications, workspace, report };
+  return { skip, menu, chrome, notifications, workspace, report };
 }
 
 function makeWorkspaceShape(context, kind) {
@@ -636,7 +636,7 @@ function testInertRestoration() {
   shape.open();
   assertActive(context, shape);
   assert(shape.skip.inert);
-  assert(shape.facet.inert);
+  assert(shape.chrome.inert);
   assert(preInert.inert);
   assert(sibling.inert);
   assert(!shape.workspace.inert);
@@ -645,7 +645,7 @@ function testInertRestoration() {
   shape.close();
   assertInactive(context, shape);
   assert(!shape.skip.inert);
-  assert(!shape.facet.inert);
+  assert(!shape.chrome.inert);
   assert(preInert.inert);
   assert(preInert.hasAttribute('inert'));
   assert(!sibling.inert);
