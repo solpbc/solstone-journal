@@ -2694,7 +2694,7 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -2705,7 +2705,7 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -2716,7 +2716,7 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3077,7 +3077,7 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3380,7 +3380,7 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3420,7 +3420,7 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3431,7 +3431,7 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3548,7 +3548,7 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3922,7 +3922,7 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3933,7 +3933,7 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -3944,7 +3944,7 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -4639,7 +4639,7 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -5006,7 +5006,7 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -5046,7 +5046,7 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -5057,7 +5057,7 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
@@ -5179,7 +5179,7 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 8085,
+        "body_bytes": 8099,
         "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
