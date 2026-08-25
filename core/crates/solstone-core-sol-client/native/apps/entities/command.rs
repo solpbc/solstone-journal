@@ -12,12 +12,12 @@ use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 const EDGE_INDEX_UNAVAILABLE_MESSAGE: &str = "I couldn't read your connections because the index hasn't been built yet. Run `journal indexer --rebuild-edges` to build it.";
 const ENTITY_BUSY_MESSAGE: &str =
     "I couldn't update that entity right now because it was busy. Try again in a moment.";
-const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str =
-    "I couldn't read detected entity activity. Run `journal doctor` and try again.";
+const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str = "Detected entity activity is unreadable. Run `journal doctor`, repair the reported record, and try again.";
 const ENTITY_SEARCH_INDEX_BUSY_MESSAGE: &str =
-    "I couldn't search your entities while indexing is in progress. Retry once it finishes.";
-const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str = "I couldn't search your entities because the index is stale. Run `journal indexer --rescan-full` and try again.";
-const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "I couldn't search your entities because the index is unavailable. Run `journal indexer --reset --rescan-full` and try again.";
+    "Entity search is unavailable while indexing is in progress. Try again when it finishes.";
+const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str =
+    "The entity search index is stale. Run `journal indexer --rescan-full` and try again.";
+const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "The entity search index is unavailable. Run `journal indexer --reset --rescan-full` and try again.";
 const ENTITY_HISTORY_BASE_ROUTE: &str = "/app/entities/api/journal";
 
 #[must_use]
