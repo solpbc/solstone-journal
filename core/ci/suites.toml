@@ -2016,6 +2016,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-backup-web::backup_web_dom"
+package = "solstone-core-backup-web"
+target = "backup_web_dom"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-callosum::callosum_wire_component"
 package = "solstone-core-callosum"
 target = "callosum_wire_component"
