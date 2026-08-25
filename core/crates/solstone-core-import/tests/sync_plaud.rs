@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use chrono::{DateTime, Duration, Local, TimeZone};
 use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
@@ -369,6 +370,207 @@ fn save_preserves_catalogue_order_for_equal_start_times() {
 }
 
 #[test]
+fn save_keeps_past_and_near_future_timestamps_without_fallback() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let past = fixed_now
+        .checked_sub_signed(Duration::seconds(1))
+        .unwrap()
+        .timestamp();
+    let near_future = fixed_now
+        .checked_add_signed(Duration::seconds(172_799))
+        .unwrap()
+        .timestamp();
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("past", past as f64, 60_000.0),
+            file("near", near_future as f64, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+
+    for (id, timestamp) in [("past", past), ("near", near_future)] {
+        let entry = &outcome.state.root()["files"][id];
+        assert_eq!(entry["import_timestamp"], device_timestamp(timestamp));
+        assert!(entry.get("import_timestamp_fallback").is_none());
+    }
+}
+
+#[test]
+fn save_trusts_timestamp_exactly_48_hours_ahead() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let boundary = fixed_now.checked_add_signed(Duration::hours(48)).unwrap();
+    assert_eq!(boundary.timestamp(), 1_786_622_400);
+    let mut catalogue = Catalogue {
+        files: vec![file("boundary", boundary.timestamp() as f64, 60_000.0)],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    let entry = &outcome.state.root()["files"]["boundary"];
+    assert_eq!(
+        entry["import_timestamp"],
+        device_timestamp(boundary.timestamp())
+    );
+    assert!(entry.get("import_timestamp_fallback").is_none());
+}
+
+#[test]
+fn save_falls_back_for_timestamp_more_than_48_hours_ahead() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let future = fixed_now
+        .checked_add_signed(Duration::hours(48) + Duration::seconds(1))
+        .unwrap();
+    let mut catalogue = Catalogue {
+        files: vec![file("future", future.timestamp() as f64, 60_000.0)],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    let entry = &outcome.state.root()["files"]["future"];
+    assert_eq!(entry["import_timestamp"], "20260811_120000");
+    assert_eq!(entry["import_timestamp_fallback"], true);
+    assert_eq!(
+        writer.checkpoints.last().unwrap().root()["files"]["future"]["import_timestamp_fallback"],
+        true
+    );
+}
+
+#[test]
+fn save_disambiguates_same_run_fallback_timestamps() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
+    let first_future = fixed_now
+        .checked_add_signed(Duration::hours(49))
+        .unwrap()
+        .timestamp();
+    let second_future = fixed_now
+        .checked_add_signed(Duration::hours(50))
+        .unwrap()
+        .timestamp();
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("first", first_future as f64, 60_000.0),
+            file("second", second_future as f64, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    let mut timestamps = vec![
+        outcome.state.root()["files"]["first"]["import_timestamp"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+        outcome.state.root()["files"]["second"]["import_timestamp"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    ];
+    timestamps.sort();
+    assert_eq!(timestamps, ["20260811_120000", "20260811_120001"]);
+    for id in ["first", "second"] {
+        assert_eq!(
+            outcome.state.root()["files"][id]["import_timestamp_fallback"],
+            true
+        );
+    }
+    assert_eq!(pipeline.calls.borrow().len(), 2);
+}
+
+#[test]
 fn successful_plaud_item_is_checkpointed_before_a_later_failure() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;
@@ -673,4 +875,13 @@ fn file(id: &str, start_time: f64, duration: f64) -> PlaudFile {
         duration,
         is_trash: false,
     }
+}
+
+fn device_timestamp(seconds: i64) -> String {
+    Local
+        .timestamp_opt(seconds, 0)
+        .single()
+        .unwrap()
+        .format("%Y%m%d_%H%M%S")
+        .to_string()
 }

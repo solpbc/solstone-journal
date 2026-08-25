@@ -3,12 +3,12 @@
 
 //! Plaud catalogue and save orchestration behind caller-owned seams.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, TimeZone};
+use chrono::{DateTime, Duration, Local, TimeZone};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::create_directory_with_mode;
 
@@ -169,6 +169,11 @@ pub struct PlaudSyncOutcome {
     pub errors: Vec<String>,
 }
 
+struct ResolvedImportTimestamp {
+    timestamp: String,
+    used_fallback: bool,
+}
+
 /// Named Plaud sync failure with no transport detail.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlaudSyncError {
@@ -224,8 +229,15 @@ pub fn sync_plaud_save(
 
     let mut downloaded = 0;
     let mut errors = Vec::new();
+    let mut used_fallback_timestamps = HashSet::new();
     for file in catalogued.available {
-        let result = import_file(&file, token, &request.journal_root, seams);
+        let result = import_file(
+            &file,
+            token,
+            &request.journal_root,
+            seams,
+            &mut used_fallback_timestamps,
+        );
         let entry = catalogued
             .state
             .files_mut()
@@ -233,9 +245,15 @@ pub fn sync_plaud_save(
             .and_then(Value::as_object_mut)
             .expect("catalogued file exists");
         match result {
-            Ok(timestamp) => {
+            Ok(resolved) => {
                 entry.insert("status".to_owned(), Value::String("imported".to_owned()));
-                entry.insert("import_timestamp".to_owned(), Value::String(timestamp));
+                entry.insert(
+                    "import_timestamp".to_owned(),
+                    Value::String(resolved.timestamp),
+                );
+                if resolved.used_fallback {
+                    entry.insert("import_timestamp_fallback".to_owned(), Value::Bool(true));
+                }
                 entry.insert(
                     "imported_at".to_owned(),
                     Value::String(seams.preview.clock.now()),
@@ -380,9 +398,12 @@ fn import_file(
     token: &str,
     journal_root: &Path,
     seams: &mut PlaudSaveSeams<'_>,
-) -> Result<String, PlaudFailureKind> {
-    let timestamp = import_timestamp(file.start_time).ok_or(PlaudFailureKind::Pipeline)?;
-    let destination_dir = journal_root.join("imports").join(&timestamp);
+    used_fallback_timestamps: &mut HashSet<String>,
+) -> Result<ResolvedImportTimestamp, PlaudFailureKind> {
+    let now = seams.preview.clock.now();
+    let resolved = import_timestamp(file.start_time, &now, used_fallback_timestamps)
+        .ok_or(PlaudFailureKind::Pipeline)?;
+    let destination_dir = journal_root.join("imports").join(&resolved.timestamp);
     create_directory_with_mode(&destination_dir, 0o700).map_err(|_| PlaudFailureKind::Download)?;
     let url = seams.download.temporary_url(token, &file.id)?;
     let destination = destination_dir.join(destination_name(file));
@@ -390,10 +411,10 @@ fn import_file(
     match seams.pipeline.import_one(PipelineImportRequest {
         source: &destination,
         source_kind: "plaud",
-        timestamp: Some(&timestamp),
+        timestamp: Some(&resolved.timestamp),
         auto: PipelineAuto::Enabled,
     }) {
-        Ok(PipelineOutcome::Imported) => Ok(timestamp),
+        Ok(PipelineOutcome::Imported) => Ok(resolved),
         Ok(PipelineOutcome::Skipped { .. })
         | Ok(PipelineOutcome::NoResult)
         | Ok(PipelineOutcome::Unrecognized)
@@ -401,7 +422,11 @@ fn import_file(
     }
 }
 
-fn import_timestamp(start_time: f64) -> Option<String> {
+fn import_timestamp(
+    start_time: f64,
+    now: &str,
+    used_fallback_timestamps: &mut HashSet<String>,
+) -> Option<ResolvedImportTimestamp> {
     if !start_time.is_finite() || start_time <= 0.0 {
         return None;
     }
@@ -413,10 +438,26 @@ fn import_timestamp(start_time: f64) -> Option<String> {
     if seconds > i64::MAX as f64 {
         return None;
     }
-    Local
-        .timestamp_opt(seconds as i64, 0)
-        .single()
-        .map(|timestamp| timestamp.format("%Y%m%d_%H%M%S").to_string())
+    let device_time = Local.timestamp_opt(seconds as i64, 0).single()?;
+    let now = DateTime::parse_from_rfc3339(now).ok()?;
+    if device_time.signed_duration_since(now) <= Duration::hours(48) {
+        return Some(ResolvedImportTimestamp {
+            timestamp: device_time.format("%Y%m%d_%H%M%S").to_string(),
+            used_fallback: false,
+        });
+    }
+
+    let mut fallback_time = now;
+    loop {
+        let timestamp = fallback_time.format("%Y%m%d_%H%M%S").to_string();
+        if used_fallback_timestamps.insert(timestamp.clone()) {
+            return Some(ResolvedImportTimestamp {
+                timestamp,
+                used_fallback: true,
+            });
+        }
+        fallback_time = fallback_time.checked_add_signed(Duration::seconds(1))?;
+    }
 }
 
 fn destination_name(file: &PlaudFile) -> String {
