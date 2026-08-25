@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::os::unix::net::UnixListener;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
@@ -63,16 +63,23 @@ fn accept_exact(listener: &UnixListener, expected: &[u8]) {
         .set_nonblocking(true)
         .expect("make the already-ready accept bounded");
     let (mut stream, _) = listener.accept().expect("accept queued request");
-    stream
-        .set_nonblocking(false)
-        .expect("make accepted request stream blocking");
-    stream
-        .set_read_timeout(Some(IO_DEADLINE))
-        .expect("bound request read");
     let mut received = Vec::new();
-    stream
-        .read_to_end(&mut received)
-        .expect("read request through sender EOF");
+    let deadline = Instant::now() + IO_DEADLINE;
+    let mut buffer = [0_u8; 256];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => received.extend_from_slice(&buffer[..count]),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "request sender did not close before the I/O deadline"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("read request through sender EOF: {error}"),
+        }
+    }
     assert_eq!(received, expected);
     let mut after_eof = [0_u8; 1];
     assert_eq!(stream.read(&mut after_eof).expect("re-read EOF"), 0);
