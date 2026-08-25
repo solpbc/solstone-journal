@@ -19,7 +19,6 @@ fn assets_command_emits_the_complete_round_trippable_catalog() {
         .unwrap()
         .to_vec();
     assert_eq!(emitted, expected);
-    assert_eq!(emitted.len(), 45);
     assert!(emitted.iter().any(|row| row["origin_key"]
         == "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz"));
     assert!(emitted.iter().any(|row| row["origin_key"]

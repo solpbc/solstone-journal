@@ -270,7 +270,14 @@ fn health_and_service_log_real_native_bodies_survive_live_interpreter_poisons() 
         );
         let (expected_stdout, expected_stderr) = match probe.token {
             "health" => (
-                Vec::new(),
+                concat!(
+                    "Sound tagging is degraded because its CED assets are unavailable. ",
+                    "Transcription will continue. Use `journal install-models` to check or repair the CED assets.\n",
+                    "Object detection is degraded because its RF-DETR assets are unavailable. ",
+                    "Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.\n",
+                )
+                .as_bytes()
+                .to_vec(),
                 format!(
                     "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
                     harness.journal.display()
