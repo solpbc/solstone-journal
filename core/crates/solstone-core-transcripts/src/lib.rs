@@ -734,7 +734,7 @@ mod tests {
         assert!(markdown.contains("named-payload"), "{markdown}");
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn two_non_utf8_streams_stay_distinct_through_cluster() {
         use std::ffi::OsStr;

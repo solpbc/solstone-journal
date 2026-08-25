@@ -330,6 +330,7 @@ mod tests {
         assert!(matches!(status, VadRuntimeStatus::Ready), "{status:?}");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn loader_stderr_is_loader() {
         let (_root, path) = write_stub(
@@ -363,6 +364,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn exec_format_is_spawn_with_the_real_cause() {
         let (_root, path) = write_stub("not-an-executable-format\x00\x01\x02", 0o755);

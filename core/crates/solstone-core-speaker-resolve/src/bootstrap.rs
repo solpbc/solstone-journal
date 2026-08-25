@@ -719,7 +719,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn scan_segments_refuses_non_utf8_names() {
         use std::ffi::OsStr;

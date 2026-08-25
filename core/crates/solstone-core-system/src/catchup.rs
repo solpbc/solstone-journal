@@ -1514,7 +1514,7 @@ mod tests {
         assert_eq!(repair["next_retry_at"], 0);
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn unreadable_fingerprint_never_completes_or_supersedes_a_daily_attempt() {
         use std::ffi::OsString;

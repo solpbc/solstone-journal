@@ -461,6 +461,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn catalog_day_refuses_non_utf8_identity() {
         use std::ffi::OsStr;

@@ -143,6 +143,7 @@ mod tests {
         assert_eq!(classify_loader_failure(Some(127), None, Some("")), None);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_exit_127_with_a_library_name_is_a_named_loader_failure() {
         assert_eq!(

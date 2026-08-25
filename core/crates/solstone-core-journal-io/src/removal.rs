@@ -128,7 +128,7 @@ mod tests {
         assert!(matches!(error, PathError::Io { path, .. } if path == target));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn remove_contained_tree_deletes_a_non_utf8_directory() {
         use std::ffi::OsStr;

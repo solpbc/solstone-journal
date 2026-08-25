@@ -737,6 +737,7 @@ mod unix_tests {
     use super::{ConflictKind, NameAdmissionError, classify_no_follow, scan_directory_conflicts};
     use crate::test_support::TempDir;
     use std::fs;
+    #[cfg(target_os = "linux")]
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::symlink;
     use std::path::Path;
@@ -755,6 +756,7 @@ mod unix_tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn collision_skips_non_utf8_names() {
         use std::ffi::OsStr;

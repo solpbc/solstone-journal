@@ -1433,7 +1433,7 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn identity_stall_keeps_reason_token_and_carries_detail() {
         use std::ffi::OsStr;

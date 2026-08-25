@@ -597,7 +597,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn non_utf8_sibling_makes_predecessor_unresolvable() {
         use std::ffi::OsStr;

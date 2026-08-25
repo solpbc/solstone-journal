@@ -429,6 +429,7 @@ mod tests {
         assert!(stream.join(SEGMENT).is_dir());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn create_segment_strict_aborts_case_variant_before_creating() {
         let temporary = TempDir::new();

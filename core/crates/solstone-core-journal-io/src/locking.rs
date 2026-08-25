@@ -862,13 +862,20 @@ mod tests {
         ));
     }
 
+    #[cfg(target_os = "linux")]
     const FF: &[u8] = b"seg-\xff";
+    #[cfg(target_os = "linux")]
     const FE: &[u8] = b"seg-\xfe";
+    #[cfg(target_os = "linux")]
     const TWIN: &[u8] = b"seg-\xef\xbf\xbd";
+    #[cfg(target_os = "linux")]
     const FF_LOCK: &[u8] = b"seg-\xff.lock";
+    #[cfg(target_os = "linux")]
     const FE_LOCK: &[u8] = b"seg-\xfe.lock";
+    #[cfg(target_os = "linux")]
     const TWIN_LOCK: &[u8] = b"seg-\xef\xbf\xbd.lock";
 
+    #[cfg(target_os = "linux")]
     fn os_path(dir: &Path, bytes: &[u8]) -> PathBuf {
         dir.join(OsString::from_vec(bytes.to_vec()))
     }
@@ -952,6 +959,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn invalid_name_and_its_lossy_twin_lock_independently() {
         let (_temporary, _probe, locks) = layout();
@@ -974,6 +982,7 @@ mod tests {
         assert!(!lock_is_held(&twin).unwrap());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn invalid_utf8_collisions_are_independent_and_same_name_contends() {
         let (_temporary, _probe, locks) = layout();

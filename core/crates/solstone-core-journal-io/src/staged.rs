@@ -209,6 +209,7 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::fs;
     use std::io;
+    #[cfg(target_os = "linux")]
     use std::os::unix::ffi::OsStringExt;
     use std::path::Path;
 
@@ -222,6 +223,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     fn os_from_bytes(bytes: &[u8]) -> OsString {
         OsString::from_vec(bytes.to_vec())
     }
@@ -356,6 +358,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn publish_staged_dir_preserves_distinct_invalid_utf8_basenames() {
         let temporary = TempDir::new();

@@ -1029,7 +1029,7 @@ mod tests {
         assert!(unmarked.stdout.contains("next: (none)"));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn verify_day_refuses_unrepresentable_segment_instead_of_truncating() {
         use std::ffi::OsStr;

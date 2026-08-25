@@ -973,7 +973,7 @@ fn write_string(value: &str, ensure_ascii: bool, output: &mut String) {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn later_day_identity_failure_refuses_the_whole_days_list() {
         use std::ffi::OsStr;

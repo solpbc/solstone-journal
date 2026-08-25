@@ -908,7 +908,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn enumerates_distinct_non_utf8_stream_directories() {
         use std::os::unix::ffi::OsStrExt;
@@ -1098,7 +1098,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn locator_identity_refuses_non_utf8_stream_or_basename() {
         use std::os::unix::ffi::OsStrExt;

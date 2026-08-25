@@ -2695,7 +2695,7 @@ mod tests {
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn later_day_identity_failure_does_not_stage_earlier_day() {
         use std::ffi::OsStr;

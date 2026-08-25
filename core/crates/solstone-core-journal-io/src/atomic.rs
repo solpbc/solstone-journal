@@ -989,6 +989,7 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"payload");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn write_bytes_exclusive_preserves_distinct_invalid_utf8_basenames() {
         let temporary = TempDir::new();
@@ -1000,6 +1001,7 @@ mod tests {
         assert_eq!(fs::read(&right).unwrap(), b"beta");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn write_reader_exclusive_preserves_distinct_invalid_utf8_basenames() {
         let temporary = TempDir::new();
@@ -1023,6 +1025,7 @@ mod tests {
         assert_eq!(fs::read(&right).unwrap(), b"beta");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn atomic_replace_preserves_distinct_invalid_utf8_basenames() {
         let temporary = TempDir::new();
@@ -1034,6 +1037,7 @@ mod tests {
         assert_eq!(fs::read(&right).unwrap(), b"beta");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn detailed_replace_preserves_distinct_invalid_utf8_basenames() {
         let temporary = TempDir::new();
