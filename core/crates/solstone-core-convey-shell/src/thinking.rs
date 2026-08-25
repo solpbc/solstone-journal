@@ -288,7 +288,7 @@ async fn shell() -> Response {
     asset_response("/static/shell.html")
 }
 async fn shell_redirect() -> Response {
-    let location = "http://localhost/app/thinking/";
+    let location = "/app/thinking/";
     Response::builder()
         .status(StatusCode::PERMANENT_REDIRECT)
         .header(header::LOCATION, location)
