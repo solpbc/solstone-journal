@@ -6,19 +6,27 @@
 use std::env;
 use std::fs;
 use std::io;
-#[cfg(feature = "test-hooks")]
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use solstone_core_cli::{ConfigAction, ConfigCommand, ConfigJournalOptions};
+use solstone_core_installation_identity::{
+    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
+    namespace_name, root_token_from_path,
+};
 use solstone_core_journal::{
-    Source, detect_checkout_root, read_config_journal, resolve_journal_path,
+    Source, detect_checkout_root, read_config_journal, resolve_identity_root_from_executable_dir,
+    resolve_journal_path,
+};
+use solstone_core_setup::{
+    identity_evidence::gather_wrapper_artifact_evidence,
+    manifest::{legacy_manifest_evidence, manifest_path},
+    wrapper::{
+        parse_wrapper, render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
+    },
 };
 
 const MERGE_INSTRUCTIONS: &str = "journal config: --merge is temporarily unavailable.\nKeep both journal copies until archive merge support is migrated.";
-const WRAPPER_MARKER: &str = "# managed-version: 7";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RequestedAction {
@@ -67,6 +75,8 @@ pub(crate) struct JournalChange {
     pub sol_bin: PathBuf,
     pub service_bin: PathBuf,
     pub alias: PathBuf,
+    pub home_dir: PathBuf,
+    pub identity_root: PathBuf,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Decision {
@@ -333,243 +343,6 @@ impl ServiceCommandRunner for RealServiceRunner {
         }
     }
 }
-pub(crate) struct WrapperBins {
-    pub solstone: PathBuf,
-    pub journal: PathBuf,
-}
-pub(crate) enum WrapperInstallError {
-    Io(io::Error),
-}
-pub(crate) trait WrapperInstaller {
-    fn install(&self, journal: &Path, bins: &WrapperBins) -> Result<(), WrapperInstallError>;
-}
-pub(crate) trait WrapperCommitter {
-    fn replace(&self, staged: &Path, destination: &Path) -> io::Result<()>;
-}
-struct RealCommitter;
-impl WrapperCommitter for RealCommitter {
-    fn replace(&self, a: &Path, b: &Path) -> io::Result<()> {
-        fs::rename(a, b)
-    }
-}
-struct RealInstaller;
-impl WrapperInstaller for RealInstaller {
-    fn install(&self, journal: &Path, bins: &WrapperBins) -> Result<(), WrapperInstallError> {
-        install_wrappers(journal, bins, &RealCommitter).map_err(WrapperInstallError::Io)
-    }
-}
-fn wrapper_paths() -> (PathBuf, PathBuf) {
-    let base = env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    (
-        base.join(".local/bin/solstone"),
-        base.join(".local/bin/journal"),
-    )
-}
-fn parse_wrapper(text: &str) -> Option<(String, PathBuf)> {
-    let marker = text.lines().any(|l| {
-        l.strip_prefix("# managed-version: ")
-            .is_some_and(|v| matches!(v.as_bytes(), [b'1'..=b'7']))
-    });
-    if !marker {
-        return None;
-    }
-    let journal = text
-        .lines()
-        .find_map(|l| {
-            l.strip_prefix(": \"${SOLSTONE_JOURNAL:=")
-                .and_then(|v| v.strip_suffix("}\""))
-        })?
-        .to_owned();
-    let sol = text.lines().find_map(|l| {
-        l.strip_prefix("SOL_BIN='")
-            .and_then(|v| v.strip_suffix('\''))
-    })?;
-    Some((journal, PathBuf::from(sol.replace("'\\''", "'"))))
-}
-fn render_wrapper(binary: &str, journal: &Path, sol: &Path) -> String {
-    format!(
-        "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/{binary}}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"{binary}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf '{binary}: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
-        journal.display(),
-        sol.display().to_string().replace('\'', "'\\''")
-    )
-}
-fn install_wrappers(
-    journal: &Path,
-    bins: &WrapperBins,
-    committer: &dyn WrapperCommitter,
-) -> io::Result<()> {
-    let (sol, jrnl) = wrapper_paths();
-    install_wrappers_at(journal, bins, &sol, &jrnl, committer)
-}
-enum WrapperSnapshot {
-    Absent,
-    File { bytes: Vec<u8>, mode: u32 },
-    Symlink(PathBuf),
-}
-fn snapshot_wrapper(path: &Path) -> io::Result<WrapperSnapshot> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok(WrapperSnapshot::Absent);
-        }
-        Err(error) => return Err(error),
-    };
-    if metadata.file_type().is_symlink() {
-        return fs::read_link(path).map(WrapperSnapshot::Symlink);
-    }
-    Ok(WrapperSnapshot::File {
-        bytes: fs::read(path)?,
-        mode: metadata.permissions().mode(),
-    })
-}
-fn restore_wrapper(path: &Path, snapshot: &WrapperSnapshot) -> io::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => fs::remove_file(path)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    match snapshot {
-        WrapperSnapshot::Absent => Ok(()),
-        WrapperSnapshot::File { bytes, mode } => {
-            fs::write(path, bytes)?;
-            fs::set_permissions(path, fs::Permissions::from_mode(*mode))
-        }
-        WrapperSnapshot::Symlink(target) => std::os::unix::fs::symlink(target, path),
-    }
-}
-fn install_wrappers_at(
-    journal: &Path,
-    bins: &WrapperBins,
-    sol: &Path,
-    jrnl: &Path,
-    committer: &dyn WrapperCommitter,
-) -> io::Result<()> {
-    let lock_path = sol.parent().unwrap().join(".sol.lock");
-    fs::create_dir_all(lock_path.parent().unwrap())?;
-    let lock = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(lock_path)?;
-    let _lock = acquire_wrapper_lock(lock)?;
-    let items = [
-        (
-            sol.to_path_buf(),
-            render_wrapper("solstone", journal, &bins.solstone),
-        ),
-        (
-            jrnl.to_path_buf(),
-            render_wrapper("journal", journal, &bins.journal),
-        ),
-    ];
-    let snapshots: Vec<_> = items
-        .iter()
-        .map(|(path, _)| snapshot_wrapper(path).map(|snapshot| (path.clone(), snapshot)))
-        .collect::<io::Result<_>>()?;
-    let mut staged = Vec::new();
-    for (i, (path, content)) in items.iter().enumerate() {
-        let tmp = path.with_file_name(format!(
-            ".{}.tmp-{}",
-            path.file_name().unwrap().to_string_lossy(),
-            i
-        ));
-        staged.push((path, tmp.clone()));
-        let result = (|| {
-            fs::create_dir_all(path.parent().unwrap())?;
-            match fs::remove_file(&tmp) {
-                Ok(()) => {}
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-            fs::write(&tmp, content)?;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))
-        })();
-        if let Err(error) = result {
-            for (_, staged_path) in &staged {
-                let _ = fs::remove_file(staged_path);
-            }
-            return Err(error);
-        }
-    }
-    for (path, tmp) in &staged {
-        if let Err(e) = committer.replace(tmp, path) {
-            for (path, snapshot) in &snapshots {
-                let _ = restore_wrapper(path, snapshot);
-            }
-            for (_, staged_path) in &staged {
-                let _ = fs::remove_file(staged_path);
-            }
-            return Err(e);
-        }
-    }
-    Ok(())
-}
-
-fn acquire_wrapper_lock(lock: fs::File) -> io::Result<nix::fcntl::Flock<fs::File>> {
-    #[cfg(feature = "test-hooks")]
-    {
-        match nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusiveNonblock) {
-            Ok(lock) => return Ok(lock),
-            Err((lock, error))
-                if error == nix::errno::Errno::EAGAIN
-                    || error == nix::errno::Errno::EWOULDBLOCK =>
-            {
-                let mut stderr = io::stderr();
-                writeln!(stderr, "contended")?;
-                stderr.flush()?;
-                return nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
-                    .map_err(|(_, error)| io::Error::other(error));
-            }
-            Err((_, error)) => return Err(io::Error::other(error)),
-        }
-    }
-    #[cfg(not(feature = "test-hooks"))]
-    nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
-        .map_err(|(_, error)| io::Error::other(error))
-}
-
-#[cfg(feature = "test-hooks")]
-pub(crate) fn run_wrapper_write_test_child(args: &[std::ffi::OsString]) -> Option<ExitCode> {
-    if args
-        .first()
-        .is_none_or(|argument| argument != "__wrapper-write")
-    {
-        return None;
-    }
-    Some(execute_wrapper_write_test_child(&args[1..]))
-}
-
-#[cfg(feature = "test-hooks")]
-fn execute_wrapper_write_test_child(args: &[std::ffi::OsString]) -> ExitCode {
-    if args.len() != 2 {
-        eprintln!("__wrapper-write requires <bin-dir> <target-root>");
-        return ExitCode::from(2);
-    }
-    let bin_dir = Path::new(&args[0]);
-    let target = Path::new(&args[1]);
-    let sol = bin_dir.join("solstone");
-    let journal = bin_dir.join("journal");
-    let bins = WrapperBins {
-        solstone: PathBuf::from("/new/solstone"),
-        journal: PathBuf::from("/new/journal"),
-    };
-    match install_wrappers_at(target, &bins, &sol, &journal, &RealCommitter) {
-        Ok(()) => {
-            let mut stdout = io::stdout();
-            if writeln!(stdout, "wrapper-write-lock").is_err() || stdout.flush().is_err() {
-                return ExitCode::from(1);
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(1)
-        }
-    }
-}
-
 fn wrapper_refusal(path: &Path) -> String {
     format!(
         "journal config: refused: {} is not a managed wrapper (run 'journal setup' from the solstone source checkout to install the wrapper first)",
@@ -691,17 +464,32 @@ fn project_root() -> Option<PathBuf> {
             .map(Path::to_path_buf)
     })
 }
+
+fn identity_root_from_current_executable() -> Result<PathBuf, String> {
+    let executable = env::current_exe().map_err(|error| {
+        format!("journal config: could not resolve current executable: {error}")
+    })?;
+    let executable_dir = executable.parent().ok_or_else(|| {
+        "journal config: current executable has no containing directory".to_owned()
+    })?;
+    resolve_identity_root_from_executable_dir(executable_dir)
+        .or_else(project_root)
+        .ok_or_else(|| {
+            format!(
+                "journal config: could not resolve installation identity root from {}",
+                executable_dir.display()
+            )
+        })
+}
+
 fn is_source_checkout() -> bool {
     project_root().is_some_and(|root| root.join(".git").exists())
 }
 enum RewriteError {
     Refusal(String),
-    Install(io::Error),
+    Install(String),
 }
-fn rewrite(
-    change: &JournalChange,
-    installer: &dyn WrapperInstaller,
-) -> Result<PathBuf, RewriteError> {
+fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
     let sol_alias = change.alias.clone();
     let journal_alias = sol_alias.with_file_name("journal");
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
@@ -710,9 +498,10 @@ fn rewrite(
             sol_alias.display()
         ))
     })?;
-    let Some((_, sol_bin)) = parse_wrapper(&sol_content) else {
+    let Some(sol_wrapper) = parse_wrapper(&sol_content) else {
         return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
+    let sol_bin = sol_wrapper.sol_bin;
     let journal_bin = if !journal_alias.exists() && !journal_alias.is_symlink() {
         sol_bin.with_file_name("journal")
     } else if journal_alias.is_symlink() {
@@ -725,29 +514,50 @@ fn rewrite(
             ))
         })?;
         match parse_wrapper(&content) {
-            Some((_, p)) => p,
+            Some(wrapper) => wrapper.sol_bin,
             None => return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias))),
         }
     };
-    installer
-        .install(
-            &change.target_path,
-            &WrapperBins {
-                solstone: sol_bin,
-                journal: journal_bin.clone(),
+    let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
+        RewriteError::Refusal(format!("journal config: identity root refused: {error}"))
+    })?;
+    let namespace = namespace_name(PlatformTag::current(), &root_token);
+    let admission = admit_setup(SetupAdmissionRequest {
+        owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
+            |error| {
+                RewriteError::Refusal(format!("journal config: identity owner refused: {error}"))
             },
-        )
-        .map_err(|e| match e {
-            WrapperInstallError::Io(e) => RewriteError::Install(e),
-        })?;
+        )?,
+        root_token,
+        journal_token: journal_token_from_path(&change.target_path).map_err(|error| {
+            RewriteError::Refusal(format!("journal config: journal path refused: {error}"))
+        })?,
+        journal_is_explicit: true,
+        legacy_manifest: legacy_manifest_evidence(&manifest_path(&change.target_path)),
+        artifacts: gather_wrapper_artifact_evidence(&change.home_dir, &namespace),
+    })
+    .map_err(|error| {
+        RewriteError::Refusal(format!(
+            "journal config: identity admission refused: {error}"
+        ))
+    })?;
+    let guard = solstone_core_installation_identity::GuardFields::from_binding(admission.binding());
+    let _wrapper_lock =
+        wrapper_lock(&change.home_dir).map_err(|error| RewriteError::Install(error.to_string()))?;
+    write_wrappers_atomically(&[
+        (
+            sol_alias,
+            render_wrapper("solstone", &change.target_path, &sol_bin, &guard),
+        ),
+        (
+            journal_alias,
+            render_wrapper("journal", &change.target_path, &journal_bin, &guard),
+        ),
+    ])
+    .map_err(|error| RewriteError::Install(error.to_string()))?;
     Ok(journal_bin)
 }
-fn execute(
-    c: &JournalChange,
-    d: &Decision,
-    service: &dyn ServiceCommandRunner,
-    wrappers: &dyn WrapperInstaller,
-) -> u8 {
+fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) -> u8 {
     if c.action == Some(RequestedAction::Force) {
         eprintln!(
             "journal config: warning: --force bypasses confirmation and target activity checks"
@@ -773,15 +583,11 @@ fn execute(
             println!("{}", plan(c, d));
             d.exit_code
         }
-        Action::Proceed | Action::Switch => run_switch(c, service, wrappers),
-        Action::Move => run_move(c, service, wrappers),
+        Action::Proceed | Action::Switch => run_switch(c, service),
+        Action::Move => run_move(c, service),
     }
 }
-fn run_switch(
-    c: &JournalChange,
-    service: &dyn ServiceCommandRunner,
-    wrappers: &dyn WrapperInstaller,
-) -> u8 {
+fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     if let Err(e) = fs::create_dir_all(&c.target_path) {
         eprintln!(
             "journal config: refused: cannot create {}: {e}",
@@ -789,7 +595,7 @@ fn run_switch(
         );
         return 1;
     }
-    let restart = match rewrite(c, wrappers) {
+    let restart = match rewrite(c) {
         Ok(v) => v,
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
@@ -849,11 +655,7 @@ fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommand
         eprintln!("journal config: rollback warning: could not restart service ({error})");
     }
 }
-fn run_move(
-    c: &JournalChange,
-    service: &dyn ServiceCommandRunner,
-    wrappers: &dyn WrapperInstaller,
-) -> u8 {
+fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     if !c.target_parent_exists {
         eprintln!("{}", missing_parent(c));
         return 1;
@@ -889,7 +691,7 @@ fn run_move(
         eprintln!("journal config: move failed: {e}");
         return 1;
     }
-    let restart = match rewrite(c, wrappers) {
+    let restart = match rewrite(c) {
         Ok(v) => v,
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
@@ -946,7 +748,9 @@ fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
         fs::read_to_string(alias)
             .ok()
             .and_then(|text| parse_wrapper(&text))
-            .map_or(("foreign", None), |(journal, _)| ("managed", Some(journal)))
+            .map_or(("foreign", None), |wrapper| {
+                ("managed", Some(wrapper.journal))
+            })
     }
 }
 fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>) -> &'static str {
@@ -959,9 +763,8 @@ fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>
     }
 }
 fn show() -> ExitCode {
-    let (alias, _) = wrapper_paths();
-    let wrapper = wrapper_status(&alias);
     let h = home();
+    let wrapper = wrapper_status(&wrapper_paths(&h).solstone);
     let cfg = read_config_journal(&h).ok().flatten();
     let root = env::current_dir()
         .ok()
@@ -1014,7 +817,8 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         );
         return ExitCode::from(1);
     }
-    let (alias, _) = wrapper_paths();
+    let owner_home = home();
+    let alias = wrapper_paths(&owner_home).solstone;
     if !alias.exists() || alias.is_symlink() {
         eprintln!("{}", wrapper_refusal(&alias));
         return ExitCode::from(1);
@@ -1029,11 +833,11 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let Some((current, sol_bin)) = parse_wrapper(&content) else {
+    let Some(wrapper) = parse_wrapper(&content) else {
         eprintln!("{}", wrapper_refusal(&alias));
         return ExitCode::from(1);
     };
-    let current = resolve_non_strict(Path::new(&current));
+    let current = resolve_non_strict(Path::new(&wrapper.journal));
     let current_active = match active(&current) {
         Ok(v) => v,
         Err(e) => {
@@ -1056,6 +860,13 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         use std::os::unix::fs::MetadataExt;
         m.dev()
     });
+    let identity_root = match identity_root_from_current_executable() {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(1);
+        }
+    };
     let c = JournalChange {
         paths_equal: current == target,
         current_exists: current.exists(),
@@ -1071,16 +882,18 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         action: o.action.map(Into::into),
         yes: o.yes,
         dry_run: o.dry_run,
-        service_bin: sol_bin.with_file_name("journal"),
-        sol_bin,
+        service_bin: wrapper.sol_bin.with_file_name("journal"),
+        sol_bin: wrapper.sol_bin,
         alias,
+        home_dir: owner_home,
+        identity_root,
         current_path: current,
         target_path: target,
         current_active,
         target_active,
     };
     let d = decide(&c);
-    ExitCode::from(execute(&c, &d, &RealServiceRunner, &RealInstaller))
+    ExitCode::from(execute(&c, &d, &RealServiceRunner))
 }
 
 #[cfg(test)]
@@ -1118,48 +931,8 @@ mod tests {
         }
     }
 
-    struct FakeInstaller {
-        fail: bool,
-    }
-    impl WrapperInstaller for FakeInstaller {
-        fn install(&self, _journal: &Path, _bins: &WrapperBins) -> Result<(), WrapperInstallError> {
-            if self.fail {
-                Err(WrapperInstallError::Io(io::Error::other("disk full")))
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    struct RecordingInstaller {
-        fail: bool,
-        calls: AtomicUsize,
-    }
-    impl WrapperInstaller for RecordingInstaller {
-        fn install(&self, _journal: &Path, _bins: &WrapperBins) -> Result<(), WrapperInstallError> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            if self.fail {
-                Err(WrapperInstallError::Io(io::Error::other("disk full")))
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    struct FailSecondCommit {
-        calls: AtomicUsize,
-    }
-    impl WrapperCommitter for FailSecondCommit {
-        fn replace(&self, staged: &Path, destination: &Path) -> io::Result<()> {
-            if self.calls.fetch_add(1, Ordering::Relaxed) == 1 {
-                return Err(io::Error::other("second replacement failed"));
-            }
-            fs::rename(staged, destination)
-        }
-    }
-
     fn test_root(label: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
+        let root = PathBuf::from("/var/tmp").join(format!(
             "config-{label}-{}-{}",
             std::process::id(),
             TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
@@ -1172,16 +945,22 @@ mod tests {
         let source = root.join("source");
         let target = root.join("target");
         fs::create_dir_all(&source).unwrap();
-        let alias = root.join("bin/solstone");
+        fs::create_dir_all(source.join("health")).unwrap();
+        fs::write(
+            source.join("health/setup-state.json"),
+            r#"{"schema_version":1,"started_at":"2026-01-01T00:00:00Z","completed_at":null,"mode":"setup","args_resolved":{},"steps":[]}"#,
+        )
+        .unwrap();
+        let alias = root.join(".local/bin/solstone");
         fs::create_dir_all(alias.parent().unwrap()).unwrap();
         fs::write(
             &alias,
-            render_wrapper("solstone", &source, Path::new("/service/solstone")),
+            legacy_wrapper("solstone", &source, Path::new("/service/solstone")),
         )
         .unwrap();
         fs::write(
             alias.with_file_name("journal"),
-            render_wrapper("journal", &source, Path::new("/restart/journal")),
+            legacy_wrapper("journal", &source, Path::new("/restart/journal")),
         )
         .unwrap();
         let mut c = change(Some(RequestedAction::Move));
@@ -1190,8 +969,18 @@ mod tests {
         c.alias = alias;
         c.sol_bin = PathBuf::from("/service/solstone");
         c.service_bin = PathBuf::from("/service/journal");
+        c.home_dir = root.to_path_buf();
+        c.identity_root = root.to_path_buf();
         c.yes = true;
         c
+    }
+
+    fn legacy_wrapper(binary: &str, journal: &Path, sol_bin: &Path) -> String {
+        format!(
+            "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+            journal.display(),
+            sol_bin.display()
+        )
     }
 
     fn change(action: Option<RequestedAction>) -> JournalChange {
@@ -1215,6 +1004,8 @@ mod tests {
             sol_bin: PathBuf::from("/bin/solstone"),
             service_bin: PathBuf::from("/bin/journal"),
             alias: PathBuf::from("/home/.local/bin/solstone"),
+            home_dir: PathBuf::from("/home"),
+            identity_root: PathBuf::from("/identity-root"),
         }
     }
 
@@ -1314,31 +1105,30 @@ mod tests {
     #[test]
     fn run_move_covers_the_eleven_reference_exit_sites() {
         let no_service = FakeServiceRunner::new([]);
-        let success = FakeInstaller { fail: false };
 
         let root = test_root("move-parent");
         let mut c = move_change(&root);
         c.target_parent_exists = false;
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(c.current_path.exists());
 
         let root = test_root("move-source");
         let c = move_change(&root);
         fs::remove_dir_all(&c.current_path).unwrap();
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(!c.current_path.exists());
 
         let root = test_root("move-target");
         let c = move_change(&root);
         fs::create_dir_all(&c.target_path).unwrap();
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(c.current_path.exists());
         assert!(c.target_path.exists());
 
         let root = test_root("move-device");
         let mut c = move_change(&root);
         c.same_filesystem = Some(false);
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(c.current_path.exists());
 
         let root = test_root("move-stop-missing");
@@ -1347,14 +1137,14 @@ mod tests {
         let missing = FakeServiceRunner::new([ServiceCommandResult::ExecutableMissing {
             error: io::Error::new(io::ErrorKind::NotFound, "stop"),
         }]);
-        assert_eq!(run_move(&c, &missing, &success), 2);
+        assert_eq!(run_move(&c, &missing), 2);
         assert!(c.current_path.exists());
 
         let root = test_root("move-stop-nonzero");
         let mut c = move_change(&root);
         c.service_running = true;
         let nonzero = FakeServiceRunner::new([ServiceCommandResult::Exited { code: 1 }]);
-        assert_eq!(run_move(&c, &nonzero, &success), 2);
+        assert_eq!(run_move(&c, &nonzero), 2);
         assert!(c.current_path.exists());
 
         let root = test_root("move-rename");
@@ -1362,19 +1152,13 @@ mod tests {
         let not_a_directory = root.join("not-a-directory");
         fs::write(&not_a_directory, "file").unwrap();
         c.target_path = not_a_directory.join("target");
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(c.current_path.exists());
-
-        let root = test_root("move-wrapper-write");
-        let c = move_change(&root);
-        assert_eq!(run_move(&c, &no_service, &FakeInstaller { fail: true }), 2);
-        assert!(c.current_path.exists());
-        assert!(!c.target_path.exists());
 
         let root = test_root("move-wrapper-refusal");
         let c = move_change(&root);
         fs::write(&c.alias, "foreign wrapper").unwrap();
-        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert_eq!(run_move(&c, &no_service), 1);
         assert!(c.current_path.exists());
         assert!(!c.target_path.exists());
 
@@ -1388,7 +1172,7 @@ mod tests {
                 error: io::Error::new(io::ErrorKind::NotFound, "start"),
             },
         ]);
-        assert_eq!(run_move(&c, &start_missing, &success), 2);
+        assert_eq!(run_move(&c, &start_missing), 2);
         assert!(!c.current_path.exists());
         assert!(c.target_path.exists());
 
@@ -1400,7 +1184,7 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
             ServiceCommandResult::Exited { code: 1 },
         ]);
-        assert_eq!(run_move(&c, &start_nonzero, &success), 2);
+        assert_eq!(run_move(&c, &start_nonzero), 2);
         assert!(!c.current_path.exists());
         assert!(c.target_path.exists());
     }
@@ -1415,7 +1199,7 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
             ServiceCommandResult::Exited { code: 0 },
         ]);
-        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 0);
+        assert_eq!(run_move(&c, &service), 0);
         assert_eq!(
             *service.calls.lock().unwrap(),
             vec![
@@ -1437,7 +1221,7 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
             ServiceCommandResult::Exited { code: 0 },
         ]);
-        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 1);
+        assert_eq!(run_move(&c, &service), 1);
         assert_eq!(
             *service.calls.lock().unwrap(),
             vec![
@@ -1454,18 +1238,7 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
             ServiceCommandResult::Exited { code: 0 },
         ]);
-        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 1);
-        assert_eq!(service.calls.lock().unwrap().len(), 2);
-        assert_eq!(service.calls.lock().unwrap()[1].1, ServiceCommand::Start);
-
-        let root = test_root("move-restart-install");
-        let mut c = move_change(&root);
-        c.service_running = true;
-        let service = FakeServiceRunner::new([
-            ServiceCommandResult::Exited { code: 0 },
-            ServiceCommandResult::Exited { code: 0 },
-        ]);
-        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: true }), 2);
+        assert_eq!(run_move(&c, &service), 1);
         assert_eq!(service.calls.lock().unwrap().len(), 2);
         assert_eq!(service.calls.lock().unwrap()[1].1, ServiceCommand::Start);
     }
@@ -1484,7 +1257,7 @@ mod tests {
                 "unreadable" => fs::create_dir(&journal_alias).unwrap(),
                 _ => unreachable!(),
             }
-            let error = rewrite(&c, &FakeInstaller { fail: false }).unwrap_err();
+            let error = rewrite(&c).unwrap_err();
             let message = match error {
                 RewriteError::Refusal(message) => message,
                 RewriteError::Install(_) => panic!("journal alias must be rejected before install"),
@@ -1503,167 +1276,6 @@ mod tests {
                 assert!(message.contains("is not a managed wrapper"));
             }
         }
-    }
-
-    #[test]
-    fn move_wrapper_install_failure_rolls_back_and_success_twin_invokes_the_seam() {
-        let root = test_root("move-wrapper-installer");
-        let c = move_change(&root);
-        let sol_before = fs::read(&c.alias).unwrap();
-        let journal_before = fs::read(c.alias.with_file_name("journal")).unwrap();
-        let failing = RecordingInstaller {
-            fail: true,
-            calls: AtomicUsize::new(0),
-        };
-        assert_eq!(run_move(&c, &FakeServiceRunner::new([]), &failing), 2);
-        assert_eq!(failing.calls.load(Ordering::Relaxed), 1);
-        assert!(c.current_path.exists());
-        assert!(!c.target_path.exists());
-        assert_eq!(fs::read(&c.alias).unwrap(), sol_before);
-        assert_eq!(
-            fs::read(c.alias.with_file_name("journal")).unwrap(),
-            journal_before
-        );
-
-        let root = test_root("move-wrapper-installer-success");
-        let c = move_change(&root);
-        let succeeding = RecordingInstaller {
-            fail: false,
-            calls: AtomicUsize::new(0),
-        };
-        assert_eq!(run_move(&c, &FakeServiceRunner::new([]), &succeeding), 0);
-        assert_eq!(succeeding.calls.load(Ordering::Relaxed), 1);
-        assert!(!c.current_path.exists());
-        assert!(c.target_path.exists());
-    }
-
-    #[test]
-    fn wrapper_commit_failure_restores_both_wrappers_and_cleans_staging() {
-        let root = test_root("wrapper-rollback");
-        let sol = root.join("bin/solstone");
-        let journal_alias = root.join("bin/journal");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(&sol, b"old sol bytes").unwrap();
-        fs::write(&journal_alias, b"old journal bytes").unwrap();
-        fs::set_permissions(&sol, fs::Permissions::from_mode(0o700)).unwrap();
-        fs::set_permissions(&journal_alias, fs::Permissions::from_mode(0o740)).unwrap();
-        let bins = WrapperBins {
-            solstone: PathBuf::from("/new/solstone"),
-            journal: PathBuf::from("/new/journal"),
-        };
-        let committer = FailSecondCommit {
-            calls: AtomicUsize::new(0),
-        };
-        assert!(
-            install_wrappers_at(
-                &root.join("target"),
-                &bins,
-                &sol,
-                &journal_alias,
-                &committer
-            )
-            .is_err()
-        );
-        assert_eq!(fs::read(&sol).unwrap(), b"old sol bytes");
-        assert_eq!(fs::read(&journal_alias).unwrap(), b"old journal bytes");
-        assert_eq!(
-            fs::metadata(&sol).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert_eq!(
-            fs::metadata(&journal_alias).unwrap().permissions().mode() & 0o777,
-            0o740
-        );
-        assert!(!root.join("bin/.sol.tmp-0").exists());
-        assert!(!root.join("bin/.journal.tmp-1").exists());
-    }
-
-    #[test]
-    fn wrapper_commit_success_replaces_both_wrappers_without_staging_artifacts() {
-        let root = test_root("wrapper-commit");
-        let sol = root.join("bin/solstone");
-        let journal_alias = root.join("bin/journal");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(&sol, b"old sol bytes").unwrap();
-        fs::write(&journal_alias, b"old journal bytes").unwrap();
-        let bins = WrapperBins {
-            solstone: PathBuf::from("/new/solstone"),
-            journal: PathBuf::from("/new/journal"),
-        };
-        install_wrappers_at(
-            &root.join("target"),
-            &bins,
-            &sol,
-            &journal_alias,
-            &RealCommitter,
-        )
-        .unwrap();
-        assert_eq!(
-            fs::read_to_string(&sol).unwrap(),
-            render_wrapper("solstone", &root.join("target"), &bins.solstone)
-        );
-        assert_eq!(
-            fs::read_to_string(&journal_alias).unwrap(),
-            render_wrapper("journal", &root.join("target"), &bins.journal)
-        );
-        assert!(!root.join("bin/.sol.tmp-0").exists());
-        assert!(!root.join("bin/.journal.tmp-1").exists());
-    }
-
-    #[test]
-    fn wrapper_staging_does_not_follow_existing_symlinks() {
-        let root = test_root("wrapper-stage-symlink");
-        let sol = root.join("bin/solstone");
-        let journal_alias = root.join("bin/journal");
-        let canary = root.join("canary");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(&sol, "old sol").unwrap();
-        fs::write(&journal_alias, "old journal").unwrap();
-        fs::write(&canary, "do not overwrite").unwrap();
-        std::os::unix::fs::symlink(&canary, root.join("bin/.sol.tmp-0")).unwrap();
-        let bins = WrapperBins {
-            solstone: PathBuf::from("/new/solstone"),
-            journal: PathBuf::from("/new/journal"),
-        };
-        install_wrappers_at(
-            &root.join("target"),
-            &bins,
-            &sol,
-            &journal_alias,
-            &RealCommitter,
-        )
-        .unwrap();
-        assert_eq!(fs::read_to_string(&canary).unwrap(), "do not overwrite");
-        assert_eq!(
-            fs::read_to_string(&sol).unwrap(),
-            render_wrapper("solstone", &root.join("target"), &bins.solstone)
-        );
-    }
-
-    #[test]
-    fn wrapper_staging_failure_cleans_previously_staged_files() {
-        let root = test_root("wrapper-stage-cleanup");
-        let sol = root.join("bin/solstone");
-        let journal_alias = root.join("bin/journal");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(&sol, "old sol").unwrap();
-        fs::write(&journal_alias, "old journal").unwrap();
-        fs::create_dir(root.join("bin/.journal.tmp-1")).unwrap();
-        let bins = WrapperBins {
-            solstone: PathBuf::from("/new/solstone"),
-            journal: PathBuf::from("/new/journal"),
-        };
-        assert!(
-            install_wrappers_at(
-                &root.join("target"),
-                &bins,
-                &sol,
-                &journal_alias,
-                &RealCommitter
-            )
-            .is_err()
-        );
-        assert!(!root.join("bin/.sol.tmp-0").exists());
     }
 
     #[test]
@@ -1729,23 +1341,6 @@ mod tests {
     }
 
     #[test]
-    fn native_wrapper_template_is_reference_compatible() {
-        let wrapper = render_wrapper(
-            "solstone",
-            Path::new("/journal"),
-            Path::new("/venv/bin/solstone"),
-        );
-        assert_eq!(
-            wrapper,
-            "#!/bin/bash\n# solstone — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${SOLSTONE_JOURNAL:=/journal}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/venv/bin/solstone'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${SOL_BIN%/.venv/bin/solstone}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"solstone: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'solstone: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
-        );
-        assert_eq!(
-            parse_wrapper(&wrapper),
-            Some(("/journal".into(), PathBuf::from("/venv/bin/solstone")))
-        );
-    }
-
-    #[test]
     fn show_source_covers_all_reference_labels() {
         assert_eq!(
             show_source(Source::Env, Some("/wrapper"), Some("/wrapper")),
@@ -1786,7 +1381,7 @@ mod tests {
         assert_eq!(wrapper_status(&alias), ("foreign", None));
         fs::remove_dir(&alias).unwrap();
 
-        let legacy = render_wrapper("solstone", Path::new("/legacy"), Path::new("/bin/solstone"))
+        let legacy = legacy_wrapper("solstone", Path::new("/legacy"), Path::new("/bin/solstone"))
             .replace("# managed-version: 7", "# managed-version: 5");
         fs::write(&alias, legacy).unwrap();
         assert_eq!(
@@ -1809,41 +1404,18 @@ mod tests {
     #[test]
     fn rewrite_always_emits_the_current_wrapper_marker() {
         let root = test_root("wrapper-version");
-        let sol = root.join("bin/solstone");
-        let journal_alias = root.join("bin/journal");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(
-            &sol,
-            render_wrapper("solstone", Path::new("/old"), Path::new("/bin/solstone"))
-                .replace("# managed-version: 7", "# managed-version: 5"),
-        )
-        .unwrap();
-        fs::write(
-            &journal_alias,
-            render_wrapper("journal", Path::new("/old"), Path::new("/bin/journal")),
-        )
-        .unwrap();
-        install_wrappers_at(
-            Path::new("/new"),
-            &WrapperBins {
-                solstone: PathBuf::from("/bin/solstone"),
-                journal: PathBuf::from("/bin/journal"),
-            },
-            &sol,
-            &journal_alias,
-            &RealCommitter,
-        )
-        .unwrap();
+        let c = move_change(&root);
+        assert_eq!(run_move(&c, &FakeServiceRunner::new([])), 0);
         assert!(
-            fs::read_to_string(&sol)
+            fs::read_to_string(&c.alias)
                 .unwrap()
-                .contains("# managed-version: 7")
+                .contains("# managed-version: 8")
         );
     }
 
     #[test]
     fn non_strict_resolution_matches_pathlib_for_relative_home_and_missing_paths() {
-        let root = std::env::temp_dir().join(format!("config-resolve-{}", std::process::id()));
+        let root = PathBuf::from("/var/tmp").join(format!("config-resolve-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let cwd = root.join("cwd");
         let home = root.join("home");
@@ -1882,21 +1454,21 @@ mod tests {
 
     #[test]
     fn parser_accepts_all_historical_marker_versions() {
-        for version in 1..=7 {
+        for version in 1..=8 {
             let content = format!(
                 "# managed-version: {version}\n: \"${{SOLSTONE_JOURNAL:=/journal}}\"\nSOL_BIN='/bin/it'\\''s'\n"
             );
-            assert_eq!(
-                parse_wrapper(&content),
-                Some(("/journal".to_owned(), PathBuf::from("/bin/it's")))
-            );
+            let wrapper = parse_wrapper(&content).unwrap();
+            assert_eq!(wrapper.journal, "/journal");
+            assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's"));
+            assert_eq!(wrapper.version, version);
         }
-        assert!(parse_wrapper("# managed-version: 8\nSOL_BIN='/bin/sol'\n").is_none());
+        assert!(parse_wrapper("# managed-version: 9\nSOL_BIN='/bin/sol'\n").is_none());
     }
 
     #[test]
     fn active_distinguishes_missing_and_corrupt() {
-        let root = std::env::temp_dir().join(format!("config-active-{}", std::process::id()));
+        let root = PathBuf::from("/var/tmp").join(format!("config-active-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         assert_eq!(active(&root), Ok(false));

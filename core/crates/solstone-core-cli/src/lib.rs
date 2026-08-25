@@ -4183,6 +4183,7 @@ pub const SERVICE_USAGE: &str = concat!(
 pub enum ServiceAction {
     Install {
         port: solstone_core_operational_logs::ServicePort,
+        installation_guard: Option<ServiceInstallationGuardArguments>,
     },
     Uninstall,
     Start,
@@ -4196,6 +4197,16 @@ pub enum ServiceAction {
     },
     Up,
     Down,
+}
+
+/// The hidden identity fields carried from `journal setup` to service rendering.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceInstallationGuardArguments {
+    pub namespace: String,
+    pub id: String,
+    pub generation: String,
+    pub journal_token: String,
 }
 
 /// A dynamic service diagnostic sanitized for exactly one terminal rendering.
@@ -4216,6 +4227,10 @@ impl SafeServiceDiagnostic {
             "Error: invalid port '{}'",
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
         ))
+    }
+
+    fn incomplete_installation_guard() -> Self {
+        Self("Error: installation identity arguments must be supplied together".to_owned())
     }
 
     fn unknown_subcommand(value: &OsStr) -> Self {
@@ -4282,6 +4297,61 @@ pub fn parse_service_port_argv(
         .map_err(|_| SafeServiceDiagnostic::invalid_port_value(OsStr::new("5015")))
 }
 
+fn parse_service_install_argv(
+    args: &[OsString],
+) -> Result<
+    (
+        solstone_core_operational_logs::ServicePort,
+        Option<ServiceInstallationGuardArguments>,
+    ),
+    SafeServiceDiagnostic,
+> {
+    let port = parse_service_port_argv(args)?;
+    let mut namespace = None;
+    let mut id = None;
+    let mut generation = None;
+    let mut journal_token = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        let Some(name) = argument.to_str() else {
+            index += 1;
+            continue;
+        };
+        let field = match name {
+            "--installation-namespace" => Some(&mut namespace),
+            "--installation-id" => Some(&mut id),
+            "--installation-generation" => Some(&mut generation),
+            "--installation-journal-token" => Some(&mut journal_token),
+            _ => None,
+        };
+        let Some(field) = field else {
+            index += 1;
+            continue;
+        };
+        let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+            return Err(SafeServiceDiagnostic::incomplete_installation_guard());
+        };
+        if field.replace(value.to_owned()).is_some() {
+            return Err(SafeServiceDiagnostic::incomplete_installation_guard());
+        }
+        index += 2;
+    }
+    match (namespace, id, generation, journal_token) {
+        (None, None, None, None) => Ok((port, None)),
+        (Some(namespace), Some(id), Some(generation), Some(journal_token)) => Ok((
+            port,
+            Some(ServiceInstallationGuardArguments {
+                namespace,
+                id,
+                generation,
+                journal_token,
+            }),
+        )),
+        _ => Err(SafeServiceDiagnostic::incomplete_installation_guard()),
+    }
+}
+
 /// Parse the complete retained service lifecycle grammar without dispatching it.
 #[doc(hidden)]
 pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
@@ -4312,8 +4382,13 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
     };
     let rest = &args[1..];
     if command == OsStr::new("install") {
-        return match parse_service_port_argv(rest) {
-            Ok(port) => ServiceParseOutcome::Dispatch(ServiceAction::Install { port }),
+        return match parse_service_install_argv(rest) {
+            Ok((port, installation_guard)) => {
+                ServiceParseOutcome::Dispatch(ServiceAction::Install {
+                    port,
+                    installation_guard,
+                })
+            }
             Err(stderr) => ServiceParseOutcome::Exit {
                 code: 1,
                 stdout: None,
@@ -5457,6 +5532,7 @@ mod tests {
                 args(&["install", "--port", "7"]),
                 ServiceParseOutcome::Dispatch(ServiceAction::Install {
                     port: solstone_core_operational_logs::parse_service_port("7").unwrap(),
+                    installation_guard: None,
                 }),
             ),
             (
@@ -5496,6 +5572,45 @@ mod tests {
         ] {
             assert_eq!(parse_service_args(&argv), expected);
         }
+    }
+
+    #[test]
+    fn service_install_identity_arguments_are_all_or_nothing() {
+        let all = args(&[
+            "install",
+            "--installation-namespace",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "--installation-id",
+            "0123456789abcdef0123456789abcdef",
+            "--installation-generation",
+            "1",
+            "--installation-journal-token",
+            "2f6a6f75726e616c",
+        ]);
+        assert!(matches!(
+            parse_service_args(&all),
+            ServiceParseOutcome::Dispatch(ServiceAction::Install {
+                installation_guard: Some(_),
+                ..
+            })
+        ));
+        let partial = args(&[
+            "install",
+            "--installation-id",
+            "0123456789abcdef0123456789abcdef",
+        ]);
+        let ServiceParseOutcome::Exit {
+            code: 1,
+            stderr: Some(stderr),
+            ..
+        } = parse_service_args(&partial)
+        else {
+            panic!("partial guard should fail");
+        };
+        assert_eq!(
+            stderr.as_str(),
+            "Error: installation identity arguments must be supplied together"
+        );
     }
 
     #[cfg(unix)]
