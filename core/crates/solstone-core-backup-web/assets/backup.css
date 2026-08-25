@@ -113,6 +113,10 @@
 
 .backup-panel[hidden],
 .backup-operation[hidden],
+[data-restore-lane-panel][hidden],
+[data-hosted-restore-key-control][hidden],
+[data-hosted-restore-hint][hidden],
+[data-hosted-restore-outcome][hidden],
 [data-offload-disable-note][hidden],
 [data-backend-fields][hidden],
 [data-restore-backend-fields][hidden],
@@ -240,6 +244,78 @@
   gap: 0.4rem;
   color: #b06a1a;
   font-size: 0.85rem;
+}
+
+/* restore lanes are intentionally separate from the destination mode selector */
+.backup-restore-lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.4rem 0 1.1rem;
+}
+
+.backup-restore-lane {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  text-align: left;
+  padding: 0.85rem 0.95rem;
+  min-height: 0;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  background: var(--surface-color, #fff);
+  cursor: pointer;
+}
+
+.backup-restore-lane.is-selected {
+  border-color: #e8923a;
+  box-shadow: inset 0 0 0 1px #e8923a;
+}
+
+.backup-restore-lane:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.backup-restore-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.backup-restore-lane-radio {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--border-color, #bbb);
+  border-radius: 999px;
+  box-sizing: border-box;
+}
+
+.backup-restore-lane.is-selected .backup-restore-lane-radio {
+  border-color: #e8923a;
+  background: radial-gradient(circle, #e8923a 0 42%, transparent 48%);
+}
+
+.backup-restore-lane-title {
+  font-weight: 600;
+}
+
+.backup-restore-lane-desc {
+  color: var(--text-muted, #555);
+  font-size: 0.9rem;
+}
+
+.backup-hosted-restore-outcome {
+  color: var(--text-muted, #555);
+}
+
+.backup-hosted-restore-outcome.is-error {
+  color: #9b1c1c;
+}
+
+.backup-hosted-restore-outcome.is-active {
+  color: var(--text-muted, #555);
 }
 
 .backup-panel-actions {
@@ -536,6 +612,10 @@
   }
 
   .backup-modes {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-restore-lanes {
     grid-template-columns: 1fr;
   }
 }

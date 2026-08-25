@@ -312,61 +312,88 @@
     </article>
 
     <article class="backup-panel" data-backup-panel="restore" hidden>
-      <div class="backup-hosted-restore">
-        <p class="backup-note" data-copy="hosted.restore_hint"></p>
-        <label>
+      <h2 data-copy="action_labels.restore"></h2>
+      <p class="backup-note" data-copy="restore.hosted.choose_lane"></p>
+
+      <div class="backup-restore-lanes" role="radiogroup" aria-label="restore source">
+        <button type="button" class="backup-restore-lane" data-restore-lane="byo" role="radio" aria-checked="false" tabindex="0">
+          <span class="backup-restore-lane-head">
+            <span class="backup-restore-lane-radio" aria-hidden="true"></span>
+            <span class="backup-restore-lane-title" data-copy="destination.modes.byo.title"></span>
+          </span>
+          <span class="backup-restore-lane-desc" data-copy="destination.modes.byo.desc"></span>
+        </button>
+        <button type="button" class="backup-restore-lane" data-restore-lane="operated" role="radio" aria-checked="false" tabindex="-1">
+          <span class="backup-restore-lane-head">
+            <span class="backup-restore-lane-radio" aria-hidden="true"></span>
+            <span class="backup-restore-lane-title" data-copy="destination.modes.hosted.title"></span>
+          </span>
+          <span class="backup-restore-lane-desc" data-copy="destination.modes.hosted.desc"></span>
+        </button>
+      </div>
+
+      <div data-restore-lane-panel="operated" hidden>
+        <h4 id="backup-restore-hosted-heading" data-copy="restore.hosted.lane_title"></h4>
+        <p class="backup-note" data-hosted-restore-hint data-copy="restore.hosted.lane_intro"></p>
+        <label data-hosted-restore-key-control>
           <span data-copy="confirm.prompt"></span>
-          <textarea data-restore-hosted-input name="recovery_key" autocomplete="off" spellcheck="false"></textarea>
+          <textarea data-restore-hosted-input name="recovery_key" autocomplete="off" spellcheck="false" aria-describedby="backup-restore-hosted-heading"></textarea>
         </label>
+        <p id="backup-restore-hosted-outcome" class="backup-hosted-restore-outcome" data-hosted-restore-outcome role="status" aria-live="polite" aria-atomic="true" hidden></p>
         <div class="backup-panel-actions">
-          <button type="button" class="primary" data-action="restore-hosted" data-copy="destination.modes.hosted.cta"></button>
+          <button type="button" class="primary" data-action="restore-hosted-unbound-start" data-copy="action_labels.restore" disabled></button>
+          <button type="button" data-action="cancel-hosted-restore-attempt" data-copy="action_labels.cancel" hidden></button>
         </div>
       </div>
 
-      <form data-restore-form>
-        <h2 data-copy="action_labels.restore"></h2>
-        <p class="backup-note" data-copy="restore.expectation"></p>
-        <label>
-          <span data-copy="destination.field_labels.repository"></span>
-          <input name="repository" data-field="restore_repository" autocomplete="off">
-        </label>
-        <label>
-          <span data-copy="destination.field_labels.backend"></span>
-          <select name="backend" data-field="restore_backend">
-            <option value="s3" data-copy="destination.field_labels.s3"></option>
-            <option value="b2" data-copy="destination.field_labels.b2"></option>
-          </select>
-        </label>
-        <div data-restore-backend-fields="s3">
+      <div data-restore-lane-panel="byo" hidden>
+        <form data-restore-form>
+          <p class="backup-note" data-copy="restore.expectation"></p>
           <label>
-            <span data-copy="destination.field_labels.access_key_id"></span>
-            <input name="access_key_id" data-field="restore_access_key_id" autocomplete="off">
+            <span data-copy="destination.field_labels.repository"></span>
+            <input name="repository" data-field="restore_repository" autocomplete="off">
           </label>
           <label>
-            <span data-copy="destination.field_labels.secret_access_key"></span>
-            <input name="secret_access_key" data-field="restore_secret_access_key" type="password" autocomplete="off">
+            <span data-copy="destination.field_labels.backend"></span>
+            <select name="backend" data-field="restore_backend">
+              <option value="s3" data-copy="destination.field_labels.s3"></option>
+              <option value="b2" data-copy="destination.field_labels.b2"></option>
+            </select>
           </label>
-        </div>
-        <div data-restore-backend-fields="b2" hidden>
+          <div data-restore-backend-fields="s3">
+            <label>
+              <span data-copy="destination.field_labels.access_key_id"></span>
+              <input name="access_key_id" data-field="restore_access_key_id" autocomplete="off">
+            </label>
+            <label>
+              <span data-copy="destination.field_labels.secret_access_key"></span>
+              <input name="secret_access_key" data-field="restore_secret_access_key" type="password" autocomplete="off">
+            </label>
+          </div>
+          <div data-restore-backend-fields="b2" hidden>
+            <label>
+              <span data-copy="destination.field_labels.b2_key_id"></span>
+              <input name="account_id" data-field="restore_account_id" autocomplete="off">
+            </label>
+            <label>
+              <span data-copy="destination.field_labels.b2_application_key"></span>
+              <input name="account_key" data-field="restore_account_key" type="password" autocomplete="off">
+            </label>
+          </div>
           <label>
-            <span data-copy="destination.field_labels.b2_key_id"></span>
-            <input name="account_id" data-field="restore_account_id" autocomplete="off">
+            <span data-copy="confirm.prompt"></span>
+            <textarea name="recovery_key" data-restore-key-input autocomplete="off" spellcheck="false"></textarea>
           </label>
-          <label>
-            <span data-copy="destination.field_labels.b2_application_key"></span>
-            <input name="account_key" data-field="restore_account_key" type="password" autocomplete="off">
-          </label>
-        </div>
-        <label>
-          <span data-copy="confirm.prompt"></span>
-          <textarea name="recovery_key" data-restore-key-input autocomplete="off" spellcheck="false"></textarea>
-        </label>
-        <p class="backup-status-message" data-restore-status></p>
-        <div class="backup-panel-actions">
-          <button type="submit" class="primary" data-copy="action_labels.restore"></button>
-          <button type="button" data-action="cancel-restore" data-copy="action_labels.cancel"></button>
-        </div>
-      </form>
+          <p class="backup-status-message" data-restore-status></p>
+          <div class="backup-panel-actions">
+            <button type="submit" class="primary" data-copy="action_labels.restore"></button>
+          </div>
+        </form>
+      </div>
+
+      <div class="backup-panel-actions">
+        <button type="button" data-action="cancel-restore" data-copy="action_labels.cancel"></button>
+      </div>
     </article>
   </div>
 

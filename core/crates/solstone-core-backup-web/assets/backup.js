@@ -69,7 +69,6 @@
     },
     "hosted": {
       "setup_hint": "turning this on sets up encrypted backup, operated by sol pbc — you turn it on on the services page that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
-      "restore_hint": "restore the encrypted copy sol pbc keeps for you — enter your recovery key, then turn it on on the services page.",
       "location_label": "operated by sol pbc",
       "manage_label": "manage in your services →",
       "manage_url": "https://services.solstone.app/services/backup"
@@ -107,7 +106,24 @@
       }
     },
     "restore": {
-      "expectation": "a large restore can take a while. you can leave this page open while it runs."
+      "expectation": "a large restore can take a while. you can leave this page open while it runs.",
+      "hosted": {
+        "choose_lane": "choose where the encrypted backup you want to restore comes from.",
+        "lane_title": "restore from sol pbc",
+        "lane_intro": "enter your recovery key to open the services page and restore the encrypted copy sol pbc keeps for you.",
+        "state_b": "waiting for the services page to approve your restore…",
+        "state_b_refused": {
+          "no_hosted_backup": "there isn't an operated backup available for this journal.",
+          "hosted_backup_expired": "the operated backup is no longer available to restore."
+        },
+        "status_retryable": "something went wrong. you can try again.",
+        "errors": {
+          "auth_failed": "that recovery key didn't unlock the operated backup. check your saved key and try again.",
+          "cancelled": "restore cancelled. you can try again."
+        },
+        "popup_preflight_failed": "your browser couldn't open the services page. allow popups, then try again.",
+        "key_required": "enter your recovery key before continuing."
+      }
     },
     "status": {
       "last_backup": {
@@ -207,6 +223,7 @@
       "tearing_down": "turning off…",
       "done": "done",
       "degraded": "restored, but not verified",
+      "refused": "restore wasn't available",
       "error": "couldn't finish",
       "loading": "loading…",
       "empty": "not set up yet"
@@ -278,6 +295,17 @@
   let currentRecoveryDisplay = '';
   let offloadDaysExpanded = false;
   let pollTimer = null;
+  let restoreLane = null;
+  const hostedRestoreAttempt = {
+    stage: 'idle',
+    capability: null,
+    popup: null,
+    message: '',
+    tone: 'neutral',
+    refusedReason: null,
+    dismissedRefusal: false,
+    fieldError: false,
+  };
 
   const root = document.querySelector('[data-backup-root]');
   if (!root) return;
@@ -371,6 +399,7 @@
   const managementCopy = copy.management || {};
   const statusLabels = managementCopy.status_labels || {};
   const hostedCopy = copy.hosted || {};
+  const restoreHostedCopy = (copy.restore && copy.restore.hosted) || {};
   const offloadCopy = copy.offload || {};
   const offloadLabels = offloadCopy.labels || {};
   const offloadMessages = offloadCopy.messages || {};
@@ -455,6 +484,284 @@
     const operation = payload && payload.operation;
     if (operation && operation.portal_url) {
       window.open(operation.portal_url, '_blank', 'noopener');
+    }
+  }
+
+  function hostedRestoreControls() {
+    return {
+      field: root.querySelector('[data-restore-hosted-input]'),
+      hint: root.querySelector('[data-hosted-restore-hint]'),
+      keyControl: root.querySelector('[data-hosted-restore-key-control]'),
+      primary: root.querySelector('[data-action="restore-hosted-unbound-start"]'),
+      attemptCancel: root.querySelector('[data-action="cancel-hosted-restore-attempt"]'),
+      outcome: root.querySelector('[data-hosted-restore-outcome]'),
+    };
+  }
+
+  function hostedRestoreLaneSelected() {
+    return restoreLane === 'operated';
+  }
+
+  function hostedRestoreAttemptInFlight() {
+    return hostedRestoreAttempt.stage !== 'idle' && hostedRestoreAttempt.stage !== 'terminal';
+  }
+
+  function setHostedRestoreOutcome(message, tone) {
+    hostedRestoreAttempt.message = message || '';
+    hostedRestoreAttempt.tone = tone || 'neutral';
+  }
+
+  function clearHostedRestoreFieldError() {
+    hostedRestoreAttempt.fieldError = false;
+    const { field } = hostedRestoreControls();
+    if (!field) return;
+    field.removeAttribute('aria-invalid');
+    field.removeAttribute('aria-errormessage');
+  }
+
+  function setHostedRestoreFieldError(message) {
+    const { field, outcome } = hostedRestoreControls();
+    hostedRestoreAttempt.fieldError = true;
+    setHostedRestoreOutcome(message, 'error');
+    if (!field || !outcome) return;
+    field.setAttribute('aria-invalid', 'true');
+    field.setAttribute('aria-errormessage', outcome.id);
+  }
+
+  function renderHostedRestoreAttempt() {
+    const { field, hint, keyControl, primary, attemptCancel, outcome } = hostedRestoreControls();
+    if (!field || !primary || !outcome) return;
+    const refused = hostedRestoreAttempt.stage === 'terminal' && hostedRestoreAttempt.refusedReason;
+    if (hint) hint.hidden = Boolean(refused);
+    if (keyControl) keyControl.hidden = Boolean(refused);
+    primary.hidden = Boolean(refused);
+    primary.disabled = Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '';
+    if (attemptCancel) attemptCancel.hidden = !hostedRestoreAttempt.capability || Boolean(refused);
+    outcome.textContent = hostedRestoreAttempt.message;
+    outcome.hidden = !hostedRestoreAttempt.message;
+    outcome.classList.toggle('is-error', hostedRestoreAttempt.tone === 'error');
+    outcome.classList.toggle('is-active', hostedRestoreAttempt.tone === 'active');
+    if (hostedRestoreAttempt.fieldError) {
+      field.setAttribute('aria-invalid', 'true');
+      field.setAttribute('aria-errormessage', outcome.id);
+    } else {
+      field.removeAttribute('aria-invalid');
+      field.removeAttribute('aria-errormessage');
+    }
+  }
+
+  function closeHostedRestorePopup() {
+    const popup = hostedRestoreAttempt.popup;
+    hostedRestoreAttempt.popup = null;
+    if (!popup || popup.closed || typeof popup.close !== 'function') return;
+    try {
+      popup.close();
+    } catch (_err) {
+      // A cross-origin popup can become uncontrollable after navigation.
+    }
+  }
+
+  function resetHostedRestoreAttempt() {
+    closeHostedRestorePopup();
+    hostedRestoreAttempt.stage = 'idle';
+    hostedRestoreAttempt.capability = null;
+    hostedRestoreAttempt.refusedReason = null;
+  }
+
+  function dismissHostedRestoreRefusal() {
+    resetHostedRestoreAttempt();
+    hostedRestoreAttempt.dismissedRefusal = true;
+    setHostedRestoreOutcome('', 'neutral');
+    clearHostedRestoreFieldError();
+  }
+
+  function validHostedRestorePortal(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) return null;
+      const expected = root.getAttribute('data-hosted-portal-origin');
+      if (expected && url.origin !== new URL(expected).origin) return null;
+      return url.href;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  async function cancelHostedRestoreAttempt(options) {
+    const settings = options || {};
+    const capability = hostedRestoreAttempt.capability;
+    if (capability) {
+      try {
+        const payload = await postJson('/app/backup/restore-hosted/cancel', { capability });
+        applyPayload(payload);
+      } catch (_err) {
+        // Cancellation is best-effort. A resolved or expired lease is already clean server-side.
+      }
+    }
+    resetHostedRestoreAttempt();
+    if (settings.showCancelled) {
+      setHostedRestoreOutcome((restoreHostedCopy.errors && restoreHostedCopy.errors.cancelled) || '', 'neutral');
+    } else if (!settings.preserveOutcome) {
+      setHostedRestoreOutcome('', 'neutral');
+    }
+    renderHostedRestoreAttempt();
+  }
+
+  async function failHostedRestoreAttempt(err, options) {
+    const reason = err && err.reason_code;
+    if (hostedRestoreAttempt.capability) {
+      await cancelHostedRestoreAttempt({ preserveOutcome: true });
+    } else {
+      resetHostedRestoreAttempt();
+    }
+    if (reason === 'invalid_key') {
+      setHostedRestoreFieldError(operationLabels.invalid_key || '');
+    } else if (reason === 'auth_failed') {
+      setHostedRestoreOutcome((restoreHostedCopy.errors && restoreHostedCopy.errors.auth_failed) || '', 'error');
+    } else if (options && options.popupPreflight) {
+      setHostedRestoreOutcome(restoreHostedCopy.popup_preflight_failed || '', 'error');
+    } else {
+      setHostedRestoreOutcome(restoreHostedCopy.status_retryable || '', 'error');
+    }
+    renderHostedRestoreAttempt();
+  }
+
+  function renderHostedRestoreOperation() {
+    const operation = state.operation;
+    if (!hostedRestoreLaneSelected() || !operation || operation.kind !== 'restore_hosted') return;
+    if (operation.phase === 'refused') {
+      if (hostedRestoreAttempt.dismissedRefusal) {
+        renderHostedRestoreAttempt();
+        return;
+      }
+      resetHostedRestoreAttempt();
+      hostedRestoreAttempt.stage = 'terminal';
+      hostedRestoreAttempt.refusedReason = operation.reason_code || '';
+      const refused = restoreHostedCopy.state_b_refused || {};
+      setHostedRestoreOutcome(refused[operation.reason_code] || restoreHostedCopy.status_retryable || '', 'error');
+      clearHostedRestoreFieldError();
+    } else if (operation.phase === 'needs_subscription') {
+      resetHostedRestoreAttempt();
+      setHostedRestoreOutcome('', 'neutral');
+      clearHostedRestoreFieldError();
+    } else if (operation.phase === 'error') {
+      resetHostedRestoreAttempt();
+      if (operation.reason_code === 'invalid_key') {
+        setHostedRestoreFieldError(operationLabels.invalid_key || '');
+      } else if (operation.reason_code === 'auth_failed') {
+        setHostedRestoreOutcome((restoreHostedCopy.errors && restoreHostedCopy.errors.auth_failed) || '', 'error');
+      } else {
+        setHostedRestoreOutcome(restoreHostedCopy.status_retryable || '', 'error');
+      }
+    } else if (!operationActive(operation)) {
+      resetHostedRestoreAttempt();
+      setHostedRestoreOutcome('', 'neutral');
+      clearHostedRestoreFieldError();
+    }
+    renderHostedRestoreAttempt();
+  }
+
+  async function beginHostedRestoreAttempt() {
+    const { field } = hostedRestoreControls();
+    if (!field || hostedRestoreAttemptInFlight() || hostedRestoreAttempt.stage === 'terminal') return;
+    if (field.value.trim() === '') {
+      setHostedRestoreFieldError(restoreHostedCopy.key_required || '');
+      renderHostedRestoreAttempt();
+      return;
+    }
+    clearHostedRestoreFieldError();
+    hostedRestoreAttempt.dismissedRefusal = false;
+    setHostedRestoreOutcome('', 'neutral');
+
+    if (state.hosted && state.hosted.bound === true) {
+      hostedRestoreAttempt.stage = 'polling';
+      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
+      renderHostedRestoreAttempt();
+      try {
+        await startOperation('/app/backup/restore-hosted', { recovery_key: field.value });
+      } catch (err) {
+        await failHostedRestoreAttempt(err);
+      }
+      return;
+    }
+
+    let popup;
+    try {
+      popup = window.open('', '_blank');
+    } catch (err) {
+      await failHostedRestoreAttempt(err, { popupPreflight: true });
+      return;
+    }
+    if (!popup || popup.closed) {
+      await failHostedRestoreAttempt(null, { popupPreflight: true });
+      return;
+    }
+    hostedRestoreAttempt.popup = popup;
+    hostedRestoreAttempt.stage = 'popup_opened';
+    setHostedRestoreOutcome('', 'neutral');
+    renderHostedRestoreAttempt();
+
+    try {
+      hostedRestoreAttempt.stage = 'verifying_popup';
+      if (popup.closed) {
+        await failHostedRestoreAttempt(null, { popupPreflight: true });
+        return;
+      }
+      hostedRestoreAttempt.stage = 'preparing';
+      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
+      renderHostedRestoreAttempt();
+      const prepared = await postJson('/app/backup/restore-hosted/prepare');
+      if (!prepared || typeof prepared.capability !== 'string' || prepared.capability === '') {
+        throw { reason_code: 'restore_prepare_invalid_capability' };
+      }
+      if (hostedRestoreAttempt.stage !== 'preparing') return;
+      hostedRestoreAttempt.capability = prepared.capability;
+      renderHostedRestoreAttempt();
+
+      const keyed = await postJson('/app/backup/restore-hosted/key', {
+        capability: hostedRestoreAttempt.capability,
+        recovery_key: field.value,
+      });
+      if (hostedRestoreAttempt.stage !== 'preparing') return;
+      const portalUrl = validHostedRestorePortal(keyed && keyed.portal_url);
+      if (!portalUrl) {
+        throw { reason_code: 'restore_prepare_invalid_portal' };
+      }
+      hostedRestoreAttempt.stage = 'key_submitted';
+      renderHostedRestoreAttempt();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      if (hostedRestoreAttempt.stage !== 'key_submitted') return;
+
+      hostedRestoreAttempt.stage = 'navigating';
+      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
+      renderHostedRestoreAttempt();
+      popup.opener = null;
+      if (popup.location && typeof popup.location.replace === 'function') {
+        popup.location.replace(portalUrl);
+      } else {
+        popup.location = portalUrl;
+      }
+
+      hostedRestoreAttempt.stage = 'arming';
+      renderHostedRestoreAttempt();
+      const armed = await postJson('/app/backup/restore-hosted/arm', {
+        capability: hostedRestoreAttempt.capability,
+      });
+      if (hostedRestoreAttempt.stage !== 'arming') return;
+      applyPayload(armed);
+
+      hostedRestoreAttempt.stage = 'activating';
+      renderHostedRestoreAttempt();
+      const activated = await postJson('/app/backup/restore-hosted/activate', {
+        capability: hostedRestoreAttempt.capability,
+      });
+      if (hostedRestoreAttempt.stage !== 'activating') return;
+      hostedRestoreAttempt.stage = 'polling';
+      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
+      applyPayload(activated);
+      pollUntilTerminal();
+    } catch (err) {
+      if (hostedRestoreAttempt.stage !== 'idle') await failHostedRestoreAttempt(err);
     }
   }
 
@@ -960,7 +1267,11 @@
     const operation = state.operation;
     const banner = root.querySelector('[data-operation-banner]');
     if (!banner) return;
-    if (!operation || operation.phase === 'needs_subscription') {
+    if (
+      !operation ||
+      operation.phase === 'needs_subscription' ||
+      (hostedRestoreLaneSelected() && operation.kind === 'restore_hosted' && operation.phase === 'refused')
+    ) {
       banner.hidden = true;
       return;
     }
@@ -1014,6 +1325,7 @@
       if (key && retention[key] != null) input.value = retention[key];
     }
     renderOperation();
+    renderHostedRestoreOperation();
     renderHostedLocation();
     renderOffload();
   }
@@ -1232,9 +1544,17 @@
   function bindIntro() {
     root.addEventListener('click', async function (event) {
       const button = event.target.closest('[data-action]');
-      if (!button || button.disabled) return;
-      const action = button.getAttribute('data-action');
+      const action = button && button.getAttribute('data-action');
+      if (!button || (button.disabled && action !== 'restore-hosted-unbound-start')) return;
       try {
+        if (action === 'restore-hosted-unbound-start') {
+          await beginHostedRestoreAttempt();
+          return;
+        }
+        if (action === 'cancel-hosted-restore-attempt') {
+          await cancelHostedRestoreAttempt({ showCancelled: true });
+          return;
+        }
         if (action === 'start') showPanel('educate');
         if (action === 'show-restore') showPanel('restore');
         if (action === 'understand') {
@@ -1284,12 +1604,12 @@
           await startOperation('/app/backup/offload/restore', { all: true });
           resetTeardownGate();
         }
-        if (action === 'cancel-restore') showPanel(managedMode() ? 'management' : 'intro');
-        if (action === 'restore-hosted') {
-          const field = root.querySelector('[data-restore-hosted-input]') || {};
-          const entered = field.value || '';
-          const payload = await startOperation('/app/backup/restore-hosted', { recovery_key: entered });
-          maybeOpenPortal(payload);
+        if (action === 'cancel-restore') {
+          if (hostedRestoreAttempt.stage === 'terminal' && hostedRestoreAttempt.refusedReason) {
+            dismissHostedRestoreRefusal();
+          }
+          await cancelHostedRestoreAttempt();
+          showPanel(managedMode() ? 'management' : 'intro');
         }
         if (action === 'offload-enable') {
           const limits = offloadLimitState();
@@ -1456,6 +1776,61 @@
     }
   }
 
+  function setRestoreLane(lane) {
+    if (lane !== 'byo' && lane !== 'operated') return;
+    if (
+      restoreLane === 'operated' &&
+      lane !== 'operated' &&
+      hostedRestoreAttempt.stage === 'terminal' &&
+      hostedRestoreAttempt.refusedReason
+    ) {
+      dismissHostedRestoreRefusal();
+    }
+    if (restoreLane !== lane && hostedRestoreAttemptInFlight()) {
+      void cancelHostedRestoreAttempt();
+    }
+    restoreLane = lane;
+    for (const button of root.querySelectorAll('.backup-restore-lane')) {
+      const selected = button.getAttribute('data-restore-lane') === lane;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-checked', selected ? 'true' : 'false');
+      button.setAttribute('tabindex', selected ? '0' : '-1');
+    }
+    for (const item of root.querySelectorAll('[data-restore-lane-panel]')) {
+      item.hidden = item.getAttribute('data-restore-lane-panel') !== lane;
+    }
+    renderHostedRestoreOperation();
+    renderHostedRestoreAttempt();
+  }
+
+  function bindRestoreLaneSwitching() {
+    const lanes = Array.from(root.querySelectorAll('.backup-restore-lane'));
+    for (const [index, button] of lanes.entries()) {
+      button.addEventListener('click', function () {
+        setRestoreLane(button.getAttribute('data-restore-lane'));
+      });
+      button.addEventListener('keydown', function (event) {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+        const next = lanes[(index + direction + lanes.length) % lanes.length];
+        setRestoreLane(next.getAttribute('data-restore-lane'));
+        next.focus();
+      });
+    }
+    const { field } = hostedRestoreControls();
+    if (field) {
+      field.addEventListener('input', function () {
+        clearHostedRestoreFieldError();
+        if (hostedRestoreAttempt.message === (restoreHostedCopy.key_required || '')) {
+          setHostedRestoreOutcome('', 'neutral');
+        }
+        renderHostedRestoreAttempt();
+      });
+    }
+    renderHostedRestoreAttempt();
+  }
+
   function initialPanel() {
     if (operationActive(state.operation)) {
       pollUntilTerminal();
@@ -1473,6 +1848,7 @@
     bindForms();
     bindBackendSwitching();
     bindModeSwitching();
+    bindRestoreLaneSwitching();
     try {
       await refreshStatus();
     } catch (err) {
