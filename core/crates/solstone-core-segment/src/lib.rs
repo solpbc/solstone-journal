@@ -28,6 +28,7 @@ mod manifest;
 mod projection;
 mod relocate;
 mod segment_dir;
+mod source_mutation;
 mod stream_record;
 mod stream_repair;
 mod supervisor;
@@ -66,6 +67,7 @@ pub use solstone_core_journal_io::{
     SegmentIdentityError, StreamLocation, check_record_identities, day_path, hold_lock,
     iter_segments, list_dir_entries, read_text,
 };
+pub use source_mutation::hold_source_mutation;
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,
     UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_named_stream,
@@ -100,6 +102,7 @@ mod architecture_tests {
         Projection,
         Relocate,
         SegmentDir,
+        SourceMutation,
         StreamRepair,
         StreamRecord,
         Supervisor,
@@ -123,6 +126,7 @@ mod architecture_tests {
         (Source::Projection, include_str!("projection.rs")),
         (Source::Relocate, include_str!("relocate.rs")),
         (Source::SegmentDir, include_str!("segment_dir.rs")),
+        (Source::SourceMutation, include_str!("source_mutation.rs")),
         (Source::StreamRepair, include_str!("stream_repair.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
         (Source::Supervisor, include_str!("supervisor.rs")),
@@ -173,6 +177,20 @@ mod architecture_tests {
                         assert!(
                             source.contains(primitive),
                             "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                }
+                Source::SourceMutation => {
+                    assert!(source.contains("hold_lock"));
+                    for primitive in [
+                        "write_bytes_exclusive",
+                        "write_json",
+                        "atomic_replace",
+                        "append_jsonl",
+                    ] {
+                        assert!(
+                            !source.contains(primitive),
+                            "unexpected journal-io write primitive {primitive}"
                         );
                     }
                 }

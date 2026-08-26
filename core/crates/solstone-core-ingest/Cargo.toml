@@ -20,6 +20,8 @@ solstone-core-ingest-contract = { workspace = true }
 solstone-core-ingest-resolve = { workspace = true }
 solstone-core-observer = { workspace = true }
 solstone-core-segment = { workspace = true }
+solstone-core-sol-link = { workspace = true, features = ["host"] }
+time = { version = "0.3.54", features = ["formatting"] }
 tower-http = { workspace = true }
 
 [dev-dependencies]

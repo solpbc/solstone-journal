@@ -40,6 +40,7 @@ pub enum ReasonCode {
     EventAppendFailed,
     StreamAdvanceFailed,
     StreamMarkerBumpFailed,
+    LocationLockUnavailable,
     NotifyFailed,
     ObserverStampFailed,
     JournalReadFailed,
@@ -56,7 +57,7 @@ pub enum ReasonCode {
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 46] = [
+    const ALL: [Self; 47] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -91,6 +92,7 @@ impl ReasonCode {
         Self::EventAppendFailed,
         Self::StreamAdvanceFailed,
         Self::StreamMarkerBumpFailed,
+        Self::LocationLockUnavailable,
         Self::NotifyFailed,
         Self::ObserverStampFailed,
         Self::JournalReadFailed,
@@ -141,6 +143,7 @@ impl ReasonCode {
             Self::EventAppendFailed => "event_append_failed",
             Self::StreamAdvanceFailed => "stream_advance_failed",
             Self::StreamMarkerBumpFailed => "stream_marker_bump_failed",
+            Self::LocationLockUnavailable => "location_lock_unavailable",
             Self::NotifyFailed => "notify_failed",
             Self::ObserverStampFailed => "observer_stamp_failed",
             Self::JournalReadFailed => "journal_read_failed",

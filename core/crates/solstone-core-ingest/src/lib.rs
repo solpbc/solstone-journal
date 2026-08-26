@@ -16,7 +16,7 @@
 //! `ingestManifestDay`. `register` and bearer-credential issuance are removed
 //! by the hard cut; `ingestEvent` and `callosumStream` await a Rust Callosum
 //! client; `health` has no settled semantics. `deleteSource` is served by
-//! `solstone-core-observer-web` as a whole-segment location erase through
+//! `solstone-core-clients-web` as a whole-segment location erase through
 //! retention's door. The remaining deferred operations are an intentional
 //! strand delta, not missing routes.
 //!

@@ -26,7 +26,11 @@ use solstone_core_ingest_resolve::{
 };
 use solstone_core_observer::store::write::save_observer;
 use solstone_core_observer::system_now_ms;
-use solstone_core_segment::{ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream};
+use solstone_core_segment::{
+    ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream, hold_source_mutation,
+};
+use solstone_core_sol_link::ledger::{AcceptedSegment, AuthorizationLedger};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
@@ -174,15 +178,19 @@ async fn ingest_upload(
         Err((code, status, detail)) => return refusal(code, status, detail),
     };
     if let Err((code, status, detail)) = validate_protocol(request.headers()) {
-        return refusal(code, status, detail);
+        return refusal_with_activity(&state, &cid, code, status, detail);
     }
     let parsed = match parse_multipart(request).await {
         Ok(parsed) => parsed,
-        Err((code, detail)) => return refusal(code, StatusCode::BAD_REQUEST, detail),
+        Err((code, detail)) => {
+            return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
+        }
     };
     let envelope = match parse_envelope(parsed.envelope, parsed.files) {
         Ok(envelope) => envelope,
-        Err((code, detail)) => return refusal(code, StatusCode::BAD_REQUEST, detail),
+        Err((code, detail)) => {
+            return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
+        }
     };
     write_envelope(&state, &cid, envelope)
 }
@@ -482,6 +490,37 @@ fn required_string(
 /// outcome; it is self-healing the same way, since the content and its event
 /// are already durably written and idempotent by the time it can occur.
 fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Response {
+    let _location_mutation_lock = if envelope.source == "location" {
+        // This outermost guard stays live through every path below. The stream,
+        // registry, segment, and retention locks reached by ingest are acquired
+        // inside it, never before it.
+        match hold_source_mutation(&state.journal_root, "location") {
+            Ok(lock) => Some(lock),
+            Err(error) => {
+                log::warn!("location mutation lock unavailable: {error}");
+                return finish_ingest_completion(
+                    state,
+                    cid,
+                    IngestCompletion::rejected(
+                        ReasonCode::LocationLockUnavailable,
+                        outcome_error(
+                            "retryable",
+                            ReasonCode::LocationLockUnavailable,
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "location ingest is temporarily unavailable; retry the request",
+                        ),
+                    ),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let completion = write_envelope_inner(state, cid, envelope);
+    finish_ingest_completion(state, cid, completion)
+}
+
+fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> IngestCompletion {
     let hints = StreamHints {
         kind: Some(Kind::Observed),
         host: None,
@@ -500,10 +539,13 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     ) {
         Ok(bound) => bound,
         Err((code, status, detail)) if status.is_client_error() => {
-            return refusal(code, status, detail);
+            return IngestCompletion::rejected(code, refusal(code, status, detail));
         }
         Err((code, status, detail)) => {
-            return outcome_error("failed", code, status, &detail);
+            return IngestCompletion::rejected(
+                code,
+                outcome_error("failed", code, status, &detail),
+            );
         }
     };
     let requested = envelope.segment.clone();
@@ -522,11 +564,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     {
         Ok(files) => files,
         Err(()) => {
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::FileNameInvalid,
-                StatusCode::BAD_REQUEST,
-                "invalid file name",
+                outcome_error(
+                    "failed",
+                    ReasonCode::FileNameInvalid,
+                    StatusCode::BAD_REQUEST,
+                    "invalid file name",
+                ),
             );
         }
     };
@@ -540,38 +585,50 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     ) {
         Ok(ApplyPhase::Applied(result)) => result,
         Ok(ApplyPhase::Conflict(_plan)) => {
-            return outcome_error(
-                "conflict",
+            return IngestCompletion::rejected(
                 ReasonCode::ContentConflict,
-                StatusCode::CONFLICT,
-                "held sidecar bytes conflict",
+                outcome_error(
+                    "conflict",
+                    ReasonCode::ContentConflict,
+                    StatusCode::CONFLICT,
+                    "held sidecar bytes conflict",
+                ),
             );
         }
         Ok(ApplyPhase::Failed(plan)) => {
             if quarantine_failed(&state.journal_root, &envelope.day, &plan, &files).is_err() {
-                return outcome_error(
-                    "failed",
+                return IngestCompletion::rejected(
                     ReasonCode::JournalWriteFailed,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "cannot quarantine failed ingest",
+                    outcome_error(
+                        "failed",
+                        ReasonCode::JournalWriteFailed,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "cannot quarantine failed ingest",
+                    ),
                 );
             }
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::SegmentAllocationFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "segment allocation attempts exhausted",
+                outcome_error(
+                    "failed",
+                    ReasonCode::SegmentAllocationFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "segment allocation attempts exhausted",
+                ),
             );
         }
         Ok(ApplyPhase::Partial(partial)) => {
             return append_partial_and_fail(state, cid, &envelope, &bound.stream, partial);
         }
         Err(_) => {
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::JournalWriteFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot resolve or write journal content",
+                outcome_error(
+                    "failed",
+                    ReasonCode::JournalWriteFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot resolve or write journal content",
+                ),
             );
         }
     };
@@ -590,11 +647,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         if solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
             .is_err()
         {
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::StreamMarkerBumpFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot advance stream marker",
+                outcome_error(
+                    "failed",
+                    ReasonCode::StreamMarkerBumpFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot advance stream marker",
+                ),
             );
         }
     }
@@ -613,11 +673,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     )
     .is_err()
     {
-        return outcome_error(
-            "failed",
+        return IngestCompletion::rejected(
             ReasonCode::EventAppendFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot append ingest event",
+            outcome_error(
+                "failed",
+                ReasonCode::EventAppendFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot append ingest event",
+            ),
         );
     }
     if applied.should_advance
@@ -632,11 +695,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         )
         .is_err()
     {
-        return outcome_error(
-            "failed",
+        return IngestCompletion::rejected(
             ReasonCode::StreamAdvanceFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot advance stream",
+            outcome_error(
+                "failed",
+                ReasonCode::StreamAdvanceFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot advance stream",
+            ),
         );
     }
     let observer = match stamp_observer(
@@ -648,11 +714,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     ) {
         Ok(observer) => observer,
         Err(()) => {
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::ObserverStampFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot stamp observer receipt",
+                outcome_error(
+                    "failed",
+                    ReasonCode::ObserverStampFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot stamp observer receipt",
+                ),
             );
         }
     };
@@ -669,11 +738,14 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         };
         if let Err(error) = state.notifier.notify(&notice) {
             log::warn!("observer ingest notification failed: {error}");
-            return outcome_error(
-                "failed",
+            return IngestCompletion::rejected(
                 ReasonCode::NotifyFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot notify ingest listeners",
+                outcome_error(
+                    "failed",
+                    ReasonCode::NotifyFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot notify ingest listeners",
+                ),
             );
         }
     }
@@ -681,6 +753,8 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         .iter()
         .map(|file| file.written.clone())
         .collect();
+    let accepted_day = envelope.day.clone();
+    let accepted_segment = applied.landed_segment.clone();
     let body = match outcome {
         "duplicate" => {
             json!({"status":"duplicate", "existing_segment": applied.landed_segment, "message":"All files already received", "file_descriptors":descriptors, "meta": envelope.meta})
@@ -692,7 +766,7 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
             json!({"status":"ok", "segment":applied.landed_segment, "files":written_names, "bytes":total_size(&envelope.files), "file_descriptors":descriptors, "meta":envelope.meta})
         }
     };
-    Json(body).into_response()
+    IngestCompletion::accepted(accepted_day, accepted_segment, Json(body).into_response())
 }
 
 enum ApplyPhase {
@@ -714,7 +788,7 @@ fn append_partial_and_fail(
     envelope: &Envelope,
     stream: &str,
     partial: PartialApply,
-) -> Response {
+) -> IngestCompletion {
     let descriptors = written_descriptors(&partial.applied);
     let announced_files = descriptors
         .iter()
@@ -724,11 +798,14 @@ fn append_partial_and_fail(
         && solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
             .is_err()
     {
-        return outcome_error(
-            "failed",
+        return IngestCompletion::rejected(
             ReasonCode::StreamMarkerBumpFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot advance stream marker",
+            outcome_error(
+                "failed",
+                ReasonCode::StreamMarkerBumpFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot advance stream marker",
+            ),
         );
     }
     if append_device_ingest(
@@ -742,11 +819,14 @@ fn append_partial_and_fail(
     )
     .is_err()
     {
-        return outcome_error(
-            "failed",
+        return IngestCompletion::rejected(
             ReasonCode::EventAppendFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot append ingest event",
+            outcome_error(
+                "failed",
+                ReasonCode::EventAppendFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot append ingest event",
+            ),
         );
     }
     if !announced_files.is_empty() {
@@ -768,11 +848,14 @@ fn append_partial_and_fail(
             log::warn!("partial observer ingest notification failed: {error}");
         }
     }
-    outcome_error(
-        "failed",
+    IngestCompletion::rejected(
         ReasonCode::JournalWriteFailed,
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "cannot resolve or write journal content",
+        outcome_error(
+            "failed",
+            ReasonCode::JournalWriteFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot resolve or write journal content",
+        ),
     )
 }
 
@@ -962,13 +1045,90 @@ fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &s
     (status, Json(json!({"status":outcome,"error":"Ingest request failed","reason_code":code.as_str(),"detail":detail}))).into_response()
 }
 
+enum IngestActivity {
+    Accepted(AcceptedSegment),
+    Rejected(ReasonCode),
+}
+
+struct IngestCompletion {
+    response: Response,
+    activity: IngestActivity,
+}
+
+impl IngestCompletion {
+    fn accepted(day: String, name: String, response: Response) -> Self {
+        Self {
+            response,
+            activity: IngestActivity::Accepted(AcceptedSegment { day, name }),
+        }
+    }
+
+    fn rejected(code: ReasonCode, response: Response) -> Self {
+        Self {
+            response,
+            activity: IngestActivity::Rejected(code),
+        }
+    }
+}
+
+fn refusal_with_activity(
+    state: &IngestState,
+    cid: &str,
+    code: ReasonCode,
+    status: StatusCode,
+    detail: impl Into<String>,
+) -> Response {
+    finish_ingest_completion(
+        state,
+        cid,
+        IngestCompletion::rejected(code, refusal(code, status, detail)),
+    )
+}
+
+fn finish_ingest_completion(
+    state: &IngestState,
+    cid: &str,
+    completion: IngestCompletion,
+) -> Response {
+    let IngestCompletion { response, activity } = completion;
+    record_ingest_activity(state, cid, activity);
+    response
+}
+
+fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivity) {
+    let timestamp = activity_timestamp((state.now_ms)());
+    let mut ledger = AuthorizationLedger::new(&state.journal_root);
+    let (operation, result) = match activity {
+        IngestActivity::Accepted(segment) => (
+            "ingest_success",
+            ledger.record_accepted_ingest(cid, &timestamp, segment),
+        ),
+        IngestActivity::Rejected(code) => (
+            "ingest_rejection",
+            ledger.record_ingest_rejection(cid, &timestamp, code.as_str()),
+        ),
+    };
+    if result.is_err() {
+        log::warn!("client_activity_write_failed operation={operation}");
+    }
+}
+
+fn activity_timestamp(now_ms: i64) -> String {
+    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(i128::from(now_ms) * 1_000_000)
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    timestamp
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, Once, mpsc};
+    use std::thread;
     use std::time::Duration;
 
     use axum::body::{Body, to_bytes};
@@ -982,9 +1142,14 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApplyPhase, IngestState, MAX_PART_BYTES, api_router, api_router_with,
-        api_router_with_notifier, clear_before_apply_hook, resolve_and_apply, router,
-        set_before_apply_hook, wall_clock_ms,
+        ApplyPhase, Envelope, IngestState, MAX_PART_BYTES, TestIngestNotifier, api_router,
+        api_router_with, api_router_with_notifier, clear_before_apply_hook, resolve_and_apply,
+        router, set_before_apply_hook, wall_clock_ms, write_envelope,
+    };
+    use crate::model::IncomingFile;
+    use solstone_core_segment::hold_source_mutation;
+    use solstone_core_sol_link::ledger::{
+        AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, read_device_activity,
     };
 
     const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1038,8 +1203,63 @@ mod tests {
         }
     }
 
+    struct CapturedLogger {
+        messages: Mutex<Vec<String>>,
+    }
+
+    impl log::Log for CapturedLogger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.level() == log::Level::Warn
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    static ACTIVITY_LOGGER: CapturedLogger = CapturedLogger {
+        messages: Mutex::new(Vec::new()),
+    };
+    static ACTIVITY_LOGGER_INIT: Once = Once::new();
+
     fn root() -> tempfile::TempDir {
         tempfile::TempDir::new().unwrap()
+    }
+
+    fn seed_authorized_client(root: &Path, cid: &str) {
+        AuthorizationLedger::new(root)
+            .add(ClientEntry::new(
+                cid,
+                "Test device",
+                "2026-01-01T00:00:00Z",
+                "test-instance",
+                ClientRole::Roleless,
+            ))
+            .unwrap();
+    }
+
+    fn activity_for(root: &Path, cid: &str) -> solstone_core_sol_link::ledger::ClientActivity {
+        let DeviceActivityRead::Present(activity) =
+            read_device_activity(&root.join("link/devices.json"))
+        else {
+            panic!("expected device activity for {cid}");
+        };
+        activity.get(cid).cloned().expect("activity for client")
+    }
+
+    fn clear_activity_logs() {
+        ACTIVITY_LOGGER_INIT.call_once(|| {
+            log::set_logger(&ACTIVITY_LOGGER).expect("install test logger");
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+        ACTIVITY_LOGGER.messages.lock().unwrap().clear();
     }
 
     fn basis(cid: &str) -> AccessBasis {
@@ -1151,6 +1371,41 @@ mod tests {
 
     fn envelope(day: &str, segment: &str, files: Value) -> Value {
         json!({"day": day, "segment": segment, "files": files})
+    }
+
+    fn direct_state(root: &Path) -> IngestState {
+        IngestState {
+            journal_root: root.to_path_buf(),
+            notifier: Arc::new(TestIngestNotifier),
+            now_ms: Arc::new(|| 0),
+        }
+    }
+
+    fn direct_envelope(source: &str, submitted: &str) -> Envelope {
+        Envelope {
+            day: "20260804".to_owned(),
+            segment: "120000_1".to_owned(),
+            source: source.to_owned(),
+            meta: Map::new(),
+            files: vec![IncomingFile {
+                submitted: submitted.to_owned(),
+                bytes: b"upload".to_vec(),
+                descriptor_extra: Map::new(),
+            }],
+        }
+    }
+
+    fn stream_record_count(root: &Path) -> usize {
+        fs::read_dir(root.join("streams"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.ends_with(".json"))
+            })
+            .count()
     }
 
     fn seed_observer(root: &Path, prefix: &str, name: &str, cid: &str, stream: &str) {
@@ -1423,6 +1678,225 @@ mod tests {
             !root
                 .join("chronicle/20260804/device/120000_3/audio.flac")
                 .exists()
+        );
+    }
+
+    #[test]
+    fn location_writes_serialize_before_the_second_stream_bind() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        let state = direct_state(&journal);
+        let (first_at_apply_sender, first_at_apply) = mpsc::channel();
+        let (release_first_sender, release_first) = mpsc::channel();
+        let first_state = state.clone();
+        let first = thread::spawn(move || {
+            set_before_apply_hook(move |_| {
+                first_at_apply_sender.send(()).unwrap();
+                release_first.recv().unwrap();
+            });
+            write_envelope(
+                &first_state,
+                CID_A,
+                direct_envelope("location", "first.json"),
+            )
+            .status()
+        });
+        first_at_apply
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first location ingest reached apply while holding its source lock");
+
+        let (second_started_sender, second_started) = mpsc::channel();
+        let (second_at_apply_sender, second_at_apply) = mpsc::channel();
+        let second_state = state.clone();
+        let second = thread::spawn(move || {
+            set_before_apply_hook(move |_| second_at_apply_sender.send(()).unwrap());
+            second_started_sender.send(()).unwrap();
+            write_envelope(
+                &second_state,
+                CID_B,
+                direct_envelope("location", "second.json"),
+            )
+            .status()
+        });
+        second_started
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second location ingest started");
+
+        assert!(matches!(
+            second_at_apply.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(
+            stream_record_count(&journal),
+            1,
+            "the second ingest must not bind a stream while the first holds the source lock"
+        );
+
+        release_first_sender.send(()).unwrap();
+        assert_eq!(first.join().unwrap(), StatusCode::OK);
+        second_at_apply
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second location ingest reaches apply after the first releases the lock");
+        assert_eq!(second.join().unwrap(), StatusCode::OK);
+    }
+
+    #[test]
+    fn non_location_write_bypasses_a_held_location_lock() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        let _location_lock = hold_source_mutation(&journal, "location").unwrap();
+
+        let response = write_envelope(
+            &direct_state(&journal),
+            CID_A,
+            direct_envelope("audio", "audio.flac"),
+        );
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(stream_record_count(&journal), 1);
+    }
+
+    #[tokio::test]
+    async fn accepted_ingest_records_the_landed_segment_and_clears_rejection() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        AuthorizationLedger::new(&journal)
+            .record_ingest_rejection(CID_A, "2026-01-02T00:00:00Z", "event_append_failed")
+            .unwrap();
+        let (_now, clock) = frozen_clock(1_700_000_000_000);
+        let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "audio",
+            "files": [{"submitted": "audio.flac"}],
+        });
+
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+
+        assert_eq!(status, StatusCode::OK);
+        let activity = activity_for(&journal, CID_A);
+        assert!(activity.last_accepted_ingest_at.is_some());
+        assert_eq!(
+            activity.last_accepted_segment.as_ref().unwrap().day,
+            "20260804"
+        );
+        assert_eq!(
+            activity.last_accepted_segment.as_ref().unwrap().name,
+            body["segment"].as_str().unwrap()
+        );
+        assert_eq!(activity.ingest_rejection, None);
+    }
+
+    #[tokio::test]
+    async fn protocol_refusal_records_the_existing_reason_code() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        let app = router(&journal);
+
+        let (status, body) = call(
+            &app,
+            "POST",
+            "/app/devices/ingest",
+            None,
+            Vec::new(),
+            basis(CID_A),
+            None,
+            &[],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "protocol_version_required");
+        assert_eq!(
+            activity_for(&journal, CID_A)
+                .ingest_rejection
+                .as_ref()
+                .unwrap()
+                .reason_code,
+            "protocol_version_required"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejection_for_an_unpaired_cid_leaves_the_refusal_unchanged() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        let app = router(&journal);
+
+        let (status, body) = call(
+            &app,
+            "POST",
+            "/app/devices/ingest",
+            None,
+            Vec::new(),
+            basis(CID_A),
+            None,
+            &[],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "protocol_version_required");
+        assert!(!journal.join("link/devices.json").exists());
+    }
+
+    #[test]
+    fn activity_write_failure_keeps_the_accepted_ingest_outcome() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        fs::create_dir(journal.join("link/devices.json")).unwrap();
+        clear_activity_logs();
+
+        let response = write_envelope(
+            &direct_state(&journal),
+            CID_A,
+            direct_envelope("audio", "audio.flac"),
+        );
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(journal.join("chronicle").exists());
+        assert!(
+            ACTIVITY_LOGGER
+                .messages
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message == "client_activity_write_failed operation=ingest_success")
+        );
+    }
+
+    #[tokio::test]
+    async fn location_lock_failure_is_retryable_before_any_durable_ingest_mutation() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        fs::write(journal.join("streams"), b"not a directory").unwrap();
+        let app = router(&journal);
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "location",
+            "files": [{"submitted": "location.json"}],
+        });
+
+        let (status, body) = call_upload(&app, request, "location.json", b"location").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["status"], "retryable");
+        assert_eq!(body["reason_code"], "location_lock_unavailable");
+        assert!(!journal.join("streams/device.json").exists());
+        assert!(!journal.join("chronicle").exists());
+        assert_eq!(
+            activity_for(&journal, CID_A)
+                .ingest_rejection
+                .as_ref()
+                .unwrap()
+                .reason_code,
+            "location_lock_unavailable"
         );
     }
 
