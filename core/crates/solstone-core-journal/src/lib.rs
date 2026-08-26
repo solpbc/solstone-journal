@@ -1020,6 +1020,15 @@ mod tests {
         value.replace("$TMP", &root.as_os_str().to_string_lossy())
     }
 
+    fn expand_toml_token(value: &str, root: &Path) -> String {
+        let escaped = root
+            .as_os_str()
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        value.replace("$TMP", &escaped)
+    }
+
     fn mapping_string<'a>(mapping: &'a Value, key: &str) -> &'a str {
         mapping
             .get(key)
@@ -1130,7 +1139,7 @@ mod tests {
             let config_journal = match config_state {
                 "absent" => Ok(None),
                 "text" => {
-                    let value = expand_token(mapping_string(&case["config"], "value"), &root);
+                    let value = expand_toml_token(mapping_string(&case["config"], "value"), &root);
                     let document = toml_edit::DocumentMut::from_str(&value);
                     Ok(document.ok().and_then(|doc| {
                         doc.get("journal")
