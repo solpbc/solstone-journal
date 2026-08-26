@@ -178,6 +178,16 @@ impl ObjectIdentity {
             file_id,
         })
     }
+
+    /// Compare a Windows directory-listing file identifier with this retained identity.
+    #[cfg(windows)]
+    pub(crate) fn matches_windows_file_id(self, file_id: [u8; 16]) -> bool {
+        match self.0 {
+            Repr::Windows {
+                file_id: observed, ..
+            } => observed == file_id,
+        }
+    }
 }
 
 mod backend {

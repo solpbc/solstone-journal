@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! journal-io carries a Windows root-admission backend while archive remains Unix-only.
+//! journal-io and archive retain their supported Windows source surfaces.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,11 +80,11 @@ fn compile_error_literal(lib: &str, cfg: &str) -> String {
     let after_cfg = &lib[cfg_at + cfg.len()..];
     let macro_rel = after_cfg
         .find(MACRO)
-        .expect("lib.rs must declare compile_error! after #[cfg(not(unix))]");
+        .expect("lib.rs must declare compile_error! after its target gate");
     let between = after_cfg[..macro_rel].trim();
     assert!(
         between.is_empty(),
-        "compile_error! must follow #[cfg(not(unix))] immediately, found {between:?}"
+        "compile_error! must follow its target gate immediately, found {between:?}"
     );
     let rest = &after_cfg[macro_rel + MACRO.len()..];
     let quote = rest
@@ -112,6 +112,8 @@ fn journal_io_nix_edges_are_unix_target_gated() {
     assert_eq!(
         features(workspace_dependencies(&workspace), "windows-sys"),
         [
+            "Wdk_Foundation",
+            "Wdk_Storage_FileSystem",
             "Win32_Globalization",
             "Win32_Security",
             "Win32_Storage_CloudFilters",
@@ -134,6 +136,8 @@ fn journal_archive_unix_edges_are_target_gated() {
     let unix_deps = target_unix(&doc, "dependencies").expect("unix dependencies");
     assert_eq!(features(unix_deps, "nix"), ["dir", "user"]);
     assert!(unix_deps.contains_key("solstone-core-journal-io"));
+    let windows_deps = target_windows(&doc, "dependencies").expect("windows dependencies");
+    assert!(windows_deps.contains_key("solstone-core-journal-io"));
     let dev = table(&doc, "dev-dependencies").expect("dev-dependencies");
     assert!(!dev.contains_key("nix"));
     assert!(dev.contains_key("zip"));
@@ -151,42 +155,23 @@ fn journal_io_lib_declares_non_unix_non_windows_compile_error() {
 }
 
 #[test]
-fn journal_archive_lib_declares_not_unix_compile_error() {
+fn journal_archive_lib_declares_non_unix_non_windows_compile_error() {
     let lib = read_repo_file("core/crates/solstone-core-journal-archive/src/lib.rs");
     assert_eq!(
-        compile_error_literal(&lib, "#[cfg(not(unix))]"),
-        "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
+        compile_error_literal(&lib, "#[cfg(not(any(unix, windows)))]"),
+        "solstone-core-journal-archive requires a Unix or Windows target: archive source traversal has no portable backend"
     );
 }
 
 #[test]
-fn windows_crosscheck_keeps_journal_archive_exclusive_diagnostic() {
-    let archive_literal = compile_error_literal(
-        &read_repo_file("core/crates/solstone-core-journal-archive/src/lib.rs"),
-        "#[cfg(not(unix))]",
-    );
+fn windows_crosscheck_has_no_journal_archive_exclusion() {
     let doc: DocumentMut = read_repo_file("core/ci/windows-crosscheck.toml")
         .parse()
         .expect("parse windows-crosscheck.toml");
     let exclusions = doc["exclusions"]
         .as_array_of_tables()
         .expect("exclusions array of tables");
-    let mut saw_archive = false;
-    for exclusion in exclusions {
-        let Some(package) = exclusion.get("package").and_then(Item::as_str) else {
-            continue;
-        };
-        if package == "solstone-core-journal-archive" {
-            saw_archive = true;
-            assert!(
-                exclusion.get("expected_stderr").is_none(),
-                "journal-archive exclusion still names expected_stderr"
-            );
-            assert_eq!(
-                exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
-                Some(archive_literal.as_str())
-            );
-        }
-    }
-    assert!(saw_archive, "missing journal-archive exclusion");
+    assert!(exclusions.iter().all(|exclusion| {
+        exclusion.get("package").and_then(Item::as_str) != Some("solstone-core-journal-archive")
+    }));
 }

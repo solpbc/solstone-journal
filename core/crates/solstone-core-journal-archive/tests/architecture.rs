@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 //! The archive capability surface is deliberately narrow: source and target
 //! acquire filesystem capabilities; the remaining modules only consume them.
 
@@ -15,6 +17,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("source", include_str!("../src/source.rs")),
     ("target", include_str!("../src/target.rs")),
     ("test_hooks", include_str!("../src/test_hooks.rs")),
+    ("windows_source", include_str!("../src/windows_source.rs")),
     ("writer", include_str!("../src/writer.rs")),
 ];
 const LIB: &str = include_str!("../src/lib.rs");
@@ -288,6 +291,10 @@ fn manifest_declares_only_runtime_dependencies() {
             "nix = { workspace = true, features = [\"dir\", \"user\"] }",
             "solstone-core-journal-io = { workspace = true }",
         ],
+    );
+    assert_eq!(
+        section_lines(MANIFEST, "[target.'cfg(windows)'.dependencies]"),
+        vec!["solstone-core-journal-io = { workspace = true }"],
     );
 }
 

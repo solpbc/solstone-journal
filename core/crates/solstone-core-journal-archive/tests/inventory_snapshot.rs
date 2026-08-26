@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 mod common;
 
 use common::{TempDir, valid_four_root_journal, write};

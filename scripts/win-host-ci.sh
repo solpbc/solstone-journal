@@ -9,6 +9,8 @@ SCP=${SCP:-scp}
 SSH=${SSH:-ssh}
 ssh_output_file=
 cloud_sync_test=${JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST:-}
+refs_root=${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-}
+refs_requested=0
 
 case "$cloud_sync_test" in
   '') cloud_sync_test=0 ;;
@@ -18,6 +20,15 @@ case "$cloud_sync_test" in
     exit 1
     ;;
 esac
+
+if [ -n "$refs_root" ]; then
+  if printf '%s\n' "$refs_root" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$'; then
+    refs_requested=1
+  else
+    echo "win-host-ci: SOLSTONE_JOURNAL_WIN_REFS_ROOT is not a safe absolute Windows path; ReFS witness evidence will be skipped" >&2
+    refs_root=
+  fi
+fi
 
 cleanup() {
   original_status=$1
@@ -130,7 +141,7 @@ else
   echo "ERROR: win-host-ci: SSH output file creation failed" >&2
   exit 1
 fi
-remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&C:\\sol\\sj-ci.cmd\""
+remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=$refs_root\"&&C:\\sol\\sj-ci.cmd\""
 if "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \
@@ -151,6 +162,9 @@ normalized_output=$(awk '{ sub(/\r$/, ""); print }' "$ssh_output_file")
 head_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { count++ } END { print count + 0 }')
 cargo_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { count++ } END { print count + 0 }')
 cloud_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=/ { count++ } END { print count + 0 }')
+refs_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=/ { count++ } END { print count + 0 }')
+refs_root_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_ROOT=/ { count++ } END { print count + 0 }')
+refs_filesystem_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=/ { count++ } END { print count + 0 }')
 if [ "$cloud_sync_test" -eq 1 ]; then
   expected_cloud_evidence=passed
 else
@@ -170,6 +184,10 @@ if [ "$cloud_evidence_count" -ne 1 ] || [ "$expected_cloud_evidence_count" -ne 1
   echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=$expected_cloud_evidence line, found $cloud_evidence_count evidence-key lines and $expected_cloud_evidence_count exact matches; rerun the complete box gate" >&2
   exit 1
 fi
+if [ "$refs_evidence_count" -ne 1 ] || [ "$refs_root_count" -ne 1 ] || [ "$refs_filesystem_count" -ne 1 ]; then
+  echo "ERROR: win-host-ci: expected exactly one ReFS witness evidence, resolved-root, and filesystem line; rerun the complete box gate" >&2
+  exit 1
+fi
 if [ "$ok_count" -ne 1 ]; then
   echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_OK acknowledgement, found $ok_count; rerun the complete box gate" >&2
   exit 1
@@ -177,6 +195,9 @@ fi
 
 remote_head=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_HEAD=//p')
 remote_cargo_lock_sha256=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=//p')
+refs_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=//p')
+refs_resolved_root=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_WITNESS_ROOT=//p')
+refs_filesystem=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=//p')
 if [ "$remote_head" != "$snapshot_sha" ]; then
   echo "ERROR: win-host-ci: remote HEAD mismatch: expected $snapshot_sha, actual $remote_head; restore the transferred snapshot and rerun" >&2
   exit 1
@@ -185,16 +206,46 @@ if [ "$remote_cargo_lock_sha256" != "$cargo_lock_sha256" ]; then
   echo "ERROR: win-host-ci: remote Cargo.lock SHA-256 mismatch: expected $cargo_lock_sha256, actual $remote_cargo_lock_sha256; restore the transferred lockfile and rerun" >&2
   exit 1
 fi
+case "$refs_evidence" in
+  passed)
+    if [ "$refs_requested" -ne 1 ] || [ "$refs_filesystem" != "ReFS" ] || [ -z "$refs_resolved_root" ]; then
+      echo "ERROR: win-host-ci: ReFS witness passed without a requested ReFS fixture and resolved ReFS classification" >&2
+      exit 1
+    fi
+    ;;
+  unsupported)
+    if [ "$refs_requested" -ne 1 ]; then
+      echo "ERROR: win-host-ci: ReFS witness reported unsupported without a requested fixture" >&2
+      exit 1
+    fi
+    ;;
+  skipped)
+    if [ "$refs_requested" -ne 0 ]; then
+      echo "ERROR: win-host-ci: requested ReFS fixture was silently skipped" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "ERROR: win-host-ci: invalid ReFS witness evidence $refs_evidence" >&2
+    exit 1
+    ;;
+esac
 
 head_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { print NR }')
 cargo_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { print NR }')
 cloud_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=/ { print NR }')
+refs_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=/ { print NR }')
+refs_root_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_ROOT=/ { print NR }')
+refs_filesystem_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=/ { print NR }')
 ok_line=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { print NR }')
 if [ "$head_line" -ge "$ok_line" ] ||
   [ "$cargo_line" -ge "$ok_line" ] ||
-  [ "$cloud_evidence_line" -ge "$ok_line" ]; then
-  echo "ERROR: win-host-ci: source-binding and Cloud Files evidence acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
+  [ "$cloud_evidence_line" -ge "$ok_line" ] ||
+  [ "$refs_evidence_line" -ge "$ok_line" ] ||
+  [ "$refs_root_line" -ge "$ok_line" ] ||
+  [ "$refs_filesystem_line" -ge "$ok_line" ]; then
+  echo "ERROR: win-host-ci: source-binding, Cloud Files, and ReFS witness evidence acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
   exit 1
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence refs_witness_evidence=$refs_evidence refs_witness_root=$refs_resolved_root refs_witness_filesystem=$refs_filesystem"

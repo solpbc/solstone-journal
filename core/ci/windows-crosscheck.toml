@@ -6,12 +6,6 @@ workspace_packages = 131
 library_packages = 125
 
 [[exclusions]]
-package = "solstone-core-journal-archive"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns archive traversal and metadata preservation; Lane 1 may not replace the Unix implementation with a no-op."
-exclusive_diagnostic = "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
-
-[[exclusions]]
 package = "solstone-core-backfill-cli"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, atomic_replace, and bump_stream_marker."

@@ -11,9 +11,9 @@ use std::path::Path;
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, openat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
-use solstone_core_journal_io::{JournalRoot, JournalRootError};
+use solstone_core_journal_io::JournalRoot;
 
-use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof};
+use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
 use crate::{
     ArchiveError, ArchiveMemberName, Inventory, InventoryEntry, JournalEntryKind,
     OpenedInventoryFile,
@@ -319,7 +319,7 @@ pub struct ArchiveSource {
 impl ArchiveSource {
     /// Acquire `root` once and immediately freeze its portable archive inventory.
     pub fn open(root: &Path) -> Result<Self, ArchiveError> {
-        let retained_root = JournalRoot::open(root).map_err(map_root_error)?;
+        let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
         let inventory = crate::inventory::build(&retained_root)?;
         Ok(Self {
             root: retained_root,
@@ -345,7 +345,9 @@ impl ArchiveSource {
 
     /// Confirm every directory and regular-file identity in the frozen inventory.
     pub fn revalidate(&self) -> Result<(), ArchiveError> {
-        self.root.revalidate().map_err(map_root_error)?;
+        self.root
+            .revalidate()
+            .map_err(crate::error::map_root_error)?;
         for proof in &self.inventory.directory_proofs {
             revalidate_directory(&self.root, proof)?;
         }
@@ -353,25 +355,6 @@ impl ArchiveSource {
             revalidate_file(&self.root, entry)?;
         }
         Ok(())
-    }
-}
-
-pub(crate) fn map_root_error(error: JournalRootError) -> ArchiveError {
-    match error {
-        JournalRootError::Invalid { root, reason, .. } => {
-            ArchiveError::InvalidJournal { root, reason }
-        }
-        JournalRootError::Unsupported { root, reason, .. } => {
-            ArchiveError::UnsupportedJournal { root, reason }
-        }
-        JournalRootError::Io {
-            operation, source, ..
-        } => ArchiveError::SourceIo {
-            operation,
-            member: None,
-            source,
-        },
-        JournalRootError::Changed => ArchiveError::SourceChanged { member: None },
     }
 }
 
@@ -510,7 +493,7 @@ fn open_verified_file(
         return Err(changed(Some(member)));
     }
     current = opened;
-    Ok((current, proof.file))
+    Ok((current, proof.file.clone()))
 }
 
 fn open_verified_route(
@@ -638,8 +621,10 @@ fn open_regular_file(
 
 fn directory_proof(stat: &FileStat) -> Result<DirectoryProof, ArchiveError> {
     Ok(DirectoryProof {
-        device: stat_identifier(stat.st_dev)?,
-        inode: stat_identifier(stat.st_ino)?,
+        identity: ProofIdentity::Unix {
+            device: stat_identifier(stat.st_dev)?,
+            inode: stat_identifier(stat.st_ino)?,
+        },
     })
 }
 
@@ -650,8 +635,10 @@ fn file_proof(stat: &FileStat) -> Result<FileProof, ArchiveError> {
         source: io::Error::new(io::ErrorKind::InvalidData, "regular-file size is negative"),
     })?;
     Ok(FileProof {
-        device: stat_identifier(stat.st_dev)?,
-        inode: stat_identifier(stat.st_ino)?,
+        identity: ProofIdentity::Unix {
+            device: stat_identifier(stat.st_dev)?,
+            inode: stat_identifier(stat.st_ino)?,
+        },
         size,
     })
 }
@@ -706,6 +693,8 @@ mod tests {
     use std::io::Read;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    use solstone_core_journal_io::JournalRootError;
 
     use super::*;
 
@@ -987,7 +976,7 @@ mod tests {
     #[test]
     fn map_root_error_preserves_refusal_categories() {
         let root = PathBuf::from("/journal");
-        match map_root_error(JournalRootError::Invalid {
+        match crate::error::map_root_error(JournalRootError::Invalid {
             root: root.clone(),
             reason: "journal root does not exist",
             category: None,
@@ -1003,7 +992,7 @@ mod tests {
         }
 
         let io_error = io::Error::from_raw_os_error(Errno::EIO as i32);
-        match map_root_error(JournalRootError::Io {
+        match crate::error::map_root_error(JournalRootError::Io {
             operation: "open journal root",
             path: root.clone(),
             source: io_error,
@@ -1020,12 +1009,12 @@ mod tests {
             other => panic!("unexpected mapping: {other:?}"),
         }
 
-        match map_root_error(JournalRootError::Changed) {
+        match crate::error::map_root_error(JournalRootError::Changed) {
             ArchiveError::SourceChanged { member: None } => {}
             other => panic!("unexpected mapping: {other:?}"),
         }
 
-        match map_root_error(JournalRootError::Unsupported {
+        match crate::error::map_root_error(JournalRootError::Unsupported {
             root: root.clone(),
             reason: "no retained handle",
             category: None,

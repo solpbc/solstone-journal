@@ -2,7 +2,9 @@
 
 This is the shared vocabulary for a journal root, its identity, entry kinds, and
 refusals. It is not a generic VFS. `solstone-core-journal-io` supports Unix and
-Windows journal-root admission; `solstone-core-journal-archive` remains Unix-only.
+Windows journal-root admission; `solstone-core-journal-archive` supports
+source-only traversal on both platforms. Archive encoding and publication remain
+Unix-only.
 
 ## Root, identity, kind, refusal
 
@@ -69,6 +71,41 @@ exclusively from `FileIdInfo` on the retained handle.
 > independent opens. This is materially weaker than Unix's descriptor-relative
 > walk and is a known gate-1 limitation, not equivalent-strength authority.
 
+### Windows retained-handle source operations
+
+Windows source inventory and checked reads retain the admitted root handle and
+never reopen a descendant by the caller's pathname. Each witnessed operation
+first revalidates that root (including NTFS Cloud Files classification by
+retained handle), creates a watch handle by `ReOpenFile` from that retained
+handle, and arms `ReadDirectoryChangesW` with `bWatchSubtree=TRUE` and file-
+and directory-name notifications. The root is revalidated again before the
+result stands.
+
+The watch is runtime-probed for each admitted NTFS or ReFS root. A completed
+watch, `ERROR_NOTIFY_ENUM_DIR`, a zero-byte synchronous completion, or
+inability to arm/check/cancel the watch refuses the whole operation; an
+unsupported watch makes the capability `Unsupported` for that filesystem.
+There is no pre/post pathname listing fallback. The root's own identity
+revalidation remains necessary because directory change notifications do not
+report every change to the watched directory object itself.
+
+Recursive Windows inventory uses retained-relative child handles and
+`FileIdExtdDirectoryInfo`; every child is checked as a non-reparse directory or
+regular file and matched to its volume-serial plus 128-bit file identity before
+acceptance. A checked file read verifies every directory in its frozen route
+before reading, then rechecks the leaf metadata, root, and witness before
+returning any bytes. Windows retains the Gate-1 ancestor-swap and
+Cloud-Files-after-ancestor-rename limitation above; this source layer does not
+claim to strengthen it.
+
+`InventoryBudget` bounds complete source operations: total observed entries
+before portable policy filtering, recursive depth (admitted root is zero), one
+portable slash-joined archive member's UTF-8 length, native relative UTF-16
+path length, and cumulative bytes returned by a checked-read session. Exceeding
+any limit refuses the complete
+inventory or checked read; callers never receive a partial snapshot or partial
+member bytes.
+
 ## Exhaustive kind vs three coarse projections
 
 These mappings are documentation only. There is no conversion helper, no fifth
@@ -104,11 +141,14 @@ Uses: archive manifest `source_journal`, export default path, and
 
 ## Archive reuse
 
-`ArchiveSource` holds exactly one `JournalRoot`. Inventory, `open_file`, and
-proof revalidation walk descendants through `AsFd`. `ArchiveSource::open` maps
-`JournalRootError` exhaustively onto `ArchiveError` (`InvalidJournal`,
-`UnsupportedJournal`, `SourceIo` with `member: None`, `SourceChanged` with
-`member: None`).
+`ArchiveSource` holds exactly one `JournalRoot`. On Unix, inventory, `open_file`,
+and proof revalidation walk descendants through `AsFd`. On Windows, it freezes
+the witnessed journal-io inventory after applying the same portable deny policy;
+exact member reads delegate to journal-io's witnessed, retained-relative checked
+read and return complete verified bytes rather than a raw handle. In both cases,
+`ArchiveSource::open` maps `JournalRootError` exhaustively onto `ArchiveError`
+(`InvalidJournal`, `UnsupportedJournal`, `SourceIo` with `member: None`,
+`SourceChanged` with `member: None`).
 
 ## Unsupported
 
@@ -123,11 +163,12 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 
 ## Future-backend obligations
 
-Windows gate 1 covers root admission and portable name admission only.
-Locking, leases, atomic publication, retention, packaging, archive,
-`flat_directory`, `snapshot`, `staged`, `health_marker`, `append`, and
-`claim_remove` remain explicitly Unix-only and unsupported on Windows in this
-slice.
+Windows covers root admission, complete witnessed source enumeration, route
+revalidation, checked archive-source reads, and portable name admission.
+Locking, leases, atomic publication, retention, packaging, archive encoding and
+publication, `flat_directory`, `snapshot`, `staged`, `health_marker`, `append`,
+and `claim_remove` remain explicitly Unix-only and unsupported on Windows in
+this slice.
 
 A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid
@@ -190,6 +231,13 @@ An already-open descriptor can still mutate the claimed object. This API does
 not provide hard-link ownership proof, advisory locking, persistent claim
 registry or cleanup, claim-name hiding, recursive removal, Windows support,
 heartbeat behavior, or archive refactoring.
+
+Windows `claim_and_remove_observed` is explicitly unsupported. Windows has no
+primitive with a documented proof of both atomic no-replace transfer of the
+observed original into a claim name and directory durability equivalent to
+`fsync` on a directory descriptor. It therefore does not substitute a
+path-based claim, overwrite-capable rename, or uncertain delete for the Unix
+state machine.
 
 ## No-replace platform support
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 mod common;
 
 // Before the authoritative open, replacing the requested root or its symlink target is accepted.

@@ -6,7 +6,7 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-use solstone_core_journal_io::JournalEntryKind;
+use solstone_core_journal_io::{JournalEntryKind, JournalRootError};
 
 use crate::ArchiveMemberName;
 
@@ -85,5 +85,24 @@ impl Error for ArchiveError {
             | Self::UnsafeJournalEntry { .. }
             | Self::SourceChanged { .. } => None,
         }
+    }
+}
+
+pub(crate) fn map_root_error(error: JournalRootError) -> ArchiveError {
+    match error {
+        JournalRootError::Invalid { root, reason, .. } => {
+            ArchiveError::InvalidJournal { root, reason }
+        }
+        JournalRootError::Unsupported { root, reason, .. } => {
+            ArchiveError::UnsupportedJournal { root, reason }
+        }
+        JournalRootError::Io {
+            operation, source, ..
+        } => ArchiveError::SourceIo {
+            operation,
+            member: None,
+            source,
+        },
+        JournalRootError::Changed => ArchiveError::SourceChanged { member: None },
     }
 }
