@@ -13,17 +13,16 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 compile_error!(
-    "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
+    "solstone-core-journal-archive requires a Unix or Windows target: archive source traversal has no portable backend"
 );
 
-#[cfg(unix)]
 mod deny;
 #[cfg(unix)]
 mod encode;
 mod entry;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod error;
 #[cfg(unix)]
 mod inventory;
@@ -36,6 +35,8 @@ mod source;
 mod target;
 #[cfg(all(unix, feature = "test-hooks"))]
 mod test_hooks;
+#[cfg(windows)]
+mod windows_source;
 #[cfg(unix)]
 mod writer;
 
@@ -48,11 +49,11 @@ pub use entry::{
     ArchiveMemberName, IncludedRootName, Inventory, InventoryEntry, OpenedInventoryFile,
     SkippedRootName,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use error::ArchiveError;
 #[cfg(unix)]
 pub use publish::{ArchivePublicationError, publish_archive};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use solstone_core_journal_io::JournalEntryKind;
 #[cfg(unix)]
 pub use source::ArchiveSource;
@@ -67,3 +68,5 @@ pub use test_hooks::{
     TestFaultKind, TestSinkOperation, run_with_acquisition_fault, run_with_descendant_barrier,
     run_with_encode_control,
 };
+#[cfg(windows)]
+pub use windows_source::ArchiveSource;

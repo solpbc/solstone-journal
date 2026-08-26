@@ -1491,6 +1491,18 @@ case "$*" in
   *'set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0&&'*) expected=skipped ;;
   *) expected=missing-forward ;;
 esac
+case "$*" in
+  *'set "SOLSTONE_JOURNAL_WIN_REFS_ROOT=C:\refs"&&'*)
+    refs_evidence=passed
+    refs_root='C:\refs'
+    refs_filesystem=ReFS
+    ;;
+  *)
+    refs_evidence=skipped
+    refs_root=
+    refs_filesystem=unavailable
+    ;;
+esac
 printf 'JOURNAL_WIN_CI_HEAD=%s\n' "$snapshot_sha"
 printf 'JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%s\n' "$cargo_lock_sha256"
 case "${SOLSTONE_SSH_SCENARIO:-valid}" in
@@ -1511,9 +1523,15 @@ case "${SOLSTONE_SSH_SCENARIO:-valid}" in
   *) exit 97 ;;
 esac
 if [ "${SOLSTONE_SSH_SCENARIO:-valid}" != post ]; then
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=%s\n' "$refs_evidence"
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_ROOT=%s\n' "$refs_root"
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%s\n' "$refs_filesystem"
   printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
 else
   printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected"
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=%s\n' "$refs_evidence"
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_ROOT=%s\n' "$refs_root"
+  printf 'JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%s\n' "$refs_filesystem"
 fi
 "#,
     );
@@ -1527,6 +1545,19 @@ fn run_windows_driver(
     ssh: &Path,
     ssh_log: &Path,
     opt_in: Option<&str>,
+    scenario: &str,
+) -> std::process::Output {
+    run_windows_driver_with_refs(temp, scp, scp_log, ssh, ssh_log, opt_in, None, scenario)
+}
+
+fn run_windows_driver_with_refs(
+    temp: &TempDir,
+    scp: &Path,
+    scp_log: &Path,
+    ssh: &Path,
+    ssh_log: &Path,
+    opt_in: Option<&str>,
+    refs_root: Option<&str>,
     scenario: &str,
 ) -> std::process::Output {
     let mut command = Command::new("sh");
@@ -1543,6 +1574,11 @@ fn run_windows_driver(
         command.env("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST", value);
     } else {
         command.env_remove("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST");
+    }
+    if let Some(value) = refs_root {
+        command.env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", value);
+    } else {
+        command.env_remove("SOLSTONE_JOURNAL_WIN_REFS_ROOT");
     }
     command.output().expect("run Windows native-gate driver")
 }
@@ -1729,6 +1765,47 @@ fn windows_native_driver_forwards_only_normalized_cloud_opt_in() {
 }
 
 #[test]
+fn windows_native_driver_forwards_or_skips_the_refs_witness_fixture() {
+    let temp = windows_transport_fixture("windows-native-driver-refs");
+    let (scp, scp_log) = write_transport_scp_shim(&temp);
+    let (ssh, ssh_log) = write_transport_ssh_shim(&temp);
+    let output = run_windows_driver_with_refs(
+        &temp,
+        &scp,
+        &scp_log,
+        &ssh,
+        &ssh_log,
+        None,
+        Some("C:\\refs"),
+        "valid",
+    );
+    assert!(
+        output.status.success(),
+        "valid ReFS fixture failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ssh_call = fs::read_to_string(&ssh_log).expect("read ssh command");
+    assert!(ssh_call.contains("set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=C:\\refs\"&&"));
+    let receipt = String::from_utf8_lossy(&output.stdout);
+    assert!(receipt.contains("refs_witness_evidence=passed"));
+    assert!(receipt.contains("refs_witness_root=C:\\refs"));
+    assert!(receipt.contains("refs_witness_filesystem=ReFS"));
+
+    let invalid = run_windows_driver_with_refs(
+        &temp,
+        &scp,
+        &scp_log,
+        &ssh,
+        &ssh_log,
+        None,
+        Some("not-a-windows-path"),
+        "valid",
+    );
+    assert!(invalid.status.success(), "invalid fixture must be skipped");
+    assert!(String::from_utf8_lossy(&invalid.stdout).contains("refs_witness_evidence=skipped"));
+}
+
+#[test]
 fn windows_native_driver_rejects_ambiguous_cloud_evidence() {
     for scenario in [
         "missing",
@@ -1755,6 +1832,11 @@ fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
     let integration = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
     let passed = "set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
     let evidence = "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
+    let refs_evidence =
+        "echo JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=%JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE%";
+    let refs_root = "echo JOURNAL_WIN_CI_REFS_WITNESS_ROOT=%JOURNAL_WIN_CI_REFS_WITNESS_ROOT%";
+    let refs_filesystem =
+        "echo JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM%";
     let ok_prefix = "echo === JOURNAL_WIN_CI_OK:";
     let lines = runner.lines().map(str::trim).collect::<Vec<_>>();
 
@@ -1777,6 +1859,9 @@ fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
     let integration_position = unique_position(integration)?;
     let passed_position = unique_position(passed)?;
     let evidence_position = unique_position(evidence)?;
+    let refs_evidence_position = unique_position(refs_evidence)?;
+    let refs_root_position = unique_position(refs_root)?;
+    let refs_filesystem_position = unique_position(refs_filesystem)?;
     let ok_positions = lines
         .iter()
         .enumerate()
@@ -1791,7 +1876,12 @@ fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
     if integration_position >= passed_position {
         return Err("passed evidence precedes its gated integration command".to_owned());
     }
-    if passed_position >= evidence_position || evidence_position >= ok_positions[0] {
+    if passed_position >= evidence_position
+        || evidence_position >= refs_evidence_position
+        || refs_evidence_position >= refs_root_position
+        || refs_root_position >= refs_filesystem_position
+        || refs_filesystem_position >= ok_positions[0]
+    {
         return Err("evidence assignment/echo/OK ordering is invalid".to_owned());
     }
     Ok(())
@@ -1805,6 +1895,8 @@ fn windows_native_runner_evidence_validator_rejects_false_green_mutations() {
     let integration = "  cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
     let passed = "  set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
     let evidence = "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
+    let refs_filesystem =
+        "echo JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM%";
     let ok = runner
         .lines()
         .find(|line| line.starts_with("echo === JOURNAL_WIN_CI_OK:"))
@@ -1829,8 +1921,8 @@ fn windows_native_runner_evidence_validator_rejects_false_green_mutations() {
         (
             "post-OK evidence",
             runner.replacen(
-                &format!("{evidence}\n{ok}"),
-                &format!("{ok}\n{evidence}"),
+                &format!("{refs_filesystem}\n{ok}"),
+                &format!("{ok}\n{refs_filesystem}"),
                 1,
             ),
         ),
@@ -1890,6 +1982,16 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     );
     assert!(runner.contains("set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped\""));
     assert!(runner.contains("set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\""));
+    for token in [
+        "SOLSTONE_JOURNAL_WIN_REFS_ROOT",
+        "JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE",
+        "JOURNAL_WIN_CI_REFS_WITNESS_ROOT",
+        "JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM",
+        "real_ntfs_and_refs_witness_mutation_controls_skip_without_environment",
+        "real_ntfs_and_refs_witness_overflow_controls_skip_without_environment",
+    ] {
+        assert!(runner.contains(token), "Windows runner missing {token}");
+    }
     assert!(runner.contains(
         "echo === cargo test --locked journal-io Cloud Files sync-root registration ==="
     ));
@@ -1922,7 +2024,7 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         "Windows runner must verify the exact source both before and after native work"
     );
     assert!(runner.contains(
-        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
+        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; ReFS witness evidence %JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS native evidence not run"
     ));
     assert!(!sync.contains("swbuild.bundle"));
     assert!(!driver.contains("C:\\\\sol\\\\sw-ci.cmd"));

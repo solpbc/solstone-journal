@@ -16,6 +16,9 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 nix = { workspace = true, features = ["dir", "user"] }
 solstone-core-journal-io = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-journal-io = { workspace = true }
+
 [lints]
 workspace = true
 

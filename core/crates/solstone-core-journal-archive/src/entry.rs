@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::OsString;
+#[cfg(unix)]
 use std::fs::File;
 
 /// One portable archive member name, always a UTF-8 relative name.
@@ -49,17 +50,29 @@ impl IncludedRootName {
     }
 }
 
+/// Platform-native identity retained by an archive proof.
+///
+/// This stays archive-private: Unix and Windows acquire the proof through
+/// different backends, while the portable archive surface never exposes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct DirectoryProof {
-    pub(crate) device: u64,
-    pub(crate) inode: u64,
+pub(crate) enum ProofIdentity {
+    #[cfg(unix)]
+    Unix { device: u64, inode: u64 },
+    #[cfg(windows)]
+    Windows(solstone_core_journal_io::ObjectIdentity),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DirectoryProof {
+    pub(crate) identity: ProofIdentity,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FileProof {
-    pub(crate) device: u64,
-    pub(crate) inode: u64,
+    pub(crate) identity: ProofIdentity,
     pub(crate) size: u64,
+    #[cfg(windows)]
+    pub(crate) observed: solstone_core_journal_io::WindowsInventoryEntry,
 }
 
 /// The descriptor-relative route and identities frozen during inventory.
@@ -154,14 +167,26 @@ impl Inventory {
 
 /// A verified regular file opened from an inventory entry.
 pub struct OpenedInventoryFile {
+    #[cfg(unix)]
     file: File,
+    #[cfg(windows)]
+    bytes: Vec<u8>,
     inventoried_size: u64,
 }
 
 impl OpenedInventoryFile {
+    #[cfg(unix)]
     pub(crate) fn new(file: File, inventoried_size: u64) -> Self {
         Self {
             file,
+            inventoried_size,
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn from_bytes(bytes: Vec<u8>, inventoried_size: u64) -> Self {
+        Self {
+            bytes,
             inventoried_size,
         }
     }
@@ -172,7 +197,14 @@ impl OpenedInventoryFile {
     }
 
     /// Consume this wrapper and return its already-verified file descriptor.
+    #[cfg(unix)]
     pub fn into_file(self) -> File {
         self.file
+    }
+
+    /// Consume this wrapper and return its already-verified complete contents.
+    #[cfg(windows)]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
     }
 }

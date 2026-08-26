@@ -13,7 +13,8 @@ use windows_sys::Win32::Foundation::{
     INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::CloudFilters::{
-    CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
+    CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByHandle,
+    CfGetSyncRootInfoByPath,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
@@ -48,6 +49,7 @@ pub enum WindowsAcquisitionPrimitive {
     VolumeInformationByHandle,
     DriveType,
     CloudSyncRootInfo,
+    CloudSyncRootInfoByHandle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,10 +100,20 @@ thread_local! {
     static FILE_ID_SUBSTITUTION: std::cell::RefCell<Option<FileIdSubstitution>> = const {
         std::cell::RefCell::new(None)
     };
+    static ATTRIBUTE_TAG_SUBSTITUTION: std::cell::RefCell<Option<AttributeTagSubstitution>> = const {
+        std::cell::RefCell::new(None)
+    };
 }
 
 #[cfg(test)]
 struct FileIdSubstitution {
+    ordinal: usize,
+    seen: usize,
+    consumed: bool,
+}
+
+#[cfg(test)]
+struct AttributeTagSubstitution {
     ordinal: usize,
     seen: usize,
     consumed: bool,
@@ -281,6 +293,42 @@ fn with_file_id_identity_mismatch<T>(ordinal: usize, operation: impl FnOnce() ->
 }
 
 #[cfg(test)]
+fn with_reparse_attribute_substitution<T>(
+    ordinal: usize,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    ATTRIBUTE_TAG_SUBSTITUTION.with(|substitution| {
+        assert!(
+            substitution.borrow().is_none(),
+            "Windows attribute-tag substitution is already active"
+        );
+        *substitution.borrow_mut() = Some(AttributeTagSubstitution {
+            ordinal,
+            seen: 0,
+            consumed: false,
+        });
+    });
+    struct SubstitutionGuard;
+    impl Drop for SubstitutionGuard {
+        fn drop(&mut self) {
+            ATTRIBUTE_TAG_SUBSTITUTION.with(|substitution| {
+                substitution.borrow_mut().take();
+            });
+        }
+    }
+    let guard = SubstitutionGuard;
+    let result = operation();
+    let state = ATTRIBUTE_TAG_SUBSTITUTION.with(|substitution| {
+        substitution
+            .borrow_mut()
+            .take()
+            .expect("Windows attribute-tag substitution remains active")
+    });
+    drop(guard);
+    (result, state.consumed)
+}
+
+#[cfg(test)]
 fn substitute_file_id(info: &mut FILE_ID_INFO) {
     FILE_ID_SUBSTITUTION.with(|substitution| {
         let mut substitution = substitution.borrow_mut();
@@ -295,10 +343,26 @@ fn substitute_file_id(info: &mut FILE_ID_INFO) {
     });
 }
 
+#[cfg(test)]
+fn substitute_attribute_tag(info: &mut FILE_ATTRIBUTE_TAG_INFO) {
+    ATTRIBUTE_TAG_SUBSTITUTION.with(|substitution| {
+        let mut substitution = substitution.borrow_mut();
+        let Some(state) = substitution.as_mut() else {
+            return;
+        };
+        state.seen += 1;
+        if state.seen == state.ordinal {
+            info.FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
+            state.consumed = true;
+        }
+    });
+}
+
 pub(crate) struct WindowsRoot {
     root: OwnedHandle,
     canonical: PathBuf,
     identity: ObjectIdentity,
+    filesystem: WindowsFilesystemKind,
 }
 
 impl AsHandle for WindowsRoot {
@@ -341,7 +405,11 @@ impl Backend for WindowsRoot {
             })?;
         (identity == self.identity)
             .then_some(())
-            .ok_or(JournalRootError::Changed)
+            .ok_or(JournalRootError::Changed)?;
+        if self.filesystem == WindowsFilesystemKind::Ntfs {
+            classify_cloud_sync_root_by_handle(&self.canonical, &self.root)?;
+        }
+        Ok(())
     }
 }
 
@@ -390,6 +458,7 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
         root: authoritative,
         canonical: validated.canonical,
         identity: expected,
+        filesystem,
     })
 }
 
@@ -614,6 +683,8 @@ fn attribute_tag(
                 size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
             )
         };
+        #[cfg(test)]
+        substitute_attribute_tag(&mut info);
         (result != 0)
             .then_some(info)
             .ok_or_else(io::Error::last_os_error)
@@ -788,6 +859,46 @@ fn classify_cloud_sync_root(root: &Path, wide: &[u16]) -> Result<(), JournalRoot
             WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None),
         )
     })?;
+    classify_cloud_sync_root_result(root, result)
+}
+
+fn classify_cloud_sync_root_by_handle(
+    root: &Path,
+    handle: &OwnedHandle,
+) -> Result<(), JournalRootError> {
+    let result = traced_win32(
+        WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle,
+        || {
+            let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+            let mut returned = 0;
+            // SAFETY: `handle` is the retained admitted root and `info` is writable for the exact buffer size documented by `CfGetSyncRootInfoByHandle`.
+            #[allow(unsafe_code)]
+            let result = unsafe {
+                CfGetSyncRootInfoByHandle(
+                    handle.as_raw_handle(),
+                    CF_SYNC_ROOT_INFO_BASIC,
+                    (&mut info as *mut CF_SYNC_ROOT_BASIC_INFO).cast(),
+                    size_of::<CF_SYNC_ROOT_BASIC_INFO>() as u32,
+                    &mut returned,
+                )
+            };
+            Ok(result)
+        },
+    )
+    .map_err(|_| {
+        unsupported(
+            root,
+            "Cloud Files sync-root status could not be verified",
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None),
+        )
+    })?;
+    classify_cloud_sync_root_by_handle_result(root, result)
+}
+
+fn classify_cloud_sync_root_by_handle_result(
+    root: &Path,
+    result: i32,
+) -> Result<(), JournalRootError> {
     classify_cloud_sync_root_result(root, result)
 }
 
@@ -1139,6 +1250,40 @@ mod tests {
     }
 
     #[test]
+    fn ntfs_revalidation_queries_cloud_sync_root_by_retained_handle() {
+        let (_temporary, root_path) = fixture("cloud-sync-revalidate");
+        let root = JournalRoot::open(&root_path).expect("NTFS fixture is admitted");
+        let (result, outcome) = trace_scenario(None, None, || root.revalidate());
+        result.expect("retained NTFS root remains revalidatable");
+        assert_eq!(
+            outcome
+                .successful
+                .iter()
+                .filter(|primitive| {
+                    **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle
+                })
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn retained_handle_cloud_status_preserves_unclassified_hresult() {
+        let root = Path::new(r"C:\journal");
+        let result = classify_cloud_sync_root_by_handle_result(root, 0x1234_5678_i32);
+        let error = result.expect_err("unclassified retained-handle status must be refused");
+        assert!(matches!(
+            error,
+            JournalRootError::Unsupported {
+                category: Some(WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(
+                    Some(0x1234_5678)
+                )),
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn refs_admission_skips_cloud_sync_root_query() {
         let (result, outcome) = trace_scenario(None, None, || {
             admit_for_filesystem(
@@ -1234,6 +1379,7 @@ mod tests {
             WindowsAcquisitionPrimitive::VolumeInformationByHandle,
             WindowsAcquisitionPrimitive::DriveType,
             WindowsAcquisitionPrimitive::CloudSyncRootInfo,
+            WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle,
         ];
         for primitive in primitives {
             let (result, outcome) = trace_scenario(
@@ -1290,6 +1436,24 @@ mod tests {
         fs::rename(&moved, &root_path).expect("restore fixture namespace");
         assert_eq!(root.identity(), before.identity);
         assert_eq!(snapshot_fixture(&root_path), before);
+    }
+
+    #[test]
+    fn retained_root_revalidation_refuses_an_identity_change() {
+        let (_temporary, root_path) = fixture("revalidate-identity-mismatch");
+        let root = JournalRoot::open(&root_path).expect("admit fixture root");
+        let (result, consumed) = with_file_id_identity_mismatch(1, || root.revalidate());
+        assert!(consumed);
+        assert!(matches!(result, Err(JournalRootError::Changed)));
+    }
+
+    #[test]
+    fn retained_root_revalidation_refuses_a_mutable_reparse_state() {
+        let (_temporary, root_path) = fixture("revalidate-reparse-mismatch");
+        let root = JournalRoot::open(&root_path).expect("admit fixture root");
+        let (result, consumed) = with_reparse_attribute_substitution(1, || root.revalidate());
+        assert!(consumed);
+        assert!(matches!(result, Err(JournalRootError::Changed)));
     }
 
     #[test]
@@ -1373,7 +1537,7 @@ mod tests {
 
     #[test]
     fn real_ntfs_and_refs_controls_skip_without_environment() {
-        for variable in ["JOURNAL_WIN_CI_NTFS_ROOT", "JOURNAL_WIN_CI_REFS_ROOT"] {
+        for variable in ["JOURNAL_WIN_CI_NTFS_ROOT", "SOLSTONE_JOURNAL_WIN_REFS_ROOT"] {
             let Ok(root) = std::env::var(variable) else {
                 continue;
             };

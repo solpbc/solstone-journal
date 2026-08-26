@@ -25,6 +25,7 @@ pub mod errors;
 pub mod flat_directory;
 #[cfg(unix)]
 pub mod health_marker;
+pub mod inventory_budget;
 pub mod journal_root;
 #[cfg(unix)]
 pub mod lease;
@@ -39,6 +40,8 @@ pub mod snapshot;
 #[cfg(unix)]
 pub mod staged;
 pub mod strict_segment;
+#[cfg(windows)]
+pub mod windows_inventory;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -89,6 +92,7 @@ pub use health_marker::{
     PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,
     publish_daily_marker_if_current, read_health_marker,
 };
+pub use inventory_budget::{InventoryBudget, InventoryBudgetLimit};
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use journal_root::{AcquisitionPrimitive, run_with_acquisition_fault};
 pub use journal_root::{
@@ -140,3 +144,10 @@ pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
     resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
+#[cfg(windows)]
+pub use windows_inventory::{
+    WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry, WindowsInventoryError,
+    enumerate_windows_inventory, read_windows_inventory_file,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_inventory::{WindowsInventoryPrimitive, run_with_windows_inventory_fault};
