@@ -2,18 +2,27 @@
 // Copyright (c) 2026 sol pbc
 
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
-
-#[cfg(test)]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::{http::StatusCode, response::Response};
 
 use crate::{
-    handoff_poll::HANDOFF_POLL_TIMEOUT,
     operation::{self, SharedOperationSlot},
     response,
 };
+
+/// How long an abandoned lease that never advanced past `Prepared` (nobody entered a
+/// recovery key yet) may block a fresh `prepare()` attempt before a new attempt reclaims
+/// it. Unchanged in value from the prior borrowed constant -- only the reclaim role ever
+/// needed to be this short.
+pub(crate) const RESTORE_PREPARE_RECLAIM_WINDOW: Duration = Duration::from_secs(15);
+
+/// How long an owner has, from `prepare()`, to read the portal handoff and complete
+/// consent (key -> arm -> activate) before the lease is considered dead. Real read-plus-click
+/// time, not a retry bound. Stays under the Worker's 5-minute `HANDOFF_TTL_MS` service-side
+/// handoff-row expiry (`account/src/enable-constants.js`) so the lease never outlives the
+/// row it depends on.
+pub(crate) const RESTORE_PREPARE_CONSENT_WINDOW: Duration = Duration::from_secs(180);
 
 pub(crate) type SharedRestorePrepare = Arc<Mutex<Option<RestorePrepareLease>>>;
 
@@ -218,16 +227,24 @@ fn take_expired(
         let mut guard = shared.lock().expect("restore prepare lock");
         guard
             .as_ref()
-            .is_some_and(|lease| lease.issued_at.elapsed() >= HANDOFF_POLL_TIMEOUT)
+            .is_some_and(|lease| lease.issued_at.elapsed() >= expiry_window(lease.stage))
             .then(|| guard.take())
             .flatten()
     };
     if let Some(lease) = expired.as_ref()
         && lease.stage != RestorePrepareStage::Prepared
     {
-        operation::mark_expired(operations, lease.baseline_generation);
+        operation::mark_prepare_lease_expired(operations, lease.baseline_generation);
     }
     expired
+}
+
+fn expiry_window(stage: RestorePrepareStage) -> Duration {
+    if stage == RestorePrepareStage::Prepared {
+        RESTORE_PREPARE_RECLAIM_WINDOW
+    } else {
+        RESTORE_PREPARE_CONSENT_WINDOW
+    }
 }
 
 fn require_capability(lease: &RestorePrepareLease, capability: &str) -> Result<(), Response> {
@@ -289,5 +306,16 @@ pub(crate) fn backdate_restore_prepare_issued_at(shared: &SharedRestorePrepare, 
     let mut guard = shared.lock().expect("restore prepare lock");
     if let Some(lease) = guard.as_mut() {
         lease.issued_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RESTORE_PREPARE_CONSENT_WINDOW;
+    use std::time::Duration;
+
+    #[test]
+    fn consent_window_stays_under_the_worker_handoff_row_ttl() {
+        assert!(RESTORE_PREPARE_CONSENT_WINDOW < Duration::from_secs(5 * 60));
     }
 }

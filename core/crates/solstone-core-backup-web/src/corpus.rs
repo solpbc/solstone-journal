@@ -1955,7 +1955,7 @@ fn portal_nonce(body: &Value) -> String {
 async fn prepare_unbound_restore(deps: &crate::BackupWebDeps) -> String {
     let (status, body) = post_json(deps, "/app/backup/restore-hosted/prepare", None).await;
     assert_eq!(status, 200);
-    assert_eq!(body["expires_in_seconds"], 15);
+    assert_eq!(body["expires_in_seconds"], 180);
     body["capability"].as_str().unwrap().to_owned()
 }
 
@@ -2067,7 +2067,7 @@ async fn restore_prepare_rejects_duplicate_prepares_and_reuses_an_expired_lease(
 
     crate::restore_prepare::backdate_restore_prepare_issued_at(
         &deps.restore_prepare,
-        crate::handoff_poll::HANDOFF_POLL_TIMEOUT + Duration::from_secs(1),
+        crate::restore_prepare::RESTORE_PREPARE_RECLAIM_WINDOW + Duration::from_secs(1),
     );
     let replacement = prepare_unbound_restore(&deps).await;
     assert_ne!(replacement, capability);
@@ -2288,11 +2288,22 @@ async fn restore_prepare_cancellation_and_expiry_clear_deferred_restore_state() 
     let _ = arm_unbound_restore(&deps, &capability).await;
     crate::restore_prepare::backdate_restore_prepare_issued_at(
         &deps.restore_prepare,
-        crate::handoff_poll::HANDOFF_POLL_TIMEOUT + Duration::from_secs(1),
+        crate::restore_prepare::RESTORE_PREPARE_RECLAIM_WINDOW + Duration::from_secs(1),
+    );
+    let (_, surviving) = get_status_json(&deps).await;
+    assert_ne!(surviving["operation"]["phase"], "error");
+    assert!(crate::operation::is_busy(&deps.operations));
+
+    crate::restore_prepare::backdate_restore_prepare_issued_at(
+        &deps.restore_prepare,
+        crate::restore_prepare::RESTORE_PREPARE_CONSENT_WINDOW + Duration::from_secs(1),
     );
     let (_, expired) = get_status_json(&deps).await;
     assert_eq!(expired["operation"]["phase"], "error");
-    assert_eq!(expired["operation"]["reason_code"], "expired");
+    assert_eq!(
+        expired["operation"]["reason_code"],
+        "restore_prepare_expired"
+    );
     assert_handoff_state_cleared(&deps);
     let (status, body) = post_json(
         &deps,

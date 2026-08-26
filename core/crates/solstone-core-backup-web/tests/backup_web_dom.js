@@ -695,6 +695,17 @@ asyncCase('operated auth failure uses copy distinct from the shared reason', asy
   assert.notStrictEqual(harness.outcome.textContent, "that recovery key didn't unlock the backup. check the key first, then the destination details.");
 });
 
+asyncCase('restore prepare consent-window expiry has its own copy', async () => {
+  const harness = createHarness({ respond: hostedSequence(status(restoreOperation('error', 'restore_prepare_expired'))) });
+  await ready(harness);
+  selectOperated(harness);
+  setKey(harness, 'recovery key');
+  await startToPolling(harness);
+  await harness.runTimer(800);
+  assert.strictEqual(harness.outcome.textContent, 'the approval took too long. try again.');
+  assert.notStrictEqual(harness.outcome.textContent, 'start with the recovery key. if it still fails, check the destination details.');
+});
+
 asyncCase('hosted recovery-key ARIA separates local validation from C3 failures', async () => {
   const harness = createHarness({ popupFactory: () => null });
   await ready(harness);

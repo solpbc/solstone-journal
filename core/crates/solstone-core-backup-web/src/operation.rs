@@ -284,7 +284,10 @@ pub fn match_handoff(
     };
     expire_hosted_wait_in_place(current);
     if is_terminal(&current.view.phase) {
-        return if current.view.reason_code.as_deref() == Some("expired") {
+        return if matches!(
+            current.view.reason_code.as_deref(),
+            Some("expired") | Some("restore_prepare_expired")
+        ) {
             Err(HandoffError::Expired)
         } else {
             Err(HandoffError::Invalid)
@@ -322,6 +325,16 @@ pub fn mark_expired(slot: &SharedOperationSlot, generation: u64) {
     finish(slot, generation, "error", Some("expired".into()), None);
 }
 
+pub fn mark_prepare_lease_expired(slot: &SharedOperationSlot, generation: u64) {
+    finish(
+        slot,
+        generation,
+        "error",
+        Some("restore_prepare_expired".into()),
+        None,
+    );
+}
+
 pub fn mark_cancelled(slot: &SharedOperationSlot, generation: u64) {
     finish(slot, generation, "error", Some("cancelled".into()), None);
 }
@@ -353,7 +366,10 @@ pub fn backdate_started(slot: &SharedOperationSlot, age: Duration) {
 
 #[cfg(test)]
 mod tests {
-    use super::{portal_url, restore_portal_url};
+    use super::{
+        HandoffError, begin, mark_prepare_lease_expired, match_handoff, new_slot, portal_url,
+        restore_portal_url,
+    };
 
     fn parse_portal_url(url: &str) -> (&str, &str, &str, Vec<(&str, &str)>) {
         let (scheme, remainder) = url.split_once("://").expect("scheme separator");
@@ -410,5 +426,17 @@ mod tests {
 
         assert_eq!(path, "/enable/backup");
         assert_eq!(query_pairs, vec![("intent", "restore"), ("nonce", nonce)]);
+    }
+
+    #[test]
+    fn match_handoff_classifies_prepare_lease_expiry_as_expired_not_invalid() {
+        let slot = new_slot();
+        let begun =
+            begin(&slot, "restore_hosted", None, Some("nonce-1".into()), None).expect("begin");
+        mark_prepare_lease_expired(&slot, begun.generation);
+
+        let result = match_handoff(&slot, "nonce-1");
+
+        assert!(matches!(result, Err(HandoffError::Expired)));
     }
 }

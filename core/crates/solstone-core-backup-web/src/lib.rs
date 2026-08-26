@@ -950,7 +950,7 @@ async fn restore_hosted_prepare_route(deps: BackupWebDeps) -> axum::response::Re
     match restore_prepare::prepare(&deps.restore_prepare, &deps.operations) {
         Ok(prepared) => response::success(json!({
             "capability": prepared.capability,
-            "expires_in_seconds": handoff_poll::HANDOFF_POLL_TIMEOUT.as_secs(),
+            "expires_in_seconds": restore_prepare::RESTORE_PREPARE_CONSENT_WINDOW.as_secs(),
         })),
         Err(error) => error,
     }

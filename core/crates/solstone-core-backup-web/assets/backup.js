@@ -255,6 +255,7 @@
       "missing_required_field": "fill in the required fields, then try again.",
       "recovery_key_mismatch": "that didn't match your recovery key. re-enter the key from your saved copy.",
       "expired": "the approval took too long. try again.",
+      "restore_prepare_expired": "the approval took too long. try again.",
       "malformed": "the response couldn't be read. update your journal, then try again.",
       "network_error": "the services page couldn't be reached. check your connection, then try again.",
       "broker_unreachable": "encrypted backup couldn't be reached. check your connection, then try again.",
@@ -661,6 +662,8 @@
         setHostedRestoreFieldError(operationLabels.invalid_key || '');
       } else if (operation.reason_code === 'auth_failed') {
         setHostedRestoreOutcome((restoreHostedCopy.errors && restoreHostedCopy.errors.auth_failed) || '', 'error');
+      } else if (operation.reason_code === 'restore_prepare_expired') {
+        setHostedRestoreOutcome(operationLabels.restore_prepare_expired || '', 'error');
       } else {
         setHostedRestoreOutcome(restoreHostedCopy.status_retryable || '', 'error');
       }
