@@ -17,6 +17,8 @@ pub mod acceptor;
 #[cfg(feature = "host")]
 pub mod ca;
 #[cfg(feature = "host")]
+pub mod client_status;
+#[cfg(feature = "host")]
 pub mod committed;
 #[cfg(feature = "client")]
 mod direct_seam;

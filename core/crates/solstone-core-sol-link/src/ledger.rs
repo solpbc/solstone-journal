@@ -6,6 +6,7 @@
 //! `authorized_clients.json` is authoritative. `devices.json` holds only
 //! non-authoritative last-seen metadata and must never grant authorization.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -14,6 +15,7 @@ use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
@@ -63,6 +65,52 @@ pub struct ClientEntry {
     pub client_label: String,
     pub label_ordinal: u32,
     pub kind: String,
+}
+
+/// Non-authoritative activity retained for one authorized certificate client.
+///
+/// `last_seen_at` is written by the completed-handshake path. The remaining
+/// fields are owned by ingest and deliberately do not participate in access
+/// decisions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientActivity {
+    pub last_seen_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_ingest_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_segment: Option<AcceptedSegment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingest_rejection: Option<IngestRejection>,
+}
+
+impl ClientActivity {
+    fn new(last_seen_at: impl Into<String>) -> Self {
+        Self {
+            last_seen_at: last_seen_at.into(),
+            last_accepted_ingest_at: None,
+            last_accepted_segment: None,
+            ingest_rejection: None,
+        }
+    }
+}
+
+/// The day and directory name of a durably accepted ingest segment.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptedSegment {
+    pub day: String,
+    pub name: String,
+}
+
+/// The active streak of post-commit ingest failures for a client.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IngestRejection {
+    pub reason_code: String,
+    pub first: String,
+    pub latest: String,
+    pub active_count: u64,
 }
 
 impl ClientEntry {
@@ -167,6 +215,7 @@ pub enum AuthorizedClientsMutationError {
     Device(DevicesMutationError),
     InvalidLabel(&'static str),
     InvalidLastSeenAt,
+    InvalidActivityTimestamp(&'static str),
     Write(solstone_core_journal_io::AtomicWriteError),
 }
 
@@ -180,6 +229,9 @@ impl fmt::Display for AuthorizedClientsMutationError {
             Self::InvalidLastSeenAt => {
                 formatter.write_str("last_seen_at must be an RFC3339 UTC timestamp")
             }
+            Self::InvalidActivityTimestamp(field) => {
+                write!(formatter, "{field} must be an RFC3339 UTC timestamp")
+            }
             Self::Write(error) => error.fmt(formatter),
         }
     }
@@ -191,7 +243,9 @@ impl Error for AuthorizedClientsMutationError {
             Self::Lock(error) => Some(error),
             Self::Load(error) => Some(error),
             Self::Device(error) => Some(error),
-            Self::InvalidLabel(_) | Self::InvalidLastSeenAt => None,
+            Self::InvalidLabel(_) | Self::InvalidLastSeenAt | Self::InvalidActivityTimestamp(_) => {
+                None
+            }
             Self::Write(error) => Some(error),
         }
     }
@@ -214,7 +268,7 @@ pub enum DevicesMutationError {
 /// Read-only view of the non-authoritative device activity ledger.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeviceActivityRead {
-    Present(Map<String, Value>),
+    Present(BTreeMap<String, ClientActivity>),
     Missing,
     Unreadable,
     Malformed,
@@ -480,9 +534,7 @@ impl AuthorizationLedger {
         fingerprint: &str,
         last_seen_at: &str,
     ) -> Result<bool, AuthorizedClientsMutationError> {
-        let timestamp = OffsetDateTime::parse(last_seen_at, &Rfc3339)
-            .map_err(|_| AuthorizedClientsMutationError::InvalidLastSeenAt)?;
-        if timestamp.offset() != UtcOffset::UTC {
+        if parse_rfc3339_utc(last_seen_at).is_none() {
             return Err(AuthorizedClientsMutationError::InvalidLastSeenAt);
         }
         let _authorization_lock = lock(&self.authorized_clients_path)?;
@@ -493,6 +545,61 @@ impl AuthorizationLedger {
         }
         self.set_cached(clients);
         touch_device(&self.devices_path, fingerprint, last_seen_at)
+            .map_err(AuthorizedClientsMutationError::Device)?;
+        Ok(true)
+    }
+
+    /// Record an ingest whose content and durable event were accepted.
+    ///
+    /// The authorization lock deliberately remains held while the devices lock
+    /// is acquired, matching connection activity and unpair mutations.
+    pub fn record_accepted_ingest(
+        &mut self,
+        cid: &str,
+        accepted_at: &str,
+        segment: AcceptedSegment,
+    ) -> Result<bool, AuthorizedClientsMutationError> {
+        if parse_rfc3339_utc(accepted_at).is_none() {
+            return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
+                "accepted_at",
+            ));
+        }
+        let _authorization_lock = lock(&self.authorized_clients_path)?;
+        let clients = load_authorized_for_mutation(&self.authorized_clients_path)
+            .map_err(AuthorizedClientsMutationError::Load)?;
+        if clients.get(cid).is_none() {
+            return Ok(false);
+        }
+        self.set_cached(clients);
+        record_accepted_device(&self.devices_path, cid, accepted_at, segment)
+            .map_err(AuthorizedClientsMutationError::Device)?;
+        Ok(true)
+    }
+
+    /// Record a post-commit ingest failure without discarding the active streak.
+    ///
+    /// A later successful accepted ingest clears the streak. Until then every
+    /// rejection, including one with a different reason code, keeps the first
+    /// timestamp and advances the saturating count.
+    pub fn record_ingest_rejection(
+        &mut self,
+        cid: &str,
+        at: &str,
+        reason_code: &str,
+    ) -> Result<bool, AuthorizedClientsMutationError> {
+        if parse_rfc3339_utc(at).is_none() {
+            return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
+                "at",
+            ));
+        }
+        let _authorization_lock = lock(&self.authorized_clients_path)?;
+        let clients = load_authorized_for_mutation(&self.authorized_clients_path)
+            .map_err(AuthorizedClientsMutationError::Load)?;
+        if clients.get(cid).is_none() {
+            return Ok(false);
+        }
+        self.set_cached(clients);
+        record_device_rejection(&self.devices_path, cid, at, reason_code)
             .map_err(AuthorizedClientsMutationError::Device)?;
         Ok(true)
     }
@@ -569,18 +676,10 @@ pub fn read_device_activity(path: &Path) -> DeviceActivityRead {
     let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
         return DeviceActivityRead::Malformed;
     };
-    let Some(devices) = value.as_object().cloned() else {
-        return DeviceActivityRead::Malformed;
-    };
-    if devices.values().any(|device| {
-        let Some(device) = device.as_object() else {
-            return true;
-        };
-        device.len() != 1 || device.get("last_seen_at").and_then(Value::as_str).is_none()
-    }) {
-        return DeviceActivityRead::Malformed;
+    match parse_devices(&value) {
+        Ok(devices) => DeviceActivityRead::Present(devices),
+        Err(_) => DeviceActivityRead::Malformed,
     }
-    DeviceActivityRead::Present(devices)
 }
 
 fn lock(path: &Path) -> Result<solstone_core_journal_io::FileLock, AuthorizedClientsMutationError> {
@@ -758,31 +857,71 @@ fn touch_device(
     fingerprint: &str,
     last_seen_at: &str,
 ) -> Result<(), DevicesMutationError> {
-    let _devices_lock = hold_lock(
-        path,
-        LockOptions {
-            mode: Some(0o600),
-            ..LockOptions::default()
-        },
-    )
-    .map_err(DevicesMutationError::Lock)?;
-    let mut devices = load_devices_for_mutation(path)?;
-    devices.insert(
-        fingerprint.to_owned(),
-        json!({ "last_seen_at": last_seen_at }),
-    );
-    write_json(
-        path,
-        &Value::Object(devices),
-        JsonWriteOptions {
-            mode: Some(0o600),
-            ..JsonWriteOptions::default()
-        },
-    )
-    .map_err(DevicesMutationError::Write)
+    mutate_devices(path, |devices| {
+        let activity = devices
+            .entry(fingerprint.to_owned())
+            .or_insert_with(|| ClientActivity::new(last_seen_at));
+        activity.last_seen_at = last_seen_at.to_owned();
+        ((), true)
+    })
 }
 
 fn remove_device(path: &Path, fingerprint: &str) -> Result<bool, DevicesMutationError> {
+    mutate_devices(path, |devices| {
+        let removed = devices.remove(fingerprint).is_some();
+        (removed, removed)
+    })
+}
+
+fn record_accepted_device(
+    path: &Path,
+    cid: &str,
+    accepted_at: &str,
+    segment: AcceptedSegment,
+) -> Result<(), DevicesMutationError> {
+    mutate_devices(path, |devices| {
+        let activity = devices
+            .entry(cid.to_owned())
+            .or_insert_with(|| ClientActivity::new(accepted_at));
+        activity.last_accepted_ingest_at = Some(accepted_at.to_owned());
+        activity.last_accepted_segment = Some(segment);
+        activity.ingest_rejection = None;
+        ((), true)
+    })
+}
+
+fn record_device_rejection(
+    path: &Path,
+    cid: &str,
+    at: &str,
+    reason_code: &str,
+) -> Result<(), DevicesMutationError> {
+    mutate_devices(path, |devices| {
+        let activity = devices
+            .entry(cid.to_owned())
+            .or_insert_with(|| ClientActivity::new(at));
+        activity.ingest_rejection = Some(match activity.ingest_rejection.take() {
+            Some(mut rejection) => {
+                rejection.reason_code = reason_code.to_owned();
+                rejection.latest = at.to_owned();
+                rejection.active_count = rejection.active_count.saturating_add(1);
+                rejection
+            }
+            None => IngestRejection {
+                reason_code: reason_code.to_owned(),
+                first: at.to_owned(),
+                latest: at.to_owned(),
+                active_count: 1,
+            },
+        });
+        ((), true)
+    })
+}
+
+fn mutate_devices<T>(
+    path: &Path,
+    mutate: impl FnOnce(&mut BTreeMap<String, ClientActivity>) -> (T, bool),
+) -> Result<T, DevicesMutationError> {
     let _devices_lock = hold_lock(
         path,
         LockOptions {
@@ -792,25 +931,27 @@ fn remove_device(path: &Path, fingerprint: &str) -> Result<bool, DevicesMutation
     )
     .map_err(DevicesMutationError::Lock)?;
     let mut devices = load_devices_for_mutation(path)?;
-    if devices.remove(fingerprint).is_none() {
-        return Ok(false);
+    let (result, changed) = mutate(&mut devices);
+    if changed {
+        write_json(
+            path,
+            &devices,
+            JsonWriteOptions {
+                mode: Some(0o600),
+                ..JsonWriteOptions::default()
+            },
+        )
+        .map_err(DevicesMutationError::Write)?;
     }
-    write_json(
-        path,
-        &Value::Object(devices),
-        JsonWriteOptions {
-            mode: Some(0o600),
-            ..JsonWriteOptions::default()
-        },
-    )
-    .map_err(DevicesMutationError::Write)?;
-    Ok(true)
+    Ok(result)
 }
 
-fn load_devices_for_mutation(path: &Path) -> Result<Map<String, Value>, DevicesMutationError> {
+fn load_devices_for_mutation(
+    path: &Path,
+) -> Result<BTreeMap<String, ClientActivity>, DevicesMutationError> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
         Err(source) => {
             return Err(DevicesMutationError::Unreadable {
                 path: path.to_path_buf(),
@@ -824,37 +965,76 @@ fn load_devices_for_mutation(path: &Path) -> Result<Map<String, Value>, DevicesM
             source: Box::new(source),
         }
     })?;
-    let object = value
-        .as_object()
-        .cloned()
-        .ok_or_else(|| DevicesMutationError::Malformed {
-            path: path.to_path_buf(),
-            source: Box::new(io::Error::new(
+    parse_devices(&value).map_err(|source| DevicesMutationError::Malformed {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn parse_devices(
+    value: &Value,
+) -> Result<BTreeMap<String, ClientActivity>, Box<dyn Error + Send + Sync>> {
+    let object = value.as_object().ok_or_else(|| {
+        Box::new(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "devices must be a JSON object",
+        )) as Box<dyn Error + Send + Sync>
+    })?;
+    let mut devices = BTreeMap::new();
+    for (cid, value) in object {
+        let device = value.as_object().ok_or_else(|| {
+            Box::new(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "devices must be a JSON object",
-            )),
+                "device entry must be an object",
+            )) as Box<dyn Error + Send + Sync>
         })?;
-    for device in object.values() {
-        let Some(device) = device.as_object() else {
-            return Err(DevicesMutationError::Malformed {
-                path: path.to_path_buf(),
-                source: Box::new(io::Error::new(
+        for field in [
+            "last_accepted_ingest_at",
+            "last_accepted_segment",
+            "ingest_rejection",
+        ] {
+            if device.get(field).is_some_and(Value::is_null) {
+                return Err(Box::new(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "device entry must be an object",
-                )),
-            });
-        };
-        if device.len() != 1 || device.get("last_seen_at").and_then(Value::as_str).is_none() {
-            return Err(DevicesMutationError::Malformed {
-                path: path.to_path_buf(),
-                source: Box::new(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "device entry must contain only a string last_seen_at",
-                )),
-            });
+                    format!("{field} must be omitted or have its declared shape"),
+                )));
+            }
+        }
+        let activity = serde_json::from_value::<ClientActivity>(value.clone())
+            .map_err(|source| Box::new(source) as Box<dyn Error + Send + Sync>)?;
+        validate_activity(&activity)?;
+        devices.insert(cid.clone(), activity);
+    }
+    Ok(devices)
+}
+
+fn validate_activity(activity: &ClientActivity) -> Result<(), Box<dyn Error + Send + Sync>> {
+    for (field, value) in [("last_seen_at", &activity.last_seen_at)] {
+        if parse_rfc3339_utc(value).is_none() {
+            return Err(invalid_activity_field(field));
         }
     }
-    Ok(object)
+    if activity
+        .last_accepted_ingest_at
+        .as_deref()
+        .is_some_and(|value| parse_rfc3339_utc(value).is_none())
+    {
+        return Err(invalid_activity_field("last_accepted_ingest_at"));
+    }
+    if activity.ingest_rejection.as_ref().is_some_and(|rejection| {
+        parse_rfc3339_utc(&rejection.first).is_none()
+            || parse_rfc3339_utc(&rejection.latest).is_none()
+    }) {
+        return Err(invalid_activity_field("ingest_rejection"));
+    }
+    Ok(())
+}
+
+fn invalid_activity_field(field: &str) -> Box<dyn Error + Send + Sync> {
+    Box::new(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("{field} must be an RFC3339 UTC timestamp"),
+    ))
 }
 
 fn reload_key(path: &Path) -> Option<ReloadKey> {
@@ -864,6 +1044,11 @@ fn reload_key(path: &Path) -> Option<ReloadKey> {
         mtime_ns: i128::from(metadata.mtime()) * 1_000_000_000 + i128::from(metadata.mtime_nsec()),
         size: metadata.len(),
     })
+}
+
+pub(crate) fn parse_rfc3339_utc(value: &str) -> Option<OffsetDateTime> {
+    let timestamp = OffsetDateTime::parse(value, &Rfc3339).ok()?;
+    (timestamp.offset() == UtcOffset::UTC).then_some(timestamp)
 }
 
 fn rfc3339_utc(timestamp: OffsetDateTime) -> String {
@@ -1001,6 +1186,207 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&fs::read(ledger.devices_path()).unwrap()).unwrap(),
             json!({"a": {"last_seen_at": NOW}})
+        );
+    }
+
+    #[test]
+    fn last_seen_only_activity_remains_backward_readable() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, json!({"a": {"last_seen_at": NOW}}).to_string()).unwrap();
+
+        assert_eq!(
+            read_device_activity(&path),
+            DeviceActivityRead::Present(BTreeMap::from_iter([(
+                "a".to_owned(),
+                ClientActivity::new(NOW),
+            )]))
+        );
+    }
+
+    #[test]
+    fn activity_reader_rejects_unknown_and_wrongly_typed_fields() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for payload in [
+            json!({"a": {"last_seen_at": NOW, "unknown": true}}),
+            json!({"a": {"last_seen_at": 1}}),
+            json!({"a": {"last_seen_at": NOW, "last_accepted_ingest_at": null}}),
+            json!({"a": {"last_seen_at": NOW, "last_accepted_segment": {"day": "20260419"}}}),
+            json!({"a": {"last_seen_at": NOW, "ingest_rejection": {"reason_code": "x", "first": NOW, "latest": NOW, "active_count": -1}}}),
+        ] {
+            fs::write(&path, payload.to_string()).unwrap();
+            assert_eq!(read_device_activity(&path), DeviceActivityRead::Malformed);
+        }
+    }
+
+    #[test]
+    fn accepted_ingest_clears_rejection_and_preserves_connection_activity() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        ledger.touch_last_seen_at("a", NOW).unwrap();
+        ledger
+            .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "event_append_failed")
+            .unwrap();
+
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    },
+                )
+                .unwrap()
+        );
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(activity["a"].last_seen_at, NOW);
+        assert_eq!(
+            activity["a"].last_accepted_ingest_at.as_deref(),
+            Some("2026-04-19T18:05:12Z")
+        );
+        assert_eq!(
+            activity["a"].last_accepted_segment,
+            Some(AcceptedSegment {
+                day: "20260419".to_owned(),
+                name: "180512_1".to_owned(),
+            })
+        );
+        assert_eq!(activity["a"].ingest_rejection, None);
+    }
+
+    #[test]
+    fn rejection_streak_crosses_reason_codes_and_saturates() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "stream_advance_failed")
+                .unwrap()
+        );
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(
+            activity["a"].ingest_rejection,
+            Some(IngestRejection {
+                reason_code: "stream_advance_failed".to_owned(),
+                first: NOW.to_owned(),
+                latest: "2026-04-19T18:04:12Z".to_owned(),
+                active_count: 2,
+            })
+        );
+
+        fs::write(
+            ledger.devices_path(),
+            json!({"a": {
+                "last_seen_at": NOW,
+                "ingest_rejection": {
+                    "reason_code": "previous",
+                    "first": NOW,
+                    "latest": NOW,
+                    "active_count": u64::MAX,
+                }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        assert!(
+            ledger
+                .record_ingest_rejection("a", "2026-04-19T18:05:12Z", "next")
+                .unwrap()
+        );
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(
+            activity["a"]
+                .ingest_rejection
+                .as_ref()
+                .unwrap()
+                .active_count,
+            u64::MAX
+        );
+        assert_eq!(activity["a"].ingest_rejection.as_ref().unwrap().first, NOW);
+        assert_eq!(
+            activity["a"].ingest_rejection.as_ref().unwrap().latest,
+            "2026-04-19T18:05:12Z"
+        );
+        assert_eq!(
+            activity["a"].ingest_rejection.as_ref().unwrap().reason_code,
+            "next"
+        );
+    }
+
+    #[test]
+    fn activity_mutators_do_not_create_metadata_for_an_absent_client() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            !ledger
+                .record_ingest_rejection("missing", NOW, "event_append_failed")
+                .unwrap()
+        );
+        assert!(
+            !ledger
+                .record_accepted_ingest(
+                    "missing",
+                    NOW,
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180312_1".to_owned(),
+                    },
+                )
+                .unwrap()
+        );
+        assert!(!ledger.devices_path().exists());
+    }
+
+    #[test]
+    fn activity_mutator_io_failure_does_not_partially_apply() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        fs::create_dir_all(ledger.devices_path()).unwrap();
+
+        assert!(
+            ledger
+                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .is_err()
+        );
+        assert!(ledger.devices_path().is_dir());
+        assert!(
+            fs::read_dir(ledger.devices_path())
+                .unwrap()
+                .next()
+                .is_none()
         );
     }
 
