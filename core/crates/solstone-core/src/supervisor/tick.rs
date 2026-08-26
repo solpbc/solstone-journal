@@ -14,8 +14,8 @@ use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
-    DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus, check_sync,
-    machine_id, sync_conflict_event, write_sync_heartbeat,
+    DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
+    SupervisorLifecycle, SyncPeerObservation, SyncTickOutcome, sync_conflict_event,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system::process::{
@@ -79,10 +79,10 @@ pub(crate) enum SupervisorSignal {
     SigInt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum SupervisorStopReason {
     Signal(SupervisorSignal),
-    SyncConflict,
+    Sync(SyncTickOutcome),
     ParentLost(ParentLossReason),
 }
 
@@ -207,6 +207,7 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
 
 pub(crate) async fn run(
     state: &mut SupervisorState,
+    lifecycle: &mut SupervisorLifecycle,
     shutdown: &mut ShutdownSignals,
     parent_watch: Option<ParentWatch>,
 ) -> SupervisorStopReason {
@@ -281,8 +282,9 @@ pub(crate) async fn run(
             );
         }
         if last_sync.elapsed().as_secs_f64() >= DEFAULT_INTERVAL_SECONDS {
-            if sync_tick(state) {
-                return SupervisorStopReason::SyncConflict;
+            let outcome = sync_tick(state, lifecycle);
+            if !matches!(outcome, SyncTickOutcome::Healthy) {
+                return SupervisorStopReason::Sync(outcome);
             }
             last_sync = Instant::now();
         }
@@ -668,20 +670,16 @@ fn is_crashed_phase(phase: RuntimePhase) -> bool {
     )
 }
 
-fn stale_heartbeat_wire_input(
-    writer: &solstone_core_system::lifecycle::ForeignWriter,
-) -> StaleHeartbeatWireInput {
+fn stale_heartbeat_wire_input(writer: &SyncPeerObservation) -> StaleHeartbeatWireInput {
+    let heartbeat = writer.heartbeat.as_ref();
     StaleHeartbeatWireInput {
-        source_filename: writer
-            .path
-            .file_name()
-            .map_or_else(Vec::new, |filename| filename.as_encoded_bytes().to_vec()),
-        hostname: writer.hostname.clone(),
-        machine_id: writer.machine_id.clone(),
-        journal_path: writer.journal_path.clone(),
-        pid: writer.pid,
-        wall_time: Some(writer.wall_time.clone()),
-        malformed: writer.malformed,
+        source_filename: writer.source_filename.as_encoded_bytes().to_vec(),
+        hostname: heartbeat.map_or_else(String::new, |value| value.hostname.clone()),
+        machine_id: heartbeat.map_or_else(String::new, |value| value.machine_id.clone()),
+        journal_path: heartbeat.map_or_else(String::new, |value| value.journal_path.clone()),
+        pid: heartbeat.map(|value| value.pid),
+        wall_time: heartbeat.map(|value| value.wall_time.clone()),
+        malformed: heartbeat.is_none(),
     }
 }
 
@@ -1339,68 +1337,63 @@ fn message_truthy(message: &CallosumEnvelope, key: &str) -> bool {
     })
 }
 
-fn sync_tick(state: &mut SupervisorState) -> bool {
+fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -> SyncTickOutcome {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |value| value.as_secs_f64());
-    let filename = state.heartbeat_filename.clone();
-    let heartbeat = solstone_core_system::lifecycle::Heartbeat {
-        schema: 1,
-        machine_id: machine_id(),
-        hostname: filename.trim_end_matches(".check").to_owned(),
-        pid: std::process::id(),
-        wall_time: now.to_string(),
-        solstone_version: env!("CARGO_PKG_VERSION").to_owned(),
-        interval_seconds: DEFAULT_INTERVAL_SECONDS as u32,
-        journal_path: state.journal.display().to_string(),
-    };
-    if write_sync_heartbeat(
-        &state.journal,
-        &filename,
-        &serde_json::to_vec(&heartbeat).expect("heartbeat serializes"),
-    )
-    .is_err()
-    {
-        return false;
+    let outcome = lifecycle.tick_sync(state.last_sync_snapshot.as_ref(), now);
+    match &outcome {
+        SyncTickOutcome::Healthy => {
+            update_completed_sync_state(state, lifecycle);
+        }
+        SyncTickOutcome::Conflict(result) => {
+            update_completed_sync_state(state, lifecycle);
+            eprintln!("supervisor: sync conflict");
+            if let Some(conflict) = sync_conflict_event(result) {
+                emit(
+                    &state.server,
+                    "supervisor",
+                    "sync_conflict",
+                    Map::from_iter([
+                        ("hostname".into(), json!(conflict.hostname)),
+                        ("journal_path".into(), json!(conflict.journal_path)),
+                        ("pid".into(), json!(conflict.pid)),
+                        (
+                            "machine_id_prefix".into(),
+                            json!(conflict.machine_id_prefix),
+                        ),
+                        ("wall_time".into(), json!(conflict.wall_time)),
+                    ]),
+                );
+            }
+        }
+        SyncTickOutcome::RenewalFailure(error) => {
+            eprintln!("supervisor: sync renewal failure");
+            eprintln!("supervisor: sync renewal failure detail: {error:?}");
+        }
+        SyncTickOutcome::CompleteScanFailure(error) => {
+            eprintln!("supervisor: sync complete scan failure");
+            eprintln!("supervisor: sync complete scan failure detail: {error:?}");
+        }
+        SyncTickOutcome::RetainedObservationFailure(error) => {
+            eprintln!("supervisor: sync retained observation failure");
+            eprintln!("supervisor: sync retained observation failure detail: {error:?}");
+        }
     }
-    let Ok(result) = check_sync(
-        &state.journal,
-        &filename,
-        &heartbeat.machine_id,
-        state.last_sync_snapshot.as_ref(),
-        now,
-    ) else {
-        return false;
-    };
-    let conflict_now = result.is_tick_conflict(state.last_sync_snapshot.as_ref());
+    outcome
+}
+
+fn update_completed_sync_state(state: &mut SupervisorState, lifecycle: &SupervisorLifecycle) {
+    let result = lifecycle
+        .last_completed_sync_result()
+        .expect("healthy and conflict outcomes retain a completed sync result");
     state.stale_heartbeats = result
-        .foreign_writers
+        .peer_observations
         .iter()
-        .filter(|writer| !writer.is_live)
+        .filter(|peer| !peer.is_live)
         .cloned()
         .collect();
     state.last_sync_snapshot = Some(result.snapshot.clone());
-    if !conflict_now {
-        return false;
-    }
-    if let Some(conflict) = sync_conflict_event(&result) {
-        emit(
-            &state.server,
-            "supervisor",
-            "sync_conflict",
-            Map::from_iter([
-                ("hostname".into(), json!(conflict.hostname)),
-                ("journal_path".into(), json!(conflict.journal_path)),
-                ("pid".into(), json!(conflict.pid)),
-                (
-                    "machine_id_prefix".into(),
-                    json!(conflict.machine_id_prefix),
-                ),
-                ("wall_time".into(), json!(conflict.wall_time)),
-            ]),
-        );
-    }
-    true
 }
 
 #[cfg(test)]

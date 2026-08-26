@@ -21,8 +21,8 @@ use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
 use solstone_core_system::lifecycle::{
-    ForeignWriter, ParentLossReason, ParentWatch, ParentWatchStatus, PreReadySupervisorLifecycle,
-    ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
+    ParentLossReason, ParentWatch, ParentWatchStatus, PreReadySupervisorLifecycle, ShutdownRegime,
+    SupervisorLifecycle, SyncPeerObservation, SyncSnapshot,
 };
 use solstone_core_system::process::{
     ManagedProcess, RestartDecision, RestartPolicy, SpawnError, SpawnOptions, describe_exit,
@@ -87,8 +87,7 @@ pub(crate) struct SupervisorState {
     pub connection: CallosumSocketConnection,
     pub queue: TaskQueue,
     pub last_sync_snapshot: Option<SyncSnapshot>,
-    pub heartbeat_filename: String,
-    pub stale_heartbeats: Vec<ForeignWriter>,
+    pub stale_heartbeats: Vec<SyncPeerObservation>,
     pub shutdown_started: AtomicBool,
     pub started: Instant,
     pub scheduler: Option<ScheduleEngine>,
@@ -972,7 +971,6 @@ pub(crate) async fn boot_and_tick(
     )
     .await;
     pause_before_final_parent_check().await;
-    let heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
     let mut state = SupervisorState {
         journal,
         is_remote_mode: remote,
@@ -981,7 +979,6 @@ pub(crate) async fn boot_and_tick(
         connection,
         queue,
         last_sync_snapshot: None,
-        heartbeat_filename,
         stale_heartbeats: Vec::new(),
         shutdown_started: AtomicBool::new(false),
         started: Instant::now(),
@@ -1018,7 +1015,7 @@ pub(crate) async fn boot_and_tick(
             .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
         return Err(RuntimeBootError::ParentLostBeforeReadiness(reason));
     }
-    let lifecycle = lifecycle
+    let mut lifecycle = lifecycle
         .publish_heartbeat()
         .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
     lifecycle
@@ -1040,7 +1037,13 @@ pub(crate) async fn boot_and_tick(
         eprintln!("supervisor: startup catchup reconciliation failed: {error}");
     }
     state.last_retry_expiry_drain = Instant::now();
-    let stop_reason = tick::run(&mut state, &mut shutdown_signals, parent_watch).await;
+    let stop_reason = tick::run(
+        &mut state,
+        &mut lifecycle,
+        &mut shutdown_signals,
+        parent_watch,
+    )
+    .await;
     Ok(SupervisorOutcome {
         lifecycle,
         state,

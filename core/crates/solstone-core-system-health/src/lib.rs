@@ -18,6 +18,7 @@ mod safe_text;
 mod scan;
 mod segment_state;
 mod source;
+mod sync_copy;
 mod terminal;
 mod types;
 mod vocabulary;
@@ -49,6 +50,7 @@ pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,
     day_is_complete,
 };
+pub use sync_copy::{SyncRescanDiagnosis, describe_sync_rescan, format_sync_scan_failure_copy};
 pub use terminal::{
     is_floor_talent_capped, read_completed_since, read_completed_units,
     read_daily_deterministic_failures, read_terminal_states,

@@ -324,3 +324,24 @@ fn ac15_mid_tick_sync_conflict_exits_2_keeps_own_identity_and_heartbeat() {
             .any(|entry| entry.file_name() != "foreign-host.check")
     );
 }
+
+#[test]
+fn unsafe_sync_entry_exits_tempfail_and_uses_non_conflict_cleanup() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal);
+    let ready = journal.0.join("health/supervisor.ready");
+    wait_for(&ready, &mut child);
+    // The initial scan establishes the tick baseline before the unsafe entry
+    // is introduced; the following scan must fail closed rather than treating
+    // the directory as an ignored non-heartbeat name.
+    thread::sleep(Duration::from_secs(2));
+    fs::create_dir(journal.0.join("health/sync/unsafe")).expect("unsafe sync entry");
+
+    let status = child.wait().expect("wait complete scan failure");
+    assert_eq!(status.code(), Some(75));
+    assert!(!ready.exists(), "failure shutdown clears readiness");
+    assert!(
+        !journal.0.join("health/supervisor.pid").exists(),
+        "non-conflict failure attempts normal identity cleanup"
+    );
+}

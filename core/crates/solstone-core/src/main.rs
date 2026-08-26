@@ -156,6 +156,12 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
             eprintln!("supervisor: refusing boot, live foreign writer detected");
             ExitCode::from(1)
         }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::SyncScan(copy),
+        } => {
+            eprintln!("{copy}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
         supervisor::SupervisorHostOutcome::Refused { reason } => {
             eprintln!("supervisor failed to boot: {reason:?}");
             ExitCode::from(EXIT_TEMPFAIL)
@@ -163,12 +169,20 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
         supervisor::SupervisorHostOutcome::ParentLost { .. } => ExitCode::from(EXIT_TEMPFAIL),
         supervisor::SupervisorHostOutcome::OrderlyShutdown { cause }
         | supervisor::SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout { cause, .. } => {
-            if matches!(cause, supervisor::ShutdownCause::SyncConflict) {
-                ExitCode::from(2)
-            } else {
-                ExitCode::SUCCESS
-            }
+            ExitCode::from(exit_code_for_shutdown_cause(cause))
         }
+    }
+}
+
+fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
+    match cause {
+        supervisor::ShutdownCause::Sync(supervisor::SyncFailureKind::Conflict) => 2,
+        supervisor::ShutdownCause::Sync(
+            supervisor::SyncFailureKind::RenewalFailure
+            | supervisor::SyncFailureKind::CompleteScanFailure
+            | supervisor::SyncFailureKind::RetainedObservationFailure,
+        ) => EXIT_TEMPFAIL,
+        supervisor::ShutdownCause::Signal(_) => 0,
     }
 }
 
@@ -5577,6 +5591,32 @@ mod tests {
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
         assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    #[test]
+    fn shutdown_cause_exit_codes_distinguish_conflict_from_operational_failure() {
+        assert_eq!(
+            exit_code_for_shutdown_cause(supervisor::ShutdownCause::Sync(
+                supervisor::SyncFailureKind::Conflict
+            )),
+            2
+        );
+        for kind in [
+            supervisor::SyncFailureKind::RenewalFailure,
+            supervisor::SyncFailureKind::CompleteScanFailure,
+            supervisor::SyncFailureKind::RetainedObservationFailure,
+        ] {
+            assert_eq!(
+                exit_code_for_shutdown_cause(supervisor::ShutdownCause::Sync(kind)),
+                EXIT_TEMPFAIL
+            );
+        }
+        assert_eq!(
+            exit_code_for_shutdown_cause(supervisor::ShutdownCause::Signal(
+                supervisor::SupervisorSignal::SigTerm
+            )),
+            0
+        );
     }
 
     fn session_options(arguments: Vec<OsString>) -> GenerateSessionOptions {

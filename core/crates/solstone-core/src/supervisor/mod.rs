@@ -10,6 +10,6 @@ mod tick;
 
 pub use host::{
     InstallationBindingRefusal, LifecycleBootError, ShutdownCause, SiblingBinaryResolutionError,
-    SupervisorBootRefusal, SupervisorHostOutcome, SupervisorSignal, run_hosted,
+    SupervisorBootRefusal, SupervisorHostOutcome, SupervisorSignal, SyncFailureKind, run_hosted,
 };
 pub use solstone_core_system::lifecycle::ShutdownDisposition;

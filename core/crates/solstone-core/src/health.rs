@@ -17,10 +17,14 @@ use solstone_core_local::install::ced_readiness::{
 use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
-use solstone_core_system_health::sanitize_for_terminal;
+use solstone_core_system::lifecycle::machine_id;
+use solstone_core_system_health::{
+    SyncRescanDiagnosis, describe_sync_rescan, sanitize_for_terminal,
+};
 use tokio::time::{Instant, timeout};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
+const STATUS_SYNC_DIAGNOSTIC_FILENAME: &str = "status-diagnostic.check";
 
 fn deadline_after(limit: Duration) -> Instant {
     Instant::now() + limit
@@ -62,10 +66,33 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
             }
         }
     };
+    let sync_diagnosis = should_rescan_sync(&fetch)
+        .then(|| no_supervisor_sync_diagnosis(&journal))
+        .flatten();
     let (stdout, stderr, code) = present_health(&ced, &rfdetr, fetch);
+    let (stdout, stderr, code) = match sync_diagnosis {
+        Some(message) => (
+            stdout,
+            format!("{message}\n"),
+            std::process::ExitCode::FAILURE,
+        ),
+        None => (stdout, stderr, code),
+    };
     print!("{stdout}");
     eprint!("{stderr}");
     code
+}
+
+fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |duration| duration.as_secs_f64());
+    match describe_sync_rescan(journal, STATUS_SYNC_DIAGNOSTIC_FILENAME, &machine_id(), now) {
+        SyncRescanDiagnosis::Clean(_) => None,
+        SyncRescanDiagnosis::Conflict(message) | SyncRescanDiagnosis::Unsafe(message) => {
+            Some(message)
+        }
+    }
 }
 
 enum PresentedHealthError {
@@ -74,6 +101,16 @@ enum PresentedHealthError {
     NotInspectable { reason: String },
     RuntimeUnavailable { message: String },
     Fetch(HealthFetchError),
+}
+
+fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) -> bool {
+    matches!(
+        fetch,
+        Err(PresentedHealthError::InvalidUtf8
+            | PresentedHealthError::NotFound { .. }
+            | PresentedHealthError::NotInspectable { .. }
+            | PresentedHealthError::RuntimeUnavailable { .. })
+    )
 }
 
 fn ced_line(ced: &CedReadiness) -> String {
@@ -629,6 +666,28 @@ mod tests {
             "Cannot connect: callosum socket not found at /journal/health/callosum.sock\n"
         );
         assert_eq!(code, std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn rescan_covers_every_pre_connection_failure_but_not_socket_fetch_failures() {
+        let not_found: Result<SupervisorStatus, PresentedHealthError> =
+            Err(PresentedHealthError::NotFound {
+                path: "/journal/health/callosum.sock".to_owned(),
+            });
+        let not_inspectable = Err(PresentedHealthError::NotInspectable {
+            reason: "not a socket".to_owned(),
+        });
+        let runtime_unavailable = Err(PresentedHealthError::RuntimeUnavailable {
+            message: "runtime unavailable".to_owned(),
+        });
+        let invalid_utf8 = Err(PresentedHealthError::InvalidUtf8);
+        let fetch_failed = Err(PresentedHealthError::Fetch(HealthFetchError::TimedOut));
+
+        assert!(should_rescan_sync(&not_found));
+        assert!(should_rescan_sync(&not_inspectable));
+        assert!(should_rescan_sync(&runtime_unavailable));
+        assert!(should_rescan_sync(&invalid_utf8));
+        assert!(!should_rescan_sync(&fetch_failed));
     }
 
     #[test]

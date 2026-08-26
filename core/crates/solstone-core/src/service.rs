@@ -26,7 +26,8 @@ use solstone_core_journal_io::{
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
 };
-use solstone_core_system::lifecycle::{clear_readiness, wait_ready};
+use solstone_core_system::lifecycle::{clear_readiness, machine_id, wait_ready};
+use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
 use crate::{discover_binary_home, resolve_process_journal_path};
 
@@ -41,6 +42,8 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(40);
 const MUTATION_TIMEOUT: Duration = Duration::from_secs(60);
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const SERVICE_SYNC_DIAGNOSTIC_FILENAME: &str = "service-diagnostic.check";
+const READY_TIMEOUT_MESSAGE: &str = "service did not become ready within 120 seconds";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Platform {
@@ -81,7 +84,11 @@ pub fn run(action: ServiceAction) -> ExitCode {
     match run_inner(action) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("error: {}", safe(&message));
+            if is_final_sync_diagnosis(&message) {
+                eprintln!("{message}");
+            } else {
+                eprintln!("error: {}", safe(&message));
+            }
             ExitCode::from(1)
         }
     }
@@ -494,7 +501,7 @@ fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, St
     };
     require_success(result, "restart service")?;
     if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
-        return Err("service did not become ready within 120 seconds".to_owned());
+        return Err(ready_timeout_message(&journal));
     }
     println!("service restarted");
     Ok(0)
@@ -506,6 +513,7 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
         UnitTruth::Absent => {
             println!("service: not installed");
             println!("run 'journal setup' or 'journal service install' to install it.");
+            print_no_supervisor_sync_diagnosis();
             Ok(ExitCode::from(1))
         }
         UnitTruth::Managed(_) => {
@@ -525,6 +533,7 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
                 }
                 RuntimeTruth::Managed { active: false } | RuntimeTruth::Absent => {
                     println!("state: stopped");
+                    print_no_supervisor_sync_diagnosis();
                 }
                 other => return Err(runtime_error("status", other)),
             }
@@ -546,7 +555,7 @@ fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     }
     let journal = resolved_journal()?;
     if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
-        return Err("service did not become ready within 120 seconds".to_owned());
+        return Err(ready_timeout_message(&journal));
     }
     let _ = status(platform, home)?;
     Ok(ExitCode::SUCCESS)
@@ -556,6 +565,45 @@ fn resolved_journal() -> Result<PathBuf, String> {
     resolve_process_journal_path()
         .map(|line| line.path)
         .map_err(|_| "could not resolve journal".to_owned())
+}
+
+fn ready_timeout_message(journal: &Path) -> String {
+    match sync_rescan_diagnosis(journal) {
+        Some(message) => message,
+        None => READY_TIMEOUT_MESSAGE.to_owned(),
+    }
+}
+
+fn is_final_sync_diagnosis(message: &str) -> bool {
+    message.starts_with("Installation: needs attention\n")
+        || message.starts_with(
+            "Refusing to start - another solstone service is active on this journal.\n",
+        )
+}
+
+fn sync_rescan_diagnosis(journal: &Path) -> Option<String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |duration| duration.as_secs_f64());
+    match describe_sync_rescan(
+        journal,
+        SERVICE_SYNC_DIAGNOSTIC_FILENAME,
+        &machine_id(),
+        now,
+    ) {
+        SyncRescanDiagnosis::Clean(_) => None,
+        SyncRescanDiagnosis::Conflict(message) | SyncRescanDiagnosis::Unsafe(message) => {
+            Some(message)
+        }
+    }
+}
+
+fn print_no_supervisor_sync_diagnosis() {
+    if let Ok(journal) = resolved_journal()
+        && let Some(message) = sync_rescan_diagnosis(&journal)
+    {
+        println!("{message}");
+    }
 }
 
 fn service_lock(home: &Path) -> Result<solstone_core_journal_io::ExistingParentLock, String> {
@@ -1697,6 +1745,25 @@ fn safe(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clean_sync_rescan_preserves_ready_timeout_message() {
+        let journal = tempfile::tempdir_in("/var/tmp").unwrap();
+
+        assert_eq!(ready_timeout_message(journal.path()), READY_TIMEOUT_MESSAGE);
+        assert!(!journal.path().join("health").exists());
+    }
+
+    #[test]
+    fn final_sync_diagnoses_are_not_wrapped_or_sanitized_again() {
+        assert!(is_final_sync_diagnosis(
+            "Installation: needs attention\nyour journal contains an item that can't be checked safely."
+        ));
+        assert!(is_final_sync_diagnosis(
+            "Refusing to start - another solstone service is active on this journal.\nHost: peer"
+        ));
+        assert!(!is_final_sync_diagnosis(READY_TIMEOUT_MESSAGE));
+    }
 
     fn test_guard() -> GuardFields {
         parse_service_guard_environment(&BTreeMap::from([

@@ -16,9 +16,10 @@ use solstone_core_installation_identity::{
 };
 use solstone_core_system::lifecycle::{
     DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason, ParentWatch,
-    ShutdownDisposition, ShutdownPhase, ShutdownReport, SupervisorBootAdmission,
+    ShutdownDisposition, ShutdownPhase, ShutdownReport, SupervisorBootAdmission, SyncTickOutcome,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
+use solstone_core_system_health::format_sync_scan_failure_copy;
 
 use super::{runtime, tick};
 
@@ -29,9 +30,31 @@ pub enum SupervisorSignal {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncFailureKind {
+    Conflict,
+    RenewalFailure,
+    CompleteScanFailure,
+    RetainedObservationFailure,
+}
+
+impl SyncFailureKind {
+    fn classify(outcome: &SyncTickOutcome) -> Self {
+        match outcome {
+            SyncTickOutcome::Healthy => {
+                unreachable!("healthy sync ticks never stop the supervisor loop")
+            }
+            SyncTickOutcome::Conflict(_) => Self::Conflict,
+            SyncTickOutcome::RenewalFailure(_) => Self::RenewalFailure,
+            SyncTickOutcome::CompleteScanFailure(_) => Self::CompleteScanFailure,
+            SyncTickOutcome::RetainedObservationFailure(_) => Self::RetainedObservationFailure,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShutdownCause {
     Signal(SupervisorSignal),
-    SyncConflict,
+    Sync(SyncFailureKind),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +78,9 @@ pub enum LifecycleBootError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SupervisorBootRefusal {
     SyncConflict,
+    /// The pre-formatted, terminal-safe copy for an unsafe or incomplete sync
+    /// scan at boot, produced by `format_sync_scan_failure_copy`.
+    SyncScan(String),
     ParentLiveness(ParentAdmissionFailure),
     ParentLostBeforeReadiness(ParentLossReason),
     SiblingBinaryResolution(SiblingBinaryResolutionError),
@@ -111,6 +137,11 @@ pub async fn run_hosted(
         Err(LifecycleError::SyncConflict(_)) => {
             return SupervisorHostOutcome::Refused {
                 reason: SupervisorBootRefusal::SyncConflict,
+            };
+        }
+        Err(LifecycleError::SyncScan(failure)) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure)),
             };
         }
         Err(error) => {
@@ -178,7 +209,9 @@ pub async fn run_hosted(
         tick::SupervisorStopReason::Signal(tick::SupervisorSignal::SigInt) => {
             ShutdownCause::Signal(SupervisorSignal::SigInt)
         }
-        tick::SupervisorStopReason::SyncConflict => ShutdownCause::SyncConflict,
+        tick::SupervisorStopReason::Sync(sync_outcome) => {
+            ShutdownCause::Sync(SyncFailureKind::classify(&sync_outcome))
+        }
         tick::SupervisorStopReason::ParentLost(reason) => {
             let mut driver = outcome.state.into_shutdown_driver();
             let report = outcome
@@ -191,7 +224,7 @@ pub async fn run_hosted(
             };
         }
     };
-    let sync_conflict = matches!(cause, ShutdownCause::SyncConflict);
+    let sync_conflict = matches!(cause, ShutdownCause::Sync(SyncFailureKind::Conflict));
     let mut driver = outcome.state.into_shutdown_driver();
     let report = outcome
         .lifecycle

@@ -14,10 +14,9 @@ use solstone_core_journal_io::{FlatDirectory, JournalRoot, create_or_open_flat_d
 #[cfg(target_os = "linux")]
 use solstone_core_system::lifecycle::sweep_orphans;
 use solstone_core_system::lifecycle::{
-    Heartbeat, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle,
-    SyncCheckResult, SyncRescan, append_supervisor_log, compact_log_if_oversized,
-    format_conflict_message, rescan_sync_read_only, sanitize_hostname, shutdown,
-    sync_conflict_event, write_sync_heartbeat,
+    Heartbeat, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle, SyncCheckResult,
+    SyncRescan, append_supervisor_log, compact_log_if_oversized, format_conflict_message,
+    rescan_sync_read_only, sanitize_hostname, shutdown, sync_conflict_event, write_sync_heartbeat,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
