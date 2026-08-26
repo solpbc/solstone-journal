@@ -39,7 +39,7 @@ use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow};
 use solstone_core_system::status_wire::CrashedServiceCandidate;
 
 use super::bus::{SupervisorProcessSink, SupervisorScheduleSink, SupervisorTaskQueueSink};
-use super::shutdown::SupervisorShutdownDriver;
+use super::shutdown::{StderrBoundedShutdownDiagnosticSink, SupervisorShutdownDriver};
 use super::tick;
 
 const APP_FIXTURE_ENABLED_ENV: &str = "SOLSTONE_SUPERVISOR_APP_FIXTURE";
@@ -196,7 +196,7 @@ pub(crate) struct ManagedAppProcess {
 }
 
 impl ManagedAppProcess {
-    fn new(
+    pub(super) fn new(
         service: AppService,
         enabled: bool,
         journal: &Path,
@@ -577,6 +577,7 @@ impl SupervisorState {
             self,
             tokio::runtime::Handle::current(),
             matches!(regime, ShutdownRegime::ParentLossBounded),
+            Arc::new(StderrBoundedShutdownDiagnosticSink),
         )
     }
 
