@@ -477,8 +477,8 @@ fn map_root_revalidation_error(
             path,
             source,
         },
-        JournalRootError::Invalid { root, reason }
-        | JournalRootError::Unsupported { root, reason } => FlatDirectoryError::Io {
+        JournalRootError::Invalid { root, reason, .. }
+        | JournalRootError::Unsupported { root, reason, .. } => FlatDirectoryError::Io {
             operation: "revalidate journal root",
             path: root,
             source: io::Error::other(reason),

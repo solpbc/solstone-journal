@@ -247,7 +247,7 @@ fn io_error(path: &Path, source: io::Error) -> ReadError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::sync::{Mutex, Once, OnceLock};

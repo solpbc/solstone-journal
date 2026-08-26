@@ -1589,11 +1589,35 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     assert!(driver.contains("solstone-journal-win-host-ci.lock"));
     assert!(driver.contains("C:\\\\sol\\\\sj-ci.cmd"));
     assert!(runner.contains(
-        "cargo build --manifest-path core\\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config"
+        "cargo build --manifest-path core\\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io"
     ));
     assert!(runner.contains(
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-config --lib"
     ));
+    for command in [
+        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --lib",
+        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks",
+        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal --lib",
+    ] {
+        assert!(runner.contains(command), "Windows runner missing {command}");
+    }
+    for test in [
+        "config_strip_matches_python_control_whitespace",
+        "ensure_journal_dir_reports_non_directory_parent",
+    ] {
+        assert!(
+            runner.contains(&format!("findstr /c:\"tests::{test}: test\"")),
+            "Windows runner must list required test {test}"
+        );
+        assert!(
+            runner.contains(&format!("call :require_journal_test tests::{test}")),
+            "Windows runner must require execution of {test}"
+        );
+        assert!(
+            runner.contains(&format!("ERROR: required journal test {test}")),
+            "Windows runner must name a failed required test {test}"
+        );
+    }
     assert_eq!(
         runner
             .matches("call :verify_source_binding || exit /b 1")
@@ -1602,9 +1626,8 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         "Windows runner must verify the exact source both before and after native work"
     );
     assert!(runner.contains(
-        "journal-core unit portability filesystem I/O archive Callosum identity supervisor"
+        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
     ));
-    assert!(runner.contains("packaging install sign smoke and NTFS/ReFS evidence not run"));
     assert!(!sync.contains("swbuild.bundle"));
     assert!(!driver.contains("C:\\\\sol\\\\sw-ci.cmd"));
 }

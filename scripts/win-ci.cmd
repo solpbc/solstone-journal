@@ -3,10 +3,11 @@
 :: Copyright (c) 2026 sol pbc
 ::
 :: First native Windows journal gate. It proves the source-bound MSVC transport
-:: and the portable journal/config substrate only. The journal crate is built;
-:: the config crate's unit suite runs. Journal-core unit portability,
-:: filesystem I/O, archive, Callosum, identity, supervisor, packaging, install,
-:: sign, smoke, and NTFS/ReFS behavior remain later gates and are not implied.
+:: and the portable journal/config substrate only. It builds journal-io,
+:: journal, and journal-config; runs journal-io library and lock-component
+:: tests, journal-config unit tests, and journal library tests. Archive,
+:: publication, locking beyond the named component, Callosum, packaging,
+:: install, signing, smoke, and full NTFS/ReFS evidence remain later gates.
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
@@ -26,9 +27,20 @@ if not defined VSINSTALL ( echo ERROR: VS Build Tools with VC.Tools.x86.x64 not 
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vcvarsall failed & exit /b 1 )
 
 echo === cargo build --locked (portable journal substrate) ===
-cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config || exit /b 1
+cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
+echo === cargo test --locked (journal-io library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
+echo === cargo test --locked (journal-io lock component) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
+echo === checking required journal portability tests ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
+call :require_journal_test tests::config_strip_matches_python_control_whitespace || exit /b 1
+call :require_journal_test tests::ensure_journal_dir_reports_non_directory_parent || exit /b 1
+echo === cargo test --locked (journal library) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
 
 :: Detect another operator replacing the persistent checkout while Cargo ran.
 :: The driver-side lock normally serializes this rail; this second check keeps
@@ -37,7 +49,12 @@ call :verify_source_binding || exit /b 1
 
 echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
-echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal and solstone-core-journal-config and config unit tests passed; journal-core unit portability filesystem I/O archive Callosum identity supervisor packaging install sign smoke and NTFS/ReFS evidence not run ===
+echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run ===
+exit /b 0
+
+:require_journal_test
+set "JOURNAL_WIN_CI_TEST=%~1"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --exact "%JOURNAL_WIN_CI_TEST%" 2>&1 | findstr /c:"test result: ok. 1 passed;" >nul || ( echo ERROR: required journal test %JOURNAL_WIN_CI_TEST% is missing ignored or failed & exit /b 1 )
 exit /b 0
 
 :verify_source_binding

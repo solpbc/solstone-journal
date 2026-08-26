@@ -375,7 +375,7 @@ fn lookup_from_path_error(error: PathError) -> ExactLookupError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::{
         ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,

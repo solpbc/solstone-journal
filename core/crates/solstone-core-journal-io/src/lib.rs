@@ -7,9 +7,9 @@
 //! let _ = solstone_core_journal_io::read_journal_config;
 //! ```
 //!
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 compile_error!(
-    "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend"
+    "solstone-core-journal-io requires a Unix or Windows target: atomic write, locking, and lease durability guarantees have no portable backend"
 );
 
 #[cfg(unix)]
@@ -25,7 +25,6 @@ pub mod errors;
 pub mod flat_directory;
 #[cfg(unix)]
 pub mod health_marker;
-#[cfg(unix)]
 pub mod journal_root;
 #[cfg(unix)]
 pub mod lease;
@@ -86,8 +85,11 @@ pub use health_marker::{
 };
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use journal_root::{AcquisitionPrimitive, run_with_acquisition_fault};
-#[cfg(unix)]
-pub use journal_root::{JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity};
+pub use journal_root::{
+    JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity, WindowsRefusalCategory,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use journal_root::{WindowsAcquisitionPrimitive, run_with_windows_acquisition_fault};
 #[cfg(unix)]
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,

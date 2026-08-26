@@ -336,6 +336,15 @@ crossterm = { version = "=0.29.0", default-features = false, features = ["events
 # already sit on the license allow list, so the BSL-1.0 alternative does not
 # require a deny.toml edit.
 whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
+# Direct Windows journal-root substrate. `windows-sys` 0.61.2 is already locked
+# transitively; this exact pin makes the root-admission Win32 surface reviewed
+# and reproducible. The selected bindings cover handle identity, no-reparse
+# directory opens, fixed-volume classification, Cloud Files status, and the
+# existing CompareStringOrdinal portability contract. It is Windows-target
+# gated by journal-io, has no build script or C/C++ step, and adds only system
+# DLL links on that target. Package MSRV 1.82 is below workspace Rust 1.95;
+# MIT license and the resolved graph are already covered by cargo-deny.
+windows-sys = { version = "=0.61.2", features = ["Win32_Globalization", "Win32_Security", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_WindowsProgramming"] }
 # IANA timezone for journal-config default materialization. Release-rail lenses:
 # `iana-time-zone` 0.1.65 is MIT OR Apache-2.0 and is already in the lock via
 # health-web and reprocess-cli. `build = false`; package MSRV 1.62.0 is below

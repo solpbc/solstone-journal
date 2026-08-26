@@ -158,7 +158,7 @@ pub fn sync_dir_bound(directory: &impl AsFd) -> Result<(), io::Error> {
     nix::unistd::fsync(directory).map_err(|error| io::Error::from_raw_os_error(error as i32))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::symlink;

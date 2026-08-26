@@ -350,10 +350,12 @@ fn open_requested_root(root: &Path) -> Result<(OwnedFd, ObjectIdentity), Journal
         Errno::ENOENT => JournalRootError::Invalid {
             root: root.to_path_buf(),
             reason: "journal root does not exist",
+            category: None,
         },
         Errno::ENOTDIR | Errno::ELOOP => JournalRootError::Invalid {
             root: root.to_path_buf(),
             reason: "journal root is not a directory",
+            category: None,
         },
         other => source_io("open journal root", root, other),
     })?;
@@ -365,6 +367,7 @@ fn open_requested_root(root: &Path) -> Result<(OwnedFd, ObjectIdentity), Journal
         return Err(JournalRootError::Invalid {
             root: root.to_path_buf(),
             reason: "journal root is not a directory",
+            category: None,
         });
     }
     Ok((opened, object_identity(&stat)?))
@@ -409,6 +412,7 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf, ObjectIdentity), Journ
         return Err(JournalRootError::Invalid {
             root: root.to_path_buf(),
             reason: "journal root must be absolute",
+            category: None,
         });
     }
 
@@ -452,6 +456,7 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf, ObjectIdentity), Journ
             .ok_or_else(|| JournalRootError::Invalid {
                 root: root.to_path_buf(),
                 reason: "canonical journal root has no final component",
+                category: None,
             })?;
     let final_name = final_name.clone();
     for component in ancestors {
@@ -547,12 +552,14 @@ fn canonical_components(
                 return Err(JournalRootError::Invalid {
                     root: original.to_path_buf(),
                     reason: "canonical journal root has a non-UTF-8 ancestor",
+                    category: None,
                 });
             }
             _ => {
                 return Err(JournalRootError::Invalid {
                     root: original.to_path_buf(),
                     reason: "canonical journal root is not absolute",
+                    category: None,
                 });
             }
         }
@@ -566,10 +573,10 @@ fn is_directory(stat: &FileStat) -> bool {
 }
 
 fn object_identity(stat: &FileStat) -> Result<ObjectIdentity, JournalRootError> {
-    Ok(ObjectIdentity {
-        dev: stat_identifier(stat.st_dev)?,
-        ino: stat_identifier(stat.st_ino)?,
-    })
+    Ok(ObjectIdentity::from_device_inode(
+        stat_identifier(stat.st_dev)?,
+        stat_identifier(stat.st_ino)?,
+    ))
 }
 
 fn require_same_root_identity(
@@ -806,11 +813,13 @@ mod tests {
                 JournalRootError::Invalid {
                     root: actual_root,
                     reason: actual_reason,
+                    category,
                 },
                 ExpectedFault::Invalid(expected_reason),
             ) => {
                 assert_eq!(actual_root, root);
                 assert_eq!(actual_reason, expected_reason);
+                assert_eq!(category, None);
             }
             (
                 JournalRootError::Io {

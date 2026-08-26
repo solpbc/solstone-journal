@@ -1,18 +1,18 @@
 # Journal filesystem contract
 
 This is the shared vocabulary for a journal root, its identity, entry kinds, and
-refusals. It is not a generic VFS. It is not Windows support. The only backend
-today is Unix: both crates target-gate `nix` (archive also target-gates
-`solstone-core-journal-io`) and each refuses non-Unix with its own `compile_error!`.
-`core/ci/windows-crosscheck.toml` excludes both as sibling-owned platform backends.
+refusals. It is not a generic VFS. `solstone-core-journal-io` supports Unix and
+Windows journal-root admission; `solstone-core-journal-archive` remains Unix-only.
 
 ## Root, identity, kind, refusal
 
 `solstone-core-journal-io` owns:
 
-- **`JournalRoot`:** one admitted journal directory, retained by descriptor.
-- **`ObjectIdentity`:** opaque `(device, inode)` pair. No public constructor,
-  no accessors for the raw pair, no serde.
+- **`JournalRoot`:** one admitted journal directory, retained by descriptor or
+  handle.
+- **`ObjectIdentity`:** opaque platform identity: Unix `(device, inode)` or
+  Windows `(volume serial, 128-bit file ID)`. No public constructor, no
+  accessors for the raw identity, no serde.
 - **`JournalEntryKind`:** exhaustive no-follow kind: `RegularFile`,
   `Directory`, `Symlink`, `Fifo`, `Socket`, `CharacterDevice`, `BlockDevice`,
   `Other`.
@@ -21,7 +21,9 @@ today is Unix: both crates target-gate `nix` (archive also target-gates
 `JournalRoot` is not `Clone`: a cloned descriptor would be a second capability,
 and a cloned path would be reacquisition. It is not serializable.
 
-## Unix retained handle and no-follow
+## Retained authority and no-follow
+
+### Unix retained handle and no-follow
 
 Admit once. The retained directory descriptor is source authority. Do not
 reopen the root by path.
@@ -33,6 +35,37 @@ opens in archive keep `O_NOFOLLOW` (regular files also `O_NONBLOCK`).
 Revalidate the admitted object (`fstat` of the retained descriptor against the
 frozen identity, and confirm it is still a directory). Do not walk the stored
 canonical path to reacquire.
+
+### Windows retained handle and gate-1 admission
+
+Windows gate 1 admits only a journal root and its portable final name. It opens
+the exact requested path with `CreateFileW` using `FILE_FLAG_BACKUP_SEMANTICS |
+FILE_FLAG_OPEN_REPARSE_POINT`. A reparse point at the root or any inspected
+ancestor is refused; unlike Unix, this gate does not admit a leaf symlink or
+junction.
+
+Admission has two passes: an authoritative open captures attributes and
+`FileIdInfo`, then an independent absolute-path walk opens every ancestor and
+the target again, rejecting reparses and comparing the final target identity.
+The retained handle is the only identity authority. `revalidate()` reads that
+handle only and never reopens a path.
+
+Filesystem admission is a strict `NTFS`/`ReFS` allow-list, and volume admission
+is a strict fixed-drive allow-list; each wildcard refuses rather than admits.
+Cloud Files has exactly three outcomes: a registered sync root refuses, the
+one confirmed not-under-sync-root HRESULT admits, and every other result
+refuses as unverifiable. `GetDriveTypeW` and `CfGetSyncRootInfoByPath` are
+classification-only queries against the already-validated path spelling, never
+identity reacquisition; identity comes exclusively from `FileIdInfo` on the
+retained handle.
+
+> **Known Windows gate-1 limitation:** the Win32 surface used here has no
+> descriptor-relative open equivalent to Unix's `openat` + `O_NOFOLLOW` chain,
+> so the ancestor verification uses separate absolute-path opens. The final
+> target identity recheck catches final-target replacement, but cannot prove an
+> intermediate ancestor was not transiently swapped and restored between those
+> independent opens. This is materially weaker than Unix's descriptor-relative
+> walk and is a known gate-1 limitation, not equivalent-strength authority.
 
 ## Exhaustive kind vs three coarse projections
 
@@ -77,18 +110,24 @@ proof revalidation walk descendants through `AsFd`. `ArchiveSource::open` maps
 
 ## Unsupported
 
-`JournalRootError::Unsupported` is the explicit refusal for a backend that
-cannot retain a handle. The Unix backend never emits it. It is not a silent
-path-only mode.
+`JournalRootError::Unsupported` is the explicit refusal for an unsupported
+backend policy; it is never a silent path-only mode. The Unix backend never
+emits it. Windows gate 1 uses it for reparse, filesystem, drive-type, and
+Cloud Files policy refusals; each carries a `WindowsRefusalCategory`. Ordinary
+permission and I/O failures remain `JournalRootError::Io`.
 
 ## Future-backend obligations
+
+Windows gate 1 covers root admission and portable name admission only.
+Locking, leases, atomic publication, retention, packaging, archive,
+`flat_directory`, `snapshot`, `staged`, `health_marker`, `append`, and
+`claim_remove` remain explicitly Unix-only and unsupported on Windows in this
+slice.
 
 A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid
 `Clone` and serialization; treat any stored path as metadata. No public
-filesystem trait, no `Box<dyn>`, no path-only fake backend. Windows policy,
-Win32, and `windows-sys` are out of scope. The current build continues to
-exclude these Unix-only crates from Windows cross-checks.
+filesystem trait, no `Box<dyn>`, no path-only fake backend.
 
 ## Bound publication
 

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+#![cfg(unix)]
 
 use std::ffi::OsStr;
 #[cfg(all(unix, not(target_os = "macos")))]

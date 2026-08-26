@@ -358,8 +358,10 @@ impl ArchiveSource {
 
 pub(crate) fn map_root_error(error: JournalRootError) -> ArchiveError {
     match error {
-        JournalRootError::Invalid { root, reason } => ArchiveError::InvalidJournal { root, reason },
-        JournalRootError::Unsupported { root, reason } => {
+        JournalRootError::Invalid { root, reason, .. } => {
+            ArchiveError::InvalidJournal { root, reason }
+        }
+        JournalRootError::Unsupported { root, reason, .. } => {
             ArchiveError::UnsupportedJournal { root, reason }
         }
         JournalRootError::Io {
@@ -988,6 +990,7 @@ mod tests {
         match map_root_error(JournalRootError::Invalid {
             root: root.clone(),
             reason: "journal root does not exist",
+            category: None,
         }) {
             ArchiveError::InvalidJournal {
                 root: actual,
@@ -1025,6 +1028,7 @@ mod tests {
         match map_root_error(JournalRootError::Unsupported {
             root: root.clone(),
             reason: "no retained handle",
+            category: None,
         }) {
             ArchiveError::UnsupportedJournal {
                 root: actual,

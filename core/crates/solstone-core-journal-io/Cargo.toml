@@ -18,6 +18,9 @@ solstone-core-journal = { workspace = true }
 libc = { workspace = true }
 nix = { workspace = true, features = ["dir", "fs"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
 [features]
 test-hooks = []
 
@@ -35,4 +38,11 @@ unsafe_code = "deny"
 [[test]]
 name = "journal_io_lock_component"
 path = "tests/journal_io_lock_component.rs"
+required-features = ["test-hooks"]
+
+# Cloud Files registration is irreconcilable process-global sync-root setup and
+# must not run concurrently with any other test touching that namespace.
+[[test]]
+name = "windows_cloud_sync_root_registration"
+path = "tests/windows_cloud_sync_root_registration.rs"
 required-features = ["test-hooks"]

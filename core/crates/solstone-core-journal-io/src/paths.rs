@@ -689,7 +689,7 @@ fn path_io(path: &Path, source: io::Error) -> PathError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::{PermissionsExt, symlink};

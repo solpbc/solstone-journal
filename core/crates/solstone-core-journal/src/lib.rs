@@ -565,14 +565,17 @@ mod tests {
 
     #[test]
     fn config_strip_matches_python_control_whitespace() {
+        let expected = PathBuf::from("/").join("tmp").join("from-config");
         let resolved = resolve_journal_path(
             None,
-            Some("\u{001c}/tmp/from-config\u{001f}"),
+            Some(
+                "\u{001c}\u{001d}\u{001e}\u{001f}/tmp/from-config\u{001f}\u{001e}\u{001d}\u{001c}",
+            ),
             None,
             Path::new("/tmp/home"),
         );
         assert_eq!(resolved.source, Source::Config);
-        assert_eq!(resolved.path, PathBuf::from("/tmp/from-config"));
+        assert_eq!(resolved.path, expected);
     }
 
     #[test]
@@ -977,39 +980,40 @@ mod tests {
         assert_eq!(error.error.kind(), io::ErrorKind::NotFound);
     }
 
+    #[cfg(unix)]
     #[test]
     fn ensure_journal_dir_reports_read_only_parent() {
         let root = unique_temp("ensure-read-only");
         let parent = root.join("parent");
         fs::create_dir_all(&parent).expect("create parent");
-        #[cfg(unix)]
-        {
-            let original_permissions = fs::metadata(&parent).expect("metadata").permissions();
-            let mut read_only_permissions = original_permissions.clone();
-            read_only_permissions.set_mode(0o500);
-            fs::set_permissions(&parent, read_only_permissions).expect("set readonly");
-            let target = parent.join("journal");
-            let result = ensure_journal_dir(&target, Source::Source);
-            fs::set_permissions(&parent, original_permissions).expect("restore permissions");
-            fs::remove_dir_all(root).expect("cleanup readonly root");
-            let error = result.expect_err("read-only parent should error");
-            assert_eq!(error.source, "source");
-            assert_eq!(error.path, target);
-        }
-        #[cfg(not(unix))]
-        {
-            let mut permissions = fs::metadata(&parent).expect("metadata").permissions();
-            permissions.set_readonly(true);
-            fs::set_permissions(&parent, permissions.clone()).expect("set readonly");
-            let target = parent.join("journal");
-            let result = ensure_journal_dir(&target, Source::Source);
-            permissions.set_readonly(false);
-            fs::set_permissions(&parent, permissions).expect("restore permissions");
-            fs::remove_dir_all(root).expect("cleanup readonly root");
-            let error = result.expect_err("read-only parent should error");
-            assert_eq!(error.source, "source");
-            assert_eq!(error.path, target);
-        }
+        let original_permissions = fs::metadata(&parent).expect("metadata").permissions();
+        let mut read_only_permissions = original_permissions.clone();
+        read_only_permissions.set_mode(0o500);
+        fs::set_permissions(&parent, read_only_permissions).expect("set readonly");
+        let target = parent.join("journal");
+        let result = ensure_journal_dir(&target, Source::Source);
+        fs::set_permissions(&parent, original_permissions).expect("restore permissions");
+        fs::remove_dir_all(root).expect("cleanup readonly root");
+        let error = result.expect_err("read-only parent should error");
+        assert_eq!(error.source, "source");
+        assert_eq!(error.path, target);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ensure_journal_dir_reports_non_directory_parent() {
+        // Windows' read-only bit does not deny directory creation. A file in the
+        // parent position is a deterministic Windows create-directory failure.
+        let root = unique_temp("ensure-non-directory-parent");
+        fs::create_dir_all(&root).expect("create root");
+        let parent = root.join("parent-file");
+        fs::write(&parent, "not a directory").expect("write parent file");
+        let target = parent.join("journal");
+        let error = ensure_journal_dir(&target, Source::Source)
+            .expect_err("non-directory parent should error");
+        assert_eq!(error.source, "source");
+        assert_eq!(error.path, target);
+        fs::remove_dir_all(root).expect("cleanup root");
     }
 
     fn expand_token(value: &str, root: &Path) -> String {

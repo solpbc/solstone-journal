@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! journal-io and journal-archive refuse non-Unix at compile time.
+//! journal-io carries a Windows root-admission backend while archive remains Unix-only.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -38,6 +38,20 @@ fn target_unix<'a>(doc: &'a DocumentMut, kind: &str) -> Option<&'a Table> {
         .and_then(Item::as_table)
 }
 
+fn target_windows<'a>(doc: &'a DocumentMut, kind: &str) -> Option<&'a Table> {
+    doc.get("target")
+        .and_then(|item| item.get("cfg(windows)"))
+        .and_then(|item| item.get(kind))
+        .and_then(Item::as_table)
+}
+
+fn workspace_dependencies<'a>(doc: &'a DocumentMut) -> &'a Table {
+    doc.get("workspace")
+        .and_then(|item| item.get("dependencies"))
+        .and_then(Item::as_table)
+        .expect("workspace dependencies")
+}
+
 fn has_key(table: Option<&Table>, key: &str) -> bool {
     table.is_some_and(|table| table.contains_key(key))
 }
@@ -58,13 +72,12 @@ fn features(table: &Table, crate_name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn compile_error_literal(lib: &str) -> String {
-    const CFG: &str = "#[cfg(not(unix))]";
+fn compile_error_literal(lib: &str, cfg: &str) -> String {
     const MACRO: &str = "compile_error!(";
     let cfg_at = lib
-        .find(CFG)
-        .expect("lib.rs must declare #[cfg(not(unix))]");
-    let after_cfg = &lib[cfg_at + CFG.len()..];
+        .find(cfg)
+        .unwrap_or_else(|| panic!("lib.rs must declare {cfg}"));
+    let after_cfg = &lib[cfg_at + cfg.len()..];
     let macro_rel = after_cfg
         .find(MACRO)
         .expect("lib.rs must declare compile_error! after #[cfg(not(unix))]");
@@ -93,6 +106,22 @@ fn journal_io_nix_edges_are_unix_target_gated() {
     assert_eq!(features(unix_deps, "nix"), ["dir", "fs"]);
     let unix_dev = target_unix(&doc, "dev-dependencies").expect("unix dev-dependencies");
     assert_eq!(features(unix_dev, "nix"), ["signal"]);
+    let windows = target_windows(&doc, "dependencies").expect("windows dependencies");
+    assert!(windows.contains_key("windows-sys"));
+    let workspace = parse_manifest("core/Cargo.toml");
+    assert_eq!(
+        features(workspace_dependencies(&workspace), "windows-sys"),
+        [
+            "Win32_Globalization",
+            "Win32_Security",
+            "Win32_Storage_CloudFilters",
+            "Win32_Storage_FileSystem",
+            "Win32_System_IO",
+            "Win32_System_Ioctl",
+            "Win32_System_SystemServices",
+            "Win32_System_WindowsProgramming",
+        ]
+    );
 }
 
 #[test]
@@ -113,11 +142,11 @@ fn journal_archive_unix_edges_are_target_gated() {
 }
 
 #[test]
-fn journal_io_lib_declares_not_unix_compile_error() {
+fn journal_io_lib_declares_non_unix_non_windows_compile_error() {
     let lib = read_repo_file("core/crates/solstone-core-journal-io/src/lib.rs");
     assert_eq!(
-        compile_error_literal(&lib),
-        "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend"
+        compile_error_literal(&lib, "#[cfg(not(any(unix, windows)))]"),
+        "solstone-core-journal-io requires a Unix or Windows target: atomic write, locking, and lease durability guarantees have no portable backend"
     );
 }
 
@@ -125,43 +154,29 @@ fn journal_io_lib_declares_not_unix_compile_error() {
 fn journal_archive_lib_declares_not_unix_compile_error() {
     let lib = read_repo_file("core/crates/solstone-core-journal-archive/src/lib.rs");
     assert_eq!(
-        compile_error_literal(&lib),
+        compile_error_literal(&lib, "#[cfg(not(unix))]"),
         "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
     );
 }
 
 #[test]
-fn windows_crosscheck_exclusive_diagnostics_match_compile_error_literals() {
-    let io_literal = compile_error_literal(&read_repo_file(
-        "core/crates/solstone-core-journal-io/src/lib.rs",
-    ));
-    let archive_literal = compile_error_literal(&read_repo_file(
-        "core/crates/solstone-core-journal-archive/src/lib.rs",
-    ));
+fn windows_crosscheck_keeps_journal_archive_exclusive_diagnostic() {
+    let archive_literal = compile_error_literal(
+        &read_repo_file("core/crates/solstone-core-journal-archive/src/lib.rs"),
+        "#[cfg(not(unix))]",
+    );
     let doc: DocumentMut = read_repo_file("core/ci/windows-crosscheck.toml")
         .parse()
         .expect("parse windows-crosscheck.toml");
     let exclusions = doc["exclusions"]
         .as_array_of_tables()
         .expect("exclusions array of tables");
-    let mut saw_io = false;
     let mut saw_archive = false;
     for exclusion in exclusions {
         let Some(package) = exclusion.get("package").and_then(Item::as_str) else {
             continue;
         };
         match package {
-            "solstone-core-journal-io" => {
-                saw_io = true;
-                assert!(
-                    exclusion.get("expected_stderr").is_none(),
-                    "journal-io exclusion still names expected_stderr"
-                );
-                assert_eq!(
-                    exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
-                    Some(io_literal.as_str())
-                );
-            }
             "solstone-core-journal-archive" => {
                 saw_archive = true;
                 assert!(
@@ -176,6 +191,5 @@ fn windows_crosscheck_exclusive_diagnostics_match_compile_error_literals() {
             _ => {}
         }
     }
-    assert!(saw_io, "missing journal-io exclusion");
     assert!(saw_archive, "missing journal-archive exclusion");
 }

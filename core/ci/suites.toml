@@ -1,7 +1,7 @@
 version = 1
 sets = ["component", "native", "differential", "race", "live", "policy", "package", "platform"]
 areas = ["audio", "backup", "body", "cognition", "commands", "core", "entities", "facets", "formats", "health", "home", "identity", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "records", "repository", "retention", "services", "stats", "support", "system", "talents", "transfer", "trust", "workspace"]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache", "cargo-deny", "ffmpeg-toolchain", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "host-tools"]
 serial_groups = ["host-contention", "local-services", "native-runtime"]
 runtimes = ["none", "onnx", "pdf"]
@@ -2989,6 +2989,19 @@ target = "journal_io_lock_component"
 set = "component"
 areas = ["journal"]
 platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_cloud_sync_root_registration"
+package = "solstone-core-journal-io"
+target = "windows_cloud_sync_root_registration"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true

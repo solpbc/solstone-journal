@@ -9,19 +9,27 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::os::fd::{AsFd, BorrowedFd};
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::fd::{AsFd, BorrowedFd};
+#[cfg(windows)]
+use std::os::windows::io::{AsHandle, BorrowedHandle};
 
 #[cfg(unix)]
 use nix::sys::stat::SFlag;
 
 #[cfg(unix)]
 mod unix;
+#[cfg(windows)]
+mod windows;
 
 use backend::Backend;
 
-#[cfg(feature = "test-hooks")]
+#[cfg(all(unix, feature = "test-hooks"))]
 pub use unix::{AcquisitionPrimitive, run_with_acquisition_fault};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows::{WindowsAcquisitionPrimitive, run_with_windows_acquisition_fault};
 
 /// The no-follow file kind observed for a journal entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,9 +65,17 @@ impl JournalEntryKind {
 #[derive(Debug)]
 pub enum JournalRootError {
     /// The requested journal root is not a usable absolute directory.
-    Invalid { root: PathBuf, reason: &'static str },
+    Invalid {
+        root: PathBuf,
+        reason: &'static str,
+        category: Option<WindowsRefusalCategory>,
+    },
     /// The current backend cannot retain a handle for this root.
-    Unsupported { root: PathBuf, reason: &'static str },
+    Unsupported {
+        root: PathBuf,
+        reason: &'static str,
+        category: Option<WindowsRefusalCategory>,
+    },
     /// A source operation failed without evidence of a replacement race.
     Io {
         operation: &'static str,
@@ -73,14 +89,14 @@ pub enum JournalRootError {
 impl fmt::Display for JournalRootError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Invalid { root, reason } => {
+            Self::Invalid { root, reason, .. } => {
                 write!(
                     formatter,
                     "invalid journal root {}: {reason}",
                     root.display()
                 )
             }
-            Self::Unsupported { root, reason } => {
+            Self::Unsupported { root, reason, .. } => {
                 write!(
                     formatter,
                     "unsupported journal root {}: {reason}",
@@ -104,17 +120,52 @@ impl Error for JournalRootError {
     }
 }
 
-/// Opaque `(device, inode)` identity of an admitted journal root.
+/// Windows policy refusal classes for journal-root admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ObjectIdentity {
-    dev: u64,
-    ino: u64,
+pub enum WindowsRefusalCategory {
+    NonAbsolutePath,
+    NonCanonicalPath,
+    NonFullyQualifiedNamespace,
+    NonLocalVolume,
+    RemovableOrOpticalVolume,
+    RamDiskVolume,
+    UnknownVolumeType,
+    UnsupportedFilesystem,
+    ReparsePoint,
+    CloudSyncRootRegistered,
+    CloudSyncRootStatusUnverifiable,
+    InvalidJournalName,
+}
+
+/// Opaque platform-specific identity of an admitted journal root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObjectIdentity(Repr);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Repr {
+    #[cfg(unix)]
+    Unix { dev: u64, ino: u64 },
+    #[cfg(windows)]
+    Windows {
+        volume_serial: u64,
+        file_id: [u8; 16],
+    },
 }
 
 impl ObjectIdentity {
     /// Construct an identity from a no-follow Unix stat result.
+    #[cfg(unix)]
     pub(crate) const fn from_device_inode(dev: u64, ino: u64) -> Self {
-        Self { dev, ino }
+        Self(Repr::Unix { dev, ino })
+    }
+
+    /// Construct an identity from a retained Windows file handle query.
+    #[cfg(windows)]
+    pub(crate) const fn from_volume_and_file_id(volume_serial: u64, file_id: [u8; 16]) -> Self {
+        Self(Repr::Windows {
+            volume_serial,
+            file_id,
+        })
     }
 }
 
@@ -136,14 +187,20 @@ mod backend {
 /// path would be reacquisition. The canonical path is non-authoritative
 /// metadata recorded at admit time.
 pub struct JournalRoot {
+    #[cfg(unix)]
     inner: unix::UnixRoot,
+    #[cfg(windows)]
+    inner: windows::WindowsRoot,
 }
 
 impl JournalRoot {
     /// Acquire `root` once and retain its directory descriptor.
     pub fn open(root: &Path) -> Result<Self, JournalRootError> {
         Ok(Self {
+            #[cfg(unix)]
             inner: unix::acquire(root)?,
+            #[cfg(windows)]
+            inner: windows::acquire(root)?,
         })
     }
 
@@ -165,15 +222,24 @@ impl JournalRoot {
     }
 }
 
+#[cfg(unix)]
 impl AsFd for JournalRoot {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
 }
 
+#[cfg(windows)]
+impl AsHandle for JournalRoot {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        self.inner.as_handle()
+    }
+}
+
 #[cfg(test)]
 mod architecture {
     const UNIX: &str = include_str!("unix.rs");
+    const WINDOWS: &str = include_str!("windows.rs");
     const MOD: &str = include_str!("mod.rs");
 
     fn production_source(source: &str) -> &str {
@@ -207,7 +273,7 @@ mod architecture {
 
     #[test]
     fn journal_root_sources_are_read_only() {
-        for (name, source) in [("mod", MOD), ("unix", UNIX)] {
+        for (name, source) in [("mod", MOD), ("unix", UNIX), ("windows", WINDOWS)] {
             let production = production_source(source);
             for forbidden in [
                 "fs::write",
@@ -259,7 +325,7 @@ mod architecture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use nix::sys::stat::SFlag;
 

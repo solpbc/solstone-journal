@@ -53,7 +53,7 @@ pub fn remove_contained_tree(root: &Path, path: &Path) -> Result<(), PathError> 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::symlink;
