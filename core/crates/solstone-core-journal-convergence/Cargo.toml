@@ -13,7 +13,7 @@ publish = false
 chrono = { workspace = true }
 getrandom = { workspace = true }
 hmac = { workspace = true }
-nix = { workspace = true, features = ["fs"] }
+nix = { workspace = true, features = ["dir", "fs"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

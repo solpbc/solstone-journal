@@ -643,6 +643,29 @@ fn release_after_evict(
     Ok(())
 }
 
+/// Read: the retained per-day clearance member, or `None`. Never creates.
+pub(crate) fn read_clearance_member(
+    dirs: &StoreDirs,
+    day: &DayKey,
+) -> Result<Option<ClearanceMember>, ConvergenceError> {
+    read_json(&dirs.days, &member_name(day), DurableRole::ClearanceMember)
+}
+
+/// Read: the retained clearance barrier for `serial`, or `None`. Never creates.
+pub(crate) fn read_clearance_barrier(
+    dirs: &StoreDirs,
+    serial: u64,
+) -> Result<Option<ClearanceBarrier>, ConvergenceError> {
+    let Some(parent) = crate::walk::open_dir(&dirs.convergence, CLEARANCE)? else {
+        return Ok(None);
+    };
+    read_json(
+        &parent,
+        &barrier_name(serial),
+        DurableRole::ClearanceBarrier,
+    )
+}
+
 fn write_member(
     dirs: &StoreDirs,
     day: &DayKey,

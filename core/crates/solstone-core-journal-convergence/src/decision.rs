@@ -210,7 +210,8 @@ pub(crate) fn publish_decision(
 pub(crate) fn accept_decision(
     decision: GrantDecision,
     owner: &OwnerBinding,
-    intent: &Intent,
+    serial: u64,
+    intent_digest: &str,
     wanted: DecisionKind,
 ) -> Result<GrantDecision, ConvergenceError> {
     if decision.role != ROLE_GRANT_DECISION || decision.schema_version != SCHEMA_VERSION {
@@ -227,7 +228,7 @@ pub(crate) fn accept_decision(
     if decision.selector_digest != owner.selector_digest() {
         return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
     }
-    if decision.serial != intent.serial || decision.intent_digest != intent.intent_digest {
+    if decision.serial != serial || decision.intent_digest != intent_digest {
         return Err(ConvergenceError::Unknown {
             role: DurableRole::Decision,
         });
@@ -587,9 +588,13 @@ pub(crate) fn commit_with_grants(
     let decision = {
         let section = crate::registry::enter_registry(&dirs)?;
         match load_decision(&section, serial)? {
-            Some(existing) => {
-                accept_decision(existing, held.owner(), &intent, DecisionKind::Commit)?
-            }
+            Some(existing) => accept_decision(
+                existing,
+                held.owner(),
+                intent.serial,
+                &intent.intent_digest,
+                DecisionKind::Commit,
+            )?,
             None => {
                 let tuples = derive_tuples(held.owner().selector(), &snapshots)?;
                 publish_decision(
@@ -757,7 +762,13 @@ pub(crate) fn abort_with_decision(
             // A fixed commit decision can never be turned into an abort by an
             // owner choosing the opposite terminal.
             Some(existing) => {
-                accept_decision(existing, held.owner(), &intent, DecisionKind::AbortNoOpen)?;
+                accept_decision(
+                    existing,
+                    held.owner(),
+                    intent.serial,
+                    &intent.intent_digest,
+                    DecisionKind::AbortNoOpen,
+                )?;
             }
             None => {
                 publish_decision(

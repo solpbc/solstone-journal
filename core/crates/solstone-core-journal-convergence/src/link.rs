@@ -43,10 +43,78 @@ pub(crate) fn operation_link_present(
     section: &RegistrySection<'_>,
     operation_id: &str,
 ) -> Result<bool, ConvergenceError> {
+    Ok(!operation_link_serials(section, operation_id)?.is_empty())
+}
+
+/// Read: the operation's linked serials, ascending. Empty when the operation
+/// has no link. Never creates.
+///
+/// This lists one small per-operation registry directory. It is bounded
+/// resolver-file work, not a day-artifact scan, which is what a registry
+/// section is forbidden to do.
+pub(crate) fn operation_link_serials(
+    section: &RegistrySection<'_>,
+    operation_id: &str,
+) -> Result<Vec<u64>, ConvergenceError> {
     let Some(links) = open_dir(section.registry(), LINKS)? else {
-        return Ok(false);
+        return Ok(Vec::new());
     };
-    Ok(open_dir(&links, &operation_links_dir(operation_id))?.is_some())
+    let Some(directory) = open_dir(&links, &operation_links_dir(operation_id))? else {
+        return Ok(Vec::new());
+    };
+    // Descriptor-relative listing of the already-bound directory itself.
+    let mut listing = nix::dir::Dir::openat(
+        &directory,
+        ".",
+        nix::fcntl::OFlag::O_RDONLY
+            .union(nix::fcntl::OFlag::O_DIRECTORY)
+            .union(nix::fcntl::OFlag::O_CLOEXEC),
+        nix::sys::stat::Mode::empty(),
+    )
+    .map_err(|source| ConvergenceError::Io {
+        operation: "list links directory",
+        role: DurableRole::OwnerIntentLink,
+        source: std::io::Error::from_raw_os_error(source as i32),
+    })?;
+    let mut serials = Vec::new();
+    for entry in listing.iter() {
+        let entry = entry.map_err(|source| ConvergenceError::Io {
+            operation: "read links directory entry",
+            role: DurableRole::OwnerIntentLink,
+            source: std::io::Error::from_raw_os_error(source as i32),
+        })?;
+        let name = String::from_utf8_lossy(entry.file_name().to_bytes()).into_owned();
+        if name == "." || name == ".." {
+            continue;
+        }
+        let Some(stem) = name.strip_suffix(".json") else {
+            // An unexpected name in the link directory is not interpretable as
+            // linkage, and guessing past it would be worse than refusing.
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::OwnerIntentLink,
+            });
+        };
+        let serial: u64 = stem.parse().map_err(|_| ConvergenceError::Unknown {
+            role: DurableRole::OwnerIntentLink,
+        })?;
+        serials.push(serial);
+    }
+    serials.sort_unstable();
+    Ok(serials)
+}
+
+/// Read: the operation's most recent link, or `None`. With later-dirty an
+/// operation can hold several immutable links; the highest serial is the
+/// transition its outbox belongs to. Never creates.
+pub(crate) fn latest_link(
+    section: &RegistrySection<'_>,
+    operation_id: &str,
+) -> Result<Option<OwnerIntentLink>, ConvergenceError> {
+    let serials = operation_link_serials(section, operation_id)?;
+    let Some(serial) = serials.last().copied() else {
+        return Ok(None);
+    };
+    load_owner_intent_link(section, operation_id, serial)
 }
 
 /// Read: the operation's link at `serial`, or `None`. Never creates.

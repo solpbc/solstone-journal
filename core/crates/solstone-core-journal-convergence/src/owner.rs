@@ -391,6 +391,39 @@ fn accept_existing_owner(
     Ok(record)
 }
 
+/// Read-only: rebuild a live binding from the durable record for `operation`,
+/// or `None` if there is none. Creates nothing. The record's state is returned
+/// alongside so the caller can classify revocation rather than have it refused
+/// here, but lineage, selector, and keyed authentication are all enforced.
+pub(crate) fn load_owner_binding(
+    section: &RegistrySection<'_>,
+    operation: &OperationId,
+    selector: &GrantRequestSelector,
+    identity: ObjectIdentity,
+    journal_id: &str,
+    root_id: &str,
+    key_hex: &str,
+) -> Result<Option<(OwnerBinding, PreparedOwnerState)>, ConvergenceError> {
+    let Some(record) = load_prepared_owner(section, operation.as_hex())? else {
+        return Ok(None);
+    };
+    if record.role != ROLE_PREPARED_OWNER || record.schema_version != SCHEMA_VERSION {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::PreparedOwner,
+        });
+    }
+    if record.journal_id != journal_id || record.root_id != root_id {
+        return Err(ConvergenceError::Refused(Refusal::WrongLineage));
+    }
+    if record.operation_id != operation.as_hex() {
+        return Err(ConvergenceError::Refused(Refusal::WrongOperation));
+    }
+    verify_owner_mac(&record, key_hex)?;
+    let state = record.state;
+    let binding = OwnerBinding::from_record(&record, identity, selector.clone())?;
+    Ok(Some((binding, state)))
+}
+
 /// Keyed authentication of the record's own owner-binding digest.
 pub(crate) fn verify_owner_mac(
     record: &PreparedOwner,
@@ -904,17 +937,39 @@ mod tests {
     }
 
     #[test]
-    fn admit_classifies_an_existing_link_as_recovery() {
-        let (temporary, admitted) = admit_days("admit-link", &["20260823"]);
+    fn an_empty_link_directory_is_absence_not_recovery() {
+        let (temporary, admitted) = admit_days("admit-empty-dir", &["20260823"]);
         let owner = prepared_owner(&admitted).unwrap();
         let operation = OperationId::parse(owner.operation_id()).unwrap();
         let held = admitted.begin(owner).unwrap();
+        // A crash between creating the per-operation directory and creating the
+        // link leaves an empty directory. That is the intent-without-link half,
+        // which resumes by creating the link, so admission must read it as
+        // absence rather than as an already-linked transaction.
         std::fs::create_dir_all(
             registry_dir(&temporary)
                 .join("links")
                 .join(operation.as_hex()),
         )
         .unwrap();
+        let outcome = ClaimAdmission::admit(&held, held.owner()).unwrap();
+        assert!(!outcome.is_existing_link());
+    }
+
+    #[test]
+    fn a_durable_link_classifies_admission_as_recovery() {
+        let (temporary, admitted) = admit_days("admit-link", &["20260823"]);
+        let operation = OperationId::generate().unwrap();
+        let selector = empty_selector(&admitted);
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = admit_proof(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+
+        // A fresh admission of the same operation now sees its durable link.
+        let owner = prepare(&admitted, &operation, &selector).unwrap();
+        let held = admitted.begin(owner).unwrap();
         let before = snapshot_tree(&temporary.journal_path());
         let outcome = ClaimAdmission::admit(&held, held.owner()).unwrap();
         assert!(outcome.is_existing_link());

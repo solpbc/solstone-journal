@@ -23,6 +23,7 @@ mod clearance;
 mod decision;
 mod digest;
 mod error;
+mod grant;
 mod init;
 mod intent;
 mod layout;
@@ -48,6 +49,7 @@ mod walk;
 
 pub use digest::RecordDigest;
 pub use error::{ChangedWhat, ConvergenceError, DurableRole, Refusal};
+pub use grant::{Delivery, DeniedReason, GrantToken};
 pub use init::check_initialized;
 pub use layout::DayKey;
 pub use owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
@@ -57,6 +59,7 @@ pub use recover::{
     AwaitingOwnerDecision, AwaitingStage, CleanupOutcome, DayStoreRecovery, RecoveryReport,
     StoreVerdict,
 };
+pub use schema::PendingStage;
 pub use selector::{
     GrantRequestSelector, OperationId, TargetScope, TransactionClass, WriterFamily,
 };
@@ -115,6 +118,7 @@ mod architecture {
             include_str!("decision.rs"),
             include_str!("digest.rs"),
             include_str!("error.rs"),
+            include_str!("grant.rs"),
             include_str!("init.rs"),
             include_str!("intent.rs"),
             include_str!("layout.rs"),
