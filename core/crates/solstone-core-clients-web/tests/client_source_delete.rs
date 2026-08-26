@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
+use solstone_core_clients_web::router;
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_shell::router as shell_router;
 use solstone_core_indexer_store::db::open_index;
 use solstone_core_observer::store::record::ObserverRecord;
 use solstone_core_observer::store::write::save_observer;
-use solstone_core_observer_web::router;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -138,19 +139,21 @@ fn assert_receipt_shape(body: &Value) {
 
 async fn call_app(
     app: axum::Router,
-    stream: &str,
+    source: &str,
+    basis: Option<AccessBasis>,
     headers: &[(&str, &str)],
 ) -> (StatusCode, Value) {
     let mut request = Request::builder()
         .method("DELETE")
-        .uri(format!("/app/observer/source/{stream}"));
+        .uri(format!("/app/devices/source/{source}"));
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    let response = app
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let mut request = request.body(Body::empty()).unwrap();
+    if let Some(basis) = basis {
+        request.extensions_mut().insert(basis);
+    }
+    let response = app.oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({"raw": bytes.is_empty()}));
@@ -158,15 +161,45 @@ async fn call_app(
 }
 
 async fn call(journal: &Path, stream: &str, headers: &[(&str, &str)]) -> (StatusCode, Value) {
-    call_app(router(journal.to_path_buf()), stream, headers).await
+    call_as(journal, stream, linked_basis(CID_A), headers).await
 }
 
 async fn call_shell(journal: &Path, stream: &str, headers: &[(&str, &str)]) -> (StatusCode, Value) {
-    call_app(shell_router(journal.to_path_buf()), stream, headers).await
+    call_app(
+        shell_router(journal.to_path_buf()),
+        stream,
+        Some(linked_basis(CID_A)),
+        headers,
+    )
+    .await
+}
+
+async fn call_as(
+    journal: &Path,
+    source: &str,
+    basis: AccessBasis,
+    headers: &[(&str, &str)],
+) -> (StatusCode, Value) {
+    call_app(router(journal.to_path_buf()), source, Some(basis), headers).await
+}
+
+async fn call_without_identity(
+    journal: &Path,
+    source: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, Value) {
+    call_app(router(journal.to_path_buf()), source, None, headers).await
+}
+
+fn linked_basis(cid: &str) -> AccessBasis {
+    AccessBasis::LinkedDevice {
+        carrier: Carrier::Direct,
+        cid: LinkedDeviceCid::try_from(cid).unwrap(),
+    }
 }
 
 fn owner_headers() -> Vec<(&'static str, &'static str)> {
-    vec![("Authorization", "Bearer abcdefghijklmnop-observer-handle")]
+    Vec::new()
 }
 
 fn index_path(journal: &Path, rel: &str) {
@@ -309,10 +342,9 @@ async fn criterion_2_two_mixed_fixtures_are_removed_whole() {
 }
 
 #[tokio::test]
-async fn criterion_3_and_6_receipt_shape_and_bearer_full_key() {
+async fn criterion_3_receipt_shape_and_linked_device_identity() {
     let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
-    assert!(KEY.len() > 8);
     bed.location_only("20260805", "location", "070000_17");
     let (status, body) = call(bed.path(), "location", &owner_headers()).await;
     assert_eq!(status, StatusCode::OK);
@@ -325,58 +357,31 @@ async fn criterion_3_and_6_receipt_shape_and_bearer_full_key() {
 }
 
 #[tokio::test]
-async fn criterion_5_revoked_before_disabled_and_auth_gates() {
+async fn linked_device_identity_is_required_even_with_legacy_bearer_headers() {
     let bed = Bed::new();
-    bed.seed_observer(
-        KEY,
-        json!({"revoked": true, "enabled": true, "name": "revoked"}),
-    );
-    bed.seed_observer(OTHER_KEY, json!({"enabled": false, "name": "disabled"}));
     bed.location_only("20260805", "location", "070000_17");
-    let (status, body) = call(bed.path(), "location", &owner_headers()).await;
+    let (status, body) = call_as(bed.path(), "location", AccessBasis::Localhost, &[]).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "pl_revoked");
-    let (status, body) = call(
+    assert_eq!(body["reason_code"], "linked_device_required");
+    let (status, body) = call_as(
         bed.path(),
         "location",
-        &[("Authorization", "Bearer otherkeyzzzzzzzz-observer-handle")],
+        AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        },
+        &[],
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "feature_unavailable");
-    let (status, body) = call(bed.path(), "location", &[]).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["reason_code"], "auth_required");
-    let (status, body) = call(
+    assert_eq!(body["reason_code"], "linked_device_required");
+    let (status, body) = call_without_identity(
         bed.path(),
         "location",
-        &[("Authorization", "Bearer abcdefgh")],
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["reason_code"], "auth_key_invalid");
-}
-
-#[tokio::test]
-async fn criterion_6_auth_before_400_and_other_observer_key() {
-    let bed = Bed::new();
-    bed.seed_observer(KEY, json!({"stream": "location", "name": "owner"}));
-    bed.seed_observer(OTHER_KEY, json!({"name": "other"}));
-    bed.location_only("20260805", "location", "070000_17");
-    let (status, body) = call(bed.path(), "audio", &[]).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["reason_code"], "auth_required");
-    let (status, body) = call(bed.path(), "audio", &owner_headers()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["reason_code"], "invalid_segment_or_stream");
-    let (status, body) = call(
-        bed.path(),
-        "location",
-        &[("Authorization", "Bearer otherkeyzzzzzzzz-observer-handle")],
+        &[("Authorization", "Bearer abcdefghijklmnop-observer-handle")],
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "feature_unavailable");
+    assert_eq!(body["reason_code"], "linked_device_required");
     assert!(
         bed.path()
             .join("chronicle/20260805/location/070000_17/location.jsonl")
@@ -385,19 +390,95 @@ async fn criterion_6_auth_before_400_and_other_observer_key() {
 }
 
 #[tokio::test]
-async fn ambiguous_attribution_with_two_unrevoked_observers_is_403() {
+async fn old_observer_source_route_is_not_registered() {
+    let bed = Bed::new();
+    let mut request = Request::builder()
+        .method("DELETE")
+        .uri("/app/observer/source/location")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(linked_basis(CID_A));
+
+    let response = router(bed.path().to_path_buf())
+        .oneshot(request)
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let mut request = Request::builder()
+        .method("DELETE")
+        .uri("/app/observer/source/location")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(linked_basis(CID_A));
+    let response = shell_router(bed.path().to_path_buf())
+        .oneshot(request)
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn location_lock_failure_returns_a_failure_envelope_without_mutation() {
+    let bed = Bed::new();
+    bed.location_only("20260805", "location", "070000_17");
+    bed.write_file("streams", b"not a directory");
+
+    let (status, body) = call(bed.path(), "location", &[]).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "Location deletion temporarily unavailable");
+    assert_eq!(body["reason_code"], "location_lock_unavailable");
+    assert_eq!(
+        body["detail"],
+        "the location journal is busy; try again shortly"
+    );
+    assert!(
+        bed.path()
+            .join("chronicle/20260805/location/070000_17/location.jsonl")
+            .is_file()
+    );
+}
+
+#[tokio::test]
+async fn source_validation_follows_linked_device_identity() {
+    let bed = Bed::new();
+    bed.location_only("20260805", "location", "070000_17");
+    let (status, body) = call(bed.path(), "audio", &owner_headers()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["reason_code"], "invalid_segment_or_stream");
+    assert!(
+        bed.path()
+            .join("chronicle/20260805/location/070000_17/location.jsonl")
+            .is_file()
+    );
+}
+
+#[tokio::test]
+async fn any_linked_client_deletes_the_journal_wide_location_set() {
     let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
     bed.seed_observer(OTHER_KEY, json!({}));
     bed.location_only("20260805", "location", "070000_17");
-    let loc = bed
-        .path()
-        .join("chronicle/20260805/location/070000_17/location.jsonl");
-    let before = fs::read(&loc).unwrap();
-    let (status, body) = call(bed.path(), "location", &owner_headers()).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert_eq!(body["reason_code"], "feature_unavailable");
-    assert_eq!(fs::read(&loc).unwrap(), before);
+    bed.write_file(
+        "chronicle/20260805/location/070000_17/device.json",
+        json!({"cid": CID_A}).to_string().as_bytes(),
+    );
+    let (status, body) = call_as(
+        bed.path(),
+        "location",
+        linked_basis("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["removed"]["segments"], 1);
+    assert_eq!(
+        tombstone(bed.path(), "20260805", "location", "070000_17")["cid"],
+        CID_A
+    );
 }
 
 #[tokio::test]
@@ -784,19 +865,18 @@ async fn criterion_14_post_chronicle_failures_do_not_claim_the_work() {
 }
 
 #[tokio::test]
-async fn x_solstone_observer_preferred_over_bearer() {
+async fn legacy_observer_headers_do_not_supply_client_identity() {
     let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
     bed.location_only("20260805", "location", "070000_17");
-    let (status, body) = call(
-        bed.path(),
-        "location",
-        &[
-            ("X-Solstone-Observer", KEY),
-            ("Authorization", "Bearer spoofed-not-a-key"),
-        ],
-    )
-    .await;
+    let legacy_headers = [
+        ("X-Solstone-Observer", KEY),
+        ("Authorization", "Bearer spoofed-not-a-key"),
+    ];
+    let (status, body) = call_without_identity(bed.path(), "location", &legacy_headers).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["reason_code"], "linked_device_required");
+    let (status, body) = call(bed.path(), "location", &legacy_headers).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["removed"]["segments"], 1);
 }
@@ -842,13 +922,12 @@ async fn torn_history_is_left_unchanged() {
 }
 
 #[tokio::test]
-async fn merged_shell_router_tombstones_on_an_unestablished_journal() {
-    let bed = Bed::unestablished();
+async fn merged_shell_router_tombstones_at_the_devices_route() {
+    let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
     bed.location_only("20260805", "location", "070000_17");
     let (status, body) = call_shell(bed.path(), "location", &owner_headers()).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_ne!(status, StatusCode::FOUND);
     assert_receipt_shape(&body);
     assert_eq!(body["removed"]["segments"], 1);
     assert_eq!(
@@ -858,15 +937,13 @@ async fn merged_shell_router_tombstones_on_an_unestablished_journal() {
 }
 
 #[tokio::test]
-async fn merged_shell_router_missing_handle_is_401_not_redirect_or_404() {
+async fn merged_shell_router_keeps_devices_routes_session_gated() {
     let bed = Bed::unestablished();
     bed.seed_observer(KEY, json!({}));
     bed.location_only("20260805", "location", "070000_17");
-    let (status, body) = call_shell(bed.path(), "location", &[]).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
-    assert_ne!(status, StatusCode::FOUND);
+    let (status, _body) = call_shell(bed.path(), "location", &[]).await;
+    assert_eq!(status, StatusCode::FOUND);
     assert_ne!(status, StatusCode::NOT_FOUND);
-    assert_eq!(body["reason_code"], "auth_required");
     assert!(
         bed.path()
             .join("chronicle/20260805/location/070000_17/location.jsonl")

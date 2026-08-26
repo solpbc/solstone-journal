@@ -5,69 +5,33 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use axum::Json;
-use axum::extract::{Path as RoutePath, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, Path as RoutePath, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_journal_io::Removed;
 use solstone_core_observer::remove_history_rows_for_stream;
 use solstone_core_retention::door;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::tombstone::RemovalReason;
-use solstone_core_segment::delete_stream_record;
+use solstone_core_segment::{delete_stream_record, hold_source_mutation};
 
-use crate::auth::{AuthError, authorize};
 use crate::not_confirmed::collect_not_confirmed;
 use crate::receipt::{Issue, Receipt, ReceiptTarget, Removed as RemovedCounts, owner_issue};
 use crate::select::{Selected, select_location_targets};
 
 pub(crate) async fn delete_source(
     State(journal): State<PathBuf>,
-    RoutePath(stream): RoutePath<String>,
-    headers: HeaderMap,
+    RoutePath(source): RoutePath<String>,
+    basis: Option<Extension<AccessBasis>>,
 ) -> Response {
-    match authorize(&journal, &headers) {
-        Ok(_) => {}
-        Err(AuthError::Required) => {
-            return error_envelope(
-                "auth_required",
-                "I need an observer key.",
-                "Observer handle missing or invalid.",
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response();
-        }
-        Err(AuthError::InvalidKey) => {
-            return error_envelope(
-                "auth_key_invalid",
-                "I need an observer key.",
-                "Observer handle missing or invalid.",
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response();
-        }
-        Err(AuthError::Revoked) => {
-            return error_envelope(
-                "pl_revoked",
-                "I couldn't use that observer because it was revoked.",
-                "observer revoked",
-                StatusCode::FORBIDDEN,
-            )
-            .into_response();
-        }
-        Err(AuthError::FeatureUnavailable) => {
-            return error_envelope(
-                "feature_unavailable",
-                "I couldn't use that observer.",
-                "observer is disabled or does not own this source",
-                StatusCode::FORBIDDEN,
-            )
-            .into_response();
-        }
-    }
-    if stream != "location" {
+    let Some(Extension(AccessBasis::LinkedDevice { .. })) = basis else {
+        return linked_device_required();
+    };
+    if source != "location" {
         return error_envelope(
             "invalid_segment_or_stream",
             "I couldn't use that segment or stream.",
@@ -77,12 +41,39 @@ pub(crate) async fn delete_source(
         .into_response();
     }
 
+    // This is the outermost location-mutation lock. Segment, retention, and
+    // stream-record locks reached by `erase_location` are always nested inside it.
+    let _location_mutation_lock = match hold_source_mutation(&journal, "location") {
+        Ok(lock) => lock,
+        Err(error) => {
+            log::warn!("location mutation lock unavailable for deletion: {error}");
+            return error_envelope(
+                "location_lock_unavailable",
+                "Location deletion temporarily unavailable",
+                "the location journal is busy; try again shortly",
+                StatusCode::SERVICE_UNAVAILABLE,
+            )
+            .into_response();
+        }
+    };
+
     Json(erase_location(&journal)).into_response()
+}
+
+fn linked_device_required() -> Response {
+    error_envelope(
+        "linked_device_required",
+        "Linked device required",
+        "a linked device identity is required",
+        StatusCode::FORBIDDEN,
+    )
+    .into_response()
 }
 
 fn erase_location(journal: &Path) -> Receipt {
     let scan = select_location_targets(journal);
     let scan_complete = scan.complete;
+    let mut not_removed = scan.incomplete;
     let selected = scan.targets;
     let occupied_streams: BTreeSet<String> = selected
         .iter()
@@ -109,11 +100,12 @@ fn erase_location(journal: &Path) -> Receipt {
         outcome.targets.extend(part.targets);
     }
 
-    let mut not_removed: Vec<Issue> = outcome
-        .targets
-        .iter()
-        .flat_map(|target| target.not_removed.iter().map(owner_issue))
-        .collect();
+    not_removed.extend(
+        outcome
+            .targets
+            .iter()
+            .flat_map(|target| target.not_removed.iter().map(owner_issue)),
+    );
     not_removed.extend(outcome.targets.iter().filter_map(|target| {
         target.post_commit_failure.as_ref().map(|failure| Issue {
             what: failure.entry.clone(),
@@ -222,6 +214,7 @@ fn unlink_location_stream(
     }
     let remaining = select_location_targets(journal);
     if !remaining.complete {
+        not_removed.extend(remaining.incomplete);
         not_removed.push(incomplete_scan_issue());
         return 0;
     }
@@ -247,5 +240,43 @@ fn incomplete_scan_issue() -> Issue {
         plain_reason: "the journal could not be listed completely, so remaining \
                        location data could not be ruled out"
             .to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::erase_location;
+    use crate::select::{clear_forced_unreadable_segment, force_unreadable_segment};
+
+    #[test]
+    fn incomplete_segment_scan_names_residue_and_keeps_stream_identity() {
+        let temporary = TempDir::new_in("/var/tmp").unwrap();
+        let journal = temporary.path();
+        let segment = journal.join("chronicle/20260805/location/070000_17");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("location.jsonl"), b"{}\n").unwrap();
+        fs::write(segment.join("stream.json"), b"{}").unwrap();
+        fs::create_dir_all(journal.join("streams")).unwrap();
+        fs::write(
+            journal.join("streams/location.json"),
+            b"{\"name\":\"location\"}",
+        )
+        .unwrap();
+
+        force_unreadable_segment(&segment);
+        let receipt = erase_location(journal);
+        clear_forced_unreadable_segment();
+
+        assert_eq!(receipt.removed.segments, 0);
+        assert_eq!(receipt.removed.stream_identity, 0);
+        assert!(receipt.not_removed.iter().any(|issue| {
+            issue.what == "chronicle/20260805/location/070000_17"
+                && issue.plain_reason.contains("could not be listed")
+        }));
+        assert!(journal.join("streams/location.json").exists());
     }
 }

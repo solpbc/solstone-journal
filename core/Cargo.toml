@@ -13,7 +13,7 @@ members = [
     "crates/solstone-core-entity-matching",
     "crates/solstone-core-facets",
     "crates/solstone-core-observer",
-    "crates/solstone-core-observer-web",
+    "crates/solstone-core-clients-web",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-cli",
     "crates/solstone-core-journal-bin",
@@ -152,7 +152,7 @@ solstone-core-entity = { path = "crates/solstone-core-entity" }
 solstone-core-entity-matching = { path = "crates/solstone-core-entity-matching" }
 solstone-core-facets = { path = "crates/solstone-core-facets" }
 solstone-core-observer = { path = "crates/solstone-core-observer" }
-solstone-core-observer-web = { path = "crates/solstone-core-observer-web" }
+solstone-core-clients-web = { path = "crates/solstone-core-clients-web" }
 solstone-core-observe-audio = { path = "crates/solstone-core-observe-audio" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-format = { path = "crates/solstone-core-format" }

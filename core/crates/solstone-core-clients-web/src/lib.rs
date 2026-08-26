@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Observer source-delete HTTP surface. Selection lives here; removal is
+//! Linked-client source-delete HTTP surface. Selection lives here; removal is
 //! retention's door.
 
 use std::path::PathBuf;
@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use axum::Router;
 use axum::routing::delete;
 
-mod auth;
 mod delete;
 mod not_confirmed;
 mod receipt;
@@ -18,7 +17,7 @@ mod select;
 pub fn router(journal_root: PathBuf) -> Router {
     Router::new()
         .route(
-            "/app/observer/source/{stream}",
+            "/app/devices/source/{source}",
             delete(delete::delete_source),
         )
         .with_state(journal_root)

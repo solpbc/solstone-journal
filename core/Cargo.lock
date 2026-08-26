@@ -3377,6 +3377,31 @@ name = "solstone-core-cli-boundary"
 version = "2.0.0"
 
 [[package]]
+name = "solstone-core-clients-web"
+version = "2.0.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "solstone-core-facets",
+ "solstone-core-indexer-store",
+ "solstone-core-ingest",
+ "solstone-core-journal-io",
+ "solstone-core-observer",
+ "solstone-core-retention",
+ "solstone-core-segment",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "solstone-core-cogitate"
 version = "2.0.0"
 dependencies = [
@@ -3492,6 +3517,7 @@ dependencies = [
  "solstone-core-backup-web",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-clients-web",
  "solstone-core-convey-body",
  "solstone-core-convey-http",
  "solstone-core-entities",
@@ -3514,7 +3540,6 @@ dependencies = [
  "solstone-core-model-pricing",
  "solstone-core-npy",
  "solstone-core-observer",
- "solstone-core-observer-web",
  "solstone-core-records-web",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
@@ -3659,8 +3684,8 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-journal",
  "solstone-core-journal-config",
- "solstone-core-observer",
  "solstone-core-skill-state",
+ "solstone-core-sol-link",
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcribe",
@@ -3870,7 +3895,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-indexer-query",
  "solstone-core-journal-stats-cli",
- "solstone-core-observer",
+ "solstone-core-sol-link",
  "solstone-core-system-health",
  "solstone-core-thinking",
  "tempfile",
@@ -4066,7 +4091,9 @@ dependencies = [
  "solstone-core-ingest-resolve",
  "solstone-core-observer",
  "solstone-core-segment",
+ "solstone-core-sol-link",
  "tempfile",
+ "time",
  "tokio",
  "tower",
  "tower-http",
@@ -4286,28 +4313,6 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-segment",
  "tempfile",
-]
-
-[[package]]
-name = "solstone-core-observer-web"
-version = "2.0.0"
-dependencies = [
- "axum",
- "chrono",
- "rusqlite",
- "serde",
- "serde_json",
- "solstone-core-convey-http",
- "solstone-core-convey-shell",
- "solstone-core-facets",
- "solstone-core-indexer-store",
- "solstone-core-journal-io",
- "solstone-core-observer",
- "solstone-core-retention",
- "solstone-core-segment",
- "tempfile",
- "tokio",
- "tower",
 ]
 
 [[package]]

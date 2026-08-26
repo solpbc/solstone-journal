@@ -13,7 +13,7 @@
 //!
 //! The raw-release verb and the whole-segment verb — with its staging rename,
 //! its tombstone, its lock and its crash-recovery pass — both live here. A
-//! caller that names a source (the observer-web location erase) resolves that
+//! caller that names a source (the clients-web location erase) resolves that
 //! name to a set of segments and hands the set to [`remove_segments`]; this
 //! module still resolves nothing.
 
@@ -182,7 +182,7 @@ fn owner_reason(error: &solstone_core_journal_io::errors::PathError) -> String {
 ///
 /// ⛔ **This resolves nothing.** It receives targets the owner chose. There is no
 /// query anywhere in this crate from a source name to a set of segments. The
-/// observer-web source-delete surface performs that selection and hands the set
+/// clients-web source-delete surface performs that selection and hands the set
 /// here.
 ///
 /// Duplicate targets are collapsed at entry: the second occurrence would meet the

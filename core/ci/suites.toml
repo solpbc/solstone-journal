@@ -1002,8 +1002,8 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-observer-web"
-package = "solstone-core-observer-web"
+id = "package::solstone-core-clients-web"
+package = "solstone-core-clients-web"
 set = "component"
 areas = ["observation"]
 platforms = ["linux", "macos"]
@@ -3062,9 +3062,23 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-observer-web::observer_source_delete"
-package = "solstone-core-observer-web"
-target = "observer_source_delete"
+id = "solstone-core-clients-web::client_source_delete"
+package = "solstone-core-clients-web"
+target = "client_source_delete"
+set = "component"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-clients-web::location_mutation_ordering"
+package = "solstone-core-clients-web"
+target = "location_mutation_ordering"
 set = "component"
 areas = ["observation"]
 platforms = ["linux", "macos"]

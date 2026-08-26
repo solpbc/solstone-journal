@@ -9,6 +9,8 @@ use solstone_core_journal_io::{DirEntry, DirEntryKind, list_dir_entries};
 use solstone_core_retention::receipt::Target;
 use solstone_core_segment::{is_reserved_name, list_days, list_segments};
 
+use crate::receipt::Issue;
+
 const LOCATION_FILE: &str = "location.jsonl";
 // Nothing in the tree writes `item.json`, and it is not in
 // RESERVED_SEGMENT_FILENAMES. Excluded so a future reserved-set expansion is
@@ -24,6 +26,7 @@ pub(crate) struct Selected {
 pub(crate) struct LocationScan {
     pub targets: Vec<Selected>,
     pub complete: bool,
+    pub incomplete: Vec<Issue>,
 }
 
 /// A segment is mixed iff a direct child is client content other than its
@@ -77,6 +80,14 @@ fn segment_cid(path: &Path) -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
+fn segment_entries(path: &Path) -> Option<Vec<DirEntry>> {
+    #[cfg(test)]
+    if forced_unreadable_segment(path) {
+        return None;
+    }
+    list_dir_entries(path).ok()
+}
+
 pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
     let mut selected = Vec::new();
     let days = match list_days(journal) {
@@ -85,10 +96,12 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
             return LocationScan {
                 targets: selected,
                 complete: false,
+                incomplete: Vec::new(),
             };
         }
     };
     let mut complete = true;
+    let mut incomplete = Vec::new();
     for (day, _) in days {
         let segments = match list_segments(journal, &day) {
             Ok(segments) => segments,
@@ -106,7 +119,12 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
             if dir.starts_with('.') {
                 continue;
             }
-            let Ok(entries) = list_dir_entries(segment.path()) else {
+            let Some(entries) = segment_entries(segment.path()) else {
+                complete = false;
+                incomplete.push(Issue {
+                    what: format!("chronicle/{day}/{}/{dir}", identity.stream),
+                    plain_reason: "this segment directory could not be listed".to_owned(),
+                });
                 continue;
             };
             if holds_tombstone(&entries) || !holds_location_file(&entries) {
@@ -126,6 +144,72 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
     LocationScan {
         targets: selected,
         complete,
+        incomplete,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FORCED_UNREADABLE_SEGMENT: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn forced_unreadable_segment(path: &Path) -> bool {
+    FORCED_UNREADABLE_SEGMENT.with(|forced| {
+        forced
+            .borrow()
+            .as_ref()
+            .is_some_and(|forced_path| forced_path == path)
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn force_unreadable_segment(path: &Path) {
+    FORCED_UNREADABLE_SEGMENT.with(|forced| *forced.borrow_mut() = Some(path.to_path_buf()));
+}
+
+#[cfg(test)]
+pub(crate) fn clear_forced_unreadable_segment() {
+    FORCED_UNREADABLE_SEGMENT.with(|forced| *forced.borrow_mut() = None);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::{
+        clear_forced_unreadable_segment, force_unreadable_segment, select_location_targets,
+    };
+
+    #[test]
+    fn unreadable_segment_listing_is_incomplete_and_names_the_residue() {
+        let temporary = TempDir::new_in("/var/tmp").unwrap();
+        let path = temporary
+            .path()
+            .join("chronicle/20260805/location/070000_17");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("location.jsonl"), b"{}\n").unwrap();
+        fs::write(path.join("stream.json"), b"{}").unwrap();
+
+        force_unreadable_segment(&path);
+        let scan = select_location_targets(temporary.path());
+        clear_forced_unreadable_segment();
+
+        assert!(!scan.complete);
+        assert!(scan.targets.is_empty());
+        assert_eq!(scan.incomplete.len(), 1);
+        assert_eq!(
+            scan.incomplete[0].what,
+            "chronicle/20260805/location/070000_17"
+        );
+        assert!(
+            scan.incomplete[0]
+                .plain_reason
+                .contains("could not be listed")
+        );
     }
 }
 

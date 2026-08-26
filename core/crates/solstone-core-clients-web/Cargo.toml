@@ -2,7 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 [package]
-name = "solstone-core-observer-web"
+name = "solstone-core-clients-web"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,12 +14,17 @@ autotests = false
 workspace = true
 
 [[test]]
-name = "observer_source_delete"
-path = "tests/observer_source_delete.rs"
+name = "client_source_delete"
+path = "tests/client_source_delete.rs"
+
+[[test]]
+name = "location_mutation_ordering"
+path = "tests/location_mutation_ordering.rs"
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
@@ -33,6 +38,8 @@ solstone-core-segment.workspace = true
 [dev-dependencies]
 rusqlite.workspace = true
 solstone-core-convey-shell.workspace = true
+solstone-core-callosum.workspace = true
+solstone-core-ingest.workspace = true
 tempfile = "3.24.0"
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true
