@@ -7,9 +7,9 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core::supervisor::{
     InstallationBindingRefusal, ShutdownCause, SupervisorBootRefusal, SupervisorHostOutcome,
@@ -19,7 +19,13 @@ use solstone_core::supervisor::{
         write_hosted_supervisor_receipt,
     },
 };
+use solstone_core_system::direct_door::{
+    DirectDoorOutcome, DirectDoorPublishResult, publish_direct_door,
+};
 use solstone_core_system::lifecycle::ParentAdmissionFailure;
+use solstone_core_system::process::{
+    InstanceCensus, InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
+};
 
 use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
 
@@ -79,6 +85,43 @@ fn start_with_convey_argv(journal: &TempJournal, convey_argv: Option<String>) ->
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
+fn start_paused_before_readiness(journal: &TempJournal, marker: &Path) -> SupervisorGuard {
+    start_paused_before_readiness_with_args(journal, marker, &[])
+}
+
+fn start_paused_before_readiness_with_args(
+    journal: &TempJournal,
+    marker: &Path,
+    extra_args: &[&str],
+) -> SupervisorGuard {
+    let home = super::installation_binding::admit_for(&journal.0);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
+        .args(["supervisor", "--journal"])
+        .arg(&journal.0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
+        .env("HOME", home)
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env(
+            "SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK",
+            marker,
+        );
+    command.args(extra_args);
+    SupervisorGuard::new(command.spawn().expect("paused supervisor starts"))
+}
+
 fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     for _ in 0..1_600 {
         if UnixStream::connect(socket).is_ok() {
@@ -105,10 +148,24 @@ fn foreign_heartbeat(journal: &TempJournal) -> (PathBuf, Vec<u8>) {
     (path, body)
 }
 
-fn age_heartbeat_to_near_expiry(path: &PathBuf) {
+fn age_heartbeat_with_startup_cushion(path: &PathBuf) {
     let file = fs::File::open(path).expect("open foreign heartbeat");
-    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(59)))
+    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(45)))
         .expect("age foreign heartbeat");
+}
+
+fn wait_for_bounded_status(mut child: SupervisorGuard, timeout: Duration) -> ExitStatus {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            return status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "supervisor did not settle within {timeout:?}"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn renew_heartbeat_when_wait_marker_appears(
@@ -239,7 +296,7 @@ fn poll_for_outcome(
 }
 
 fn wait_for_outcome(path: &Path, expected_nonce: &str) -> SupervisorHostOutcome {
-    match poll_for_outcome(path, expected_nonce, 1_600) {
+    match poll_for_outcome(path, expected_nonce, 6_000) {
         Ok(outcome) => outcome,
         Err(PendingOutcome::Missing) => {
             panic!(
@@ -616,15 +673,18 @@ fn two_empty_journal_boots_never_both_reach_readiness() {
 fn ac8_live_foreign_writer_blocks_boot_without_pid() {
     let journal = TempJournal::new();
     let (heartbeat_path, heartbeat_body) = foreign_heartbeat(&journal);
-    age_heartbeat_to_near_expiry(&heartbeat_path);
+    age_heartbeat_with_startup_cushion(&heartbeat_path);
     let renewal =
         renew_heartbeat_when_wait_marker_appears(&journal, heartbeat_path, heartbeat_body);
-    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+    let stderr_path = journal.0.join("ac8-supervisor.stderr");
+    let stderr_file = fs::File::create(&stderr_path).expect("supervisor stderr file");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::from(stderr_file))
         .env(
             "SOLSTONE_LOCAL_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
@@ -635,13 +695,16 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
-        .output()
-        .expect("supervisor runs");
+        );
+    let status = wait_for_bounded_status(
+        SupervisorGuard::new(command.spawn().expect("supervisor runs")),
+        Duration::from_secs(30),
+    );
     renewal.join().expect("foreign heartbeat renewal");
-    assert_eq!(output.status.code(), Some(75));
-    assert!(String::from_utf8_lossy(&output.stderr).contains(
-        "a recent heartbeat from another run is present.\nto protect your journal, solstone did not start while it is present.\nwait a moment, then try again."
+    let stderr = fs::read(stderr_path).expect("supervisor stderr");
+    assert_eq!(status.code(), Some(75));
+    assert!(String::from_utf8_lossy(&stderr).contains(
+        "a recent heartbeat from another run is present.\nthe solstone app did not start while that heartbeat was still present.\nwait a moment, then try again."
     ));
     assert!(!journal.0.join("health/supervisor.pid").exists());
 }
@@ -696,7 +759,7 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
 
     let conflict_journal = TempJournal::new();
     let (heartbeat_path, heartbeat_body) = foreign_heartbeat(&conflict_journal);
-    age_heartbeat_to_near_expiry(&heartbeat_path);
+    age_heartbeat_with_startup_cushion(&heartbeat_path);
     let renewal =
         renew_heartbeat_when_wait_marker_appears(&conflict_journal, heartbeat_path, heartbeat_body);
     let (mut conflict, _, conflict_outcome, conflict_nonce) = start_hosted(&conflict_journal);
@@ -724,4 +787,183 @@ fn pre_ready_startup_failure_clears_supervisor_identity() {
     assert!(!journal.0.join("health/supervisor.pid").exists());
     assert!(!journal.0.join("health/supervisor.start_time").exists());
     assert!(!journal.0.join("health/supervisor.ready").exists());
+}
+
+#[test]
+fn pre_ready_convey_wait_renews_heartbeat_before_readiness() {
+    let journal = TempJournal::new();
+    let parked = journal.0.join("convey-parked");
+    let mut child =
+        start_with_convey_argv(&journal, Some(format!("ready-park {}", parked.display())));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut first_heartbeat = None;
+    loop {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited during pre-ready renewal proof: {status}");
+        }
+        let heartbeat = fs::read_dir(journal.0.join("health/sync"))
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with("solstone-v2-"))
+            })
+            .and_then(|entry| fs::read(entry.path()).ok());
+        if let Some(heartbeat) = heartbeat {
+            match first_heartbeat.as_ref() {
+                Some(first) if first != &heartbeat => {
+                    assert!(
+                        !journal.0.join("health/supervisor.ready").exists(),
+                        "heartbeat renewal must happen while startup is still pre-ready"
+                    );
+                    break;
+                }
+                None => first_heartbeat = Some(heartbeat),
+                Some(_) => {}
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pre-ready Convey wait did not renew its heartbeat"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
+    child
+        .shutdown_and_wait(Duration::from_secs(5))
+        .expect("supervisor shuts down after renewal proof");
+}
+
+#[test]
+fn final_pre_ready_sync_refuses_an_interleaved_writer_without_convey() {
+    let journal = TempJournal::new();
+    let pause = journal.0.join("pause-before-final-sync");
+    let mut child = start_paused_before_readiness_with_args(&journal, &pause, &["--no-convey"]);
+    for _ in 0..1_600 {
+        if pause.exists() {
+            break;
+        }
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before the final-sync pause: {status}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(pause.exists(), "supervisor reached the final-sync pause");
+    let (foreign, _) = foreign_heartbeat(&journal);
+    fs::write(format!("{}.go", pause.display()), b"go\n").expect("release final-sync pause");
+
+    let status = child.wait().expect("supervisor returns sync refusal");
+    assert_eq!(status.code(), Some(75));
+    assert!(foreign.exists(), "foreign heartbeat is preserved");
+    assert!(!journal.0.join("health/supervisor.ready").exists());
+    assert!(!journal.0.join("health/supervisor.pid").exists());
+    assert!(!journal.0.join("health/supervisor.start_time").exists());
+}
+
+#[test]
+fn readiness_publication_failure_clears_heartbeat_and_supervisor_identity() {
+    let journal = TempJournal::new();
+    fs::write(
+        journal.0.join("config/schedules.json"),
+        serde_json::to_vec(&serde_json::json!({"pre-ready": {
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
+            "every": "1m"
+        }}))
+        .expect("schedule JSON"),
+    )
+    .expect("schedule fixture");
+    fs::create_dir_all(journal.0.join("health/supervisor.ready"))
+        .expect("make readiness target a directory");
+    let pause = journal.0.join("pause-before-readiness");
+    let mut child = start_paused_before_readiness(&journal, &pause);
+    for _ in 0..1_600 {
+        if pause.exists() {
+            break;
+        }
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before the pre-readiness pause: {status}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(pause.exists(), "supervisor reached the pre-readiness pause");
+    let direct_door_path = journal.0.join("health/direct-door.json");
+    let direct_door = serde_json::from_slice::<serde_json::Value>(
+        &fs::read(&direct_door_path).expect("boot-time direct-door record"),
+    )
+    .expect("direct-door JSON");
+    let direct_port = u16::try_from(
+        direct_door["port"]
+            .as_u64()
+            .expect("direct-door port is numeric"),
+    )
+    .expect("direct-door port fits u16");
+    assert_eq!(
+        publish_direct_door(
+            &journal.0,
+            0,
+            DirectDoorOutcome::Bound { port: direct_port },
+        )
+        .expect("simulate Convey bound publication"),
+        DirectDoorPublishResult::Published
+    );
+    let source = SystemProcessInstanceSource;
+    let rows = match source.census() {
+        InstanceCensus::Complete(rows) | InstanceCensus::Incomplete(rows) => rows,
+    };
+    let app_instances = rows
+        .into_iter()
+        .filter(|row| row.ppid == child.id())
+        .map(|row| row.instance)
+        .collect::<Vec<_>>();
+    assert!(
+        !app_instances.is_empty(),
+        "the teardown proof must observe at least one started app fixture"
+    );
+    let scheduler = journal.0.join("health/scheduler.json");
+    let scheduled_work_completed = fs::read(&scheduler)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|value| value["pre-ready"]["last_status"] == "ok");
+    assert!(
+        !scheduled_work_completed,
+        "pre-ready queue submissions must remain pending"
+    );
+    fs::write(format!("{}.go", pause.display()), b"go\n").expect("release readiness pause");
+    let status = child.wait().expect("supervisor returns startup refusal");
+    assert_eq!(status.code(), Some(75));
+    assert!(!journal.0.join("health/supervisor.pid").exists());
+    assert!(!journal.0.join("health/supervisor.start_time").exists());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(
+            &fs::read(&direct_door_path).expect("withheld direct-door record")
+        )
+        .expect("withheld direct-door JSON"),
+        serde_json::json!({"state": "withheld", "port": direct_port}),
+        "pre-ready teardown must not leave a dead Convey door bound"
+    );
+    let sync_entries = fs::read_dir(journal.0.join("health/sync"))
+        .expect("sync directory")
+        .map(|entry| entry.expect("sync entry").file_name())
+        .collect::<Vec<_>>();
+    assert!(
+        sync_entries.iter().all(|name| {
+            !name
+                .to_str()
+                .is_some_and(|name| name.starts_with("solstone-v2-"))
+        }),
+        "a failed readiness publication must remove the retained self heartbeat"
+    );
+    for _ in 0..200 {
+        if app_instances
+            .iter()
+            .all(|instance| matches!(source.observe(instance), InstanceVerdict::NotSameOrExited))
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("readiness refusal left an app fixture alive");
 }

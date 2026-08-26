@@ -21,6 +21,7 @@ use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
 use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 
 use crate::errors::AtomicWriteError;
+use crate::flat_directory::{FileObservation, entry_from_stat, same_entry_metadata};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -207,9 +208,25 @@ pub enum DetailedAtomicOutcome {
 #[derive(Debug)]
 pub enum BoundAtomicOutcome {
     /// Rename landed in the bound directory and the directory was synced.
-    Published,
+    Published { observation: FileObservation },
     /// Rename landed; syncing the bound directory failed.
-    PublishedDurabilityUncertain { source: io::Error },
+    PublishedDurabilityUncertain {
+        observation: FileObservation,
+        source: io::Error,
+    },
+    /// Rename landed, but the destination no longer named the published
+    /// observation when publication completed.
+    PublishedObservationUncertain {
+        observation: FileObservation,
+        source: io::Error,
+        durability_source: Option<io::Error>,
+    },
+}
+
+struct BoundPublicationResult {
+    observation: FileObservation,
+    durability_source: Option<io::Error>,
+    observation_source: Option<io::Error>,
 }
 
 /// A failure before publication. The prior destination is preserved.
@@ -345,16 +362,26 @@ pub fn atomic_replace_detailed(
         ));
     }
 
-    let sync_error =
-        publish_into_bound_directory(&directory, name, contents, mode).map_err(|error| {
-            DetailedAtomicError {
-                path: path.to_path_buf(),
-                operation: error.operation,
-                source: error.source,
-                orphan_stage: error.orphan_stage,
-                cleanup_error: error.cleanup_error,
-            }
-        })?;
+    let BoundPublicationResult {
+        durability_source: sync_error,
+        observation_source,
+        ..
+    } = publish_into_bound_directory(&directory, name, contents, mode).map_err(|error| {
+        DetailedAtomicError {
+            path: path.to_path_buf(),
+            operation: error.operation,
+            source: error.source,
+            orphan_stage: error.orphan_stage,
+            cleanup_error: error.cleanup_error,
+        }
+    })?;
+
+    if let Some(observation) = observation_source {
+        return Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
+            observation,
+            sync_error,
+        });
+    }
 
     let final_observation = stat_parent(parent);
     match final_observation {
@@ -415,9 +442,22 @@ pub fn atomic_replace_bound(
             ),
         )
     })?;
-    match publish_into_bound_directory(directory, name, contents, mode)? {
-        None => Ok(BoundAtomicOutcome::Published),
-        Some(source) => Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { source }),
+    let result = publish_into_bound_directory(directory, name, contents, mode)?;
+    if let Some(source) = result.observation_source {
+        return Ok(BoundAtomicOutcome::PublishedObservationUncertain {
+            observation: result.observation,
+            source,
+            durability_source: result.durability_source,
+        });
+    }
+    match result.durability_source {
+        None => Ok(BoundAtomicOutcome::Published {
+            observation: result.observation,
+        }),
+        Some(source) => Ok(BoundAtomicOutcome::PublishedDurabilityUncertain {
+            observation: result.observation,
+            source,
+        }),
     }
 }
 
@@ -508,14 +548,14 @@ fn publish_into_bound_directory(
     name: &OsStr,
     contents: &[u8],
     mode: u32,
-) -> Result<Option<io::Error>, DetailedAtomicError> {
+) -> Result<BoundPublicationResult, DetailedAtomicError> {
     let path = Path::new(name);
     inspect_destination(directory, name, path)?;
     checkpoint(BoundPublicationPrimitive::TempCreate)
         .map_err(|source| detailed_error(path, "create stage", source))?;
     let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, path)?;
     pause_at("temp-create");
-    let operation = (|| -> io::Result<()> {
+    let operation = (|| -> io::Result<FileObservation> {
         checkpoint(BoundPublicationPrimitive::Write)?;
         stage_file.write_all(contents)?;
         pause_at("write");
@@ -523,18 +563,28 @@ fn publish_into_bound_directory(
         checkpoint(BoundPublicationPrimitive::FileSync)?;
         sync_file(&stage_file)?;
         pause_at("fsync-file");
-        Ok(())
+        let status = fstat(&stage_file).map_err(errno_io)?;
+        let entry = entry_from_stat(name.to_os_string(), &status, path)
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        Ok(FileObservation {
+            entry,
+            bytes: contents.to_vec(),
+        })
     })();
+    let observation = match operation {
+        Ok(observation) => observation,
+        Err(source) => {
+            drop(stage_file);
+            return Err(cleanup_stage_error(
+                directory,
+                path,
+                stage_name,
+                "prepare stage",
+                source,
+            ));
+        }
+    };
     drop(stage_file);
-    if let Err(source) = operation {
-        return Err(cleanup_stage_error(
-            directory,
-            path,
-            stage_name,
-            "prepare stage",
-            source,
-        ));
-    }
     pause_at("close");
     checkpoint(BoundPublicationPrimitive::Rename).map_err(|source| {
         cleanup_stage_error(directory, path, stage_name.clone(), "publish stage", source)
@@ -549,14 +599,38 @@ fn publish_into_bound_directory(
         )
     })?;
     pause_at("rename");
-    if let Err(source) = checkpoint(BoundPublicationPrimitive::ParentSync) {
-        return Ok(Some(source));
-    }
-    let sync_error = fsync(directory)
-        .err()
-        .map(|error| io::Error::from_raw_os_error(error as i32));
+    let durability_source = match checkpoint(BoundPublicationPrimitive::ParentSync) {
+        Err(source) => Some(source),
+        Ok(()) => fsync(directory)
+            .err()
+            .map(|error| io::Error::from_raw_os_error(error as i32)),
+    };
     pause_at("fsync-bound-parent-dir");
-    Ok(sync_error)
+    let observation_source = verify_bound_publication(directory, name, &observation).err();
+    Ok(BoundPublicationResult {
+        observation,
+        durability_source,
+        observation_source,
+    })
+}
+
+#[cfg(unix)]
+fn verify_bound_publication(
+    directory: &impl AsFd,
+    name: &OsStr,
+    observation: &FileObservation,
+) -> io::Result<()> {
+    let status = fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_io)?;
+    let current = entry_from_stat(name.to_os_string(), &status, Path::new(name))
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    if same_entry_metadata(&observation.entry, &current) {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published destination identity changed before verification",
+        ))
+    }
 }
 
 /// Atomically replace `path` with durably prepared `contents`.
@@ -1386,7 +1460,11 @@ mod tests {
         let directory = open_directory(temporary.path());
         let result =
             atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o640).unwrap();
-        assert!(matches!(result, BoundAtomicOutcome::Published));
+        let BoundAtomicOutcome::Published { observation } = result else {
+            panic!("bound publication must be durable");
+        };
+        assert_eq!(observation.entry.name, OsStr::new("unit.service"));
+        assert_eq!(observation.bytes, b"new");
         assert_eq!(fs::read(&target).unwrap(), b"new");
         assert_eq!(
             fs::metadata(&target).unwrap().permissions().mode() & 0o777,
@@ -1408,7 +1486,11 @@ mod tests {
 
         let result =
             atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o644).unwrap();
-        assert!(matches!(result, BoundAtomicOutcome::Published));
+        assert!(matches!(
+            result,
+            BoundAtomicOutcome::Published { observation }
+                if observation.bytes == b"new"
+        ));
         assert_eq!(fs::read(moved.join("unit.service")).unwrap(), b"new");
         assert_eq!(
             fs::read(parent.join("unit.service")).unwrap(),
@@ -1460,8 +1542,11 @@ mod tests {
                 BoundPublicationPrimitive::ParentSync => {
                     assert!(matches!(
                         result,
-                        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { ref source })
-                            if source.raw_os_error() == Some(Errno::EIO as i32)
+                        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain {
+                            ref observation,
+                            ref source,
+                        }) if source.raw_os_error() == Some(Errno::EIO as i32)
+                            && observation.bytes == b"new"
                     ));
                     assert_eq!(fs::read(&target).unwrap(), b"new");
                 }
@@ -1505,7 +1590,11 @@ mod tests {
             || atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600),
         );
 
-        assert!(matches!(result, Ok(BoundAtomicOutcome::Published)));
+        assert!(matches!(
+            result,
+            Ok(BoundAtomicOutcome::Published { observation })
+                if observation.bytes == b"new"
+        ));
         assert_eq!(barriers_fired, 2);
         assert_eq!(
             observed.lock().unwrap().as_slice(),
@@ -1514,5 +1603,31 @@ mod tests {
                 BoundPublicationPrimitive::ParentSync,
             ]
         );
+    }
+
+    #[test]
+    fn bound_publication_does_not_report_success_after_destination_disappears() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let target = temporary.path().join("unit.service");
+        let callback_target = target.clone();
+
+        let (result, barrier_fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            move || fs::remove_file(&callback_target).expect("remove published destination"),
+            || atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600),
+        );
+
+        assert!(barrier_fired);
+        assert!(matches!(
+            result,
+            Ok(BoundAtomicOutcome::PublishedObservationUncertain {
+                observation,
+                source,
+                durability_source: None,
+            }) if observation.bytes == b"new" && source.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(!target.exists());
     }
 }

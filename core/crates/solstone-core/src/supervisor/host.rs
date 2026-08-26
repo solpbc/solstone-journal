@@ -17,9 +17,9 @@ use solstone_core_installation_identity::{
     Generation, journal_token_from_path, load_installation_binding, root_token_from_path,
 };
 use solstone_core_system::lifecycle::{
-    ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
-    ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SupervisorBootAdmission,
-    SyncTickOutcome, WriterId,
+    ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome, DeclaredParent,
+    LifecycleError, ParentAdmissionFailure, ParentLossReason, ParentWatch, ShutdownDisposition,
+    ShutdownOutcome, ShutdownPhase, SupervisorBootAdmission, SyncTickOutcome, WriterId,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
@@ -99,8 +99,7 @@ pub enum LifecycleBootError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorBootRefusal {
-    /// The pre-formatted, terminal-safe copy for an unsafe or incomplete sync
-    /// scan at boot, produced by `format_sync_scan_failure_copy`.
+    /// Pre-formatted, terminal-safe owner copy for a sync admission refusal.
     SyncScan(String),
     ParentLiveness(ParentAdmissionFailure),
     ParentLostBeforeReadiness(ParentLossReason),
@@ -146,6 +145,32 @@ struct HostedInstallationBinding {
     writer_id: WriterId,
 }
 
+fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
+    match error {
+        LifecycleError::SyncScan(failure) => {
+            SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure))
+        }
+        LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ActivityRemains) => {
+            SupervisorBootRefusal::AdmissionWaitTerminal
+        }
+        LifecycleError::AdmissionWaitMarkerLive => {
+            SupervisorBootRefusal::SyncScan(ADMISSION_WAIT_ACTIVE_COPY.to_owned())
+        }
+        LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ClockDiscontinuity) => {
+            SupervisorBootRefusal::AdmissionWaitUnverifiable
+        }
+        LifecycleError::AdmissionWaitMarkerNeedsAttention(_)
+        | LifecycleError::AdmissionHeartbeatNeedsAttention { .. }
+        | LifecycleError::AdmissionWaitProcessIdentity
+        | LifecycleError::AdmissionWaitMarkerCleanup(_)
+        | LifecycleError::AdmissionWaitMarkerPublication(_)
+        | LifecycleError::PostPublicationHeartbeatCleanup(_) => {
+            SupervisorBootRefusal::AdmissionWaitUnverifiable
+        }
+        error => SupervisorBootRefusal::Lifecycle(LifecycleBootError::Failed(error.to_string())),
+    }
+}
+
 /// Run the complete Rust-owned supervisor lifecycle inside the caller's Tokio
 /// runtime. `parent` distinguishes hosted execution from normal foreground
 /// execution without adding a CLI surface.
@@ -168,31 +193,9 @@ pub async fn run_hosted(
     };
     let admission = match SupervisorBootAdmission::acquire(journal, binding.writer_id.clone()) {
         Ok(admission) => admission,
-        Err(LifecycleError::SyncScan(failure)) => {
-            return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure)),
-            };
-        }
-        Err(LifecycleError::AdmissionWaitTerminal(_) | LifecycleError::AdmissionWaitMarkerLive) => {
-            return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::AdmissionWaitTerminal,
-            };
-        }
-        Err(
-            LifecycleError::AdmissionWaitMarkerNeedsAttention(_)
-            | LifecycleError::AdmissionWaitProcessIdentity
-            | LifecycleError::AdmissionWaitMarkerCleanup(_)
-            | LifecycleError::AdmissionWaitMarkerPublication(_),
-        ) => {
-            return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::AdmissionWaitUnverifiable,
-            };
-        }
         Err(error) => {
             return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::Lifecycle(LifecycleBootError::Failed(
-                    error.to_string(),
-                )),
+                reason: lifecycle_boot_refusal(error),
             };
         }
     };
@@ -211,9 +214,7 @@ pub async fn run_hosted(
         Ok(lifecycle) => lifecycle,
         Err(error) => {
             return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::Lifecycle(LifecycleBootError::Failed(
-                    error.to_string(),
-                )),
+                reason: lifecycle_boot_refusal(error),
             };
         }
     };
@@ -235,6 +236,16 @@ pub async fn run_hosted(
         Err(runtime::RuntimeBootError::ParentLostBeforeReadiness(reason)) => {
             return SupervisorHostOutcome::Refused {
                 reason: SupervisorBootRefusal::ParentLostBeforeReadiness(reason),
+            };
+        }
+        Err(runtime::RuntimeBootError::SyncScan(failure)) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure)),
+            };
+        }
+        Err(runtime::RuntimeBootError::AdmissionWaitTerminal) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::AdmissionWaitTerminal,
             };
         }
         Err(error) => {
@@ -357,11 +368,12 @@ mod tests {
 
     use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
     use super::{
-        InstallationBindingRefusal, ShutdownCause, SupervisorHostOutcome, SupervisorSignal,
-        SyncFailureKind, classify_shutdown,
+        InstallationBindingRefusal, ShutdownCause, SupervisorBootRefusal, SupervisorHostOutcome,
+        SupervisorSignal, SyncFailureKind, classify_shutdown, lifecycle_boot_refusal,
     };
     use solstone_core_system::lifecycle::{
-        ArtifactClearOutcome, DeclaredParent, ParentLossReason, ParentWatch, ParentWatchStatus,
+        ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome,
+        DeclaredParent, LifecycleError, ParentLossReason, ParentWatch, ParentWatchStatus,
         ShutdownDisposition, ShutdownOutcome, ShutdownPhase, ShutdownReport,
     };
     use solstone_core_system::process::{
@@ -593,5 +605,25 @@ mod tests {
                 "the saved installation binding is for a different journal"
             )
         );
+    }
+
+    #[test]
+    fn admission_wait_refusal_preserves_what_was_verified() {
+        assert!(matches!(
+            lifecycle_boot_refusal(LifecycleError::AdmissionWaitTerminal(
+                AdmissionWaitTerminalReason::ActivityRemains
+            )),
+            SupervisorBootRefusal::AdmissionWaitTerminal
+        ));
+        assert!(matches!(
+            lifecycle_boot_refusal(LifecycleError::AdmissionWaitTerminal(
+                AdmissionWaitTerminalReason::ClockDiscontinuity
+            )),
+            SupervisorBootRefusal::AdmissionWaitUnverifiable
+        ));
+        assert!(matches!(
+            lifecycle_boot_refusal(LifecycleError::AdmissionWaitMarkerLive),
+            SupervisorBootRefusal::SyncScan(copy) if copy == ADMISSION_WAIT_ACTIVE_COPY
+        ));
     }
 }

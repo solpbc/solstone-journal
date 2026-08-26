@@ -602,7 +602,7 @@ fn checked_identifier(
     })
 }
 
-fn entry_from_stat(
+pub(crate) fn entry_from_stat(
     name: OsString,
     stat: &FileStat,
     path: &Path,

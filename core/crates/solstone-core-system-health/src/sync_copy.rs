@@ -13,7 +13,7 @@ use solstone_core_system::lifecycle::{
     SyncIncompleteSnapshotReason, SyncRescan, SyncScanFailure, SyncUnsafeReason,
     is_admission_wait_marker_filename_candidate, rescan_sync_read_only,
 };
-use solstone_core_system::process::{InstanceVerdict, ProcessInstanceSource};
+use solstone_core_system::process::ProcessInstanceSource;
 
 use crate::sanitize_os_bytes_for_terminal;
 
@@ -102,7 +102,7 @@ pub fn describe_sync_rescan(
 ) -> SyncRescanDiagnosis {
     match rescan_sync_read_only(journal, self_filename, None, now) {
         Ok(SyncRescan::Absent) => SyncRescanDiagnosis::Clean(None),
-        Ok(SyncRescan::Complete(result)) => diagnose_complete_rescan(result, process_source),
+        Ok(SyncRescan::Complete(result)) => diagnose_complete_rescan(result, now, process_source),
         Err(failure) if admission_wait_marker_scan_failure(&failure) => {
             SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
                 ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
@@ -125,17 +125,30 @@ fn admission_wait_marker_scan_failure(failure: &SyncScanFailure) -> bool {
 
 fn diagnose_complete_rescan(
     result: SyncCheckResult,
-    process_source: &dyn ProcessInstanceSource,
+    now: f64,
+    _process_source: &dyn ProcessInstanceSource,
 ) -> SyncRescanDiagnosis {
     let mut has_waiting_marker = false;
     let mut has_unverifiable_marker = false;
     for peer in &result.peer_observations {
         match &peer.classification {
-            HeartbeatClassification::AdmissionWaitMarker(marker) => {
-                match process_source.observe(&marker.process) {
-                    InstanceVerdict::SameLive { .. } => has_waiting_marker = true,
-                    InstanceVerdict::Unverifiable => has_unverifiable_marker = true,
-                    InstanceVerdict::NotSameOrExited => {}
+            HeartbeatClassification::AdmissionWaitMarker(_) => {
+                let Some(observation) = result.snapshot.files.get(&peer.source_filename) else {
+                    has_unverifiable_marker = true;
+                    continue;
+                };
+                let modified = observation.entry.mtime.seconds as f64
+                    + observation.entry.mtime.nanoseconds as f64 / 1_000_000_000.0;
+                let provably_stale = now.is_finite()
+                    && modified.is_finite()
+                    && modified <= now
+                    && now - modified > solstone_core_system::lifecycle::FRESH_WINDOW_SECONDS;
+                if !provably_stale {
+                    // Diagnostics are read-only and do not possess a local writer
+                    // identity or exact cleanup authority. Treat every non-proven-old
+                    // marker as waiting instead of applying this host's PID table to
+                    // a possibly foreign installation.
+                    has_waiting_marker = true;
                 }
             }
             HeartbeatClassification::AdmissionWaitMarkerIdentityMismatch(_)
@@ -145,10 +158,21 @@ fn diagnose_complete_rescan(
             _ => {}
         }
     }
+    if has_unverifiable_marker {
+        return SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
+            ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
+        );
+    }
     if has_waiting_marker {
         return SyncRescanDiagnosis::Waiting(format_admission_waiting_copy());
     }
-    if has_unverifiable_marker {
+    if result.live_peer_observations.iter().any(|peer| {
+        matches!(
+            peer.classification,
+            HeartbeatClassification::BoundedMalformed
+                | HeartbeatClassification::IdentityMismatch(_)
+        )
+    }) {
         return SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
             ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
         );
@@ -293,7 +317,9 @@ mod tests {
     use std::os::unix::ffi::OsStringExt;
     use std::path::PathBuf;
 
-    use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind};
+    use solstone_core_journal_io::{
+        FileObservation, FlatDirectoryEntry, FlatDirectoryError, JournalEntryKind, NativeMtime,
+    };
     use solstone_core_system::lifecycle::{
         AdmissionWaitMarker, AdmissionWaitReason, Heartbeat, HeartbeatClassification, RunId,
         SyncCheckResult, SyncDirectoryOperation, SyncIncompleteSnapshotReason, SyncPeerObservation,
@@ -344,14 +370,41 @@ mod tests {
     }
 
     fn complete(classification: HeartbeatClassification, is_live: bool) -> SyncCheckResult {
+        complete_with_mtime(classification, is_live, 100)
+    }
+
+    fn complete_with_mtime(
+        classification: HeartbeatClassification,
+        is_live: bool,
+        mtime_seconds: i64,
+    ) -> SyncCheckResult {
         let peer = SyncPeerObservation {
             source_filename: OsString::from("peer.check"),
             classification,
             heartbeat: None,
             is_live,
         };
+        let observation = FileObservation {
+            entry: FlatDirectoryEntry {
+                name: peer.source_filename.clone(),
+                kind: JournalEntryKind::RegularFile,
+                device: 1,
+                inode: 1,
+                size: 0,
+                mtime: NativeMtime {
+                    seconds: mtime_seconds,
+                    nanoseconds: 0,
+                },
+            },
+            bytes: Vec::new(),
+        };
         SyncCheckResult {
-            snapshot: SyncSnapshot::default(),
+            snapshot: SyncSnapshot {
+                files: std::collections::BTreeMap::from([(
+                    peer.source_filename.clone(),
+                    observation,
+                )]),
+            },
             peer_observations: vec![peer.clone()],
             live_peer_observations: if is_live { vec![peer] } else { Vec::new() },
         }
@@ -369,7 +422,7 @@ mod tests {
         );
         assert_eq!(
             format_admission_waiting_copy(),
-            "Installation: waiting\na recent heartbeat from another run is present.\nsolstone is waiting to protect your journal. it should clear on its own shortly."
+            "Installation: waiting\na recent heartbeat from another run was found.\nthe solstone app is waiting while it checks whether that activity continues. it will check again shortly."
         );
     }
 
@@ -397,6 +450,7 @@ mod tests {
         assert!(matches!(
             diagnose_complete_rescan(
                 complete(HeartbeatClassification::AdmissionWaitMarker(marker), false),
+                100.0,
                 &source,
             ),
             SyncRescanDiagnosis::Waiting(_)
@@ -404,7 +458,44 @@ mod tests {
     }
 
     #[test]
-    fn unverifiable_marker_and_uncorroborated_heartbeat_need_attention() {
+    fn unverifiable_marker_dominates_a_live_wait_marker() {
+        let marker = marker();
+        let live = SyncPeerObservation {
+            source_filename: OsString::from("live.check"),
+            classification: HeartbeatClassification::AdmissionWaitMarker(marker.clone()),
+            heartbeat: None,
+            is_live: false,
+        };
+        let malformed = SyncPeerObservation {
+            source_filename: OsString::from("malformed.check"),
+            classification: HeartbeatClassification::AdmissionWaitMarkerMalformed,
+            heartbeat: None,
+            is_live: false,
+        };
+        let source = FakeProcessSource {
+            result: InspectResult::Present {
+                instance: marker.process,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(7),
+            },
+        };
+        assert!(matches!(
+            diagnose_complete_rescan(
+                SyncCheckResult {
+                    snapshot: SyncSnapshot::default(),
+                    peer_observations: vec![live, malformed],
+                    live_peer_observations: Vec::new(),
+                },
+                100.0,
+                &source,
+            ),
+            SyncRescanDiagnosis::AdmissionWaitNeedsAttention(_)
+        ));
+    }
+
+    #[test]
+    fn fresh_marker_waits_without_using_the_local_process_table() {
         let marker = marker();
         let source = FakeProcessSource {
             result: InspectResult::Unverifiable,
@@ -412,9 +503,10 @@ mod tests {
         assert!(matches!(
             diagnose_complete_rescan(
                 complete(HeartbeatClassification::AdmissionWaitMarker(marker), false),
+                100.0,
                 &source,
             ),
-            SyncRescanDiagnosis::AdmissionWaitNeedsAttention(_)
+            SyncRescanDiagnosis::Waiting(_)
         ));
 
         let heartbeat = Heartbeat {
@@ -430,9 +522,18 @@ mod tests {
         assert!(matches!(
             diagnose_complete_rescan(
                 complete(HeartbeatClassification::SchemaV1(heartbeat), true),
+                100.0,
                 &source,
             ),
             SyncRescanDiagnosis::HeartbeatNeedsAttention(_)
+        ));
+        assert!(matches!(
+            diagnose_complete_rescan(
+                complete(HeartbeatClassification::BoundedMalformed, true),
+                100.0,
+                &source,
+            ),
+            SyncRescanDiagnosis::AdmissionWaitNeedsAttention(_)
         ));
     }
 
@@ -443,10 +544,12 @@ mod tests {
         };
         assert!(matches!(
             diagnose_complete_rescan(
-                complete(
+                complete_with_mtime(
                     HeartbeatClassification::AdmissionWaitMarker(marker()),
-                    false
+                    false,
+                    39,
                 ),
+                100.0,
                 &source,
             ),
             SyncRescanDiagnosis::Clean(_)
@@ -454,6 +557,7 @@ mod tests {
         assert!(matches!(
             diagnose_complete_rescan(
                 complete(HeartbeatClassification::AdmissionWaitMarkerMalformed, false),
+                100.0,
                 &source,
             ),
             SyncRescanDiagnosis::AdmissionWaitNeedsAttention(_)

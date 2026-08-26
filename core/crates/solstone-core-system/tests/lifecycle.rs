@@ -235,8 +235,7 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
     .expect("lock released after the foreign heartbeat freshness window")
     .activate()
     .expect("activate lifecycle")
-    .publish_heartbeat()
-    .expect("publish heartbeat");
+    .into_lifecycle();
     assert_eq!(lifecycle.journal(), bed.root);
 }
 
@@ -363,7 +362,7 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
 #[test]
 fn ac8_ac17_identity_and_readiness_are_pid_bound() {
     let bed = Bed::new("readiness");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     let mut extra = serde_json::Map::new();
     extra.insert("pid".to_owned(), serde_json::json!(0));
     extra.insert("ready_at".to_owned(), serde_json::json!(0));
@@ -386,7 +385,7 @@ fn ac8_ac17_identity_and_readiness_are_pid_bound() {
 #[test]
 fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
     let bed = Bed::new("identity-rules");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     lifecycle
         .signal_ready(1.0, serde_json::Map::new())
         .expect("ready");
@@ -420,7 +419,7 @@ fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
 #[test]
 fn ac17_wait_ready_uses_injected_clock_and_poll() {
     let bed = Bed::new("wait-ready");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     let ticks = std::cell::Cell::new(0_u64);
     let marker = wait_ready_with(
         &bed.root,
@@ -447,7 +446,7 @@ fn ac17_wait_ready_uses_injected_clock_and_poll() {
 #[test]
 fn ac3_ac8_stale_pid_identity_is_rejected() {
     let bed = Bed::new("stale-pid");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     lifecycle
         .signal_ready(1.0, serde_json::Map::new())
         .expect("ready");
@@ -733,8 +732,10 @@ fn gc_collects_only_the_stable_stale_run_from_a_same_writer_crash_loop() {
     }
 
     let bed = Bed::new("stale-heartbeat-gc-crash-loop");
-    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
-    let now = 100_000.0;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("wall clock")
+        .as_secs_f64();
     let stale = v2_heartbeat(
         "11111111111111111111111111111111",
         now - 86_401.0,
@@ -757,6 +758,14 @@ fn gc_collects_only_the_stable_stale_run_from_a_same_writer_crash_loop() {
         &unstable_filename,
         &serde_json::to_vec(&unstable).expect("unstable heartbeat"),
     );
+    let stale_mtime = UNIX_EPOCH + Duration::from_secs_f64(now - 86_401.0);
+    for filename in [&stale_filename, &unstable_filename] {
+        fs::File::open(bed.root.join("health/sync").join(filename))
+            .expect("open stale fixture")
+            .set_times(fs::FileTimes::new().set_modified(stale_mtime))
+            .expect("age stale fixture");
+    }
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
 
     let mut clock = TickClock {
         wall_seconds: now,
@@ -833,7 +842,7 @@ fn gc_collects_only_the_stable_stale_run_from_a_same_writer_crash_loop() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-fn gc_never_collects_non_v2_or_admission_marker_records() {
+fn gc_collects_every_proven_old_bounded_regular_class() {
     struct TickClock {
         wall_seconds: f64,
         monotonic_seconds: f64,
@@ -853,9 +862,11 @@ fn gc_never_collects_non_v2_or_admission_marker_records() {
         }
     }
 
-    let bed = Bed::new("stale-heartbeat-gc-non-v2");
-    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
-    let now = 100_000.0;
+    let bed = Bed::new("stale-heartbeat-gc-bounded-classes");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("wall clock")
+        .as_secs_f64();
     let old_v1 = Heartbeat {
         schema: 1,
         machine_id: "legacy".to_owned(),
@@ -907,15 +918,31 @@ fn gc_never_collects_non_v2_or_admission_marker_records() {
             mismatch_filename.clone(),
             serde_json::to_vec(&mismatch_body).expect("mismatch heartbeat"),
         ),
-        (
-            marker_filename.clone(),
-            serde_json::to_vec(&marker).expect("wait marker"),
-        ),
         ("malformed.check".to_owned(), b"{".to_vec()),
+        ("!solstone-claim-00000001".to_owned(), b"{".to_vec()),
     ];
     for (filename, body) in &fixtures {
         write_fixture_heartbeat(&bed.root, filename, body);
+        fs::File::open(bed.root.join("health/sync").join(filename))
+            .expect("open old fixture")
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(UNIX_EPOCH + Duration::from_secs_f64(now - 86_401.0)),
+            )
+            .expect("age old fixture");
     }
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    write_fixture_heartbeat(
+        &bed.root,
+        &marker_filename,
+        &serde_json::to_vec(&marker).expect("wait marker"),
+    );
+    fs::File::open(bed.root.join("health/sync").join(&marker_filename))
+        .expect("open old marker fixture")
+        .set_times(
+            fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs_f64(now - 86_401.0)),
+        )
+        .expect("age old marker fixture");
 
     let mut clock = TickClock {
         wall_seconds: now,
@@ -932,8 +959,15 @@ fn gc_never_collects_non_v2_or_admission_marker_records() {
     let _ = lifecycle.tick_sync_with(Some(&previous), &mut clock);
 
     for (filename, _) in &fixtures {
-        assert!(bed.root.join("health/sync").join(filename).exists());
+        assert!(
+            !bed.root.join("health/sync").join(filename).exists(),
+            "proven old bounded regular entry {filename:?} should be collected"
+        );
     }
+    assert!(
+        bed.root.join("health/sync").join(marker_filename).exists(),
+        "admission-wait markers are never stale-heartbeat collection candidates"
+    );
     assert!(
         bed.root
             .join("health/sync")

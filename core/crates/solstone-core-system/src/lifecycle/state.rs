@@ -15,13 +15,12 @@ use solstone_core_journal_io::{
     BoundAtomicOutcome, BoundParentLock, ClaimName, ClaimRemovalError, ClaimRemovalOutcome,
     DetailedAtomicError, ExistingParentLockError, FileObservation, FlatDirectory,
     FlatDirectoryError, JournalRoot, acquire_existing_parent_lock_bound, atomic_replace_bound,
-    claim_and_remove_observed, create_or_open_flat_directory_bound, read_observed_file_bounded,
+    claim_and_remove_observed, create_or_open_flat_directory_bound,
 };
 use thiserror::Error;
 
 use super::LifecycleError;
 use super::readiness::ReadinessMarker;
-use super::sync::MAX_SYNC_HEARTBEAT_BYTES;
 
 static SELF_HEARTBEAT_CLAIM_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -95,6 +94,53 @@ pub enum HeartbeatWriteError {
     },
     #[error("published heartbeat bytes changed before retention")]
     ObservationBytesMismatched,
+    #[error("published heartbeat identity could not be retained: {source}")]
+    PublicationObservationUncertain {
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// Failure to publish and retain a lifecycle-owned health artifact.
+#[derive(Debug, Error)]
+pub enum LifecycleArtifactWriteError {
+    #[error("could not publish lifecycle artifact {name}: {source}")]
+    Publish {
+        name: &'static str,
+        #[source]
+        source: DetailedAtomicError,
+    },
+    #[error("lifecycle artifact {name} publication durability is uncertain: {source}")]
+    DurabilityUncertain {
+        name: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("published lifecycle artifact {name} disappeared before retention")]
+    ObservationMissing { name: &'static str },
+    #[error("could not retain published lifecycle artifact {name}: {source}")]
+    Observation {
+        name: &'static str,
+        #[source]
+        source: FlatDirectoryError,
+    },
+    #[error("published lifecycle artifact {name} changed before retention")]
+    ObservationBytesMismatched { name: &'static str },
+    #[error("published lifecycle artifact {name} identity could not be retained: {source}")]
+    PublicationObservationUncertain {
+        name: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// Exact observations and values for the current run's shared identity files.
+#[derive(Debug)]
+pub(crate) struct SupervisorIdentityArtifacts {
+    pub(crate) pid: u32,
+    pub(crate) start_time: f64,
+    pub(crate) pid_observation: FileObservation,
+    pub(crate) start_time_observation: FileObservation,
 }
 
 /// Outcome of claim-only self-heartbeat cleanup.
@@ -137,45 +183,32 @@ impl fmt::Display for SelfHeartbeatRemoval {
     }
 }
 
-pub fn write_readiness(
-    journal: &Path,
+pub(crate) fn write_readiness(
+    health: &FlatDirectory,
+    identity: &SupervisorIdentityArtifacts,
     ready_at: f64,
     mut extra: serde_json::Map<String, serde_json::Value>,
-) -> Result<(), LifecycleError> {
-    let pid = read_pid(&health(journal).join("supervisor.pid"))?;
-    let start_time = read_f64(&health(journal).join("supervisor.start_time"))?;
+) -> Result<FileObservation, LifecycleError> {
     extra.remove("pid");
     extra.remove("ready_at");
     extra.remove("start_time");
     let marker = ReadinessMarker {
-        pid,
+        pid: identity.pid,
         ready_at,
-        start_time,
+        start_time: identity.start_time,
         extra,
     };
-    atomic_write(
-        &health(journal).join("supervisor.ready"),
-        &serde_json::to_vec(&marker)?,
-    )
+    write_lifecycle_artifact(health, "supervisor.ready", &serde_json::to_vec(&marker)?)
 }
 
+/// Service-management cleanup used only after the external manager has
+/// established that no supervisor run owns readiness.
 pub fn clear_ready(journal: &Path) -> Result<(), LifecycleError> {
     match fs::remove_file(health(journal).join("supervisor.ready")) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
     }
-}
-
-pub(crate) fn clear_supervisor_identity(journal: &Path) -> Result<(), LifecycleError> {
-    for name in ["supervisor.pid", "supervisor.start_time"] {
-        match fs::remove_file(health(journal).join(name)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
 }
 
 /// Atomically publish a heartbeat through the retained sync descriptor, then
@@ -187,19 +220,32 @@ pub fn write_sync_heartbeat(
 ) -> Result<FileObservation, HeartbeatWriteError> {
     let name = heartbeat_name(filename)?;
     match atomic_replace_bound(sync, name, body, 0o600) {
-        Ok(BoundAtomicOutcome::Published) => {}
-        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { source }) => {
-            return Err(HeartbeatWriteError::DurabilityUncertain { source });
+        Ok(BoundAtomicOutcome::Published { observation }) => Ok(observation),
+        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain {
+            observation,
+            source,
+        }) => {
+            let cleanup = cleanup_uncertain_publication(sync, name, &observation);
+            Err(HeartbeatWriteError::DurabilityUncertain {
+                source: durability_uncertain_source(source, cleanup),
+            })
         }
-        Err(source) => return Err(HeartbeatWriteError::Publish { source }),
+        Ok(BoundAtomicOutcome::PublishedObservationUncertain {
+            observation,
+            source,
+            durability_source,
+        }) => {
+            let cleanup = cleanup_uncertain_publication(sync, name, &observation);
+            Err(HeartbeatWriteError::PublicationObservationUncertain {
+                source: publication_observation_uncertain_source(
+                    source,
+                    durability_source,
+                    cleanup,
+                ),
+            })
+        }
+        Err(source) => Err(HeartbeatWriteError::Publish { source }),
     }
-    let observation = read_observed_file_bounded(sync, name, MAX_SYNC_HEARTBEAT_BYTES)
-        .map_err(|source| HeartbeatWriteError::Observation { source })?
-        .ok_or(HeartbeatWriteError::ObservationMissing)?;
-    if observation.bytes != body {
-        return Err(HeartbeatWriteError::ObservationBytesMismatched);
-    }
-    Ok(observation)
 }
 
 /// Remove only the exact observation retained after a prior successful publish.
@@ -218,6 +264,139 @@ pub fn clear_self_heartbeat(
         Ok(outcome) => Ok(SelfHeartbeatRemoval::NotClean { outcome }),
         Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError { source }),
     }
+}
+
+pub(crate) fn clear_lifecycle_artifact(
+    directory: &FlatDirectory,
+    name: &'static str,
+    retained: Option<&FileObservation>,
+) -> Result<SelfHeartbeatRemoval, LifecycleError> {
+    let Some(prior) = retained else {
+        return Ok(SelfHeartbeatRemoval::NoCleanupAuthority);
+    };
+    let claim = next_claim_name()?;
+    match claim_and_remove_observed(directory, OsStr::new(name), prior, &claim) {
+        Ok(ClaimRemovalOutcome::Removed) => Ok(SelfHeartbeatRemoval::Removed),
+        Ok(outcome) => Ok(SelfHeartbeatRemoval::NotClean { outcome }),
+        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError { source }),
+    }
+}
+
+pub(crate) fn require_lifecycle_artifact_removed(
+    name: &'static str,
+    removal: Result<SelfHeartbeatRemoval, LifecycleError>,
+) -> Result<(), LifecycleError> {
+    match removal? {
+        SelfHeartbeatRemoval::Removed => Ok(()),
+        outcome => Err(LifecycleError::LifecycleArtifactCleanup { name, outcome }),
+    }
+}
+
+pub(crate) fn clear_supervisor_identity(
+    health: &FlatDirectory,
+    identity: &SupervisorIdentityArtifacts,
+) -> Result<(), LifecycleError> {
+    let pid = require_lifecycle_artifact_removed(
+        "supervisor.pid",
+        clear_lifecycle_artifact(health, "supervisor.pid", Some(&identity.pid_observation)),
+    );
+    let start_time = require_lifecycle_artifact_removed(
+        "supervisor.start_time",
+        clear_lifecycle_artifact(
+            health,
+            "supervisor.start_time",
+            Some(&identity.start_time_observation),
+        ),
+    );
+    pid?;
+    start_time
+}
+
+fn write_lifecycle_artifact(
+    directory: &FlatDirectory,
+    name: &'static str,
+    body: &[u8],
+) -> Result<FileObservation, LifecycleError> {
+    match atomic_replace_bound(directory, OsStr::new(name), body, 0o600) {
+        Ok(BoundAtomicOutcome::Published { observation }) => Ok(observation),
+        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain {
+            observation,
+            source,
+        }) => {
+            let cleanup = cleanup_uncertain_publication(directory, OsStr::new(name), &observation);
+            Err(LifecycleArtifactWriteError::DurabilityUncertain {
+                name,
+                source: durability_uncertain_source(source, cleanup),
+            }
+            .into())
+        }
+        Ok(BoundAtomicOutcome::PublishedObservationUncertain {
+            observation,
+            source,
+            durability_source,
+        }) => {
+            let cleanup = cleanup_uncertain_publication(directory, OsStr::new(name), &observation);
+            Err(
+                LifecycleArtifactWriteError::PublicationObservationUncertain {
+                    name,
+                    source: publication_observation_uncertain_source(
+                        source,
+                        durability_source,
+                        cleanup,
+                    ),
+                }
+                .into(),
+            )
+        }
+        Err(source) => Err(LifecycleArtifactWriteError::Publish { name, source }.into()),
+    }
+}
+
+/// A rename has already landed when parent-directory sync fails. Recover an
+/// exact observation of those bytes and remove only that observation before
+/// returning the durability error, so a refused boot does not strand its own
+/// lifecycle artifact.
+fn cleanup_uncertain_publication(
+    directory: &FlatDirectory,
+    name: &OsStr,
+    observation: &FileObservation,
+) -> Result<(), String> {
+    let claim = next_claim_name().map_err(|source| source.to_string())?;
+    match claim_and_remove_observed(directory, name, observation, &claim) {
+        Ok(ClaimRemovalOutcome::Removed) => Ok(()),
+        Ok(outcome) => Err(format!("exact cleanup was not durable: {outcome:?}")),
+        Err(source) => Err(format!("exact cleanup failed: {source}")),
+    }
+}
+
+fn durability_uncertain_source(
+    source: std::io::Error,
+    cleanup: Result<(), String>,
+) -> std::io::Error {
+    match cleanup {
+        Ok(()) => source,
+        Err(cleanup) => std::io::Error::new(
+            source.kind(),
+            format!("{source}; exact post-publication cleanup failed: {cleanup}"),
+        ),
+    }
+}
+
+fn publication_observation_uncertain_source(
+    source: std::io::Error,
+    durability_source: Option<std::io::Error>,
+    cleanup: Result<(), String>,
+) -> std::io::Error {
+    let mut detail = source.to_string();
+    if let Some(durability_source) = durability_source {
+        detail.push_str(&format!("; parent sync failed: {durability_source}"));
+    }
+    if let Err(cleanup) = cleanup {
+        detail.push_str(&format!(
+            "; exact post-publication cleanup failed: {cleanup}"
+        ));
+    }
+    std::io::Error::new(source.kind(), detail)
 }
 
 /// Claim-remove a wait marker only when the exact published observation was
@@ -361,36 +540,6 @@ pub fn append_supervisor_log(
     Ok(())
 }
 
-// Readiness/identity state remains path-owned for this dispatch. This is the
-// pre-existing helper used only by those functions, never by heartbeat I/O.
-fn atomic_write(path: &Path, body: &[u8]) -> Result<(), LifecycleError> {
-    let parent = path
-        .parent()
-        .ok_or(LifecycleError::Identity("health path parent"))?;
-    fs::create_dir_all(parent)?;
-    let temporary = path.with_file_name(format!(
-        ".{}_{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("state"),
-        std::process::id()
-    ));
-    let result = (|| -> Result<(), LifecycleError> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        file.write_all(body)?;
-        file.flush()?;
-        fs::rename(&temporary, path)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
 fn read_pid(path: &Path) -> Result<u32, LifecycleError> {
     fs::read_to_string(path)?
         .trim()
@@ -400,17 +549,6 @@ fn read_pid(path: &Path) -> Result<u32, LifecycleError> {
 
 pub fn recorded_supervisor_pid(journal: &Path) -> Option<u32> {
     read_pid(&health(journal).join("supervisor.pid")).ok()
-}
-
-fn read_f64(path: &Path) -> Result<f64, LifecycleError> {
-    let value: f64 = fs::read_to_string(path)?
-        .trim()
-        .parse()
-        .map_err(|_| LifecycleError::Identity("start time"))?;
-    value
-        .is_finite()
-        .then_some(value)
-        .ok_or(LifecycleError::Identity("start time"))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -426,16 +564,33 @@ pub(crate) fn process_start_time_epoch_seconds(pid: u32) -> Result<f64, Lifecycl
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub fn write_supervisor_identity(journal: &Path, pid: u32) -> Result<(), LifecycleError> {
+pub(crate) fn write_supervisor_identity(
+    health: &FlatDirectory,
+    pid: u32,
+) -> Result<SupervisorIdentityArtifacts, LifecycleError> {
     let start_time = process_start_time_epoch_seconds(pid)?;
-    atomic_write(
-        &health(journal).join("supervisor.pid"),
-        pid.to_string().as_bytes(),
-    )?;
-    atomic_write(
-        &health(journal).join("supervisor.start_time"),
+    let pid_observation =
+        write_lifecycle_artifact(health, "supervisor.pid", pid.to_string().as_bytes())?;
+    let start_time_observation = match write_lifecycle_artifact(
+        health,
+        "supervisor.start_time",
         start_time.to_string().as_bytes(),
-    )
+    ) {
+        Ok(observation) => observation,
+        Err(error) => {
+            require_lifecycle_artifact_removed(
+                "supervisor.pid",
+                clear_lifecycle_artifact(health, "supervisor.pid", Some(&pid_observation)),
+            )?;
+            return Err(error);
+        }
+    };
+    Ok(SupervisorIdentityArtifacts {
+        pid,
+        start_time,
+        pid_observation,
+        start_time_observation,
+    })
 }
 
 // Process start-time identity is owned by process::instance.
@@ -626,7 +781,7 @@ mod tests {
 
     #[cfg(feature = "test-hooks")]
     #[test]
-    fn durability_uncertainty_never_grants_a_retained_observation() {
+    fn durability_uncertainty_removes_every_published_lifecycle_artifact() {
         use solstone_core_journal_io::{
             BoundPublicationPrimitive, run_with_bound_publication_fault,
         };
@@ -645,5 +800,68 @@ mod tests {
             result,
             Err(HeartbeatWriteError::DurabilityUncertain { .. })
         ));
+        assert!(!temporary.path().join("health/sync/self.check").exists());
+
+        let root = JournalRoot::open(temporary.path()).expect("journal root");
+        let health = create_or_open_flat_directory_bound(
+            &root,
+            OsStr::new("health"),
+            0o700,
+            temporary.path(),
+        )
+        .expect("bound health");
+        for name in [
+            "supervisor.pid",
+            "supervisor.start_time",
+            "supervisor.ready",
+        ] {
+            let (result, fault_consumed) = run_with_bound_publication_fault(
+                BoundPublicationPrimitive::ParentSync,
+                1,
+                nix::errno::Errno::EIO as i32,
+                || write_lifecycle_artifact(&health, name, b"owned artifact"),
+            );
+            assert!(fault_consumed, "parent-sync fault for {name}");
+            assert!(matches!(
+                result,
+                Err(LifecycleError::LifecycleArtifactWrite(
+                    LifecycleArtifactWriteError::DurabilityUncertain { .. }
+                ))
+            ));
+            assert!(
+                !temporary.path().join("health").join(name).exists(),
+                "{name} must be removed after uncertain publication"
+            );
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn published_observation_never_claims_an_identical_replacement() {
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_barrier,
+        };
+
+        let temporary = temporary();
+        let sync = bound_sync(temporary.path());
+        let target = temporary.path().join("health/sync/self.check");
+        let replacement = temporary.path().join("health/sync/replacement.tmp");
+        let callback_target = target.clone();
+        let (result, barrier_fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            move || {
+                fs::write(&replacement, b"identical").expect("replacement fixture");
+                fs::rename(&replacement, &callback_target).expect("replace published inode");
+            },
+            || write_sync_heartbeat(&sync, "self.check", b"identical"),
+        );
+
+        assert!(barrier_fired);
+        assert!(matches!(
+            result,
+            Err(HeartbeatWriteError::PublicationObservationUncertain { .. })
+        ));
+        assert_eq!(fs::read(target).expect("replacement remains"), b"identical");
     }
 }

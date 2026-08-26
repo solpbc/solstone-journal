@@ -23,14 +23,26 @@ pub fn identity_root_from_current_executable() -> Result<PathBuf, String> {
     let executable_dir = executable
         .parent()
         .ok_or_else(|| "current executable has no containing directory".to_owned())?;
-    resolve_identity_root_from_executable_dir(executable_dir)
-        .or_else(project_root_from_current_executable)
-        .ok_or_else(|| {
-            format!(
-                "could not resolve installation identity root from {}",
-                executable_dir.display()
-            )
-        })
+    let resolved = resolve_identity_root_from_executable_dir(executable_dir)
+        .or_else(project_root_from_current_executable);
+    #[cfg(debug_assertions)]
+    let resolved = resolved.or_else(supervisor_fixture_project_root);
+    resolved.ok_or_else(|| {
+        format!(
+            "could not resolve installation identity root from {}",
+            executable_dir.display()
+        )
+    })
+}
+
+/// Integration-test-only root seam for binaries emitted to an external Cargo
+/// target directory. Release builds do not compile this fallback, and debug
+/// builds require the explicit supervisor app-fixture gate.
+#[cfg(debug_assertions)]
+fn supervisor_fixture_project_root() -> Option<PathBuf> {
+    (std::env::var("SOLSTONE_SUPERVISOR_APP_FIXTURE").as_deref() == Ok("1"))
+        .then(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."))
+        .and_then(|root| root.canonicalize().ok())
 }
 
 pub fn owner_base_at_home(home: PathBuf) -> Result<OwnerBase, IdentityError> {

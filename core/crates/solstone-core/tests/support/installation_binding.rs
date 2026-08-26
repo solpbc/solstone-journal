@@ -13,15 +13,14 @@ use solstone_core_installation_identity::{
 pub fn admit_for(journal: &Path) -> PathBuf {
     let home = journal.join(".supervisor-home");
     std::fs::create_dir_all(&home).expect("test identity home");
-    let executable = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core"));
-    let root = executable
-        .ancestors()
-        .find(|path| path.join("pyproject.toml").is_file())
-        .expect("workspace root for test binary");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("workspace root from manifest directory");
     let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).expect("test owner");
     let admission = admit_setup(SetupAdmissionRequest {
         owner,
-        root_token: root_token_from_path(root).expect("root token"),
+        root_token: root_token_from_path(&root).expect("root token"),
         journal_token: journal_token_from_path(journal).expect("journal token"),
         journal_is_explicit: true,
         legacy_manifest: LegacyManifestEvidence::Absent,

@@ -21,11 +21,12 @@ use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
 use solstone_core_system::lifecycle::{
-    ParentLossReason, ParentWatch, ParentWatchStatus, PreReadySupervisorLifecycle, ShutdownRegime,
-    SupervisorLifecycle, SyncPeerObservation, SyncSnapshot,
+    DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
+    PreReadySupervisorLifecycle, ShutdownRegime, SupervisorLifecycle, SyncPeerObservation,
+    SyncSnapshot, SyncTickOutcome,
 };
 use solstone_core_system::process::{
-    ManagedProcess, RestartDecision, RestartPolicy, SpawnError, SpawnOptions, describe_exit,
+    ManagedProcess, RestartDecision, RestartPolicy, SpawnOptions, describe_exit,
 };
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -56,6 +57,7 @@ const FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(3);
 const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
 const FAST_FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_millis(100);
 const FAST_FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(5);
+const FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(20);
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
 const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
 
@@ -337,23 +339,27 @@ fn selected_direct_door_port(journal: &Path, requested: Option<u16>) -> Result<u
 }
 
 pub(crate) fn apply_app_exit(app: &mut ManagedAppProcess, journal: &Path, exit: AppExit) {
-    if app.service == AppService::Convey
-        && let Some(generation) = app.direct_door_generation.take()
-    {
-        match read_direct_door_port(journal) {
-            Ok(port) => {
-                if let Err(error) = withhold_direct_door(journal, generation, port) {
-                    eprintln!("supervisor: failed to withhold direct-door record: {error}");
-                }
-            }
-            Err(error) => {
-                eprintln!("supervisor: failed to read direct-door port while withholding: {error}");
-            }
-        }
+    if let Err(error) = withhold_app_direct_door(app, journal) {
+        eprintln!("supervisor: failed to withhold direct-door record: {error}");
     }
     if matches!(app.record_exit(exit), RestartDecision::GiveUp) {
         write_failed_record(journal, app);
     }
+}
+
+fn withhold_app_direct_door(app: &mut ManagedAppProcess, journal: &Path) -> Result<(), String> {
+    if app.service != AppService::Convey {
+        return Ok(());
+    }
+    let Some(generation) = app.direct_door_generation else {
+        return Ok(());
+    };
+    let port = read_direct_door_port(journal)
+        .map_err(|error| format!("failed to read direct-door port: {error}"))?;
+    withhold_direct_door(journal, generation, port)
+        .map_err(|error| format!("generation {generation} could not be withheld: {error}"))?;
+    app.direct_door_generation = None;
+    Ok(())
 }
 
 fn fixture_marker_path(journal: &Path, service: AppService) -> String {
@@ -545,6 +551,8 @@ pub(crate) struct SupervisorOutcome {
 #[derive(Debug)]
 pub(crate) enum RuntimeBootError {
     Startup(String),
+    SyncScan(solstone_core_system::lifecycle::SyncScanFailure),
+    AdmissionWaitTerminal,
     ParentLostBeforeReadiness(ParentLossReason),
 }
 
@@ -552,6 +560,10 @@ impl std::fmt::Display for RuntimeBootError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Startup(error) => formatter.write_str(error),
+            Self::SyncScan(error) => write!(formatter, "sync scan failed: {error}"),
+            Self::AdmissionWaitTerminal => {
+                formatter.write_str("post-publication heartbeat conflict")
+            }
             Self::ParentLostBeforeReadiness(reason) => {
                 write!(formatter, "parent lost before readiness: {reason:?}")
             }
@@ -690,15 +702,14 @@ pub(crate) fn spawn_app_process(
     app: &mut ManagedAppProcess,
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
-) -> Result<(), SpawnError> {
+) -> Result<(), String> {
     if app.service == AppService::Convey {
-        match peek_direct_door_generation(journal) {
-            Ok(generation) => app.direct_door_generation = Some(generation),
-            Err(error) => {
-                eprintln!("supervisor: failed to peek direct-door generation: {error}");
-                app.direct_door_generation = None;
-            }
+        if app.direct_door_generation.is_some() {
+            return Err("previous direct-door cleanup authority is still retained".to_owned());
         }
+        let generation = peek_direct_door_generation(journal)
+            .map_err(|error| format!("failed to retain direct-door cleanup authority: {error}"))?;
+        app.direct_door_generation = Some(generation);
     }
     let process = ManagedProcess::spawn_exact(
         app.argv.clone(),
@@ -715,7 +726,8 @@ pub(crate) fn spawn_app_process(
                 OsString::from("1"),
             )]),
         },
-    )?;
+    )
+    .map_err(|error| error.to_string())?;
     app.process = Some(process);
     app.started_at = Some(Instant::now());
     app.restart_at = None;
@@ -738,8 +750,12 @@ async fn wait_for_convey_ready(
     app: &mut ManagedAppProcess,
     journal: &Path,
     probe: &dyn ConveyReadinessProbe,
-) -> bool {
+    lifecycle: &mut SupervisorLifecycle,
+    heartbeat_interval: Duration,
+) -> Result<bool, SyncTickOutcome> {
     let start = Instant::now();
+    renew_pre_ready_heartbeat(lifecycle)?;
+    let mut last_heartbeat = Instant::now();
     loop {
         let exited = match app.process.as_mut() {
             Some(process) => match process.poll() {
@@ -752,28 +768,42 @@ async fn wait_for_convey_ready(
                     eprintln!(
                         "supervisor: failed to poll convey during startup: {error}; continuing into supervise loop"
                     );
-                    return false;
+                    return Ok(false);
                 }
             },
-            None => return false,
+            None => return Ok(false),
         };
         if let Some(exit_code) = exited {
             apply_app_exit(app, journal, AppExit::Process { code: exit_code });
             eprintln!(
                 "supervisor: convey exited during startup (exit {exit_code}); continuing into supervise loop"
             );
-            return false;
+            return Ok(false);
         }
         if probe.is_ready(journal, &app.argv) {
-            return true;
+            return Ok(true);
         }
         if start.elapsed() >= probe.wait_window() {
             eprintln!(
                 "supervisor: convey was not ready during startup; continuing into supervise loop"
             );
-            return false;
+            return Ok(false);
+        }
+        if last_heartbeat.elapsed() >= heartbeat_interval {
+            renew_pre_ready_heartbeat(lifecycle)?;
+            last_heartbeat = Instant::now();
         }
         tokio::time::sleep(probe.poll_interval()).await;
+    }
+}
+
+fn renew_pre_ready_heartbeat(lifecycle: &mut SupervisorLifecycle) -> Result<(), SyncTickOutcome> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |value| value.as_secs_f64());
+    match lifecycle.tick_sync(None, now) {
+        SyncTickOutcome::Healthy => Ok(()),
+        outcome => Err(outcome),
     }
 }
 
@@ -782,7 +812,9 @@ async fn start_app_stack(
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
     probe: &dyn ConveyReadinessProbe,
-) {
+    lifecycle: &mut SupervisorLifecycle,
+    heartbeat_interval: Duration,
+) -> Result<(), SyncTickOutcome> {
     for service in [
         AppService::Convey,
         AppService::Sense,
@@ -798,9 +830,11 @@ async fn start_app_stack(
         }
         start_app_process(app, journal, sink.clone());
         if service == AppService::Convey && app.process.is_some() {
-            let _ = wait_for_convey_ready(app, journal, probe).await;
+            let _ =
+                wait_for_convey_ready(app, journal, probe, lifecycle, heartbeat_interval).await?;
         }
     }
+    Ok(())
 }
 
 pub(crate) async fn boot_and_tick(
@@ -810,21 +844,24 @@ pub(crate) async fn boot_and_tick(
     journal_binary: Option<PathBuf>,
     parent_watch: Option<ParentWatch>,
 ) -> Result<SupervisorOutcome, RuntimeBootError> {
+    let mut lifecycle = lifecycle.into_lifecycle();
     let mut shutdown_signals = match tick::ShutdownSignals::install() {
         Ok(signals) => signals,
-        Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+        Err(error) => return Err(abort_pre_ready(&lifecycle, error)),
     };
     let server = Arc::new(
         match CallosumSocketServer::bind(journal.join("health/callosum.sock")).await {
             Ok(server) => server,
-            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+            Err(error) => return Err(abort_pre_ready(&lifecycle, error)),
         },
     );
     let mut connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), serde_json::Map::new());
     connection.start();
     if let Err(error) = wait_for_callosum_connection(&mut connection).await {
-        return Err(abort_pre_ready(lifecycle, error));
+        connection.stop().await;
+        server.stop().await;
+        return Err(abort_pre_ready(&lifecycle, error));
     }
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
@@ -840,7 +877,7 @@ pub(crate) async fn boot_and_tick(
             server: Arc::clone(&server),
             restart_id: Arc::new(Mutex::new(None)),
         })),
-        ready: true,
+        ready: false,
         before_deadline_commit: None,
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
@@ -962,7 +999,16 @@ pub(crate) async fn boot_and_tick(
             now,
         ) {
             Ok((scheduler, _)) => scheduler,
-            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+            Err(error) => {
+                return Err(abort_published_setup(
+                    &lifecycle,
+                    &queue,
+                    &mut connection,
+                    &server,
+                    error,
+                )
+                .await);
+            }
         };
         let schedule_sink = SupervisorScheduleSink {
             queue: queue.clone(),
@@ -980,20 +1026,37 @@ pub(crate) async fn boot_and_tick(
     } else {
         match resolve_available_port() {
             Ok(port) => port,
-            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+            Err(error) => {
+                return Err(abort_published_setup(
+                    &lifecycle,
+                    &queue,
+                    &mut connection,
+                    &server,
+                    error,
+                )
+                .await);
+            }
         }
     };
     let direct_port = match selected_direct_door_port(&journal, options.direct_port) {
         Ok(port) => port,
-        Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+        Err(error) => {
+            return Err(
+                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+            );
+        }
     };
     if let Err(error) = persist_direct_door_port(&journal, direct_port) {
-        return Err(abort_pre_ready(lifecycle, error));
+        return Err(
+            abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+        );
     }
     if let Err(error) = initialize_direct_door(&journal, direct_port) {
-        return Err(abort_pre_ready(lifecycle, error));
+        return Err(
+            abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+        );
     }
-    let mut app_processes = app_processes(
+    let app_processes = app_processes(
         &options,
         &journal,
         fixture_binary.as_deref(),
@@ -1001,14 +1064,6 @@ pub(crate) async fn boot_and_tick(
         convey_port,
         fast_fixture_timing,
     );
-    start_app_stack(
-        &mut app_processes,
-        &journal,
-        server.clone(),
-        readiness_probe.as_ref(),
-    )
-    .await;
-    pause_before_final_parent_check().await;
     let mut state = SupervisorState {
         journal,
         is_remote_mode: remote,
@@ -1034,36 +1089,52 @@ pub(crate) async fn boot_and_tick(
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
     };
+    let startup_journal = state.journal.clone();
+    let startup_server = Arc::clone(&state.server);
+    let pre_ready_heartbeat_interval = if fast_fixture_timing {
+        FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL
+    } else {
+        Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS)
+    };
+    if let Err(outcome) = start_app_stack(
+        &mut state.app_processes,
+        &startup_journal,
+        startup_server,
+        readiness_probe.as_ref(),
+        &mut lifecycle,
+        pre_ready_heartbeat_interval,
+    )
+    .await
+    {
+        let startup = classify_pre_ready_sync_error(outcome);
+        return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
+    }
+    pause_before_final_parent_check().await;
     if let Some(watch) = parent_watch
         && let ParentWatchStatus::Lost(reason) =
             watch.check(&solstone_core_system::process::SystemProcessInstanceSource)
     {
-        let _ = state.queue.shutdown();
-        for app in state.app_processes.iter_mut().rev() {
-            if let Some(process) = app.process.as_mut() {
-                let _ = process
-                    .terminate_exact(solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT);
-                process.cleanup();
-            }
-        }
-        state.connection.stop().await;
-        state.server.stop().await;
-        lifecycle
-            .abort_pre_ready()
-            .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
-        return Err(RuntimeBootError::ParentLostBeforeReadiness(reason));
-    }
-    let mut lifecycle = lifecycle
-        .publish_heartbeat()
-        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
-    lifecycle
-        .signal_ready(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0.0, |value| value.as_secs_f64()),
-            serde_json::Map::new(),
+        return Err(abort_pre_ready_state(
+            &mut state,
+            &lifecycle,
+            RuntimeBootError::ParentLostBeforeReadiness(reason),
         )
-        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
+        .await);
+    }
+    if let Err(outcome) = renew_pre_ready_heartbeat(&mut lifecycle) {
+        let startup = classify_pre_ready_sync_error(outcome);
+        return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
+    }
+    if let Err(error) = lifecycle.signal_ready(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |value| value.as_secs_f64()),
+        serde_json::Map::new(),
+    ) {
+        let startup = RuntimeBootError::Startup(error.to_string());
+        return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
+    }
+    state.queue.set_ready();
     if let Err(error) = tick::initialize_catchup(
         &state.journal,
         &state.queue,
@@ -1118,12 +1189,125 @@ async fn pause_before_final_parent_check() {
     }
 }
 
+async fn abort_published_setup(
+    lifecycle: &SupervisorLifecycle,
+    queue: &TaskQueue,
+    connection: &mut CallosumSocketConnection,
+    server: &Arc<CallosumSocketServer>,
+    error: impl std::fmt::Display,
+) -> RuntimeBootError {
+    let startup = RuntimeBootError::Startup(error.to_string());
+    let queue_report = queue.shutdown();
+    connection.stop().await;
+    server.stop().await;
+    let mut cleanup_failures = Vec::new();
+    if queue_report.active_count != 0 || queue_report.forced {
+        cleanup_failures.push(format!(
+            "pre-ready queue shutdown observed {} active tasks (forced={})",
+            queue_report.active_count, queue_report.forced
+        ));
+    }
+    if cleanup_failures.is_empty() {
+        if let Err(error) = lifecycle.abort_before_ready() {
+            cleanup_failures.push(format!("lifecycle cleanup failed: {error}"));
+        }
+    } else {
+        cleanup_failures.push(
+            "lifecycle heartbeat and identity retained because runtime cleanup was not established"
+                .to_owned(),
+        );
+    }
+    cleanup_result(startup, cleanup_failures)
+}
+
+async fn teardown_pre_ready_state(state: &mut SupervisorState) -> Result<(), String> {
+    let mut failures = Vec::new();
+    let queue_report = state.queue.shutdown();
+    if queue_report.active_count != 0 || queue_report.forced {
+        failures.push(format!(
+            "queue shutdown observed {} active tasks (forced={})",
+            queue_report.active_count, queue_report.forced
+        ));
+    }
+    for app in state.app_processes.iter_mut().rev() {
+        if let Some(process) = app.process.as_mut() {
+            if let Err(error) =
+                process.terminate_exact(solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT)
+            {
+                failures.push(format!(
+                    "{} exact-process termination failed: {error}",
+                    app.service.as_str()
+                ));
+            }
+            process.cleanup();
+        }
+        if let Err(error) = withhold_app_direct_door(app, &state.journal) {
+            failures.push(format!(
+                "{} direct-door cleanup failed: {error}",
+                app.service.as_str()
+            ));
+        }
+    }
+    state.connection.stop().await;
+    state.server.stop().await;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+async fn abort_pre_ready_state(
+    state: &mut SupervisorState,
+    lifecycle: &SupervisorLifecycle,
+    startup: RuntimeBootError,
+) -> RuntimeBootError {
+    let mut cleanup_failures = Vec::new();
+    match teardown_pre_ready_state(state).await {
+        Ok(()) => {
+            if let Err(error) = lifecycle.abort_before_ready() {
+                cleanup_failures.push(format!("lifecycle cleanup failed: {error}"));
+            }
+        }
+        Err(error) => {
+            cleanup_failures.push(format!("runtime cleanup failed: {error}"));
+            cleanup_failures.push(
+                "lifecycle heartbeat and identity retained because process cleanup was not established"
+                    .to_owned(),
+            );
+        }
+    }
+    cleanup_result(startup, cleanup_failures)
+}
+
+fn cleanup_result(startup: RuntimeBootError, cleanup_failures: Vec<String>) -> RuntimeBootError {
+    if cleanup_failures.is_empty() {
+        startup
+    } else {
+        RuntimeBootError::Startup(format!(
+            "{startup}; pre-ready cleanup failed: {}",
+            cleanup_failures.join("; ")
+        ))
+    }
+}
+
+fn classify_pre_ready_sync_error(outcome: SyncTickOutcome) -> RuntimeBootError {
+    match outcome {
+        SyncTickOutcome::Healthy => unreachable!("healthy pre-ready heartbeat renewal continues"),
+        SyncTickOutcome::Conflict(_) => RuntimeBootError::AdmissionWaitTerminal,
+        SyncTickOutcome::CompleteScanFailure(failure) => RuntimeBootError::SyncScan(failure),
+        outcome => {
+            RuntimeBootError::Startup(format!("pre-ready heartbeat renewal failed: {outcome:?}"))
+        }
+    }
+}
+
 fn abort_pre_ready(
-    lifecycle: PreReadySupervisorLifecycle,
+    lifecycle: &SupervisorLifecycle,
     error: impl std::fmt::Display,
 ) -> RuntimeBootError {
     let error = error.to_string();
-    match lifecycle.abort_pre_ready() {
+    match lifecycle.abort_before_ready() {
         Ok(()) => RuntimeBootError::Startup(error),
         Err(cleanup) => RuntimeBootError::Startup(format!(
             "{error}; pre-ready lifecycle cleanup failed: {cleanup}"
@@ -1172,8 +1356,9 @@ async fn wait_for_callosum_connection(
 #[cfg(test)]
 mod tests {
     use super::{
-        JournalBinaryPreflightError, resolve_journal_binary_from, selected_direct_door_port,
-        shutdown_regime_for, validate_journal_binary,
+        AppService, JournalBinaryPreflightError, ManagedAppProcess, RuntimeBootError,
+        cleanup_result, resolve_journal_binary_from, selected_direct_door_port,
+        shutdown_regime_for, validate_journal_binary, withhold_app_direct_door,
     };
     use std::path::{Path, PathBuf};
 
@@ -1248,6 +1433,86 @@ mod tests {
         assert_eq!(
             shutdown_regime_for(&SupervisorStopReason::Sync(SyncTickOutcome::Healthy)),
             ShutdownRegime::Standard
+        );
+    }
+
+    #[test]
+    fn pre_ready_cleanup_failure_overrides_an_ordinary_refusal() {
+        let outcome = cleanup_result(
+            RuntimeBootError::ParentLostBeforeReadiness(ParentLossReason::ExitedOrReused),
+            vec!["convey direct-door cleanup failed".to_owned()],
+        );
+        assert!(matches!(
+            outcome,
+            RuntimeBootError::Startup(message)
+                if message.contains("pre-ready cleanup failed")
+                    && message.contains("convey direct-door cleanup failed")
+        ));
+    }
+
+    #[test]
+    fn failed_direct_door_cleanup_retains_generation_authority() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        std::fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        std::fs::create_dir_all(journal.path().join("health")).expect("health directory");
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"pairing":{"direct_port":9000}}"#,
+        )
+        .expect("journal config");
+        std::fs::write(journal.path().join("health/direct-door.json"), b"not JSON")
+            .expect("corrupt direct-door fixture");
+        let mut app = ManagedAppProcess::new(
+            AppService::Convey,
+            true,
+            journal.path(),
+            Some("/bin/true"),
+            None,
+            9000,
+            false,
+        );
+        app.direct_door_generation = Some(7);
+
+        assert!(withhold_app_direct_door(&mut app, journal.path()).is_err());
+        assert_eq!(
+            app.direct_door_generation,
+            Some(7),
+            "a failed cleanup remains retryable instead of consuming authority"
+        );
+    }
+
+    #[test]
+    fn admitted_lifecycle_precedes_callosum_and_queue_release_follows_readiness() {
+        let source = include_str!("runtime.rs");
+        let boot = source
+            .split("pub(crate) async fn boot_and_tick(")
+            .nth(1)
+            .expect("boot_and_tick source")
+            .split("fn shutdown_regime_for(")
+            .next()
+            .expect("boot_and_tick body");
+        let admitted = boot
+            .find("lifecycle.into_lifecycle()")
+            .expect("final-admitted lifecycle");
+        let callosum = boot
+            .find("CallosumSocketServer::bind")
+            .expect("Callosum bind");
+        let queue = boot.find("TaskQueue::new").expect("queue construction");
+        let readiness = boot
+            .find("lifecycle.signal_ready")
+            .expect("readiness write");
+        let release = boot
+            .find("state.queue.set_ready()")
+            .expect("queue readiness release");
+
+        assert!(
+            admitted < callosum && callosum < queue,
+            "only a final-admitted lifecycle may bind Callosum or construct the queue"
+        );
+        assert!(boot[queue..].contains("ready: false"));
+        assert!(
+            readiness < release,
+            "queued work is released only after readiness"
         );
     }
 }

@@ -823,12 +823,6 @@ pub(crate) fn scan_bound_sync(
         snapshot.files.insert(name.clone(), observation);
 
         let heartbeat = classification_heartbeat(&classification).cloned();
-        let has_known_heartbeat = matches!(
-            &classification,
-            HeartbeatClassification::SchemaV1(_)
-                | HeartbeatClassification::UnknownFuture(_)
-                | HeartbeatClassification::SchemaV2(_)
-        );
         if name == OsStr::new(self_filename)
             && !matches!(
                 &classification,
@@ -837,9 +831,7 @@ pub(crate) fn scan_bound_sync(
         {
             continue;
         }
-        let is_live = if has_known_heartbeat {
-            fresh || changed || appeared
-        } else if matches!(
+        let is_live = if matches!(
             &classification,
             HeartbeatClassification::AdmissionWaitMarker(_)
                 | HeartbeatClassification::AdmissionWaitMarkerIdentityMismatch(_)
@@ -847,7 +839,7 @@ pub(crate) fn scan_bound_sync(
         ) {
             false
         } else {
-            fresh
+            fresh || changed || appeared
         };
         peer_observations.push(SyncPeerObservation {
             source_filename: name,
@@ -930,7 +922,7 @@ pub(crate) fn directory_binding_from_root(
     }
 }
 
-fn native_mtime_seconds(observation: &FileObservation) -> f64 {
+pub(crate) fn native_mtime_seconds(observation: &FileObservation) -> f64 {
     let mtime = observation.entry.mtime;
     mtime.seconds as f64 + (mtime.nanoseconds as f64 / 1_000_000_000.0)
 }
@@ -1050,6 +1042,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
 
+    use filetime::{FileTime, set_file_mtime};
     use sha2::{Digest, Sha256};
     use tempfile::Builder;
 
@@ -1467,6 +1460,105 @@ mod tests {
                 HeartbeatClassification::UnknownFuture(_)
             ) && peer.is_live
         }));
+        assert!(result.is_boot_conflict());
+    }
+
+    #[test]
+    fn appeared_stale_unidentified_entries_are_conflicts() {
+        let temporary = temporary();
+        let (_root, _health, sync) = bound_sync(temporary.path());
+        let sync_path = temporary.path().join(SYNC_FOLDER_DIAGNOSTIC);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let first = scan_bound_sync(&sync, "self.check", None, now).unwrap();
+
+        let malformed = sync_path.join("broken.check");
+        fs::write(&malformed, b"not heartbeat JSON").unwrap();
+        let filename_writer = writer_id("0123456789abcdef0123456789abcdef");
+        let filename_run = run_id("11111111111111111111111111111111");
+        let mismatched = sync_path.join(v2_heartbeat_filename(&filename_writer, &filename_run));
+        let body = HeartbeatV2::new(
+            writer_id("fedcba9876543210fedcba9876543210"),
+            run_id("22222222222222222222222222222222"),
+            "foreign".to_owned(),
+            7,
+            now.to_string(),
+            "test".to_owned(),
+            15,
+            "/journal".to_owned(),
+        );
+        fs::write(&mismatched, serde_json::to_vec(&body).unwrap()).unwrap();
+        let stale = FileTime::from_unix_time(now as i64 - 120, 0);
+        set_file_mtime(&malformed, stale).unwrap();
+        set_file_mtime(&mismatched, stale).unwrap();
+
+        let result = scan_bound_sync(&sync, "self.check", Some(&first.snapshot), now).unwrap();
+        assert!(result.peer_observations.iter().any(|peer| {
+            matches!(
+                peer.classification,
+                HeartbeatClassification::BoundedMalformed
+            ) && peer.is_live
+        }));
+        assert!(result.peer_observations.iter().any(|peer| {
+            matches!(
+                peer.classification,
+                HeartbeatClassification::IdentityMismatch(_)
+            ) && peer.is_live
+        }));
+        assert!(result.is_boot_conflict());
+    }
+
+    #[test]
+    fn changed_stale_unidentified_entries_are_conflicts() {
+        let temporary = temporary();
+        let (_root, _health, sync) = bound_sync(temporary.path());
+        let sync_path = temporary.path().join(SYNC_FOLDER_DIAGNOSTIC);
+        let malformed = sync_path.join("broken.check");
+        fs::write(&malformed, b"first malformed body").unwrap();
+        let filename_writer = writer_id("0123456789abcdef0123456789abcdef");
+        let filename_run = run_id("11111111111111111111111111111111");
+        let mismatched = sync_path.join(v2_heartbeat_filename(&filename_writer, &filename_run));
+        let first_body = HeartbeatV2::new(
+            writer_id("fedcba9876543210fedcba9876543210"),
+            run_id("22222222222222222222222222222222"),
+            "first".to_owned(),
+            7,
+            "old".to_owned(),
+            "test".to_owned(),
+            15,
+            "/journal".to_owned(),
+        );
+        fs::write(&mismatched, serde_json::to_vec(&first_body).unwrap()).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let first_mtime = FileTime::from_unix_time(now as i64 - 121, 0);
+        set_file_mtime(&malformed, first_mtime).unwrap();
+        set_file_mtime(&mismatched, first_mtime).unwrap();
+        let first = scan_bound_sync(&sync, "self.check", None, now).unwrap();
+        assert!(!first.is_boot_conflict());
+
+        fs::write(&malformed, b"second malformed body").unwrap();
+        let second_body = HeartbeatV2::new(
+            writer_id("fedcba9876543210fedcba9876543210"),
+            run_id("22222222222222222222222222222222"),
+            "second".to_owned(),
+            7,
+            "still-old".to_owned(),
+            "test".to_owned(),
+            15,
+            "/journal".to_owned(),
+        );
+        fs::write(&mismatched, serde_json::to_vec(&second_body).unwrap()).unwrap();
+        let changed_mtime = FileTime::from_unix_time(now as i64 - 120, 0);
+        set_file_mtime(&malformed, changed_mtime).unwrap();
+        set_file_mtime(&mismatched, changed_mtime).unwrap();
+
+        let result = scan_bound_sync(&sync, "self.check", Some(&first.snapshot), now).unwrap();
+        assert_eq!(result.live_peer_observations.len(), 2);
         assert!(result.is_boot_conflict());
     }
 }
