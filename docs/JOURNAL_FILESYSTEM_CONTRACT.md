@@ -52,9 +52,11 @@ handle only and never reopens a path.
 
 Filesystem admission is a strict `NTFS`/`ReFS` allow-list, and volume admission
 is a strict fixed-drive allow-list; each wildcard refuses rather than admits.
-Cloud Files has exactly three outcomes: a registered sync root refuses, the
-one confirmed not-under-sync-root HRESULT admits, and every other result
-refuses as unverifiable. `GetDriveTypeW` and `CfGetSyncRootInfoByPath` are
+`NTFS` roots undergo Cloud Files classification; `ReFS` roots are admitted
+without a `CfGetSyncRootInfoByPath` call. For `NTFS`, a registered sync root
+refuses; HRESULTs `ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT` (390) and
+`ERROR_NOT_A_CLOUD_FILE` (376) admit; every other HRESULT refuses as
+unverifiable. `GetDriveTypeW` and `CfGetSyncRootInfoByPath` are
 classification-only queries against the already-validated path spelling, never
 identity reacquisition; identity comes exclusively from `FileIdInfo` on the
 retained handle.
@@ -113,8 +115,10 @@ proof revalidation walk descendants through `AsFd`. `ArchiveSource::open` maps
 `JournalRootError::Unsupported` is the explicit refusal for an unsupported
 backend policy; it is never a silent path-only mode. The Unix backend never
 emits it. Windows gate 1 uses it for reparse, filesystem, drive-type, and
-Cloud Files policy refusals; each carries a `WindowsRefusalCategory`. Ordinary
-permission and I/O failures remain `JournalRootError::Io`.
+Cloud Files policy refusals. `CloudSyncRootStatusUnverifiable` carries the
+returned raw HRESULT when one exists, while `CloudSyncRootRegistered` denotes
+S_OK; `ReFS` roots do not issue a Cloud Files query. Ordinary permission and
+I/O failures remain `JournalRootError::Io`.
 
 ## Future-backend obligations
 

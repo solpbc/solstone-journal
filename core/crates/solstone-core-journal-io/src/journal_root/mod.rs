@@ -133,8 +133,19 @@ pub enum WindowsRefusalCategory {
     UnsupportedFilesystem,
     ReparsePoint,
     CloudSyncRootRegistered,
-    CloudSyncRootStatusUnverifiable,
+    CloudSyncRootStatusUnverifiable(Option<i32>),
     InvalidJournalName,
+}
+
+#[cfg(test)]
+impl WindowsRefusalCategory {
+    pub(crate) fn raw_hresult(&self) -> Option<i32> {
+        match self {
+            Self::CloudSyncRootRegistered => Some(0),
+            Self::CloudSyncRootStatusUnverifiable(code) => *code,
+            _ => None,
+        }
+    }
 }
 
 /// Opaque platform-specific identity of an admitted journal root.

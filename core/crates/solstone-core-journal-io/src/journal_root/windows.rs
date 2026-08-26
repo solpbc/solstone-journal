@@ -8,7 +8,9 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::path::{Component, Path, PathBuf, Prefix};
 
-use windows_sys::Win32::Foundation::{ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{
+    ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT, ERROR_NOT_A_CLOUD_FILE, INVALID_HANDLE_VALUE,
+};
 use windows_sys::Win32::Storage::CloudFilters::{
     CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
 };
@@ -45,6 +47,12 @@ pub enum WindowsAcquisitionPrimitive {
     VolumeInformationByHandle,
     DriveType,
     CloudSyncRootInfo,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowsFilesystemKind {
+    Ntfs,
+    Refs,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -373,9 +381,9 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
         verify_ancestors_and_target(root, &validated, expected)?;
     }
 
-    classify_filesystem(root, &authoritative)?;
+    let filesystem = classify_filesystem(root, &authoritative)?;
     classify_drive(root, &root_drive_prefix(&validated.wide))?;
-    classify_cloud_sync_root(root, &validated.wide)?;
+    admit_for_filesystem(root, &validated.wide, filesystem)?;
 
     Ok(WindowsRoot {
         root: authoritative,
@@ -638,7 +646,10 @@ fn file_id(
     })
 }
 
-fn classify_filesystem(root: &Path, handle: &OwnedHandle) -> Result<(), JournalRootError> {
+fn classify_filesystem(
+    root: &Path,
+    handle: &OwnedHandle,
+) -> Result<WindowsFilesystemKind, JournalRootError> {
     let name = traced_win32(
         WindowsAcquisitionPrimitive::VolumeInformationByHandle,
         || {
@@ -688,14 +699,29 @@ fn classify_filesystem(root: &Path, handle: &OwnedHandle) -> Result<(), JournalR
     classify_filesystem_name(root, &name)
 }
 
-fn classify_filesystem_name(root: &Path, name: &str) -> Result<(), JournalRootError> {
+fn classify_filesystem_name(
+    root: &Path,
+    name: &str,
+) -> Result<WindowsFilesystemKind, JournalRootError> {
     match name {
-        "NTFS" | "ReFS" => Ok(()),
+        "NTFS" => Ok(WindowsFilesystemKind::Ntfs),
+        "ReFS" => Ok(WindowsFilesystemKind::Refs),
         _ => Err(unsupported(
             root,
             "filesystem is not NTFS or ReFS",
             WindowsRefusalCategory::UnsupportedFilesystem,
         )),
+    }
+}
+
+fn admit_for_filesystem(
+    root: &Path,
+    wide: &[u16],
+    filesystem: WindowsFilesystemKind,
+) -> Result<(), JournalRootError> {
+    match filesystem {
+        WindowsFilesystemKind::Ntfs => classify_cloud_sync_root(root, wide),
+        WindowsFilesystemKind::Refs => Ok(()),
     }
 }
 
@@ -754,10 +780,11 @@ fn classify_cloud_sync_root(root: &Path, wide: &[u16]) -> Result<(), JournalRoot
         Ok(result)
     })
     .map_err(|_| {
+        // `traced_win32` can only fail before this closure through test-hook fault injection.
         unsupported(
             root,
             "Cloud Files sync-root status could not be verified",
-            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable,
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None),
         )
     })?;
     classify_cloud_sync_root_result(root, result)
@@ -770,11 +797,16 @@ fn classify_cloud_sync_root_result(root: &Path, result: i32) -> Result<(), Journ
             "journal root is a Cloud Files sync root",
             WindowsRefusalCategory::CloudSyncRootRegistered,
         )),
-        result if result == hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) => Ok(()),
+        result
+            if result == hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT)
+                || result == hresult_from_win32(ERROR_NOT_A_CLOUD_FILE) =>
+        {
+            Ok(())
+        }
         _ => Err(unsupported(
             root,
             "Cloud Files sync-root status could not be verified",
-            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable,
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(Some(result)),
         )),
     }
 }
@@ -923,7 +955,9 @@ mod tests {
         (temporary, root)
     }
 
-    fn unsupported_category(result: Result<(), JournalRootError>) -> WindowsRefusalCategory {
+    fn unsupported_category<T: std::fmt::Debug>(
+        result: Result<T, JournalRootError>,
+    ) -> WindowsRefusalCategory {
         match result {
             Err(JournalRootError::Unsupported {
                 category: Some(category),
@@ -1030,23 +1064,111 @@ mod tests {
     }
 
     #[test]
-    fn cloud_sync_root_classifier_requires_verified_non_membership() {
+    fn cloud_sync_root_classifier_classifies_results_and_preserves_diagnostics() {
         let root = Path::new(r"C:\journal");
+        let access_denied = hresult_from_win32(5); // ERROR_ACCESS_DENIED
+        let cases = [
+            (
+                0,
+                Err((
+                    WindowsRefusalCategory::CloudSyncRootRegistered,
+                    Some(0),
+                    "unsupported journal root C:\\journal: journal root is a Cloud Files sync root",
+                )),
+            ),
+            (
+                hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT),
+                Ok(()),
+            ),
+            (hresult_from_win32(ERROR_NOT_A_CLOUD_FILE), Ok(())),
+            (
+                access_denied,
+                Err((
+                    WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(Some(access_denied)),
+                    Some(access_denied),
+                    "unsupported journal root C:\\journal: Cloud Files sync-root status could not be verified",
+                )),
+            ),
+            (
+                0x1234_5678_i32,
+                Err((
+                    WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(Some(0x1234_5678)),
+                    Some(0x1234_5678),
+                    "unsupported journal root C:\\journal: Cloud Files sync-root status could not be verified",
+                )),
+            ),
+        ];
+
+        for (result, expected) in cases {
+            let admission = classify_cloud_sync_root_result(root, result);
+            match expected {
+                Ok(()) => assert!(admission.is_ok(), "HRESULT {result:#010x}"),
+                Err((expected_category, expected_hresult, expected_display)) => {
+                    let error = admission.expect_err("HRESULT must be refused");
+                    let category = match &error {
+                        JournalRootError::Unsupported {
+                            category: Some(category),
+                            ..
+                        } => *category,
+                        error => panic!("expected categorized unsupported refusal, got {error:?}"),
+                    };
+                    assert_eq!(category, expected_category);
+                    assert_eq!(category.raw_hresult(), expected_hresult);
+                    assert_eq!(error.to_string(), expected_display);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ntfs_admission_queries_cloud_sync_root_once() {
+        let (_temporary, root_path) = fixture("cloud-sync-ntfs");
+        let (result, outcome) = trace_scenario(None, None, || JournalRoot::open(&root_path));
+        drop(result.expect("NTFS fixture is admitted"));
         assert_eq!(
-            unsupported_category(classify_cloud_sync_root_result(root, 0)),
-            WindowsRefusalCategory::CloudSyncRootRegistered
+            outcome
+                .successful
+                .iter()
+                .filter(|primitive| **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfo)
+                .count(),
+            1
         );
-        assert!(
-            classify_cloud_sync_root_result(
-                root,
-                hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT)
+    }
+
+    #[test]
+    fn refs_admission_skips_cloud_sync_root_query() {
+        let (result, outcome) = trace_scenario(None, None, || {
+            admit_for_filesystem(
+                Path::new(r"C:\journal"),
+                &[0u16],
+                WindowsFilesystemKind::Refs,
             )
-            .is_ok()
-        );
+        });
+        result.expect("ReFS admission skips Cloud Files classification");
+        assert!(outcome.attempted.is_empty());
+    }
+
+    #[test]
+    fn unsupported_filesystem_name_refuses_before_cloud_sync_query() {
+        let (result, outcome) = trace_scenario(None, None, || {
+            classify_filesystem_name(Path::new(r"C:\journal"), "exFAT")
+        });
         assert_eq!(
-            unsupported_category(classify_cloud_sync_root_result(root, 1)),
-            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable
+            unsupported_category(result),
+            WindowsRefusalCategory::UnsupportedFilesystem
         );
+        assert!(outcome.attempted.is_empty());
+    }
+
+    #[test]
+    fn cloud_file_not_a_cloud_file_regression_requires_376_admission() {
+        let root = Path::new(r"C:\journal");
+        let not_a_cloud_file = hresult_from_win32(ERROR_NOT_A_CLOUD_FILE);
+        let accepts_only_not_under_sync_root =
+            |result| result == hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT);
+
+        assert!(!accepts_only_not_under_sync_root(not_a_cloud_file));
+        assert!(classify_cloud_sync_root_result(root, not_a_cloud_file).is_ok());
     }
 
     #[test]
