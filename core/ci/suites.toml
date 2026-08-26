@@ -2355,6 +2355,19 @@ required_features = ["test-fixture-pin"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-distribution::distribution_publish"
+package = "solstone-core-distribution"
+target = "distribution_publish"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-fixture-pin"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-entity::entity_trust_lock_component"
 package = "solstone-core-entity"
 target = "entity_trust_lock_component"

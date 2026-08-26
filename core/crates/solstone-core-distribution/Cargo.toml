@@ -41,3 +41,8 @@ path = "tests/distribution_cleanroom_loopback.rs"
 name = "distribution_sign"
 path = "tests/distribution_sign.rs"
 required-features = ["test-fixture-pin"]
+
+[[test]]
+name = "distribution_publish"
+path = "tests/distribution_publish.rs"
+required-features = ["test-fixture-pin"]

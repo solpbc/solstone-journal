@@ -2,16 +2,16 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use crate::inspect;
+use crate::manifest_verify::{
+    capture_signature, discover_manifest, validate_release_set, verify_manifest_signature,
+};
 
 const ALLOWED_LANES: &[&str] = &["release", "staging", "dev"];
-const RELEASE_KEYS: &[&str] = &["product", "version", "target", "commit", "lock_sha256"];
 
 #[derive(Debug, Clone)]
 pub struct PublishRequest {
@@ -53,6 +53,12 @@ impl std::error::Error for PublishError {}
 
 impl From<io::Error> for PublishError {
     fn from(error: io::Error) -> Self {
+        Self::new(error.to_string())
+    }
+}
+
+impl From<crate::manifest_verify::ManifestVerifyError> for PublishError {
+    fn from(error: crate::manifest_verify::ManifestVerifyError) -> Self {
         Self::new(error.to_string())
     }
 }
@@ -128,8 +134,39 @@ pub fn run(request: &PublishRequest) -> Result<PublishReport, PublishError> {
             request.lane
         )));
     }
-    let version = src_release_version(&request.src)?;
-    let files = list_src_files(&request.src)?;
+    let manifest = discover_manifest(&request.src)?;
+    let signature =
+        capture_signature(&request.src, &manifest, true)?.expect("required signature is present");
+    verify_manifest_signature(&manifest, &signature)?;
+    let release = validate_release_set(&request.src, &manifest, Some(&signature))?;
+    if release.product != "solstone-journal" {
+        return Err(PublishError::new(format!(
+            "release-declaration-mismatch\n  product {}",
+            release.product
+        )));
+    }
+    let expected_release = format!(
+        "{}-{}-{}.release",
+        release.product, release.version, release.target
+    );
+    if !release.members.contains_key(&expected_release) {
+        return Err(PublishError::new(format!(
+            "release-basename-mismatch\n  {expected_release}"
+        )));
+    }
+    if !is_safe_component(&release.version) {
+        return Err(PublishError::new(format!(
+            "unexpected:\n  version {}",
+            release.version
+        )));
+    }
+    let version = release.version.clone();
+    let mut files = Vec::new();
+    files.push((release.manifest_name, release.manifest_bytes));
+    if let (Some(name), Some(bytes)) = (release.signature_name, release.signature_bytes) {
+        files.push((name, bytes));
+    }
+    files.extend(release.members);
 
     let version_dir = request
         .dest
@@ -172,53 +209,6 @@ pub fn run(request: &PublishRequest) -> Result<PublishReport, PublishError> {
     })
 }
 
-fn src_release_version(src: &Path) -> Result<String, PublishError> {
-    if !src.is_dir() {
-        return Err(PublishError::new("missing required:\n  src"));
-    }
-    let mut releases = Vec::new();
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if name.ends_with(".release") && entry.file_type()?.is_file() {
-            releases.push(entry.path());
-        }
-    }
-    let [path] = releases.as_slice() else {
-        return Err(PublishError::new("unexpected:\n  .release"));
-    };
-    let text =
-        fs::read_to_string(path).map_err(|_| PublishError::new("unexpected:\n  .release"))?;
-    let pairs =
-        inspect::parse_release(&text).map_err(|_| PublishError::new("unexpected:\n  .release"))?;
-    version_from_pairs(&pairs)
-}
-
-fn version_from_pairs(pairs: &[(String, String)]) -> Result<String, PublishError> {
-    let keys = pairs
-        .iter()
-        .map(|(key, _)| key.as_str())
-        .collect::<BTreeSet<_>>();
-    let expected = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
-    if keys != expected {
-        return Err(PublishError::new("unexpected:\n  .release"));
-    }
-    let version = pairs
-        .iter()
-        .find(|(key, _)| key == "version")
-        .map(|(_, value)| value.clone())
-        .expect("version key present");
-    if !is_safe_component(&version) {
-        return Err(PublishError::new(format!(
-            "unexpected:\n  version {version}"
-        )));
-    }
-    Ok(version)
-}
-
 fn latest_should_advance(existing_body: &str, incoming: &str) -> bool {
     let Some(existing) = existing_body.strip_prefix("version=") else {
         return true;
@@ -258,24 +248,6 @@ fn is_safe_component(value: &str) -> bool {
         (components.next(), components.next()),
         (Some(Component::Normal(name)), None) if name == value
     )
-}
-
-fn list_src_files(src: &Path) -> Result<Vec<(String, Vec<u8>)>, PublishError> {
-    let mut names = Vec::new();
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_file() {
-            continue;
-        }
-        names.push(entry.file_name().to_string_lossy().into_owned());
-    }
-    names.sort();
-    let mut files = Vec::new();
-    for name in names {
-        let bytes = fs::read(src.join(&name))?;
-        files.push((name, bytes));
-    }
-    Ok(files)
 }
 
 fn fail_after(request: &PublishRequest) -> Option<String> {
@@ -633,193 +605,9 @@ fi
     }
 
     #[test]
-    fn ac1_publish_writes_lane_version_layout_and_latest() {
-        let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
-        let dest = root.path().join("dest");
-        let report = run_cli(&cli_args(&[
-            "--lane",
-            "release",
-            src.to_str().unwrap(),
-            "--dest",
-            dest.to_str().unwrap(),
-        ]))
-        .expect("publish");
-        assert_eq!(report.lane, "release");
-        assert_eq!(report.version, "1.2.3");
-        let version_dir = dest.join("solstone-journal/release/1.2.3");
-        let mut expected = fs::read_dir(&src)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        expected.sort();
-        let mut found = fs::read_dir(&version_dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        found.sort();
-        assert_eq!(found, expected);
-        for name in &expected {
-            assert_eq!(
-                fs::read(src.join(name)).unwrap(),
-                fs::read(version_dir.join(name)).unwrap(),
-                "{name}"
-            );
-        }
-        assert_eq!(latest_body(&dest, "release"), "version=1.2.3\n");
-        assert_eq!(report.latest, dest.join("solstone-journal/release/latest"));
-    }
-
-    #[test]
-    fn ac2_latest_pointer_advances_to_v2_in_every_lane() {
-        for lane in ALLOWED_LANES {
-            let root = temp();
-            let src_v1 = stub_produced(root.path(), "1.0.0");
-            let src_v2 = stub_produced(root.path(), "2.0.0");
-            let dest = root.path().join("dest");
-            run(&publish_request(&src_v1, &dest, lane)).expect("publish v1");
-            assert_eq!(latest_body(&dest, lane), "version=1.0.0\n");
-            let v1_dir = dest.join("solstone-journal").join(lane).join("1.0.0");
-            let v1_bytes = snapshot(&v1_dir);
-            run(&publish_request(&src_v2, &dest, lane)).expect("publish v2");
-            assert_eq!(latest_body(&dest, lane), "version=2.0.0\n");
-            assert_eq!(snapshot(&v1_dir), v1_bytes, "{lane} v1 objects");
-            assert!(
-                dest.join("solstone-journal")
-                    .join(lane)
-                    .join("2.0.0")
-                    .is_dir()
-            );
-        }
-    }
-
-    #[test]
-    fn ac3_fail_after_objects_leaves_all_objects_and_prior_latest() {
-        let root = temp();
-        let src_v1 = stub_produced(root.path(), "1.0.0");
-        let src_v2 = stub_produced(root.path(), "2.0.0");
-        let dest = root.path().join("dest");
-        run(&publish_request(&src_v1, &dest, "release")).expect("publish v1");
-        let mut request = publish_request(&src_v2, &dest, "release");
-        request.fail_after = Some("objects".into());
-        let error = run(&request).expect_err("injected objects");
-        assert!(error.to_string().contains("injected-failure objects"));
-        assert_eq!(latest_body(&dest, "release"), "version=1.0.0\n");
-        let version_dir = dest.join("solstone-journal/release/2.0.0");
-        for entry in fs::read_dir(&src_v2).unwrap() {
-            let name = entry.unwrap().file_name();
-            let path = version_dir.join(&name);
-            assert!(path.is_file(), "{}", name.to_string_lossy());
-            assert_eq!(
-                fs::read(src_v2.join(&name)).unwrap(),
-                fs::read(&path).unwrap()
-            );
-            assert!(
-                !version_dir
-                    .join(format!("{}.publish-partial", name.to_string_lossy()))
-                    .exists()
-            );
-        }
-    }
-
-    #[test]
-    fn ac4_fail_after_object_leaves_partial_not_final() {
-        let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
-        let dest = root.path().join("dest");
-        let mut names = fs::read_dir(&src)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        names.sort();
-        let target = names[names.len() / 2].clone();
-        let mut request = publish_request(&src, &dest, "release");
-        request.fail_after = Some(format!("object:{target}"));
-        let error = run(&request).expect_err("injected object");
-        assert!(
-            error
-                .to_string()
-                .contains(&format!("injected-failure object:{target}"))
-        );
-        let version_dir = dest.join("solstone-journal/release/1.2.3");
-        let mut before = true;
-        for name in &names {
-            let final_path = version_dir.join(name);
-            let partial = version_dir.join(format!("{name}.publish-partial"));
-            if *name == target {
-                assert!(!final_path.exists(), "final {name}");
-                assert!(partial.is_file(), "partial {name}");
-                assert_eq!(
-                    fs::read(src.join(name)).unwrap(),
-                    fs::read(&partial).unwrap()
-                );
-                before = false;
-                continue;
-            }
-            if before {
-                assert!(final_path.is_file(), "final {name}");
-                assert!(!partial.exists(), "partial {name}");
-            } else {
-                assert!(!final_path.exists(), "later final {name}");
-                assert!(!partial.exists(), "later partial {name}");
-            }
-        }
-        assert!(!dest.join("solstone-journal/release/latest").exists());
-    }
-
-    #[test]
-    fn ac5_second_publish_same_version_only_adds_new_filenames() {
-        for lane in ["release", "staging"] {
-            let root = temp();
-            let src = stub_produced(root.path(), "1.2.3");
-            let dest = root.path().join("dest");
-            run(&publish_request(&src, &dest, lane)).expect("first publish");
-            let version_dir = dest.join("solstone-journal").join(lane).join("1.2.3");
-            let existing = version_dir.join("solstone-journal-1.2.3-linux-x86_64.tar.gz");
-            let before = fs::read(&existing).unwrap();
-            fs::write(src.join("extra.txt"), b"new-bytes").unwrap();
-            fs::write(&existing, b"tampered").unwrap();
-            run(&publish_request(&src, &dest, lane)).expect("second publish");
-            assert_eq!(fs::read(&existing).unwrap(), b"tampered");
-            assert_ne!(fs::read(&existing).unwrap(), before);
-            assert_eq!(
-                fs::read(version_dir.join("extra.txt")).unwrap(),
-                b"new-bytes"
-            );
-            assert_eq!(latest_body(&dest, lane), "version=1.2.3\n");
-        }
-
-        let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
-        let dest = root.path().join("dest");
-        run(&publish_request(&src, &dest, "dev")).expect("first");
-        let version_dir = dest.join("solstone-journal/dev/1.2.3");
-        let name = "solstone-journal-1.2.3-linux-x86_64.tar.gz";
-        fs::write(src.join(name), b"replacement").unwrap();
-        run(&publish_request(&src, &dest, "dev")).expect("overwrite");
-        assert_eq!(fs::read(version_dir.join(name)).unwrap(), b"replacement");
-        assert_eq!(latest_body(&dest, "dev"), "version=1.2.3\n");
-
-        let root = temp();
-        let src_v1 = stub_produced(root.path(), "1.0.0");
-        let src_v2 = stub_produced(root.path(), "2.0.0");
-        let dest = root.path().join("dest");
-        run(&publish_request(&src_v1, &dest, "release")).expect("publish v1");
-        run(&publish_request(&src_v2, &dest, "release")).expect("publish v2");
-        assert_eq!(latest_body(&dest, "release"), "version=2.0.0\n");
-        fs::write(src_v1.join("extra.txt"), b"late-v1").unwrap();
-        run(&publish_request(&src_v1, &dest, "release")).expect("republish v1");
-        assert_eq!(latest_body(&dest, "release"), "version=2.0.0\n");
-        assert_eq!(
-            fs::read(dest.join("solstone-journal/release/1.0.0/extra.txt")).unwrap(),
-            b"late-v1"
-        );
-    }
-
-    #[test]
     fn ac6_invalid_lane_refuses_before_any_dest_write() {
         let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
+        let src = root.path().join("inert-src");
         let dest = root.path().join("dest");
         fs::create_dir_all(dest.join("solstone-journal/other")).unwrap();
         fs::write(dest.join("solstone-journal/other/keep.txt"), b"keep").unwrap();
@@ -834,93 +622,6 @@ fi
                 "{error}"
             );
             assert_eq!(snapshot(&dest), before, "{lane}");
-        }
-    }
-
-    #[test]
-    fn ac7_invalid_src_refuses_before_any_dest_write() {
-        let root = temp();
-        let dest = root.path().join("dest");
-        fs::create_dir_all(&dest).unwrap();
-        fs::write(dest.join("marker"), b"prior").unwrap();
-        let before = snapshot(&dest);
-
-        let missing = root.path().join("missing-src");
-        let error = run(&publish_request(&missing, &dest, "release")).expect_err("missing src");
-        assert!(error.to_string().contains("missing required:\n  src"));
-        assert_eq!(snapshot(&dest), before);
-
-        let empty = root.path().join("empty-src");
-        fs::create_dir_all(&empty).unwrap();
-        let error = run(&publish_request(&empty, &dest, "release")).expect_err("zero release");
-        assert!(error.to_string().contains("unexpected:\n  .release"));
-        assert_eq!(snapshot(&dest), before);
-
-        write_release(&empty.join("a.release"), "1.2.3");
-        write_release(&empty.join("b.release"), "1.2.3");
-        let error = run(&publish_request(&empty, &dest, "release")).expect_err("two releases");
-        assert!(error.to_string().contains("unexpected:\n  .release"));
-        assert_eq!(snapshot(&dest), before);
-
-        let malformed = root.path().join("malformed");
-        fs::create_dir_all(&malformed).unwrap();
-        fs::write(malformed.join("tree.release"), "not-key-value\n").unwrap();
-        let error = run(&publish_request(&malformed, &dest, "release")).expect_err("malformed");
-        assert!(error.to_string().contains("unexpected:\n  .release"));
-        assert_eq!(snapshot(&dest), before);
-
-        let wrong_keys = root.path().join("wrong-keys");
-        fs::create_dir_all(&wrong_keys).unwrap();
-        fs::write(
-            wrong_keys.join("tree.release"),
-            "product=solstone-journal\nversion=1.2.3\ntarget=linux-x86_64\ncommit=aaa\nfoo=bar\n",
-        )
-        .unwrap();
-        let error = run(&publish_request(&wrong_keys, &dest, "release")).expect_err("keys");
-        assert!(error.to_string().contains("unexpected:\n  .release"));
-        assert_eq!(snapshot(&dest), before);
-
-        let bad_version = root.path().join("bad-version");
-        fs::create_dir_all(&bad_version).unwrap();
-        write_release(&bad_version.join("tree.release"), "../escape");
-        let error = run(&publish_request(&bad_version, &dest, "release")).expect_err("version");
-        assert!(
-            error
-                .to_string()
-                .contains("unexpected:\n  version ../escape")
-        );
-        assert_eq!(snapshot(&dest), before);
-    }
-
-    #[test]
-    fn ac8_publish_writes_no_stray_root_artifacts() {
-        let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
-        let dest = root.path().join("dest");
-        run(&publish_request(&src, &dest, "release")).expect("publish");
-        let mut top = fs::read_dir(&dest)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        top.sort();
-        assert_eq!(top, ["solstone-journal"]);
-        let stem = "solstone-journal-1.2.3-linux-x86_64";
-        for entry in fs::read_dir(&dest).unwrap() {
-            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
-            assert!(
-                !name.starts_with(&format!("{stem}.")),
-                "stray artifact at dest/: {name}"
-            );
-        }
-        for stray in [
-            "runtimes",
-            "assets",
-            "providers",
-            "solstone-macos",
-            "solstone-windows",
-            "journal-macos",
-        ] {
-            assert!(!dest.join(stray).exists(), "{stray}");
         }
     }
 
@@ -1080,46 +781,6 @@ fi
                 "{lane}"
             );
         }
-    }
-
-    #[test]
-    fn ac16_resume_after_objects_failure_sets_latest_to_v2() {
-        let root = temp();
-        let src_v1 = stub_produced(root.path(), "1.0.0");
-        let src_v2 = stub_produced(root.path(), "2.0.0");
-        let dest = root.path().join("dest");
-        run(&publish_request(&src_v1, &dest, "release")).expect("publish v1");
-        let mut failed = publish_request(&src_v2, &dest, "release");
-        failed.fail_after = Some("objects".into());
-        let error = run(&failed).expect_err("injected objects");
-        assert!(error.to_string().contains("injected-failure objects"));
-        assert_eq!(latest_body(&dest, "release"), "version=1.0.0\n");
-        let v2_dir = dest.join("solstone-journal/release/2.0.0");
-        let v2_bytes = snapshot(&v2_dir);
-        run(&publish_request(&src_v2, &dest, "release")).expect("resume v2");
-        assert_eq!(snapshot(&v2_dir), v2_bytes);
-        assert_eq!(latest_body(&dest, "release"), "version=2.0.0\n");
-    }
-
-    #[test]
-    fn publish_output_is_a_valid_install_sh_origin() {
-        let root = temp();
-        let src = stub_produced(root.path(), "1.2.3");
-        let origin = root.path().join("origin");
-        run(&publish_request(&src, &origin, "release")).expect("publish");
-        let log = root.path().join("curl.log");
-        let output = run_install(root.path(), &origin, &log, &[]);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(root.path().join("prefix/current").is_symlink());
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("installed solstone-journal 1.2.3"),
-            "{stdout}"
-        );
     }
 
     #[test]
