@@ -67,7 +67,7 @@ pub enum AiChatSource {
 
 /// Journal-authored sidecar input. Device metadata remains verbatim JSON.
 pub struct DeviceSidecarInput<'a> {
-    pub did: Option<&'a Value>,
+    pub cid: Option<&'a Value>,
     pub jid: Option<&'a Value>,
     pub kind: Kind,
     pub device: &'a RawValue,
@@ -78,10 +78,10 @@ pub fn write_device(
     segment: &SegmentDir,
     input: &DeviceSidecarInput<'_>,
 ) -> Result<(), SegmentError> {
-    let did = validate_device_did_value(input.did)?;
+    let cid = validate_device_cid_value(input.cid)?;
     let jid = validate_device_jid_value(input.jid)?;
     let document = DeviceDocument {
-        did,
+        cid,
         jid,
         kind: &input.kind,
         device: input.device,
@@ -95,16 +95,16 @@ pub fn write_device(
     Ok(())
 }
 
-pub(crate) fn validate_did(did: &str) -> Result<(), SegmentError> {
-    let Some(hex) = did.strip_prefix("sha256:") else {
-        return Err(SegmentError::InvalidDeviceDid("missing sha256: prefix"));
+pub(crate) fn validate_cid(cid: &str) -> Result<(), SegmentError> {
+    let Some(hex) = cid.strip_prefix("sha256:") else {
+        return Err(SegmentError::InvalidDeviceCid("missing sha256: prefix"));
     };
     if hex.len() != 64
         || !hex
             .bytes()
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
-        return Err(SegmentError::InvalidDeviceDid(
+        return Err(SegmentError::InvalidDeviceCid(
             "must have 64 lowercase hexadecimal digits",
         ));
     }
@@ -112,18 +112,18 @@ pub(crate) fn validate_did(did: &str) -> Result<(), SegmentError> {
 }
 
 /// Return whether a device identifier has the supported canonical form.
-pub fn is_valid_device_did(did: &str) -> bool {
-    validate_did(did).is_ok()
+pub fn is_valid_device_cid(cid: &str) -> bool {
+    validate_cid(cid).is_ok()
 }
 
-fn validate_device_did_value(did: Option<&Value>) -> Result<&str, SegmentError> {
-    let did = match did {
-        None => return Err(SegmentError::InvalidDeviceDid("missing")),
-        Some(Value::String(did)) => did.as_str(),
-        Some(_) => return Err(SegmentError::InvalidDeviceDid("must be a string")),
+fn validate_device_cid_value(cid: Option<&Value>) -> Result<&str, SegmentError> {
+    let cid = match cid {
+        None => return Err(SegmentError::InvalidDeviceCid("missing")),
+        Some(Value::String(cid)) => cid.as_str(),
+        Some(_) => return Err(SegmentError::InvalidDeviceCid("must be a string")),
     };
-    validate_did(did)?;
-    Ok(did)
+    validate_cid(cid)?;
+    Ok(cid)
 }
 
 fn validate_device_jid_value(jid: Option<&Value>) -> Result<Option<&str>, SegmentError> {
@@ -138,7 +138,7 @@ fn validate_device_jid_value(jid: Option<&Value>) -> Result<Option<&str>, Segmen
 #[derive(Serialize)]
 struct DeviceDocument<'a> {
     #[serde(rename = "cid")]
-    did: &'a str,
+    cid: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     jid: Option<&'a str>,
     kind: &'a Kind,
@@ -157,7 +157,7 @@ mod tests {
 
     use super::*;
 
-    const DID: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const CID: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     fn segment(root: &Path) -> SegmentDir {
         SegmentDir::resolve(root, "20260804", "120000_60", "workstation").unwrap()
@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_or_missing_device_did_is_refused() {
+    fn malformed_or_missing_device_cid_is_refused() {
         let cases = [
             None,
             Some(json!("")),
@@ -181,18 +181,18 @@ mod tests {
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             )),
         ];
-        for did in cases {
+        for cid in cases {
             let temporary = TempDir::new();
             let raw = raw_device();
             let input = DeviceSidecarInput {
-                did: did.as_ref(),
+                cid: cid.as_ref(),
                 jid: None,
                 kind: Kind::Observed,
                 device: &raw,
             };
             assert!(matches!(
                 write_device(&segment(temporary.path()), &input),
-                Err(SegmentError::InvalidDeviceDid(_))
+                Err(SegmentError::InvalidDeviceCid(_))
             ));
         }
     }
@@ -201,9 +201,9 @@ mod tests {
     fn opaque_device_metadata_preserves_duplicate_keys_verbatim() {
         let temporary = TempDir::new();
         let raw = raw_device();
-        let did = json!(DID);
+        let cid = json!(CID);
         let input = DeviceSidecarInput {
-            did: Some(&did),
+            cid: Some(&cid),
             jid: None,
             kind: Kind::Imported(ImportSource::AiChat(AiChatSource::ChatGpt)),
             device: &raw,
@@ -219,7 +219,7 @@ mod tests {
                 })
         );
         let parsed: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(parsed["cid"], DID);
+        assert_eq!(parsed["cid"], CID);
     }
 
     #[test]
@@ -230,9 +230,9 @@ mod tests {
         fs::create_dir_all(blocked.parent().unwrap()).unwrap();
         fs::write(&blocked, b"not a directory").unwrap();
         let raw = raw_device();
-        let did = json!(DID);
+        let cid = json!(CID);
         let input = DeviceSidecarInput {
-            did: Some(&did),
+            cid: Some(&cid),
             jid: None,
             kind: Kind::Observed,
             device: &raw,

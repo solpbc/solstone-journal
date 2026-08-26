@@ -37,14 +37,14 @@ pub(crate) enum ObserverEvidenceError {
     JournalRead,
 }
 
-/// Select the one unrevoked observer cryptographically bound to `did`.
+/// Select the one unrevoked observer cryptographically bound to `cid`.
 ///
 /// An observer without `device_binding` is deliberately omitted rather than
 /// mis-attributed. Its material is unreachable natively either way and
 /// self-heals when that device next `/register`s.
 pub(crate) fn resolve_device_observer(
     journal_root: &Path,
-    did: &str,
+    cid: &str,
 ) -> Result<Option<ResolvedObserver>, ObserverEvidenceError> {
     let loaded = load_observers_with_inventory(journal_root)
         .map_err(|_| ObserverEvidenceError::RegistryUnreadable)?;
@@ -54,7 +54,7 @@ pub(crate) fn resolve_device_observer(
     let mut matching: Vec<_> = loaded
         .records
         .into_iter()
-        .filter(|record| !record.revoked() && record.device_binding_device() == Some(did))
+        .filter(|record| !record.revoked() && record.device_binding_device() == Some(cid))
         .collect();
     if matching.len() > 1 {
         let mut prefixes = matching

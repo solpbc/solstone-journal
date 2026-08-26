@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::watch;
@@ -70,7 +70,7 @@ where
         io::Error::other("device-door connection has an empty peer certificate chain")
     })?;
     let value = format!("sha256:{}", spl_core::ca::sha256_hex(leaf.as_ref()));
-    let did = LinkedDeviceDid::try_from(value.as_str())
+    let cid = LinkedDeviceCid::try_from(value.as_str())
         .map_err(|_| io::Error::other("device-door peer certificate identifier is invalid"))?;
     let builder = tcp_builder();
 
@@ -79,7 +79,7 @@ where
         router(journal_root),
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did,
+            cid,
         },
         &builder,
     )

@@ -13,7 +13,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use serde::Serialize;
-use solstone_core_convey_http::identity::{AccessBasis, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, LinkedDeviceCid};
 use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
@@ -221,8 +221,8 @@ fn is_exempt(path: &str) -> bool {
         })
 }
 
-fn is_authorized(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {
-    matches!(posture, AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == did.as_str()))
+fn is_authorized(posture: &AuthorizedClientsRead, cid: &LinkedDeviceCid) -> bool {
+    matches!(posture, AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == cid.as_str()))
 }
 
 fn pl_revoked_response() -> Response {
@@ -251,7 +251,7 @@ async fn require_authorization(
     };
     // `PairingPeer` intentionally falls through here: the door-only
     // confinement layer refuses it before this authorization gate is reached.
-    let AccessBasis::LinkedDevice { did, .. } = basis else {
+    let AccessBasis::LinkedDevice { cid, .. } = basis else {
         return next.run(request).await;
     };
     // This gate resolves each request's authorization by reading the ledger;
@@ -277,7 +277,7 @@ async fn require_authorization(
             return pl_revoked_response();
         }
     };
-    if !is_authorized(&posture, did) {
+    if !is_authorized(&posture, cid) {
         return pl_revoked_response();
     }
     next.run(request).await

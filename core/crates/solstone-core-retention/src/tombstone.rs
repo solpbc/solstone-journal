@@ -96,7 +96,7 @@ impl Default for ExecutorStamp {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TombstoneBody {
     pub deleted_at: String,
-    pub did: String,
+    pub cid: String,
     pub reason: RemovalReason,
     /// Every journal-relative path removed from this segment.
     ///
@@ -111,7 +111,7 @@ pub struct TombstoneBody {
 struct Written<'a> {
     deleted_at: &'a str,
     #[serde(rename = "cid")]
-    did: &'a str,
+    cid: &'a str,
     reason: RemovalReason,
     manifest: &'a [String],
     manifest_count: usize,
@@ -129,7 +129,7 @@ struct Written<'a> {
 pub fn tombstone_bytes(body: &TombstoneBody) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec_pretty(&Written {
         deleted_at: &body.deleted_at,
-        did: &body.did,
+        cid: &body.cid,
         reason: body.reason,
         manifest: &body.manifest,
         manifest_count: body.manifest.len(),
@@ -157,7 +157,7 @@ mod tests {
     fn body() -> TombstoneBody {
         TombstoneBody {
             deleted_at: "2026-08-05T21:00:00Z".to_owned(),
-            did: "sha256:abc".to_owned(),
+            cid: "sha256:abc".to_owned(),
             reason: RemovalReason::OwnerSegmentDelete,
             manifest: vec![
                 "chronicle/20260805/field.audio/070000_17/audio.flac".to_owned(),
@@ -242,7 +242,7 @@ mod tests {
         // documents it so a future field addition has to argue with it.
         let TombstoneBody {
             deleted_at: _,
-            did: _,
+            cid: _,
             reason: _,
             manifest: _,
         } = body();

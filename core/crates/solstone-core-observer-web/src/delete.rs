@@ -95,16 +95,16 @@ fn erase_location(journal: &Path) -> Receipt {
         targets: Vec::new(),
         halted: None,
     };
-    // The door stamps one `did` onto every tombstone in a call. Group by the
-    // segment's `device.json` did (else `"unknown"`) so each call still takes
+    // The door stamps one `cid` onto every tombstone in a call. Group by the
+    // segment's `device.json` cid (else `"unknown"`) so each call still takes
     // a SET while criterion 8's per-segment identity is preserved.
-    for (did, targets) in groups_by_did(&selected) {
+    for (cid, targets) in groups_by_cid(&selected) {
         let part = door::remove_segments(
             journal,
             &targets,
             &deleted_at,
             RemovalReason::OwnerSegmentDelete,
-            &did,
+            &cid,
         );
         outcome.targets.extend(part.targets);
     }
@@ -195,13 +195,13 @@ fn erase_location(journal: &Path) -> Receipt {
     }
 }
 
-fn groups_by_did(selected: &[Selected]) -> Vec<(String, Vec<Target>)> {
+fn groups_by_cid(selected: &[Selected]) -> Vec<(String, Vec<Target>)> {
     let mut groups: Vec<(String, Vec<Target>)> = Vec::new();
     for item in selected {
-        if let Some((_, targets)) = groups.iter_mut().find(|(did, _)| *did == item.did) {
+        if let Some((_, targets)) = groups.iter_mut().find(|(cid, _)| *cid == item.cid) {
             targets.push(item.target.clone());
         } else {
-            groups.push((item.did.clone(), vec![item.target.clone()]));
+            groups.push((item.cid.clone(), vec![item.target.clone()]));
         }
     }
     groups

@@ -275,7 +275,7 @@ fn run_remove_segments(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let did = match args.required("--did") {
+    let cid = match args.required("--did") {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
@@ -294,7 +294,7 @@ fn run_remove_segments(args: &Args) -> ExitCode {
             Err(error) => return fail(&error),
         }
     }
-    let outcome = remove_segments(&journal, &targets, &at_stamp, reason, did);
+    let outcome = remove_segments(&journal, &targets, &at_stamp, reason, cid);
     // An integration test cannot cleanly fail only the register write after a real
     // removal. Preserve the completed outcome even if that secondary write fails.
     let mut register_errors = Vec::new();
@@ -339,7 +339,7 @@ fn run_recover(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let did = match args.required("--did") {
+    let cid = match args.required("--did") {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
@@ -347,7 +347,7 @@ fn run_recover(args: &Args) -> ExitCode {
         Ok(reason) => reason,
         Err(error) => return fail(&error),
     };
-    let outcome = recover(&journal, &at_stamp, reason, did);
+    let outcome = recover(&journal, &at_stamp, reason, cid);
     if let Err(error) = reconcile_recovered(&journal) {
         return emit(
             serde_json::json!({ "ok": false, "verb": "recover", "error": error.to_string() }),

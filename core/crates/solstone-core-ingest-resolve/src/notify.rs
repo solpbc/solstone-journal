@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 /// Ingest notice assembled by the wire layer after a successful apply.
 pub struct IngestNotice<'a> {
-    pub did: &'a str,
+    pub cid: &'a str,
     pub observer: Option<&'a str>,
     pub source: &'a str,
     pub day: &'a str,

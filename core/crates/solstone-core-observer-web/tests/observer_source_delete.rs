@@ -19,7 +19,7 @@ use tower::ServiceExt;
 
 const KEY: &str = "abcdefghijklmnop-observer-handle";
 const OTHER_KEY: &str = "otherkeyzzzzzzzz-observer-handle";
-const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const JOURNAL_JID: &str = "journal-jid-fixture";
 
 struct Bed {
@@ -466,13 +466,13 @@ async fn history_untouched_when_door_refuses() {
 }
 
 #[tokio::test]
-async fn criterion_8_tombstone_did_from_device_json_not_journal_jid() {
+async fn criterion_8_tombstone_cid_from_device_json_not_journal_jid() {
     let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
     bed.location_only("20260805", "location", "070000_17");
     bed.write_file(
         "chronicle/20260805/location/070000_17/device.json",
-        json!({"did": DID_A, "jid": JOURNAL_JID, "kind": "Observed", "device": {}})
+        json!({"cid": CID_A, "jid": JOURNAL_JID, "kind": "Observed", "device": {}})
             .to_string()
             .as_bytes(),
     );
@@ -480,13 +480,13 @@ async fn criterion_8_tombstone_did_from_device_json_not_journal_jid() {
     let (status, body) = call(bed.path(), "location", &owner_headers()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["removed"]["segments"], 2);
-    let with_did = tombstone(bed.path(), "20260805", "location", "070000_17");
+    let with_cid = tombstone(bed.path(), "20260805", "location", "070000_17");
     let unknown = tombstone(bed.path(), "20260805", "location", "080000_17");
-    assert_eq!(with_did["cid"], DID_A);
+    assert_eq!(with_cid["cid"], CID_A);
     assert_eq!(unknown["cid"], "unknown");
-    assert_eq!(with_did["reason"], "owner_segment_delete");
+    assert_eq!(with_cid["reason"], "owner_segment_delete");
     assert_eq!(unknown["reason"], "owner_segment_delete");
-    let left = with_did.to_string();
+    let left = with_cid.to_string();
     let right = unknown.to_string();
     assert!(!left.contains(JOURNAL_JID));
     assert!(!right.contains(JOURNAL_JID));
@@ -501,17 +501,17 @@ async fn criterion_5_legacy_device_json_did_key_tombstones_as_cid() {
     bed.location_only("20260805", "location", "070000_17");
     bed.write_file(
         "chronicle/20260805/location/070000_17/device.json",
-        json!({"did": DID_A}).to_string().as_bytes(),
+        json!({"did": CID_A}).to_string().as_bytes(),
     );
     bed.location_only("20260805", "location", "080000_17");
     let (status, body) = call(bed.path(), "location", &owner_headers()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["removed"]["segments"], 2);
-    let with_did = tombstone(bed.path(), "20260805", "location", "070000_17");
+    let with_cid = tombstone(bed.path(), "20260805", "location", "070000_17");
     let unknown = tombstone(bed.path(), "20260805", "location", "080000_17");
-    assert_eq!(with_did["cid"], DID_A);
+    assert_eq!(with_cid["cid"], CID_A);
     assert_eq!(unknown["cid"], "unknown");
-    assert!(with_did.get("did").is_none());
+    assert!(with_cid.get("did").is_none());
 }
 
 #[tokio::test]

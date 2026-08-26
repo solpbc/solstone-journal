@@ -14,9 +14,9 @@ pub fn require_access(basis: &AccessBasis) -> bool {
 #[cfg(test)]
 mod tests {
     use super::require_access;
-    use crate::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use crate::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
@@ -25,7 +25,7 @@ mod tests {
         for carrier in [Carrier::Direct, Carrier::ViaSpl] {
             assert!(require_access(&AccessBasis::LinkedDevice {
                 carrier,
-                did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+                cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
             }));
             assert!(!require_access(&AccessBasis::PairingPeer { carrier }));
         }

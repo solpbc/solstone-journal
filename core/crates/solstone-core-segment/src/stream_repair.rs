@@ -203,7 +203,7 @@ fn default_stream_record(
         last_day: last_day.map(ToOwned::to_owned),
         last_segment: last_segment.map(ToOwned::to_owned),
         seq: max_seq,
-        did: None,
+        cid: None,
         source: None,
     }
 }
@@ -552,7 +552,7 @@ struct RebuiltStreamState<'a> {
     last_segment: &'a str,
     seq: u64,
     #[serde(rename = "cid")]
-    did: Value,
+    cid: Value,
     source: Value,
 }
 
@@ -628,7 +628,7 @@ fn rebuild_stream_state(
             last_day: &last.day,
             last_segment: &last.segment,
             seq: last.seq,
-            did: existing_fingerprint(&existing),
+            cid: existing_fingerprint(&existing),
             source: existing.get("source").cloned().unwrap_or(Value::Null),
         },
     )?;

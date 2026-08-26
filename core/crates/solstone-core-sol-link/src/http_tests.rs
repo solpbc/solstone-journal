@@ -8,7 +8,7 @@ use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_journal_config::materialized_defaults;
 use tower::ServiceExt;
 
@@ -17,7 +17,7 @@ use crate::http::router;
 use crate::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use crate::mark::mark_from_jid;
 
-const VALID_DID: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const VALID_CID: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const INIT_HTML: &str = include_str!("../assets/init.html");
 
 #[tokio::test]
@@ -38,7 +38,7 @@ async fn init_routes_reject_linked_devices_and_serve_localhost() {
             temporary.path(),
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
-                did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+                cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
             },
             method.clone(),
             path,

@@ -14,7 +14,7 @@ use axum::http::{Request, StatusCode};
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
 use serde_json::{Value, json};
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_shell::authorization_gate::{
     AuthorizationGateReadProbe, authorized_router, authorized_router_with_read_probe,
 };
@@ -31,23 +31,23 @@ use crate::door_support::{Fixture, get_over_carrier};
 use crate::warn_capture;
 
 fn linked_device(fixture: &Fixture, index: usize) -> AccessBasis {
-    let did = format!(
+    let cid = format!(
         "sha256:{}",
         spl_core::ca::sha256_hex(fixture.client_der(index))
     );
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
-        did: LinkedDeviceDid::try_from(did.as_str()).expect("fixture DID"),
+        cid: LinkedDeviceCid::try_from(cid.as_str()).expect("fixture CID"),
     }
 }
 
 fn unlisted_linked_device() -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
-        did: LinkedDeviceDid::try_from(
+        cid: LinkedDeviceCid::try_from(
             "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         )
-        .expect("syntactically valid unlisted DID"),
+        .expect("syntactically valid unlisted CID"),
     }
 }
 

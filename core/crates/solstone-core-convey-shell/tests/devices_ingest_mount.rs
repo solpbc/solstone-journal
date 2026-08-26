@@ -8,12 +8,12 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use solstone_core_callosum::CallosumSocketServer;
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
 const DAY: &str = "20260804";
-const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const FRESH_SEGMENT: &str = "180000_60";
 
 fn python_era_fixture() -> PathBuf {
@@ -120,7 +120,7 @@ fn established_python_era() -> tempfile::TempDir {
 fn basis() -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
-        did: LinkedDeviceDid::try_from(DID_A).expect("fixture did"),
+        cid: LinkedDeviceCid::try_from(CID_A).expect("fixture cid"),
     }
 }
 

@@ -239,7 +239,7 @@ fn authorize_transport(
     parts: &Parts,
 ) -> Result<(Map<String, Value>, String), Box<Response>> {
     let identity = match parts.extensions.get::<AccessBasis>() {
-        Some(AccessBasis::LinkedDevice { did, .. }) => Ok(DoorIdentity::PrivateLink(did.as_str())),
+        Some(AccessBasis::LinkedDevice { cid, .. }) => Ok(DoorIdentity::PrivateLink(cid.as_str())),
         // Localhost and pairing-window requests have no accepted device identity and must
         // authenticate with the journal-source key.
         Some(AccessBasis::Localhost | AccessBasis::PairingPeer { .. }) | None => {
@@ -794,7 +794,7 @@ mod tests {
         http::{Request, StatusCode},
     };
     use serde_json::json;
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
     use tempfile::TempDir;
     use tower::ServiceExt;
 
@@ -1184,7 +1184,7 @@ mod tests {
         let router =
             crate::routes(root.path().to_path_buf()).layer(Extension(AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
-                did: LinkedDeviceDid::try_from(FINGERPRINT).unwrap(),
+                cid: LinkedDeviceCid::try_from(FINGERPRINT).unwrap(),
             }));
 
         let response = router

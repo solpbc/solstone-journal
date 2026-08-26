@@ -286,7 +286,7 @@ mod tests {
         let report = read_device_ingest_events(&segment).unwrap();
         assert_eq!(report.records.len(), 1);
         assert_eq!(
-            report.records[0].did,
+            report.records[0].cid,
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
         assert!(report.records[0].extra.get("did").is_none());

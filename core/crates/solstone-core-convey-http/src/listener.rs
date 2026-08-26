@@ -50,10 +50,10 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use crate::envelope::probe_router;
-    use crate::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use crate::identity::{AccessBasis, Carrier, LinkedDeviceCid};
     use crate::serve::{mux_builder, serve_connection};
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     async fn duplex_probe(identity: AccessBasis) -> String {
@@ -78,16 +78,16 @@ mod tests {
     async fn loopback_and_supplied_identities_round_trip() {
         let direct = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         })
         .await;
-        assert!(direct.contains("LinkedDevice { carrier: Direct, did: LinkedDeviceDid"));
+        assert!(direct.contains("LinkedDevice { carrier: Direct, cid: LinkedDeviceCid"));
 
         let via_spl = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::ViaSpl,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         })
         .await;
-        assert!(via_spl.contains("LinkedDevice { carrier: ViaSpl, did: LinkedDeviceDid"));
+        assert!(via_spl.contains("LinkedDevice { carrier: ViaSpl, cid: LinkedDeviceCid"));
     }
 }

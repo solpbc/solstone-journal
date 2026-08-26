@@ -71,7 +71,7 @@ pub(crate) fn native_events(
     journal_root: &Path,
     day: &str,
     stream: Option<&str>,
-    did: &str,
+    cid: &str,
 ) -> Result<Vec<DeviceIngestEvent>, ListingError> {
     let Some(stream) = stream else {
         return Ok(Vec::new());
@@ -84,7 +84,7 @@ pub(crate) fn native_events(
     {
         let report =
             read_device_ingest_events(segment.path()).map_err(|_| ListingError::JournalRead)?;
-        events.extend(report.records.into_iter().filter(|event| event.did == did));
+        events.extend(report.records.into_iter().filter(|event| event.cid == cid));
     }
     Ok(events)
 }

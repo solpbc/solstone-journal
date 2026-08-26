@@ -5,9 +5,9 @@ use std::fmt;
 
 /// A validated certificate-derived identifier for a linked device.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LinkedDeviceDid(String);
+pub struct LinkedDeviceCid(String);
 
-impl LinkedDeviceDid {
+impl LinkedDeviceCid {
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -15,29 +15,29 @@ impl LinkedDeviceDid {
 
 /// A linked-device identifier was not a lowercase SHA-256 certificate digest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidLinkedDeviceDid;
+pub struct InvalidLinkedDeviceCid;
 
-impl fmt::Display for InvalidLinkedDeviceDid {
+impl fmt::Display for InvalidLinkedDeviceCid {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("invalid linked-device identifier")
     }
 }
 
-impl std::error::Error for InvalidLinkedDeviceDid {}
+impl std::error::Error for InvalidLinkedDeviceCid {}
 
-impl TryFrom<&str> for LinkedDeviceDid {
-    type Error = InvalidLinkedDeviceDid;
+impl TryFrom<&str> for LinkedDeviceCid {
+    type Error = InvalidLinkedDeviceCid;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let Some(digest) = value.strip_prefix("sha256:") else {
-            return Err(InvalidLinkedDeviceDid);
+            return Err(InvalidLinkedDeviceCid);
         };
         if digest.len() != 64
             || !digest
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
         {
-            return Err(InvalidLinkedDeviceDid);
+            return Err(InvalidLinkedDeviceCid);
         }
         Ok(Self(value.to_owned()))
     }
@@ -56,7 +56,7 @@ pub enum AccessBasis {
     Localhost,
     LinkedDevice {
         carrier: Carrier,
-        did: LinkedDeviceDid,
+        cid: LinkedDeviceCid,
     },
     /// An accepted cert-less carrier restricted by the door's pairing confinement.
     PairingPeer {
@@ -66,9 +66,9 @@ pub enum AccessBasis {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessBasis, Carrier, LinkedDeviceDid};
+    use super::{AccessBasis, Carrier, LinkedDeviceCid};
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
@@ -79,7 +79,7 @@ mod tests {
         fn assert_access_basis_is_exhaustive(basis: AccessBasis) {
             match basis {
                 AccessBasis::Localhost => {}
-                AccessBasis::LinkedDevice { carrier: _, did: _ } => {}
+                AccessBasis::LinkedDevice { carrier: _, cid: _ } => {}
                 AccessBasis::PairingPeer { carrier: _ } => {}
             }
         }
@@ -95,7 +95,7 @@ mod tests {
         assert_access_basis_is_exhaustive(AccessBasis::Localhost);
         assert_access_basis_is_exhaustive(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         });
         assert_access_basis_is_exhaustive(AccessBasis::PairingPeer {
             carrier: Carrier::Direct,
@@ -105,10 +105,10 @@ mod tests {
     }
 
     #[test]
-    fn linked_device_did_validates_the_canonical_digest_shape() {
-        let did = LinkedDeviceDid::try_from(VALID_DID).unwrap();
+    fn linked_device_cid_validates_the_canonical_digest_shape() {
+        let cid = LinkedDeviceCid::try_from(VALID_CID).unwrap();
 
-        assert_eq!(did.as_str(), VALID_DID);
+        assert_eq!(cid.as_str(), VALID_CID);
         let cases = [
             "",
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -119,7 +119,7 @@ mod tests {
         ];
 
         for value in cases {
-            assert!(LinkedDeviceDid::try_from(value).is_err(), "{value:?}");
+            assert!(LinkedDeviceCid::try_from(value).is_err(), "{value:?}");
         }
     }
 }

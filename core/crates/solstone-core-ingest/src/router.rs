@@ -169,8 +169,8 @@ async fn ingest_upload(
     State(state): State<IngestState>,
     request: Request,
 ) -> Response {
-    let did = match validate_access(&basis) {
-        Ok(did) => did,
+    let cid = match validate_access(&basis) {
+        Ok(cid) => cid,
         Err((code, status, detail)) => return refusal(code, status, detail),
     };
     if let Err((code, status, detail)) = validate_protocol(request.headers()) {
@@ -184,7 +184,7 @@ async fn ingest_upload(
         Ok(envelope) => envelope,
         Err((code, detail)) => return refusal(code, StatusCode::BAD_REQUEST, detail),
     };
-    write_envelope(&state, &did, envelope)
+    write_envelope(&state, &cid, envelope)
 }
 
 struct MultipartInput {
@@ -481,20 +481,20 @@ fn required_string(
 /// binding between the bind-time check and this call) surfaces as a `failed`
 /// outcome; it is self-healing the same way, since the content and its event
 /// are already durably written and idempotent by the time it can occur.
-fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Response {
+fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Response {
     let hints = StreamHints {
         kind: Some(Kind::Observed),
         host: None,
         platform: None,
     };
-    // Bind the (did, source)-owned stream identity once, up front. The chain
+    // Bind the (cid, source)-owned stream identity once, up front. The chain
     // is advanced separately, below, only once we know which segment key the
     // content actually landed under — never once per collision-retry attempt.
     let bound = match bind_ingest_stream(
         &state.journal_root,
         &envelope.day,
         &envelope.segment,
-        did,
+        cid,
         &envelope.source,
         &hints,
     ) {
@@ -564,7 +564,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             );
         }
         Ok(ApplyPhase::Partial(partial)) => {
-            return append_partial_and_fail(state, did, &envelope, &bound.stream, partial);
+            return append_partial_and_fail(state, cid, &envelope, &bound.stream, partial);
         }
         Err(_) => {
             return outcome_error(
@@ -600,7 +600,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
     }
     if append_device_ingest(
         applied.segment.path(),
-        did,
+        cid,
         &envelope,
         &bound.stream,
         &applied.landed_segment,
@@ -627,7 +627,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             &applied.landed_segment,
             &applied.segment,
             hints.clone(),
-            did,
+            cid,
             &envelope.source,
         )
         .is_err()
@@ -641,7 +641,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
     }
     let observer = match stamp_observer(
         state,
-        did,
+        cid,
         &envelope.day,
         &applied.landed_segment,
         applied.status,
@@ -658,7 +658,7 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
     };
     if !announced_files.is_empty() {
         let notice = IngestNotice {
-            did,
+            cid,
             observer: observer.as_deref(),
             source: &envelope.source,
             day: &envelope.day,
@@ -710,7 +710,7 @@ struct PartialApply {
 
 fn append_partial_and_fail(
     state: &IngestState,
-    did: &str,
+    cid: &str,
     envelope: &Envelope,
     stream: &str,
     partial: PartialApply,
@@ -733,7 +733,7 @@ fn append_partial_and_fail(
     }
     if append_device_ingest(
         partial.segment.path(),
-        did,
+        cid,
         envelope,
         stream,
         &partial.landed_segment,
@@ -750,12 +750,12 @@ fn append_partial_and_fail(
         );
     }
     if !announced_files.is_empty() {
-        let observer = resolve_device_observer(&state.journal_root, did)
+        let observer = resolve_device_observer(&state.journal_root, cid)
             .ok()
             .flatten()
             .and_then(|observer| observer.record.name().map(str::to_owned));
         let notice = IngestNotice {
-            did,
+            cid,
             observer: observer.as_deref(),
             source: &envelope.source,
             day: &envelope.day,
@@ -778,7 +778,7 @@ fn append_partial_and_fail(
 
 fn append_device_ingest(
     segment_path: &Path,
-    did: &str,
+    cid: &str,
     envelope: &Envelope,
     stream: &str,
     landed_segment: &str,
@@ -790,7 +790,7 @@ fn append_device_ingest(
         record_version: 1,
         outcome: outcome.to_owned(),
         protocol_version: 3,
-        did: did.to_owned(),
+        cid: cid.to_owned(),
         source: envelope.source.clone(),
         stream: stream.to_owned(),
         day: envelope.day.clone(),
@@ -804,12 +804,12 @@ fn append_device_ingest(
 
 fn stamp_observer(
     state: &IngestState,
-    did: &str,
+    cid: &str,
     day: &str,
     landed_segment: &str,
     status: solstone_core_ingest_resolve::PlanStatus,
 ) -> Result<Option<String>, ()> {
-    let mut observer = match resolve_device_observer(&state.journal_root, did) {
+    let mut observer = match resolve_device_observer(&state.journal_root, cid) {
         Ok(None) => return Ok(None),
         Ok(Some(observer)) => observer,
         Err(_) => return Err(()),
@@ -976,7 +976,7 @@ mod tests {
     use serde_json::{Map, Value, json};
     use sha2::Digest;
     use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
     use solstone_core_convey_http::serve::{mux_builder, serve_connection};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
@@ -987,8 +987,8 @@ mod tests {
         set_before_apply_hook, wall_clock_ms,
     };
 
-    const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const DID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     struct SpyNotifier {
         calls: AtomicUsize,
@@ -1042,10 +1042,10 @@ mod tests {
         tempfile::TempDir::new().unwrap()
     }
 
-    fn basis(did: &str) -> AccessBasis {
+    fn basis(cid: &str) -> AccessBasis {
         AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(did).unwrap(),
+            cid: LinkedDeviceCid::try_from(cid).unwrap(),
         }
     }
 
@@ -1125,12 +1125,12 @@ mod tests {
         name: &str,
         bytes: &[u8],
     ) -> (StatusCode, Value) {
-        call_upload_as(app, DID_A, envelope, name, bytes).await
+        call_upload_as(app, CID_A, envelope, name, bytes).await
     }
 
     async fn call_upload_as(
         app: &axum::Router,
-        did: &str,
+        cid: &str,
         envelope: Value,
         name: &str,
         bytes: &[u8],
@@ -1142,7 +1142,7 @@ mod tests {
             "/app/devices/ingest",
             Some(content_type),
             body,
-            basis(did),
+            basis(cid),
             Some("3"),
             &[],
         )
@@ -1153,7 +1153,7 @@ mod tests {
         json!({"day": day, "segment": segment, "files": files})
     }
 
-    fn seed_observer(root: &Path, prefix: &str, name: &str, did: &str, stream: &str) {
+    fn seed_observer(root: &Path, prefix: &str, name: &str, cid: &str, stream: &str) {
         let directory = root.join("apps/observer/observers");
         fs::create_dir_all(&directory).unwrap();
         fs::write(
@@ -1164,7 +1164,7 @@ mod tests {
                 "stream": stream,
                 "created_at": 4,
                 "revoked": false,
-                "device_binding": {"device": did, "kind": "cert"},
+                "device_binding": {"device": cid, "kind": "cert"},
             })
             .to_string(),
         )
@@ -1181,7 +1181,7 @@ mod tests {
         root: &Path,
         prefix: &str,
         name: &str,
-        did: &str,
+        cid: &str,
         stream: &str,
         stamp: ObserverStamp<'_>,
     ) {
@@ -1195,7 +1195,7 @@ mod tests {
                 "stream": stream,
                 "created_at": 4,
                 "revoked": false,
-                "device_binding": {"device": did, "kind": "cert"},
+                "device_binding": {"device": cid, "kind": "cert"},
                 "last_segment": stamp.segment,
                 "last_segment_day": stamp.day,
                 "last_segment_received_at": stamp.received_at,
@@ -1235,7 +1235,7 @@ mod tests {
     fn seed_attributed_stream(
         root: &Path,
         name: &str,
-        did: &str,
+        cid: &str,
         created_at: u64,
         last_day: &str,
         last_segment: &str,
@@ -1254,7 +1254,7 @@ mod tests {
                 "last_day": last_day,
                 "last_segment": last_segment,
                 "seq": seq,
-                "did": did,
+                "cid": cid,
                 "source": "",
             })
             .to_string(),
@@ -1344,7 +1344,7 @@ mod tests {
             "/app/devices/ingest",
             Some(content_type),
             body,
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -1439,8 +1439,8 @@ mod tests {
             fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
                 .unwrap();
         let event: Value = serde_json::from_str(&events).unwrap();
-        assert_eq!(event["cid"], DID_A);
-        assert_eq!(event["meta"]["did"], DID_B);
+        assert_eq!(event["cid"], CID_A);
+        assert_eq!(event["meta"]["did"], CID_B);
     }
 
     #[tokio::test]
@@ -1484,7 +1484,7 @@ mod tests {
             "/app/devices/ingest/manifest",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -1496,7 +1496,7 @@ mod tests {
             "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -1512,7 +1512,7 @@ mod tests {
             "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -1616,7 +1616,7 @@ mod tests {
     async fn notification_failure_is_5xx_and_leaves_durable_writes() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let spy = SpyNotifier::fail_next();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
         let app = api_router_with(&root, spy.clone(), clock);
@@ -1657,7 +1657,7 @@ mod tests {
 
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
         let app = api_router_with(&root, spy.clone(), clock);
@@ -1706,7 +1706,7 @@ mod tests {
             &root,
             "aaaaaaaa",
             "Desk",
-            DID_A,
+            CID_A,
             "desk",
             ObserverStamp {
                 segment: "090000_1",
@@ -1738,7 +1738,7 @@ mod tests {
     async fn heal_refreshes_stamp_without_changing_landed_segment() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
         let app = api_router_with(&root, spy, clock);
@@ -1778,7 +1778,7 @@ mod tests {
     async fn duplicate_of_already_stamped_segment_does_not_refresh() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
         let app = api_router_with(&root, spy, clock);
@@ -1810,7 +1810,7 @@ mod tests {
             &root,
             "aaaaaaaa",
             "Desk",
-            DID_A,
+            CID_A,
             "desk",
             ObserverStamp {
                 segment: "090000_1",
@@ -1916,7 +1916,7 @@ mod tests {
             "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2023,7 +2023,7 @@ mod tests {
     async fn partial_notice_keeps_reserved_meta_keys_nested() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let socket = root.join("health/callosum.sock");
         let server = CallosumSocketServer::bind(&socket).await.unwrap();
         let mut peer = CallosumSocketConnection::new(&socket, Map::new());
@@ -2101,7 +2101,7 @@ mod tests {
         let mut peer = CallosumSocketConnection::new(&socket, Map::new());
         peer.start();
         wait_for_callosum_client(&server).await;
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let app = api_router(&root);
         let request = json!({
             "day": "20260804",
@@ -2309,7 +2309,7 @@ mod tests {
             .uri("/app/observer/api/deadbeef/key")
             .body(Body::empty())
             .unwrap();
-        request.extensions_mut().insert(basis(DID_A));
+        request.extensions_mut().insert(basis(CID_A));
         let response = router(&root).oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let production = include_str!("router.rs")
@@ -2342,7 +2342,7 @@ mod tests {
                 path,
                 None,
                 Vec::new(),
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[],
             )
@@ -2370,7 +2370,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2411,7 +2411,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2459,7 +2459,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2487,7 +2487,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2515,7 +2515,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2582,7 +2582,7 @@ mod tests {
             "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2594,7 +2594,7 @@ mod tests {
             "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2631,7 +2631,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 Some("3"),
                 &[]
             )
@@ -2651,7 +2651,7 @@ mod tests {
             "/app/devices/ingest",
             Some(content_type),
             body,
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2688,7 +2688,7 @@ mod tests {
             "/app/devices/ingest",
             Some(content_type),
             body,
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[
                 ("Authorization", "Bearer spoofed"),
@@ -2703,7 +2703,7 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(event["cid"], DID_A);
+        assert_eq!(event["cid"], CID_A);
         let (_, read_body) = call(
             &app,
             "GET",
@@ -2762,7 +2762,7 @@ mod tests {
                 "/app/devices/ingest",
                 Some(content_type),
                 body,
-                basis(DID_A),
+                basis(CID_A),
                 version,
                 &[],
             )
@@ -2777,9 +2777,9 @@ mod tests {
         let dir = root();
         let root = dir.path().to_path_buf();
         let app = router(&root);
-        for (did, day, segment) in [
-            (DID_A, "20260804", "120000_1"),
-            (DID_B, "20260805", "120001_1"),
+        for (cid, day, segment) in [
+            (CID_A, "20260804", "120000_1"),
+            (CID_B, "20260805", "120001_1"),
         ] {
             let request = envelope(day, segment, json!([{"submitted":"audio.flac"}]));
             let (content_type, body) = multipart(request, "audio.flac", b"sound");
@@ -2790,7 +2790,7 @@ mod tests {
                     "/app/devices/ingest",
                     Some(content_type),
                     body,
-                    basis(did),
+                    basis(cid),
                     Some("3"),
                     &[]
                 )
@@ -2805,10 +2805,10 @@ mod tests {
         let second =
             fs::read_to_string(root.join("chronicle/20260805/device_2/120001_1/events.jsonl"))
                 .unwrap();
-        assert!(first.contains(DID_A));
-        assert!(!first.contains(DID_B));
-        assert!(second.contains(DID_B));
-        assert!(!second.contains(DID_A));
+        assert!(first.contains(CID_A));
+        assert!(!first.contains(CID_B));
+        assert!(second.contains(CID_B));
+        assert!(!second.contains(CID_A));
     }
 
     #[tokio::test]
@@ -2831,7 +2831,7 @@ mod tests {
             "/app/devices/ingest/manifest",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2843,7 +2843,7 @@ mod tests {
             "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2865,7 +2865,7 @@ mod tests {
             "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2877,7 +2877,7 @@ mod tests {
             "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             None,
             &[],
         )
@@ -2909,7 +2909,7 @@ mod tests {
             "/app/devices/ingest/manifest",
             None,
             Vec::new(),
-            basis(DID_A),
+            basis(CID_A),
             Some("3"),
             &[],
         )
@@ -2924,7 +2924,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         let (server, mut client) = tokio::io::duplex(128 * 1024);
         let task = tokio::spawn(async move {
-            serve_connection(server, router(&root), basis(DID_A), &mux_builder())
+            serve_connection(server, router(&root), basis(CID_A), &mux_builder())
                 .await
                 .unwrap();
         });
@@ -2952,7 +2952,7 @@ mod tests {
     async fn ac1_adopts_unattributed_listing_stream() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         seed_unattributed_stream(
             &root,
             "desk",
@@ -2976,7 +2976,7 @@ mod tests {
         assert_eq!(record["seq"], SEEDED_SEQ + 1);
         assert_eq!(record["last_day"], "20260804");
         assert_eq!(record["last_segment"], body["segment"]);
-        assert_eq!(record["cid"], DID_A);
+        assert_eq!(record["cid"], CID_A);
         assert_eq!(record["source"], "");
         let landed = body["segment"].as_str().unwrap();
         let marker: Value = serde_json::from_str(
@@ -2998,7 +2998,7 @@ mod tests {
     async fn ac2_duplicate_does_not_advance_attributed_listing_stream() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         seed_unattributed_stream(
             &root,
             "desk",
@@ -3021,19 +3021,19 @@ mod tests {
         assert!(!root.join("streams/device.json").exists());
         let record = stream_record(&root, "desk");
         assert_eq!(record["seq"], SEEDED_SEQ + 1);
-        assert_eq!(record["cid"], DID_A);
+        assert_eq!(record["cid"], CID_A);
     }
 
     #[tokio::test]
-    async fn ac3_second_did_naming_the_same_stream_is_refused() {
+    async fn ac3_second_cid_naming_the_same_stream_is_refused() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
-        seed_observer(&root, "bbbbbbbb", "Desk", DID_B, "desk");
+        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
+        seed_observer(&root, "bbbbbbbb", "Desk", CID_B, "desk");
         seed_attributed_stream(
             &root,
             "desk",
-            DID_A,
+            CID_A,
             SEEDED_CREATED_AT,
             SEEDED_LAST_DAY,
             SEEDED_LAST_SEGMENT,
@@ -3042,7 +3042,7 @@ mod tests {
         let before = fs::read(root.join("streams/desk.json")).unwrap();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload_as(&app, DID_B, request, "audio.flac", b"other").await;
+        let (status, body) = call_upload_as(&app, CID_B, request, "audio.flac", b"other").await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["reason_code"], "foreign_stream_binding");
         assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
@@ -3054,8 +3054,8 @@ mod tests {
     async fn ac4_ambiguous_observers_refuse_the_write() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "One", DID_A, "one");
-        seed_observer(&root, "cccccccc", "Many", DID_A, "many");
+        seed_observer(&root, "aaaaaaaa", "One", CID_A, "one");
+        seed_observer(&root, "cccccccc", "Many", CID_A, "many");
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
@@ -3065,14 +3065,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ac5_foreign_did_on_named_stream_is_refused() {
+    async fn ac5_foreign_cid_on_named_stream_is_refused() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "bbbbbbbb", "Desk", DID_B, "desk");
+        seed_observer(&root, "bbbbbbbb", "Desk", CID_B, "desk");
         seed_attributed_stream(
             &root,
             "desk",
-            DID_A,
+            CID_A,
             SEEDED_CREATED_AT,
             SEEDED_LAST_DAY,
             SEEDED_LAST_SEGMENT,
@@ -3081,7 +3081,7 @@ mod tests {
         let before = fs::read(root.join("streams/desk.json")).unwrap();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload_as(&app, DID_B, request, "audio.flac", b"other").await;
+        let (status, body) = call_upload_as(&app, CID_B, request, "audio.flac", b"other").await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["reason_code"], "foreign_stream_binding");
         assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);

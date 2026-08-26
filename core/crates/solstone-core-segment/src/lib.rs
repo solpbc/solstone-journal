@@ -42,7 +42,7 @@ pub use content_name::{
     ContentName, ContentNameError, RESERVED_SEGMENT_FILENAMES, is_reserved_name,
 };
 pub use device::{
-    AiChatSource, DeviceSidecarInput, ImportSource, Kind, is_valid_device_did, write_device,
+    AiChatSource, DeviceSidecarInput, ImportSource, Kind, is_valid_device_cid, write_device,
 };
 pub use document_migration::{
     PdfExtractionMigrationError, PdfExtractionMigrationReport, migrate_pdf_extractions,

@@ -71,9 +71,9 @@ mod tests {
 
     use super::{REQUEST_BODY_LIMIT, mux_builder, serve_connection, tcp_builder};
     use crate::envelope::probe_router;
-    use crate::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use crate::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     const REQUEST: &str = "GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -144,7 +144,7 @@ mod tests {
         let response = response_until_closed(
             AccessBasis::LinkedDevice {
                 carrier: Carrier::ViaSpl,
-                did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+                cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
             },
             mux_builder,
             "GET /Localhost?basis=Localhost HTTP/1.1\r\nHost: localhost\r\nX-Access-Basis: Localhost\r\nConnection: close\r\n\r\n".to_owned(),
@@ -152,7 +152,7 @@ mod tests {
         )
         .await;
 
-        assert!(response.contains("LinkedDevice { carrier: ViaSpl, did: LinkedDeviceDid"));
+        assert!(response.contains("LinkedDevice { carrier: ViaSpl, cid: LinkedDeviceCid"));
         assert!(!response.contains("\"detail\":\"Localhost\""));
     }
 

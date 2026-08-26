@@ -27,7 +27,7 @@ use rustls::{
 use serde_json::{Map, json};
 use socket2::{SockRef, TcpKeepalive};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_http::serve::{mux_builder, serve_connection};
 use solstone_core_sol_link::ca::issue_server_certificate;
 use solstone_core_sol_link::committed::load_committed_identity;
@@ -487,7 +487,7 @@ impl PairingCarrierRegistry {
 /// per-connection refusal-classification state without parallel state.
 #[derive(Clone, Debug)]
 struct AcceptedIdentity {
-    did: LinkedDeviceDid,
+    cid: LinkedDeviceCid,
 }
 
 type IdentityCell = Arc<Mutex<Option<AcceptedIdentity>>>;
@@ -540,7 +540,7 @@ impl ClientCertVerifier for DoorIdentityVerifier {
     ) -> Result<ClientCertVerified, RustlsError> {
         self.inner
             .verify_client_cert(end_entity, intermediates, now)?;
-        let did = LinkedDeviceDid::try_from(
+        let cid = LinkedDeviceCid::try_from(
             format!("sha256:{}", spl_core::ca::sha256_hex(end_entity.as_ref())).as_str(),
         )
         .map_err(|_| {
@@ -550,12 +550,12 @@ impl ClientCertVerifier for DoorIdentityVerifier {
             RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)
         })?;
         match identity.as_ref() {
-            Some(existing) if existing.did != did => Err(RustlsError::InvalidCertificate(
+            Some(existing) if existing.cid != cid => Err(RustlsError::InvalidCertificate(
                 CertificateError::ApplicationVerificationFailure,
             )),
             Some(_) => Ok(ClientCertVerified::assertion()),
             None => {
-                *identity = Some(AcceptedIdentity { did });
+                *identity = Some(AcceptedIdentity { cid });
                 Ok(ClientCertVerified::assertion())
             }
         }
@@ -960,9 +960,9 @@ async fn serve_carrier(
     } else {
         None
     };
-    let did = linked_device_did(&basis);
-    if let Some(did) = &did {
-        record_completed_handshake(&config.journal_root, did);
+    let cid = linked_device_cid(&basis);
+    if let Some(cid) = &cid {
+        record_completed_handshake(&config.journal_root, cid);
     }
     // The publisher feeds the door's carrier loop. Neither the gate nor the verifier consumes it for decisions.
     let mut authorization = config.authorization.clone();
@@ -1032,8 +1032,8 @@ async fn serve_carrier(
             changed = authorization.changed(), if authorization_watch_open => {
                 match changed {
                     Ok(()) => {
-                        if did.as_ref().is_some_and(|did| {
-                            close_for_revocation(authorization.borrow().as_read(), did)
+                        if cid.as_ref().is_some_and(|cid| {
+                            close_for_revocation(authorization.borrow().as_read(), cid)
                         }) {
                             let _ = connection.close();
                             break;
@@ -1146,14 +1146,14 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for StallBoundStream<S> {
     }
 }
 
-fn record_completed_handshake(journal_root: &std::path::Path, did: &LinkedDeviceDid) {
-    match AuthorizationLedger::new(journal_root).touch_last_seen(did.as_str()) {
+fn record_completed_handshake(journal_root: &std::path::Path, cid: &LinkedDeviceCid) {
+    match AuthorizationLedger::new(journal_root).touch_last_seen(cid.as_str()) {
         Ok(true) => {}
-        Ok(false) => log::debug!("paired-device DID was absent while recording last seen"),
+        Ok(false) => log::debug!("paired-device CID was absent while recording last seen"),
         Err(error) => log::debug!("paired-device last-seen update failed: {error}"),
     }
     let mut extra = Map::new();
-    extra.insert("fingerprint".to_owned(), json!(did.as_str()));
+    extra.insert("fingerprint".to_owned(), json!(cid.as_str()));
     let envelope = CallosumEnvelope {
         tract: "link".to_owned(),
         event: "last_seen".to_owned(),
@@ -1182,7 +1182,7 @@ fn capture_to_basis(
     match identity.lock().ok()?.clone() {
         Some(accepted) => Some(AccessBasis::LinkedDevice {
             carrier: carrier_from_peer(peer),
-            did: accepted.did,
+            cid: accepted.cid,
         }),
         None if certless_pairing_admitted => Some(AccessBasis::PairingPeer {
             carrier: carrier_from_peer(peer),
@@ -1200,21 +1200,21 @@ fn unix_seconds() -> i64 {
         .expect("Unix seconds fit i64")
 }
 
-fn linked_device_did(basis: &AccessBasis) -> Option<LinkedDeviceDid> {
+fn linked_device_cid(basis: &AccessBasis) -> Option<LinkedDeviceCid> {
     match basis {
-        AccessBasis::LinkedDevice { did, .. } => Some(did.clone()),
+        AccessBasis::LinkedDevice { cid, .. } => Some(cid.clone()),
         // A cert-less pairing carrier has no device identity to refresh or revoke.
         AccessBasis::PairingPeer { .. } => None,
         AccessBasis::Localhost => None,
     }
 }
 
-fn close_for_revocation(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {
+fn close_for_revocation(posture: &AuthorizedClientsRead, cid: &LinkedDeviceCid) -> bool {
     // The handshake fails closed on every non-`Present` posture it reads from the ledger itself.
     // Once a device is authenticated, only a definite `Present` removal observed on this arm
     // ends its carrier: a transient malformed/unreadable read must not discard captured material
     // that exists nowhere else, and a dead publication now ends no carrier at all.
-    matches!(posture, AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == did.as_str()))
+    matches!(posture, AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == cid.as_str()))
 }
 
 fn carrier_from_peer(peer: Option<SocketAddr>) -> Carrier {
@@ -1334,22 +1334,22 @@ mod tests {
 
     #[test]
     fn revocation_only_closes_definite_present_removal() {
-        let did = LinkedDeviceDid::try_from(
+        let cid = LinkedDeviceCid::try_from(
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         )
         .unwrap();
-        assert!(!close_for_revocation(&AuthorizedClientsRead::Missing, &did));
+        assert!(!close_for_revocation(&AuthorizedClientsRead::Missing, &cid));
         assert!(!close_for_revocation(
             &AuthorizedClientsRead::Unreadable,
-            &did
+            &cid
         ));
         assert!(!close_for_revocation(
             &AuthorizedClientsRead::Malformed,
-            &did
+            &cid
         ));
         assert!(close_for_revocation(
             &AuthorizedClientsRead::Present(Vec::new()),
-            &did
+            &cid
         ));
     }
 }
@@ -1371,23 +1371,23 @@ mod access_tests {
 
     use super::{
         PairingAdmission, PairingCarrierRegistry, PairingCarrierState, PairingDelay,
-        constrain_pair_dispatch, linked_device_did, record_pair_dispatch,
+        constrain_pair_dispatch, linked_device_cid, record_pair_dispatch,
     };
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
     fn carrier_basis_handling_keeps_linked_identity_and_accepts_pairing_peers() {
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         };
-        assert_eq!(linked_device_did(&linked).unwrap().as_str(), VALID_DID);
+        assert_eq!(linked_device_cid(&linked).unwrap().as_str(), VALID_CID);
 
         assert!(
-            linked_device_did(&AccessBasis::PairingPeer {
+            linked_device_cid(&AccessBasis::PairingPeer {
                 carrier: Carrier::Direct,
             })
             .is_none()

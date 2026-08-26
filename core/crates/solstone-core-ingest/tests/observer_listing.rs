@@ -14,13 +14,13 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use solstone_core_callosum::CallosumSocketServer;
-use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_ingest::api_router;
 use tower::ServiceExt;
 
 const DAY: &str = "20260804";
-const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const DID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn root(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -142,10 +142,10 @@ fn assert_python_era_provenance(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn basis(did: &str) -> AccessBasis {
+fn basis(cid: &str) -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
-        did: LinkedDeviceDid::try_from(did).expect("fixture did"),
+        cid: LinkedDeviceCid::try_from(cid).expect("fixture did"),
     }
 }
 
@@ -192,9 +192,9 @@ async fn request_json(
     app: &axum::Router,
     method: &str,
     uri: &str,
-    did: &str,
+    cid: &str,
 ) -> (StatusCode, Value) {
-    let (status, body) = request_bytes(app, method, uri, basis(did), Vec::new(), None, &[]).await;
+    let (status, body) = request_bytes(app, method, uri, basis(cid), Vec::new(), None, &[]).await;
     (
         status,
         serde_json::from_slice(&body).expect("json response"),
@@ -220,13 +220,13 @@ fn multipart(envelope: Value, name: &str, bytes: &[u8]) -> (String, Vec<u8>) {
     (format!("multipart/form-data; boundary={boundary}"), body)
 }
 
-async fn upload(app: &axum::Router, did: &str, segment: &str, name: &str, bytes: &[u8]) -> Value {
-    upload_on_day(app, did, DAY, segment, name, bytes).await
+async fn upload(app: &axum::Router, cid: &str, segment: &str, name: &str, bytes: &[u8]) -> Value {
+    upload_on_day(app, cid, DAY, segment, name, bytes).await
 }
 
 async fn upload_on_day(
     app: &axum::Router,
-    did: &str,
+    cid: &str,
     day: &str,
     segment: &str,
     name: &str,
@@ -241,7 +241,7 @@ async fn upload_on_day(
         app,
         "POST",
         "/app/devices/ingest",
-        basis(did),
+        basis(cid),
         body,
         Some(content_type),
         &[],
@@ -343,7 +343,7 @@ fn append_device_ingest_event(
             "record_version": 1,
             "outcome": "accepted",
             "protocol_version": 3,
-            "did": DID_A,
+            "did": CID_A,
             "source": "",
             "stream": stream,
             "day": DAY,
@@ -385,7 +385,7 @@ async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() 
         &app,
         "GET",
         "/app/devices/ingest/segments/20260804",
-        basis(DID_A),
+        basis(CID_A),
         Vec::new(),
         None,
         &headers,
@@ -396,7 +396,7 @@ async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() 
         &app,
         "GET",
         "/app/devices/ingest/segments/20260804",
-        basis(DID_A),
+        basis(CID_A),
         Vec::new(),
         None,
         &[],
@@ -429,15 +429,15 @@ async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() 
     );
     assert_eq!(file(&a, "120200_60", "gone.flac")["status"], "missing");
 
-    let (status, manifest) = request_json(&app, "GET", "/app/devices/ingest/manifest", DID_A).await;
+    let (status, manifest) = request_json(&app, "GET", "/app/devices/ingest/manifest", CID_A).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(manifest["days"][DAY]["segments"], 3);
     let (status, day) =
-        request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", CID_A).await;
     assert_eq!(status, StatusCode::OK);
     assert!(day["segments"].get("120000_60").is_some());
 
-    let (_, b) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_B).await;
+    let (_, b) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_B).await;
     assert!(b["total"].as_u64().expect("B total") > 0);
     assert!(
         b["items"]
@@ -464,7 +464,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
         "cccccccc",
         "cccccccc-extra",
         "Wrong",
-        json!({"device": DID_B, "kind":"cert"}),
+        json!({"device": CID_B, "kind":"cert"}),
         json!("wrong"),
         false,
     );
@@ -473,7 +473,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
         "dddddddd",
         "dddddddd-extra",
         "Revoked",
-        json!({"device": DID_A, "kind":"cert"}),
+        json!({"device": CID_A, "kind":"cert"}),
         json!("revoked"),
         true,
     );
@@ -497,7 +497,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
         );
     }
     let app = api_router(&root);
-    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     for key in ["140000_60", "140100_60", "140200_60", "140300_60"] {
         assert!(
             body["items"]
@@ -515,9 +515,9 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
     let root = root("zero-observer");
     let server = callosum_server(&root).await;
     let app = api_router(&root);
-    upload(&app, DID_A, "150000_60", "native.flac", b"native").await;
+    upload(&app, CID_A, "150000_60", "native.flac", b"native").await;
     let (status, zero) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         status,
         StatusCode::OK,
@@ -530,7 +530,7 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
         "aaaaaaaa",
         "aaaaaaaa-extra",
         "One",
-        json!({"device": DID_A, "kind":"cert"}),
+        json!({"device": CID_A, "kind":"cert"}),
         json!("one"),
         false,
     );
@@ -540,7 +540,7 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
         "aaaaaaaa",
         json!({"segment":"150100_60","stream":"one","files":[{"submitted":"one.flac","written":"one.flac","size":3,"sha256":"one","disposition":"written"}]}),
     );
-    let (_, one) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    let (_, one) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert!(
         one["items"]
             .as_array()
@@ -554,12 +554,12 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
         "cccccccc",
         "cccccccc-extra",
         "Many",
-        json!({"device": DID_A, "kind":"cert"}),
+        json!({"device": CID_A, "kind":"cert"}),
         json!("many"),
         false,
     );
     let (status, many) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(many["reason_code"], "ambiguous_device_observer");
     let detail = many["detail"].as_str().expect("detail");
@@ -577,7 +577,7 @@ async fn ac11_named_refusal_reaches_every_read_route() {
         "cccccccc",
         "cccccccc-extra",
         "Ambiguous",
-        json!({"device": DID_A, "kind":"cert"}),
+        json!({"device": CID_A, "kind":"cert"}),
         json!("other"),
         false,
     );
@@ -587,7 +587,7 @@ async fn ac11_named_refusal_reaches_every_read_route() {
         "/app/devices/ingest/manifest/20260804",
         "/app/devices/ingest/segments/20260804",
     ] {
-        let (status, body) = request_json(&app, "GET", route, DID_A).await;
+        let (status, body) = request_json(&app, "GET", route, CID_A).await;
         assert_eq!(status, StatusCode::CONFLICT, "{route}");
         assert_eq!(body["reason_code"], "ambiguous_device_observer", "{route}");
     }
@@ -603,11 +603,11 @@ async fn ac5_history_tears_refuse_and_remain_device_scoped() {
     fs::write(&torn, contents).expect("torn history");
     let app = api_router(&root);
     let (status, torn) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(torn["reason_code"], "observer_history_torn");
     let (status, intact) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_B).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_B).await;
     assert_eq!(status, StatusCode::OK);
     assert!(intact["total"].as_u64().expect("total") > 0);
     assert!(
@@ -625,12 +625,12 @@ async fn ac1_all_days_manifest_degrades_a_torn_day() {
     let root = fixture("all-days-degrade");
     let server = callosum_server(&root).await;
     let app = api_router(&root);
-    upload_on_day(&app, DID_A, "20260805", "120000_60", "later.flac", b"later").await;
+    upload_on_day(&app, CID_A, "20260805", "120000_60", "later.flac", b"later").await;
     let torn = history_path(&root, "aaaaaaaa");
     let mut contents = fs::read_to_string(&torn).expect("fixture history");
     contents.push_str("{\n");
     fs::write(&torn, contents).expect("torn history");
-    let (status, manifest) = request_json(&app, "GET", "/app/devices/ingest/manifest", DID_A).await;
+    let (status, manifest) = request_json(&app, "GET", "/app/devices/ingest/manifest", CID_A).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         manifest["days"]["20260804"]["error"],
@@ -643,7 +643,7 @@ async fn ac1_all_days_manifest_degrades_a_torn_day() {
             >= 1
     );
     let (status, day) =
-        request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(day["reason_code"], "observer_history_torn");
     server.stop().await;
@@ -661,7 +661,7 @@ async fn ac5_existing_unreadable_history_refuses_loudly() {
     }
     let app = api_router(&root);
     let (status, body) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["reason_code"], "observer_history_unreadable");
     fs::set_permissions(&history, fs::Permissions::from_mode(0o600)).expect("restore history");
@@ -673,12 +673,12 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let root = fixture("merge");
     let server = callosum_server(&root).await;
     let app = api_router(&root);
-    let first = upload(&app, DID_A, "160000_60", "native.flac", b"native").await;
+    let first = upload(&app, CID_A, "160000_60", "native.flac", b"native").await;
     let landed = first["segment"]
         .as_str()
         .expect("landed segment")
         .to_owned();
-    upload(&app, DID_A, "160000_60", "added.json", b"added").await;
+    upload(&app, CID_A, "160000_60", "added.json", b"added").await;
     append_history(
         &root,
         "aaaaaaaa",
@@ -692,7 +692,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         "stored-name.flac",
         b"projected event",
     );
-    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         file(&body, "120000_60", "present.flac")["status"],
         "present",
@@ -746,9 +746,9 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         "missing",
         "history attestation is missing before the device re-sends it"
     );
-    upload(&app, DID_A, "120200_60", "gone.flac", b"replacement").await;
+    upload(&app, CID_A, "120200_60", "gone.flac", b"replacement").await;
     let (_, converged) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_ne!(
         file(&converged, "120200_60", "gone.flac")["status"],
         "missing"
@@ -762,7 +762,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         .join("native.flac");
     fs::write(disk, b"drifted native bytes").expect("mutate event media");
     let (_, drifted) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         file(&drifted, &landed, "native.flac")["status"],
         "present",
@@ -777,9 +777,9 @@ async fn native_write_conflicting_with_history_attestation_refuses_ambiguous() {
     let root = fixture("history-sha-conflict");
     let server = callosum_server(&root).await;
     let app = api_router(&root);
-    upload(&app, DID_A, "120200_60", "gone.flac", b"conflicting-bytes").await;
+    upload(&app, CID_A, "120200_60", "gone.flac", b"conflicting-bytes").await;
     let (status, body) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["reason_code"], "ambiguous_segment_file_name");
     server.stop().await;
@@ -843,7 +843,7 @@ async fn ac6d_and_ac7_history_selection_rules_are_route_visible() {
         create_media(&root, "laptop", "120600_60", name, b"held");
     }
     let app = api_router(&root);
-    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(item(&body, "120000_60")["observed"], true);
     assert_eq!(item(&body, "120300_60")["observed"], false);
     assert!(
@@ -888,7 +888,7 @@ async fn ac6d_and_ac7_history_selection_rules_are_route_visible() {
     );
     let app = api_router(&root);
     let (status, body) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["reason_code"], "ambiguous_segment_file_name");
     let _ = fs::remove_dir_all(root);
@@ -899,7 +899,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     let root = fixture("fallback-status");
     fs::write(
         observer_path(&root, "aaaaaaaa"),
-        json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":"locked-stream","created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string(),
+        json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":"locked-stream","created_at":1,"revoked":false,"device_binding":{"device":CID_A,"kind":"cert"}}).to_string(),
     )
     .expect("lock observer to distinct stream");
     append_history(
@@ -918,13 +918,13 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     );
     let app = api_router(&root);
     let (_, locked) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         file(&locked, "120800_60", "locked.flac")["status"],
         "present",
         "locked observer stream is the fallback"
     );
-    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string()).expect("unlock observer");
+    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","created_at":1,"revoked":false,"device_binding":{"device":CID_A,"kind":"cert"}}).to_string()).expect("unlock observer");
     append_history(
         &root,
         "aaaaaaaa",
@@ -944,7 +944,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
         json!({"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","handler":"transcribe","input_size":21}}).to_string() + "\n",
     )
     .expect("terminal sidecar beside present media");
-    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         file(&body, "120900_60", "derived.flac")["status"],
         "present",
@@ -975,7 +975,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     )
     .expect("history drift");
     let (_, drifted) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         file(&drifted, "120000_60", "present.flac")["status"],
         "present"
@@ -996,17 +996,17 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
         append_history(&root, "aaaaaaaa", row);
         let app = api_router(&root);
         let (status, body) =
-            request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+            request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["reason_code"], "malformed_evidence_row");
         let _ = fs::remove_dir_all(root);
     }
 
     let root = fixture("non-string-stream");
-    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":{},"created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string()).expect("malformed observer");
+    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":{},"created_at":1,"revoked":false,"device_binding":{"device":CID_A,"kind":"cert"}}).to_string()).expect("malformed observer");
     let app = api_router(&root);
     let (status, body) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["reason_code"], "malformed_evidence_row");
     let _ = fs::remove_dir_all(root);
@@ -1023,7 +1023,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
     }
     let app = api_router(&root);
     let (status, unreadable) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(unreadable["reason_code"], "observer_registry_unreadable");
     fs::set_permissions(&registry, fs::Permissions::from_mode(0o700)).expect("restore registry");
@@ -1033,7 +1033,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
     fs::write(observer_path(&root, "brokenxx"), "{").expect("broken regular json");
     let app = api_router(&root);
     let (status, skipped) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(skipped["reason_code"], "observer_record_unreadable");
     let _ = fs::remove_dir_all(root);
@@ -1043,7 +1043,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
         .expect("json-named directory");
     let app = api_router(&fixture_root);
     let (status, normal) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(
         status,
         StatusCode::OK,
@@ -1058,7 +1058,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
         &zero_app,
         "GET",
         "/app/devices/ingest/segments/20260804",
-        DID_A,
+        CID_A,
     )
     .await;
     let many_root = fixture("registry-many");
@@ -1067,7 +1067,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
         "cccccccc",
         "cccccccc-extra",
         "Many",
-        json!({"device": DID_A, "kind":"cert"}),
+        json!({"device": CID_A, "kind":"cert"}),
         json!("many"),
         false,
     );
@@ -1076,7 +1076,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
         &many_app,
         "GET",
         "/app/devices/ingest/segments/20260804",
-        DID_A,
+        CID_A,
     )
     .await;
     assert_ne!(unreadable["reason_code"], zero["reason_code"]);
@@ -1091,7 +1091,7 @@ async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
     async fn code(root: &Path) -> String {
         let app = api_router(root);
         let (_, body) =
-            request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+            request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
         body["reason_code"]
             .as_str()
             .expect("refusal code")
@@ -1100,7 +1100,7 @@ async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
 
     let mut codes = HashSet::new();
     let root = fixture("codes-malformed");
-    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":[],"created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string()).expect("malformed observer");
+    fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":[],"created_at":1,"revoked":false,"device_binding":{"device":CID_A,"kind":"cert"}}).to_string()).expect("malformed observer");
     codes.insert(code(&root).await);
     let _ = fs::remove_dir_all(root);
 
@@ -1110,7 +1110,7 @@ async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
         "cccccccc",
         "cccccccc-extra",
         "Many",
-        json!({"device":DID_A,"kind":"cert"}),
+        json!({"device":CID_A,"kind":"cert"}),
         json!("many"),
         false,
     );
@@ -1181,7 +1181,7 @@ async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
     }
     let app = api_router(&root);
     let (status, body) =
-        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", CID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["reason_code"], "journal_read_failed");
     fs::set_permissions(&chronicle, fs::Permissions::from_mode(0o700)).expect("restore chronicle");

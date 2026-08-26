@@ -1953,14 +1953,14 @@ fn ac6_remove_authorization_uses_the_ledger_writer() {
     let before_inode = std::fs::metadata(&path)
         .expect("authorization metadata")
         .ino();
-    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
 
     let outcome = fixture.remove_authorization(0);
 
     assert!(outcome.authorized_removed);
     assert!(matches!(
         read_authorized_clients(&path),
-        AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == did)
+        AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == cid)
     ));
     assert_ne!(
         std::fs::metadata(&path)
@@ -2044,7 +2044,7 @@ async fn basis(Extension(basis): Extension<AccessBasis>) -> String {
 }
 
 #[tokio::test]
-async fn ac4_accepted_leaf_digest_is_the_did() {
+async fn ac4_accepted_leaf_digest_is_the_cid() {
     let fixture = Fixture::established(2);
     let app =
         router(fixture.root.clone()).merge(Router::new().route("/__door_test/basis", get(basis)));
@@ -2191,10 +2191,10 @@ async fn ac6_ca_signed_but_unlisted_client_is_refused() {
 #[tokio::test]
 async fn ac6_authorized_client_is_admitted() {
     let fixture = Fixture::established(1);
-    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
     assert!(matches!(
         ledger_posture(&fixture),
-        AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == did)
+        AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == cid)
     ));
     let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
         .await
@@ -3859,14 +3859,14 @@ async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
     .await
     .expect("serve");
     let port = door_port(handle.door_outcome());
-    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
 
     let established = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             if matches!(
                 publication.borrow().as_read(),
                 AuthorizedClientsRead::Present(entries)
-                    if entries.iter().any(|entry| entry.fingerprint == did)
+                    if entries.iter().any(|entry| entry.fingerprint == cid)
             ) {
                 return;
             }
@@ -3883,7 +3883,7 @@ async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
     assert!(matches!(
         publication.borrow().as_read(),
         AuthorizedClientsRead::Present(entries)
-            if entries.iter().any(|entry| entry.fingerprint == did)
+            if entries.iter().any(|entry| entry.fingerprint == cid)
     ));
     assert!(
         fresh_door_connection_is_refused(&fixture, port).await,
@@ -4417,7 +4417,7 @@ async fn ac21_handshake_touches_native_devices_ledger_and_emits_callosum() {
         .expect("serve");
     let port = door_port(handle.door_outcome());
     assert!(request_result(&fixture, 0, port).await.is_ok());
-    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
     let message = received
         .await
         .expect("Callosum task")
@@ -4426,12 +4426,12 @@ async fn ac21_handshake_touches_native_devices_ledger_and_emits_callosum() {
         .expect("last_seen message");
     assert_eq!(message["tract"], "link");
     assert_eq!(message["event"], "last_seen");
-    assert_eq!(message["fingerprint"], did);
+    assert_eq!(message["fingerprint"], cid);
     let devices: serde_json::Value = serde_json::from_slice(
         &std::fs::read(fixture.root.join("link/devices.json")).expect("devices ledger"),
     )
     .expect("devices ledger JSON");
-    let last_seen_at = devices[&did]["last_seen_at"]
+    let last_seen_at = devices[&cid]["last_seen_at"]
         .as_str()
         .expect("accepted device records last_seen_at");
     let parsed =

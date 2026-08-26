@@ -10,7 +10,7 @@ pub const PROTOCOL_HEADER: &str = "X-Solstone-Protocol-Version";
 
 pub fn validate_access(basis: &AccessBasis) -> Result<String, (ReasonCode, StatusCode, String)> {
     match basis {
-        AccessBasis::LinkedDevice { did, .. } => Ok(did.as_str().to_owned()),
+        AccessBasis::LinkedDevice { cid, .. } => Ok(cid.as_str().to_owned()),
         AccessBasis::Localhost => Err((
             ReasonCode::LinkedDeviceRequired,
             StatusCode::FORBIDDEN,
@@ -127,22 +127,22 @@ mod tests {
 
     use crate::model::ReasonCode;
 
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
     use super::{
         PROTOCOL_HEADER, validate_access, validate_protocol, validate_segment, validate_source,
     };
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
     fn access_validation_accepts_linked_devices_and_refuses_pairing_peers() {
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         };
-        assert_eq!(validate_access(&linked), Ok(VALID_DID.to_owned()));
+        assert_eq!(validate_access(&linked), Ok(VALID_CID.to_owned()));
 
         let refusal = validate_access(&AccessBasis::PairingPeer {
             carrier: Carrier::Direct,

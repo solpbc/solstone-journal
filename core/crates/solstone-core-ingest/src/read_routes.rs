@@ -51,7 +51,7 @@ pub async fn ingest_manifest(
     for day in days {
         let listing = match day_listing(
             &state,
-            &context.did,
+            &context.cid,
             context.observer.as_ref(),
             context.native_stream.as_deref(),
             &day,
@@ -85,7 +85,7 @@ pub async fn ingest_manifest_day(
     }
     let listing = match day_listing(
         &state,
-        &context.did,
+        &context.cid,
         context.observer.as_ref(),
         context.native_stream.as_deref(),
         &day,
@@ -117,7 +117,7 @@ pub async fn ingest_segments(
     }
     let listing = match day_listing(
         &state,
-        &context.did,
+        &context.cid,
         context.observer.as_ref(),
         context.native_stream.as_deref(),
         &day,
@@ -146,7 +146,7 @@ pub async fn ingest_segments(
 }
 
 struct ListingContext {
-    did: String,
+    cid: String,
     observer: Option<ResolvedObserver>,
     native_stream: Option<String>,
 }
@@ -157,7 +157,7 @@ fn listing_context(
     headers: &HeaderMap,
     query: &SourceQuery,
 ) -> Result<ListingContext, (ReasonCode, StatusCode, String)> {
-    let did = admitted(basis, headers)?;
+    let cid = admitted(basis, headers)?;
     let source = query
         .source
         .as_deref()
@@ -165,16 +165,16 @@ fn listing_context(
         .transpose()
         .map_err(|code| (code, StatusCode::BAD_REQUEST, "invalid source".to_owned()))?
         .unwrap_or_default();
-    let native_stream = lookup_stream(&state.journal_root, &did, &source).map_err(|_| {
+    let native_stream = lookup_stream(&state.journal_root, &cid, &source).map_err(|_| {
         (
             ReasonCode::JournalReadFailed,
             StatusCode::INTERNAL_SERVER_ERROR,
             "cannot resolve journal stream".to_owned(),
         )
     })?;
-    let observer = resolve_device_observer(&state.journal_root, &did).map_err(evidence_error)?;
+    let observer = resolve_device_observer(&state.journal_root, &cid).map_err(evidence_error)?;
     Ok(ListingContext {
-        did,
+        cid,
         observer,
         native_stream,
     })
@@ -182,14 +182,14 @@ fn listing_context(
 
 fn day_listing(
     state: &IngestState,
-    did: &str,
+    cid: &str,
     observer: Option<&ResolvedObserver>,
     native_stream: Option<&str>,
     day: &str,
 ) -> Result<DayListing, DayReadError> {
     let history =
         read_history_day(&state.journal_root, observer, day).map_err(DayReadError::Evidence)?;
-    let events = native_events(&state.journal_root, day, native_stream, did)
+    let events = native_events(&state.journal_root, day, native_stream, cid)
         .map_err(DayReadError::Listing)?;
     merge_day_listing(&state.journal_root, day, observer, history, events)
         .map_err(DayReadError::Listing)
@@ -330,13 +330,13 @@ fn admitted(
 #[cfg(test)]
 mod access_tests {
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
     use super::admitted;
     use crate::model::ReasonCode;
     use crate::validation::PROTOCOL_HEADER;
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     fn protocol_headers() -> HeaderMap {
@@ -350,9 +350,9 @@ mod access_tests {
         let headers = protocol_headers();
         let linked = AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
         };
-        assert_eq!(admitted(&linked, &headers), Ok(VALID_DID.to_owned()));
+        assert_eq!(admitted(&linked, &headers), Ok(VALID_CID.to_owned()));
 
         let refusal = admitted(
             &AccessBasis::PairingPeer {

@@ -23,13 +23,13 @@ mod tests {
     use axum::http::{HeaderMap, Request, StatusCode};
     use axum::routing::get;
     use serde_json::{Value, json};
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
     use solstone_core_sol_link::DeviceDoorAuthorization;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
     use tokio::sync::watch;
     use tower::ServiceExt;
 
-    const VALID_DID: &str =
+    const VALID_CID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     struct Journal(tempfile::TempDir);
@@ -78,12 +78,12 @@ mod tests {
             .expect("candidate writes");
         }
 
-        fn authorize(&self, did: &str) {
+        fn authorize(&self, cid: &str) {
             let directory = self.0.path().join("link");
             fs::create_dir_all(&directory).expect("link directory creates");
             fs::write(
                 directory.join("authorized_clients.json"),
-                serde_json::to_vec(&json!([{"fingerprint":did,"kind":"cert"}]))
+                serde_json::to_vec(&json!([{"fingerprint":cid,"kind":"cert"}]))
                     .expect("ledger serializes"),
             )
             .expect("ledger writes");
@@ -401,7 +401,7 @@ mod tests {
         );
 
         let authorized = Journal::established();
-        authorized.authorize(VALID_DID);
+        authorized.authorize(VALID_CID);
         let (_sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
@@ -410,14 +410,14 @@ mod tests {
             receiver,
         )
         .into_inner();
-        let did = LinkedDeviceDid::try_from(VALID_DID).expect("valid DID");
+        let cid = LinkedDeviceCid::try_from(VALID_CID).expect("valid CID");
         let (status, headers, body) = oneshot(
             app,
             "POST",
             "/app/entities/api/move",
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
-                did,
+                cid,
             },
             b"",
         )
@@ -436,14 +436,14 @@ mod tests {
         let app =
             crate::authorization_gate::authorized_router(revoked.0.path().to_path_buf(), receiver)
                 .into_inner();
-        let did = LinkedDeviceDid::try_from(VALID_DID).expect("valid DID");
+        let cid = LinkedDeviceCid::try_from(VALID_CID).expect("valid CID");
         let (status, _headers, body) = oneshot(
             app,
             "POST",
             "/app/entities/api/move",
             AccessBasis::LinkedDevice {
                 carrier: Carrier::Direct,
-                did,
+                cid,
             },
             b"",
         )

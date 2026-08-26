@@ -9,7 +9,7 @@ use rcgen::{
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use rustls::{ClientConfig, HandshakeKind, RootCertStore};
-use solstone_core_convey_http::identity::LinkedDeviceDid;
+use solstone_core_convey_http::identity::LinkedDeviceCid;
 use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use solstone_core_sol_link::test_support::{
     FIXED_CERTIFICATE_PEM, FIXED_CERTIFICATE_SHA256, TestCa,
@@ -22,7 +22,7 @@ use x509_parser::pem::parse_x509_pem;
 
 const REQUEST: &str = "GET /missing HTTP/1.1\r\nHost: door.test\r\nConnection: close\r\n\r\n";
 #[tokio::test]
-async fn concurrent_authorized_devices_observe_their_own_distinct_dids() {
+async fn concurrent_authorized_devices_observe_their_own_distinct_cids() {
     let temporary = TempDir::new();
     let fixture = Fixture::new();
     let first = issue_identity(&fixture.ca, ExtendedKeyUsagePurpose::ClientAuth);
@@ -44,11 +44,11 @@ async fn concurrent_authorized_devices_observe_their_own_distinct_dids() {
         ),
     );
 
-    let first_did = did_for(&first.certificate);
-    let second_did = did_for(&second.certificate);
-    assert_ne!(first_did, second_did);
-    assert_response_identity(&first_response.0, &first_did);
-    assert_response_identity(&second_response.0, &second_did);
+    let first_cid = cid_for(&first.certificate);
+    let second_cid = cid_for(&second.certificate);
+    assert_ne!(first_cid, second_cid);
+    assert_response_identity(&first_response.0, &first_cid);
+    assert_response_identity(&second_response.0, &second_cid);
     refresh.abort();
 }
 
@@ -56,23 +56,23 @@ async fn concurrent_authorized_devices_observe_their_own_distinct_dids() {
 async fn fixed_certificate_digest_is_the_cert_der_sha256_literal() {
     let (_, pem) = parse_x509_pem(FIXED_CERTIFICATE_PEM.as_bytes()).unwrap();
     let certificate = CertificateDer::from(pem.contents);
-    let did = did_for(&certificate);
+    let cid = cid_for(&certificate);
     let expected = format!("sha256:{FIXED_CERTIFICATE_SHA256}");
 
-    assert_eq!(did, expected);
+    assert_eq!(cid, expected);
     assert_eq!(
-        LinkedDeviceDid::try_from(did.as_str()).unwrap().as_str(),
+        LinkedDeviceCid::try_from(cid.as_str()).unwrap().as_str(),
         expected
     );
 }
 
 #[tokio::test]
-async fn request_data_cannot_replace_the_tls_derived_did() {
+async fn request_data_cannot_replace_the_tls_derived_cid() {
     let temporary = TempDir::new();
     let fixture = Fixture::new();
     let client = issue_identity(&fixture.ca, ExtendedKeyUsagePurpose::ClientAuth);
     let (acceptor, refresh) = fixture.acceptor(temporary.path(), &[&client]);
-    let expected = did_for(&client.certificate);
+    let expected = cid_for(&client.certificate);
     let alternate = format!("sha256:{}", "b".repeat(64));
     let requests = [
         format!(
@@ -108,7 +108,7 @@ async fn router_receives_one_complete_access_basis_identity() {
     let fixture = Fixture::new();
     let client = issue_identity(&fixture.ca, ExtendedKeyUsagePurpose::ClientAuth);
     let (acceptor, refresh) = fixture.acceptor(temporary.path(), &[&client]);
-    let expected = did_for(&client.certificate);
+    let expected = cid_for(&client.certificate);
 
     let response = request(
         acceptor,
@@ -128,7 +128,7 @@ async fn router_receives_one_complete_access_basis_identity() {
 }
 
 #[tokio::test]
-async fn resumed_tls_session_carries_the_original_connection_did() {
+async fn resumed_tls_session_carries_the_original_connection_cid() {
     let temporary = TempDir::new();
     let fixture = Fixture::new();
     let client = issue_identity(&fixture.ca, ExtendedKeyUsagePurpose::ClientAuth);
@@ -146,7 +146,7 @@ async fn resumed_tls_session_carries_the_original_connection_did() {
 
     assert_ne!(first.1, HandshakeKind::Resumed);
     assert_eq!(second.1, HandshakeKind::Resumed);
-    assert_eq!(response_did(&first.0), response_did(&second.0));
+    assert_eq!(response_cid(&first.0), response_cid(&second.0));
     refresh.abort();
 }
 
@@ -171,7 +171,7 @@ impl Fixture {
         for (index, client) in clients.iter().enumerate() {
             ledger
                 .add(ClientEntry::new(
-                    did_for(&client.certificate),
+                    cid_for(&client.certificate),
                     format!("device-{index}"),
                     "2026-01-01T00:00:00Z",
                     "instance",
@@ -247,18 +247,18 @@ async fn request(
     (String::from_utf8(bytes).unwrap(), handshake_kind)
 }
 
-fn did_for(certificate: &CertificateDer<'_>) -> String {
+fn cid_for(certificate: &CertificateDer<'_>) -> String {
     format!("sha256:{}", spl_core::ca::sha256_hex(certificate.as_ref()))
 }
 
-fn response_did(response: &str) -> String {
+fn response_cid(response: &str) -> String {
     let start = response.find("sha256:").unwrap();
     response[start..start + "sha256:".len() + 64].to_owned()
 }
 
 fn assert_response_identity(response: &str, expected: &str) {
-    assert!(response.contains("LinkedDevice { carrier: Direct, did: LinkedDeviceDid"));
-    assert_eq!(response_did(response), expected);
+    assert!(response.contains("LinkedDevice { carrier: Direct, cid: LinkedDeviceCid"));
+    assert_eq!(response_cid(response), expected);
 }
 
 struct TempDir {

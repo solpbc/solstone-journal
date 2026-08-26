@@ -179,7 +179,7 @@ impl Fixture {
                 .next()
                 .expect("client PEM")
                 .expect("client DER");
-            entries.push(serde_json::json!({"fingerprint": issued.did(), "device_label": format!("device {index}"), "paired_at": "2026-01-01T00:00:00Z", "instance_id": instance_id, "role": "", "kind": "cert"}));
+            entries.push(serde_json::json!({"fingerprint": issued.cid(), "device_label": format!("device {index}"), "paired_at": "2026-01-01T00:00:00Z", "instance_id": instance_id, "role": "", "kind": "cert"}));
             clients.push(Client {
                 certificate,
                 private_key: PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
@@ -258,14 +258,14 @@ impl Fixture {
     }
 
     pub fn remove_authorization(&self, index: usize) -> RemoveOutcome {
-        let did = format!(
+        let cid = format!(
             "sha256:{}",
             spl_core::ca::sha256_hex(self.client_der(index))
         );
         let mut attempts = 0;
         loop {
             let mut ledger = AuthorizationLedger::new(&self.root);
-            match ledger.remove(&did) {
+            match ledger.remove(&cid) {
                 Ok(outcome) => return outcome,
                 Err(AuthorizedClientsMutationError::Lock(_)) if attempts < 5 => {
                     attempts += 1;

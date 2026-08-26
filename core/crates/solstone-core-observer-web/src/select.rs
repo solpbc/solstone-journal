@@ -18,7 +18,7 @@ const ITEM_FILE: &str = "item.json";
 pub(crate) struct Selected {
     pub target: Target,
     pub mixed: bool,
-    pub did: String,
+    pub cid: String,
 }
 
 pub(crate) struct LocationScan {
@@ -65,7 +65,7 @@ fn device_json_fingerprint(value: &Value) -> Option<&str> {
         })
 }
 
-fn segment_did(path: &Path) -> String {
+fn segment_cid(path: &Path) -> String {
     let Ok(bytes) = fs::read(path.join("device.json")) else {
         return "unknown".to_owned();
     };
@@ -119,7 +119,7 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
                     dir,
                 },
                 mixed: segment_is_mixed(&entries),
-                did: segment_did(segment.path()),
+                cid: segment_cid(segment.path()),
             });
         }
     }

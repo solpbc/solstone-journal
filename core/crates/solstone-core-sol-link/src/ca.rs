@@ -56,7 +56,7 @@ pub struct IssuedClientCertificate {
     #[cfg(test)]
     certificate: Certificate,
     pem: String,
-    did: String,
+    cid: String,
 }
 
 /// A freshly minted server certificate signed by the committed local CA.
@@ -80,8 +80,8 @@ impl IssuedClientCertificate {
         &self.pem
     }
 
-    pub fn did(&self) -> &str {
-        &self.did
+    pub fn cid(&self) -> &str {
+        &self.cid
     }
 
     #[cfg(test)]
@@ -176,7 +176,7 @@ pub fn sign_csr(
     sanitize_client_certificate_params(&mut csr.params, device_label, OffsetDateTime::now_utc())?;
     let certificate = csr.signed_by(&ca.certificate, &ca.key)?;
     let pem = certificate.pem();
-    let did = format!(
+    let cid = format!(
         "sha256:{}",
         spl_core::ca::sha256_hex(certificate.der().as_ref())
     );
@@ -184,7 +184,7 @@ pub fn sign_csr(
         #[cfg(test)]
         certificate,
         pem,
-        did,
+        cid,
     })
 }
 
@@ -475,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn signing_same_csr_mints_distinct_dids() {
+    fn signing_same_csr_mints_distinct_cids() {
         let ca = generate_ca().unwrap();
         let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let csr_pem = CertificateParams::default()
@@ -487,9 +487,9 @@ mod tests {
         let first = sign_csr(&ca, &csr_pem, "phone").unwrap();
         let second = sign_csr(&ca, &csr_pem, "phone").unwrap();
 
-        assert_ne!(first.did(), second.did());
-        assert!(first.did().starts_with("sha256:"));
-        assert_eq!(first.did().len(), 71);
+        assert_ne!(first.cid(), second.cid());
+        assert!(first.cid().starts_with("sha256:"));
+        assert_eq!(first.cid().len(), 71);
     }
 
     fn decode_hex(value: &str) -> Vec<u8> {

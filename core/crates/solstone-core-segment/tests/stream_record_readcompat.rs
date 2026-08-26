@@ -39,7 +39,7 @@ impl Drop for TempDir {
 #[test]
 /// Legacy records remain deserializable, while native records demonstrate the
 /// resolver's `created_at`-preserving monotonic advance. The public resolver
-/// intentionally cannot advance a legacy record without a `did`, because that
+/// intentionally cannot advance a legacy record without a `cid`, because that
 /// would adopt an unattributed stream.
 fn python_stream_record_fixture_loads_and_advances_monotonically() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -85,7 +85,7 @@ fn python_stream_record_fixture_loads_and_advances_monotonically() {
         parsed
             .iter()
             .filter(|record| record.name != "iphone")
-            .all(|record| record.did.is_none() && record.source.is_none())
+            .all(|record| record.cid.is_none() && record.source.is_none())
     );
 
     let iphone = parsed
@@ -98,7 +98,7 @@ fn python_stream_record_fixture_loads_and_advances_monotonically() {
     assert_eq!(iphone.created_at, 1_785_891_124);
     assert_eq!(iphone.seq, 2);
     assert_eq!(
-        iphone.did.as_deref(),
+        iphone.cid.as_deref(),
         Some("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
     );
     assert!(iphone.source.is_none());

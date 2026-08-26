@@ -13,7 +13,7 @@ use solstone_core_journal_io::{
     path_lexists, read_json, remove_file, write_bytes_exclusive, write_json,
 };
 
-use crate::device::validate_did;
+use crate::device::validate_cid;
 use crate::projection::name_with_ordinal;
 use crate::{Kind, SegmentDir, SegmentError, is_safe_stream_component, project_stream_name};
 
@@ -37,7 +37,7 @@ pub struct StreamRecord {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub did: Option<String>,
+    pub cid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 }
@@ -98,7 +98,7 @@ pub struct ResolvedStream {
     pub advance: StreamAdvance,
 }
 
-/// A (did, source)-bound stream identity, not yet advanced.
+/// A (cid, source)-bound stream identity, not yet advanced.
 ///
 /// Produced by `bind_stream` or `bind_named_stream`, which resolve identity
 /// but perform no chain mutation. This lets a caller search several
@@ -121,7 +121,7 @@ struct StreamMarker {
 
 #[derive(Clone, Copy)]
 struct StreamBinding<'a> {
-    did: &'a str,
+    cid: &'a str,
     source: &'a str,
 }
 
@@ -133,13 +133,13 @@ pub fn bind_stream(
     day: &str,
     segment: &str,
     label: &str,
-    did: &str,
+    cid: &str,
     source: &str,
     hints: &StreamHints,
 ) -> Result<BoundStream, SegmentError> {
-    validate_did(did)?;
+    validate_cid(cid)?;
     let _ = SegmentDir::resolve(journal, day, segment, DEFAULT_STREAM)?;
-    let binding = StreamBinding { did, source };
+    let binding = StreamBinding { cid, source };
     loop {
         let name = {
             let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
@@ -175,17 +175,17 @@ pub fn bind_named_stream(
     day: &str,
     segment: &str,
     name: &str,
-    did: &str,
+    cid: &str,
     source: &str,
     hints: &StreamHints,
 ) -> Result<BoundStream, SegmentError> {
-    validate_did(did)?;
+    validate_cid(cid)?;
     if !is_safe_stream_component(name) {
         return Err(SegmentError::StreamInput(
             "stream must be a plain path component",
         ));
     }
-    let binding = StreamBinding { did, source };
+    let binding = StreamBinding { cid, source };
     let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
     let _registry_lock = hold_lock(registry_target, LockOptions::default())?;
     let state_path = stream_record_path(journal, name);
@@ -203,7 +203,7 @@ pub fn bind_named_stream(
     match read_typed_stream_record(&state_path)? {
         Some(record) if is_unattributed(&record) => {
             let mut attributed = record;
-            attributed.did = Some(binding.did.to_owned());
+            attributed.cid = Some(binding.cid.to_owned());
             attributed.source = Some(binding.source.to_owned());
             write_stream_record(&state_path, &attributed)?;
         }
@@ -228,7 +228,7 @@ pub fn bind_named_stream(
                         Some(record) if binding_matches(&record, binding) => {}
                         Some(record) if is_unattributed(&record) => {
                             let mut attributed = record;
-                            attributed.did = Some(binding.did.to_owned());
+                            attributed.cid = Some(binding.cid.to_owned());
                             attributed.source = Some(binding.source.to_owned());
                             write_stream_record(&state_path, &attributed)?;
                         }
@@ -264,7 +264,7 @@ pub fn bind_named_stream(
 /// a different segment key. Re-resolve `SegmentDir` for the landed key with
 /// the SAME bound `stream` name before calling this; never invent a name.
 ///
-/// This re-verifies the (did, source) binding under a freshly acquired lock,
+/// This re-verifies the (cid, source) binding under a freshly acquired lock,
 /// as close to the mutation as possible, so a hijack in the window between
 /// `bind_stream` and this call is still caught rather than silently adopted.
 pub fn advance_bound_stream(
@@ -273,21 +273,21 @@ pub fn advance_bound_stream(
     segment: &str,
     segment_dir: &SegmentDir,
     hints: StreamHints,
-    did: &str,
+    cid: &str,
     source: &str,
 ) -> Result<StreamAdvance, SegmentError> {
-    validate_did(did)?;
+    validate_cid(cid)?;
     advance_stream(
         stream,
         day,
         segment,
         segment_dir,
         hints,
-        StreamBinding { did, source },
+        StreamBinding { cid, source },
     )
 }
 
-/// Advance a stream that has no `(did, source)` binding, then write its marker.
+/// Advance a stream that has no `(cid, source)` binding, then write its marker.
 ///
 /// Import-created streams predate device identity and deliberately retain that
 /// unbound record shape. The state write and marker write share one record lock;
@@ -484,23 +484,23 @@ fn find_unbound_predecessor(
     ))
 }
 
-/// Look up the stream currently bound to `(did, source)`, if any content has
+/// Look up the stream currently bound to `(cid, source)`, if any content has
 /// ever been written for it. Read-only: never allocates, reserves, or writes.
 pub fn lookup_stream(
     journal: &Path,
-    did: &str,
+    cid: &str,
     source: &str,
 ) -> Result<Option<String>, SegmentError> {
-    validate_did(did)?;
+    validate_cid(cid)?;
     let records = read_registry_records(journal)?;
-    let binding = StreamBinding { did, source };
+    let binding = StreamBinding { cid, source };
     Ok(records
         .iter()
         .find(|(_, record)| binding_matches(record, binding))
         .map(|(name, _)| name.clone()))
 }
 
-/// Whether any stream record is missing a complete `(did, source)` binding.
+/// Whether any stream record is missing a complete `(cid, source)` binding.
 pub fn has_unattributed_stream_record(journal: &Path) -> Result<bool, SegmentError> {
     Ok(read_registry_records(journal)?
         .values()
@@ -513,19 +513,19 @@ pub fn resolve_stream(
     day: &str,
     segment: &str,
     label: &str,
-    did: &str,
+    cid: &str,
     source: &str,
     hints: StreamHints,
 ) -> Result<ResolvedStream, SegmentError> {
     loop {
-        let bound = bind_stream(journal, day, segment, label, did, source, &hints)?;
+        let bound = bind_stream(journal, day, segment, label, cid, source, &hints)?;
         match advance_bound_stream(
             &bound.stream,
             day,
             segment,
             &bound.segment,
             hints.clone(),
-            did,
+            cid,
             source,
         ) {
             Ok(advance) => {
@@ -762,7 +762,7 @@ fn reservation_record(
         last_day: None,
         last_segment: None,
         seq: 0,
-        did: Some(binding.did.to_owned()),
+        cid: Some(binding.cid.to_owned()),
         source: Some(binding.source.to_owned()),
     })
 }
@@ -785,7 +785,7 @@ fn unbound_reservation_record(
         last_day: None,
         last_segment: None,
         seq: 0,
-        did: None,
+        cid: None,
         source: None,
     })
 }
@@ -898,11 +898,11 @@ fn update_unbound_record(
 }
 
 fn binding_matches(record: &StreamRecord, binding: StreamBinding<'_>) -> bool {
-    record.did.as_deref() == Some(binding.did) && record.source.as_deref() == Some(binding.source)
+    record.cid.as_deref() == Some(binding.cid) && record.source.as_deref() == Some(binding.source)
 }
 
 fn is_unattributed(record: &StreamRecord) -> bool {
-    record.did.is_none() || record.source.is_none()
+    record.cid.is_none() || record.source.is_none()
 }
 
 fn now_unix_seconds() -> Result<u64, SegmentError> {
@@ -929,11 +929,11 @@ mod tests {
 
     use super::*;
 
-    const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const DID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    const DID_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-    const DID_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
-    const DID_E: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const CID_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const CID_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    const CID_E: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     fn hints() -> StreamHints {
         StreamHints {
@@ -945,7 +945,7 @@ mod tests {
 
     fn record(
         name: &str,
-        did: Option<&str>,
+        cid: Option<&str>,
         source: Option<&str>,
         seq: u64,
         created_at: u64,
@@ -959,7 +959,7 @@ mod tests {
             last_day: None,
             last_segment: None,
             seq,
-            did: did.map(str::to_owned),
+            cid: cid.map(str::to_owned),
             source: source.map(str::to_owned),
         }
     }
@@ -990,7 +990,7 @@ mod tests {
             &segment,
             hints(),
             StreamBinding {
-                did: DID_A,
+                cid: CID_A,
                 source: "",
             },
         );
@@ -1045,7 +1045,7 @@ mod tests {
         assert_eq!(state.seq, 3);
         assert_eq!(state.last_day.as_deref(), Some("20260804"));
         assert_eq!(state.last_segment.as_deref(), Some("120200_60"));
-        assert!(state.did.is_none());
+        assert!(state.cid.is_none());
         assert!(state.source.is_none());
     }
 
@@ -1289,7 +1289,7 @@ mod tests {
                 &segment,
                 hints(),
                 StreamBinding {
-                    did: DID_A,
+                    cid: CID_A,
                     source: ""
                 },
             ),
@@ -1307,7 +1307,7 @@ mod tests {
                 "20260804",
                 "120000_60",
                 "workstation",
-                DID_A,
+                CID_A,
                 "",
                 hints(),
             )
@@ -1332,7 +1332,7 @@ mod tests {
                 &segment,
                 hints(),
                 StreamBinding {
-                    did: DID_A,
+                    cid: CID_A,
                     source: ""
                 },
             )
@@ -1347,9 +1347,9 @@ mod tests {
     #[test]
     fn bound_records_still_serialize_binding_fields() {
         let bytes =
-            serde_json::to_vec(&record("workstation", Some(DID_A), Some("camera"), 1, 7)).unwrap();
+            serde_json::to_vec(&record("workstation", Some(CID_A), Some("camera"), 1, 7)).unwrap();
         let value: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value["cid"], DID_A);
+        assert_eq!(value["cid"], CID_A);
         assert_eq!(value["source"], "camera");
     }
 
@@ -1362,7 +1362,7 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             hints(),
         )
@@ -1377,14 +1377,14 @@ mod tests {
 
         write_record(
             temporary.path(),
-            &record("my_phone", Some(DID_A), Some(""), 1, 9),
+            &record("my_phone", Some(CID_A), Some(""), 1, 9),
         );
         let other = resolve_stream(
             temporary.path(),
             "20260804",
             "120100_60",
             "my.phone",
-            DID_B,
+            CID_B,
             "",
             hints(),
         )
@@ -1406,7 +1406,7 @@ mod tests {
             "20260804",
             "120000_60",
             "my.phone",
-            DID_A,
+            CID_A,
             "",
             hints(),
         )
@@ -1416,7 +1416,7 @@ mod tests {
             "20260804",
             "120100_60",
             "my_phone",
-            DID_B,
+            CID_B,
             "",
             hints(),
         )
@@ -1431,7 +1431,7 @@ mod tests {
             "20260804",
             "120200_60",
             "iPhone",
-            DID_C,
+            CID_C,
             "",
             hints(),
         )
@@ -1441,7 +1441,7 @@ mod tests {
             "20260804",
             "120300_60",
             "iPhone",
-            DID_D,
+            CID_D,
             "",
             hints(),
         )
@@ -1451,7 +1451,7 @@ mod tests {
             "20260804",
             "120400_60",
             "iPhone (2)",
-            DID_E,
+            CID_E,
             "",
             hints(),
         )
@@ -1476,7 +1476,7 @@ mod tests {
                 "20260804",
                 "120000_60",
                 "iPhone",
-                DID_A,
+                CID_A,
                 "",
                 &hints(),
             )
@@ -1489,7 +1489,7 @@ mod tests {
                 "120000_60",
                 &bound.segment,
                 hints(),
-                DID_A,
+                CID_A,
                 "",
             ) {
                 Err(crate::SegmentError::StreamBindingConflict { .. }) => {}
@@ -1500,7 +1500,7 @@ mod tests {
                 "20260804",
                 "120000_60",
                 "iPhone",
-                DID_A,
+                CID_A,
                 "",
                 &hints(),
             )
@@ -1511,7 +1511,7 @@ mod tests {
                 "120000_60",
                 &rebound.segment,
                 hints(),
-                DID_A,
+                CID_A,
                 "",
             )
             .unwrap();
@@ -1535,7 +1535,7 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             hints(),
         )
@@ -1551,7 +1551,7 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1565,14 +1565,14 @@ mod tests {
         assert_eq!(record.last_day, None);
         assert_eq!(record.last_segment, None);
 
-        // A second bind for the same (did, source) is idempotent and still
+        // A second bind for the same (cid, source) is idempotent and still
         // does not advance.
         let rebound = bind_stream(
             temporary.path(),
             "20260804",
             "120100_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1593,7 +1593,7 @@ mod tests {
             "20260804",
             "120000_1",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1609,7 +1609,7 @@ mod tests {
             "120000_2",
             &landed,
             hints(),
-            DID_A,
+            CID_A,
             "",
         )
         .unwrap();
@@ -1639,7 +1639,7 @@ mod tests {
     fn lookup_stream_is_read_only_and_finds_nothing_before_a_bind() {
         let temporary = TempDir::new();
         assert_eq!(
-            lookup_stream(temporary.path(), DID_A, "").unwrap(),
+            lookup_stream(temporary.path(), CID_A, "").unwrap(),
             None,
             "lookup must not allocate"
         );
@@ -1650,20 +1650,20 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
         .unwrap();
         assert_eq!(
-            lookup_stream(temporary.path(), DID_A, "").unwrap(),
+            lookup_stream(temporary.path(), CID_A, "").unwrap(),
             Some(bound.stream)
         );
         assert_eq!(
-            lookup_stream(temporary.path(), DID_A, "watch").unwrap(),
+            lookup_stream(temporary.path(), CID_A, "watch").unwrap(),
             None
         );
-        assert_eq!(lookup_stream(temporary.path(), DID_B, "").unwrap(), None);
+        assert_eq!(lookup_stream(temporary.path(), CID_B, "").unwrap(), None);
     }
 
     #[test]
@@ -1675,7 +1675,7 @@ mod tests {
         )
         .unwrap();
         let binding = StreamBinding {
-            did: DID_A,
+            cid: CID_A,
             source: "",
         };
         let registered =
@@ -1687,7 +1687,7 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             hints(),
         )
@@ -1706,14 +1706,14 @@ mod tests {
         .unwrap();
         write_record(
             temporary.path(),
-            &record("iphone", Some(DID_B), Some(""), 1, 1),
+            &record("iphone", Some(CID_B), Some(""), 1, 1),
         );
         let allocated = allocate(
             &registry,
             temporary.path(),
             "iPhone",
             StreamBinding {
-                did: DID_A,
+                cid: CID_A,
                 source: "",
             },
             &hints(),
@@ -1732,7 +1732,7 @@ mod tests {
         .unwrap();
         write_record(
             temporary.path(),
-            &record("iphone", Some(DID_B), Some(""), 1, 1),
+            &record("iphone", Some(CID_B), Some(""), 1, 1),
         );
 
         let allocated = allocate(
@@ -1740,7 +1740,7 @@ mod tests {
             temporary.path(),
             "iPhone",
             StreamBinding {
-                did: DID_A,
+                cid: CID_A,
                 source: "",
             },
             &hints(),
@@ -1758,7 +1758,7 @@ mod tests {
             "20260804",
             "120000_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "WATCH",
             hints(),
         )
@@ -1768,7 +1768,7 @@ mod tests {
             "20260804",
             "120100_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "watch",
             hints(),
         )
@@ -1778,7 +1778,7 @@ mod tests {
             "20260804",
             "120200_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "WATCH",
             hints(),
         )
@@ -1788,7 +1788,7 @@ mod tests {
             "20260804",
             "120300_60",
             "iPhone",
-            DID_A,
+            CID_A,
             "",
             hints(),
         )
@@ -1861,7 +1861,7 @@ mod tests {
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1872,7 +1872,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(created.seq, 0);
-        assert_eq!(created.did.as_deref(), Some(DID_A));
+        assert_eq!(created.cid.as_deref(), Some(CID_A));
         assert_eq!(created.source.as_deref(), Some(""));
         assert!(!stream_record_path(temporary.path(), "desk_2").exists());
         assert!(!stream_record_path(temporary.path(), "device").exists());
@@ -1891,7 +1891,7 @@ mod tests {
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1906,7 +1906,7 @@ mod tests {
         assert_eq!(adopted.last_day.as_deref(), Some("20260801"));
         assert_eq!(adopted.last_segment.as_deref(), Some("090000_1"));
         assert_eq!(adopted.kind, "observer");
-        assert_eq!(adopted.did.as_deref(), Some(DID_A));
+        assert_eq!(adopted.cid.as_deref(), Some(CID_A));
         assert_eq!(adopted.source.as_deref(), Some(""));
         assert!(!stream_record_path(temporary.path(), "desk_2").exists());
     }
@@ -1916,7 +1916,7 @@ mod tests {
         let temporary = TempDir::new();
         write_record(
             temporary.path(),
-            &record("desk", Some(DID_A), Some(""), 3, 9),
+            &record("desk", Some(CID_A), Some(""), 3, 9),
         );
         let before = fs::read(stream_record_path(temporary.path(), "desk")).unwrap();
         let bound = bind_named_stream(
@@ -1924,7 +1924,7 @@ mod tests {
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1941,7 +1941,7 @@ mod tests {
         let temporary = TempDir::new();
         write_record(
             temporary.path(),
-            &record("desk", Some(DID_B), Some(""), 3, 9),
+            &record("desk", Some(CID_B), Some(""), 3, 9),
         );
         let before = fs::read(stream_record_path(temporary.path(), "desk")).unwrap();
         let error = bind_named_stream(
@@ -1949,7 +1949,7 @@ mod tests {
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -1981,7 +1981,7 @@ mod tests {
                 "last_day": null,
                 "last_segment": null,
                 "seq": 3,
-                "did": DID_B,
+                "did": CID_B,
                 "source": "",
             }))
             .unwrap(),
@@ -1993,7 +1993,7 @@ mod tests {
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -2011,14 +2011,14 @@ mod tests {
         let temporary = TempDir::new();
         write_record(
             temporary.path(),
-            &record("device", Some(DID_A), Some(""), 1, 5),
+            &record("device", Some(CID_A), Some(""), 1, 5),
         );
         let bound = bind_named_stream(
             temporary.path(),
             "20260804",
             "120000_60",
             "desk",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -2035,7 +2035,7 @@ mod tests {
             "20260804",
             "120000_60",
             "Uppercase",
-            DID_A,
+            CID_A,
             "",
             &hints(),
         )
@@ -2053,7 +2053,7 @@ mod tests {
         assert!(!has_unattributed_stream_record(temporary.path()).unwrap());
         write_record(
             temporary.path(),
-            &record("device", Some(DID_A), Some(""), 1, 1),
+            &record("device", Some(CID_A), Some(""), 1, 1),
         );
         assert!(!has_unattributed_stream_record(temporary.path()).unwrap());
         write_record(temporary.path(), &record("desk", None, None, 2, 2));
@@ -2065,7 +2065,7 @@ mod tests {
         let temporary = TempDir::new();
         write_record(
             temporary.path(),
-            &record("location", Some(DID_A), Some(""), 1, 1),
+            &record("location", Some(CID_A), Some(""), 1, 1),
         );
         let path = stream_record_path(temporary.path(), "location");
         assert!(path.is_file());

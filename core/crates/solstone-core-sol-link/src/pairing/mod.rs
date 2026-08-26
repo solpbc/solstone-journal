@@ -444,7 +444,7 @@ pub fn complete_pairing(
         .map_err(|_| PairingError::Clock)?;
     let mut ledger = AuthorizationLedger::new(journal_root);
     let mut ledger_entry = ClientEntry::new(
-        issued.did(),
+        issued.cid(),
         &ceremony.request.device_label,
         paired_at,
         identity.instance_id(),
@@ -455,7 +455,7 @@ pub fn complete_pairing(
     }
     ledger.add(ledger_entry).map_err(PairingError::Ledger)?;
     let attestation =
-        mint_home_attestation(identity.ca(), identity.instance_id(), issued.did(), now)
+        mint_home_attestation(identity.ca(), identity.instance_id(), issued.cid(), now)
             .map_err(PairingError::Attestation)?;
     Ok(spl_core::PairResponse {
         client_cert: issued.pem().to_owned(),
@@ -465,7 +465,7 @@ pub fn complete_pairing(
         ],
         instance_id: identity.instance_id().to_owned(),
         home_label: identity.home_label().to_owned(),
-        fingerprint: issued.did().to_owned(),
+        fingerprint: issued.cid().to_owned(),
         home_attestation: Some(attestation),
         local_endpoints: ceremony.local_endpoints,
     })

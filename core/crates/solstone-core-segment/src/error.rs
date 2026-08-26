@@ -46,7 +46,7 @@ pub enum SegmentError {
     },
     StreamInput(&'static str),
     RecordIdentity(SegmentIdentityError),
-    InvalidDeviceDid(&'static str),
+    InvalidDeviceCid(&'static str),
     InvalidDeviceJid(&'static str),
     StreamBindingConflict {
         name: String,
@@ -96,7 +96,7 @@ impl fmt::Display for SegmentError {
             }
             Self::StreamInput(message) => formatter.write_str(message),
             Self::RecordIdentity(error) => error.fmt(formatter),
-            Self::InvalidDeviceDid(reason) => write!(formatter, "invalid device did: {reason}"),
+            Self::InvalidDeviceCid(reason) => write!(formatter, "invalid device cid: {reason}"),
             Self::InvalidDeviceJid(reason) => write!(formatter, "invalid device jid: {reason}"),
             Self::StreamBindingConflict { name } => {
                 write!(formatter, "stream record binding changed for {name}")
@@ -126,7 +126,7 @@ impl Error for SegmentError {
             | Self::IdentityRefusal { .. }
             | Self::Tombstoned { .. }
             | Self::StreamInput(_)
-            | Self::InvalidDeviceDid(_)
+            | Self::InvalidDeviceCid(_)
             | Self::InvalidDeviceJid(_)
             | Self::StreamBindingConflict { .. } => None,
         }

@@ -193,7 +193,7 @@ pub fn remove_segments(
     targets: &[Target],
     deleted_at: &str,
     reason: RemovalReason,
-    did: &str,
+    cid: &str,
 ) -> Outcome {
     let mut outcome = Outcome {
         targets: Vec::new(),
@@ -205,7 +205,7 @@ pub fn remove_segments(
             continue;
         }
         seen.push(target);
-        let (mut row, mutated) = remove_one(journal, target, deleted_at, reason, did);
+        let (mut row, mutated) = remove_one(journal, target, deleted_at, reason, cid);
         if mutated {
             dirty_removed_day(journal, &mut row);
         }
@@ -387,7 +387,7 @@ fn remove_one(
     target: &Target,
     deleted_at: &str,
     reason: RemovalReason,
-    did: &str,
+    cid: &str,
 ) -> (TargetOutcome, bool) {
     let live = segment_rel(target);
     let staged = format!("{}/{}", parent_rel(target), staged_name(&target.dir));
@@ -487,7 +487,7 @@ fn remove_one(
     }
 
     (
-        finish_staged(journal, target, &staged, deleted_at, reason, did),
+        finish_staged(journal, target, &staged, deleted_at, reason, cid),
         true,
     )
 }
@@ -516,7 +516,7 @@ fn finish_staged(
     staged: &str,
     deleted_at: &str,
     reason: RemovalReason,
-    did: &str,
+    cid: &str,
 ) -> TargetOutcome {
     let live = segment_rel(target);
 
@@ -545,7 +545,7 @@ fn finish_staged(
     if !matches!(path_lexists(&tombstone_path), Ok(true)) {
         let body = TombstoneBody {
             deleted_at: deleted_at.to_owned(),
-            did: did.to_owned(),
+            cid: cid.to_owned(),
             reason,
             manifest: manifest.clone(),
         };
@@ -660,7 +660,7 @@ fn finish_staged(
 /// requested, so a pass that acted on one would remove segments nobody asked about
 /// — including any segment where a *raw release* was merely interrupted, which by
 /// definition must keep its derived output.
-pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, did: &str) -> Outcome {
+pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, cid: &str) -> Outcome {
     let mut outcome = Outcome {
         targets: Vec::new(),
         halted: None,
@@ -703,7 +703,7 @@ pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, did: &st
                 let Ok(_lock) = hold_lock(journal.join(&live), LockOptions::default()) else {
                     continue;
                 };
-                let mut row = finish_staged(journal, &target, &staged, deleted_at, reason, did);
+                let mut row = finish_staged(journal, &target, &staged, deleted_at, reason, cid);
                 dirty_removed_day(journal, &mut row);
                 outcome.targets.push(row);
             }
