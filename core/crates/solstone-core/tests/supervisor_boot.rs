@@ -3,11 +3,12 @@
 
 #![cfg(unix)]
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Read;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -28,7 +29,11 @@ use solstone_core_system::process::{
     InstanceCensus, InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
 };
 
+#[path = "support/hostile_binary.rs"]
+mod hostile_binary;
+
 use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
+use hostile_binary::{copied_binary, hostile_binary};
 
 struct TempJournal(PathBuf);
 
@@ -59,6 +64,46 @@ impl Drop for TempJournal {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+const RECOVERY_HEADER: &str = "this installation couldn't be verified.";
+const RECOVERY_SETUP: &str =
+    "run `journal setup` to check it. if setup finishes successfully, try again.";
+const TRUNCATION_MARKER: &str = "…[truncated]";
+
+fn supervisor_output(binary: &Path, journal: &OsStr, home: Option<&Path>) -> Output {
+    let mut command = Command::new(binary);
+    command
+        .args(["supervisor", "--journal"])
+        .arg(journal)
+        .stdin(Stdio::null())
+        .env_remove("SOLSTONE_JOURNAL");
+    if let Some(home) = home {
+        command.env("HOME", home);
+    } else {
+        command.env_remove("HOME");
+    }
+    command.output().expect("supervisor process runs")
+}
+
+fn recovery_details(stderr: &[u8]) -> String {
+    let rendered = std::str::from_utf8(stderr).expect("recovery stderr is UTF-8");
+    assert!(
+        rendered.ends_with('\n'),
+        "recovery stderr has one final newline"
+    );
+    let lines: Vec<_> = rendered
+        .strip_suffix('\n')
+        .expect("final newline")
+        .split('\n')
+        .collect();
+    assert_eq!(lines.len(), 3, "recovery has exactly three lines");
+    assert_eq!(lines[0], RECOVERY_HEADER);
+    assert_eq!(lines[1], RECOVERY_SETUP);
+    lines[2]
+        .strip_prefix("details: ")
+        .expect("recovery has details line")
+        .to_owned()
 }
 
 fn start(journal: &TempJournal) -> SupervisorGuard {
@@ -747,19 +792,27 @@ fn ac9_give_up_is_service_local_and_does_not_end_the_supervisor() {
 #[test]
 fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
     let unbound_journal = TempJournal::new();
-    let unbound_home = unbound_journal.0.join("unbound-home");
-    fs::create_dir_all(&unbound_home).expect("unbound home");
+    let unbound_home = super::installation_binding::admit_for(&unbound_journal.0);
+    let record = super::installation_binding::admitted_record_path(&unbound_home);
+    let marker = record
+        .parent()
+        .expect("record namespace")
+        .join("adoption.marker");
+    fs::remove_file(record).expect("remove admitted record");
+    fs::remove_file(marker).expect("remove admitted marker");
     let (mut unbound, _, unbound_outcome, unbound_nonce) =
         start_hosted_with_home(&unbound_journal, unbound_home);
     let unbound_outcome = wait_for_outcome(&unbound_outcome, &unbound_nonce);
-    assert!(matches!(
-        unbound_outcome,
+    let detail = match unbound_outcome {
         SupervisorHostOutcome::Refused {
-            reason: SupervisorBootRefusal::InstallationBinding(
-                InstallationBindingRefusal::LoadFailed
-            )
-        }
-    ));
+            reason:
+                SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+                    detail,
+                )),
+        } => detail,
+        outcome => panic!("expected installation binding refusal, got {outcome:?}"),
+    };
+    assert_eq!(detail, "saved binding: namespace record is missing");
     assert!(!unbound_journal.0.join("health/supervisor.pid").exists());
     assert!(!unbound_journal.0.join("health/supervisor.ready").exists());
     assert!(!unbound.wait().expect("unbound launcher wait").success());
@@ -781,6 +834,168 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
     assert!(!conflict_journal.0.join("health/supervisor.pid").exists());
     assert!(!conflict_journal.0.join("health/supervisor.ready").exists());
     assert!(!conflict.wait().expect("conflict launcher wait").success());
+}
+
+#[test]
+fn supervisor_installation_recovery_preserves_real_provider_causes() {
+    let journal = TempJournal::new();
+
+    let missing_home = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal.0.as_os_str(),
+        None,
+    );
+    assert_eq!(missing_home.status.code(), Some(75));
+    assert!(missing_home.stdout.is_empty());
+    assert_eq!(
+        recovery_details(&missing_home.stderr),
+        "home: HOME is not set"
+    );
+
+    let relative_home = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal.0.as_os_str(),
+        Some(Path::new("relative-home")),
+    );
+    assert_eq!(relative_home.status.code(), Some(75));
+    assert!(relative_home.stdout.is_empty());
+    assert_eq!(
+        recovery_details(&relative_home.stderr),
+        "owner storage: home must be absolute"
+    );
+
+    let home = super::installation_binding::admit_for(&journal.0);
+    super::installation_binding::corrupt_admitted_record_checksum(&home);
+    let checksum_mismatch = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal.0.as_os_str(),
+        Some(&home),
+    );
+    assert_eq!(checksum_mismatch.status.code(), Some(75));
+    assert!(checksum_mismatch.stdout.is_empty());
+    assert_eq!(
+        checksum_mismatch.stderr,
+        b"this installation couldn't be verified.\n\
+run `journal setup` to check it. if setup finishes successfully, try again.\n\
+details: saved binding: identity record checksum mismatch\n"
+    );
+
+    let journal_for_tokens = TempJournal::new();
+    let token_home = super::installation_binding::admit_for(&journal_for_tokens.0);
+    let relative_journal = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        OsStr::new("relative-journal"),
+        Some(&token_home),
+    );
+    assert_eq!(relative_journal.status.code(), Some(75));
+    assert_eq!(
+        recovery_details(&relative_journal.stderr),
+        "journal token: path must be absolute and NUL-free"
+    );
+    let overlong_journal = OsString::from(format!("/{}", "a".repeat(4096)));
+    let overlong = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        overlong_journal.as_os_str(),
+        Some(&token_home),
+    );
+    assert_eq!(overlong.status.code(), Some(75));
+    assert_eq!(
+        recovery_details(&overlong.stderr),
+        "journal token: path exceeds 4096 bytes"
+    );
+
+    let different_journal = TempJournal::new();
+    let mismatch = supervisor_output(
+        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        different_journal.0.as_os_str(),
+        Some(&token_home),
+    );
+    assert_eq!(mismatch.status.code(), Some(75));
+    assert_eq!(
+        recovery_details(&mismatch.stderr),
+        "the saved installation binding is for a different journal"
+    );
+}
+
+#[test]
+fn supervisor_installation_recovery_sanitizes_hostile_executable_paths() {
+    let temporary = tempfile::Builder::new()
+        .prefix("solstone-unmarked-executable-")
+        .tempdir_in("/var/tmp")
+        .expect("isolated marker-miss binary root");
+    let binary = copied_binary(&temporary.path().join("bin"));
+    let journal = TempJournal::new();
+    let home = tempfile::Builder::new()
+        .prefix("solstone-marker-miss-home-")
+        .tempdir_in("/var/tmp")
+        .expect("absolute marker-miss home");
+    let marker_miss = supervisor_output(&binary, journal.0.as_os_str(), Some(home.path()));
+    assert_eq!(marker_miss.status.code(), Some(75));
+    assert_eq!(
+        recovery_details(&marker_miss.stderr),
+        format!(
+            "installation root: could not resolve installation identity root from {}",
+            binary.parent().expect("binary parent").display()
+        )
+    );
+
+    let cases = [
+        ("newline-control", "newline-\n-\x1b"),
+        ("backslash", "backslash-\\-component"),
+    ];
+    for (name, component) in cases {
+        let (_temporary, binary) = hostile_binary(component);
+        let journal = TempJournal::new();
+        let home = tempfile::Builder::new()
+            .prefix("solstone-hostile-home-")
+            .tempdir_in("/var/tmp")
+            .expect("absolute hostile home");
+        let output = supervisor_output(&binary, journal.0.as_os_str(), Some(home.path()));
+        assert_eq!(output.status.code(), Some(75), "{name}");
+        assert!(output.stdout.is_empty(), "{name}");
+        let details = recovery_details(&output.stderr);
+        assert!(
+            details.starts_with(
+                "installation root: could not resolve installation identity root from "
+            ),
+            "{name}: {details}"
+        );
+        match name {
+            "newline-control" => {
+                assert!(details.contains("\\n"), "{details}");
+                assert!(details.contains("\\x1b"), "{details}");
+                assert!(!details.contains('\n'), "{details}");
+                assert!(!details.contains('\x1b'), "{details}");
+            }
+            "backslash" => {
+                assert!(details.contains("\\\\"), "{details}");
+                assert!(!details.contains("\\\\\\\\"), "{details}");
+            }
+            _ => unreachable!("known hostile path fixture"),
+        }
+    }
+
+    let escaped_component = "\x1b".repeat(240);
+    let temporary = tempfile::Builder::new()
+        .prefix("solstone-hostile-executable-")
+        .tempdir_in("/var/tmp")
+        .expect("isolated oversized binary root");
+    let mut binary_dir = temporary.path().to_path_buf();
+    for _ in 0..6 {
+        binary_dir.push(&escaped_component);
+    }
+    let binary = copied_binary(&binary_dir);
+    let journal = TempJournal::new();
+    let home = tempfile::Builder::new()
+        .prefix("solstone-hostile-home-")
+        .tempdir_in("/var/tmp")
+        .expect("absolute hostile home");
+    let output = supervisor_output(&binary, journal.0.as_os_str(), Some(home.path()));
+    assert_eq!(output.status.code(), Some(75));
+    assert!(output.stdout.is_empty());
+    let details = recovery_details(&output.stderr);
+    assert!(details.ends_with(TRUNCATION_MARKER));
+    assert_eq!(details.chars().count(), 2048);
 }
 
 #[test]

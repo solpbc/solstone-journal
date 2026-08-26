@@ -42,7 +42,7 @@ pub use loader::{
 pub use progress::read_segment_progress;
 pub use safe_text::{
     sanitize_for_terminal, sanitize_os_bytes_for_terminal, sanitize_os_bytes_for_terminal_bounded,
-    unsafe_ranges,
+    sanitize_str_for_terminal_bounded, unsafe_ranges,
 };
 pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
 pub use segment_state::{find_segment_dir, read_segment_data_state};

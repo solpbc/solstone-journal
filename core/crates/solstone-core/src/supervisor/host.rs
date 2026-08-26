@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_installation_identity::{
-    Generation, journal_token_from_path, load_installation_binding, root_token_from_path,
+    Generation, IdentityError, journal_token_from_path, load_installation_binding,
+    root_token_from_path,
 };
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome, DeclaredParent,
@@ -72,16 +73,16 @@ pub enum SiblingBinaryResolutionError {
     InvalidLayout,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InstallationBindingRefusal {
-    LoadFailed,
+    LoadFailed(String),
     JournalTokenMismatch,
 }
 
 impl fmt::Display for InstallationBindingRefusal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let detail = match self {
-            Self::LoadFailed => "the saved installation binding could not be loaded",
+            Self::LoadFailed(detail) => detail.as_str(),
             Self::JournalTokenMismatch => {
                 "the saved installation binding is for a different journal"
             }
@@ -316,25 +317,38 @@ fn classify_shutdown(cause: ShutdownCause, outcome: ShutdownOutcome) -> Supervis
 }
 
 fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
-    let home = std::env::var_os("HOME").ok_or(SupervisorBootRefusal::InstallationBinding(
-        InstallationBindingRefusal::LoadFailed,
-    ))?;
+    let home = std::env::var_os("HOME").ok_or_else(|| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
+            "home: {}",
+            IdentityError::InvalidInput("HOME is not set")
+        )))
+    })?;
     let owner =
-        crate::installation_context::owner_base_at_home(PathBuf::from(home)).map_err(|_| {
-            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+        crate::installation_context::owner_base_at_home(PathBuf::from(home)).map_err(|error| {
+            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+                format!("owner storage: {error}"),
+            ))
         })?;
     let root =
-        crate::installation_context::identity_root_from_current_executable().map_err(|_| {
-            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+        crate::installation_context::identity_root_from_current_executable().map_err(|error| {
+            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+                format!("installation root: {error}"),
+            ))
         })?;
-    let root_token = root_token_from_path(&root).map_err(|_| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+    let root_token = root_token_from_path(&root).map_err(|error| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
+            "root token: {error}"
+        )))
     })?;
-    let binding = load_installation_binding(&owner, &root_token).map_err(|_| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+    let binding = load_installation_binding(&owner, &root_token).map_err(|error| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
+            "saved binding: {error}"
+        )))
     })?;
-    let journal_token = journal_token_from_path(journal).map_err(|_| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+    let journal_token = journal_token_from_path(journal).map_err(|error| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
+            "journal token: {error}"
+        )))
     })?;
     if binding.journal_token != journal_token {
         return Err(SupervisorBootRefusal::InstallationBinding(
@@ -342,7 +356,9 @@ fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, Supervis
         ));
     }
     let writer_id = WriterId::parse(&binding.id.as_hex()).map_err(|_| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+            "the saved installation binding could not be loaded".to_owned(),
+        ))
     })?;
     Ok(HostedInstallationBinding {
         generation: binding.generation,
@@ -364,6 +380,9 @@ impl From<runtime::JournalBinaryPreflightError> for SiblingBinaryResolutionError
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
+    use solstone_core_installation_identity::IdentityError;
     use tempfile::tempdir;
 
     use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
@@ -594,10 +613,13 @@ mod tests {
     #[test]
     fn installation_binding_refusal_uses_the_shared_recovery_copy() {
         assert_eq!(
-            InstallationBindingRefusal::LoadFailed.to_string(),
-            crate::installation_context::installation_recovery_copy(
-                "the saved installation binding could not be loaded"
+            InstallationBindingRefusal::LoadFailed(
+                "saved binding: namespace record is missing".into()
             )
+            .to_string(),
+            crate::installation_context::installation_recovery_copy(
+                "saved binding: namespace record is missing"
+            ),
         );
         assert_eq!(
             InstallationBindingRefusal::JournalTokenMismatch.to_string(),
@@ -625,5 +647,92 @@ mod tests {
             lifecycle_boot_refusal(LifecycleError::AdmissionWaitMarkerLive),
             SupervisorBootRefusal::SyncScan(copy) if copy == ADMISSION_WAIT_ACTIVE_COPY
         ));
+    }
+
+    #[test]
+    fn installation_root_permission_denied_prefix_is_format_only() {
+        // A portable test cannot induce current_exe permission denial, so this covers formatting only.
+        let error = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert_eq!(error.to_string(), "permission denied");
+        assert_eq!(
+            format!("installation root: {error}"),
+            "installation root: permission denied"
+        );
+    }
+
+    #[test]
+    fn root_token_io_prefix_is_format_only() {
+        // A portable test cannot deterministically race the resolved root away, so this covers formatting only.
+        let temporary = tempdir().expect("temporary root-token directory");
+        let missing = temporary.path().join("deleted-root");
+        std::fs::create_dir(&missing).expect("create deleted root");
+        std::fs::remove_dir(&missing).expect("delete root before canonicalize");
+        let source = std::fs::canonicalize(&missing).expect_err("deleted root cannot canonicalize");
+        let source_text = source.to_string();
+        let error = IdentityError::Io {
+            operation: "canonicalize root",
+            source,
+        };
+        assert_eq!(
+            format!("root token: {error}"),
+            format!("root token: canonicalize root: {source_text}")
+        );
+    }
+
+    #[test]
+    fn root_token_overlength_prefix_is_format_only() {
+        // A portable test cannot route an overlong resolved executable root, so this covers formatting only.
+        let error = IdentityError::InvalidInput("path exceeds 4096 bytes");
+        assert_eq!(
+            format!("root token: {error}"),
+            "root token: path exceeds 4096 bytes"
+        );
+    }
+
+    #[test]
+    fn installation_binding_refusals_round_trip_through_hosted_receipts() {
+        let temporary = tempdir().expect("temporary receipt directory");
+        let cases = [
+            (
+                "load-failed",
+                InstallationBindingRefusal::LoadFailed("provider\\detail\n\u{1b}".into()),
+            ),
+            (
+                "journal-mismatch",
+                InstallationBindingRefusal::JournalTokenMismatch,
+            ),
+        ];
+
+        for (nonce, refusal) in cases {
+            let outcome = SupervisorHostOutcome::Refused {
+                reason: super::SupervisorBootRefusal::InstallationBinding(refusal),
+            };
+            let before = match &outcome {
+                SupervisorHostOutcome::Refused {
+                    reason: super::SupervisorBootRefusal::InstallationBinding(refusal),
+                } => refusal.to_string(),
+                _ => unreachable!("fixture is an installation refusal"),
+            };
+            let path = temporary.path().join(format!("{nonce}.json"));
+            write_hosted_supervisor_receipt(&path, nonce, &outcome).expect("write receipt");
+            let receipt = read_hosted_supervisor_receipt(&path).expect("read receipt");
+            assert_eq!(receipt.outcome, outcome);
+            let after = match receipt.outcome {
+                SupervisorHostOutcome::Refused {
+                    reason: super::SupervisorBootRefusal::InstallationBinding(refusal),
+                } => refusal.to_string(),
+                _ => unreachable!("receipt retains installation refusal"),
+            };
+            assert_eq!(after, before);
+            let before_details = before
+                .rsplit_once("\ndetails: ")
+                .expect("recovery display has details")
+                .1;
+            let after_details = after
+                .rsplit_once("\ndetails: ")
+                .expect("round-tripped recovery display has details")
+                .1;
+            assert_eq!(after_details, before_details);
+        }
     }
 }

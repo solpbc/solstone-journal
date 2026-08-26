@@ -86,7 +86,7 @@ pub fn run(action: ServiceAction) -> ExitCode {
     match run_inner(action) {
         Ok(code) => code,
         Err(message) => {
-            if is_final_sync_diagnosis(&message) {
+            if is_final_sync_diagnosis(&message) || is_installation_recovery_diagnosis(&message) {
                 eprintln!("{message}");
             } else {
                 eprintln!("error: {}", safe(&message));
@@ -576,6 +576,10 @@ fn ready_timeout_message(journal: &Path) -> String {
 
 fn is_final_sync_diagnosis(message: &str) -> bool {
     message.starts_with("Installation: needs attention\n")
+}
+
+fn is_installation_recovery_diagnosis(message: &str) -> bool {
+    message.starts_with("this installation couldn't be verified.\n")
 }
 
 fn sync_rescan_diagnosis(journal: &Path) -> Option<String> {
