@@ -26,6 +26,11 @@ static FIXTURE_PIN: OnceLock<String> = OnceLock::new();
 const MANIFEST_SUFFIX: &str = ".manifest.json";
 const MINISIG_SUFFIX: &str = ".minisig";
 const RELEASE_KEYS: &[&str] = &["product", "version", "target", "commit", "lock_sha256"];
+const ARCHIVE_CHAIN_RELEASE_KEYS: &[&str] = &[
+    "archive_prebuild_input_sha256",
+    "archive_delivery_contract_sha256",
+    "archive_final_invocation_sha256",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManifestVerifyRefusal {
@@ -642,13 +647,23 @@ fn validate_release_declaration(
             release_name.clone(),
         )
     })?;
+    let pair_count = pairs.len();
     let fields = pairs.into_iter().collect::<BTreeMap<_, _>>();
-    let expected_keys = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
-    if fields.len() != RELEASE_KEYS.len()
+    let macos_target = manifest.manifest.target.starts_with("macos");
+    let mut expected_keys = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
+    if macos_target {
+        expected_keys.extend(ARCHIVE_CHAIN_RELEASE_KEYS.iter().copied());
+    }
+    if pair_count != expected_keys.len()
+        || fields.len() != expected_keys.len()
         || fields.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected_keys
         || fields.get("product") != Some(&manifest.manifest.product)
         || fields.get("version") != Some(&manifest.manifest.version)
         || fields.get("target") != Some(&manifest.manifest.target)
+        || (macos_target
+            && ARCHIVE_CHAIN_RELEASE_KEYS
+                .iter()
+                .any(|key| fields.get(*key).is_none_or(|value| !is_sha256(value))))
     {
         return Err(ManifestVerifyError::new(
             ManifestVerifyRefusal::ReleaseDeclarationMismatch,
@@ -656,6 +671,97 @@ fn validate_release_declaration(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod release_contract_tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use super::{
+        ARCHIVE_CHAIN_RELEASE_KEYS, Manifest, ManifestSource, ManifestVerifyRefusal,
+        validate_release_declaration,
+    };
+
+    const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn manifest(target: &str) -> ManifestSource {
+        ManifestSource {
+            path: PathBuf::from("fixture.manifest.json"),
+            name: "fixture.manifest.json".to_owned(),
+            basename: "fixture".to_owned(),
+            bytes: Vec::new(),
+            manifest: Manifest {
+                product: "solstone-journal".to_owned(),
+                version: "1.2.3".to_owned(),
+                target: target.to_owned(),
+                files: BTreeMap::new(),
+            },
+        }
+    }
+
+    fn validate(target: &str, release: String) -> Result<(), ManifestVerifyRefusal> {
+        let source = manifest(target);
+        let members = BTreeMap::from([("fixture.release".to_owned(), release.into_bytes())]);
+        validate_release_declaration(&source, &members).map_err(|error| error.kind)
+    }
+
+    fn release(target: &str) -> String {
+        format!(
+            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\n"
+        )
+    }
+
+    fn macos_release() -> String {
+        let mut release = release("macos-arm64");
+        for key in ARCHIVE_CHAIN_RELEASE_KEYS {
+            release.push_str(&format!("{key}={DIGEST}\n"));
+        }
+        release
+    }
+
+    #[test]
+    fn macos_release_requires_all_archive_chain_digests() {
+        assert!(validate("macos-arm64", macos_release()).is_ok());
+        for missing in ARCHIVE_CHAIN_RELEASE_KEYS {
+            let release = macos_release()
+                .lines()
+                .filter(|line| !line.starts_with(missing))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(
+                validate("macos-arm64", format!("{release}\n")),
+                Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch),
+                "missing {missing}"
+            );
+        }
+    }
+
+    #[test]
+    fn macos_release_refuses_an_invalid_archive_chain_digest() {
+        let release = macos_release().replace(
+            &format!("archive_delivery_contract_sha256={DIGEST}"),
+            "archive_delivery_contract_sha256=invalid",
+        );
+        assert_eq!(
+            validate("macos-arm64", release),
+            Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
+        );
+    }
+
+    #[test]
+    fn linux_release_keeps_its_five_key_contract() {
+        assert!(validate("linux-x86_64", release("linux-x86_64")).is_ok());
+        for extra in ARCHIVE_CHAIN_RELEASE_KEYS {
+            let mut release = release("linux-x86_64");
+            release.push_str(&format!("{extra}={DIGEST}\n"));
+            assert_eq!(
+                validate("linux-x86_64", release),
+                Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch),
+                "extra {extra}"
+            );
+        }
+    }
 }
 
 fn is_safe_name(name: &str) -> bool {

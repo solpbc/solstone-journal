@@ -18,7 +18,7 @@ use solstone_core_ffmpeg_build_support::{
 use crate::apple::RealArchiveMemberSigner;
 use crate::archive_census;
 use crate::archive_contract::{
-    COMPILED_EXPECTATION_ENV, DeliveryContract, PrebuildInputIdentity,
+    COMPILED_EXPECTATION_ENV, DeliveryContract, PrebuildInputIdentity, stage_chain,
     write_rfdetr_compiled_expectation,
 };
 use crate::archive_seal::{SealedArchiveSet, seal_declared_archives};
@@ -490,6 +490,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 expected_lock: &expected_lock,
                 onnx_input: &onnx_input,
                 sealed_archives: Some(&sealed_archives),
+                prebuild_input: Some(&prebuild),
+                delivery_contract: Some(&delivery),
             });
         }
 
@@ -619,6 +621,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             expected_lock: &expected_lock,
             onnx_input: &onnx_input,
             sealed_archives: None,
+            prebuild_input: None,
+            delivery_contract: None,
         })
     })();
 
@@ -690,6 +694,8 @@ struct FinishProduce<'a> {
     expected_lock: &'a str,
     onnx_input: &'a OnnxInput,
     sealed_archives: Option<&'a SealedArchiveSet>,
+    prebuild_input: Option<&'a PrebuildInputIdentity>,
+    delivery_contract: Option<&'a DeliveryContract>,
 }
 
 /// Selection, binary inspection, staging and atomic promotion — identical for
@@ -713,6 +719,8 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         expected_lock,
         onnx_input,
         sealed_archives,
+        prebuild_input,
+        delivery_contract,
     } = finish;
 
     select::refuse_wrong_triple(inventory, &args.target_id, artifacts)
@@ -771,6 +779,14 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         archive_census::validate_staged_archives(&stage, inventory)
             .map_err(|error| ProduceError::new(error.to_string()))?;
         inspect_macos_payloads(&stage, target)?;
+        let prebuild = prebuild_input.ok_or_else(|| {
+            ProduceError::new("missing required:\n  macOS prebuild archive identity")
+        })?;
+        let delivery = delivery_contract.ok_or_else(|| {
+            ProduceError::new("missing required:\n  macOS archive delivery contract")
+        })?;
+        stage_chain(&stage, prebuild, delivery, commit, expected_lock)
+            .map_err(|error| ProduceError::new(error.to_string()))?;
     }
 
     let tree = tree_from_stage(&stage)?;

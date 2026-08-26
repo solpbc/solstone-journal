@@ -8,12 +8,20 @@ use std::path::Path;
 use crate::digest::sha256_hex;
 use crate::inventory::{artifact_sidecars, checksum_members_for_os, manifest_members_for_os};
 
+#[derive(Clone, Copy)]
+pub struct ArchiveChainDigests<'a> {
+    pub prebuild_input_sha256: &'a str,
+    pub delivery_contract_sha256: &'a str,
+    pub final_invocation_sha256: &'a str,
+}
+
 pub struct ReleaseInfo<'a> {
     pub product: &'a str,
     pub version: &'a str,
     pub target: &'a str,
     pub commit: &'a str,
     pub lock_sha256: &'a str,
+    pub archive_chain: Option<ArchiveChainDigests<'a>>,
 }
 
 pub fn write_sidecars(
@@ -81,10 +89,19 @@ fn write_sidecar(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
 
 #[must_use]
 pub fn render_release(release: &ReleaseInfo<'_>) -> String {
-    format!(
+    let mut rendered = format!(
         "product={}\nversion={}\ntarget={}\ncommit={}\nlock_sha256={}\n",
         release.product, release.version, release.target, release.commit, release.lock_sha256
-    )
+    );
+    if let Some(chain) = release.archive_chain {
+        rendered.push_str(&format!(
+            "archive_prebuild_input_sha256={}\narchive_delivery_contract_sha256={}\narchive_final_invocation_sha256={}\n",
+            chain.prebuild_input_sha256,
+            chain.delivery_contract_sha256,
+            chain.final_invocation_sha256,
+        ));
+    }
+    rendered
 }
 
 pub fn self_inspect(out_dir: &Path, basename: &str) -> io::Result<Vec<(String, String)>> {
@@ -103,7 +120,7 @@ pub fn parse_release(text: &str) -> io::Result<Vec<(String, String)>> {
         };
         pairs.push((key.to_owned(), value.to_owned()));
     }
-    if pairs.len() != 5 {
+    if !matches!(pairs.len(), 5 | 8) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "release-invalid",
@@ -114,12 +131,14 @@ pub fn parse_release(text: &str) -> io::Result<Vec<(String, String)>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReleaseInfo, write_sidecars};
+    use super::{ArchiveChainDigests, ReleaseInfo, write_sidecars};
     use std::collections::BTreeMap;
     use std::fs;
 
     use crate::digest::sha256_hex;
     use crate::inventory::{checksum_members_for_os, manifest_members_for_os};
+
+    const CHAIN_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
     fn macos_sidecars_bind_the_signing_receipt_before_manifest_write() {
@@ -131,9 +150,14 @@ mod tests {
         let release = ReleaseInfo {
             product: "solstone-journal",
             version: "1.2.3",
-            target: "darwin-aarch64",
+            target: "macos-arm64",
             commit: "commit",
             lock_sha256: "lock",
+            archive_chain: Some(ArchiveChainDigests {
+                prebuild_input_sha256: CHAIN_DIGEST,
+                delivery_contract_sha256: CHAIN_DIGEST,
+                final_invocation_sha256: CHAIN_DIGEST,
+            }),
         };
 
         assert!(write_sidecars(out, "macos", &release, basename).is_err());
@@ -143,6 +167,11 @@ mod tests {
         )
         .expect("receipt");
         write_sidecars(out, "macos", &release, basename).expect("sidecars");
+        let release_text =
+            fs::read_to_string(out.join(format!("{basename}.release"))).expect("release sidecar");
+        assert!(release_text.contains("archive_prebuild_input_sha256="));
+        assert!(release_text.contains("archive_delivery_contract_sha256="));
+        assert!(release_text.contains("archive_final_invocation_sha256="));
 
         let checksums =
             fs::read_to_string(out.join(format!("{basename}.sha256"))).expect("checksum sidecar");

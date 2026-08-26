@@ -8,8 +8,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::apple;
+use crate::archive_contract;
 use crate::deb::{DebMeta, write_deb};
-use crate::inspect::{ReleaseInfo, write_sidecars};
+use crate::inspect::{ArchiveChainDigests, ReleaseInfo, write_sidecars};
 use crate::inventory::{Apple, OS_MACOS, artifact_archives};
 use crate::provenance::{Provenance, require_clean, require_commit, require_lock};
 use crate::rpm::{RpmMeta, write_rpm};
@@ -174,6 +175,18 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
             .map_err(|error| PromoteError::new(error.to_string()))?;
     }
     checkpoint(request, PromoteStep::Stage)?;
+    let archive_chain = if request.os == OS_MACOS {
+        Some(
+            archive_contract::validate_staged_chain(
+                &stage,
+                &request.expected.commit,
+                &request.expected.lock_sha256,
+            )
+            .map_err(|error| PromoteError::new(error.to_string()))?,
+        )
+    } else {
+        None
+    };
 
     let partial = request.work.join("out.partial");
     let _ = fs::remove_dir_all(&partial);
@@ -230,6 +243,11 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         target: &request.arch,
         commit: &request.expected.commit,
         lock_sha256: &request.expected.lock_sha256,
+        archive_chain: archive_chain.as_ref().map(|chain| ArchiveChainDigests {
+            prebuild_input_sha256: &chain.prebuild_input_sha256,
+            delivery_contract_sha256: &chain.delivery_contract_sha256,
+            final_invocation_sha256: &chain.final_invocation_sha256,
+        }),
     };
     if let Some(signing) = &signing {
         fs::write(

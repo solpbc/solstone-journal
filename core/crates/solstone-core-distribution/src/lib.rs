@@ -452,6 +452,7 @@ fn two_constructions_are_byte_identical() {
             target: "linux-x86_64",
             commit: "abc",
             lock_sha256: "def",
+            archive_chain: None,
         },
         &basename,
     )
@@ -465,6 +466,7 @@ fn two_constructions_are_byte_identical() {
             target: "linux-x86_64",
             commit: "abc",
             lock_sha256: "def",
+            archive_chain: None,
         },
         &basename,
     )

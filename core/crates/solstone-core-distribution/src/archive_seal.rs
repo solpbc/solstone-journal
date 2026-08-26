@@ -357,7 +357,7 @@ mod tests {
 
     use super::*;
     use crate::apple::FakeArchiveMemberSigner;
-    use crate::archive_census::{GzipMemberKind, validate_gzip_archive, validate_staged_archives};
+    use crate::archive_census::{validate_gzip_archive, validate_staged_archives};
     use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
     use crate::macho::{FixtureSpec, fixture};
     use crate::stage::write_staged_file;
