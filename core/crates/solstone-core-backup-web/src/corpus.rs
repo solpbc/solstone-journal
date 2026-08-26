@@ -1277,6 +1277,53 @@ async fn teardown_operated_wipes_via_http() {
 }
 
 #[tokio::test]
+async fn teardown_operated_keeps_binding_visible_while_held() {
+    let root = crate::test_support::hosted_bound_root();
+    let hold = Hold::new();
+    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = Arc::new(
+        HttpScript::with_responses(vec![
+            Ok(credentials_response()),
+            Ok(xml_response(
+                "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>",
+            )),
+            Ok(xml_response(
+                "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+            )),
+        ])
+        .with_hold_after(1, hold.clone()),
+    );
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        http,
+        Some(restic.path().to_path_buf()),
+    );
+
+    let (status, body) = post_json(&deps, "/app/backup/teardown", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "teardown");
+    assert_eq!(body["operation"]["phase"], "tearing_down");
+    hold.wait_started();
+
+    let (status, during) = get_status_json(&deps).await;
+    assert_eq!(status, 200);
+    assert_eq!(during["operation"]["kind"], "teardown");
+    assert_eq!(during["operation"]["phase"], "tearing_down");
+    assert_eq!(during["hosted"]["bound"], true);
+    assert_eq!(during["hosted"]["bucket"], "bucket");
+    assert_eq!(during["hosted"]["prefix"], "owner/prefix");
+
+    hold.release();
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["hosted"]["bound"], false);
+    assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+}
+
+#[tokio::test]
 async fn teardown_operated_superseded_binding_clears_local_state_without_wiping() {
     let root = crate::test_support::hosted_bound_root();
     let runner = ScriptRunner::with_outputs(vec![version_output()]);
@@ -1532,6 +1579,82 @@ async fn handoff_binding_enables_operated_mode() {
     let rendered = done.to_string();
     assert!(!rendered.contains("broker-token-secret"));
     assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
+}
+
+#[tokio::test]
+async fn hosted_enable_hides_persisted_binding_until_done_while_credentials_are_held() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let hold = Hold::new();
+    let mut outputs = init_outputs();
+    outputs.push(version_output());
+    let runner = ScriptRunner::with_outputs(outputs);
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = Arc::new(
+        HttpScript::with_responses(vec![Ok(credentials_response())]).with_hold(hold.clone()),
+    );
+    let mut deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        http,
+        Some(restic.path().to_path_buf()),
+    );
+
+    let (status, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    let nonce = portal_nonce(&started);
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(hosted_handoff_payload(&nonce)),
+    )
+    .await;
+    assert_eq!(status, 200);
+    hold.wait_started();
+    assert_eq!(
+        solstone_core_backup::load_hosted_binding(root.path()),
+        Some(crate::test_support::hosted_binding())
+    );
+
+    let (status, during) = get_status_json(&deps).await;
+    assert_eq!(status, 200);
+    assert_eq!(during["operation"]["kind"], "enable_hosted");
+    assert_eq!(during["operation"]["phase"], "setting_up");
+    assert_eq!(during["hosted"]["bound"], false);
+    assert!(during["hosted"].get("bucket").is_none());
+    assert!(during["hosted"].get("prefix").is_none());
+
+    hold.release();
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["hosted"]["bound"], true);
+    assert_eq!(done["hosted"]["bucket"], "bucket");
+    assert_eq!(done["hosted"]["prefix"], "owner/prefix");
+    assert_eq!(done["mode"], "operated");
+    assert_eq!(done["enabled"], true);
+
+    let teardown_hold = Hold::new();
+    deps.http = Arc::new(
+        HttpScript::with_responses(vec![
+            Ok(credentials_response()),
+            Ok(xml_response(
+                "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>",
+            )),
+            Ok(xml_response(
+                "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+            )),
+        ])
+        .with_hold_after(1, teardown_hold.clone()),
+    );
+    let (status, teardown) = post_json(&deps, "/app/backup/teardown", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(teardown["operation"]["kind"], "teardown");
+    assert_eq!(teardown["operation"]["phase"], "tearing_down");
+    teardown_hold.wait_started();
+    teardown_hold.release();
+    let cleanup = wait_terminal(&deps).await;
+    assert_eq!(cleanup["operation"]["phase"], "done");
 }
 
 #[tokio::test]
@@ -1897,6 +2020,9 @@ async fn bound_restore_hosted_returns_running_then_done_while_held() {
     let (status, during) = get_status_json(&deps).await;
     assert_eq!(status, 200);
     assert_eq!(during["operation"]["phase"], "restoring");
+    assert_eq!(during["hosted"]["bound"], true);
+    assert_eq!(during["hosted"]["bucket"], "bucket");
+    assert_eq!(during["hosted"]["prefix"], "owner/prefix");
     hold.release();
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
@@ -4057,7 +4183,7 @@ async fn hosted_poll_broker_unreachable_matches_local_handoff_broker_unreachable
         );
         assert_ne!(body["mode"], "operated", "{label}");
         assert_eq!(body["enabled"], false, "{label}");
-        assert_eq!(body["hosted"]["bound"], true, "{label}");
+        assert_eq!(body["hosted"]["bound"], false, "{label}");
         assert!(!body.to_string().contains("broker-token-secret"), "{label}");
     }
     assert_eq!(poll["operation"]["phase"], local["operation"]["phase"]);
@@ -4139,7 +4265,7 @@ async fn hosted_poll_broker_error_matches_local_handoff_broker_error_contract() 
         );
         assert_ne!(body["mode"], "operated", "{label}");
         assert_eq!(body["enabled"], false, "{label}");
-        assert_eq!(body["hosted"]["bound"], true, "{label}");
+        assert_eq!(body["hosted"]["bound"], false, "{label}");
         assert!(!body.to_string().contains("broker-token-secret"), "{label}");
         assert_eq!(creds, 1, "{label}");
         assert_eq!(restic, 1, "{label}");
@@ -4717,7 +4843,7 @@ async fn hosted_poll_repository_init_failure_matches_local_handoff_contract() {
             Some(crate::test_support::hosted_binding()),
             "{label}"
         );
-        assert_eq!(body["hosted"]["bound"], true, "{label}");
+        assert_eq!(body["hosted"]["bound"], false, "{label}");
         assert_eq!(creds, 1, "{label}");
         assert_eq!(restic, 3, "{label}");
         assert_ne!(body["mode"], "operated", "{label}");
@@ -4966,7 +5092,7 @@ async fn hosted_secrets_and_binding_mode_are_never_exposed() {
             credentials: vec![Err(HttpError::Unreachable)],
             init: false,
             disable: true,
-            bound: true,
+            bound: false,
         },
     ];
     for scenario in scenarios {
