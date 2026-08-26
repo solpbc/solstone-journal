@@ -15,7 +15,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
-use solstone_core_installation_identity::{GuardFields, parse_service_guard_environment};
+use solstone_core_installation_identity::{
+    GuardFields, OwnerBase, PlatformTag, load_installation_binding,
+    parse_service_guard_environment, root_token_from_path,
+};
+use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
 };
@@ -91,11 +95,9 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             port,
             installation_guard,
         } => {
-            let guard = installation_guard
-                .ok_or_else(|| {
-                    "service install requires installation identity arguments".to_owned()
-                })
-                .and_then(parse_installation_guard)?;
+            let guard = resolve_installation_guard(installation_guard, || {
+                load_existing_installation_guard(&home)
+            })?;
             install(platform, &home, port.canonical_decimal(), &guard).map(ExitCode::from)
         }
         ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
@@ -108,6 +110,43 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         ServiceAction::Up => up(platform, &home),
         ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
     }
+}
+
+fn resolve_installation_guard(
+    arguments: Option<ServiceInstallationGuardArguments>,
+    load_existing: impl FnOnce() -> Result<GuardFields, String>,
+) -> Result<GuardFields, String> {
+    match arguments {
+        Some(arguments) => parse_installation_guard(arguments),
+        None => load_existing().map_err(service_install_recovery),
+    }
+}
+
+fn load_existing_installation_guard(home: &Path) -> Result<GuardFields, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("could not resolve the solstone executable: {error}"))?;
+    let executable_dir = executable
+        .parent()
+        .ok_or_else(|| "the solstone executable has no containing directory".to_owned())?;
+    let root = resolve_identity_root_from_executable_dir(executable_dir).ok_or_else(|| {
+        format!(
+            "could not find the solstone installation from {}",
+            executable_dir.display()
+        )
+    })?;
+    let root_token = root_token_from_path(&root)
+        .map_err(|error| format!("could not verify the solstone installation: {error}"))?;
+    let owner = OwnerBase::at_home(home.to_path_buf(), PlatformTag::current())
+        .map_err(|error| format!("could not verify the solstone setup storage: {error}"))?;
+    let binding = load_installation_binding(&owner, &root_token)
+        .map_err(|error| format!("could not verify the saved installation: {error}"))?;
+    Ok(GuardFields::from_binding(&binding))
+}
+
+fn service_install_recovery(detail: String) -> String {
+    format!(
+        "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
+    )
 }
 
 fn platform() -> Result<Platform, String> {
@@ -1659,13 +1698,8 @@ fn safe(value: &str) -> String {
 mod tests {
     use super::*;
 
-    fn guarded_environment() -> BTreeMap<String, String> {
-        let mut environment = BTreeMap::from([
-            ("HOME".to_owned(), "/home/owner".to_owned()),
-            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
-            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
-        ]);
-        let guard = parse_service_guard_environment(&BTreeMap::from([
+    fn test_guard() -> GuardFields {
+        parse_service_guard_environment(&BTreeMap::from([
             (
                 "SOLSTONE_INSTALLATION_NAMESPACE".to_owned(),
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
@@ -1684,9 +1718,39 @@ mod tests {
             ),
         ]))
         .unwrap()
-        .unwrap();
+        .unwrap()
+    }
+
+    fn guarded_environment() -> BTreeMap<String, String> {
+        let mut environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/owner".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let guard = test_guard();
         environment.extend(solstone_core_installation_identity::service_guard_environment(&guard));
         environment
+    }
+
+    #[test]
+    fn direct_service_install_loads_the_existing_guard() {
+        let expected = test_guard();
+        let actual = resolve_installation_guard(None, || Ok(expected.clone())).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn direct_service_install_offers_setup_when_the_existing_guard_is_unavailable() {
+        let error = resolve_installation_guard(None, || {
+            Err("the saved installation record is unreadable".to_owned())
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: the saved installation record is unreadable"
+        );
     }
 
     #[test]
