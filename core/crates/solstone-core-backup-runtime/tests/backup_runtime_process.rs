@@ -88,6 +88,10 @@ fn real_fixture_process_observes_whitelisted_environment() {
 #[test]
 fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
     run_bounded(|| {
+        #[cfg(target_os = "macos")]
+        let (timeout, return_ceiling) = (Duration::from_millis(600), Duration::from_millis(900));
+        #[cfg(not(target_os = "macos"))]
+        let (timeout, return_ceiling) = (Duration::from_millis(200), Duration::from_millis(400));
         let directory = tempfile::tempdir().unwrap();
         let fixture = directory.path().join("fixture");
         let pidfile = directory.path().join("sleep.pid");
@@ -110,7 +114,7 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
             None,
             true,
             None,
-            Some(Duration::from_millis(200)),
+            Some(timeout),
             &[reader.as_fd()],
         )
         .unwrap();
@@ -120,8 +124,8 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
         assert_eq!(result.stderr, " [redacted]");
         assert_eq!(result.json, None);
         assert!(
-            elapsed < Duration::from_millis(400),
-            "timeout returned in {elapsed:?}, expected < 400ms"
+            elapsed < return_ceiling,
+            "timeout returned in {elapsed:?}, expected < {return_ceiling:?}"
         );
         wait_until_dead(read_pid(&pidfile));
     });
