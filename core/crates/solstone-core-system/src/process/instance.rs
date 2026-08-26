@@ -210,6 +210,16 @@ pub trait ProcessInstanceSource: Send + Sync {
         self.census()
     }
 
+    /// Return a complete census containing `root_pid` and every live descendant.
+    ///
+    /// The default filters a full process-table census in the caller. Platforms
+    /// with a native parent-scoped primitive may override this so unrelated,
+    /// unreadable processes cannot make an owned tree unobservable.
+    fn census_tree(&self, root_pid: u32, deadline: Option<Instant>) -> InstanceCensus {
+        let _ = root_pid;
+        deadline.map_or_else(|| self.census(), |deadline| self.census_until(deadline))
+    }
+
     fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
         match self.inspect(expected.pid) {
             InspectResult::Unverifiable => InstanceVerdict::Unverifiable,
@@ -240,6 +250,11 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
     #[cfg(target_os = "macos")]
     fn census_until(&self, deadline: Instant) -> InstanceCensus {
         census_macos_until(deadline)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn census_tree(&self, root_pid: u32, deadline: Option<Instant>) -> InstanceCensus {
+        census_macos_tree(root_pid, deadline)
     }
 }
 
@@ -544,6 +559,163 @@ fn collect_macos_census_row(pid: u32, rows: &mut Vec<CensusRow>) -> bool {
     }
 }
 
+/// Build one owned process tree through macOS's parent-scoped libproc query.
+///
+/// A global macOS process census is routinely incomplete for an unprivileged
+/// owner because `proc_pidinfo` refuses unrelated system processes. Tree
+/// termination does not need those rows: `proc_listpids(PROC_PPID_ONLY)` asks
+/// the kernel for each owned node's direct children, and birth-bound
+/// `inspect_macos` samples only that resulting subtree.
+#[cfg(target_os = "macos")]
+fn census_macos_tree(root_pid: u32, deadline: Option<Instant>) -> InstanceCensus {
+    census_macos_tree_with(root_pid, deadline, inspect_macos, list_macos_child_pids)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn census_macos_tree_with(
+    root_pid: u32,
+    deadline: Option<Instant>,
+    mut inspect: impl FnMut(u32) -> InspectResult,
+    mut list_children: impl FnMut(u32, Option<Instant>) -> Option<Vec<u32>>,
+) -> InstanceCensus {
+    let mut rows = Vec::new();
+    let mut pending = vec![(root_pid, None)];
+    let mut visited = std::collections::BTreeSet::new();
+    while let Some((pid, enumerated_parent)) = pending.pop() {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return InstanceCensus::Incomplete(rows);
+        }
+        if !visited.insert(pid) {
+            continue;
+        }
+        let (instance, execution, ppid, pgid) = match inspect(pid) {
+            InspectResult::Present {
+                instance,
+                execution,
+                ppid: Some(ppid),
+                pgid: Some(pgid),
+            } => (instance, execution, ppid, pgid),
+            InspectResult::Absent | InspectResult::Present { .. } | InspectResult::Unverifiable => {
+                return InstanceCensus::Incomplete(rows);
+            }
+        };
+        if enumerated_parent.is_some_and(|parent| ppid != parent) {
+            return InstanceCensus::Incomplete(rows);
+        }
+        let Some(children) = list_children(pid, deadline) else {
+            return InstanceCensus::Incomplete(rows);
+        };
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return InstanceCensus::Incomplete(rows);
+        }
+        match inspect(pid) {
+            InspectResult::Present {
+                instance: current,
+                ppid: Some(current_ppid),
+                ..
+            } if current.birth == instance.birth
+                && enumerated_parent.is_none_or(|parent| current_ppid == parent) => {}
+            InspectResult::Absent | InspectResult::Present { .. } | InspectResult::Unverifiable => {
+                return InstanceCensus::Incomplete(rows);
+            }
+        }
+        rows.push(CensusRow {
+            instance,
+            ppid,
+            pgid,
+            execution,
+        });
+        pending.extend(children.into_iter().map(|child| (child, Some(pid))));
+    }
+    InstanceCensus::Complete(rows)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn list_macos_child_pids(parent_pid: u32, deadline: Option<Instant>) -> Option<Vec<u32>> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return None;
+    }
+    // Stable libproc selector from <sys/proc_info.h>. libc exposes the raw
+    // proc_listpids call but not this constant. Use the raw API because
+    // proc_listchildpids changes byte counts to PID counts.
+    const PROC_PPID_ONLY: u32 = 6;
+    let sizing_bytes =
+        macos_proc_listpids_bytes(PROC_PPID_ONLY, parent_pid, std::ptr::null_mut(), 0)?;
+    collect_macos_child_pids(sizing_bytes, deadline, |pids, buffer_bytes| {
+        macos_proc_listpids_bytes(
+            PROC_PPID_ONLY,
+            parent_pid,
+            pids.as_mut_ptr().cast(),
+            buffer_bytes,
+        )
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn collect_macos_child_pids(
+    sizing_bytes: usize,
+    deadline: Option<Instant>,
+    mut fill: impl FnMut(&mut [libc::pid_t], i32) -> Option<usize>,
+) -> Option<Vec<u32>> {
+    let pid_size = std::mem::size_of::<libc::pid_t>();
+    let mut capacity = sizing_bytes.div_ceil(pid_size).saturating_add(16).max(16);
+    loop {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return None;
+        }
+        let buffer_bytes = capacity
+            .checked_mul(pid_size)
+            .and_then(|bytes| i32::try_from(bytes).ok())?;
+        let mut pids = vec![0; capacity];
+        let written_bytes = fill(&mut pids, buffer_bytes)?;
+        if written_bytes % pid_size != 0 || written_bytes > buffer_bytes as usize {
+            return None;
+        }
+        let written = written_bytes / pid_size;
+        if written < capacity {
+            pids.truncate(written);
+            return pids
+                .into_iter()
+                .filter(|pid| *pid > 0)
+                .map(|pid| u32::try_from(pid).ok())
+                .collect();
+        }
+        capacity = capacity.checked_mul(2)?;
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn macos_proc_listpids_bytes(
+    selector: u32,
+    selector_value: u32,
+    buffer: *mut std::ffi::c_void,
+    buffer_bytes: i32,
+) -> Option<usize> {
+    // Apple's wrapper maps the underlying syscall's -1 result to zero. Clear
+    // errno immediately before the call so an empty result can be
+    // distinguished from that collapsed error without trusting stale errno.
+    let errno = unsafe { libc::__error() };
+    if errno.is_null() {
+        return None;
+    }
+    unsafe { *errno = 0 };
+    let written =
+        unsafe { libc::proc_listpids(selector, selector_value, buffer.cast(), buffer_bytes) };
+    let call_errno = unsafe { *errno };
+    interpret_macos_proc_listpids_result(written, call_errno)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn interpret_macos_proc_listpids_result(written: i32, errno: i32) -> Option<usize> {
+    if written == 0 && errno != 0 {
+        None
+    } else {
+        usize::try_from(written).ok()
+    }
+}
+
 /// macOS orphan-candidate table. Separate from the birth/liveness sample because
 /// `command=` is an unbounded trailing field and matches custom argv[0] titles.
 #[cfg(any(target_os = "macos", test))]
@@ -644,6 +816,131 @@ mod tests {
         assert_eq!(
             decoded.birth.epoch_seconds(),
             instance.birth.epoch_seconds()
+        );
+    }
+
+    #[test]
+    fn macos_proc_listpids_zero_is_empty_only_without_errno() {
+        assert_eq!(interpret_macos_proc_listpids_result(0, 0), Some(0));
+        assert_eq!(interpret_macos_proc_listpids_result(0, libc::EPERM), None);
+        assert_eq!(interpret_macos_proc_listpids_result(-1, 0), None);
+        assert_eq!(
+            interpret_macos_proc_listpids_result(8, libc::EINTR),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn macos_child_pid_collection_grows_on_saturation_and_rejects_partial_bytes() {
+        let pid_size = std::mem::size_of::<libc::pid_t>();
+        let mut rounds = 0;
+        let pids = collect_macos_child_pids(pid_size, None, |buffer, _| {
+            rounds += 1;
+            if rounds == 1 {
+                for (index, pid) in buffer.iter_mut().enumerate() {
+                    *pid = i32::try_from(index + 1).expect("synthetic PID fits i32");
+                }
+                Some(std::mem::size_of_val(buffer))
+            } else {
+                buffer[0] = 41;
+                buffer[1] = 42;
+                Some(2 * pid_size)
+            }
+        })
+        .expect("saturated buffer grows");
+        assert_eq!(rounds, 2);
+        assert_eq!(pids, vec![41, 42]);
+        assert!(
+            collect_macos_child_pids(pid_size, None, |_, _| Some(1)).is_none(),
+            "partial PID bytes must fail closed"
+        );
+    }
+
+    #[test]
+    fn macos_child_pid_collection_honors_an_expired_deadline() {
+        assert!(
+            collect_macos_child_pids(4, Some(Instant::now()), |_, _| {
+                panic!("expired collection must not call the native fill")
+            })
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn macos_targeted_census_rejects_parent_mismatch_and_birth_reuse() {
+        use std::collections::{BTreeMap, VecDeque};
+
+        fn present(pid: u32, birth: u64, ppid: u32) -> InspectResult {
+            InspectResult::Present {
+                instance: ProcessInstance {
+                    pid,
+                    birth: ProcessBirth::linux(birth, 1, 100),
+                },
+                execution: ExecutionState::Running,
+                ppid: Some(ppid),
+                pgid: Some(i32::try_from(pid).expect("synthetic PGID fits i32")),
+            }
+        }
+
+        let mut mismatch = BTreeMap::from([
+            (10, VecDeque::from([present(10, 1, 1), present(10, 1, 1)])),
+            (11, VecDeque::from([present(11, 2, 99)])),
+        ]);
+        let mismatch = census_macos_tree_with(
+            10,
+            None,
+            |pid| {
+                mismatch
+                    .get_mut(&pid)
+                    .and_then(VecDeque::pop_front)
+                    .unwrap_or(InspectResult::Unverifiable)
+            },
+            |pid, _| Some(if pid == 10 { vec![11] } else { Vec::new() }),
+        );
+        assert!(matches!(mismatch, InstanceCensus::Incomplete(_)));
+
+        let mut reused = VecDeque::from([present(10, 1, 1), present(10, 2, 1)]);
+        let reused = census_macos_tree_with(
+            10,
+            None,
+            |_| reused.pop_front().unwrap_or(InspectResult::Unverifiable),
+            |_, _| Some(vec![11]),
+        );
+        assert!(matches!(reused, InstanceCensus::Incomplete(rows) if rows.is_empty()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_targeted_census_captures_a_live_child_and_grandchild() {
+        use std::os::unix::process::CommandExt;
+
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "sleep 30 & wait"]).process_group(0);
+        let mut child = command.spawn().expect("spawn macOS census tree");
+        let root_pid = child.id();
+        let deadline = Instant::now() + std::time::Duration::from_secs(2);
+        let census = loop {
+            let census = census_macos_tree(root_pid, Some(deadline));
+            if matches!(&census, InstanceCensus::Complete(rows) if rows.len() >= 2)
+                || Instant::now() >= deadline
+            {
+                break census;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(i32::try_from(root_pid).expect("root PID fits i32")),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+        let _ = child.wait();
+
+        let InstanceCensus::Complete(rows) = census else {
+            panic!("targeted macOS census was incomplete");
+        };
+        assert!(rows.iter().any(|row| row.instance.pid == root_pid));
+        assert!(
+            rows.iter().any(|row| row.ppid == root_pid),
+            "targeted macOS census omitted the live grandchild edge"
         );
     }
 

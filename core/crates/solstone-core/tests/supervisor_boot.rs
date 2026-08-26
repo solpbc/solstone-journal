@@ -8,6 +8,7 @@ use std::io::Read;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,13 +32,19 @@ use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
 
 struct TempJournal(PathBuf);
 
+static NEXT_TEMP_JOURNAL: AtomicU64 = AtomicU64::new(0);
+
 impl TempJournal {
     fn new() -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = temporary_root().join(format!("solstone-core-supervisor-{stamp}"));
+        let sequence = NEXT_TEMP_JOURNAL.fetch_add(1, Ordering::Relaxed);
+        let root = temporary_root().join(format!(
+            "solstone-core-supervisor-{}-{stamp}-{sequence}",
+            std::process::id()
+        ));
         fs::create_dir_all(root.join("config")).expect("journal config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -795,7 +802,7 @@ fn pre_ready_convey_wait_renews_heartbeat_before_readiness() {
     let parked = journal.0.join("convey-parked");
     let mut child =
         start_with_convey_argv(&journal, Some(format!("ready-park {}", parked.display())));
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(5);
     let mut first_heartbeat = None;
     loop {
         if let Some(status) = child.try_wait().expect("supervisor status") {

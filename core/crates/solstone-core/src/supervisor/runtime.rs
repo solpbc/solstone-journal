@@ -55,7 +55,7 @@ const CONVEY_READY_INTERVAL: Duration = Duration::from_millis(100);
 const CONVEY_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(3);
 const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
-const FAST_FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_millis(100);
+const FAST_FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(1);
 const FAST_FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(5);
 const FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(20);
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
@@ -783,15 +783,15 @@ async fn wait_for_convey_ready(
         if probe.is_ready(journal, &app.argv) {
             return Ok(true);
         }
+        if last_heartbeat.elapsed() >= heartbeat_interval {
+            renew_pre_ready_heartbeat(lifecycle)?;
+            last_heartbeat = Instant::now();
+        }
         if start.elapsed() >= probe.wait_window() {
             eprintln!(
                 "supervisor: convey was not ready during startup; continuing into supervise loop"
             );
             return Ok(false);
-        }
-        if last_heartbeat.elapsed() >= heartbeat_interval {
-            renew_pre_ready_heartbeat(lifecycle)?;
-            last_heartbeat = Instant::now();
         }
         tokio::time::sleep(probe.poll_interval()).await;
     }

@@ -36,7 +36,9 @@ pub fn snapshot(
     source: &dyn ProcessInstanceSource,
     deadline: Option<Instant>,
 ) -> io::Result<ProcessTreeSnapshot> {
-    match deadline.map_or_else(|| source.census(), |deadline| source.census_until(deadline)) {
+    let root_pid = u32::try_from(pid)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid managed parent pid"))?;
+    match source.census_tree(root_pid, deadline) {
         InstanceCensus::Complete(rows) => tree_from_census(pid, &rows),
         InstanceCensus::Incomplete(_) => Err(io::Error::other("process census incomplete")),
     }
