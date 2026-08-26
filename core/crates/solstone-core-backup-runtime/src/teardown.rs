@@ -72,6 +72,18 @@ pub fn teardown_backup(journal: &Path, services: &BackupServices<'_>) -> Teardow
             services.version,
         ) {
             Ok(credentials) => credentials,
+            Err(error) if error.reason_code == "binding_superseded" => {
+                if clear_backup_config(journal).is_err() {
+                    return failure("failed");
+                }
+                if delete_hosted_binding(journal).is_err() {
+                    return failure("failed");
+                }
+                return TeardownResult {
+                    status: "cleared_superseded".into(),
+                    reason_code: Some("binding_superseded".into()),
+                };
+            }
             Err(error) => return failure(error.reason_code),
         };
         let result = wipe_prefix(
@@ -235,6 +247,16 @@ mod tests {
             Err(HttpError::Timeout)
         }
     }
+    struct BrokerResponse {
+        response: Result<HttpResponse, HttpError>,
+        calls: RefCell<u64>,
+    }
+    impl crate::hosted_runtime::HttpTransport for BrokerResponse {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            *self.calls.borrow_mut() += 1;
+            self.response.clone()
+        }
+    }
     struct TestClock;
     impl Clock for TestClock {
         fn now_unix(&self) -> i64 {
@@ -282,6 +304,22 @@ mod tests {
     fn broker_failure_services<'a>(
         runner: &'a Script,
         http: &'a BrokerFailure,
+        clock: &'a TestClock,
+        maintenance: &'a Maintenance,
+    ) -> BackupServices<'a> {
+        BackupServices {
+            runner,
+            http,
+            clock,
+            restic_path: Some(Path::new("/fixture/bin/restic")),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: maintenance,
+        }
+    }
+    fn broker_response_services<'a>(
+        runner: &'a Script,
+        http: &'a BrokerResponse,
         clock: &'a TestClock,
         maintenance: &'a Maintenance,
     ) -> BackupServices<'a> {
@@ -566,6 +604,100 @@ mod tests {
             .reason_code,
             Some("broker_unreachable".into())
         );
+        assert_eq!(*http.calls.borrow(), 1);
+        assert!(runner.commands.borrow().is_empty());
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            config
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("backup/hosted/binding.json")).unwrap(),
+            binding_bytes
+        );
+    }
+    #[test]
+    fn operated_superseded_binding_clears_local_state_without_wiping() {
+        let journal = tempfile::tempdir().unwrap();
+        solstone_core_backup::set_mode(journal.path(), "operated").unwrap();
+        let binding = solstone_core_backup::HostedBinding {
+            broker_endpoint: "https://broker".into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "a/b/".into(),
+            broker_token: "token".into(),
+        };
+        solstone_core_backup::save_hosted_binding(journal.path(), &binding).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = BrokerResponse {
+            response: Ok(HttpResponse {
+                status: 401,
+                headers: vec![],
+                body: br#"{"error":"binding_superseded"}"#.to_vec(),
+            }),
+            calls: RefCell::new(0),
+        };
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = teardown_backup(
+            journal.path(),
+            &broker_response_services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "cleared_superseded");
+        assert_eq!(result.reason_code, Some("binding_superseded".into()));
+        assert_eq!(*http.calls.borrow(), 1);
+        assert!(runner.commands.borrow().is_empty());
+        let config = solstone_core_backup::get_backup_config(journal.path()).unwrap();
+        assert_eq!(config["enabled"], Value::Bool(false));
+        assert_eq!(config["mode"], Value::String("byo".into()));
+        assert_eq!(
+            solstone_core_backup::load_hosted_binding(journal.path()),
+            None
+        );
+    }
+    #[test]
+    fn operated_invalid_binding_keeps_binding_config_prefix_and_never_runs_restic() {
+        let journal = tempfile::tempdir().unwrap();
+        solstone_core_backup::set_mode(journal.path(), "operated").unwrap();
+        let binding = solstone_core_backup::HostedBinding {
+            broker_endpoint: "https://broker".into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "a/b/".into(),
+            broker_token: "token".into(),
+        };
+        solstone_core_backup::save_hosted_binding(journal.path(), &binding).unwrap();
+        let config = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let binding_bytes =
+            std::fs::read(journal.path().join("backup/hosted/binding.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = BrokerResponse {
+            response: Ok(HttpResponse {
+                status: 401,
+                headers: vec![],
+                body: br#"{"error":"invalid_token"}"#.to_vec(),
+            }),
+            calls: RefCell::new(0),
+        };
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = teardown_backup(
+            journal.path(),
+            &broker_response_services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason_code, Some("binding_invalid".into()));
         assert_eq!(*http.calls.borrow(), 1);
         assert!(runner.commands.borrow().is_empty());
         assert_eq!(

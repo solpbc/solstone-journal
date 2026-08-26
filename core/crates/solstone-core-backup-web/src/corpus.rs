@@ -1277,6 +1277,64 @@ async fn teardown_operated_wipes_via_http() {
 }
 
 #[tokio::test]
+async fn teardown_operated_superseded_binding_clears_local_state_without_wiping() {
+    let root = crate::test_support::hosted_bound_root();
+    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = Arc::new(HttpScript::with_responses(vec![Ok(HttpResponse {
+        status: 401,
+        headers: vec![],
+        body: br#"{"error":"binding_superseded"}"#.to_vec(),
+    })]));
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        http.clone(),
+        Some(restic.path().to_path_buf()),
+    );
+
+    let _ = post_json(&deps, "/app/backup/teardown", None).await;
+    let done = wait_terminal(&deps).await;
+
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["operation"]["reason_code"], "binding_superseded");
+    assert_eq!(done["enabled"], false);
+    assert_eq!(done["mode"], "byo");
+    assert_eq!(done["hosted"]["bound"], false);
+    assert_eq!(http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn teardown_operated_invalid_binding_keeps_local_state() {
+    let root = crate::test_support::hosted_bound_root();
+    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = Arc::new(HttpScript::with_responses(vec![Ok(HttpResponse {
+        status: 401,
+        headers: vec![],
+        body: br#"{"error":"invalid_token"}"#.to_vec(),
+    })]));
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        http.clone(),
+        Some(restic.path().to_path_buf()),
+    );
+
+    let _ = post_json(&deps, "/app/backup/teardown", None).await;
+    let done = wait_terminal(&deps).await;
+
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(done["operation"]["reason_code"], "binding_invalid");
+    assert_eq!(done["enabled"], true);
+    assert_eq!(done["mode"], "operated");
+    assert_eq!(done["hosted"]["bound"], true);
+    assert_eq!(http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn rotate_does_not_echo_recovery_key() {
     let root = crate::test_support::root("healthy");
     let runner = ScriptRunner::with_outputs(vec![

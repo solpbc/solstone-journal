@@ -1004,6 +1004,9 @@ fn turn_off(confirmed: bool, journal: &Path, services: &BackupServices<'_>) -> C
 
 fn teardown_result(result: TeardownResult) -> CliRun {
     match result.status.as_str() {
+        "cleared_superseded" => success(
+            "Backup was claimed by another device; this device's local backup settings were cleared. Run `journal backup enable` to set up a new backup here.\n".into(),
+        ),
         "ok" | "skipped" => success("Backup turned off.\n".into()),
         _ => runtime_error(format!(
             "Teardown failed: {}.",
@@ -1571,6 +1574,14 @@ mod tests {
             });
             assert_eq!(output.stdout, "Backup turned off.\n");
         }
+        let cleared = teardown_result(TeardownResult {
+            status: "cleared_superseded".into(),
+            reason_code: Some("binding_superseded".into()),
+        });
+        assert_eq!(
+            cleared.stdout,
+            "Backup was claimed by another device; this device's local backup settings were cleared. Run `journal backup enable` to set up a new backup here.\n"
+        );
         let error = teardown_result(TeardownResult {
             status: "error".into(),
             reason_code: Some("timeout".into()),

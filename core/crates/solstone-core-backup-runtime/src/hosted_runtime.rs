@@ -193,6 +193,15 @@ pub fn fetch_hosted_credentials(
             reason_code: "hosted_entitlement_inactive",
         });
     }
+    if response.status == 401 {
+        return Err(HostedCredsUnavailable {
+            reason_code: if is_binding_superseded(payload.as_ref()) {
+                "binding_superseded"
+            } else {
+                "binding_invalid"
+            },
+        });
+    }
     if !(200..300).contains(&response.status) {
         return Err(HostedCredsUnavailable {
             reason_code: "broker_error",
@@ -229,6 +238,12 @@ fn needs_subscription(payload: Option<&Value>) -> bool {
         || ["error", "reason", "code", "status"]
             .iter()
             .any(|key| payload.get(*key) == Some(&Value::String("needs_subscription".into())))
+}
+fn is_binding_superseded(payload: Option<&Value>) -> bool {
+    let Some(Value::Object(payload)) = payload else {
+        return false;
+    };
+    payload.get("error") == Some(&Value::String("binding_superseded".into()))
 }
 pub fn operated_repository(binding: &HostedBinding, credentials: &HostedCredentials) -> String {
     format!(
@@ -474,13 +489,66 @@ mod tests {
     }
     #[test]
     fn broker_maps_subscription_and_keeps_token_out_of_error() {
+        for response in [
+            HttpResponse {
+                status: 402,
+                headers: vec![],
+                body: vec![],
+            },
+            HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: br#"{"needs_subscription":true}"#.to_vec(),
+            },
+        ] {
+            let transport = Fixture(Ok(response));
+            let error =
+                fetch_hosted_credentials(&transport, &binding(), "backup", "1").unwrap_err();
+            assert_eq!(error.reason_code, "hosted_entitlement_inactive");
+            assert!(!error.to_string().contains("TOKEN"));
+        }
+    }
+
+    #[test]
+    fn broker_maps_superseded_binding_and_keeps_token_out_of_error() {
         let transport = Fixture(Ok(HttpResponse {
-            status: 402,
+            status: 401,
+            headers: vec![],
+            body: br#"{"error":"binding_superseded"}"#.to_vec(),
+        }));
+        let error = fetch_hosted_credentials(&transport, &binding(), "backup", "1").unwrap_err();
+        assert_eq!(error.reason_code, "binding_superseded");
+        assert!(!error.to_string().contains("TOKEN"));
+    }
+
+    #[test]
+    fn broker_maps_unrecognized_unauthorized_bodies_to_invalid_binding() {
+        for body in [
+            br#"{"error":"invalid_token"}"#.to_vec(),
+            vec![],
+            b"not-json".to_vec(),
+        ] {
+            let transport = Fixture(Ok(HttpResponse {
+                status: 401,
+                headers: vec![],
+                body,
+            }));
+            let error =
+                fetch_hosted_credentials(&transport, &binding(), "backup", "1").unwrap_err();
+            assert_eq!(error.reason_code, "binding_invalid");
+            assert!(!error.to_string().contains("TOKEN"));
+        }
+    }
+
+    #[test]
+    fn broker_maps_non_authorization_http_failure_to_broker_error() {
+        let transport = Fixture(Ok(HttpResponse {
+            status: 500,
             headers: vec![],
             body: vec![],
         }));
         let error = fetch_hosted_credentials(&transport, &binding(), "backup", "1").unwrap_err();
-        assert_eq!(error.reason_code, "hosted_entitlement_inactive");
+        assert_eq!(error.reason_code, "broker_error");
         assert!(!error.to_string().contains("TOKEN"));
     }
 
@@ -517,18 +585,16 @@ mod tests {
                 .iter()
                 .any(|(name, value)| name == "Authorization" && value == "Bearer TOKEN")
         );
-        for response in [
-            Err(HttpError::Timeout),
-            Ok(HttpResponse {
-                status: 401,
-                headers: vec![],
-                body: vec![],
-            }),
-            Ok(HttpResponse {
-                status: 200,
-                headers: vec![],
-                body: b"not-json".to_vec(),
-            }),
+        for (response, expected_reason_code) in [
+            (Err(HttpError::Timeout), "broker_unreachable"),
+            (
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: b"not-json".to_vec(),
+                }),
+                "broker_error",
+            ),
         ] {
             let error = fetch_hosted_credentials(
                 &CountingTransport {
@@ -540,14 +606,7 @@ mod tests {
                 "1",
             )
             .unwrap_err();
-            assert_eq!(
-                error.reason_code,
-                if error.reason_code == "broker_unreachable" {
-                    "broker_unreachable"
-                } else {
-                    "broker_error"
-                }
-            );
+            assert_eq!(error.reason_code, expected_reason_code);
             assert!(!error.to_string().contains("TOKEN"));
         }
     }

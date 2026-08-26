@@ -851,6 +851,7 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
         };
         let result = teardown_backup(&worker.journal_root, &services(&worker, &tools));
         match result.status.as_str() {
+            "cleared_superseded" => Terminal::phase("done", result.reason_code.clone()),
             "ok" | "skipped" => Terminal::done(),
             _ => Terminal::phase(
                 "error",
