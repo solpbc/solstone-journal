@@ -138,10 +138,7 @@ fn connect_reports_closed_peer_transport_failure() {
     let outcome = connect(input(root.path()));
     peer.join().expect("join closed peer");
     assert!(
-        matches!(
-            &outcome,
-            ConnectOutcome::Failed { .. }
-        ),
+        matches!(&outcome, ConnectOutcome::Failed { .. }),
         "{outcome:?}"
     );
 }
