@@ -374,7 +374,7 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
     }
 
     classify_filesystem(root, &authoritative)?;
-    classify_drive(root, &validated.wide)?;
+    classify_drive(root, &root_drive_prefix(&validated.wide))?;
     classify_cloud_sync_root(root, &validated.wide)?;
 
     Ok(WindowsRoot {
@@ -566,7 +566,7 @@ fn append_component(path: &mut Vec<u16>, component: &OsString) {
 
 fn open_directory(wide: &[u16], primitive: WindowsAcquisitionPrimitive) -> io::Result<OwnedHandle> {
     let handle = traced_win32(primitive, || {
-        // SAFETY: `wide` is NUL-terminated and the remaining parameters are documented constants.
+        // SAFETY: `wide` is NUL-terminated and the remaining parameters are documented constants for `CreateFileW`.
         #[allow(unsafe_code)]
         let handle = unsafe {
             CreateFileW(
@@ -595,7 +595,7 @@ fn attribute_tag(
 ) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
     traced_win32(primitive, || {
         let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
-        // SAFETY: `info` is writable for its exact buffer size and the retained handle is valid.
+        // SAFETY: `info` is writable for its exact buffer size and the retained handle is valid for `GetFileInformationByHandleEx`.
         #[allow(unsafe_code)]
         let result = unsafe {
             GetFileInformationByHandleEx(
@@ -617,7 +617,7 @@ fn file_id(
 ) -> io::Result<ObjectIdentity> {
     traced_win32(primitive, || {
         let mut info = FILE_ID_INFO::default();
-        // SAFETY: `info` is writable for its exact buffer size and the retained handle is valid.
+        // SAFETY: `info` is writable for its exact buffer size and the retained handle is valid for `GetFileInformationByHandleEx`.
         #[allow(unsafe_code)]
         let result = unsafe {
             GetFileInformationByHandleEx(
@@ -647,7 +647,7 @@ fn classify_filesystem(root: &Path, handle: &OwnedHandle) -> Result<(), JournalR
             let mut serial = 0;
             let mut maximum_component_length = 0;
             let mut flags = 0;
-            // SAFETY: both UTF-16 buffers are writable for their exact supplied lengths.
+            // SAFETY: both UTF-16 buffers are writable for their exact supplied lengths for `GetVolumeInformationByHandleW`.
             #[allow(unsafe_code)]
             let result = unsafe {
                 GetVolumeInformationByHandleW(
@@ -701,7 +701,7 @@ fn classify_filesystem_name(root: &Path, name: &str) -> Result<(), JournalRootEr
 
 fn classify_drive(root: &Path, wide: &[u16]) -> Result<(), JournalRootError> {
     let drive_type = traced_win32(WindowsAcquisitionPrimitive::DriveType, || {
-        // SAFETY: `wide` is the validated, NUL-terminated spelling passed to the authority open.
+        // SAFETY: `wide` is the validated, NUL-terminated drive root passed to `GetDriveTypeW`.
         #[allow(unsafe_code)]
         let value = unsafe { GetDriveTypeW(wide.as_ptr()) };
         Ok(value)
@@ -740,7 +740,7 @@ fn classify_cloud_sync_root(root: &Path, wide: &[u16]) -> Result<(), JournalRoot
     let result = traced_win32(WindowsAcquisitionPrimitive::CloudSyncRootInfo, || {
         let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
         let mut returned = 0;
-        // SAFETY: `wide` is NUL-terminated and `info` is writable for its exact size.
+        // SAFETY: `wide` is NUL-terminated and `info` is writable for its exact size for `CfGetSyncRootInfoByPath`.
         #[allow(unsafe_code)]
         let result = unsafe {
             CfGetSyncRootInfoByPath(
@@ -1006,6 +1006,30 @@ mod tests {
     }
 
     #[test]
+    fn nested_path_admission_uses_a_drive_root_for_drive_classification() {
+        let (_temporary, root_path) = nested_fixture("drive-root");
+        let validated = validate_path(&root_path).expect("nested fixture path is valid");
+        let drive_root = root_drive_prefix(&validated.wide);
+        assert_eq!(
+            drive_root,
+            vec![validated.wide[0], b':' as u16, b'\\' as u16, 0]
+        );
+        assert_ne!(
+            drive_root, validated.wide,
+            "fixture is below the drive root"
+        );
+
+        let (result, outcome) = trace_scenario(None, None, || JournalRoot::open(&root_path));
+        drop(result.expect("nested fixture is admitted from its fixed drive"));
+        assert!(
+            outcome
+                .successful
+                .contains(&WindowsAcquisitionPrimitive::DriveType),
+            "nested admission reaches drive-type classification"
+        );
+    }
+
+    #[test]
     fn cloud_sync_root_classifier_requires_verified_non_membership() {
         let root = Path::new(r"C:\journal");
         assert_eq!(
@@ -1097,6 +1121,9 @@ mod tests {
         if symlink_dir(&target, &root_link).is_err()
             || symlink_dir(&target, &ancestor_link).is_err()
         {
+            eprintln!(
+                "skipping reparse fixture test: symlink creation unavailable (no Developer Mode / elevated privilege)"
+            );
             return;
         }
         let root_result = JournalRoot::open(&root_link);

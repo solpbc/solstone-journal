@@ -5,9 +5,10 @@
 :: First native Windows journal gate. It proves the source-bound MSVC transport
 :: and the portable journal/config substrate only. It builds journal-io,
 :: journal, and journal-config; runs journal-io library and lock-component
-:: tests, journal-config unit tests, and journal library tests. Archive,
-:: publication, locking beyond the named component, Callosum, packaging,
-:: install, signing, smoke, and full NTFS/ReFS evidence remain later gates.
+:: tests, journal-config unit tests, and journal library tests. The side-effecting
+:: Cloud Files registration test is separately opt-in. Archive, publication,
+:: locking beyond the named component, Callosum, packaging, install, signing,
+:: smoke, and full NTFS/ReFS evidence remain later gates.
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
@@ -34,6 +35,14 @@ echo === cargo test --locked (journal-io library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
+set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it"
+if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
+  echo === cargo test --locked (journal-io Cloud Files sync-root registration) ===
+  cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1
+  set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=Cloud Files sync-root registration test passed"
+) else (
+  echo === Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it ===
+)
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
@@ -49,7 +58,7 @@ call :verify_source_binding || exit /b 1
 
 echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
-echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run ===
+echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run ===
 exit /b 0
 
 :require_journal_test

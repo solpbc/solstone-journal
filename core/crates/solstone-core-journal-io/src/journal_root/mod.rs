@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Unix journal-root acquisition capability.
+//! Unix and Windows journal-root acquisition capability.
 //!
 //! [`JournalRoot`] retains one admitted journal directory. The stored canonical
 //! path is diagnostic metadata, not source authority.

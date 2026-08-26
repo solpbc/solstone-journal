@@ -24,19 +24,20 @@ struct RegisteredSyncRoot {
 
 impl RegisteredSyncRoot {
     fn unregister(mut self) -> i32 {
-        self.active = false;
-        // SAFETY: `path` remains NUL-terminated for this synchronous cleanup call.
+        // SAFETY: `path` remains NUL-terminated for this synchronous `CfUnregisterSyncRoot` cleanup call.
         #[allow(unsafe_code)]
-        unsafe {
-            CfUnregisterSyncRoot(self.path.as_ptr())
+        let result = unsafe { CfUnregisterSyncRoot(self.path.as_ptr()) };
+        if result == 0 {
+            self.active = false;
         }
+        result
     }
 }
 
 impl Drop for RegisteredSyncRoot {
     fn drop(&mut self) {
         if self.active {
-            // SAFETY: `path` remains NUL-terminated through the guard's lifetime.
+            // SAFETY: `path` remains NUL-terminated through the guard's lifetime for `CfUnregisterSyncRoot`.
             #[allow(unsafe_code)]
             unsafe {
                 let _ = CfUnregisterSyncRoot(self.path.as_ptr());
@@ -78,7 +79,7 @@ fn registered_cloud_sync_root_is_refused_and_unregistered() {
         StructSize: size_of::<CF_SYNC_POLICIES>() as u32,
         ..Default::default()
     };
-    // SAFETY: all registration pointers remain valid for this synchronous call.
+    // SAFETY: all registration pointers remain valid for this synchronous `CfRegisterSyncRoot` call.
     #[allow(unsafe_code)]
     let registered = unsafe {
         CfRegisterSyncRoot(

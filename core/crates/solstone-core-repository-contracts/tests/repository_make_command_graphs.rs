@@ -1597,10 +1597,16 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     for command in [
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --lib",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks",
+        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal --lib",
     ] {
         assert!(runner.contains(command), "Windows runner missing {command}");
     }
+    assert!(runner.contains("if \"%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%\"==\"1\""));
+    assert!(runner.contains(
+        "Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it"
+    ));
+    assert!(runner.contains("Cloud Files sync-root registration test passed"));
     for test in [
         "config_strip_matches_python_control_whitespace",
         "ensure_journal_dir_reports_non_directory_parent",
@@ -1626,7 +1632,7 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         "Windows runner must verify the exact source both before and after native work"
     );
     assert!(runner.contains(
-        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
+        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
     ));
     assert!(!sync.contains("swbuild.bundle"));
     assert!(!driver.contains("C:\\\\sol\\\\sw-ci.cmd"));

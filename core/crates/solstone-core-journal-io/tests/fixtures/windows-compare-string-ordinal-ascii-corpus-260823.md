@@ -1,9 +1,9 @@
 # Windows CompareStringOrdinal ASCII corpus (2026-08-23)
 
-This is a pinned capture from Windows. This repository's own tests do not
-execute on Windows. No claim of arbitrary Unicode-to-Unicode equivalence is
-made — this corpus only proves the 65 listed pairs, and the negative test
-vectors in `name_admission.rs` confirm nothing else folds.
+This is a pinned capture from Windows. Native Windows tests exercise the
+journal substrate, but this corpus itself does not claim arbitrary
+Unicode-to-Unicode equivalence — it proves only the 65 listed pairs, and the
+negative test vectors in `name_admission.rs` confirm nothing else folds.
 
 It is crate-local evidence for `solstone-core-journal-io`, not a
 `core/fixtures/` oracle. Those fixtures are a different genre:
