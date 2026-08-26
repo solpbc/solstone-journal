@@ -73,7 +73,7 @@ impl PreReadySupervisorLifecycle {
     pub fn publish_heartbeat(self) -> Result<SupervisorLifecycle, LifecycleError> {
         let heartbeat = sync::Heartbeat {
             schema: 1,
-            machine_id: self.machine_id,
+            machine_id: self.machine_id.clone(),
             hostname: hostname(),
             pid: std::process::id(),
             wall_time: self.now.to_string(),
@@ -81,11 +81,19 @@ impl PreReadySupervisorLifecycle {
             interval_seconds: sync::DEFAULT_INTERVAL_SECONDS as u32,
             journal_path: self.journal.display().to_string(),
         };
-        state::write_sync_heartbeat(
-            &self.journal,
-            &self.heartbeat_filename,
-            &serde_json::to_vec(&heartbeat)?,
-        )?;
+        let heartbeat_bytes = match serde_json::to_vec(&heartbeat) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = self.abort_pre_ready();
+                return Err(error.into());
+            }
+        };
+        if let Err(error) =
+            state::write_sync_heartbeat(&self.journal, &self.heartbeat_filename, &heartbeat_bytes)
+        {
+            let _ = self.abort_pre_ready();
+            return Err(error);
+        }
         Ok(SupervisorLifecycle {
             journal: self.journal,
             heartbeat_filename: self.heartbeat_filename,

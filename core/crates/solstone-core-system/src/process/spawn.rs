@@ -167,7 +167,12 @@ impl ManagedProcess {
         if exact {
             delay_exact_identity_observation_for_test(&options.environment);
             let source = SystemProcessInstanceSource;
-            match source.inspect(pid) {
+            let observation = if force_exact_identity_unavailable_for_test(&options.environment) {
+                InspectResult::Unverifiable
+            } else {
+                source.inspect(pid)
+            };
+            match observation {
                 InspectResult::Present { instance, .. } => {
                     process.termination_mode = TerminationMode::Exact(instance);
                 }
@@ -182,7 +187,14 @@ impl ManagedProcess {
                     // exit status is safer than reporting a false spawn failure.
                     process.termination_mode = TerminationMode::ExactExited;
                 }
-                _ => return Err(SpawnError::ExactInstanceUnavailable { pid }),
+                _ => {
+                    // `Child` retains the original spawned process handle. A direct
+                    // kill followed by wait cannot widen to a reused PID or process
+                    // group, unlike the legacy Drop route.
+                    let _ = process.child.kill();
+                    let _ = process.child.wait();
+                    return Err(SpawnError::ExactInstanceUnavailable { pid });
+                }
             }
         }
         Ok(process)
@@ -339,6 +351,22 @@ fn delay_exact_identity_observation_for_test(_environment: &BTreeMap<OsString, O
             return;
         };
         thread::sleep(Duration::from_millis(delay));
+    }
+}
+
+/// Force the live-but-unverifiable exact-spawn branch only for an explicitly
+/// opted-in debug test process.
+fn force_exact_identity_unavailable_for_test(environment: &BTreeMap<OsString, OsString>) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        environment
+            .get(OsStr::new("SOLSTONE_TEST_EXACT_SPAWN_FORCE_UNVERIFIABLE"))
+            .is_some_and(|value| value == "1")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = environment;
+        false
     }
 }
 

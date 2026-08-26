@@ -13,8 +13,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use solstone_core_system::process::{
     CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, EXIT_TEMPFAIL, KILL_REAP_GRACE, ManagedProcess,
     OutputStream, ProcessEvent, ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT,
-    SpawnOptions, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, describe_exit,
-    exit_status_for_code,
+    SpawnError, SpawnOptions, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
+    describe_exit, exit_status_for_code,
 };
 
 const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
@@ -511,11 +511,8 @@ fn ac29_exact_spawn_preserves_an_immediate_child_exit_code() {
         OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
         OsString::from("100"),
     );
-    let mut process = bed.spawn_exact_with_environment(
-        "exact-immediate-exit",
-        &["always-exit"],
-        environment,
-    );
+    let mut process =
+        bed.spawn_exact_with_environment("exact-immediate-exit", &["always-exit"], environment);
     let exit_code = loop {
         if let Some(exit_code) = process.poll().expect("poll immediate exit") {
             break exit_code;
@@ -528,4 +525,66 @@ fn ac29_exact_spawn_preserves_an_immediate_child_exit_code() {
         Ok(TerminationOutcome::Graceful { exit_code: Some(1) })
     ));
     process.cleanup();
+}
+
+#[test]
+fn ac30_exact_spawn_unverifiable_live_child_is_reaped_without_group_cleanup() {
+    let bed = Bed::new("exact-unverifiable");
+    let descendant_path = bed.root.join("exact-unverifiable-descendant.pid");
+    let mut environment = BTreeMap::new();
+    environment.insert(
+        OsString::from("SOLSTONE_TEST_EXACT_SPAWN_FORCE_UNVERIFIABLE"),
+        OsString::from("1"),
+    );
+    environment.insert(
+        OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
+        OsString::from("100"),
+    );
+    let result = ManagedProcess::spawn_exact(
+        vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            "sleep 30 & child=$!; printf '%s\\n' \"$child\" > \"$1\"; wait \"$child\"".to_owned(),
+            "sh".to_owned(),
+            descendant_path.display().to_string(),
+        ],
+        SpawnOptions {
+            journal_root: bed.root.clone(),
+            reference: "exact-unverifiable".to_owned(),
+            day: Some("20260807".to_owned()),
+            sink: None,
+            environment,
+        },
+    );
+    let Err(error) = result else {
+        panic!("live unobservable child must refuse exact spawn");
+    };
+    let SpawnError::ExactInstanceUnavailable { pid } = error else {
+        panic!("unexpected spawn error: {error}");
+    };
+    wait_for_ready(&descendant_path);
+    let descendant: u32 = fs::read_to_string(&descendant_path)
+        .expect("descendant pid")
+        .trim()
+        .parse()
+        .expect("numeric descendant pid");
+    assert!(
+        process_is_gone(pid),
+        "the refused exact child must be directly reaped before Drop can use legacy cleanup"
+    );
+    assert!(
+        !process_is_gone(descendant),
+        "a process-group fallback would have killed the shell descendant"
+    );
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(descendant).expect("descendant pid fits i32")),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+    for _ in 0..100 {
+        if process_is_gone(descendant) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("test cleanup did not reap shell descendant {descendant}");
 }

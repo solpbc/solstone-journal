@@ -139,6 +139,13 @@ pub struct TaskQueueStatusSnapshot {
     pub queues: BTreeMap<String, usize>,
 }
 
+/// Summary of a task-queue shutdown captured from the active snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskQueueShutdownReport {
+    pub active_count: usize,
+    pub forced: bool,
+}
+
 trait QueueProcess: Send {
     fn pid(&self) -> u32;
     fn poll(&mut self) -> io::Result<Option<i32>>;
@@ -572,8 +579,8 @@ impl TaskQueue {
     }
 
     /// Stops dispatch advancement, leaves queued/pending entries inert, and
-    /// returns the active-process snapshot size from shutdown start.
-    pub fn shutdown(&self) -> usize {
+    /// reports the active-process snapshot and any forced worker termination.
+    pub fn shutdown(&self) -> TaskQueueShutdownReport {
         let (active_count, snapshot): (usize, Vec<ShutdownSnapshot>) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             state.shutdown = true;
@@ -592,16 +599,20 @@ impl TaskQueue {
             .collect::<Vec<_>>();
         for (_, process) in snapshot {
             if let Ok(handle) = thread::Builder::new().spawn(move || {
-                let _ = process
-                    .lock()
-                    .expect("managed process lock poisoned")
-                    .terminate_exact(TASK_QUEUE_SHUTDOWN_TIMEOUT);
+                matches!(
+                    process
+                        .lock()
+                        .expect("managed process lock poisoned")
+                        .terminate_exact(TASK_QUEUE_SHUTDOWN_TIMEOUT),
+                    Err(TerminationError::ParentGraceTimeout)
+                )
             }) {
                 threads.push(handle);
             }
         }
+        let mut forced = false;
         for thread in threads {
-            let _ = thread.join();
+            forced |= thread.join().unwrap_or(false);
         }
         let deadline = Instant::now() + TASK_QUEUE_SHUTDOWN_TIMEOUT;
         let mut state = self.inner.state.lock().expect("queue state lock poisoned");
@@ -623,7 +634,10 @@ impl TaskQueue {
                 break;
             }
         }
-        active_count
+        TaskQueueShutdownReport {
+            active_count,
+            forced,
+        }
     }
 
     pub fn collect_status_snapshot(&self, now: Instant) -> TaskQueueStatusSnapshot {
@@ -1581,6 +1595,10 @@ mod tests {
         let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let process: QueueProcessHandle =
             Arc::new(Mutex::new(Box::new(FakeProcess::idle(1, cleanups))));
+        add_active_process(queue, reference, process);
+    }
+
+    fn add_active_process(queue: &TaskQueue, reference: &str, process: QueueProcessHandle) {
         queue
             .inner
             .state
@@ -1598,6 +1616,38 @@ mod tests {
                     process,
                 },
             );
+    }
+
+    #[test]
+    fn shutdown_reports_forced_worker_termination() {
+        let queue = queue(true, 10, VecDeque::new());
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut process = FakeProcess::idle(1, cleanups);
+        process.terminate_error = true;
+        add_active_process(
+            &queue,
+            "escalating",
+            Arc::new(Mutex::new(Box::new(process))),
+        );
+
+        let inner = Arc::clone(&queue.inner);
+        let reaper = thread::spawn(move || {
+            loop {
+                let mut state = inner.state.lock().expect("queue state lock poisoned");
+                if state.shutdown {
+                    state.active.remove("escalating");
+                    inner.reaped.notify_all();
+                    return;
+                }
+                drop(state);
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        let report = queue.shutdown();
+        reaper.join().expect("test reaper");
+        assert_eq!(report.active_count, 1);
+        assert!(report.forced);
     }
 
     fn request(reference: &str) -> ExecutionRequest {

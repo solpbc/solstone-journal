@@ -22,8 +22,10 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         ShutdownDisposition::Orderly
     }
     fn drain_tasks(&mut self, _: Duration) -> ShutdownDisposition {
-        if !self.state.shutdown_started.swap(true, Ordering::AcqRel) {
-            let _ = self.state.queue.shutdown();
+        if !self.state.shutdown_started.swap(true, Ordering::AcqRel)
+            && self.state.queue.shutdown().forced
+        {
+            return ShutdownDisposition::ForcedAfterGraceTimeout;
         }
         ShutdownDisposition::Orderly
     }

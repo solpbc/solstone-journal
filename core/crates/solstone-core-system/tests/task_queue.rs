@@ -463,7 +463,7 @@ fn set_ready_after_shutdown_keeps_pending_work_inert() {
     let bed = Bed::new("ready-after-shutdown");
     let queue = queue(&bed, Duration::from_secs(5), false, None, None);
     queue.submit(request("pending", &command(&["lines"]), None, None));
-    assert_eq!(queue.shutdown(), 0);
+    assert_eq!(queue.shutdown().active_count, 0);
     queue.set_ready();
     assert!(queue.active_process_handles().is_empty());
     assert_eq!(queue.collect_queue_counts().get("pending"), Some(&1));
@@ -474,7 +474,7 @@ fn set_ready_after_shutdown_keeps_pending_work_inert() {
 fn submit_after_shutdown_is_rejected_without_queueing() {
     let bed = Bed::new("submit-after-shutdown");
     let queue = queue(&bed, Duration::from_secs(5), true, None, None);
-    assert_eq!(queue.shutdown(), 0);
+    assert_eq!(queue.shutdown().active_count, 0);
     assert_eq!(
         queue.submit(request("rejected", &command(&["lines"]), None, None)),
         solstone_core_system::queue::SubmitOutcome::Rejected
@@ -835,7 +835,7 @@ fn ac26_shutdown_returns_active_snapshot_count_and_blocks_advancement() {
     ));
     wait_for_ready(&ready);
     queue.submit(request("queued", &command(&["lines"]), None, None));
-    assert_eq!(queue.shutdown(), 1);
+    assert_eq!(queue.shutdown().active_count, 1);
     wait_for_history(&queue, 1);
     assert!(!started_references(&sink).contains(&"queued".to_owned()));
     assert_eq!(queue.collect_queue_counts().values().sum::<usize>(), 1);
@@ -883,7 +883,7 @@ fn shutdown_waits_for_an_already_running_deadline_termination() {
     wait_for_ready(&ready);
     queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
     wait_until(|| count.exists());
-    assert_eq!(queue.shutdown(), 1);
+    assert_eq!(queue.shutdown().active_count, 1);
     assert!(queue.active_process_handles().is_empty());
 }
 
@@ -1089,6 +1089,6 @@ fn ac33_dropping_one_clone_does_not_terminate_worker_another_clone_holds() {
         !process_is_gone(pid),
         "dropping one TaskQueue clone must not kill a worker another clone still holds"
     );
-    assert_eq!(queue.shutdown(), 1);
+    assert_eq!(queue.shutdown().active_count, 1);
     wait_until(|| process_is_gone(pid));
 }

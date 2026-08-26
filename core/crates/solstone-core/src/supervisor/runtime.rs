@@ -773,19 +773,22 @@ pub(crate) async fn boot_and_tick(
     journal_binary: Option<PathBuf>,
     parent_watch: Option<ParentWatch>,
 ) -> Result<SupervisorOutcome, RuntimeBootError> {
-    let mut shutdown_signals =
-        tick::ShutdownSignals::install().map_err(RuntimeBootError::Startup)?;
+    let mut shutdown_signals = match tick::ShutdownSignals::install() {
+        Ok(signals) => signals,
+        Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+    };
     let server = Arc::new(
-        CallosumSocketServer::bind(journal.join("health/callosum.sock"))
-            .await
-            .map_err(|error| RuntimeBootError::Startup(error.to_string()))?,
+        match CallosumSocketServer::bind(journal.join("health/callosum.sock")).await {
+            Ok(server) => server,
+            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+        },
     );
     let mut connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), serde_json::Map::new());
     connection.start();
-    wait_for_callosum_connection(&mut connection)
-        .await
-        .map_err(RuntimeBootError::Startup)?;
+    if let Err(error) = wait_for_callosum_connection(&mut connection).await {
+        return Err(abort_pre_ready(lifecycle, error));
+    }
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -916,13 +919,14 @@ pub(crate) async fn boot_and_tick(
     let scheduler = if options.no_schedule {
         None
     } else {
-        let mut scheduler = ScheduleEngine::init(
+        let mut scheduler = match ScheduleEngine::init(
             journal.join("config/schedules.json"),
             journal.join("health/scheduler.json"),
             now,
-        )
-        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?
-        .0;
+        ) {
+            Ok((scheduler, _)) => scheduler,
+            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+        };
         let schedule_sink = SupervisorScheduleSink {
             queue: queue.clone(),
             server: server.clone(),
@@ -937,14 +941,21 @@ pub(crate) async fn boot_and_tick(
     let convey_port = if options.port != 0 {
         options.port
     } else {
-        resolve_available_port().map_err(|error| RuntimeBootError::Startup(error.to_string()))?
+        match resolve_available_port() {
+            Ok(port) => port,
+            Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+        }
     };
-    let direct_port = selected_direct_door_port(&journal, options.direct_port)
-        .map_err(RuntimeBootError::Startup)?;
-    persist_direct_door_port(&journal, direct_port)
-        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
-    initialize_direct_door(&journal, direct_port)
-        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
+    let direct_port = match selected_direct_door_port(&journal, options.direct_port) {
+        Ok(port) => port,
+        Err(error) => return Err(abort_pre_ready(lifecycle, error)),
+    };
+    if let Err(error) = persist_direct_door_port(&journal, direct_port) {
+        return Err(abort_pre_ready(lifecycle, error));
+    }
+    if let Err(error) = initialize_direct_door(&journal, direct_port) {
+        return Err(abort_pre_ready(lifecycle, error));
+    }
     let mut app_processes = app_processes(
         &options,
         &journal,
@@ -1053,6 +1064,19 @@ async fn pause_before_final_parent_check() {
     let go = PathBuf::from(format!("{}.go", marker.display()));
     while !go.exists() {
         tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn abort_pre_ready(
+    lifecycle: PreReadySupervisorLifecycle,
+    error: impl std::fmt::Display,
+) -> RuntimeBootError {
+    let error = error.to_string();
+    match lifecycle.abort_pre_ready() {
+        Ok(()) => RuntimeBootError::Startup(error),
+        Err(cleanup) => RuntimeBootError::Startup(format!(
+            "{error}; pre-ready lifecycle cleanup failed: {cleanup}"
+        )),
     }
 }
 

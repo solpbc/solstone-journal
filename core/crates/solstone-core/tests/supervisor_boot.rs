@@ -519,3 +519,16 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
     assert!(!conflict_journal.0.join("health/supervisor.ready").exists());
     assert!(!conflict.wait().expect("conflict launcher wait").success());
 }
+
+#[test]
+fn pre_ready_startup_failure_clears_supervisor_identity() {
+    let journal = TempJournal::new();
+    fs::create_dir_all(journal.0.join("health/callosum.sock"))
+        .expect("make callosum path non-removable");
+    let mut child = start(&journal);
+    let status = child.wait().expect("supervisor returns startup refusal");
+    assert_eq!(status.code(), Some(75));
+    assert!(!journal.0.join("health/supervisor.pid").exists());
+    assert!(!journal.0.join("health/supervisor.start_time").exists());
+    assert!(!journal.0.join("health/supervisor.ready").exists());
+}
