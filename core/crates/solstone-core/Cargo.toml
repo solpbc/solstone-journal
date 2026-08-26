@@ -13,6 +13,9 @@ workspace = true
 [features]
 test-hooks = []
 
+[lib]
+path = "src/lib.rs"
+
 [[test]]
 name = "core_brain_contracts"
 path = "tests/core_brain_contracts.rs"
@@ -75,6 +78,11 @@ test = false
 [[bin]]
 name = "solstone-core-install-lease-holder"
 path = "tests/bin/install_lease_holder.rs"
+test = false
+
+[[bin]]
+name = "solstone-core-hosted-supervisor-fixture"
+path = "tests/bin/hosted_supervisor_fixture.rs"
 test = false
 
 [dependencies]

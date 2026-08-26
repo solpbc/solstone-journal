@@ -142,7 +142,10 @@ pub struct TaskQueueStatusSnapshot {
 trait QueueProcess: Send {
     fn pid(&self) -> u32;
     fn poll(&mut self) -> io::Result<Option<i32>>;
-    fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError>;
+    fn terminate_exact(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<TerminationOutcome, TerminationError>;
     fn cleanup(&mut self);
 }
 
@@ -157,8 +160,11 @@ impl QueueProcess for ManagedQueueProcess {
         self.0.poll()
     }
 
-    fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
-        match self.0.terminate(timeout) {
+    fn terminate_exact(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<TerminationOutcome, TerminationError> {
+        match self.0.terminate_exact(timeout) {
             Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
             Err(LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
             Err(error) => Err(TerminationError::Io(io::Error::other(error))),
@@ -187,7 +193,7 @@ fn spawn_managed_queue_process(
     timeout: Duration,
 ) -> Result<QueueProcessHandle, SpawnError> {
     let authority = match launch_managed(Disposition::IndependentBoundedHelper { timeout }, || {
-        ManagedProcess::spawn(command, options)
+        ManagedProcess::spawn_exact(command, options)
     }) {
         Ok(authority) => authority,
         Err(LaunchError::SpawnManaged(error)) => return Err(error),
@@ -589,7 +595,7 @@ impl TaskQueue {
                 let _ = process
                     .lock()
                     .expect("managed process lock poisoned")
-                    .terminate(TASK_QUEUE_SHUTDOWN_TIMEOUT);
+                    .terminate_exact(TASK_QUEUE_SHUTDOWN_TIMEOUT);
             }) {
                 threads.push(handle);
             }
@@ -978,7 +984,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
                 let _ = process
                     .lock()
                     .expect("managed process lock poisoned")
-                    .terminate(CAP_TERMINATION_TIMEOUT);
+                    .terminate_exact(CAP_TERMINATION_TIMEOUT);
                 break -1;
             }
         }
@@ -1201,7 +1207,7 @@ fn terminate_process(
     let _ = process
         .lock()
         .expect("managed process lock poisoned")
-        .terminate(timeout);
+        .terminate_exact(timeout);
     inner
         .state
         .lock()
@@ -1325,7 +1331,7 @@ mod tests {
             }
         }
 
-        fn terminate(
+        fn terminate_exact(
             &mut self,
             _timeout: Duration,
         ) -> Result<TerminationOutcome, TerminationError> {

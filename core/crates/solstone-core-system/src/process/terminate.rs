@@ -48,6 +48,8 @@ pub enum TerminationError {
     },
     #[error("descendant coverage unavailable on this platform")]
     DescendantCoverageUnavailable,
+    #[error("exact process identity is unavailable")]
+    ExactInstanceUnavailable,
     #[error("process lifecycle I/O failed: {0}")]
     Io(#[from] io::Error),
 }
@@ -64,6 +66,96 @@ pub fn terminate(
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         terminate_without_descendant_coverage(child, timeout)
+    }
+}
+
+/// Terminate one birth-bound child tree without process-group fallback.
+///
+/// Every mutation is preceded by a fresh identity observation. A caller that
+/// cannot prove the remembered parent still names the target must not signal.
+pub fn terminate_exact_instance(
+    child: &mut Child,
+    expected: ProcessInstance,
+    timeout: Duration,
+    source: &dyn ProcessInstanceSource,
+) -> Result<TerminationOutcome, TerminationError> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        terminate_exact_unix(child, expected, timeout, source)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (expected, source);
+        terminate_without_descendant_coverage(child, timeout)
+    }
+}
+
+/// Send a direct signal only after revalidating the exact remembered process.
+pub fn signal_exact_instance(
+    expected: ProcessInstance,
+    signal: nix::sys::signal::Signal,
+    source: &dyn ProcessInstanceSource,
+) -> Result<(), TerminationError> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let guard = SignalGuard::current();
+        signal_parent_exact(expected, signal, &guard, source)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (expected, signal, source);
+        Err(TerminationError::DescendantCoverageUnavailable)
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn terminate_exact_unix(
+    child: &mut Child,
+    expected: ProcessInstance,
+    timeout: Duration,
+    source: &dyn ProcessInstanceSource,
+) -> Result<TerminationOutcome, TerminationError> {
+    let parent_pid =
+        i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
+    if i32::try_from(child.id()).ok() != Some(parent_pid) {
+        return Err(TerminationError::ExactInstanceUnavailable);
+    }
+    let tree = snapshot(parent_pid).map_err(|_| TerminationError::ProcessTreeNotReaped {
+        reason: "cleanup_unproven",
+        survivors: Vec::new(),
+    })?;
+    let guard = SignalGuard::current();
+    signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
+    let deadline = Instant::now() + timeout;
+    let parent_exit = wait_for_child(child, deadline)?;
+    let Some(parent_exit) = parent_exit else {
+        signal_tree_exact(&tree, expected, SignalKind::Kill, &guard, source)?;
+        let _ = wait_for_child(child, Instant::now() + KILL_REAP_GRACE)?;
+        let _ = wait_for_descendants(&tree.descendants, Instant::now() + KILL_REAP_GRACE, source);
+        return Err(TerminationError::ParentGraceTimeout);
+    };
+    let exit_code = Some(signal_aware_exit_code(&parent_exit));
+    let survivors = wait_for_descendants(&tree.descendants, deadline, source);
+    if survivors.is_empty() {
+        return Ok(TerminationOutcome::Graceful { exit_code });
+    }
+    let (confirmed, unproven) =
+        select_confirmed_descendants(&survivors, &tree.descendant_births, source);
+    if !unproven.is_empty() {
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: unproven,
+        });
+    }
+    signal_descendants(&confirmed, SignalKind::Kill, &guard);
+    let leftover = wait_for_descendants(&confirmed, Instant::now() + KILL_REAP_GRACE, source);
+    if leftover.is_empty() {
+        Ok(TerminationOutcome::EscalatedAndReaped { exit_code })
+    } else {
+        Err(TerminationError::ProcessTreeNotReaped {
+            reason: "survived_sigkill",
+            survivors: leftover,
+        })
     }
 }
 
@@ -273,6 +365,48 @@ fn signal_tree(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+fn signal_tree_exact(
+    tree: &ProcessTreeSnapshot,
+    expected: ProcessInstance,
+    kind: SignalKind,
+    guard: &SignalGuard,
+    source: &dyn ProcessInstanceSource,
+) -> Result<(), TerminationError> {
+    let (confirmed, unproven) =
+        select_confirmed_descendants(&tree.descendants, &tree.descendant_births, source);
+    if !unproven.is_empty() {
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: unproven,
+        });
+    }
+    let signal = nix_signal(kind);
+    signal_parent_exact(expected, signal, guard, source)?;
+    signal_descendants(&confirmed, kind, guard);
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn signal_parent_exact(
+    expected: ProcessInstance,
+    signal: nix::sys::signal::Signal,
+    guard: &SignalGuard,
+    source: &dyn ProcessInstanceSource,
+) -> Result<(), TerminationError> {
+    if !matches!(source.observe(&expected), InstanceVerdict::SameLive { .. }) {
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "parent_unproven",
+            survivors: Vec::new(),
+        });
+    }
+    let pid = i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
+    if guard.permits_pid(pid) {
+        let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal);
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn signal_descendants(descendants: &[Descendant], kind: SignalKind, guard: &SignalGuard) {
     for descendant in descendants {
         signal_pid_guarded(descendant.pid, kind, guard);
@@ -445,5 +579,40 @@ mod tests {
         let (confirmed, unproven) = select_confirmed_descendants(&[survivor], &births, &source);
         assert_eq!(confirmed, vec![survivor]);
         assert!(unproven.is_empty());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn ac16_exact_parent_signal_refuses_a_reused_or_unverifiable_identity() {
+        let expected = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::linux(10, 100, 100),
+        };
+        let guard = SignalGuard::current();
+        let reused = FakeSource {
+            result: InspectResult::Present {
+                instance: ProcessInstance {
+                    pid: 42,
+                    birth: ProcessBirth::linux(11, 100, 100),
+                },
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(42),
+            },
+        };
+        for source in [
+            reused,
+            FakeSource {
+                result: InspectResult::Unverifiable,
+            },
+        ] {
+            assert!(matches!(
+                signal_parent_exact(expected, nix::sys::signal::Signal::SIGTERM, &guard, &source),
+                Err(TerminationError::ProcessTreeNotReaped {
+                    reason: "parent_unproven",
+                    ..
+                })
+            ));
+        }
     }
 }

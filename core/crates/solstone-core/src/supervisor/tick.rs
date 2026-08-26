@@ -14,8 +14,10 @@ use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
-    DEFAULT_INTERVAL_SECONDS, check_sync, machine_id, sync_conflict_event, write_sync_heartbeat,
+    DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus, check_sync,
+    machine_id, sync_conflict_event, write_sync_heartbeat,
 };
+use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system::process::{
     ProcessObservation as SystemProcessObservation, ProcessObservationTuple,
     classify_process_observation,
@@ -71,6 +73,19 @@ pub(crate) struct ShutdownSignals {
     interrupt: tokio::signal::unix::Signal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SupervisorSignal {
+    SigTerm,
+    SigInt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SupervisorStopReason {
+    Signal(SupervisorSignal),
+    SyncConflict,
+    ParentLost(ParentLossReason),
+}
+
 impl ShutdownSignals {
     pub(crate) fn install() -> Result<Self, String> {
         #[cfg(unix)]
@@ -87,14 +102,17 @@ impl ShutdownSignals {
         }
     }
 
-    async fn wait(&mut self) {
+    async fn wait(&mut self) -> SupervisorSignal {
         #[cfg(unix)]
         tokio::select! {
-            _ = self.terminate.recv() => {},
-            _ = self.interrupt.recv() => {},
+            _ = self.terminate.recv() => SupervisorSignal::SigTerm,
+            _ = self.interrupt.recv() => SupervisorSignal::SigInt,
         }
         #[cfg(not(unix))]
-        let _ = tokio::signal::ctrl_c().await;
+        {
+            let _ = tokio::signal::ctrl_c().await;
+            SupervisorSignal::SigInt
+        }
     }
 }
 
@@ -187,10 +205,19 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
     })
 }
 
-pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSignals) -> bool {
+pub(crate) async fn run(
+    state: &mut SupervisorState,
+    shutdown: &mut ShutdownSignals,
+    parent_watch: Option<ParentWatch>,
+) -> SupervisorStopReason {
     let mut last_status = Instant::now() - state.timing.status_interval;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
+        if let Some(watch) = parent_watch
+            && let ParentWatchStatus::Lost(reason) = watch.check(&SystemProcessInstanceSource)
+        {
+            return SupervisorStopReason::ParentLost(reason);
+        }
         let app_samples = reconcile_app_processes(state);
         let tick = Instant::now();
         state.queue.enforce_deadlines(tick);
@@ -255,7 +282,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
         }
         if last_sync.elapsed().as_secs_f64() >= DEFAULT_INTERVAL_SECONDS {
             if sync_tick(state) {
-                return true;
+                return SupervisorStopReason::SyncConflict;
             }
             last_sync = Instant::now();
         }
@@ -335,7 +362,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
         }
         tokio::select! {
             _ = tokio::time::sleep(state.timing.tick_interval) => {},
-            _ = shutdown.wait() => return false,
+            signal = shutdown.wait() => return SupervisorStopReason::Signal(signal),
         }
     }
 }

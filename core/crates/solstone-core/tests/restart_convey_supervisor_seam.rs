@@ -14,6 +14,9 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
+#[path = "support/installation_binding.rs"]
+mod installation_binding;
+
 struct Journal(PathBuf);
 impl Journal {
     fn new() -> Self {
@@ -59,6 +62,7 @@ fn signal_process_group(child: &Child, signal: nix::sys::signal::Signal) {
 }
 
 fn start(journal: &Journal, convey_argv: Option<String>) -> Supervisor {
+    let home = installation_binding::admit_for(&journal.0);
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
@@ -72,6 +76,7 @@ fn start(journal: &Journal, convey_argv: Option<String>) -> Supervisor {
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("HOME", home)
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),

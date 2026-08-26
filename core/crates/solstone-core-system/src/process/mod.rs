@@ -6,6 +6,7 @@ mod descendants;
 mod events;
 mod instance;
 mod log;
+mod macos_proc;
 mod observation;
 mod pdeathsig;
 mod restart;
@@ -40,7 +41,8 @@ pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
 pub(crate) use terminate::signal_pid;
 pub use terminate::{
     CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
-    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, terminate,
+    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, signal_exact_instance,
+    terminate, terminate_exact_instance,
 };
 
 /// Match Python `Popen.returncode`: normal exits are non-negative and signals

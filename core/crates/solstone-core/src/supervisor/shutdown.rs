@@ -4,7 +4,7 @@
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use solstone_core_system::lifecycle::ShutdownDriver;
+use solstone_core_system::lifecycle::{ShutdownDisposition, ShutdownDriver};
 use solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT;
 use solstone_core_system::provider_runtime::{
     ProviderStopCleanupRequest, ReasonCode, RuntimePhase,
@@ -12,20 +12,23 @@ use solstone_core_system::provider_runtime::{
 
 use super::runtime::SupervisorState;
 
-pub(crate) struct SupervisorShutdownDriver<'a> {
+pub(crate) struct SupervisorShutdownDriver {
     pub state: SupervisorState,
-    pub runtime: &'a tokio::runtime::Runtime,
+    pub runtime: tokio::runtime::Handle,
 }
-impl ShutdownDriver for SupervisorShutdownDriver<'_> {
-    fn reap_managed(&mut self, _: Duration) {
+impl ShutdownDriver for SupervisorShutdownDriver {
+    fn reap_managed(&mut self, _: Duration) -> ShutdownDisposition {
         self.state.reap_managed();
+        ShutdownDisposition::Orderly
     }
-    fn drain_tasks(&mut self, _: Duration) {
+    fn drain_tasks(&mut self, _: Duration) -> ShutdownDisposition {
         if !self.state.shutdown_started.swap(true, Ordering::AcqRel) {
             let _ = self.state.queue.shutdown();
         }
+        ShutdownDisposition::Orderly
     }
-    fn stop_children(&mut self, cap: Option<Duration>) {
+    fn stop_children(&mut self, cap: Option<Duration>) -> ShutdownDisposition {
+        let mut disposition = ShutdownDisposition::Orderly;
         for app in &mut self.state.app_processes {
             app.enabled = false;
             app.restart_at = None;
@@ -34,7 +37,13 @@ impl ShutdownDriver for SupervisorShutdownDriver<'_> {
             let Some(process) = app.process.as_mut() else {
                 continue;
             };
-            if let Err(error) = process.terminate(SERVICE_SHUTDOWN_TIMEOUT) {
+            if let Err(error) = process.terminate_exact(SERVICE_SHUTDOWN_TIMEOUT) {
+                if matches!(
+                    error,
+                    solstone_core_system::process::TerminationError::ParentGraceTimeout
+                ) {
+                    disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+                }
                 eprintln!(
                     "supervisor: failed to terminate {} during shutdown: {error}",
                     app.service.as_str()
@@ -53,12 +62,16 @@ impl ShutdownDriver for SupervisorShutdownDriver<'_> {
             std::thread::sleep(Duration::from_millis(10));
         }
         self.state.reap_managed();
+        disposition
     }
-    fn join_bus(&mut self, _: Duration) {
-        self.runtime.block_on(async {
-            self.state.connection.stop().await;
-            self.state.server.stop().await;
+    fn join_bus(&mut self, _: Duration) -> ShutdownDisposition {
+        tokio::task::block_in_place(|| {
+            self.runtime.block_on(async {
+                self.state.connection.stop().await;
+                self.state.server.stop().await;
+            });
         });
+        ShutdownDisposition::Orderly
     }
 }
 

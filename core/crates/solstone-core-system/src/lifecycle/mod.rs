@@ -5,22 +5,29 @@
 //! state but deliberately does not provide a supervisor binary or CLI.
 
 mod admission;
+mod parent;
 mod readiness;
 mod shutdown;
+mod startup;
 mod state;
 mod sweep;
 mod sync;
-mod watcher;
 
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
 pub use admission::SupervisorLease;
+pub use parent::{
+    DeclaredParent, ParentAdmissionFailure, ParentLossReason, ParentWatch, ParentWatchStatus,
+};
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
-pub use shutdown::{ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown};
+pub use shutdown::{
+    ShutdownDisposition, ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown,
+};
+pub use startup::{PreReadySupervisorLifecycle, SupervisorBootAdmission};
 pub use state::{
     append_supervisor_log, clear_ready as clear_readiness, clear_self_heartbeat,
     compact_log_if_oversized, recorded_supervisor_pid, write_sync_heartbeat,
@@ -31,7 +38,6 @@ pub use sync::{
     SyncConflictEvent, SyncSnapshot, check as check_sync, format_conflict_message, machine_id,
     sanitize_hostname, sync_conflict_event,
 };
-pub use watcher::{ParentDeathBackstop, ParentDeathReason, wait_until_parent_gone};
 
 /// Lifecycle failures that are meaningful to a supervisor host.
 #[derive(Debug, Error)]
@@ -79,45 +85,9 @@ impl SupervisorLifecycle {
     /// matching orphans, and publish this process's self-heartbeat.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn boot(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
-        let journal = journal.as_ref().to_path_buf();
-        let lock = state::open_supervisor_lock(&journal)?;
-        let lease = admission::acquire(lock)?;
-        let heartbeat_filename = self_heartbeat_filename();
-        let current_machine_id = sync::machine_id();
-        let now = epoch_seconds();
-        let sync_result = sync::check(
-            &journal,
-            &heartbeat_filename,
-            &current_machine_id,
-            None,
-            now,
-        )?;
-        if sync_result.is_boot_conflict() {
-            return Err(LifecycleError::SyncConflict(Box::new(sync_result)));
-        }
-        state::write_supervisor_identity(&journal, std::process::id())?;
-        let last_orphan_sweep = sweep::sweep_orphans(&journal, std::time::Duration::from_secs(1));
-        let heartbeat = sync::Heartbeat {
-            schema: 1,
-            machine_id: current_machine_id,
-            hostname: hostname(),
-            pid: std::process::id(),
-            wall_time: now.to_string(),
-            solstone_version: env!("CARGO_PKG_VERSION").to_owned(),
-            interval_seconds: sync::DEFAULT_INTERVAL_SECONDS as u32,
-            journal_path: journal.display().to_string(),
-        };
-        state::write_sync_heartbeat(
-            &journal,
-            &heartbeat_filename,
-            &serde_json::to_vec(&heartbeat)?,
-        )?;
-        Ok(Self {
-            journal,
-            heartbeat_filename,
-            last_orphan_sweep,
-            _lease: lease,
-        })
+        SupervisorBootAdmission::acquire(journal)?
+            .activate()?
+            .publish_heartbeat()
     }
 
     /// iOS and other unsupported targets have no supported process-start-time

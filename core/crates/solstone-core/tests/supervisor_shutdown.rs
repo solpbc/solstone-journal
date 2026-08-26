@@ -14,6 +14,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 
+#[path = "support/installation_binding.rs"]
+mod installation_binding;
 #[path = "support/supervisor_guard.rs"]
 mod supervisor_guard;
 
@@ -63,6 +65,7 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
 }
 
 fn start(journal: &TempJournal) -> SupervisorGuard {
+    let home = installation_binding::admit_for(&journal.0);
     SupervisorGuard::new(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
@@ -76,6 +79,7 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
             )
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+            .env("HOME", home)
             .env(
                 "SOLSTONE_SUPERVISOR_APP_BINARY",
                 env!("CARGO_BIN_EXE_solstone-core-system-test-child"),

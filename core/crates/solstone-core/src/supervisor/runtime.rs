@@ -21,7 +21,8 @@ use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
 use solstone_core_system::lifecycle::{
-    ForeignWriter, ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
+    ForeignWriter, ParentLossReason, ParentWatch, ParentWatchStatus, PreReadySupervisorLifecycle,
+    ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
 };
 use solstone_core_system::process::{
     ManagedProcess, RestartDecision, RestartPolicy, SpawnError, SpawnOptions, describe_exit,
@@ -231,16 +232,15 @@ impl ManagedAppProcess {
     pub(crate) fn request_restart(
         &mut self,
         journal: &Path,
-    ) -> Result<RestartRequestOutcome, nix::errno::Errno> {
+    ) -> Result<RestartRequestOutcome, String> {
         if self.restart_requested {
             return Ok(RestartRequestOutcome::Ignored);
         }
-        if let Some(process) = self.process.as_ref() {
+        if let Some(process) = self.process.as_mut() {
             let pid = process.pid();
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            )?;
+            process
+                .signal_exact(nix::sys::signal::Signal::SIGTERM)
+                .map_err(|error| error.to_string())?;
             self.restart_requested = true;
             return Ok(RestartRequestOutcome::Signaled { pid });
         }
@@ -410,6 +410,39 @@ fn resolve_journal_binary() -> Result<PathBuf, String> {
     Ok(resolve_journal_binary_from(exe_dir))
 }
 
+#[derive(Debug)]
+pub(crate) enum JournalBinaryPreflightError {
+    CurrentExecutable,
+    MissingOrNotExecutable { path: PathBuf },
+    InvalidLayout,
+}
+
+pub(crate) fn preflight_journal_binary(
+    options: &SupervisorOptions,
+) -> Result<Option<PathBuf>, JournalBinaryPreflightError> {
+    if app_fixture_binary().is_some()
+        || options.remote.as_deref().is_some_and(|url| !url.is_empty())
+    {
+        return Ok(None);
+    }
+    let path =
+        resolve_journal_binary().map_err(|_| JournalBinaryPreflightError::CurrentExecutable)?;
+    validate_journal_binary(path).map(Some)
+}
+
+fn validate_journal_binary(path: PathBuf) -> Result<PathBuf, JournalBinaryPreflightError> {
+    let metadata = std::fs::metadata(&path)
+        .map_err(|_| JournalBinaryPreflightError::MissingOrNotExecutable { path: path.clone() })?;
+    if !metadata.is_file() {
+        return Err(JournalBinaryPreflightError::InvalidLayout);
+    }
+    #[cfg(unix)]
+    if std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()) & 0o111 == 0 {
+        return Err(JournalBinaryPreflightError::MissingOrNotExecutable { path });
+    }
+    Ok(path)
+}
+
 fn resolve_available_port() -> std::io::Result<u16> {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
     Ok(listener.local_addr()?.port())
@@ -507,17 +540,31 @@ pub(crate) struct SupervisorOutcome {
     pub lifecycle: SupervisorLifecycle,
     pub state: SupervisorState,
     pub regime: ShutdownRegime,
-    pub sync_conflict: bool,
+    pub stop_reason: tick::SupervisorStopReason,
+}
+
+#[derive(Debug)]
+pub(crate) enum RuntimeBootError {
+    Startup(String),
+    ParentLostBeforeReadiness(ParentLossReason),
+}
+
+impl std::fmt::Display for RuntimeBootError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Startup(error) => formatter.write_str(error),
+            Self::ParentLostBeforeReadiness(reason) => {
+                write!(formatter, "parent lost before readiness: {reason:?}")
+            }
+        }
+    }
 }
 
 impl SupervisorState {
-    pub(crate) fn into_shutdown_driver<'a>(
-        self,
-        runtime: &'a tokio::runtime::Runtime,
-    ) -> SupervisorShutdownDriver<'a> {
+    pub(crate) fn into_shutdown_driver(self) -> SupervisorShutdownDriver {
         SupervisorShutdownDriver {
             state: self,
-            runtime,
+            runtime: tokio::runtime::Handle::current(),
         }
     }
 
@@ -616,7 +663,7 @@ pub(crate) fn spawn_app_process(
             }
         }
     }
-    let process = ManagedProcess::spawn(
+    let process = ManagedProcess::spawn_exact(
         app.argv.clone(),
         SpawnOptions {
             journal_root: journal.to_path_buf(),
@@ -720,20 +767,25 @@ async fn start_app_stack(
 }
 
 pub(crate) async fn boot_and_tick(
-    lifecycle: SupervisorLifecycle,
+    lifecycle: PreReadySupervisorLifecycle,
     journal: PathBuf,
     options: SupervisorOptions,
-) -> Result<SupervisorOutcome, String> {
-    let mut shutdown_signals = tick::ShutdownSignals::install()?;
+    journal_binary: Option<PathBuf>,
+    parent_watch: Option<ParentWatch>,
+) -> Result<SupervisorOutcome, RuntimeBootError> {
+    let mut shutdown_signals =
+        tick::ShutdownSignals::install().map_err(RuntimeBootError::Startup)?;
     let server = Arc::new(
         CallosumSocketServer::bind(journal.join("health/callosum.sock"))
             .await
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| RuntimeBootError::Startup(error.to_string()))?,
     );
     let mut connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), serde_json::Map::new());
     connection.start();
-    wait_for_callosum_connection(&mut connection).await?;
+    wait_for_callosum_connection(&mut connection)
+        .await
+        .map_err(RuntimeBootError::Startup)?;
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -869,7 +921,7 @@ pub(crate) async fn boot_and_tick(
             journal.join("health/scheduler.json"),
             now,
         )
-        .map_err(|error| error.to_string())?
+        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?
         .0;
         let schedule_sink = SupervisorScheduleSink {
             queue: queue.clone(),
@@ -879,28 +931,20 @@ pub(crate) async fn boot_and_tick(
         Some(scheduler)
     };
     let fixture_binary = app_fixture_binary();
-    let journal_binary = if fixture_binary.is_none() && !remote {
-        match resolve_journal_binary() {
-            Ok(binary) => Some(binary),
-            Err(error) => {
-                eprintln!("supervisor: failed to resolve journal binary: {error}");
-                None
-            }
-        }
-    } else {
-        None
-    };
     let fast_fixture_timing = fixture_binary.is_some()
         && std::env::var(APP_FIXTURE_FAST_TIMING_ENV).as_deref() == Ok("1");
     let readiness_probe = convey_readiness_probe(fixture_binary.as_deref(), fast_fixture_timing);
     let convey_port = if options.port != 0 {
         options.port
     } else {
-        resolve_available_port().map_err(|error| error.to_string())?
+        resolve_available_port().map_err(|error| RuntimeBootError::Startup(error.to_string()))?
     };
-    let direct_port = selected_direct_door_port(&journal, options.direct_port)?;
-    persist_direct_door_port(&journal, direct_port).map_err(|error| error.to_string())?;
-    initialize_direct_door(&journal, direct_port).map_err(|error| error.to_string())?;
+    let direct_port = selected_direct_door_port(&journal, options.direct_port)
+        .map_err(RuntimeBootError::Startup)?;
+    persist_direct_door_port(&journal, direct_port)
+        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
+    initialize_direct_door(&journal, direct_port)
+        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
     let mut app_processes = app_processes(
         &options,
         &journal,
@@ -916,14 +960,7 @@ pub(crate) async fn boot_and_tick(
         readiness_probe.as_ref(),
     )
     .await;
-    lifecycle
-        .signal_ready(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0.0, |value| value.as_secs_f64()),
-            serde_json::Map::new(),
-        )
-        .map_err(|error| error.to_string())?;
+    pause_before_final_parent_check().await;
     let heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
     let mut state = SupervisorState {
         journal,
@@ -951,6 +988,36 @@ pub(crate) async fn boot_and_tick(
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
     };
+    if let Some(watch) = parent_watch
+        && let ParentWatchStatus::Lost(reason) =
+            watch.check(&solstone_core_system::process::SystemProcessInstanceSource)
+    {
+        let _ = state.queue.shutdown();
+        for app in state.app_processes.iter_mut().rev() {
+            if let Some(process) = app.process.as_mut() {
+                let _ = process
+                    .terminate_exact(solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT);
+                process.cleanup();
+            }
+        }
+        state.connection.stop().await;
+        state.server.stop().await;
+        lifecycle
+            .abort_pre_ready()
+            .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
+        return Err(RuntimeBootError::ParentLostBeforeReadiness(reason));
+    }
+    let lifecycle = lifecycle
+        .publish_heartbeat()
+        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
+    lifecycle
+        .signal_ready(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |value| value.as_secs_f64()),
+            serde_json::Map::new(),
+        )
+        .map_err(|error| RuntimeBootError::Startup(error.to_string()))?;
     if let Err(error) = tick::initialize_catchup(
         &state.journal,
         &state.queue,
@@ -962,13 +1029,31 @@ pub(crate) async fn boot_and_tick(
         eprintln!("supervisor: startup catchup reconciliation failed: {error}");
     }
     state.last_retry_expiry_drain = Instant::now();
-    let sync_conflict = tick::run(&mut state, &mut shutdown_signals).await;
+    let stop_reason = tick::run(&mut state, &mut shutdown_signals, parent_watch).await;
     Ok(SupervisorOutcome {
         lifecycle,
         state,
         regime: ShutdownRegime::Standard,
-        sync_conflict,
+        stop_reason,
     })
+}
+
+async fn pause_before_final_parent_check() {
+    let Ok(marker) = std::env::var("SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK")
+    else {
+        return;
+    };
+    if std::env::var("SOLSTONE_SUPERVISOR_APP_FIXTURE").as_deref() != Ok("1") {
+        return;
+    }
+    let marker = PathBuf::from(marker);
+    if std::fs::write(&marker, b"paused\n").is_err() {
+        return;
+    }
+    let go = PathBuf::from(format!("{}.go", marker.display()));
+    while !go.exists() {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 async fn wait_for_callosum_connection(
@@ -1011,7 +1096,10 @@ async fn wait_for_callosum_connection(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_journal_binary_from, selected_direct_door_port};
+    use super::{
+        JournalBinaryPreflightError, resolve_journal_binary_from, selected_direct_door_port,
+        validate_journal_binary,
+    };
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -1020,6 +1108,31 @@ mod tests {
             resolve_journal_binary_from(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/solstone-core-journal")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sibling_preflight_requires_the_co_located_binary_to_be_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::TempDir::new().expect("temporary executable directory");
+        let sibling = resolve_journal_binary_from(directory.path());
+        assert!(matches!(
+            validate_journal_binary(sibling.clone()),
+            Err(JournalBinaryPreflightError::MissingOrNotExecutable { path }) if path == sibling
+        ));
+
+        std::fs::write(&sibling, b"fixture").expect("non-executable sibling");
+        std::fs::set_permissions(&sibling, std::fs::Permissions::from_mode(0o600))
+            .expect("non-executable mode");
+        assert!(matches!(
+            validate_journal_binary(sibling.clone()),
+            Err(JournalBinaryPreflightError::MissingOrNotExecutable { path }) if path == sibling
+        ));
+
+        std::fs::set_permissions(&sibling, std::fs::Permissions::from_mode(0o700))
+            .expect("executable mode");
+        assert_eq!(validate_journal_binary(sibling.clone()).unwrap(), sibling);
     }
 
     #[test]

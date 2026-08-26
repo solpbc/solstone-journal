@@ -18,6 +18,7 @@ unsafe_code = "deny"
 
 [dependencies]
 chrono = { workspace = true }
+libc = { workspace = true }
 # `feature` enables sysconf/SysconfVar for Linux process start-time identity.
 # `fs` is already unified from the workspace; name it here for lifecycle fd APIs.
 nix = { workspace = true, features = ["feature", "fs", "hostname", "process", "signal"] }

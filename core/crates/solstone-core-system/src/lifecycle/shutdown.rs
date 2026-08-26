@@ -18,6 +18,15 @@ pub enum ShutdownPhase {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ShutdownReport {
     pub phases: Vec<ShutdownPhase>,
+    pub disposition: ShutdownDisposition,
+    pub forced_phase: Option<ShutdownPhase>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShutdownDisposition {
+    #[default]
+    Orderly,
+    ForcedAfterGraceTimeout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,10 +37,10 @@ pub enum ShutdownRegime {
 
 /// Adapter for host-specific work; lifecycle owns the ordering witness.
 pub trait ShutdownDriver {
-    fn reap_managed(&mut self, cap: Duration);
-    fn drain_tasks(&mut self, cap: Duration);
-    fn stop_children(&mut self, cap: Option<Duration>);
-    fn join_bus(&mut self, cap: Duration);
+    fn reap_managed(&mut self, cap: Duration) -> ShutdownDisposition;
+    fn drain_tasks(&mut self, cap: Duration) -> ShutdownDisposition;
+    fn stop_children(&mut self, cap: Option<Duration>) -> ShutdownDisposition;
+    fn join_bus(&mut self, cap: Duration) -> ShutdownDisposition;
 }
 
 const APP_SUPERVISED_REAP_TIMEOUT: Duration = Duration::from_secs(3);
@@ -83,16 +92,45 @@ fn run_shutdown(
 ) -> ShutdownReport {
     let mut report = ShutdownReport::default();
     report.phases.push(ShutdownPhase::ReapManagedStarted);
-    driver.reap_managed(reap);
+    record_disposition(
+        &mut report,
+        driver.reap_managed(reap),
+        ShutdownPhase::ReapManagedCompleted,
+    );
     report.phases.push(ShutdownPhase::ReapManagedCompleted);
     report.phases.push(ShutdownPhase::DrainTasksStarted);
-    driver.drain_tasks(drain);
+    record_disposition(
+        &mut report,
+        driver.drain_tasks(drain),
+        ShutdownPhase::DrainTasksCompleted,
+    );
     report.phases.push(ShutdownPhase::DrainTasksCompleted);
     report.phases.push(ShutdownPhase::StopChildrenStarted);
-    driver.stop_children(children);
+    record_disposition(
+        &mut report,
+        driver.stop_children(children),
+        ShutdownPhase::StopChildrenCompleted,
+    );
     report.phases.push(ShutdownPhase::StopChildrenCompleted);
     report.phases.push(ShutdownPhase::JoinBusStarted);
-    driver.join_bus(bus);
+    record_disposition(
+        &mut report,
+        driver.join_bus(bus),
+        ShutdownPhase::JoinBusCompleted,
+    );
     report.phases.push(ShutdownPhase::JoinBusCompleted);
     report
+}
+
+fn record_disposition(
+    report: &mut ShutdownReport,
+    disposition: ShutdownDisposition,
+    phase: ShutdownPhase,
+) {
+    if matches!(disposition, ShutdownDisposition::ForcedAfterGraceTimeout)
+        && matches!(report.disposition, ShutdownDisposition::Orderly)
+    {
+        report.disposition = disposition;
+        report.forced_phase = Some(phase);
+    }
 }

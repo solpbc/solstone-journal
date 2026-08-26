@@ -6,20 +6,15 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use nix::unistd::pipe;
 #[cfg(target_os = "linux")]
 use solstone_core_system::lifecycle::sweep_orphans;
 use solstone_core_system::lifecycle::{
-    Heartbeat, ParentDeathBackstop, ParentDeathReason, ShutdownDriver, ShutdownPhase,
-    ShutdownRegime, SupervisorLifecycle, append_supervisor_log, check_sync,
-    compact_log_if_oversized, format_conflict_message, sanitize_hostname, shutdown,
-    sync_conflict_event, wait_until_parent_gone, write_sync_heartbeat,
+    Heartbeat, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle,
+    append_supervisor_log, check_sync, compact_log_if_oversized, format_conflict_message,
+    sanitize_hostname, shutdown, sync_conflict_event, write_sync_heartbeat,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
@@ -59,6 +54,21 @@ fn wait_for(path: &std::path::Path) {
         thread::sleep(Duration::from_millis(5));
     }
     panic!("fixture was not ready");
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, mode: &str) {
+    let status = Command::new(FIXTURE)
+        .args([
+            "orphan-sweep-spawner",
+            journal.to_str().expect("utf8"),
+            ready.to_str().expect("utf8"),
+            mode,
+        ])
+        .status()
+        .expect("spawn orphan fixture");
+    assert!(status.success());
+    wait_for(ready);
 }
 
 #[cfg(target_os = "linux")]
@@ -178,10 +188,30 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
 
     struct Driver;
     impl ShutdownDriver for Driver {
-        fn reap_managed(&mut self, _: Duration) {}
-        fn drain_tasks(&mut self, _: Duration) {}
-        fn stop_children(&mut self, _: Option<Duration>) {}
-        fn join_bus(&mut self, _: Duration) {}
+        fn reap_managed(
+            &mut self,
+            _: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
+        }
+        fn drain_tasks(
+            &mut self,
+            _: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
+        }
+        fn stop_children(
+            &mut self,
+            _: Option<Duration>,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
+        }
+        fn join_bus(
+            &mut self,
+            _: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
+        }
     }
     let ordinary = Bed::new("ordinary-shutdown");
     let lifecycle = SupervisorLifecycle::boot(&ordinary.root).expect("boot");
@@ -560,31 +590,36 @@ fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
 }
 
 #[test]
-fn ac26_parent_fd_eof_and_ac34_shutdown_order_are_explicit() {
-    let (reader, writer) = pipe().expect("pipe");
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        tx.send(wait_until_parent_gone(reader, Duration::ZERO))
-            .expect("reason");
-    });
-    drop(writer);
-    assert_eq!(
-        rx.recv_timeout(Duration::from_secs(1)).expect("watcher"),
-        ParentDeathReason::Eof
-    );
+fn ac34_shutdown_order_is_explicit() {
     struct Driver(Vec<Option<Duration>>);
     impl ShutdownDriver for Driver {
-        fn reap_managed(&mut self, cap: Duration) {
+        fn reap_managed(
+            &mut self,
+            cap: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
             self.0.push(Some(cap));
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
         }
-        fn drain_tasks(&mut self, cap: Duration) {
+        fn drain_tasks(
+            &mut self,
+            cap: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
             self.0.push(Some(cap));
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
         }
-        fn stop_children(&mut self, cap: Option<Duration>) {
+        fn stop_children(
+            &mut self,
+            cap: Option<Duration>,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
             self.0.push(cap);
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
         }
-        fn join_bus(&mut self, cap: Duration) {
+        fn join_bus(
+            &mut self,
+            cap: Duration,
+        ) -> solstone_core_system::lifecycle::ShutdownDisposition {
             self.0.push(Some(cap));
+            solstone_core_system::lifecycle::ShutdownDisposition::Orderly
         }
     }
     let mut app_driver = Driver(Vec::new());
@@ -621,39 +656,6 @@ fn ac26_parent_fd_eof_and_ac34_shutdown_order_are_explicit() {
             Some(Duration::from_secs(5)),
         ]
     );
-}
-
-#[test]
-fn ac27_parent_death_backstop_is_one_shot_and_uses_the_injected_ceiling() {
-    let backstop = ParentDeathBackstop::default();
-    let terms = Arc::new(AtomicUsize::new(0));
-    let sleeps = Arc::new(AtomicUsize::new(0));
-    let exits = Arc::new(AtomicUsize::new(0));
-    let ceiling = Duration::from_millis(7);
-    for _ in 0..2 {
-        let terms = Arc::clone(&terms);
-        let sleeps = Arc::clone(&sleeps);
-        let exits = Arc::clone(&exits);
-        backstop.enforce(
-            ceiling,
-            &[],
-            None,
-            move |duration| {
-                assert_eq!(duration, ceiling);
-                sleeps.fetch_add(1, Ordering::SeqCst);
-            },
-            move || {
-                terms.fetch_add(1, Ordering::SeqCst);
-            },
-            move |status| {
-                assert_eq!(status, 1);
-                exits.fetch_add(1, Ordering::SeqCst);
-            },
-        );
-    }
-    assert_eq!(terms.load(Ordering::SeqCst), 1);
-    assert_eq!(sleeps.load(Ordering::SeqCst), 1);
-    assert_eq!(exits.load(Ordering::SeqCst), 1);
 }
 
 #[test]

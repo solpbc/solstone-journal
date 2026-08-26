@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+#[cfg(debug_assertions)]
+use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
@@ -21,8 +23,10 @@ use super::log::DailyLogWriter;
 use super::pdeathsig::apply_parent_death_kill;
 use super::signal_aware_exit_code;
 use super::terminate::{
-    DRAIN_JOIN_TIMEOUT, SERVICE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, terminate,
+    DRAIN_JOIN_TIMEOUT, SERVICE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
+    signal_exact_instance, terminate, terminate_exact_instance,
 };
+use super::{InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource};
 
 #[derive(Debug, Error)]
 pub enum SpawnError {
@@ -32,6 +36,8 @@ pub enum SpawnError {
     Log(#[source] io::Error),
     #[error("failed to spawn child: {0}")]
     Spawn(#[source] io::Error),
+    #[error("failed to capture birth-bound identity for spawned pid {pid}")]
+    ExactInstanceUnavailable { pid: u32 },
 }
 
 /// Inputs owned by the caller rather than process-global state.
@@ -55,10 +61,30 @@ pub struct ManagedProcess {
     drains: Vec<JoinHandle<()>>,
     sink: Option<Arc<dyn ProcessEventSink>>,
     exit_emitted: bool,
+    termination_mode: TerminationMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TerminationMode {
+    Legacy,
+    Exact(ProcessInstance),
+    ExactExited,
 }
 
 impl ManagedProcess {
     pub fn spawn(cmd: Vec<String>, options: SpawnOptions) -> Result<Self, SpawnError> {
+        Self::spawn_with_mode(cmd, options, false)
+    }
+
+    pub fn spawn_exact(cmd: Vec<String>, options: SpawnOptions) -> Result<Self, SpawnError> {
+        Self::spawn_with_mode(cmd, options, true)
+    }
+
+    fn spawn_with_mode(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+        exact: bool,
+    ) -> Result<Self, SpawnError> {
         if cmd.is_empty() {
             return Err(SpawnError::EmptyCommand);
         }
@@ -126,7 +152,7 @@ impl ManagedProcess {
             ));
         }
 
-        Ok(Self {
+        let mut process = Self {
             child,
             name,
             cmd,
@@ -136,7 +162,30 @@ impl ManagedProcess {
             drains,
             sink: options.sink,
             exit_emitted: false,
-        })
+            termination_mode: TerminationMode::Legacy,
+        };
+        if exact {
+            delay_exact_identity_observation_for_test(&options.environment);
+            let source = SystemProcessInstanceSource;
+            match source.inspect(pid) {
+                InspectResult::Present { instance, .. } => {
+                    process.termination_mode = TerminationMode::Exact(instance);
+                }
+                _ if process
+                    .child
+                    .try_wait()
+                    .map_err(SpawnError::Spawn)?
+                    .is_some() =>
+                {
+                    // A short-lived child can exit before its birth-bound identity is
+                    // observed. It has already been reaped, so preserving its real
+                    // exit status is safer than reporting a false spawn failure.
+                    process.termination_mode = TerminationMode::ExactExited;
+                }
+                _ => return Err(SpawnError::ExactInstanceUnavailable { pid }),
+            }
+        }
+        Ok(process)
     }
 
     pub fn pid(&self) -> u32 {
@@ -183,7 +232,43 @@ impl ManagedProcess {
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
-        terminate(&mut self.child, timeout)
+        match self.termination_mode {
+            TerminationMode::Legacy => terminate(&mut self.child, timeout),
+            TerminationMode::Exact(expected) => {
+                let source = SystemProcessInstanceSource;
+                terminate_exact_instance(&mut self.child, expected, timeout, &source)
+            }
+            TerminationMode::ExactExited => self.exact_exited_outcome(),
+        }
+    }
+
+    pub fn terminate_exact(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<TerminationOutcome, TerminationError> {
+        match self.termination_mode {
+            TerminationMode::Exact(expected) => {
+                let source = SystemProcessInstanceSource;
+                terminate_exact_instance(&mut self.child, expected, timeout, &source)
+            }
+            TerminationMode::ExactExited => self.exact_exited_outcome(),
+            TerminationMode::Legacy => Err(TerminationError::ExactInstanceUnavailable),
+        }
+    }
+
+    pub fn signal_exact(
+        &mut self,
+        signal: nix::sys::signal::Signal,
+    ) -> Result<(), TerminationError> {
+        match self.termination_mode {
+            TerminationMode::Exact(expected) => {
+                let source = SystemProcessInstanceSource;
+                signal_exact_instance(expected, signal, &source)
+            }
+            TerminationMode::Legacy | TerminationMode::ExactExited => {
+                Err(TerminationError::ExactInstanceUnavailable)
+            }
+        }
     }
 
     pub fn log_path(&self) -> PathBuf {
@@ -191,6 +276,15 @@ impl ManagedProcess {
             .lock()
             .expect("log writer lock poisoned")
             .path()
+    }
+
+    fn exact_exited_outcome(&mut self) -> Result<TerminationOutcome, TerminationError> {
+        let Some(status) = self.child.try_wait()? else {
+            return Err(TerminationError::ExactInstanceUnavailable);
+        };
+        Ok(TerminationOutcome::Graceful {
+            exit_code: Some(signal_aware_exit_code(&status)),
+        })
     }
 
     /// Join drains and emit the exit event after a child exits.
@@ -230,10 +324,33 @@ impl ManagedProcess {
     }
 }
 
+/// Delay exact identity observation only for a debug-test process that opts in
+/// through its explicitly supplied child environment. This deterministically
+/// covers the short-lived-child race without adding a production control path.
+fn delay_exact_identity_observation_for_test(_environment: &BTreeMap<OsString, OsString>) {
+    #[cfg(debug_assertions)]
+    {
+        const DELAY_ENV: &str = "SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS";
+        let Some(delay) = _environment
+            .get(OsStr::new(DELAY_ENV))
+            .and_then(|value| value.to_str())
+            .and_then(|value| value.parse::<u64>().ok())
+        else {
+            return;
+        };
+        thread::sleep(Duration::from_millis(delay));
+    }
+}
+
 impl Drop for ManagedProcess {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
-            let _ = self.terminate(SERVICE_SHUTDOWN_TIMEOUT);
+            let _ = match self.termination_mode {
+                TerminationMode::Legacy => self.terminate(SERVICE_SHUTDOWN_TIMEOUT),
+                TerminationMode::Exact(_) | TerminationMode::ExactExited => {
+                    self.terminate_exact(SERVICE_SHUTDOWN_TIMEOUT)
+                }
+            };
         }
         self.cleanup();
     }

@@ -17,6 +17,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::oneshot;
 
+#[path = "support/installation_binding.rs"]
+mod installation_binding;
 #[path = "support/supervisor_guard.rs"]
 mod supervisor_guard;
 
@@ -98,6 +100,7 @@ impl SupervisorGuard {
 
 fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> SupervisorGuard {
     let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let home = installation_binding::admit_for(&journal.0);
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
@@ -110,7 +113,8 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> S
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
-        .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture);
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
+        .env("HOME", home);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }
@@ -507,6 +511,7 @@ fn start_with_app_binary(
     convey_argv: Option<String>,
     app_binary: &str,
 ) -> SupervisorGuard {
+    let home = installation_binding::admit_for(&journal.0);
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
@@ -522,7 +527,8 @@ fn start_with_app_binary(
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
-        .env("SOLSTONE_SUPERVISOR_APP_BINARY", app_binary);
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", app_binary)
+        .env("HOME", home);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }

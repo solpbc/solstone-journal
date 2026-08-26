@@ -91,6 +91,7 @@ impl Drop for TempJournal {
 }
 
 fn start(journal: &TempJournal, fixture: &str) -> SupervisorGuard {
+    let home = super::installation_binding::admit_for(&journal.0);
     SupervisorGuard::new(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
@@ -100,6 +101,7 @@ fn start(journal: &TempJournal, fixture: &str) -> SupervisorGuard {
             .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
             .env("SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE", "1")
+            .env("HOME", home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

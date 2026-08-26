@@ -3,6 +3,8 @@
 
 #![cfg(unix)]
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -47,6 +49,31 @@ impl Bed {
         )
         .expect("spawn fixture")
     }
+
+    fn spawn_exact(&self, reference: &str, args: &[&str]) -> ManagedProcess {
+        self.spawn_exact_with_environment(reference, args, BTreeMap::new())
+    }
+
+    fn spawn_exact_with_environment(
+        &self,
+        reference: &str,
+        args: &[&str],
+        environment: BTreeMap<OsString, OsString>,
+    ) -> ManagedProcess {
+        let mut cmd = vec![FIXTURE.to_owned()];
+        cmd.extend(args.iter().map(|value| (*value).to_owned()));
+        ManagedProcess::spawn_exact(
+            cmd,
+            SpawnOptions {
+                journal_root: self.root.clone(),
+                reference: reference.to_owned(),
+                day: Some("20260807".to_owned()),
+                sink: None,
+                environment,
+            },
+        )
+        .expect("spawn exact fixture")
+    }
 }
 
 impl Drop for Bed {
@@ -57,7 +84,10 @@ impl Drop for Bed {
 
 fn wait_for_ready(path: &std::path::Path) {
     for _ in 0..200 {
-        if path.exists() {
+        if fs::read_to_string(path)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+        {
             return;
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -458,4 +488,44 @@ fn ac27_linux_sigkill_of_spawner_kills_direct_child() {
         "direct child {grandchild_pid} survived SIGKILL of its spawner"
     );
     let _ = spawner.wait();
+}
+
+#[test]
+fn ac28_exact_managed_process_terminates_without_process_group_fallback() {
+    let bed = Bed::new("exact");
+    let mut process = bed.spawn_exact("exact", &["sleep"]);
+    assert!(matches!(
+        process.terminate_exact(Duration::from_secs(1)),
+        Ok(TerminationOutcome::Graceful { .. })
+            | Ok(TerminationOutcome::EscalatedAndReaped { .. })
+            | Err(TerminationError::ParentGraceTimeout)
+    ));
+    process.cleanup();
+}
+
+#[test]
+fn ac29_exact_spawn_preserves_an_immediate_child_exit_code() {
+    let bed = Bed::new("exact-immediate-exit");
+    let mut environment = BTreeMap::new();
+    environment.insert(
+        OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
+        OsString::from("100"),
+    );
+    let mut process = bed.spawn_exact_with_environment(
+        "exact-immediate-exit",
+        &["always-exit"],
+        environment,
+    );
+    let exit_code = loop {
+        if let Some(exit_code) = process.poll().expect("poll immediate exit") {
+            break exit_code;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert_eq!(exit_code, 1);
+    assert!(matches!(
+        process.terminate_exact(Duration::ZERO),
+        Ok(TerminationOutcome::Graceful { exit_code: Some(1) })
+    ));
+    process.cleanup();
 }

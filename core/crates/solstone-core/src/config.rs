@@ -15,8 +15,7 @@ use solstone_core_installation_identity::{
     namespace_name, root_token_from_path,
 };
 use solstone_core_journal::{
-    Source, detect_checkout_root, read_config_journal, resolve_identity_root_from_executable_dir,
-    resolve_journal_path,
+    Source, detect_checkout_root, read_config_journal, resolve_journal_path,
 };
 use solstone_core_setup::{
     identity_evidence::gather_wrapper_artifact_evidence,
@@ -457,29 +456,12 @@ fn resolve_non_strict_from(path: &Path, home: &Path, cwd: &Path) -> PathBuf {
     resolved
 }
 fn project_root() -> Option<PathBuf> {
-    env::current_exe().ok().and_then(|executable| {
-        executable
-            .ancestors()
-            .find(|path| path.join("pyproject.toml").is_file())
-            .map(Path::to_path_buf)
-    })
+    solstone_core::installation_context::project_root_from_current_executable()
 }
 
 fn identity_root_from_current_executable() -> Result<PathBuf, String> {
-    let executable = env::current_exe().map_err(|error| {
-        format!("journal config: could not resolve current executable: {error}")
-    })?;
-    let executable_dir = executable.parent().ok_or_else(|| {
-        "journal config: current executable has no containing directory".to_owned()
-    })?;
-    resolve_identity_root_from_executable_dir(executable_dir)
-        .or_else(project_root)
-        .ok_or_else(|| {
-            format!(
-                "journal config: could not resolve installation identity root from {}",
-                executable_dir.display()
-            )
-        })
+    solstone_core::installation_context::identity_root_from_current_executable()
+        .map_err(|error| format!("journal config: {error}"))
 }
 
 fn is_source_checkout() -> bool {

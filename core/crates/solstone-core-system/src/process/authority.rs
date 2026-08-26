@@ -120,6 +120,18 @@ impl LaunchAuthority {
         }
     }
 
+    pub fn terminate_exact(&mut self, timeout: Duration) -> Result<(), LaunchError> {
+        match self.inner_mut() {
+            Inner::Managed(process) => process
+                .terminate_exact(timeout)
+                .map(|_| ())
+                .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
+            Inner::Raw { .. } => Err(LaunchError::CapabilityUnavailable {
+                needed: "birth-bound managed process termination",
+            }),
+        }
+    }
+
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
         match self.inner_mut() {
             Inner::Managed(_) => None,

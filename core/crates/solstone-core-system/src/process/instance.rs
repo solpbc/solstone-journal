@@ -8,8 +8,6 @@ use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
 
-#[cfg(any(target_os = "macos", test))]
-use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeZone};
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
 
@@ -21,7 +19,7 @@ pub struct ProcessInstance {
 }
 
 /// Opaque start-time identity. Equality is exact (tick-level on Linux,
-/// second-level lstart on macOS). [`ProcessBirth::epoch_seconds`] is only for
+/// microsecond-level proc_bsdinfo on macOS). [`ProcessBirth::epoch_seconds`] is only for
 /// supervisor pid-file identity, which applies `START_TIME_TOLERANCE_SECONDS`.
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessBirth {
@@ -37,7 +35,7 @@ enum ProcessBirthInner {
         clk_tck: u64,
     },
     #[allow(dead_code)]
-    Macos { epoch_seconds: i64 },
+    Macos { epoch_micros: i64 },
 }
 
 impl PartialEq for ProcessBirth {
@@ -56,11 +54,9 @@ impl PartialEq for ProcessBirth {
                 },
             ) => left_ticks == right_ticks && left_btime == right_btime,
             (
+                ProcessBirthInner::Macos { epoch_micros: left },
                 ProcessBirthInner::Macos {
-                    epoch_seconds: left,
-                },
-                ProcessBirthInner::Macos {
-                    epoch_seconds: right,
+                    epoch_micros: right,
                 },
             ) => left == right,
             _ => false,
@@ -78,12 +74,12 @@ impl ProcessBirth {
                 btime,
                 clk_tck,
             } => btime as f64 + start_ticks as f64 / clk_tck as f64,
-            ProcessBirthInner::Macos { epoch_seconds } => epoch_seconds as f64,
+            ProcessBirthInner::Macos { epoch_micros } => epoch_micros as f64 / 1_000_000.0,
         }
     }
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub(crate) fn linux(start_ticks: u64, btime: u64, clk_tck: u64) -> Self {
+    pub fn linux(start_ticks: u64, btime: u64, clk_tck: u64) -> Self {
         Self {
             inner: ProcessBirthInner::Linux {
                 start_ticks,
@@ -94,9 +90,9 @@ impl ProcessBirth {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn macos(epoch_seconds: i64) -> Self {
+    pub(crate) fn macos(epoch_micros: i64) -> Self {
         Self {
-            inner: ProcessBirthInner::Macos { epoch_seconds },
+            inner: ProcessBirthInner::Macos { epoch_micros },
         }
     }
 }
@@ -380,146 +376,18 @@ fn census_linux() -> InstanceCensus {
     finalize_census(rows, complete)
 }
 
-#[cfg(any(target_os = "macos", test))]
-fn parse_macos_lstart(lstart: &str) -> Option<i64> {
-    let fields: Vec<_> = lstart.split_whitespace().collect();
-    let [weekday, month, day, time, year] = fields.as_slice() else {
-        return None;
-    };
-    let day: u8 = day.parse().ok()?;
-    let normalized = format!("{weekday} {month} {day:02} {time} {year}");
-    let naive = NaiveDateTime::parse_from_str(&normalized, "%a %b %d %H:%M:%S %Y").ok()?;
-    epoch_seconds_from_local_result(Local.from_local_datetime(&naive))
-}
-
-/// Resolve DST fall-back ambiguity to the earliest instant so identity writes
-/// and later identity checks make the same PID-reuse-safe comparison. A
-/// nonexistent spring-forward local time cannot name a real process, so it
-/// still fails closed.
-#[cfg(any(target_os = "macos", test))]
-fn epoch_seconds_from_local_result<Tz: TimeZone>(result: LocalResult<DateTime<Tz>>) -> Option<i64> {
-    match result {
-        LocalResult::Single(started) | LocalResult::Ambiguous(started, _) => {
-            Some(started.timestamp())
-        }
-        LocalResult::None => None,
-    }
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn execution_from_state_token(state: &str) -> Option<(ExecutionState, bool)> {
-    let ch = state.chars().next()?;
-    Some(match ch {
-        'Z' => (ExecutionState::Running, true),
-        'T' | 't' => (ExecutionState::Stopped, false),
-        _ => (ExecutionState::Running, false),
-    })
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn parse_macos_inspect_line(line: &str) -> Option<InspectResult> {
-    let mut parts = line.split_whitespace();
-    let pid: u32 = parts.next()?.parse().ok()?;
-    let ppid: u32 = parts.next()?.parse().ok()?;
-    let state = parts.next()?;
-    let pgid: i32 = parts.next()?.parse().ok()?;
-    let lstart = parts.collect::<Vec<_>>().join(" ");
-    let epoch_seconds = parse_macos_lstart(&lstart)?;
-    let (execution, zombie) = execution_from_state_token(state)?;
-    if zombie {
-        return Some(InspectResult::Absent);
-    }
-    Some(InspectResult::Present {
-        instance: ProcessInstance {
-            pid,
-            birth: ProcessBirth::macos(epoch_seconds),
-        },
-        execution,
-        ppid: Some(ppid),
-        pgid: Some(pgid),
-    })
-}
-
-/// One well-formed macOS census line: a live row, or a zombie to omit.
-#[cfg(any(target_os = "macos", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MacosCensusLine {
-    Row(CensusRow),
-    Zombie,
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn parse_macos_census_line(line: &str) -> Option<MacosCensusLine> {
-    let mut parts = line.split_whitespace();
-    let pid: u32 = parts.next()?.parse().ok()?;
-    let ppid: u32 = parts.next()?.parse().ok()?;
-    let pgid: i32 = parts.next()?.parse().ok()?;
-    let state = parts.next()?;
-    let lstart = parts.collect::<Vec<_>>().join(" ");
-    let epoch_seconds = parse_macos_lstart(&lstart)?;
-    let (execution, zombie) = execution_from_state_token(state)?;
-    if zombie {
-        return Some(MacosCensusLine::Zombie);
-    }
-    Some(MacosCensusLine::Row(CensusRow {
-        instance: ProcessInstance {
-            pid,
-            birth: ProcessBirth::macos(epoch_seconds),
-        },
-        ppid,
-        pgid,
-        execution,
-    }))
-}
-
 #[cfg(target_os = "macos")]
 fn inspect_macos(pid: u32) -> InspectResult {
-    let output = match std::process::Command::new("/bin/ps")
-        .args([
-            "-p",
-            &pid.to_string(),
-            "-o",
-            "pid=,ppid=,state=,pgid=,lstart=",
-        ])
-        .env("LC_ALL", "C")
-        .output()
-    {
-        Ok(output) => output,
-        Err(_) => return InspectResult::Unverifiable,
-    };
-    if !output.status.success() {
-        return InspectResult::Absent;
+    match super::macos_proc::read_bsd_info(pid) {
+        Ok(info) => super::macos_proc::inspect_from_macos_bsd_info(info),
+        Err(_) => InspectResult::Unverifiable,
     }
-    let line = String::from_utf8_lossy(&output.stdout);
-    let line = line.trim();
-    if line.is_empty() {
-        return InspectResult::Absent;
-    }
-    parse_macos_inspect_line(line).unwrap_or(InspectResult::Unverifiable)
-}
-
-/// Build a census from macOS `ps` text. Malformed lines mark Incomplete; zombies are omitted.
-#[cfg(any(target_os = "macos", test))]
-fn census_macos_from_text(text: &str) -> InstanceCensus {
-    let mut rows = Vec::new();
-    let mut complete = true;
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match parse_macos_census_line(line) {
-            Some(MacosCensusLine::Row(row)) => rows.push(row),
-            Some(MacosCensusLine::Zombie) => {}
-            None => complete = false,
-        }
-    }
-    finalize_census(rows, complete)
 }
 
 #[cfg(target_os = "macos")]
 fn census_macos() -> InstanceCensus {
     let output = match std::process::Command::new("/bin/ps")
-        .args(["-axo", "pid=,ppid=,pgid=,state=,lstart="])
+        .args(["-axo", "pid="])
         .env("LC_ALL", "C")
         .output()
     {
@@ -529,7 +397,32 @@ fn census_macos() -> InstanceCensus {
     if !output.status.success() {
         return InstanceCensus::Incomplete(Vec::new());
     }
-    census_macos_from_text(&String::from_utf8_lossy(&output.stdout))
+    let mut rows = Vec::new();
+    let mut complete = true;
+    for raw in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(pid) = raw.trim().parse::<u32>() else {
+            complete = false;
+            continue;
+        };
+        match inspect_macos(pid) {
+            InspectResult::Present {
+                instance,
+                execution,
+                ppid: Some(ppid),
+                pgid: Some(pgid),
+            } => {
+                rows.push(CensusRow {
+                    instance,
+                    ppid,
+                    pgid,
+                    execution,
+                });
+            }
+            InspectResult::Absent => {}
+            InspectResult::Present { .. } | InspectResult::Unverifiable => complete = false,
+        }
+    }
+    finalize_census(rows, complete)
 }
 
 /// macOS orphan-candidate table. Separate from the birth/liveness sample because
@@ -583,7 +476,6 @@ fn parse_macos_sweep_row(line: &str) -> Option<MacosSweepRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Local, LocalResult, TimeZone, Utc};
 
     struct FakeSource {
         result: InspectResult,
@@ -752,145 +644,6 @@ mod tests {
                 execution: ExecutionState::Running
             }
         );
-    }
-
-    #[test]
-    fn macos_lstart_parser_accepts_c_locale_timestamp() {
-        let expected = Local
-            .with_ymd_and_hms(2026, 8, 10, 12, 34, 56)
-            .single()
-            .expect("unambiguous summer time")
-            .timestamp();
-        assert_eq!(
-            parse_macos_lstart("Mon Aug 10 12:34:56 2026").expect("parse lstart"),
-            expected
-        );
-    }
-
-    #[test]
-    fn macos_lstart_parser_rejects_malformed_timestamp() {
-        assert!(parse_macos_lstart("not an lstart timestamp").is_none());
-    }
-
-    #[test]
-    fn macos_lstart_parser_resolves_ambiguous_local_time_deterministically() {
-        let earliest = Utc
-            .with_ymd_and_hms(2026, 11, 1, 7, 30, 0)
-            .single()
-            .expect("utc time");
-        let latest = Utc
-            .with_ymd_and_hms(2026, 11, 1, 8, 30, 0)
-            .single()
-            .expect("utc time");
-        assert_eq!(
-            epoch_seconds_from_local_result(LocalResult::Ambiguous(earliest, latest))
-                .expect("resolve ambiguity"),
-            earliest.timestamp()
-        );
-    }
-
-    #[test]
-    fn macos_lstart_parser_rejects_nonexistent_local_time() {
-        let nonexistent: LocalResult<chrono::DateTime<Utc>> = LocalResult::None;
-        assert!(epoch_seconds_from_local_result(nonexistent).is_none());
-    }
-
-    #[test]
-    fn macos_inspect_line_puts_lstart_last() {
-        let line = "99 1 T 99 Mon Aug 10 12:34:56 2026";
-        match parse_macos_inspect_line(line) {
-            Some(InspectResult::Present {
-                instance,
-                execution,
-                ppid,
-                pgid,
-                ..
-            }) => {
-                assert_eq!(instance.pid, 99);
-                assert_eq!(execution, ExecutionState::Stopped);
-                assert_eq!(ppid, Some(1));
-                assert_eq!(pgid, Some(99));
-                assert_eq!(
-                    instance.birth,
-                    ProcessBirth::macos(parse_macos_lstart("Mon Aug 10 12:34:56 2026").unwrap())
-                );
-            }
-            other => panic!("expected Present, got {other:?}"),
-        }
-        assert!(parse_macos_inspect_line("99 1 S 99 not-an-lstart").is_none());
-    }
-
-    #[test]
-    fn macos_census_line_parses_stopped_row() {
-        match parse_macos_census_line("99 1 99 T Mon Aug 10 12:34:56 2026") {
-            Some(MacosCensusLine::Row(census)) => {
-                assert_eq!(census.instance.pid, 99);
-                assert_eq!(census.ppid, 1);
-                assert_eq!(census.pgid, 99);
-                assert_eq!(census.execution, ExecutionState::Stopped);
-            }
-            other => panic!("expected Row, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn macos_census_line_parses_running_row() {
-        match parse_macos_census_line("42 1 42 S Mon Aug 10 12:34:56 2026") {
-            Some(MacosCensusLine::Row(census)) => {
-                assert_eq!(census.instance.pid, 42);
-                assert_eq!(census.ppid, 1);
-                assert_eq!(census.pgid, 42);
-                assert_eq!(census.execution, ExecutionState::Running);
-            }
-            other => panic!("expected Row, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn macos_census_line_well_formed_zombie_is_skip() {
-        assert_eq!(
-            parse_macos_census_line("7 1 7 Z Mon Aug 10 12:34:56 2026"),
-            Some(MacosCensusLine::Zombie)
-        );
-    }
-
-    #[test]
-    fn macos_census_line_rejects_malformed_rows() {
-        assert!(parse_macos_census_line("x 1 99 T Mon Aug 10 12:34:56 2026").is_none());
-        assert!(parse_macos_census_line("99 x 99 T Mon Aug 10 12:34:56 2026").is_none());
-        assert!(parse_macos_census_line("99 1 x T Mon Aug 10 12:34:56 2026").is_none());
-        assert!(parse_macos_census_line("99 1 99").is_none());
-        assert!(parse_macos_census_line("99 1 99 T not-an-lstart").is_none());
-        assert!(parse_macos_census_line("7 1 7 Z not-an-lstart").is_none());
-    }
-
-    #[test]
-    fn macos_census_from_text_zombie_among_live_rows_is_complete() {
-        let text = "42 1 42 S Mon Aug 10 12:34:56 2026\n\n7 1 7 Z Mon Aug 10 12:34:56 2026\n99 1 99 T Mon Aug 10 12:34:56 2026\n";
-        match census_macos_from_text(text) {
-            InstanceCensus::Complete(rows) => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0].instance.pid, 42);
-                assert_eq!(rows[0].execution, ExecutionState::Running);
-                assert_eq!(rows[1].instance.pid, 99);
-                assert_eq!(rows[1].execution, ExecutionState::Stopped);
-            }
-            other => panic!("expected Complete, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn macos_census_from_text_malformed_row_is_incomplete() {
-        let text =
-            "42 1 42 S Mon Aug 10 12:34:56 2026\nnot-a-row\n99 1 99 T Mon Aug 10 12:34:56 2026\n";
-        match census_macos_from_text(text) {
-            InstanceCensus::Incomplete(rows) => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0].instance.pid, 42);
-                assert_eq!(rows[1].instance.pid, 99);
-            }
-            other => panic!("expected Incomplete, got {other:?}"),
-        }
     }
 
     #[test]

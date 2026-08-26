@@ -340,6 +340,10 @@ bin = "solstone-core-install-lease-holder"
 reason = "test child; never ship"
 
 [[deny]]
+bin = "solstone-core-hosted-supervisor-fixture"
+reason = "test child; never ship"
+
+[[deny]]
 bin = "solstone-cortex-controller"
 reason = "test child; never ship"
 

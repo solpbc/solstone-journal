@@ -62,7 +62,7 @@ mod navigate;
 mod service;
 mod service_logs;
 mod settings;
-mod supervisor;
+use solstone_core::supervisor;
 mod thinking;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -128,6 +128,48 @@ enum JournalPathError {
 fn install_logger() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
         .try_init();
+}
+
+fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override.clone()) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("supervisor runtime unavailable: {error}");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match runtime.block_on(supervisor::run_hosted(&journal, options, None)) {
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::SyncConflict,
+        } => {
+            eprintln!("supervisor: refusing boot, live foreign writer detected");
+            ExitCode::from(1)
+        }
+        supervisor::SupervisorHostOutcome::Refused { reason } => {
+            eprintln!("supervisor failed to boot: {reason:?}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::ParentLost { .. } => ExitCode::from(EXIT_TEMPFAIL),
+        supervisor::SupervisorHostOutcome::OrderlyShutdown { cause }
+        | supervisor::SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout { cause, .. } => {
+            if matches!(cause, supervisor::ShutdownCause::SyncConflict) {
+                ExitCode::from(2)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -327,7 +369,7 @@ fn main() -> ExitCode {
             print!("{CORTEX_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Supervisor(options)) => supervisor::run(options),
+        Ok(Command::Supervisor(options)) => run_supervisor(options),
         Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
         Ok(Command::SupervisorInvalid(error)) => {
             eprint!("{SUPERVISOR_USAGE}");
