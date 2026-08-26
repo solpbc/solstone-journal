@@ -560,11 +560,12 @@ impl std::fmt::Display for RuntimeBootError {
 }
 
 impl SupervisorState {
-    pub(crate) fn into_shutdown_driver(self) -> SupervisorShutdownDriver {
-        SupervisorShutdownDriver {
-            state: self,
-            runtime: tokio::runtime::Handle::current(),
-        }
+    pub(crate) fn into_shutdown_driver(self, regime: ShutdownRegime) -> SupervisorShutdownDriver {
+        SupervisorShutdownDriver::new(
+            self,
+            tokio::runtime::Handle::current(),
+            matches!(regime, ShutdownRegime::ParentLossBounded),
+        )
     }
 
     pub(crate) fn reap_managed(&mut self) {
@@ -596,6 +597,43 @@ impl SupervisorState {
                 app.restart_at = None;
             }
         }
+    }
+
+    pub(crate) fn reap_managed_until(&mut self, deadline: Instant) -> bool {
+        self.local.processes.retain(|process| process.running);
+        self.parakeet.processes.retain(|process| process.running);
+        let mut completed = true;
+        for app in &mut self.app_processes {
+            if Instant::now() >= deadline {
+                completed = false;
+                break;
+            }
+            let exited = match app.process.as_mut() {
+                Some(process) => match process.poll() {
+                    Ok(Some(_)) => {
+                        if !process.cleanup_until(deadline) {
+                            completed = false;
+                        }
+                        true
+                    }
+                    Ok(None) => false,
+                    Err(error) => {
+                        eprintln!(
+                            "supervisor: failed to poll {} during reap: {error}",
+                            app.service.as_str()
+                        );
+                        false
+                    }
+                },
+                None => false,
+            };
+            if exited {
+                app.process = None;
+                app.started_at = None;
+                app.restart_at = None;
+            }
+        }
+        completed
     }
 }
 
@@ -1044,12 +1082,22 @@ pub(crate) async fn boot_and_tick(
         parent_watch,
     )
     .await;
+    let regime = shutdown_regime_for(&stop_reason);
     Ok(SupervisorOutcome {
         lifecycle,
         state,
-        regime: ShutdownRegime::Standard,
+        regime,
         stop_reason,
     })
+}
+
+fn shutdown_regime_for(stop_reason: &tick::SupervisorStopReason) -> ShutdownRegime {
+    match stop_reason {
+        tick::SupervisorStopReason::ParentLost(_) => ShutdownRegime::ParentLossBounded,
+        tick::SupervisorStopReason::Signal(_) | tick::SupervisorStopReason::Sync(_) => {
+            ShutdownRegime::Standard
+        }
+    }
 }
 
 async fn pause_before_final_parent_check() {
@@ -1125,9 +1173,13 @@ async fn wait_for_callosum_connection(
 mod tests {
     use super::{
         JournalBinaryPreflightError, resolve_journal_binary_from, selected_direct_door_port,
-        validate_journal_binary,
+        shutdown_regime_for, validate_journal_binary,
     };
     use std::path::{Path, PathBuf};
+
+    use solstone_core_system::lifecycle::{ParentLossReason, ShutdownRegime, SyncTickOutcome};
+
+    use super::super::tick::{SupervisorSignal, SupervisorStopReason};
 
     #[test]
     fn resolves_journal_binary_from_executable_directory() {
@@ -1178,6 +1230,24 @@ mod tests {
         assert_eq!(
             selected_direct_door_port(journal.path(), Some(9001)).unwrap(),
             9001
+        );
+    }
+
+    #[test]
+    fn parent_loss_bounded_regime_is_selected_only_for_parent_lost_stop_reasons() {
+        assert_eq!(
+            shutdown_regime_for(&SupervisorStopReason::ParentLost(
+                ParentLossReason::ExitedOrReused,
+            )),
+            ShutdownRegime::ParentLossBounded
+        );
+        assert_eq!(
+            shutdown_regime_for(&SupervisorStopReason::Signal(SupervisorSignal::SigTerm)),
+            ShutdownRegime::Standard
+        );
+        assert_eq!(
+            shutdown_regime_for(&SupervisorStopReason::Sync(SyncTickOutcome::Healthy)),
+            ShutdownRegime::Standard
         );
     }
 }

@@ -259,7 +259,7 @@ pub async fn run_hosted(
         tick::SupervisorStopReason::ParentLost(reason) => ShutdownCause::ParentLost(reason),
     };
     let sync_conflict = matches!(cause, ShutdownCause::Sync(SyncFailureKind::Conflict));
-    let mut driver = outcome.state.into_shutdown_driver();
+    let mut driver = outcome.state.into_shutdown_driver(outcome.regime);
     let shutdown = outcome
         .lifecycle
         .shutdown(&mut driver, outcome.regime, sync_conflict);
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn parent_loss_receipts_replace_stale_outcomes_for_lost_parent_observations() {
+    fn parent_loss_receipts_replace_missing_stale_and_wrong_nonce_outcomes() {
         let expected_parent = instance(42, 10);
         let admitted_source = Source {
             self_result: present(instance(std::process::id(), 1), Some(expected_parent.pid)),
@@ -525,15 +525,6 @@ mod tests {
         let stale = SupervisorHostOutcome::OrderlyShutdown {
             cause: ShutdownCause::Signal(SupervisorSignal::SigTerm),
         };
-        write_hosted_supervisor_receipt(&receipt_path, "stale-nonce", &stale)
-            .expect("stale receipt");
-        assert_eq!(
-            read_hosted_supervisor_receipt(&receipt_path)
-                .expect("stale receipt reads")
-                .nonce,
-            "stale-nonce"
-        );
-
         let cases = [
             (
                 Source {
@@ -550,7 +541,7 @@ mod tests {
                 ParentLossReason::Unverifiable,
             ),
         ];
-        for (index, (source, reason)) in cases.into_iter().enumerate() {
+        for (observation_index, (source, reason)) in cases.into_iter().enumerate() {
             assert_eq!(watch.check(&source), ParentWatchStatus::Lost(reason));
             let outcome = classify_shutdown(
                 ShutdownCause::ParentLost(reason),
@@ -564,13 +555,27 @@ mod tests {
                 }
             );
 
-            let nonce = format!("parent-loss-{index}");
-            write_hosted_supervisor_receipt(&receipt_path, &nonce, &outcome)
-                .expect("parent-loss receipt");
-            let receipt =
-                read_hosted_supervisor_receipt(&receipt_path).expect("parent-loss receipt reads");
-            assert_eq!(receipt.nonce, nonce);
-            assert_eq!(receipt.outcome, outcome);
+            for (receipt_state, previous) in [
+                ("missing", None),
+                ("stale", Some(("stale-nonce", stale.clone()))),
+                ("wrong-nonce", Some(("unrelated-nonce", stale.clone()))),
+            ] {
+                let _ = std::fs::remove_file(&receipt_path);
+                if let Some((nonce, previous_outcome)) = previous {
+                    write_hosted_supervisor_receipt(&receipt_path, nonce, &previous_outcome)
+                        .expect("previous receipt");
+                } else {
+                    assert!(!receipt_path.exists(), "{receipt_state} receipt is absent");
+                }
+
+                let nonce = format!("parent-loss-{observation_index}-{receipt_state}");
+                write_hosted_supervisor_receipt(&receipt_path, &nonce, &outcome)
+                    .expect("fresh parent-loss receipt");
+                let receipt = read_hosted_supervisor_receipt(&receipt_path)
+                    .expect("fresh parent-loss receipt reads");
+                assert_eq!(receipt.nonce, nonce);
+                assert_eq!(receipt.outcome, outcome);
+            }
         }
     }
 

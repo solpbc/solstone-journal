@@ -21,10 +21,10 @@ use solstone_core_system::lifecycle::{
 };
 use solstone_core_system::lifecycle::{
     AdmissionWaitMarker, AdmissionWaitReason, FRESH_WINDOW_SECONDS, Heartbeat, HeartbeatV2, RunId,
-    ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle, SyncCheckResult,
-    SyncPeerIdentity, SyncRescan, WriterId, admission_wait_marker_filename, append_supervisor_log,
-    compact_log_if_oversized, rescan_sync_read_only, sanitize_hostname, shutdown,
-    sync_conflict_event, v2_heartbeat_filename, write_sync_heartbeat,
+    ShutdownDisposition, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle,
+    SyncCheckResult, SyncPeerIdentity, SyncRescan, WriterId, admission_wait_marker_filename,
+    append_supervisor_log, compact_log_if_oversized, rescan_sync_read_only, sanitize_hostname,
+    shutdown, sync_conflict_event, v2_heartbeat_filename, write_sync_heartbeat,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::process::{ProcessBirth, ProcessInstance, SystemProcessInstanceSource};
@@ -1046,6 +1046,80 @@ fn ac34_shutdown_order_is_explicit() {
             Some(Duration::from_secs(5)),
         ]
     );
+}
+
+#[test]
+fn parent_loss_bounded_shutdown_preserves_first_forced_phase_with_receipt_slack() {
+    struct Driver {
+        caps: Vec<Option<Duration>>,
+        forced_at: usize,
+        calls: usize,
+    }
+
+    impl Driver {
+        fn record(&mut self, cap: Option<Duration>) -> ShutdownDisposition {
+            self.caps.push(cap);
+            let disposition = if self.calls == self.forced_at {
+                ShutdownDisposition::ForcedAfterGraceTimeout
+            } else {
+                ShutdownDisposition::Orderly
+            };
+            self.calls += 1;
+            disposition
+        }
+    }
+
+    impl ShutdownDriver for Driver {
+        fn reap_managed(&mut self, cap: Duration) -> ShutdownDisposition {
+            self.record(Some(cap))
+        }
+
+        fn drain_tasks(&mut self, cap: Duration) -> ShutdownDisposition {
+            self.record(Some(cap))
+        }
+
+        fn stop_children(&mut self, cap: Option<Duration>) -> ShutdownDisposition {
+            self.record(cap)
+        }
+
+        fn join_bus(&mut self, cap: Duration) -> ShutdownDisposition {
+            self.record(Some(cap))
+        }
+    }
+
+    let mut driver = Driver {
+        caps: Vec::new(),
+        forced_at: 1,
+        calls: 0,
+    };
+    let report = shutdown(&mut driver, ShutdownRegime::ParentLossBounded);
+
+    assert_eq!(report.phases.len(), 8);
+    assert_eq!(
+        driver.caps,
+        vec![
+            Some(Duration::from_millis(250)),
+            Some(Duration::from_millis(500)),
+            Some(Duration::from_millis(1_250)),
+            Some(Duration::from_millis(1_500)),
+        ]
+    );
+    assert_eq!(
+        report.forced_phase,
+        Some(ShutdownPhase::DrainTasksCompleted)
+    );
+
+    let phase_budget_ms = driver
+        .caps
+        .iter()
+        .flatten()
+        .map(Duration::as_millis)
+        .sum::<u128>();
+    let end_to_end_budget_ms = phase_budget_ms + 1_000 + 500;
+    assert_eq!(phase_budget_ms, 3_500);
+    assert_eq!(end_to_end_budget_ms, 5_000);
+    assert!(end_to_end_budget_ms <= 8_000);
+    assert_eq!(8_000 - end_to_end_budget_ms, 3_000);
 }
 
 #[test]

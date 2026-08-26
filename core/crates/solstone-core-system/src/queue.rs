@@ -153,7 +153,13 @@ trait QueueProcess: Send {
         &mut self,
         timeout: Duration,
     ) -> Result<TerminationOutcome, TerminationError>;
+    fn terminate_exact_until(
+        &mut self,
+        deadline: Instant,
+    ) -> Result<TerminationOutcome, TerminationError>;
     fn cleanup(&mut self);
+    fn cleanup_until(&mut self, deadline: Instant) -> bool;
+    fn detach_after_bounded_shutdown(&mut self);
 }
 
 struct ManagedQueueProcess(LaunchAuthority);
@@ -178,8 +184,27 @@ impl QueueProcess for ManagedQueueProcess {
         }
     }
 
+    fn terminate_exact_until(
+        &mut self,
+        deadline: Instant,
+    ) -> Result<TerminationOutcome, TerminationError> {
+        match self.0.terminate_exact_until(deadline) {
+            Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
+            Err(LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
+            Err(error) => Err(TerminationError::Io(io::Error::other(error))),
+        }
+    }
+
     fn cleanup(&mut self) {
         self.0.cleanup();
+    }
+
+    fn cleanup_until(&mut self, deadline: Instant) -> bool {
+        self.0.cleanup_until(deadline)
+    }
+
+    fn detach_after_bounded_shutdown(&mut self) {
+        self.0.detach_after_bounded_shutdown();
     }
 }
 
@@ -631,6 +656,90 @@ impl TaskQueue {
                 .expect("queue state lock poisoned");
             state = next;
             if timeout.timed_out() {
+                break;
+            }
+        }
+        TaskQueueShutdownReport {
+            active_count,
+            forced,
+        }
+    }
+
+    /// Stop the queue without waiting beyond one caller-owned shutdown deadline.
+    ///
+    /// The default [`Self::shutdown`] contract intentionally retains its two
+    /// independent ten-second windows. Hosted parent-loss shutdown uses this
+    /// stricter variant so task termination and active-record reaping consume
+    /// one shared budget instead.
+    pub fn shutdown_until(&self, deadline: Instant) -> TaskQueueShutdownReport {
+        let (active_count, snapshot): (usize, Vec<ShutdownSnapshot>) = {
+            let mut state = self.inner.state.lock().expect("queue state lock poisoned");
+            state.shutdown = true;
+            let active = state
+                .active
+                .iter()
+                .map(|(reference, active)| (reference.clone(), Arc::clone(&active.process)))
+                .collect::<Vec<_>>();
+            let active_count = active.len();
+            (active_count, active)
+        };
+        let references = snapshot
+            .iter()
+            .map(|(reference, _)| reference.clone())
+            .collect::<Vec<_>>();
+        let (completed_send, completed_receive) = std::sync::mpsc::channel();
+        for (_, process) in snapshot {
+            let completed_send = completed_send.clone();
+            thread::spawn(move || {
+                let mut process = process.lock().expect("managed process lock poisoned");
+                let forced = process.terminate_exact_until(deadline).is_err()
+                    || !process.cleanup_until(deadline);
+                if forced {
+                    process.detach_after_bounded_shutdown();
+                }
+                let _ = completed_send.send(forced);
+            });
+        }
+        drop(completed_send);
+
+        let mut forced = false;
+        for _ in 0..active_count {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                forced = true;
+                break;
+            }
+            match completed_receive.recv_timeout(remaining) {
+                Ok(worker_forced) => forced |= worker_forced,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    forced = true;
+                    break;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    forced = true;
+                    break;
+                }
+            }
+        }
+
+        let mut state = self.inner.state.lock().expect("queue state lock poisoned");
+        while references
+            .iter()
+            .any(|reference| state.active.contains_key(reference))
+        {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                forced = true;
+                break;
+            }
+            let (next, timeout) = self
+                .inner
+                .reaped
+                .wait_timeout(state, remaining)
+                .expect("queue state lock poisoned");
+            state = next;
+            if timeout.timed_out() {
+                forced = true;
                 break;
             }
         }
@@ -1356,10 +1465,24 @@ mod tests {
             }
         }
 
+        fn terminate_exact_until(
+            &mut self,
+            _deadline: Instant,
+        ) -> Result<TerminationOutcome, TerminationError> {
+            self.terminate_exact(Duration::ZERO)
+        }
+
         fn cleanup(&mut self) {
             self.cleanups
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
+
+        fn cleanup_until(&mut self, _deadline: Instant) -> bool {
+            self.cleanup();
+            true
+        }
+
+        fn detach_after_bounded_shutdown(&mut self) {}
     }
 
     enum SpawnPlan {

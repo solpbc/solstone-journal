@@ -49,6 +49,7 @@ pub struct ShutdownOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShutdownRegime {
     AppSupervised,
+    ParentLossBounded,
     Standard,
 }
 
@@ -73,9 +74,27 @@ const _: () = assert!(
         < APP_SUPERVISED_SHUTDOWN_CEILING.as_secs()
 );
 
+// Parent loss keeps the existing one-second watch cadence and reserves a
+// half-second for lifecycle artifacts plus the hosted receipt. The four
+// shutdown phases therefore consume at most 3.5 seconds of the eight-second
+// receiver window, leaving three seconds of end-to-end slack.
+const PARENT_LOSS_REAP_TIMEOUT: Duration = Duration::from_millis(250);
+const PARENT_LOSS_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+const PARENT_LOSS_CHILD_STOP_TIMEOUT: Duration = Duration::from_millis(1_250);
+const PARENT_LOSS_BUS_JOIN_TIMEOUT: Duration = Duration::from_millis(1_500);
+const PARENT_LOSS_SHUTDOWN_CEILING: Duration = Duration::from_millis(3_500);
+const _: () = assert!(
+    PARENT_LOSS_REAP_TIMEOUT.as_millis()
+        + PARENT_LOSS_DRAIN_TIMEOUT.as_millis()
+        + PARENT_LOSS_CHILD_STOP_TIMEOUT.as_millis()
+        + PARENT_LOSS_BUS_JOIN_TIMEOUT.as_millis()
+        <= PARENT_LOSS_SHUTDOWN_CEILING.as_millis()
+);
+
 pub fn shutdown(driver: &mut dyn ShutdownDriver, regime: ShutdownRegime) -> ShutdownReport {
     match regime {
         ShutdownRegime::AppSupervised => shutdown_app_supervised(driver),
+        ShutdownRegime::ParentLossBounded => shutdown_parent_loss_bounded(driver),
         ShutdownRegime::Standard => shutdown_standard(driver),
     }
 }
@@ -97,6 +116,16 @@ fn shutdown_standard(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
         Duration::from_secs(10),
         Some(CHILD_STOP_TIMEOUT),
         Duration::from_secs(5),
+    )
+}
+
+fn shutdown_parent_loss_bounded(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
+    run_shutdown(
+        driver,
+        PARENT_LOSS_REAP_TIMEOUT,
+        PARENT_LOSS_DRAIN_TIMEOUT,
+        Some(PARENT_LOSS_CHILD_STOP_TIMEOUT),
+        PARENT_LOSS_BUS_JOIN_TIMEOUT,
     )
 }
 

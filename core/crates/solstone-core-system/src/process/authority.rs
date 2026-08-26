@@ -4,7 +4,7 @@
 use std::fmt;
 use std::io;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Output};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
@@ -132,6 +132,19 @@ impl LaunchAuthority {
         }
     }
 
+    /// Terminate a managed child without opening a wait beyond `deadline`.
+    pub fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
+        match self.inner_mut() {
+            Inner::Managed(process) => process
+                .terminate_exact_until(deadline)
+                .map(|_| ())
+                .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
+            Inner::Raw { .. } => Err(LaunchError::CapabilityUnavailable {
+                needed: "birth-bound managed process termination",
+            }),
+        }
+    }
+
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
         match self.inner_mut() {
             Inner::Managed(_) => None,
@@ -169,6 +182,26 @@ impl LaunchAuthority {
     pub fn cleanup(&mut self) {
         if let Inner::Managed(process) = self.inner_mut() {
             process.cleanup();
+        }
+    }
+
+    /// Clean up a managed child only while the caller's shared deadline remains.
+    pub fn cleanup_until(&mut self, deadline: Instant) -> bool {
+        match self.inner_mut() {
+            Inner::Managed(process) => process.cleanup_until(deadline),
+            Inner::Raw { child, .. } => child.try_wait().ok().flatten().is_some(),
+        }
+    }
+
+    /// Discard the retained authority after a bounded shutdown expires so drop
+    /// cannot begin a new service-length termination window.
+    pub fn detach_after_bounded_shutdown(&mut self) {
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.detach_after_bounded_shutdown(),
+            Some(Inner::Raw { .. }) => {
+                let _ = self.inner.take();
+            }
+            None => {}
         }
     }
 

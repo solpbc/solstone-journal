@@ -24,7 +24,7 @@ use super::pdeathsig::apply_parent_death_kill;
 use super::signal_aware_exit_code;
 use super::terminate::{
     DRAIN_JOIN_TIMEOUT, SERVICE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
-    signal_exact_instance, terminate, terminate_exact_instance,
+    signal_exact_instance, terminate, terminate_exact_instance, terminate_exact_instance_until,
 };
 use super::{InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource};
 
@@ -69,6 +69,7 @@ enum TerminationMode {
     Legacy,
     Exact(ProcessInstance),
     ExactExited,
+    BoundedShutdownDetached,
 }
 
 impl ManagedProcess {
@@ -251,6 +252,9 @@ impl ManagedProcess {
                 terminate_exact_instance(&mut self.child, expected, timeout, &source)
             }
             TerminationMode::ExactExited => self.exact_exited_outcome(),
+            TerminationMode::BoundedShutdownDetached => {
+                Err(TerminationError::ExactInstanceUnavailable)
+            }
         }
     }
 
@@ -264,8 +268,34 @@ impl ManagedProcess {
                 terminate_exact_instance(&mut self.child, expected, timeout, &source)
             }
             TerminationMode::ExactExited => self.exact_exited_outcome(),
-            TerminationMode::Legacy => Err(TerminationError::ExactInstanceUnavailable),
+            TerminationMode::Legacy | TerminationMode::BoundedShutdownDetached => {
+                Err(TerminationError::ExactInstanceUnavailable)
+            }
         }
+    }
+
+    /// Terminate this exact process without waiting beyond one shared phase deadline.
+    pub fn terminate_exact_until(
+        &mut self,
+        deadline: Instant,
+    ) -> Result<TerminationOutcome, TerminationError> {
+        match self.termination_mode {
+            TerminationMode::Exact(expected) => {
+                let source = SystemProcessInstanceSource;
+                terminate_exact_instance_until(&mut self.child, expected, deadline, &source)
+            }
+            TerminationMode::ExactExited => self.exact_exited_outcome(),
+            TerminationMode::Legacy | TerminationMode::BoundedShutdownDetached => {
+                Err(TerminationError::ExactInstanceUnavailable)
+            }
+        }
+    }
+
+    /// Prevent drop from opening a new service-length termination window after
+    /// a bounded shutdown has returned a forced result.
+    pub fn detach_after_bounded_shutdown(&mut self) {
+        self.termination_mode = TerminationMode::BoundedShutdownDetached;
+        self.drains.clear();
     }
 
     pub fn signal_exact(
@@ -277,7 +307,9 @@ impl ManagedProcess {
                 let source = SystemProcessInstanceSource;
                 signal_exact_instance(expected, signal, &source)
             }
-            TerminationMode::Legacy | TerminationMode::ExactExited => {
+            TerminationMode::Legacy
+            | TerminationMode::ExactExited
+            | TerminationMode::BoundedShutdownDetached => {
                 Err(TerminationError::ExactInstanceUnavailable)
             }
         }
@@ -334,6 +366,43 @@ impl ManagedProcess {
         );
         self.exit_emitted = true;
     }
+
+    /// Join output drains only while the caller's shared deadline remains.
+    /// Timed-out drain handles detach with their process, matching the existing
+    /// bounded cleanup behavior without extending the caller's deadline.
+    pub fn cleanup_until(&mut self, deadline: Instant) -> bool {
+        if self.child.try_wait().ok().flatten().is_none() {
+            return false;
+        }
+        let mut completed = true;
+        for drain in self.drains.drain(..) {
+            completed &= join_drain_until(drain, deadline);
+        }
+        if self.exit_emitted {
+            return completed;
+        }
+        let exit_code = self
+            .child
+            .try_wait()
+            .ok()
+            .flatten()
+            .map(|status| signal_aware_exit_code(&status));
+        let log_path = self.log_path();
+        emit(
+            &self.sink,
+            ProcessEvent::Exited {
+                reference: self.reference.clone(),
+                name: self.name.clone(),
+                pid: self.child.id(),
+                exit_code,
+                duration: self.started_at.elapsed(),
+                cmd: self.cmd.clone(),
+                log_path,
+            },
+        );
+        self.exit_emitted = true;
+        completed
+    }
 }
 
 /// Delay exact identity observation only for a debug-test process that opts in
@@ -378,6 +447,9 @@ impl Drop for ManagedProcess {
                 TerminationMode::Exact(_) | TerminationMode::ExactExited => {
                     self.terminate_exact(SERVICE_SHUTDOWN_TIMEOUT)
                 }
+                TerminationMode::BoundedShutdownDetached => {
+                    Ok(TerminationOutcome::Graceful { exit_code: None })
+                }
             };
         }
         self.cleanup();
@@ -393,6 +465,19 @@ fn join_drain_bounded(handle: JoinHandle<()>) {
     if rx.recv_timeout(DRAIN_JOIN_TIMEOUT).is_err() {
         eprintln!("managed process: drain join exceeded DRAIN_JOIN_TIMEOUT; detaching");
     }
+}
+
+fn join_drain_until(handle: JoinHandle<()>, deadline: Instant) -> bool {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return false;
+    }
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = handle.join();
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(remaining).is_ok()
 }
 
 fn spawn_drain<R>(

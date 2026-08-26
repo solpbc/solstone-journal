@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::io;
 use std::process::Child;
-use std::time::Duration;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::{process::ExitStatus, time::Instant};
+use std::process::ExitStatus;
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
@@ -90,6 +90,28 @@ pub fn terminate_exact_instance(
     }
 }
 
+/// Terminate one birth-bound child tree without waiting beyond `deadline`.
+///
+/// As with [`terminate_exact_instance`], every signal remains guarded by a
+/// fresh exact-instance observation. A deadline expiry reports the existing
+/// forced-shutdown error rather than widening authority to a replacement.
+pub fn terminate_exact_instance_until(
+    child: &mut Child,
+    expected: ProcessInstance,
+    deadline: Instant,
+    source: &dyn ProcessInstanceSource,
+) -> Result<TerminationOutcome, TerminationError> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        terminate_exact_unix_until(child, expected, deadline, source)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (child, expected, deadline, source);
+        Err(TerminationError::DescendantCoverageUnavailable)
+    }
+}
+
 /// Send a direct signal only after revalidating the exact remembered process.
 pub fn signal_exact_instance(
     expected: ProcessInstance,
@@ -149,6 +171,59 @@ fn terminate_exact_unix(
     }
     signal_descendants(&confirmed, SignalKind::Kill, &guard);
     let leftover = wait_for_descendants(&confirmed, Instant::now() + KILL_REAP_GRACE, source);
+    if leftover.is_empty() {
+        Ok(TerminationOutcome::EscalatedAndReaped { exit_code })
+    } else {
+        Err(TerminationError::ProcessTreeNotReaped {
+            reason: "survived_sigkill",
+            survivors: leftover,
+        })
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn terminate_exact_unix_until(
+    child: &mut Child,
+    expected: ProcessInstance,
+    deadline: Instant,
+    source: &dyn ProcessInstanceSource,
+) -> Result<TerminationOutcome, TerminationError> {
+    if Instant::now() >= deadline {
+        return Err(TerminationError::ParentGraceTimeout);
+    }
+    let parent_pid =
+        i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
+    if i32::try_from(child.id()).ok() != Some(parent_pid) {
+        return Err(TerminationError::ExactInstanceUnavailable);
+    }
+    let tree = snapshot(parent_pid).map_err(|_| TerminationError::ProcessTreeNotReaped {
+        reason: "cleanup_unproven",
+        survivors: Vec::new(),
+    })?;
+    let guard = SignalGuard::current();
+    signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
+    let parent_exit = wait_for_child(child, deadline)?;
+    let Some(parent_exit) = parent_exit else {
+        signal_tree_exact(&tree, expected, SignalKind::Kill, &guard, source)?;
+        let _ = wait_for_child(child, deadline)?;
+        let _ = wait_for_descendants(&tree.descendants, deadline, source);
+        return Err(TerminationError::ParentGraceTimeout);
+    };
+    let exit_code = Some(signal_aware_exit_code(&parent_exit));
+    let survivors = wait_for_descendants(&tree.descendants, deadline, source);
+    if survivors.is_empty() {
+        return Ok(TerminationOutcome::Graceful { exit_code });
+    }
+    let (confirmed, unproven) =
+        select_confirmed_descendants(&survivors, &tree.descendant_births, source);
+    if !unproven.is_empty() {
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: unproven,
+        });
+    }
+    signal_descendants(&confirmed, SignalKind::Kill, &guard);
+    let leftover = wait_for_descendants(&confirmed, deadline, source);
     if leftover.is_empty() {
         Ok(TerminationOutcome::EscalatedAndReaped { exit_code })
     } else {
