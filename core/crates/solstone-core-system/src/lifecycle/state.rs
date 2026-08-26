@@ -1,29 +1,125 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The sole lifecycle leaf permitted to create, replace, or remove `health/` files.
+//! Lifecycle-owned health state.
 
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use solstone_core_journal_io::{
+    BoundAtomicOutcome, BoundParentLock, ClaimName, ClaimRemovalError, ClaimRemovalOutcome,
+    DetailedAtomicError, ExistingParentLockError, FileObservation, FlatDirectory,
+    FlatDirectoryError, JournalRoot, acquire_existing_parent_lock_bound, atomic_replace_bound,
+    claim_and_remove_observed, create_or_open_flat_directory_bound, read_observed_file_bounded,
+};
+use thiserror::Error;
 
 use super::LifecycleError;
 use super::readiness::ReadinessMarker;
+use super::sync::MAX_SYNC_HEARTBEAT_BYTES;
+
+static SELF_HEARTBEAT_CLAIM_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 fn health(journal: &Path) -> PathBuf {
     journal.join("health")
 }
 
+/// The retained health capability and singleton lock acquired beneath it.
+pub(crate) struct SupervisorLock {
+    pub(crate) health: FlatDirectory,
+    pub(crate) lease: BoundParentLock,
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum SupervisorLockError {
+    #[error("supervisor already running")]
+    AlreadyRunning,
+    #[error("could not bind health directory: {0}")]
+    BindHealth(FlatDirectoryError),
+    #[error("could not acquire supervisor lock: {0}")]
+    Acquire(ExistingParentLockError),
+}
+
+/// Bind/create `health` and retain the persistent singleton lock beneath it.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub fn open_supervisor_lock(journal: &Path) -> Result<File, LifecycleError> {
-    fs::create_dir_all(health(journal))?;
-    Ok(OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(health(journal).join("supervisor.lock"))?)
+pub(crate) fn open_supervisor_lock(
+    root: &JournalRoot,
+) -> Result<SupervisorLock, SupervisorLockError> {
+    let health = create_or_open_flat_directory_bound(
+        root,
+        OsStr::new("health"),
+        0o700,
+        root.canonical_path(),
+    )
+    .map_err(SupervisorLockError::BindHealth)?;
+    let lease = match acquire_existing_parent_lock_bound(
+        &health,
+        OsStr::new("supervisor.lock"),
+        Duration::ZERO,
+        Duration::ZERO,
+    ) {
+        Ok(lease) => lease,
+        Err(ExistingParentLockError::Timeout(_)) => {
+            return Err(SupervisorLockError::AlreadyRunning);
+        }
+        Err(error) => return Err(SupervisorLockError::Acquire(error)),
+    };
+    Ok(SupervisorLock { health, lease })
+}
+
+#[derive(Debug, Error)]
+pub enum HeartbeatWriteError {
+    #[error("invalid heartbeat filename")]
+    InvalidFilename,
+    #[error("could not publish heartbeat: {source}")]
+    Publish {
+        #[source]
+        source: DetailedAtomicError,
+    },
+    #[error("heartbeat publication durability is uncertain: {source}")]
+    DurabilityUncertain {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("published heartbeat disappeared before it could be retained")]
+    ObservationMissing,
+    #[error("could not retain published heartbeat observation: {source}")]
+    Observation {
+        #[source]
+        source: FlatDirectoryError,
+    },
+    #[error("published heartbeat bytes changed before retention")]
+    ObservationBytesMismatched,
+}
+
+/// Outcome of claim-only self-heartbeat cleanup.
+#[derive(Debug)]
+pub enum SelfHeartbeatRemoval {
+    NoCleanupAuthority,
+    Removed,
+    NotClean { outcome: ClaimRemovalOutcome },
+    NotCleanError { source: ClaimRemovalError },
+}
+
+impl fmt::Display for SelfHeartbeatRemoval {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoCleanupAuthority => formatter.write_str("no self-heartbeat cleanup authority"),
+            Self::Removed => formatter.write_str("self heartbeat removed"),
+            Self::NotClean { outcome } => write!(
+                formatter,
+                "self heartbeat was not cleanly removed: {outcome:?}"
+            ),
+            Self::NotCleanError { source } => {
+                write!(formatter, "self heartbeat cleanup failed: {source}")
+            }
+        }
+    }
 }
 
 pub fn write_readiness(
@@ -33,7 +129,6 @@ pub fn write_readiness(
 ) -> Result<(), LifecycleError> {
     let pid = read_pid(&health(journal).join("supervisor.pid"))?;
     let start_time = read_f64(&health(journal).join("supervisor.start_time"))?;
-    // These three fields are supervisor identity, never caller-controlled extras.
     extra.remove("pid");
     extra.remove("ready_at");
     extra.remove("start_time");
@@ -68,23 +163,54 @@ pub(crate) fn clear_supervisor_identity(journal: &Path) -> Result<(), LifecycleE
     Ok(())
 }
 
-pub fn clear_self_heartbeat(journal: &Path, filename: &str) -> Result<(), LifecycleError> {
-    match fs::remove_file(heartbeat_path(journal, filename)?) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
+/// Atomically publish a heartbeat through the retained sync descriptor, then
+/// retain only an exact stable observation of the bytes that were published.
+pub fn write_sync_heartbeat(
+    sync: &FlatDirectory,
+    filename: &str,
+    body: &[u8],
+) -> Result<FileObservation, HeartbeatWriteError> {
+    let name = heartbeat_name(filename)?;
+    match atomic_replace_bound(sync, name, body, 0o600) {
+        Ok(BoundAtomicOutcome::Published) => {}
+        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { source }) => {
+            return Err(HeartbeatWriteError::DurabilityUncertain { source });
+        }
+        Err(source) => return Err(HeartbeatWriteError::Publish { source }),
+    }
+    let observation = read_observed_file_bounded(sync, name, MAX_SYNC_HEARTBEAT_BYTES)
+        .map_err(|source| HeartbeatWriteError::Observation { source })?
+        .ok_or(HeartbeatWriteError::ObservationMissing)?;
+    if observation.bytes != body {
+        return Err(HeartbeatWriteError::ObservationBytesMismatched);
+    }
+    Ok(observation)
+}
+
+/// Remove only the exact observation retained after a prior successful publish.
+pub fn clear_self_heartbeat(
+    sync: &FlatDirectory,
+    self_filename: &str,
+    retained: Option<&FileObservation>,
+) -> Result<SelfHeartbeatRemoval, LifecycleError> {
+    validate_heartbeat_filename(self_filename)?;
+    let Some(prior) = retained else {
+        return Ok(SelfHeartbeatRemoval::NoCleanupAuthority);
+    };
+    let claim = next_claim_name()?;
+    match claim_and_remove_observed(sync, OsStr::new(self_filename), prior, &claim) {
+        Ok(ClaimRemovalOutcome::Removed) => Ok(SelfHeartbeatRemoval::Removed),
+        Ok(outcome) => Ok(SelfHeartbeatRemoval::NotClean { outcome }),
+        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError { source }),
     }
 }
 
-pub fn write_sync_heartbeat(
-    journal: &Path,
-    filename: &str,
-    body: &[u8],
-) -> Result<(), LifecycleError> {
-    atomic_write(&heartbeat_path(journal, filename)?, body)
+fn heartbeat_name(filename: &str) -> Result<&OsStr, HeartbeatWriteError> {
+    validate_heartbeat_filename(filename).map_err(|_| HeartbeatWriteError::InvalidFilename)?;
+    Ok(OsStr::new(filename))
 }
 
-fn heartbeat_path(journal: &Path, filename: &str) -> Result<PathBuf, LifecycleError> {
+fn validate_heartbeat_filename(filename: &str) -> Result<(), LifecycleError> {
     let candidate = Path::new(filename);
     if filename.is_empty()
         || filename.starts_with('.')
@@ -94,7 +220,17 @@ fn heartbeat_path(journal: &Path, filename: &str) -> Result<PathBuf, LifecycleEr
     {
         return Err(LifecycleError::InvalidHeartbeatFilename);
     }
-    Ok(health(journal).join("sync").join(filename))
+    Ok(())
+}
+
+fn next_claim_name() -> Result<ClaimName, LifecycleError> {
+    let sequence = SELF_HEARTBEAT_CLAIM_SEQUENCE
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .map_err(|_| LifecycleError::Identity("self heartbeat claim sequence exhausted"))?;
+    let candidate = format!("!solstone-claim-{:08x}-{sequence:016x}", std::process::id());
+    ClaimName::parse(&candidate).map_err(|_| LifecycleError::Identity("self heartbeat claim name"))
 }
 
 pub fn compact_log_if_oversized(log_path: &Path, max_bytes: u64) -> Result<(), LifecycleError> {
@@ -174,6 +310,8 @@ pub fn append_supervisor_log(
     Ok(())
 }
 
+// Readiness/identity state remains path-owned for this dispatch. This is the
+// pre-existing helper used only by those functions, never by heartbeat I/O.
 fn atomic_write(path: &Path, body: &[u8]) -> Result<(), LifecycleError> {
     let parent = path
         .parent()
@@ -281,4 +419,87 @@ pub(crate) fn test_supervisor_journal(
 #[cfg(test)]
 pub(crate) fn remove_test_supervisor_journal(root: PathBuf) {
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::Builder;
+
+    use super::*;
+
+    fn temporary() -> tempfile::TempDir {
+        Builder::new()
+            .prefix("solstone-lifecycle-state-")
+            .tempdir_in("/var/tmp")
+            .expect("temporary journal")
+    }
+
+    fn bound_sync(root_path: &Path) -> FlatDirectory {
+        let root = JournalRoot::open(root_path).expect("open journal root");
+        let health = create_or_open_flat_directory_bound(
+            &root,
+            OsStr::new("health"),
+            0o700,
+            root.canonical_path(),
+        )
+        .expect("bind health");
+        create_or_open_flat_directory_bound(
+            &health,
+            OsStr::new("sync"),
+            0o700,
+            &root.canonical_path().join("health"),
+        )
+        .expect("bind sync")
+    }
+
+    #[test]
+    fn no_retained_observation_never_falls_back_to_path_removal() {
+        let temporary = temporary();
+        let sync = bound_sync(temporary.path());
+        let heartbeat = temporary.path().join("health/sync/self.check");
+        fs::write(&heartbeat, b"unretained").expect("fixture heartbeat");
+
+        assert!(matches!(
+            clear_self_heartbeat(&sync, "self.check", None).expect("no cleanup authority"),
+            SelfHeartbeatRemoval::NoCleanupAuthority
+        ));
+        assert!(heartbeat.exists());
+    }
+
+    #[test]
+    fn verified_observation_is_removed_only_through_a_claim() {
+        let temporary = temporary();
+        let sync = bound_sync(temporary.path());
+        let observation =
+            write_sync_heartbeat(&sync, "self.check", b"heartbeat").expect("publish and retain");
+
+        assert!(matches!(
+            clear_self_heartbeat(&sync, "self.check", Some(&observation)).expect("claim removal"),
+            SelfHeartbeatRemoval::Removed
+        ));
+        assert!(!temporary.path().join("health/sync/self.check").exists());
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn durability_uncertainty_never_grants_a_retained_observation() {
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_fault,
+        };
+
+        let temporary = temporary();
+        let sync = bound_sync(temporary.path());
+        let (result, fault_consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            nix::errno::Errno::EIO as i32,
+            || write_sync_heartbeat(&sync, "self.check", b"heartbeat"),
+        );
+
+        assert!(fault_consumed);
+        assert!(matches!(
+            result,
+            Err(HeartbeatWriteError::DurabilityUncertain { .. })
+        ));
+    }
 }

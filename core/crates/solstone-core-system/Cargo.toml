@@ -16,6 +16,9 @@ autotests = false
 [lints.rust]
 unsafe_code = "deny"
 
+[features]
+test-hooks = ["solstone-core-journal-io/test-hooks"]
+
 [dependencies]
 chrono = { workspace = true }
 libc = { workspace = true }

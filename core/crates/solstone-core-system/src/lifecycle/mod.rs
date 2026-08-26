@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Supervisor lifecycle primitives.  This module owns `health/` operational
+//! Supervisor lifecycle primitives. This module owns `health/` operational
 //! state but deliberately does not provide a supervisor binary or CLI.
 
-mod admission;
 mod parent;
 mod readiness;
 mod shutdown;
@@ -15,9 +14,11 @@ mod sync;
 
 use std::path::{Path, PathBuf};
 
+use solstone_core_journal_io::{
+    BoundParentLock, ExistingParentLockError, FileObservation, FlatDirectory, JournalRoot,
+};
 use thiserror::Error;
 
-pub use admission::SupervisorLease;
 pub use parent::{
     DeclaredParent, ParentAdmissionFailure, ParentLossReason, ParentWatch, ParentWatchStatus,
 };
@@ -29,15 +30,29 @@ pub use shutdown::{
 };
 pub use startup::{PreReadySupervisorLifecycle, SupervisorBootAdmission};
 pub use state::{
-    append_supervisor_log, clear_ready as clear_readiness, clear_self_heartbeat,
-    compact_log_if_oversized, recorded_supervisor_pid, write_sync_heartbeat,
+    HeartbeatWriteError, SelfHeartbeatRemoval, append_supervisor_log,
+    clear_ready as clear_readiness, clear_self_heartbeat, compact_log_if_oversized,
+    recorded_supervisor_pid, write_sync_heartbeat,
 };
 pub use sweep::{OrphanSweepOutcome, OrphanSweepReport, sweep_orphans};
 pub use sync::{
-    DEFAULT_INTERVAL_SECONDS, FRESH_WINDOW_MULTIPLIER, ForeignWriter, Heartbeat, SyncCheckResult,
-    SyncConflictEvent, SyncSnapshot, check as check_sync, format_conflict_message, machine_id,
-    sanitize_hostname, sync_conflict_event,
+    DEFAULT_INTERVAL_SECONDS, FRESH_WINDOW_MULTIPLIER, HEARTBEAT_SCHEMA_V1, Heartbeat,
+    HeartbeatClassification, MAX_SYNC_DIRECTORY_ENTRIES, MAX_SYNC_HEARTBEAT_BYTES, SyncCheckResult,
+    SyncConflictEvent, SyncDirectoryOperation, SyncIncompleteSnapshotReason, SyncPeerObservation,
+    SyncReadOperation, SyncRescan, SyncScanFailure, SyncSnapshot, SyncUnsafeReason,
+    format_conflict_message, machine_id, rescan_sync_read_only, sanitize_hostname,
+    sync_conflict_event,
 };
+
+/// Result of a supervisor heartbeat renewal and complete peer scan.
+#[derive(Debug)]
+pub enum SyncTickOutcome {
+    Healthy,
+    Conflict(Box<SyncCheckResult>),
+    RenewalFailure(HeartbeatWriteError),
+    CompleteScanFailure(SyncScanFailure),
+    RetainedObservationFailure(HeartbeatWriteError),
+}
 
 /// Lifecycle failures that are meaningful to a supervisor host.
 #[derive(Debug, Error)]
@@ -54,16 +69,27 @@ pub enum LifecycleError {
     Identity(&'static str),
     #[error("invalid heartbeat filename")]
     InvalidHeartbeatFilename,
+    #[error("sync scan failed: {0}")]
+    SyncScan(#[source] Box<SyncScanFailure>),
+    #[error("could not acquire bound supervisor lock: {0}")]
+    SupervisorLock(#[source] ExistingParentLockError),
+    #[error("heartbeat publication or retention failed: {0}")]
+    HeartbeatWrite(#[from] HeartbeatWriteError),
     #[error("another solstone writer is active on this journal")]
     SyncConflict(Box<SyncCheckResult>),
 }
 
-/// Held singleton admission and its journal root.
+/// Held singleton admission and retained descriptor capabilities.
 pub struct SupervisorLifecycle {
     journal: PathBuf,
     heartbeat_filename: String,
     last_orphan_sweep: OrphanSweepOutcome,
-    _lease: SupervisorLease,
+    _journal_root: JournalRoot,
+    _health: FlatDirectory,
+    sync: FlatDirectory,
+    _lease: BoundParentLock,
+    retained_self_heartbeat: Option<FileObservation>,
+    last_completed_sync_result: Option<SyncCheckResult>,
 }
 
 /// Enter supervisor lifecycle ownership and retain the singleton lease.
@@ -81,8 +107,8 @@ impl SupervisorLifecycle {
         &self.heartbeat_filename
     }
 
-    /// Acquire admission, reject live foreign writers, record identity, sweep
-    /// matching orphans, and publish this process's self-heartbeat.
+    /// Acquire descriptor-bound admission, reject live foreign writers, record
+    /// identity, sweep matching orphans, and retain the self heartbeat proof.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn boot(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
         SupervisorBootAdmission::acquire(journal)?
@@ -105,9 +131,6 @@ impl SupervisorLifecycle {
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), LifecycleError> {
         state::write_readiness(&self.journal, ready_at, extra)?;
-        // After the readiness marker exists: convey has been waited on, and
-        // the control socket is bound. Type=notify units stay activating
-        // until this datagram arrives.
         sd_notify("READY=1");
         Ok(())
     }
@@ -120,16 +143,96 @@ impl SupervisorLifecycle {
         &self.last_orphan_sweep
     }
 
+    /// Publish and retain the self heartbeat, then complete a peer scan.
+    ///
+    /// A completed result is retained only for `Healthy` and `Conflict`, so
+    /// callers cannot mistake a failed scan for a new snapshot.
+    pub fn tick_sync(&mut self, previous: Option<&SyncSnapshot>, now: f64) -> SyncTickOutcome {
+        let current_machine_id = sync::machine_id();
+        let heartbeat = sync::Heartbeat {
+            schema: sync::HEARTBEAT_SCHEMA_V1,
+            machine_id: current_machine_id.clone(),
+            hostname: hostname(),
+            pid: std::process::id(),
+            wall_time: now.to_string(),
+            solstone_version: env!("CARGO_PKG_VERSION").to_owned(),
+            interval_seconds: sync::DEFAULT_INTERVAL_SECONDS as u32,
+            journal_path: self.journal.display().to_string(),
+        };
+        let body = serde_json::to_vec(&heartbeat).expect("heartbeat serializes");
+        let observation =
+            match state::write_sync_heartbeat(&self.sync, &self.heartbeat_filename, &body) {
+                Ok(observation) => observation,
+                Err(
+                    error @ (HeartbeatWriteError::Publish { .. }
+                    | HeartbeatWriteError::DurabilityUncertain { .. }),
+                ) => {
+                    return SyncTickOutcome::RenewalFailure(error);
+                }
+                Err(
+                    error @ (HeartbeatWriteError::ObservationMissing
+                    | HeartbeatWriteError::Observation { .. }
+                    | HeartbeatWriteError::ObservationBytesMismatched),
+                ) => {
+                    return SyncTickOutcome::RetainedObservationFailure(error);
+                }
+                Err(HeartbeatWriteError::InvalidFilename) => {
+                    return SyncTickOutcome::RenewalFailure(HeartbeatWriteError::InvalidFilename);
+                }
+            };
+        self.retained_self_heartbeat = Some(observation);
+
+        let result = match sync::scan_bound_sync(
+            &self.sync,
+            &self.heartbeat_filename,
+            &current_machine_id,
+            previous,
+            now,
+        ) {
+            Ok(result) => result,
+            Err(error) => return SyncTickOutcome::CompleteScanFailure(error),
+        };
+        let conflict = result.is_tick_conflict(previous);
+        self.last_completed_sync_result = Some(result.clone());
+        if conflict {
+            SyncTickOutcome::Conflict(Box::new(result))
+        } else {
+            SyncTickOutcome::Healthy
+        }
+    }
+
+    /// The complete result from the latest healthy or conflicting tick.
+    pub fn last_completed_sync_result(&self) -> Option<&SyncCheckResult> {
+        self.last_completed_sync_result.as_ref()
+    }
+
     pub fn shutdown(
         &self,
         driver: &mut dyn ShutdownDriver,
         regime: ShutdownRegime,
         sync_conflict: bool,
     ) -> Result<ShutdownReport, LifecycleError> {
-        state::clear_ready(&self.journal)?;
+        if let Err(error) = state::clear_ready(&self.journal) {
+            eprintln!("supervisor readiness cleanup failed: {error}");
+        }
         if !sync_conflict {
-            state::clear_self_heartbeat(&self.journal, &self.heartbeat_filename)?;
-            state::clear_supervisor_identity(&self.journal)?;
+            match state::clear_self_heartbeat(
+                &self.sync,
+                &self.heartbeat_filename,
+                self.retained_self_heartbeat.as_ref(),
+            ) {
+                Ok(SelfHeartbeatRemoval::Removed | SelfHeartbeatRemoval::NoCleanupAuthority) => {
+                    if let Err(error) = state::clear_supervisor_identity(&self.journal) {
+                        eprintln!("supervisor identity cleanup failed: {error}");
+                    }
+                }
+                Ok(outcome) => {
+                    eprintln!("supervisor heartbeat cleanup did not complete cleanly: {outcome}");
+                }
+                Err(error) => {
+                    eprintln!("supervisor heartbeat cleanup failed: {error}");
+                }
+            }
         }
         Ok(shutdown::shutdown(driver, regime))
     }
@@ -229,15 +332,36 @@ pub fn sd_notify_to(address: &str, state_value: &str) {
     }
 }
 
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(
+    test,
+    feature = "test-hooks",
+    any(target_os = "linux", target_os = "macos")
+))]
 mod tests {
-    use super::{LifecycleError, is_supervisor_up_with_start_time, state};
+    use std::fs;
+
+    use solstone_core_journal_io::{
+        BoundPublicationPrimitive, ClaimRemovalPrimitive, run_with_bound_publication_barrier,
+        run_with_bound_publication_fault, run_with_claim_removal_barrier,
+    };
+    use tempfile::Builder;
+
+    use super::{
+        LifecycleError, ShutdownDisposition, ShutdownDriver, ShutdownPhase, ShutdownRegime,
+        SupervisorLifecycle, SyncTickOutcome, is_supervisor_up_with_start_time, state,
+    };
+
+    fn temporary_journal() -> tempfile::TempDir {
+        Builder::new()
+            .prefix("solstone-lifecycle-tick-")
+            .tempdir_in("/var/tmp")
+            .expect("temporary journal")
+    }
 
     #[test]
     fn ac3_injected_start_time_rejects_reused_pid() {
         let root =
             state::test_supervisor_journal("supervisor-probe", std::process::id(), 100.0, None);
-
         assert!(is_supervisor_up_with_start_time(&root, |_| Ok(100.0)));
         assert!(!is_supervisor_up_with_start_time(&root, |_| Ok(101.6)));
         state::remove_test_supervisor_journal(root);
@@ -245,17 +369,12 @@ mod tests {
 
     #[test]
     fn ac3_unavailable_start_time_is_not_up() {
-        // Fail-closed through the injected start-time source. This does not by
-        // itself prove the deleted kill(None) probe is gone: the fixture PID is
-        // this process, so the old probe would have succeeded and still reached
-        // the closure.
         let root = state::test_supervisor_journal(
             "supervisor-start-time-err",
             std::process::id(),
             100.0,
             None,
         );
-
         assert!(!is_supervisor_up_with_start_time(&root, |_| {
             Err(LifecycleError::Identity("process start time"))
         }));
@@ -270,14 +389,124 @@ mod tests {
             .nth(1)
             .and_then(|rest| rest.split("pub fn clear_ready(").next())
             .expect("signal_ready body");
-        assert!(
-            signal_ready.contains("sd_notify(\"READY=1\")"),
-            "Type=notify units stay activating unless signal_ready sends READY=1"
-        );
+        assert!(signal_ready.contains("sd_notify(\"READY=1\")"));
         assert!(
             signal_ready.find("write_readiness").expect("marker write")
-                < signal_ready.find("sd_notify(\"READY=1\")").expect("notify"),
-            "READY=1 must follow the readiness marker, not precede it"
+                < signal_ready.find("sd_notify(\"READY=1\")").expect("notify")
         );
+    }
+
+    #[test]
+    fn tick_sync_maps_renewal_retention_scan_conflict_and_healthy_outcomes() {
+        let healthy_journal = temporary_journal();
+        let mut healthy = SupervisorLifecycle::boot(healthy_journal.path()).expect("boot");
+        assert!(matches!(
+            healthy.tick_sync(None, 10.0),
+            SyncTickOutcome::Healthy
+        ));
+        let previous = healthy
+            .last_completed_sync_result()
+            .expect("completed healthy scan")
+            .snapshot
+            .clone();
+        fs::write(
+            healthy_journal.path().join("health/sync/foreign.check"),
+            br#"{"schema":1,"machine_id":"foreign","hostname":"foreign","pid":7,"wall_time":"now","solstone_version":"test","interval_seconds":15,"journal_path":"/journal"}"#,
+        )
+        .expect("foreign heartbeat");
+        assert!(matches!(
+            healthy.tick_sync(Some(&previous), 11.0),
+            SyncTickOutcome::Conflict(_)
+        ));
+
+        let renewal_journal = temporary_journal();
+        let mut renewal = SupervisorLifecycle::boot(renewal_journal.path()).expect("boot");
+        let (renewal_outcome, renewal_fault) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::Write,
+            1,
+            nix::errno::Errno::EIO as i32,
+            || renewal.tick_sync(None, 10.0),
+        );
+        assert!(renewal_fault);
+        assert!(matches!(
+            renewal_outcome,
+            SyncTickOutcome::RenewalFailure(_)
+        ));
+
+        let retention_journal = temporary_journal();
+        let mut retention = SupervisorLifecycle::boot(retention_journal.path()).expect("boot");
+        let self_path = retention_journal
+            .path()
+            .join("health/sync")
+            .join(retention.heartbeat_filename());
+        let (retention_outcome, retention_barrier) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            move || fs::remove_file(&self_path).expect("remove just-published heartbeat"),
+            || retention.tick_sync(None, 10.0),
+        );
+        assert!(retention_barrier);
+        assert!(matches!(
+            retention_outcome,
+            SyncTickOutcome::RetainedObservationFailure(_)
+        ));
+
+        let scan_journal = temporary_journal();
+        let mut scan = SupervisorLifecycle::boot(scan_journal.path()).expect("boot");
+        fs::create_dir(scan_journal.path().join("health/sync/unsafe")).expect("unsafe entry");
+        assert!(matches!(
+            scan.tick_sync(None, 10.0),
+            SyncTickOutcome::CompleteScanFailure(_)
+        ));
+    }
+
+    #[test]
+    fn shutdown_runs_driver_after_non_clean_heartbeat_cleanup() {
+        struct Driver(Vec<&'static str>);
+
+        impl ShutdownDriver for Driver {
+            fn reap_managed(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+                self.0.push("reap");
+                ShutdownDisposition::Orderly
+            }
+
+            fn drain_tasks(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+                self.0.push("drain");
+                ShutdownDisposition::Orderly
+            }
+
+            fn stop_children(&mut self, _: Option<std::time::Duration>) -> ShutdownDisposition {
+                self.0.push("children");
+                ShutdownDisposition::Orderly
+            }
+
+            fn join_bus(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+                self.0.push("bus");
+                ShutdownDisposition::Orderly
+            }
+        }
+
+        let journal = temporary_journal();
+        let lifecycle = SupervisorLifecycle::boot(journal.path()).expect("boot");
+        let heartbeat = journal
+            .path()
+            .join("health/sync")
+            .join(lifecycle.heartbeat_filename());
+        let mut driver = Driver(Vec::new());
+        let (result, barrier_fired) = run_with_claim_removal_barrier(
+            ClaimRemovalPrimitive::BeforeClaim,
+            1,
+            move || fs::write(&heartbeat, b"replacement").expect("replace heartbeat"),
+            || lifecycle.shutdown(&mut driver, ShutdownRegime::Standard, false),
+        );
+
+        assert!(barrier_fired);
+        let report = result.expect("non-clean heartbeat cleanup is auxiliary");
+        assert_eq!(
+            driver.0,
+            vec!["reap", "drain", "children", "bus"],
+            "the shutdown driver must run after an ambiguous claim cleanup"
+        );
+        assert_eq!(report.phases.last(), Some(&ShutdownPhase::JoinBusCompleted));
     }
 }

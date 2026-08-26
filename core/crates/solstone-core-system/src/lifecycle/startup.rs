@@ -4,50 +4,96 @@
 //! Phased supervisor admission. Hosts that need an interlock between child
 //! launch and readiness use these phases instead of the convenience `boot`.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use super::{
-    LifecycleError, OrphanSweepOutcome, SupervisorLease, SupervisorLifecycle, epoch_seconds,
-    hostname, self_heartbeat_filename,
+use solstone_core_journal_io::{
+    BoundParentLock, FlatDirectory, JournalRoot, create_or_open_flat_directory_bound,
 };
-use super::{admission, state, sweep, sync};
+
+use super::{
+    LifecycleError, OrphanSweepOutcome, SupervisorLifecycle, epoch_seconds, hostname,
+    self_heartbeat_filename,
+};
+use super::{state, sweep, sync};
 
 pub struct SupervisorBootAdmission {
     journal: PathBuf,
+    root: JournalRoot,
+    health: FlatDirectory,
+    sync: FlatDirectory,
+    lease: BoundParentLock,
     heartbeat_filename: String,
     machine_id: String,
     now: f64,
-    lease: SupervisorLease,
 }
 
 pub struct PreReadySupervisorLifecycle {
     journal: PathBuf,
+    root: JournalRoot,
+    health: FlatDirectory,
+    sync: FlatDirectory,
+    lease: BoundParentLock,
     heartbeat_filename: String,
     machine_id: String,
     now: f64,
     last_orphan_sweep: OrphanSweepOutcome,
-    lease: SupervisorLease,
 }
 
 impl SupervisorBootAdmission {
+    /// Bind `health`/`sync` beneath a resolved journal root, retain the
+    /// singleton lock, and reject a live foreign writer before any identity
+    /// or heartbeat write.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn acquire(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
         let journal = journal.as_ref().to_path_buf();
-        let lock = state::open_supervisor_lock(&journal)?;
-        let lease = admission::acquire(lock)?;
+        let root = JournalRoot::open(&journal).map_err(|error| {
+            LifecycleError::SyncScan(Box::new(sync::directory_binding_from_root(&journal, error)))
+        })?;
+        let lock = state::open_supervisor_lock(&root).map_err(|error| match error {
+            state::SupervisorLockError::AlreadyRunning => LifecycleError::AlreadyRunning,
+            state::SupervisorLockError::BindHealth(reason) => {
+                LifecycleError::SyncScan(Box::new(sync::SyncScanFailure::DirectoryBinding {
+                    path: root.canonical_path().join("health"),
+                    operation: sync::SyncDirectoryOperation::BindHealth,
+                    reason: Box::new(reason),
+                }))
+            }
+            state::SupervisorLockError::Acquire(error) => LifecycleError::SupervisorLock(error),
+        })?;
+        let state::SupervisorLock { health, lease } = lock;
+        let health_diagnostic = root.canonical_path().join("health");
+        let sync = create_or_open_flat_directory_bound(
+            &health,
+            OsStr::new("sync"),
+            0o700,
+            &health_diagnostic,
+        )
+        .map_err(|reason| {
+            LifecycleError::SyncScan(Box::new(sync::SyncScanFailure::DirectoryBinding {
+                path: health_diagnostic.join("sync"),
+                operation: sync::SyncDirectoryOperation::BindSync,
+                reason: Box::new(reason),
+            }))
+        })?;
+
         let heartbeat_filename = self_heartbeat_filename();
         let machine_id = sync::machine_id();
         let now = epoch_seconds();
-        let result = sync::check(&journal, &heartbeat_filename, &machine_id, None, now)?;
+        let result = sync::scan_bound_sync(&sync, &heartbeat_filename, &machine_id, None, now)
+            .map_err(|failure| LifecycleError::SyncScan(Box::new(failure)))?;
         if result.is_boot_conflict() {
             return Err(LifecycleError::SyncConflict(Box::new(result)));
         }
         Ok(Self {
             journal,
+            root,
+            health,
+            sync,
+            lease,
             heartbeat_filename,
             machine_id,
             now,
-            lease,
         })
     }
 
@@ -57,11 +103,14 @@ impl SupervisorBootAdmission {
             sweep::sweep_orphans(&self.journal, std::time::Duration::from_secs(1));
         Ok(PreReadySupervisorLifecycle {
             journal: self.journal,
+            root: self.root,
+            health: self.health,
+            sync: self.sync,
+            lease: self.lease,
             heartbeat_filename: self.heartbeat_filename,
             machine_id: self.machine_id,
             now: self.now,
             last_orphan_sweep,
-            lease: self.lease,
         })
     }
 }
@@ -70,9 +119,10 @@ impl PreReadySupervisorLifecycle {
     pub fn heartbeat_filename(&self) -> &str {
         &self.heartbeat_filename
     }
+
     pub fn publish_heartbeat(self) -> Result<SupervisorLifecycle, LifecycleError> {
         let heartbeat = sync::Heartbeat {
-            schema: 1,
+            schema: sync::HEARTBEAT_SCHEMA_V1,
             machine_id: self.machine_id.clone(),
             hostname: hostname(),
             pid: std::process::id(),
@@ -88,17 +138,27 @@ impl PreReadySupervisorLifecycle {
                 return Err(error.into());
             }
         };
-        if let Err(error) =
-            state::write_sync_heartbeat(&self.journal, &self.heartbeat_filename, &heartbeat_bytes)
-        {
-            let _ = self.abort_pre_ready();
-            return Err(error);
-        }
+        let retained_self_heartbeat = match state::write_sync_heartbeat(
+            &self.sync,
+            &self.heartbeat_filename,
+            &heartbeat_bytes,
+        ) {
+            Ok(observation) => observation,
+            Err(error) => {
+                let _ = self.abort_pre_ready();
+                return Err(error.into());
+            }
+        };
         Ok(SupervisorLifecycle {
             journal: self.journal,
             heartbeat_filename: self.heartbeat_filename,
             last_orphan_sweep: self.last_orphan_sweep,
+            _journal_root: self.root,
+            _health: self.health,
+            sync: self.sync,
             _lease: self.lease,
+            retained_self_heartbeat: Some(retained_self_heartbeat),
+            last_completed_sync_result: None,
         })
     }
 

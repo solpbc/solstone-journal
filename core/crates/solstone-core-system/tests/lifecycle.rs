@@ -3,18 +3,21 @@
 
 #![cfg(unix)]
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use solstone_core_journal_io::{FlatDirectory, JournalRoot, create_or_open_flat_directory_bound};
 #[cfg(target_os = "linux")]
 use solstone_core_system::lifecycle::sweep_orphans;
 use solstone_core_system::lifecycle::{
     Heartbeat, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle,
-    append_supervisor_log, check_sync, compact_log_if_oversized, format_conflict_message,
-    sanitize_hostname, shutdown, sync_conflict_event, write_sync_heartbeat,
+    SyncCheckResult, SyncRescan, append_supervisor_log, compact_log_if_oversized,
+    format_conflict_message, rescan_sync_read_only, sanitize_hostname, shutdown,
+    sync_conflict_event, write_sync_heartbeat,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
@@ -48,7 +51,7 @@ impl Drop for Bed {
 
 fn wait_for(path: &std::path::Path) {
     for _ in 0..200 {
-        if path.exists() {
+        if fs::read(path).is_ok_and(|body| !body.is_empty()) {
             return;
         }
         thread::sleep(Duration::from_millis(5));
@@ -57,13 +60,13 @@ fn wait_for(path: &std::path::Path) {
 }
 
 #[cfg(target_os = "linux")]
-fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, mode: &str) {
+fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, holder_mode: &str) {
     let status = Command::new(FIXTURE)
         .args([
             "orphan-sweep-spawner",
-            journal.to_str().expect("utf8"),
-            ready.to_str().expect("utf8"),
-            mode,
+            journal.to_str().expect("utf8 journal"),
+            ready.to_str().expect("utf8 ready path"),
+            holder_mode,
         ])
         .status()
         .expect("spawn orphan fixture");
@@ -117,6 +120,43 @@ fn heartbeat(journal: &std::path::Path, machine_id: &str) -> Heartbeat {
     }
 }
 
+fn bound_sync(journal: &std::path::Path) -> FlatDirectory {
+    let root = JournalRoot::open(journal).expect("open journal root");
+    let health = create_or_open_flat_directory_bound(
+        &root,
+        OsStr::new("health"),
+        0o700,
+        root.canonical_path(),
+    )
+    .expect("bind health");
+    create_or_open_flat_directory_bound(
+        &health,
+        OsStr::new("sync"),
+        0o700,
+        &root.canonical_path().join("health"),
+    )
+    .expect("bind sync")
+}
+
+fn rescan_sync(
+    journal: &std::path::Path,
+    self_filename: &str,
+    self_machine_id: &str,
+    previous: Option<&solstone_core_system::lifecycle::SyncSnapshot>,
+    now: f64,
+) -> Result<SyncCheckResult, solstone_core_system::lifecycle::SyncScanFailure> {
+    match rescan_sync_read_only(journal, self_filename, self_machine_id, previous, now)? {
+        SyncRescan::Absent => panic!("sync directory should be present for this fixture"),
+        SyncRescan::Complete(result) => Ok(result),
+    }
+}
+
+fn write_fixture_heartbeat(journal: &std::path::Path, filename: &str, body: &[u8]) {
+    let sync = journal.join("health/sync");
+    fs::create_dir_all(&sync).expect("sync directory");
+    fs::write(sync.join(filename), body).expect("fixture heartbeat");
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac6_ac7_singleton_admission_is_real_process_safe() {
@@ -167,12 +207,11 @@ fn ac7_single_process_lease_lives_with_supervisor_value() {
 #[test]
 fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts() {
     let conflicting = Bed::new("boot-conflict");
-    write_sync_heartbeat(
+    write_fixture_heartbeat(
         &conflicting.root,
         "foreign.check",
         &serde_json::to_vec(&heartbeat(&conflicting.root, "foreign")).expect("json"),
-    )
-    .expect("heartbeat");
+    );
     let Err(conflict) = SupervisorLifecycle::boot(&conflicting.root) else {
         panic!("expected sync conflict");
     };
@@ -489,18 +528,17 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
     let sync = bed.root.join("health/sync");
     fs::create_dir_all(&sync).expect("sync directory");
     let heartbeat = heartbeat(&bed.root, "foreign");
-    write_sync_heartbeat(
+    write_fixture_heartbeat(
         &bed.root,
         "foreign.check",
         &serde_json::to_vec(&heartbeat).expect("heartbeat json"),
-    )
-    .expect("heartbeat");
+    );
     let now = now_seconds();
-    let first = check_sync(&bed.root, "self.check", "self", None, now).expect("check");
+    let first = rescan_sync(&bed.root, "self.check", "self", None, now).expect("check");
     assert!(first.is_boot_conflict());
     assert!(!first.is_tick_conflict(None));
     assert!(first.is_tick_conflict(Some(&first.snapshot)));
-    write_sync_heartbeat(
+    write_fixture_heartbeat(
         &bed.root,
         "same-machine.check",
         &serde_json::to_vec(&Heartbeat {
@@ -508,31 +546,35 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
             ..heartbeat.clone()
         })
         .expect("self heartbeat json"),
-    )
-    .expect("self heartbeat");
+    );
     fs::write(sync.join("broken.check"), b"{").expect("broken heartbeat");
-    let malformed = check_sync(&bed.root, "self.check", "self", Some(&first.snapshot), now)
+    let malformed = rescan_sync(&bed.root, "self.check", "self", Some(&first.snapshot), now)
         .expect("check malformed");
     assert!(
         malformed
-            .foreign_writers
+            .peer_observations
             .iter()
-            .any(|writer| writer.malformed && writer.hostname == "(unknown)")
+            .any(|peer| peer.heartbeat.is_none())
     );
     assert_eq!(sanitize_hostname("My Host!"), "My-Host");
-    assert!(malformed.foreign_writers.iter().all(|writer| {
-        writer.path.file_name().and_then(|name| name.to_str()) != Some("same-machine.check")
-    }));
-    write_sync_heartbeat(
+    assert!(
+        malformed
+            .peer_observations
+            .iter()
+            .all(|peer| { peer.source_filename != OsStr::new("same-machine.check") })
+    );
+    write_fixture_heartbeat(
         &bed.root,
         "self.check",
         &serde_json::to_vec(&heartbeat).expect("filename guard json"),
-    )
-    .expect("filename guard");
-    let guarded = check_sync(&bed.root, "self.check", "", None, now).expect("guarded");
-    assert!(guarded.foreign_writers.iter().all(|writer| {
-        writer.path.file_name().and_then(|name| name.to_str()) != Some("self.check")
-    }));
+    );
+    let guarded = rescan_sync(&bed.root, "self.check", "", None, now).expect("guarded");
+    assert!(
+        guarded
+            .peer_observations
+            .iter()
+            .all(|peer| { peer.source_filename != OsStr::new("self.check") })
+    );
     let message = format_conflict_message(&first);
     let event = sync_conflict_event(&first).expect("tick event");
     assert!(message.contains("Refusing to start"));
@@ -544,9 +586,10 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
 fn heartbeat_filename_rejects_path_traversal() {
     let bed = Bed::new("heartbeat-path");
     let escaped = bed.root.join("escape.check");
+    let sync = bound_sync(&bed.root);
     assert!(matches!(
-        write_sync_heartbeat(&bed.root, "../escape.check", b"heartbeat"),
-        Err(LifecycleError::InvalidHeartbeatFilename)
+        write_sync_heartbeat(&sync, "../escape.check", b"heartbeat"),
+        Err(solstone_core_system::lifecycle::HeartbeatWriteError::InvalidFilename)
     ));
     assert!(!escaped.exists());
 }
@@ -555,11 +598,11 @@ fn heartbeat_filename_rejects_path_traversal() {
 fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
     let bed = Bed::new("stale-sync");
     let body = serde_json::to_vec(&heartbeat(&bed.root, "foreign")).expect("json");
-    write_sync_heartbeat(&bed.root, "foreign.check", &body).expect("heartbeat");
+    write_fixture_heartbeat(&bed.root, "foreign.check", &body);
     let current =
-        check_sync(&bed.root, "self.check", "self", None, now_seconds()).expect("current");
+        rescan_sync(&bed.root, "self.check", "self", None, now_seconds()).expect("current");
     let stale_now = now_seconds() + 61.0;
-    let stale = check_sync(
+    let stale = rescan_sync(
         &bed.root,
         "self.check",
         "self",
@@ -567,16 +610,16 @@ fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
         stale_now,
     )
     .expect("stale");
-    assert_eq!(stale.foreign_writers.len(), 1);
-    assert!(!stale.foreign_writers[0].is_live);
+    assert_eq!(stale.peer_observations.len(), 1);
+    assert!(!stale.peer_observations[0].is_live);
     assert!(!stale.is_boot_conflict());
     let mut changed_snapshot = current.snapshot.clone();
     changed_snapshot
         .files
-        .get_mut("foreign.check")
+        .get_mut(OsStr::new("foreign.check"))
         .expect("file")
-        .1 = "different".to_owned();
-    let tick = check_sync(
+        .bytes = b"different".to_vec();
+    let tick = rescan_sync(
         &bed.root,
         "self.check",
         "self",
@@ -584,9 +627,9 @@ fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
         stale_now,
     )
     .expect("changed tick");
-    assert!(tick.foreign_writers[0].is_live);
-    let boot = check_sync(&bed.root, "self.check", "self", None, stale_now).expect("boot");
-    assert!(!boot.foreign_writers[0].is_live);
+    assert!(tick.peer_observations[0].is_live);
+    let boot = rescan_sync(&bed.root, "self.check", "self", None, stale_now).expect("boot");
+    assert!(!boot.peer_observations[0].is_live);
 }
 
 #[test]

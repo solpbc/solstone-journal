@@ -32,7 +32,6 @@ const OBSERVATION: &str = include_str!("../src/process/observation.rs");
 const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
 const MACOS_PROC: &str = include_str!("../src/process/macos_proc.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
-const LIFECYCLE_ADMISSION: &str = include_str!("../src/lifecycle/admission.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
 const LIFECYCLE_PARENT: &str = include_str!("../src/lifecycle/parent.rs");
 const LIFECYCLE_SHUTDOWN: &str = include_str!("../src/lifecycle/shutdown.rs");
@@ -190,7 +189,6 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("terminate", TERMINATE),
     ];
     let lifecycle_modules = [
-        ("admission", LIFECYCLE_ADMISSION),
         ("parent", LIFECYCLE_PARENT),
         ("readiness", LIFECYCLE_READINESS),
         ("shutdown", LIFECYCLE_SHUTDOWN),
