@@ -7549,33 +7549,15 @@
         ]
       }
     },
-    "/app/observer/source/{stream}": {
+    "/app/devices/source/{source}": {
       "delete": {
-        "description": "Erase every journal segment that holds location.jsonl as a whole segment, leaving tombstone.json. Removal runs only through retention's door; this route selects the set. mixed_segments is a cost disclosure, never a disposition: mixed segments are still removed whole. Auth is the observer's full key in X-Solstone-Observer (preferred) or Authorization: Bearer. The receipt includes removed.tombstones and does not include removed.in_segment_derived. Coordinated adoption: solstone-swift's DeleteSourceReceipt.Removed.inSegmentDerived is required today and must be dropped or made optional in the same release arc.",
-        "operationId": "observer.deleteSource",
+        "description": "Erase every journal segment that holds location.jsonl as a whole segment, leaving tombstone.json. Removal runs only through retention's door; this route selects the set. mixed_segments is a cost disclosure, never a disposition: mixed segments are still removed whole. Authorization is derived from AccessBasis::LinkedDevice, established by the paired-device TLS client certificate; no bearer token or observer header is accepted. The receipt includes removed.tombstones and does not include removed.in_segment_derived.",
+        "operationId": "clients.deleteSource",
         "parameters": [
           {
-            "description": "Observer handle. Preferred over Authorization when present.",
-            "in": "header",
-            "name": "X-Solstone-Observer",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Bearer observer handle.",
-            "in": "header",
-            "name": "Authorization",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Source stream; only 'location' is deletable.",
+            "description": "Capture source; only 'location' is deletable.",
             "in": "path",
-            "name": "stream",
+            "name": "source",
             "required": true,
             "schema": {
               "type": "string"
@@ -7647,23 +7629,9 @@
                 }
               }
             },
-            "description": "Only known source streams can be deleted.",
+            "description": "Only the supported `location` source can be deleted.",
             "x-reason-codes": [
               "invalid_segment_or_stream"
-            ]
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Observer handle missing or invalid.",
-            "x-reason-codes": [
-              "auth_key_invalid",
-              "auth_required"
             ]
           },
           "403": {
@@ -7674,16 +7642,29 @@
                 }
               }
             },
-            "description": "Observer is disabled, revoked, does not own this source, or ownership could not be established on a multi-observer journal.",
+            "description": "A linked-device certificate identity is required. Localhost, pairing peers, and missing identities are refused; a revoked linked device is refused by the authorization gate.",
             "x-reason-codes": [
-              "feature_unavailable",
+              "linked_device_required",
               "pl_revoked"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The location-mutation lock could not be acquired; no deletion was performed.",
+            "x-reason-codes": [
+              "location_lock_unavailable"
             ]
           }
         },
-        "summary": "Delete observer source",
+        "summary": "Delete source",
         "tags": [
-          "observer"
+          "clients"
         ]
       }
     },

@@ -6,7 +6,17 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let records = common::enabled(common::clients(context).unwrap_or_default());
+    let records = match common::clients(context) {
+        Ok(records) => common::enabled(records),
+        Err(error) => {
+            return Ok(make_result(
+                check,
+                Status::Skip,
+                format!("device records unavailable: {error}"),
+                None::<String>,
+            ));
+        }
+    };
     // A client projection row is keyed by the authorization certificate CID.
     // The old observer-record ambiguity (an observer lacking or sharing a
     // device binding) is therefore structurally impossible.

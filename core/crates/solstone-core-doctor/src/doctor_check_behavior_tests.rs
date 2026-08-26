@@ -1128,6 +1128,21 @@ fn unreadable_skip_is_not_never_sent() {
 }
 
 #[test]
+fn observer_binding_skips_when_authorization_ledger_is_unavailable() {
+    let context = fixture();
+    let ledger = context.journal_path.join("link/authorized_clients.json");
+    fs::create_dir_all(&ledger).unwrap();
+
+    let row = result("observer_binding", &context);
+
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(
+        row.detail,
+        "device records unavailable: authorized client ledger unavailable: Unreadable"
+    );
+}
+
+#[test]
 fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     let dated = fixture();
     write_observer(

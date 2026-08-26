@@ -61,11 +61,12 @@ Never return a bare `"", 404`, an in-band `{"error": ...}` at HTTP 200, or raw
 exception text on a JSON route. HTML page routes may render a 404 page or
 plain text.
 
-**Identity.** The actor comes from the session gate, never from a
-client-supplied field. Key-based ingest authenticates with an
-`Authorization: Bearer` header (never a key in the URL path) and derives its
-storage scope from the authenticated record; a scope id in the URL is an
-assertion to check against that record, not an input.
+**Identity.** The actor is derived from connection access state, never from a
+client-supplied field. Paired-device ingest derives `AccessBasis::LinkedDevice`
+from the paired-device TLS client certificate and takes its CID from that basis,
+rather than from a bearer key, header, URL, or request body. Source deletion
+requires that same linked-device identity; its source path selects an allowed
+source but does not alter authorization or the journal-wide deletion scope.
 
 **Pagination.** Offset/limit (max 100) or a cursor; no list endpoint returns
 an unbounded full array.

@@ -679,7 +679,7 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 🆕 ⛔ **CLOSED 2026-08-05 by operator ruling, by removing the question rather than answering it. Do not re-derive it.** This entry used to record an open call: legacy segments holding one source's data beside another's, where an owner deleting one source either loses the segment whole or keeps the data they asked to remove.
 
-🔴 **The source-delete affordance resolves a source name to a SET of whole segments and hands that set to the door.** There is still no partial owner-directed delete of any kind. The legacy-mixed problem was a *disposition* (keep vs drop part of a segment); that disposition stays gone. `DELETE /app/observer/source/{stream}` names a source (`location`); selection lives with that surface.
+🔴 **The source-delete affordance resolves a source name to a SET of whole segments and hands that set to the door.** There is still no partial owner-directed delete of any kind. The legacy-mixed problem was a *disposition* (keep vs drop part of a segment); that disposition stays gone. `DELETE /app/devices/source/{source}` names a source (`location`); selection lives with that surface.
 
 ✅ **Two selection surfaces exist** — the per-segment delete route under the transcripts app, with containment via `commonpath` and a **10-second undo window**, and the source-delete route which expands a source name to a set. ⛔ Retention never resolves anything; it receives owner-chosen targets. Selection lives with the surface.
 
