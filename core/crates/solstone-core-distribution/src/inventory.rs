@@ -8,6 +8,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::archive_taxonomy::ContainerKind;
+
 const KNOWN_LANES: &[&str] = &["musl-static", "zig-gnu-2.27"];
 /// Lanes a target may declare for itself. Linux entries carry a per-binary lane
 /// because the Linux tree is built by two distinct cross toolchains; macOS has
@@ -284,6 +286,8 @@ pub enum Entry {
         mode: u32,
         digest_const: String,
         digest_source: String,
+        #[serde(default)]
+        archive_slot: Option<ArchiveSlot>,
         targets: Vec<String>,
     },
     OnnxRuntime {
@@ -302,6 +306,23 @@ pub enum Entry {
         mode: u32,
         targets: Vec<String>,
     },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveSlot {
+    pub id: String,
+    pub target: String,
+    pub container: ContainerKind,
+    pub executables: Vec<ArchiveExecutable>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveExecutable {
+    pub path: String,
+    pub digest_const: String,
+    pub digest_source: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -501,6 +522,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             &unexpected_lanes,
         )));
     }
+    validate_archive_slots(path, inventory)?;
 
     let payload_path = path
         .parent()
@@ -558,6 +580,136 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             "invalid cleanroom control",
             &invalid_controls,
         )));
+    }
+    Ok(())
+}
+
+/// Extract a named SHA-256 constant from the Rust source which owns it.
+///
+/// Both model-asset staging and archive-slot validation use this parser so a
+/// digest declaration has exactly one interpretation in the producer.
+#[must_use]
+pub fn digest_const_hex(source: &str, name: &str) -> Option<String> {
+    let mut pending: Option<&str> = None;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("pub const ") {
+            let Some((const_name, after)) = rest.split_once(':') else {
+                continue;
+            };
+            if !after.contains("&str") {
+                continue;
+            }
+            if const_name.trim() != name {
+                pending = None;
+                continue;
+            }
+            if let Some((_, literal)) = trimmed.split_once('=') {
+                let hex = literal
+                    .trim()
+                    .trim_end_matches(';')
+                    .trim()
+                    .trim_matches('"');
+                if hex.len() == 64 && hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                    return Some(hex.to_owned());
+                }
+            }
+            pending = Some(name);
+            continue;
+        }
+        if pending.take() == Some(name) {
+            let hex = trimmed.trim_end_matches(';').trim().trim_matches('"');
+            if hex.len() == 64 && hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                return Some(hex.to_owned());
+            }
+        }
+    }
+    None
+}
+
+fn validate_archive_slots(path: &Path, inventory: &Inventory) -> Result<(), InventoryError> {
+    let repository = path
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or_else(|| {
+            InventoryError::new(format!(
+                "inventory path has no repository root: {}",
+                path.display()
+            ))
+        })?;
+    let mut slot_ids = BTreeSet::new();
+    for entry in &inventory.entry {
+        let Entry::ModelAsset {
+            dest,
+            targets,
+            archive_slot: Some(slot),
+            ..
+        } = entry
+        else {
+            continue;
+        };
+        if !slot_ids.insert(slot.id.clone()) {
+            return Err(InventoryError::new(format!(
+                "duplicate archive slot id {}",
+                slot.id
+            )));
+        }
+        if !targets.iter().any(|target| target == &slot.target) {
+            return Err(InventoryError::new(format!(
+                "archive slot {} target {} is not admitted by {dest}",
+                slot.id, slot.target
+            )));
+        }
+        let mut executable_paths = BTreeSet::new();
+        for executable in &slot.executables {
+            validate_archive_member_path(&executable.path).map_err(|reason| {
+                InventoryError::new(format!(
+                    "archive slot {} executable {}: {reason}",
+                    slot.id, executable.path
+                ))
+            })?;
+            if !executable_paths.insert(executable.path.clone()) {
+                return Err(InventoryError::new(format!(
+                    "archive slot {} duplicate executable path {}",
+                    slot.id, executable.path
+                )));
+            }
+            let source_path = repository.join(&executable.digest_source);
+            let source = fs::read_to_string(&source_path).map_err(|error| {
+                InventoryError::new(format!(
+                    "read archive executable digest source {}: {error}",
+                    source_path.display()
+                ))
+            })?;
+            if digest_const_hex(&source, &executable.digest_const).is_none() {
+                return Err(InventoryError::new(format!(
+                    "missing required:\n  digest {}",
+                    executable.digest_const
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_archive_member_path(path: &str) -> Result<(), &'static str> {
+    if path.is_empty() {
+        return Err("empty path");
+    }
+    if path.starts_with('/') {
+        return Err("absolute path");
+    }
+    if path.contains('\\') {
+        return Err("non-POSIX separator");
+    }
+    for component in path.split('/') {
+        if component.is_empty() {
+            return Err("empty path segment");
+        }
+        if component == "." || component == ".." {
+            return Err("non-canonical path segment");
+        }
     }
     Ok(())
 }

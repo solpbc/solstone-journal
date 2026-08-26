@@ -18,6 +18,7 @@ workspace = true
 
 [features]
 test-fixture-pin = []
+test-hooks = []
 
 [dependencies]
 flate2.workspace = true

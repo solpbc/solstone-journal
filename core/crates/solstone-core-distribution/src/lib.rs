@@ -5,6 +5,10 @@ pub mod acquire;
 pub mod apple;
 pub mod ar;
 pub mod archive;
+pub mod archive_census;
+pub mod archive_contract;
+pub mod archive_seal;
+pub mod archive_taxonomy;
 pub mod cleanroom;
 pub mod deb;
 pub mod digest;
@@ -79,15 +83,27 @@ pub fn discover_and_validate_inventory(start: &Path) -> Result<Inventory, Invent
 #[test]
 fn inventory_requires_every_runtime_layout_anchor() {
     let temporary = tempfile::tempdir().expect("temporary inventory");
+    let distribution = temporary.path().join("core/distribution");
+    let digest_source = temporary
+        .path()
+        .join("core/crates/solstone-core-local/src/install/rfdetr_install.rs");
+    fs::create_dir_all(digest_source.parent().expect("digest-source parent"))
+        .expect("create digest-source parent");
     fs::write(
-        temporary.path().join("inventory.toml"),
+        &digest_source,
+        "pub const RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256: &str =\n    \"f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e\";\n",
+    )
+    .expect("write digest source");
+    fs::create_dir_all(&distribution).expect("create distribution fixture");
+    fs::write(
+        distribution.join("inventory.toml"),
         include_str!("../../../distribution/inventory.toml"),
     )
     .expect("write inventory");
     let payload = include_str!("../../../distribution/payload.txt")
         .replace("solstone/think/contract/layout.json\n", "");
-    fs::write(temporary.path().join("payload.txt"), payload).expect("write payload");
-    let error = validate_distribution_inventory(&temporary.path().join("inventory.toml"))
+    fs::write(distribution.join("payload.txt"), payload).expect("write payload");
+    let error = validate_distribution_inventory(&distribution.join("inventory.toml"))
         .expect_err("missing anchor must fail");
     assert!(
         error

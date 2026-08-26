@@ -15,10 +15,18 @@ use solstone_core_ffmpeg_build_support::{
     read_current_run_record, verify_sha256,
 };
 
+use crate::apple::RealArchiveMemberSigner;
+use crate::archive_census;
+use crate::archive_contract::{
+    COMPILED_EXPECTATION_ENV, DeliveryContract, PrebuildInputIdentity,
+    write_rfdetr_compiled_expectation,
+};
+use crate::archive_seal::{SealedArchiveSet, seal_declared_archives};
 use crate::digest::sha256_hex;
 use crate::elf;
 use crate::inventory::{
-    Entry, Inventory, Target, artifact_set_for_os, format_named_list, load_payload, parse_min_macos,
+    Entry, Inventory, Target, artifact_set_for_os, digest_const_hex, format_named_list,
+    load_payload, parse_min_macos,
 };
 use crate::lanes::{self, write_wrappers};
 use crate::macho;
@@ -246,44 +254,6 @@ pub fn payload_dest(prefix: &str, source: &str) -> String {
     format!("{prefix}/{source}")
 }
 
-pub fn digest_const_hex(source: &str, name: &str) -> Option<String> {
-    let mut pending: Option<&str> = None;
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("pub const ") {
-            let Some((const_name, after)) = rest.split_once(':') else {
-                continue;
-            };
-            if !after.contains("&str") {
-                continue;
-            }
-            if const_name.trim() != name {
-                pending = None;
-                continue;
-            }
-            if let Some((_, literal)) = trimmed.split_once('=') {
-                let hex = literal
-                    .trim()
-                    .trim_end_matches(';')
-                    .trim()
-                    .trim_matches('"');
-                if hex.len() == 64 {
-                    return Some(hex.to_owned());
-                }
-            }
-            pending = Some(name);
-            continue;
-        }
-        if pending.take() == Some(name) {
-            let hex = trimmed.trim_end_matches(';').trim().trim_matches('"');
-            if hex.len() == 64 && hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
-                return Some(hex.to_owned());
-            }
-        }
-    }
-    None
-}
-
 pub fn inspect_bin(bin: &str, lane: &str, bytes: &[u8], machine: u16) -> Result<(), ProduceError> {
     let info = elf::parse_elf(bytes).map_err(|error| ProduceError::new(error.to_string()))?;
     match lane {
@@ -462,6 +432,27 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
 
         let mut artifacts = BTreeMap::new();
         if target.is_macos() {
+            let signer = RealArchiveMemberSigner {
+                apple: &inventory.apple,
+            };
+            let sealed_archives =
+                seal_declared_archives(&checkout, &inventory, &target.id, &signer)
+                    .map_err(|error| ProduceError::new(error.to_string()))?;
+            let prebuild = PrebuildInputIdentity::from_sealed_archives(
+                &target.id,
+                &commit,
+                &expected_lock,
+                &fs::read(&inventory_path)?,
+                &sealed_archives,
+            );
+            let delivery = DeliveryContract::from_sealed_archives(&prebuild, &sealed_archives);
+            let expectation = write_rfdetr_compiled_expectation(&work, &delivery)
+                .map_err(|error| ProduceError::new(error.to_string()))?;
+            let mut apple_vars = apple_lane_env(target, &onnx_dir);
+            apple_vars.insert(
+                COMPILED_EXPECTATION_ENV.to_owned(),
+                expectation.display().to_string(),
+            );
             let remap = remap_for(&sysroot);
             let apple_bins = bins_for_resolved_lane(&inventory, target, "apple-native");
             merge_artifacts(
@@ -474,7 +465,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                     triple: &target.triple_apple,
                     host: &host,
                     bins: &apple_bins,
-                    vars: &apple_lane_env(target, &onnx_dir),
+                    vars: &apple_vars,
                     rustflags: &remap.join("\x1f"),
                     epoch: &epoch,
                     ffmpeg_archive: &ffmpeg_archive,
@@ -498,6 +489,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 commit: &commit,
                 expected_lock: &expected_lock,
                 onnx_input: &onnx_input,
+                sealed_archives: Some(&sealed_archives),
             });
         }
 
@@ -626,6 +618,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             commit: &commit,
             expected_lock: &expected_lock,
             onnx_input: &onnx_input,
+            sealed_archives: None,
         })
     })();
 
@@ -696,6 +689,7 @@ struct FinishProduce<'a> {
     commit: &'a str,
     expected_lock: &'a str,
     onnx_input: &'a OnnxInput,
+    sealed_archives: Option<&'a SealedArchiveSet>,
 }
 
 /// Selection, binary inspection, staging and atomic promotion — identical for
@@ -718,6 +712,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         commit,
         expected_lock,
         onnx_input,
+        sealed_archives,
     } = finish;
 
     select::refuse_wrong_triple(inventory, &args.target_id, artifacts)
@@ -764,6 +759,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         staged_runtime,
         pdfium_spec,
         staged_pdfium,
+        sealed_archives,
         &stage,
     )?;
 
@@ -772,6 +768,8 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     // and never passes through `select`. A census that walked only `selection`
     // would report a clean tree with the loaded half never looked at.
     if target.is_macos() {
+        archive_census::validate_staged_archives(&stage, inventory)
+            .map_err(|error| ProduceError::new(error.to_string()))?;
         inspect_macos_payloads(&stage, target)?;
     }
 
@@ -1118,6 +1116,7 @@ fn stage_layout(
     runtime: &onnx_runtime::StagedRuntime,
     pdfium_spec: &pdfium::TargetSpec,
     pdfium_runtime: &pdfium::StagedRuntime,
+    sealed_archives: Option<&SealedArchiveSet>,
     stage: &Path,
 ) -> Result<(), ProduceError> {
     for entry in &inventory.entry {
@@ -1148,6 +1147,8 @@ fn stage_layout(
                 digest_const,
                 digest_source,
                 targets,
+                archive_slot,
+                ..
             } => {
                 stage_model_asset(
                     repo,
@@ -1159,6 +1160,8 @@ fn stage_layout(
                     digest_const,
                     digest_source,
                     targets,
+                    archive_slot.as_ref(),
+                    sealed_archives,
                 )?;
             }
             Entry::OnnxRuntime {
@@ -1206,8 +1209,28 @@ fn stage_model_asset(
     digest_const: &str,
     digest_source: &str,
     targets: &[String],
+    archive_slot: Option<&crate::inventory::ArchiveSlot>,
+    sealed_archives: Option<&SealedArchiveSet>,
 ) -> Result<(), ProduceError> {
     if !targets.iter().any(|item| item == target_id) {
+        return Ok(());
+    }
+    if let Some(slot) = archive_slot {
+        let sealed = sealed_archives
+            .and_then(|archives| archives.by_slot_id(&slot.id))
+            .ok_or_else(|| {
+                ProduceError::new(format!(
+                    "missing required:\n  sealed archive slot {}",
+                    slot.id
+                ))
+            })?;
+        if sealed.staged_dest != dest {
+            return Err(ProduceError::new(format!(
+                "unexpected:\n  sealed archive slot {} dest {} (want {dest})",
+                slot.id, sealed.staged_dest
+            )));
+        }
+        stage::write_staged_file_mode(stage, dest, &sealed.bytes, mode)?;
         return Ok(());
     }
     let bytes = fs::read(repo.join(source))?;
@@ -1348,6 +1371,9 @@ mod tests {
         ConfigureReceipt, ConfigureRunRecord, write_configure_receipt, write_current_run_record,
     };
 
+    use crate::archive_taxonomy::ContainerKind;
+    use crate::inventory::{ArchiveExecutable, ArchiveSlot};
+
     fn write_ffmpeg_pin(repo: &Path, sha256: &str) {
         let inputs = repo.join("core/distribution/builder-inputs.toml");
         fs::create_dir_all(inputs.parent().unwrap()).unwrap();
@@ -1422,6 +1448,8 @@ mod tests {
             "PAYLOAD_SHA256",
             "pins.rs",
             &targets,
+            None,
+            None,
         )
         .unwrap();
         assert!(!stage.path().join("lib/payload").exists());
@@ -1437,10 +1465,83 @@ mod tests {
             "PAYLOAD_SHA256",
             "pins.rs",
             &targets,
+            None,
+            None,
         )
         .unwrap_err();
         assert!(error.to_string().contains("digest"));
         fs::write(repo.path().join("assets/payload"), b"expected bytes").unwrap();
+    }
+
+    #[test]
+    fn rfdetr_archive_slot_stages_only_the_sealed_derivative() {
+        let repo = tempfile::tempdir().expect("temporary repository");
+        let stage = tempfile::tempdir().expect("temporary stage");
+        let targets = vec!["macos-arm64".to_owned()];
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz");
+        let original = fs::read(source).expect("checked-in RF-DETR archive");
+        let mut derivative = original.clone();
+        derivative.extend_from_slice(b"fixture sealed derivative");
+        let slot = ArchiveSlot {
+            id: "rfdetr-macos-metal-arm64".to_owned(),
+            target: "macos-arm64".to_owned(),
+            container: ContainerKind::GzipTar,
+            executables: vec![ArchiveExecutable {
+                path: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli".to_owned(),
+                digest_const: "RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256".to_owned(),
+                digest_source: "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+                    .to_owned(),
+            }],
+        };
+        let dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz";
+        let sealed = SealedArchiveSet {
+            archives: vec![crate::archive_seal::SealedArchive {
+                slot_id: slot.id.clone(),
+                staged_dest: dest.to_owned(),
+                bytes: derivative.clone(),
+                sha256: sha256_hex(&derivative),
+                size: derivative.len() as u64,
+                source_sha256: sha256_hex(&original),
+                signed_executables: vec![],
+            }],
+        };
+
+        stage_model_asset(
+            repo.path(),
+            stage.path(),
+            "macos-arm64",
+            "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+            dest,
+            0o644,
+            "MISSING_SHA256",
+            "missing.rs",
+            &targets,
+            Some(&slot),
+            Some(&sealed),
+        )
+        .expect("sealed derivative stages without reading original");
+        assert_eq!(
+            fs::read(stage.path().join(dest)).expect("staged derivative"),
+            derivative
+        );
+        assert_ne!(fs::read(stage.path().join(dest)).unwrap(), original);
+
+        let error = stage_model_asset(
+            repo.path(),
+            stage.path(),
+            "macos-arm64",
+            "core/models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+            dest,
+            0o644,
+            "MISSING_SHA256",
+            "missing.rs",
+            &targets,
+            Some(&slot),
+            None,
+        )
+        .expect_err("missing sealed archive refuses");
+        assert!(error.to_string().contains("sealed archive slot"));
     }
 
     #[test]

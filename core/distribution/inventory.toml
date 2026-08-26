@@ -230,6 +230,9 @@ dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-mac
 mode = 0o644
 digest_const = "RFDETR_ENGINE_MACOS_METAL_ARM64_TARBALL_SHA256"
 digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
+archive_slot = { id = "rfdetr-macos-metal-arm64", target = "macos-arm64", container = "gzip-tar", executables = [
+  { path = "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64/rfdetr-cli", digest_const = "RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256", digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs" },
+] }
 targets = ["macos-arm64"]
 
 [[entry]]

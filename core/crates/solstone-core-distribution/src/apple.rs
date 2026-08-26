@@ -20,6 +20,8 @@
 
 use std::fs;
 use std::io;
+#[cfg(any(test, feature = "test-hooks"))]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -223,6 +225,83 @@ pub struct SignedMember {
     pub trusted_timestamp: bool,
 }
 
+pub(crate) trait ArchiveMemberSigner {
+    fn sign_executable(
+        &self,
+        path: &Path,
+        relative_member_path: &str,
+    ) -> Result<SignedMember, AppleError>;
+}
+
+pub(crate) struct RealArchiveMemberSigner<'a> {
+    pub apple: &'a Apple,
+}
+
+impl ArchiveMemberSigner for RealArchiveMemberSigner<'_> {
+    fn sign_executable(
+        &self,
+        path: &Path,
+        relative_member_path: &str,
+    ) -> Result<SignedMember, AppleError> {
+        codesign_at(path, self.apple)?;
+        verify_signed(relative_member_path, path, false, self.apple)
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) struct FakeArchiveMemberSigner {
+    marker: String,
+    mutate_mode: bool,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl FakeArchiveMemberSigner {
+    pub(crate) fn new(marker: impl Into<String>) -> Self {
+        Self {
+            marker: marker.into(),
+            mutate_mode: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_mode_mutation(marker: impl Into<String>) -> Self {
+        Self {
+            marker: marker.into(),
+            mutate_mode: true,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl ArchiveMemberSigner for FakeArchiveMemberSigner {
+    fn sign_executable(
+        &self,
+        path: &Path,
+        relative_member_path: &str,
+    ) -> Result<SignedMember, AppleError> {
+        let mut bytes = fs::read(path)?;
+        bytes.extend_from_slice(b"\nSOLSTONE-FAKE-ARCHIVE-SIGNATURE:");
+        bytes.extend_from_slice(self.marker.as_bytes());
+        bytes.extend_from_slice(b":");
+        bytes.extend_from_slice(relative_member_path.as_bytes());
+        fs::write(path, &bytes)?;
+        if self.mutate_mode {
+            let mut permissions = fs::metadata(path)?.permissions();
+            permissions.set_mode(0o644);
+            fs::set_permissions(path, permissions)?;
+        }
+        Ok(SignedMember {
+            relative: relative_member_path.to_owned(),
+            payload: false,
+            sha256: crate::digest::sha256_hex(&bytes),
+            authority: format!("fake:{}", self.marker),
+            team_identifier: "fake".to_owned(),
+            hardened_runtime: true,
+            trusted_timestamp: true,
+        })
+    }
+}
+
 /// Sign every Mach-O in the staged tree, loaded payloads first.
 ///
 /// 🔴 Payload-first is not cosmetic. Under the hardened runtime a signed
@@ -238,33 +317,13 @@ pub fn sign_tree(stage: &Path, apple: &Apple) -> Result<Vec<SignedMember>, Apple
             "missing required:\n  mach-o members in staged tree",
         ));
     }
-    let keychain = apple.keychain_path().to_string_lossy().into_owned();
-    let codesign = if apple.codesign_path.is_empty() {
-        "codesign".to_owned()
-    } else {
-        apple.codesign_path.clone()
-    };
     let mut signed = Vec::new();
     for member in members
         .iter()
         .filter(|member| member.payload)
         .chain(members.iter().filter(|member| !member.payload))
     {
-        let path = member.path.to_string_lossy().into_owned();
-        run(
-            &codesign,
-            &[
-                "--force",
-                "--options",
-                "runtime",
-                "--timestamp",
-                "--keychain",
-                &keychain,
-                "--sign",
-                &apple.app_identity,
-                &path,
-            ],
-        )?;
+        codesign_at(&member.path, apple)?;
         signed.push(verify_signed(
             &member.relative,
             &member.path,
@@ -273,6 +332,31 @@ pub fn sign_tree(stage: &Path, apple: &Apple) -> Result<Vec<SignedMember>, Apple
         )?);
     }
     Ok(signed)
+}
+
+fn codesign_at(path: &Path, apple: &Apple) -> Result<(), AppleError> {
+    let keychain = apple.keychain_path().to_string_lossy().into_owned();
+    let codesign = if apple.codesign_path.is_empty() {
+        "codesign".to_owned()
+    } else {
+        apple.codesign_path.clone()
+    };
+    let display = path.to_string_lossy().into_owned();
+    run(
+        &codesign,
+        &[
+            "--force",
+            "--options",
+            "runtime",
+            "--timestamp",
+            "--keychain",
+            &keychain,
+            "--sign",
+            &apple.app_identity,
+            &display,
+        ],
+    )?;
+    Ok(())
 }
 
 /// Assert the properties we wanted, never merely the absence of an error.
@@ -621,5 +705,31 @@ mod tests {
         );
         assert_eq!(field(adhoc, "Authority=").as_deref(), None);
         assert_eq!(field(adhoc, "TeamIdentifier=").as_deref(), None);
+    }
+
+    #[test]
+    fn fake_archive_signer_is_deterministic_and_marker_distinct() {
+        let temporary = tempfile::tempdir().expect("temporary signer files");
+        let first = temporary.path().join("first");
+        let second = temporary.path().join("second");
+        let third = temporary.path().join("third");
+        for path in [&first, &second, &third] {
+            fs::write(path, b"unsigned member").expect("write member");
+        }
+
+        let first_signature = FakeArchiveMemberSigner::new("one")
+            .sign_executable(&first, "bin/member")
+            .expect("first signature");
+        let second_signature = FakeArchiveMemberSigner::new("one")
+            .sign_executable(&second, "bin/member")
+            .expect("second signature");
+        let third_signature = FakeArchiveMemberSigner::new("two")
+            .sign_executable(&third, "bin/member")
+            .expect("third signature");
+
+        assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
+        assert_eq!(first_signature.sha256, second_signature.sha256);
+        assert_ne!(fs::read(&first).unwrap(), fs::read(&third).unwrap());
+        assert_ne!(first_signature.sha256, third_signature.sha256);
     }
 }
