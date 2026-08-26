@@ -17,8 +17,8 @@ use crate::errors::{
     FlatDirectoryError, IdentityChangeDisposition, NoReplacePrimitive,
 };
 use crate::flat_directory::{
-    FileObservation, FlatDirectory, read_observed_file_unchecked, same_entry_metadata,
-    same_observation, stat_entry,
+    FileObservation, FlatDirectory, FlatDirectoryEntry, read_observed_file_unchecked,
+    same_entry_metadata, same_observation, stat_entry,
 };
 use crate::name_admission::{ClaimName, check_portable_component};
 
@@ -181,6 +181,44 @@ pub fn run_with_two_claim_removal_barriers<T>(
     (result, state.barriers_fired)
 }
 
+#[cfg(test)]
+fn run_with_claim_removal_fault_and_barrier<T>(
+    fault_primitive: ClaimRemovalPrimitive,
+    fault_ordinal: usize,
+    raw_errno: i32,
+    barrier_primitive: ClaimRemovalPrimitive,
+    barrier_ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, bool, bool) {
+    CLAIM_TRACE.with(|trace| {
+        assert!(trace.borrow().is_none(), "claim trace is already active");
+        *trace.borrow_mut() = Some(ClaimTraceState {
+            attempted: Vec::new(),
+            fault: Some(ClaimFault {
+                primitive: fault_primitive,
+                ordinal: fault_ordinal,
+                error: Errno::from_raw(raw_errno),
+            }),
+            fault_consumed: false,
+            barriers: vec![ClaimBarrier {
+                primitive: barrier_primitive,
+                ordinal: barrier_ordinal,
+                callback: Box::new(callback),
+            }],
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = CLAIM_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("claim trace remains active")
+    });
+    (result, state.fault_consumed, state.barriers_fired == 1)
+}
+
 /// Claim the exact observed file under `claim`, then remove or restore it safely.
 pub fn claim_and_remove_observed(
     directory: &FlatDirectory,
@@ -275,8 +313,20 @@ pub fn claim_and_remove_observed(
         }
     })?;
     let claimed = match read_observed_file_unchecked(directory, claim.as_os_str()) {
-        Ok(Some(observation)) => observation,
+        Ok(Some(observation)) => ClaimedObject::Observed(observation),
         Ok(None) => return Ok(unknown_location()),
+        Err(FlatDirectoryError::NotRegular { .. } | FlatDirectoryError::IdentityChanged { .. }) => {
+            match stat_entry(directory, claim.as_os_str()) {
+                Ok(Some(entry)) => ClaimedObject::StatOnly(entry),
+                Ok(None) => return Ok(unknown_location()),
+                Err(source) => {
+                    return Err(ClaimRemovalError::PostClaimInspection {
+                        claim: claim.clone(),
+                        source,
+                    });
+                }
+            }
+        }
         Err(source) => {
             return Err(ClaimRemovalError::PostClaimInspection {
                 claim: claim.clone(),
@@ -284,7 +334,8 @@ pub fn claim_and_remove_observed(
             });
         }
     };
-    if same_observation(&claimed, prior) {
+    if matches!(&claimed, ClaimedObject::Observed(observation) if same_observation(observation, prior))
+    {
         return unlink_matching_claim(directory, claim);
     }
     restore_changed_claim(directory, original, &claimed, claim)
@@ -313,6 +364,11 @@ enum ObservationState {
     Different,
 }
 
+enum ClaimedObject {
+    Observed(FileObservation),
+    StatOnly(FlatDirectoryEntry),
+}
+
 fn observation_state(
     directory: &FlatDirectory,
     name: &OsStr,
@@ -328,6 +384,23 @@ fn observation_state(
             Ok(ObservationState::Different)
         }
         Err(source) => Err(source),
+    }
+}
+
+fn claimed_object_state(
+    directory: &FlatDirectory,
+    name: &OsStr,
+    expected: &ClaimedObject,
+) -> Result<ObservationState, FlatDirectoryError> {
+    match expected {
+        ClaimedObject::Observed(observation) => observation_state(directory, name, observation),
+        ClaimedObject::StatOnly(expected) => match stat_entry(directory, name)? {
+            Some(observed) if same_entry_metadata(&observed, expected) => {
+                Ok(ObservationState::Matches)
+            }
+            Some(_) => Ok(ObservationState::Different),
+            None => Ok(ObservationState::Absent),
+        },
     }
 }
 
@@ -400,7 +473,7 @@ fn unlink_matching_claim(
 fn restore_changed_claim(
     directory: &FlatDirectory,
     original: &OsStr,
-    claimed: &FileObservation,
+    claimed: &ClaimedObject,
     claim: &ClaimName,
 ) -> Result<ClaimRemovalOutcome, ClaimRemovalError> {
     checkpoint(ClaimRemovalPrimitive::BeforeRestore).map_err(|source| {
@@ -438,10 +511,10 @@ fn restore_changed_claim(
 fn reconcile_restore_rename(
     directory: &FlatDirectory,
     original: &OsStr,
-    claimed: &FileObservation,
+    claimed: &ClaimedObject,
     claim: &ClaimName,
 ) -> Result<ClaimRemovalOutcome, ClaimRemovalError> {
-    let original_state = observation_state(directory, original, claimed).map_err(|source| {
+    let original_state = claimed_object_state(directory, original, claimed).map_err(|source| {
         ClaimRemovalError::Reconciliation {
             original: original.to_os_string(),
             claim: claim.clone(),
@@ -449,7 +522,7 @@ fn reconcile_restore_rename(
         }
     })?;
     let claim_state =
-        observation_state(directory, claim.as_os_str(), claimed).map_err(|source| {
+        claimed_object_state(directory, claim.as_os_str(), claimed).map_err(|source| {
             ClaimRemovalError::Reconciliation {
                 original: original.to_os_string(),
                 claim: claim.clone(),
@@ -565,7 +638,7 @@ fn rename_no_replace(directory: &FlatDirectory, from: &OsStr, to: &OsStr) -> Res
             "entry name contains an interior NUL",
         )
     })?;
-    let result = platform_rename_no_replace(directory.as_fd().as_raw_fd(), &from, &to);
+    let result = platform_rename_no_replace(directory.as_fd().as_raw_fd(), &from, &to)?;
     if result == -1 {
         Err(io::Error::last_os_error())
     } else {
@@ -575,42 +648,50 @@ fn rename_no_replace(directory: &FlatDirectory, from: &OsStr, to: &OsStr) -> Res
 
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
-fn platform_rename_no_replace(directory: i32, from: &CString, to: &CString) -> i32 {
+fn platform_rename_no_replace(
+    directory: i32,
+    from: &CString,
+    to: &CString,
+) -> Result<i32, io::Error> {
     // `libc` exposes these Linux UAPI constants for both glibc and musl targets.
     unsafe {
-        libc::syscall(
+        Ok(libc::syscall(
             libc::SYS_renameat2,
             directory,
             from.as_ptr(),
             directory,
             to.as_ptr(),
             libc::RENAME_NOREPLACE,
-        ) as i32
+        ) as i32)
     }
 }
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
-fn platform_rename_no_replace(directory: i32, from: &CString, to: &CString) -> i32 {
+fn platform_rename_no_replace(
+    directory: i32,
+    from: &CString,
+    to: &CString,
+) -> Result<i32, io::Error> {
     // libc 0.2.189 exposes the descriptor-relative Darwin variant directly.
     unsafe {
-        libc::renameatx_np(
+        Ok(libc::renameatx_np(
             directory,
             from.as_ptr(),
             directory,
             to.as_ptr(),
             libc::RENAME_EXCL,
-        )
+        ))
     }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-#[allow(unsafe_code)]
-fn platform_rename_no_replace(_directory: i32, _from: &CString, _to: &CString) -> i32 {
-    unsafe {
-        *libc::__errno_location() = libc::ENOSYS;
-    }
-    -1
+fn platform_rename_no_replace(
+    _directory: i32,
+    _from: &CString,
+    _to: &CString,
+) -> Result<i32, io::Error> {
+    Err(io::Error::from_raw_os_error(libc::ENOSYS))
 }
 
 fn errno_io(error: Errno) -> io::Error {
@@ -693,7 +774,11 @@ fn pause_at(primitive: ClaimRemovalPrimitive) {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::FileTypeExt;
     use std::path::Path;
+
+    use nix::sys::stat::Mode;
+    use nix::unistd::mkfifo;
 
     use super::*;
     use crate::journal_root::JournalRoot;
@@ -788,5 +873,151 @@ mod tests {
             unchanged(ClaimUnchangedReason::RenameNotAppliedAfterReconciliation)
         );
         assert!(temporary.path().join("flat/entry").exists());
+    }
+
+    #[test]
+    fn injected_ambiguous_claim_error_reconciles_a_rename_that_already_succeeded() {
+        let (temporary, _root, directory, claim) = setup();
+        let original = temporary.path().join("flat/entry");
+        let claim_path = temporary.path().join("flat").join(claim.as_str());
+        fs::write(&original, b"observed").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let (result, fault_consumed, barrier_fired) = run_with_claim_removal_fault_and_barrier(
+            ClaimRemovalPrimitive::ClaimRename,
+            1,
+            libc::EIO,
+            ClaimRemovalPrimitive::BeforeClaim,
+            1,
+            move || fs::rename(original, claim_path).unwrap(),
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert!(fault_consumed);
+        assert!(barrier_fired);
+        assert_eq!(result.unwrap(), ClaimRemovalOutcome::Removed);
+    }
+
+    #[test]
+    fn removed_but_unsynced_is_never_reported_as_removed() {
+        let (temporary, _root, directory, claim) = setup();
+        fs::write(temporary.path().join("flat/entry"), b"observed").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let (result, consumed) = run_with_claim_removal_fault(
+            ClaimRemovalPrimitive::DirectorySync,
+            1,
+            libc::EIO,
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert!(consumed);
+        assert_eq!(
+            result.unwrap(),
+            ClaimRemovalOutcome::RemovedDurabilityUncertain
+        );
+        assert!(!temporary.path().join("flat/entry").exists());
+        assert!(!temporary.path().join("flat").join(claim.as_str()).exists());
+    }
+
+    #[test]
+    fn claimed_name_disappearance_is_unknown_not_an_inspection_error() {
+        let (temporary, _root, directory, claim) = setup();
+        fs::write(temporary.path().join("flat/entry"), b"observed").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let claim_path = temporary.path().join("flat").join(claim.as_str());
+        let (result, fired) = run_with_claim_removal_barrier(
+            ClaimRemovalPrimitive::AfterClaim,
+            1,
+            move || fs::remove_file(claim_path).unwrap(),
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert!(fired);
+        assert_eq!(result.unwrap(), unknown_location());
+    }
+
+    #[test]
+    fn restore_source_disappearance_is_unknown_not_an_error() {
+        let (temporary, _root, directory, claim) = setup();
+        fs::write(temporary.path().join("flat/entry"), b"observed").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let claim_path = temporary.path().join("flat").join(claim.as_str());
+        let changed_claim = claim_path.clone();
+        let (result, fired) = run_with_two_claim_removal_barriers(
+            ClaimRemovalPrimitive::BeforeInspection,
+            1,
+            move || fs::write(changed_claim, b"changed").unwrap(),
+            ClaimRemovalPrimitive::BeforeRestore,
+            1,
+            move || fs::remove_file(claim_path).unwrap(),
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert_eq!(fired, 2);
+        assert_eq!(result.unwrap(), unknown_location());
+    }
+
+    #[test]
+    fn non_regular_claimed_entries_are_restored_without_unlinking() {
+        let (temporary, _root, directory, claim) = setup();
+        let original = temporary.path().join("flat/entry");
+        let claim_path = temporary.path().join("flat").join(claim.as_str());
+        fs::write(&original, b"observed").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let fifo_path = claim_path.clone();
+        let (result, fired) = run_with_claim_removal_barrier(
+            ClaimRemovalPrimitive::BeforeInspection,
+            1,
+            move || {
+                fs::remove_file(&fifo_path).unwrap();
+                mkfifo(&fifo_path, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+            },
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert!(fired);
+        assert_eq!(
+            result.unwrap(),
+            identity_changed(IdentityChangeDisposition::Restored, ClaimDurability::Synced)
+        );
+        assert!(
+            fs::symlink_metadata(&original)
+                .unwrap()
+                .file_type()
+                .is_fifo()
+        );
+        assert!(!claim_path.exists());
+
+        fs::remove_file(&original).unwrap();
+        fs::write(&original, b"observed-again").unwrap();
+        let prior = crate::flat_directory::read_observed_file(&directory, OsStr::new("entry"))
+            .unwrap()
+            .unwrap();
+        let directory_path = claim_path.clone();
+        let (result, fired) = run_with_claim_removal_barrier(
+            ClaimRemovalPrimitive::BeforeInspection,
+            1,
+            move || {
+                fs::remove_file(&directory_path).unwrap();
+                fs::create_dir(&directory_path).unwrap();
+            },
+            || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+        );
+        assert!(fired);
+        assert_eq!(
+            result.unwrap(),
+            identity_changed(IdentityChangeDisposition::Restored, ClaimDurability::Synced)
+        );
+        assert!(
+            fs::symlink_metadata(&original)
+                .unwrap()
+                .file_type()
+                .is_dir()
+        );
+        assert!(!claim_path.exists());
     }
 }

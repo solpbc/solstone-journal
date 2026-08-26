@@ -8,14 +8,14 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, openat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 
 use crate::errors::FlatDirectoryError;
-use crate::journal_root::{JournalEntryKind, JournalRoot, ObjectIdentity};
+use crate::journal_root::{JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity};
 use crate::name_admission::{NameAdmissionReason, check_portable_component};
 
 const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
@@ -26,6 +26,69 @@ const FILE_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_NONBLOCK)
     .union(OFlag::O_CLOEXEC)
     .union(OFlag::O_NOFOLLOW);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FlatDirectoryTestPrimitive {
+    BeforeDescendantOpen,
+    BeforeEntryStat,
+    BeforeObservedFileOpen,
+    AfterObservedFileStat,
+}
+
+#[cfg(test)]
+struct FlatDirectoryTestHook {
+    primitive: FlatDirectoryTestPrimitive,
+    callback: Box<dyn FnOnce()>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FLAT_DIRECTORY_TEST_HOOK: std::cell::RefCell<Option<FlatDirectoryTestHook>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn run_with_flat_directory_hook<T>(
+    primitive: FlatDirectoryTestPrimitive,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, bool) {
+    FLAT_DIRECTORY_TEST_HOOK.with(|hook| {
+        assert!(
+            hook.borrow().is_none(),
+            "flat-directory test hook is already active"
+        );
+        *hook.borrow_mut() = Some(FlatDirectoryTestHook {
+            primitive,
+            callback: Box::new(callback),
+        });
+    });
+    let result = op();
+    let callback = FLAT_DIRECTORY_TEST_HOOK.with(|hook| hook.borrow_mut().take());
+    (result, callback.is_none())
+}
+
+#[cfg(test)]
+fn flat_directory_test_hook(primitive: FlatDirectoryTestPrimitive) {
+    let callback = FLAT_DIRECTORY_TEST_HOOK.with(|hook| {
+        let mut hook = hook.borrow_mut();
+        if hook
+            .as_ref()
+            .is_some_and(|candidate| candidate.primitive == primitive)
+        {
+            hook.take().map(|hook| hook.callback)
+        } else {
+            None
+        }
+    });
+    if let Some(callback) = callback {
+        callback();
+    }
+}
+
+#[cfg(not(test))]
+fn flat_directory_test_hook(_primitive: FlatDirectoryTestPrimitive) {}
 
 /// A native-precision modification timestamp from a no-follow Unix stat result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,10 +140,9 @@ impl FlatDirectory {
     /// metadata to errors; it is never reopened or used as authority.
     pub fn open(root: &JournalRoot, relative: &Path) -> Result<Self, FlatDirectoryError> {
         let components = portable_relative_components(relative)?;
-        root.revalidate()
-            .map_err(|_| FlatDirectoryError::IdentityChanged {
-                path: root.canonical_path().to_path_buf(),
-            })?;
+        root.revalidate().map_err(|error| {
+            map_root_revalidation_error(error, root.canonical_path().to_path_buf())
+        })?;
 
         let mut diagnostic_path = root.canonical_path().to_path_buf();
         let mut opened: Option<OwnedFd> = None;
@@ -122,6 +184,7 @@ impl FlatDirectory {
                     });
                 }
             }
+            flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeDescendantOpen);
             let next = {
                 let parent: &dyn AsFd = match &opened {
                     Some(directory) => directory,
@@ -256,6 +319,7 @@ pub fn list_flat_directory(
             return Ok(None);
         }
         let name = OsString::from_vec(bytes.to_vec());
+        flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeEntryStat);
         let entry = stat_entry(directory, &name)?.ok_or_else(|| {
             FlatDirectoryError::EnumerationChanged {
                 path: directory.diagnostic_entry(&name),
@@ -282,6 +346,7 @@ pub(crate) fn read_observed_file_unchecked(
 ) -> Result<Option<FileObservation>, FlatDirectoryError> {
     directory.revalidate()?;
     let path = directory.diagnostic_entry(name);
+    flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeObservedFileOpen);
     let fd = match openat(directory, name, FILE_FLAGS, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::ENOENT) => return Ok(None),
@@ -294,6 +359,7 @@ pub(crate) fn read_observed_file_unchecked(
     if entry.kind != JournalEntryKind::RegularFile {
         return Err(FlatDirectoryError::NotRegular { path });
     }
+    flat_directory_test_hook(FlatDirectoryTestPrimitive::AfterObservedFileStat);
     let size = usize::try_from(entry.size).map_err(|_| FlatDirectoryError::Io {
         operation: "size observed file buffer",
         path: path.clone(),
@@ -304,22 +370,15 @@ pub(crate) fn read_observed_file_unchecked(
     })?;
     let mut file = File::from(fd);
     let mut bytes = vec![0; size];
-    let mut offset = 0;
-    while offset < bytes.len() {
-        match file.read(&mut bytes[offset..]) {
-            Ok(0) => {
-                return Err(FlatDirectoryError::IdentityChanged { path });
-            }
-            Ok(read) => offset += read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(source) => {
-                return Err(FlatDirectoryError::Io {
-                    operation: "read observed file",
-                    path,
-                    source,
-                });
-            }
+    if let Err(source) = read_exact(&mut file, &mut bytes) {
+        if source.kind() == io::ErrorKind::UnexpectedEof {
+            return Err(FlatDirectoryError::IdentityChanged { path });
         }
+        return Err(FlatDirectoryError::Io {
+            operation: "read observed file",
+            path,
+            source,
+        });
     }
     let after = fstat(&file).map_err(|error| {
         errno_error(
@@ -335,6 +394,19 @@ pub(crate) fn read_observed_file_unchecked(
         });
     }
     Ok(Some(FileObservation { entry, bytes }))
+}
+
+fn read_exact(reader: &mut impl Read, bytes: &mut [u8]) -> io::Result<()> {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match reader.read(&mut bytes[offset..]) {
+            Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof)),
+            Ok(read) => offset += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn stat_entry(
@@ -365,31 +437,53 @@ pub(crate) fn same_observation(left: &FileObservation, right: &FileObservation) 
 }
 
 fn portable_relative_components(relative: &Path) -> Result<Vec<&OsStr>, FlatDirectoryError> {
-    let mut components = Vec::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(name) => {
-                validate_portable_name(name)?;
-                components.push(name);
-            }
-            Component::Prefix(_)
-            | Component::RootDir
-            | Component::CurDir
-            | Component::ParentDir => {
-                return Err(FlatDirectoryError::InvalidRelativePath {
-                    path: relative.to_path_buf(),
-                    reason: "path must be a nonempty sequence of normal portable components",
-                });
-            }
-        }
-    }
-    if components.is_empty() {
+    let bytes = relative.as_os_str().as_bytes();
+    if bytes.is_empty() || bytes.starts_with(b"/") {
         return Err(FlatDirectoryError::InvalidRelativePath {
             path: relative.to_path_buf(),
             reason: "path must be a nonempty sequence of normal portable components",
         });
     }
+
+    let mut components = Vec::new();
+    for raw_component in bytes.split(|byte| *byte == b'/') {
+        if raw_component.is_empty() || matches!(raw_component, b"." | b"..") {
+            return Err(FlatDirectoryError::InvalidRelativePath {
+                path: relative.to_path_buf(),
+                reason: "path must be a nonempty sequence of normal portable components",
+            });
+        }
+        let component = OsStr::from_bytes(raw_component);
+        validate_portable_name(component)?;
+        components.push(component);
+    }
     Ok(components)
+}
+
+fn map_root_revalidation_error(
+    error: JournalRootError,
+    diagnostic_path: PathBuf,
+) -> FlatDirectoryError {
+    match error {
+        JournalRootError::Changed => FlatDirectoryError::IdentityChanged {
+            path: diagnostic_path,
+        },
+        JournalRootError::Io {
+            operation,
+            path,
+            source,
+        } => FlatDirectoryError::Io {
+            operation,
+            path,
+            source,
+        },
+        JournalRootError::Invalid { root, reason }
+        | JournalRootError::Unsupported { root, reason } => FlatDirectoryError::Io {
+            operation: "revalidate journal root",
+            path: root,
+            source: io::Error::other(reason),
+        },
+    }
 }
 
 fn validate_portable_name(name: &OsStr) -> Result<(), FlatDirectoryError> {
@@ -450,8 +544,15 @@ fn errno_error(operation: &'static str, path: PathBuf, error: Errno) -> FlatDire
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::ffi::OsString;
     use std::fs;
+    use std::io::{self, Read};
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
     use std::os::unix::fs::symlink;
+
+    use nix::sys::stat::Mode;
+    use nix::unistd::mkfifo;
 
     use super::*;
     use crate::test_support::TempDir;
@@ -465,27 +566,60 @@ mod tests {
     }
 
     #[test]
-    fn acquisition_refuses_empty_parent_and_symlink_components() {
+    fn acquisition_refuses_non_normal_paths_non_directories_and_symlinks() {
         let temporary = TempDir::new();
         fs::create_dir(temporary.path().join("directory")).unwrap();
+        fs::write(temporary.path().join("file"), b"not a directory").unwrap();
         symlink("directory", temporary.path().join("link")).unwrap();
         let root = JournalRoot::open(temporary.path()).unwrap();
-        assert!(matches!(
-            FlatDirectory::open(&root, Path::new("")),
-            Err(FlatDirectoryError::InvalidRelativePath { .. })
-        ));
+        for relative in [
+            Path::new(""),
+            Path::new("/absolute"),
+            Path::new("."),
+            Path::new("./directory"),
+            Path::new("directory/."),
+            Path::new("directory/.."),
+            Path::new("flat/./file"),
+        ] {
+            assert!(matches!(
+                FlatDirectory::open(&root, relative),
+                Err(FlatDirectoryError::InvalidRelativePath { .. })
+            ));
+        }
         assert!(matches!(
             FlatDirectory::open(&root, Path::new("link")),
             Err(FlatDirectoryError::SymlinkRefused { .. })
         ));
         assert!(matches!(
-            FlatDirectory::open(&root, Path::new("directory/..")),
-            Err(FlatDirectoryError::InvalidRelativePath { .. })
+            FlatDirectory::open(&root, Path::new("file")),
+            Err(FlatDirectoryError::NotDirectory { .. })
         ));
     }
 
     #[test]
-    fn listing_uses_an_all_or_nothing_overflow_sentinel() {
+    fn acquisition_rejects_a_descendant_replaced_between_stat_and_open() {
+        let temporary = TempDir::new();
+        let descendant = temporary.path().join("flat");
+        fs::create_dir(&descendant).unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let replacement = descendant.clone();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeDescendantOpen,
+            move || {
+                fs::remove_dir(&replacement).unwrap();
+                fs::create_dir(&replacement).unwrap();
+            },
+            || FlatDirectory::open(&root, Path::new("flat")),
+        );
+        assert!(fired);
+        assert!(matches!(
+            result,
+            Err(FlatDirectoryError::IdentityChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn listing_uses_an_all_or_nothing_overflow_sentinel_at_both_boundaries() {
         let (temporary, _root, flat) = root_and_flat();
         fs::write(temporary.path().join("flat/a"), b"a").unwrap();
         fs::write(temporary.path().join("flat/b"), b"b").unwrap();
@@ -497,7 +631,34 @@ mod tests {
     }
 
     #[test]
-    fn observed_read_rejects_bad_names_and_returns_exact_bytes() {
+    fn listing_entry_disappearance_is_one_error_not_a_partial_listing() {
+        let (temporary, _root, flat) = root_and_flat();
+        let entry = temporary.path().join("flat/entry");
+        fs::write(&entry, b"entry").unwrap();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeEntryStat,
+            move || fs::remove_file(&entry).unwrap(),
+            || list_flat_directory(&flat, 1),
+        );
+        assert!(fired);
+        assert!(matches!(
+            result,
+            Err(FlatDirectoryError::EnumerationChanged { .. })
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn listing_round_trips_non_utf8_names_without_loss() {
+        let (temporary, _root, flat) = root_and_flat();
+        let name = OsString::from_vec(b"entry-\xff".to_vec());
+        fs::write(temporary.path().join("flat").join(&name), b"entry").unwrap();
+        let entries = list_flat_directory(&flat, 1).unwrap().unwrap();
+        assert_eq!(entries[0].name.as_bytes(), name.as_bytes());
+    }
+
+    #[test]
+    fn observed_read_returns_exact_bytes_and_loops_for_short_reads() {
         let (temporary, _root, flat) = root_and_flat();
         fs::write(temporary.path().join("flat/record"), b"bytes").unwrap();
         let observed = read_observed_file(&flat, OsStr::new("record"))
@@ -505,9 +666,147 @@ mod tests {
             .unwrap();
         assert_eq!(observed.bytes, b"bytes");
         assert_eq!(observed.entry.kind, JournalEntryKind::RegularFile);
+
+        let mut reader = ShortReader::new(b"short-read".to_vec(), 2);
+        let mut bytes = vec![0; 10];
+        read_exact(&mut reader, &mut bytes).unwrap();
+        assert_eq!(bytes, b"short-read");
+    }
+
+    #[test]
+    fn observed_read_rejects_early_eof_and_growth_after_initial_stat() {
+        let (temporary, _root, flat) = root_and_flat();
+        let entry = temporary.path().join("flat/record");
+        fs::write(&entry, b"old").unwrap();
+        let truncate = entry.clone();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::AfterObservedFileStat,
+            move || fs::write(truncate, b"").unwrap(),
+            || read_observed_file(&flat, OsStr::new("record")),
+        );
+        assert!(fired);
         assert!(matches!(
-            read_observed_file(&flat, OsStr::new("../record")),
-            Err(FlatDirectoryError::InvalidName { .. })
+            result,
+            Err(FlatDirectoryError::IdentityChanged { .. })
         ));
+
+        fs::write(&entry, b"old").unwrap();
+        let grow = entry.clone();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::AfterObservedFileStat,
+            move || fs::write(grow, b"newer").unwrap(),
+            || read_observed_file(&flat, OsStr::new("record")),
+        );
+        assert!(fired);
+        assert!(matches!(
+            result,
+            Err(FlatDirectoryError::IdentityChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn observed_read_refuses_every_supported_non_regular_kind() {
+        let (temporary, _root, flat) = root_and_flat();
+        let parent = temporary.path().join("flat");
+        fs::write(parent.join("target"), b"target").unwrap();
+        symlink("target", parent.join("link")).unwrap();
+        mkfifo(&parent.join("fifo"), Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+        fs::create_dir(parent.join("directory")).unwrap();
+        for name in ["link", "fifo", "directory"] {
+            assert!(matches!(
+                read_observed_file(&flat, OsStr::new(name)),
+                Err(FlatDirectoryError::NotRegular { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn observed_read_refuses_a_regular_leaf_replaced_before_open() {
+        let (temporary, _root, flat) = root_and_flat();
+        let entry = temporary.path().join("flat/record");
+        fs::write(&entry, b"regular").unwrap();
+        let replacement = entry.clone();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeObservedFileOpen,
+            move || {
+                fs::remove_file(&replacement).unwrap();
+                fs::create_dir(&replacement).unwrap();
+            },
+            || read_observed_file(&flat, OsStr::new("record")),
+        );
+        assert!(fired);
+        assert!(matches!(result, Err(FlatDirectoryError::NotRegular { .. })));
+    }
+
+    #[test]
+    fn stable_comparison_includes_identity_but_excludes_atime_and_ctime() {
+        let entry = FlatDirectoryEntry {
+            name: OsString::from("entry"),
+            kind: JournalEntryKind::RegularFile,
+            device: 1,
+            inode: 2,
+            size: 3,
+            mtime: NativeMtime {
+                seconds: 4,
+                nanoseconds: 5,
+            },
+        };
+        let same_bytes_new_inode = FlatDirectoryEntry {
+            inode: 6,
+            ..entry.clone()
+        };
+        assert!(!same_entry_metadata(&entry, &same_bytes_new_inode));
+
+        // `FlatDirectoryEntry` intentionally has no atime or ctime field, so
+        // equal exposed stable fields remain equal when only either changes.
+        assert!(same_entry_metadata(&entry, &entry.clone()));
+    }
+
+    #[test]
+    fn observed_read_refuses_the_full_portable_leaf_name_matrix_before_io() {
+        let (_temporary, _root, flat) = root_and_flat();
+        let over_limit = "a".repeat(256);
+        let invalid = [
+            OsString::from(""),
+            OsString::from("a/b"),
+            OsString::from(r"a\b"),
+            OsString::from("."),
+            OsString::from(".."),
+            OsString::from("trailing."),
+            OsString::from("trailing "),
+            OsString::from("CON"),
+            OsString::from(over_limit),
+            OsString::from_vec(b"embedded\0nul".to_vec()),
+        ];
+        for name in invalid {
+            assert!(matches!(
+                read_observed_file(&flat, &name),
+                Err(FlatDirectoryError::InvalidName { .. })
+            ));
+        }
+    }
+
+    struct ShortReader {
+        chunks: VecDeque<u8>,
+        maximum: usize,
+    }
+
+    impl ShortReader {
+        fn new(bytes: Vec<u8>, maximum: usize) -> Self {
+            Self {
+                chunks: bytes.into(),
+                maximum,
+            }
+        }
+    }
+
+    impl Read for ShortReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let count = buffer.len().min(self.maximum).min(self.chunks.len());
+            for destination in &mut buffer[..count] {
+                *destination = self.chunks.pop_front().expect("count bounds chunks");
+            }
+            Ok(count)
+        }
     }
 }
