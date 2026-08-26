@@ -40,9 +40,9 @@ fn ac7_python_settings_and_observer_management_surfaces_are_absent() {
         "native Settings web owner is present"
     );
     assert!(
-        root.join("core/crates/solstone-core-convey-shell/src/devices.rs")
+        root.join("core/crates/solstone-core-convey-shell/src/clients.rs")
             .exists(),
-        "native Devices owner is present"
+        "native Clients owner is present"
     );
 }
 

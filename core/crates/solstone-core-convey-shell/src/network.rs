@@ -20,7 +20,8 @@ use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsLoadError, AuthorizedClientsMutationError,
-    AuthorizedClientsRead, DeviceActivityRead, read_authorized_clients, read_device_activity,
+    AuthorizedClientsRead, ClientActivity, DeviceActivityRead, read_authorized_clients,
+    read_device_activity,
 };
 use solstone_core_sol_link::pairing::addresses::{
     PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
@@ -41,7 +42,7 @@ use crate::{JournalRoot, asset_response, assets};
 
 /// Exact network-device response vocabulary mirrored from
 /// `solstone/apps/network/routes.py::_entry_to_json`.
-pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 11] = [
+pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 10] = [
     "fingerprint",
     "fingerprint_short",
     "device_label",
@@ -52,7 +53,6 @@ pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 11] = [
     "role",
     "network",
     "kind",
-    "observer_handle",
 ];
 
 #[derive(Deserialize)]
@@ -352,7 +352,7 @@ fn unpair_label_refusal(error: UnpairLabelError) -> Response {
     }
 }
 
-fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
+pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
     match error {
         AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::Unreadable { .. })
         | AuthorizedClientsMutationError::Lock(_) => refusal(
@@ -370,7 +370,8 @@ fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
         AuthorizedClientsMutationError::Write(_)
         | AuthorizedClientsMutationError::Device(_)
         | AuthorizedClientsMutationError::InvalidLabel(_)
-        | AuthorizedClientsMutationError::InvalidLastSeenAt => refusal(
+        | AuthorizedClientsMutationError::InvalidLastSeenAt
+        | AuthorizedClientsMutationError::InvalidActivityTimestamp(_) => refusal(
             "internal_error",
             "couldn't unpair this device",
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -380,13 +381,11 @@ fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
 
 fn network_device_json(
     entry: &solstone_core_sol_link::ledger::ClientEntry,
-    activity: Option<&Map<String, Value>>,
+    activity: Option<&std::collections::BTreeMap<String, ClientActivity>>,
 ) -> Value {
     let last_seen_at = activity
         .and_then(|devices| devices.get(&entry.fingerprint))
-        .and_then(Value::as_object)
-        .and_then(|device| device.get("last_seen_at"))
-        .cloned()
+        .map(|device| Value::from(device.last_seen_at.clone()))
         .unwrap_or(Value::Null);
     let value = Map::from_iter([
         ("fingerprint".to_owned(), json!(entry.fingerprint)),
@@ -410,10 +409,6 @@ fn network_device_json(
         ("role".to_owned(), json!(entry.role.as_wire())),
         ("network".to_owned(), json!(entry.network)),
         ("kind".to_owned(), json!(entry.kind)),
-        // Verified from `solstone/think/link/auth.py`: the loader never
-        // populates this field (line 322) and the writer omits it (line 358),
-        // so every reloaded reference entry has `None` here.
-        ("observer_handle".to_owned(), Value::Null),
     ]);
     debug_assert_eq!(value.len(), NETWORK_DEVICE_FIELDS.len());
     Value::Object(value)
@@ -1106,7 +1101,10 @@ mod tests {
                 "{prefix}: the projection neither widens nor narrows"
             );
             assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z", "{prefix}");
-            assert_eq!(device["observer_handle"], Value::Null, "{prefix}");
+            assert!(
+                device.get("observer_handle").is_none(),
+                "{prefix}: observer handles are no longer exposed"
+            );
         }
     }
 
@@ -1518,7 +1516,7 @@ mod tests {
                 format!("{prefix}/api/identity"),
                 format!("{prefix}/api/private-link"),
                 format!("{prefix}/api/devices"),
-                format!("{prefix}/api/observers"),
+                format!("{prefix}/api/clients"),
             ] {
                 let response = get_response(app.clone(), &path).await;
                 assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
@@ -1542,7 +1540,6 @@ mod tests {
                 (format!("{prefix}/host-address"), json!({})),
                 (format!("{prefix}/private-link/enable"), json!({})),
                 (format!("{prefix}/private-link/disable"), json!({})),
-                (format!("{prefix}/api/observers/create"), json!({})),
             ] {
                 let mut request = Request::post(&path)
                     .header("content-type", "application/json")

@@ -111,7 +111,7 @@ mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
 mod body;
-mod devices;
+mod clients;
 #[cfg(feature = "host")]
 mod door;
 mod entities;
@@ -581,14 +581,14 @@ pub fn router(journal_root: PathBuf) -> Router {
                 operation_registry.clone(),
                 pair_windows.clone(),
             ))
-            .merge(devices::router(prefix));
+            .merge(clients::router(prefix));
     }
     let routes = routes
-        .route("/app/devices", get(devices::redirect_app))
-        .route("/app/devices/", get(devices::redirect_app))
-        .route("/app/devices/workspace", get(devices::redirect_workspace))
+        .route("/app/devices", get(clients::redirect_app))
+        .route("/app/devices/", get(clients::redirect_app))
+        .route("/app/devices/workspace", get(clients::redirect_workspace))
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
-        .merge(solstone_core_observer_web::router(journal_root.clone()))
+        .merge(solstone_core_clients_web::router(journal_root.clone()))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))
         .route("/app/speakers/workspace", get(speakers::workspace))
@@ -813,7 +813,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         ))
         .route("/app/{app}", get(app_bare))
         .route("/app/{app}/", get(app_root))
-        .route("/app/{app}/{*tail}", get(app_nested))
+        .route("/app/{app}/{*tail}", get(app_nested).fallback(not_found))
         .merge(solstone_core_records_web::api_router(journal_root.clone()))
         .merge(thinking::router(route_journal_root.clone()))
         .merge(solstone_core_sol_link::http::init_router(

@@ -161,14 +161,14 @@
     <div id="wsErrorContainer" class="ws-error-container" role="alert" style="display: none">
       <div class="ws-error-message" id="wsErrorMessage"></div>
       <div class="ws-error-actions">
-        <button type="button" class="ws-error-retry" id="wsErrorRetry" style="display: none" onclick="loadObservers()">retry now</button>
+        <button type="button" class="ws-error-retry" id="wsErrorRetry" style="display: none" onclick="loadClients()">retry now</button>
         <span class="ws-error-countdown" id="wsErrorCountdown"></span>
         <button type="button" class="ws-error-dismiss" onclick="clearError()">dismiss</button>
       </div>
     </div>
     <section aria-label="devices">
       <h2 class="section-title">devices</h2>
-      <div id="observersList" role="list">
+      <div id="clientsList" role="list">
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
           <span class="surface-state-text" data-role="loading-status">loading devices…</span>
@@ -223,29 +223,6 @@
         <p id="link-pairing-success-subhead" data-copy="SUCCESS_SUBHEAD"></p>
         <p class="modal-warning" data-copy="SUCCESS_VERIFY_NOTE"></p>
         <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="close" data-copy="SUCCESS_DONE"></button></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Observer Key Modal (for viewing existing keys) -->
-  <div id="keyModal" class="modal" role="dialog" aria-modal="true" aria-label="device key">
-    <div class="modal-content">
-      <button type="button" class="modal-close" id="keyModalClose" aria-label="close">&times;</button>
-      <h3 id="keyModalTitle">the solstone app on <span id="modalObserverName"></span></h3>
-      <p>paste these into the solstone app on that device, under settings. keep the key secret. anyone with it can add to your journal.</p>
-      <div class="credential-label">server URL</div>
-      <div class="command-box">
-        <code id="serverUrlText"></code>
-        <button class="copy-btn" id="copyServerUrlBtn">copy</button>
-      </div>
-      <div class="credential-label">key</div>
-      <div class="command-box">
-        <code id="keyText"></code>
-        <button class="copy-btn" id="revealKeyBtn">reveal</button>
-        <button class="copy-btn" id="copyKeyBtn">copy</button>
-      </div>
-      <div class="modal-actions">
-        <button id="doneBtn" class="modal-primary-btn">done</button>
       </div>
     </div>
   </div>
@@ -556,11 +533,6 @@
   background: #f1b0b7;
 }
 
-/* Observer key modal */
-#keyModal .modal-content {
-  max-width: 600px;
-  padding: 1.5em;
-}
 #link-pairing-dialog[hidden] {
   display: none;
 }
@@ -665,9 +637,6 @@
 .copy-btn.copied {
   background: #28a745;
 }
-#revealKeyBtn {
-  right: 60px;
-}
 .credential-label {
   font-weight: 600;
   text-transform: uppercase;
@@ -754,10 +723,6 @@
   .observer-header {
     flex-wrap: wrap;
     gap: 8px;
-  }
-  #keyModal .modal-content {
-    margin: 16px;
-    max-width: calc(100vw - 32px);
   }
 }
 
@@ -1503,9 +1468,6 @@
     if (linkInitialized) return;
     linkInitialized = true;
     window.linkPairingCeremony = window.NetworkRender?.initPairingCeremony?.({
-      beforeOpen() {
-        window.closeKeyModal?.();
-      },
       clipboardWriteText,
       showToast,
     });
@@ -1536,22 +1498,12 @@
 </script>
 
 <script>
-const observersList = document.getElementById('observersList');
-const keyModal = document.getElementById('keyModal');
-const modalObserverName = document.getElementById('modalObserverName');
-const serverUrlText = document.getElementById('serverUrlText');
-const keyText = document.getElementById('keyText');
-const copyServerUrlBtn = document.getElementById('copyServerUrlBtn');
-const copyKeyBtn = document.getElementById('copyKeyBtn');
-const doneBtn = document.getElementById('doneBtn');
-const keyModalClose = document.getElementById('keyModalClose');
-const revealKeyBtn = document.getElementById('revealKeyBtn');
+const clientsList = document.getElementById('clientsList');
 
 function escapeHtml(value) {
   return window.AppServices.escapeHtml(value);
 }
 
-let keyModalTrigger = null;
 // Error display state
 const wsErrorContainer = document.getElementById('wsErrorContainer');
 const wsErrorMessage = document.getElementById('wsErrorMessage');
@@ -1578,23 +1530,33 @@ function emptyStateHTML() {
   return empty;
 }
 
-function verdictAvailable(observer) {
-  return Boolean(observer.revoked) || observer.live !== null;
+function captureLabel(client) {
+  if (client.failing) return 'failing';
+  return {
+    active: 'capturing',
+    stale: 'capture stale',
+    offline: 'capture offline',
+    no_capture: 'no capture yet',
+    unknown: 'capture unknown',
+  }[client.capture_state] || 'capture unknown';
 }
 
-function statsHTML(observer, statusClass) {
-  const lastSeenBase = observer.last_seen ? `${relativeTime(Date.now() - observer.last_seen)} ago` : 'never';
-  const lastSeen = !verdictAvailable(observer)
-    ? lastSeenBase
-    : statusClass === 'stale'
-      ? `last check-in from this device: ${lastSeenBase}`
-      : statusClass === 'disconnected'
-        ? `${lastSeenBase} — offline`
-        : lastSeenBase;
+function timestampLabel(timestamp) {
+  if (!timestamp) return 'never';
+  const elapsed = Date.now() - Date.parse(timestamp);
+  return Number.isFinite(elapsed) ? `${relativeTime(Math.max(0, elapsed))} ago` : timestamp;
+}
+
+function clientStatsHTML(client) {
+  const segment = client.last_accepted_segment;
+  const segmentLabel = segment ? `${segment.day}/${segment.name}` : 'none';
+  const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
   return `<dl>
-    <div><dt>last check-in</dt><dd data-last-seen="${observer.last_seen || ''}" data-state="${statusClass}">${lastSeen}</dd></div>
-    <div><dt>segments (5-min chunks)</dt><dd>${observer.stats?.segments_received ?? 0}</dd></div>
-    <div><dt>data</dt><dd>${formatBytes(observer.stats?.bytes_received || 0)}</dd></div>
+    <div><dt>connection</dt><dd>${escapeHtml(client.label || client.state || 'unknown')}</dd></div>
+    <div><dt>last check-in</dt><dd>${escapeHtml(timestampLabel(client.last_seen_at))}</dd></div>
+    <div><dt>capture</dt><dd>${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</dd></div>
+    <div><dt>last segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
+    ${failure ? `<div><dt>capture detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
 }
 
@@ -1647,66 +1609,52 @@ function updateCountdownDisplay() {
   wsErrorCountdown.textContent = remaining > 0 ? `retrying in ${remaining}s\u2026` : 'retrying\u2026';
 }
 
-let currentFullKey = null;
-let revealTimer = null;
-
-function statusMeta(state) {
-  const currentState = state || 'disconnected';
-  return {
-    statusClass: currentState,
-    cardClass: currentState
-  };
+function connectionClass(client) {
+  if (client.failing || client.capture_state === 'degraded') return 'stale';
+  return ['connected', 'stale', 'disconnected'].includes(client.state)
+    ? client.state
+    : 'disconnected';
 }
 
-function groupFor(state) {
-  if (state === 'connected') return 'active';
-  if (state === 'stale') return 'stale';
-  return 'inactive';
+function captureClass(client) {
+  if (client.failing || client.capture_state === 'degraded') return 'stale';
+  if (client.capture_state === 'active') return 'connected';
+  if (client.capture_state === 'stale') return 'stale';
+  return 'disconnected';
+}
+
+function groupFor(client) {
+  return GROUP_ORDER.includes(client.group) ? client.group : 'inactive';
 }
 
 function groupHeaderHTML(group) {
   return `<h3 class="observer-group-header" data-group="${group}">${GROUP_LABELS[group]}</h3>`;
 }
 
-function observerCardHTML(observer, labels = {}) {
-  const hasVerdict = verdictAvailable(observer);
-  const { statusClass, cardClass } = hasVerdict ? statusMeta(observer.state) : { statusClass: '', cardClass: '' };
-  const label = hasVerdict ? observer.label : '';
-  const displayName = observer.display_name || observer.name;
-  const sourceLabel = observer.source_label || '';
-  const safeLabel = escapeHtml(label);
-  const liveLabel = observer.live === true ? (labels.live || '') : '';
-  // Replace this unavailable state when a native live-connection source is mounted
-  // and can determine device liveness.
-  const liveUnavailable = observer.live === null
-    ? '<span class="observer-live-unavailable" data-live-status="unavailable">live connection status unavailable</span>'
-    : '';
-  const safeLiveLabel = escapeHtml(liveLabel);
-  const livePip = liveLabel
-    ? `<span class="observer-live-pip">${safeLiveLabel}</span>`
-    : '';
-  const ariaLabel = [displayName, sourceLabel, label, liveLabel].filter(Boolean).join(', ');
-
+function clientCardHTML(client) {
+  const displayName = client.display_label || client.device_label || client.client_label || client.cid_short;
+  const connectionClassName = connectionClass(client);
+  const captureClassName = captureClass(client);
+  const connectionLabel = client.label || client.state || 'unknown';
+  const ariaLabel = [displayName, connectionLabel, captureLabel(client)].filter(Boolean).join(', ');
   return `
-    <div class="observer-card ${cardClass}" data-key="${observer.prefix}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+    <div class="observer-card ${connectionClassName}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
       <div class="observer-header">
         <span class="observer-name">${escapeHtml(displayName)}</span>
-        ${sourceLabel ? `<span class="observer-source">${escapeHtml(sourceLabel)}</span>` : ''}
-        ${hasVerdict ? `<span class="observer-status ${statusClass}">${safeLabel}</span>` : ''}
-        ${livePip}${liveUnavailable}
+        <span class="observer-source">${escapeHtml(client.cid_short)}</span>
+        <span class="observer-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span>
+        <span class="observer-status ${captureClassName}">${escapeHtml(captureLabel(client))}</span>
       </div>
-      <div class="observer-stats">${statsHTML(observer, statusClass)}</div>
+      <div class="observer-stats">${clientStatsHTML(client)}</div>
       <div class="observer-actions">
-        ${hasVerdict && statusClass === 'stale' && !observer.revoked ? `<button onclick="restartObserver('${observer.prefix}', this)">${window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect'}</button><span class="observer-reconnect-result" data-reconnect-result="${observer.prefix}"></span>` : ''}
-        ${observer.revoked ? '' : `<button onclick="viewObserverKey('${observer.prefix}', this)">view key</button>`}
-        ${observer.revoked ? '' : `<button class="danger" onclick="revokeObserver('${observer.prefix}', this)">revoke</button>`}
+        <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
       </div>
     </div>
   `;
 }
 
-function renderObservers(observers, labels = {}) {
-  if (!observers || observers.length === 0) {
+function renderClients(clients) {
+  if (!clients || clients.length === 0) {
     return emptyStateHTML();
   }
 
@@ -1715,87 +1663,63 @@ function renderObservers(observers, labels = {}) {
     stale: [],
     inactive: []
   };
-  const undecided = [];
-
-  for (const observer of observers) {
-    if (!verdictAvailable(observer)) {
-      undecided.push(observer);
-      continue;
-    }
-    const group = observer.group || groupFor(observer.state);
-    (groups[group] || groups.inactive).push(observer);
+  for (const client of clients) {
+    const group = groupFor(client);
+    groups[group].push(client);
   }
 
-  let html = undecided.map((observer) => observerCardHTML(observer, labels)).join('');
+  let html = '';
   for (const group of GROUP_ORDER) {
     if (!groups[group].length) continue;
     html += groupHeaderHTML(group);
-    html += groups[group].map((observer) => observerCardHTML(observer, labels)).join('');
+    html += groups[group].map(clientCardHTML).join('');
   }
 
   return html || emptyStateHTML();
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-async function loadObservers() {
+async function loadClients() {
   lastPollTime = Date.now();
   if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   try {
-    const payload = await window.apiJson('/app/network/api/observers');
-    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.observers)) {
+    const payload = await window.apiJson('/app/network/api/clients');
+    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.clients)) {
       throw new window.ApiError({
         status: 200,
         statusText: 'OK',
         serverMessage: '',
-        url: '/app/network/api/observers',
+        url: '/app/network/api/clients',
         cause: 'parse',
       });
     }
-    if (payload.thresholds && typeof payload.thresholds !== 'object') {
-      throw new window.ApiError({
-        status: 200,
-        statusText: 'OK',
-        serverMessage: '',
-        url: '/app/network/api/observers',
-        cause: 'parse',
-      });
-    }
-    const observers = payload.observers;
-    const labels = payload.labels || {};
+    const clients = payload.clients;
 
     // Rebuild on every poll so grouped headers stay aligned with server ordering.
     const activeEl = document.activeElement;
     let focusSelector = null;
-    if (activeEl && observersList.contains(activeEl)) {
+    if (activeEl && clientsList.contains(activeEl)) {
       const card = activeEl.closest('.observer-card');
       if (card) {
-        const key = card.getAttribute('data-key');
+        const cid = card.getAttribute('data-cid');
         const buttons = [...card.querySelectorAll('button')];
         const btnIndex = buttons.indexOf(activeEl);
         if (btnIndex >= 0) {
-          focusSelector = `[data-key="${key}"] button:nth-child(${btnIndex + 1})`;
+          focusSelector = `[data-cid="${CSS.escape(cid)}"] button:nth-child(${btnIndex + 1})`;
         }
       }
     }
-    const scrollTop = observersList.scrollTop;
+    const scrollTop = clientsList.scrollTop;
 
-    observersList.innerHTML = renderObservers(observers, labels);
+    clientsList.innerHTML = renderClients(clients);
     clearError();
-    observersList.scrollTop = scrollTop;
+    clientsList.scrollTop = scrollTop;
 
     if (focusSelector) {
-      const target = observersList.querySelector(focusSelector);
+      const target = clientsList.querySelector(focusSelector);
       if (target) target.focus();
     }
   } catch (err) {
-    window.SurfaceState.replaceLoading('observersList', window.SurfaceState.error({
+    window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
       heading: 'your devices couldn\'t be loaded.',
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: err?.serverMessage || err?.message || '',
@@ -1804,228 +1728,42 @@ async function loadObservers() {
   }
 }
 
-function refreshTimestamps() {
-  const spans = observersList.querySelectorAll('[data-last-seen]');
-  for (const span of spans) {
-    const lastSeen = parseInt(span.getAttribute('data-last-seen'), 10);
-    if (!lastSeen) continue;
-	    const text = `${relativeTime(Date.now() - lastSeen)} ago`;
-	    const state = span.getAttribute('data-state');
-		    span.textContent = state === 'stale'
-	      ? `last check-in from this device: ${text}`
-	      : state === 'disconnected'
-	        ? `${text} — offline`
-	        : text;
-	  }
-	}
-
-	async function restartObserver(keyPrefix, button) {
-	  const result = observersList.querySelector(`[data-reconnect-result="${CSS.escape(keyPrefix)}"]`);
-	  button.disabled = true;
-	  button.textContent = 'reconnecting…';
-	  if (result) {
-	    result.textContent = '';
-	    result.style.color = '';
-	  }
-	  // Observer cards are per registration key; supervisor restarts the shared sense worker.
-	  try {
-	    await window.apiJson('/app/health/api/restart-observer', {
-	      method: 'POST',
-	      headers: { 'Content-Type': 'application/json' },
-	      body: JSON.stringify({ service: 'sense' })
-	    });
-	    button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
-	    if (result) result.textContent = 'reconnect requested';
-	  } catch (err) {
-	    window.logError(err, { context: 'observer: restart-observer failed' });
-	    button.disabled = false;
-	    button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
-	    if (result) {
-	      result.style.color = '#dc2626';
-	      result.textContent = err.serverMessage || "couldn't reconnect.";
-	    }
-	  }
-	}
-
 function observerNameFor(button) {
   return button.closest('.observer-card')?.querySelector('.observer-name')?.textContent || 'this device';
 }
 
-async function revokeObserver(keyPrefix, button) {
+async function unpairClient(cid, button) {
   const name = observerNameFor(button);
   if (!confirm(`remove "${name}"? this disconnects that device from your journal.`)) {
     return;
   }
 
   try {
-    const response = await fetch(`/app/network/api/observers/${keyPrefix}`, {
+    const response = await fetch(`/app/network/api/clients/${encodeURIComponent(cid)}`, {
       method: 'DELETE'
     });
 
     if (!response.ok) {
       const data = await response.json();
-      throw new Error(data.error || 'Failed to revoke');
+      throw new Error(data.error || 'Failed to unpair');
     }
 
-    loadObservers();
+    loadClients();
   } catch (err) {
     const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
     if (window.showError) { showError(msg); } else { showLocalError(msg); }
   }
 }
 
-async function viewObserverKey(keyPrefix, button) {
-  const name = observerNameFor(button);
-  if (!confirm(`Reveal key for "${name}"?`)) return;
-  try {
-    const response = await fetch(`/app/network/api/observers/${keyPrefix}/key`);
-    const data = await response.json();
+function initClients() {
+  loadClients();
 
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to get key');
-    }
-
-    showKeyModal(name, data.key, button);
-  } catch (err) {
-    const msg = 'the key for that device couldn\'t be retrieved. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
-    if (window.showError) { showError(msg); } else { showLocalError(msg); }
-  }
-}
-
-function showKeyModal(name, key, trigger) {
-  window.linkPairingCeremony?.close({ restoreFocus: false });
-  modalObserverName.textContent = name;
-  serverUrlText.textContent = window.location.origin;
-  currentFullKey = key;
-  keyText.textContent = key.slice(0, 8) + '••••••••••••••••';
-  revealKeyBtn.textContent = 'reveal';
-  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
-  keyModal.style.display = 'block';
-  keyModalTrigger = trigger || null;
-  keyModalClose.focus();
-  document.addEventListener('keydown', handleKeyModalKeys);
-}
-
-function handleKeyModalKeys(e) {
-  if (e.key === 'Escape') {
-    closeKeyModal();
-    return;
-  }
-  if (e.key === 'Tab') {
-    const focusable = [...keyModal.querySelectorAll('button:not([disabled]), [tabindex="0"]')];
-    if (focusable.length === 0) return;
-    const currentIndex = focusable.indexOf(document.activeElement);
-    if (e.shiftKey) {
-      e.preventDefault();
-      focusable[currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1].focus();
-    } else {
-      e.preventDefault();
-      focusable[currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1].focus();
-    }
-  }
-}
-
-function closeKeyModal() {
-  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
-  currentFullKey = null;
-  revealKeyBtn.textContent = 'reveal';
-  keyModal.style.display = 'none';
-  document.removeEventListener('keydown', handleKeyModalKeys);
-  if (keyModalTrigger && document.contains(keyModalTrigger)) {
-    keyModalTrigger.focus();
-  }
-  keyModalTrigger = null;
-}
-
-// Modal controls
-keyModalClose.onclick = () => closeKeyModal();
-doneBtn.onclick = () => closeKeyModal();
-
-window.addEventListener('click', (e) => {
-  if (e.target === keyModal) {
-    closeKeyModal();
-  }
-});
-
-function copyText(text) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(text);
-  }
-  // Fallback for non-HTTPS contexts (local solstone instances)
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-  return Promise.resolve();
-}
-
-function setupCopyBtn(btn, codeEl) {
-  btn.onclick = () => {
-    copyText(codeEl.textContent).then(() => {
-      btn.textContent = 'copied!';
-      btn.classList.add('copied');
-      setTimeout(() => {
-        btn.textContent = 'copy';
-        btn.classList.remove('copied');
-      }, 2000);
-    }, () => {
-      btn.textContent = 'failed';
-      setTimeout(() => { btn.textContent = 'copy'; }, 2000);
-    });
-  };
-}
-
-setupCopyBtn(copyServerUrlBtn, serverUrlText);
-copyKeyBtn.onclick = () => {
-  if (!currentFullKey) return;
-  copyText(currentFullKey).then(() => {
-    copyKeyBtn.textContent = 'copied!';
-    copyKeyBtn.classList.add('copied');
-    setTimeout(() => {
-      copyKeyBtn.textContent = 'copy';
-      copyKeyBtn.classList.remove('copied');
-    }, 2000);
-  }, () => {
-    copyKeyBtn.textContent = 'failed';
-    setTimeout(() => { copyKeyBtn.textContent = 'copy'; }, 2000);
-  });
-};
-revealKeyBtn.onclick = () => {
-  if (!currentFullKey) return;
-  const isRevealed = keyText.textContent === currentFullKey;
-  if (isRevealed) {
-    keyText.textContent = currentFullKey.slice(0, 8) + '••••••••••••••••';
-    revealKeyBtn.textContent = 'reveal';
-    if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
-  } else {
-    keyText.textContent = currentFullKey;
-    revealKeyBtn.textContent = 'hide';
-    if (revealTimer) clearTimeout(revealTimer);
-    revealTimer = setTimeout(() => {
-      if (currentFullKey && keyText.textContent === currentFullKey) {
-        keyText.textContent = currentFullKey.slice(0, 8) + '••••••••••••••••';
-        revealKeyBtn.textContent = 'reveal';
-      }
-      revealTimer = null;
-    }, 30000);
-  }
-};
-
-function initObserver() {
-  loadObservers();
-
-  // Refresh every 30 seconds to update connection status
-  setInterval(loadObservers, 30000);
-  setInterval(refreshTimestamps, 10000);
+  setInterval(loadClients, 30000);
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initObserver);
+  document.addEventListener('DOMContentLoaded', initClients);
 } else {
-  initObserver();
+  initClients();
 }
 </script>
