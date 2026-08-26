@@ -5,13 +5,19 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
+use solstone_core_distribution::manifest_verify::{
+    capture_signature, discover_manifest, install_test_fixture_pin, validate_release_set,
+    verify_manifest_signature,
+};
 use solstone_core_distribution::promote;
 use solstone_core_distribution::publish::{self, PublishRequest};
 
 mod support;
 
-use support::{Fixture, build_publisher_fixture, publisher_pin_path, sign_fixture};
+use support::{
+    Fixture, PASSPHRASE, build_publisher_fixture, minisig_path, publisher_pin_path, sign_fixture,
+    sign_ok, write_identity,
+};
 
 fn fixture(label: &str, version: &str) -> Fixture {
     // Every publisher fixture uses one process-lifetime test identity, so this
@@ -53,6 +59,17 @@ fn names(dir: &Path) -> Vec<String> {
         .collect::<Vec<_>>();
     names.sort();
     names
+}
+
+fn assert_signature_refusal_leaves_dest_unchanged(fixture: &Fixture, expected: &str) {
+    let dest = fixture.root.join("dest");
+    fs::create_dir_all(&dest).expect("dest");
+    fs::write(dest.join("marker"), b"prior").expect("marker");
+    let before = snapshot(&dest);
+    let error =
+        publish::run(&request(&fixture.dest, &dest, "release")).expect_err("signature refusal");
+    assert!(error.to_string().contains(expected), "{error}");
+    assert_eq!(snapshot(&dest), before);
 }
 
 #[test]
@@ -236,6 +253,71 @@ fn listed_member_symlink_refuses_publishing() {
     assert!(
         error.to_string().contains("listed-member-symlink"),
         "{error}"
+    );
+}
+
+#[test]
+fn missing_corrupted_or_foreign_signature_refuse_before_destination_write() {
+    let missing = fixture("publish-missing-signature", "1.2.3");
+    fs::remove_file(minisig_path(&missing)).expect("remove signature");
+    assert_signature_refusal_leaves_dest_unchanged(&missing, "missing-signature");
+
+    let corrupted = fixture("publish-corrupted-signature", "1.2.3");
+    let minisig = minisig_path(&corrupted);
+    let mut bytes = fs::read(&minisig).expect("signature");
+    let signature_start = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("first line")
+        + 1;
+    let signature_end = signature_start
+        + bytes[signature_start..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .expect("signature line");
+    let index = (signature_start..signature_end)
+        .rfind(|index| bytes[*index].is_ascii_alphanumeric())
+        .expect("base64 character");
+    bytes[index] = if bytes[index] == b'A' { b'B' } else { b'A' };
+    fs::write(&minisig, bytes).expect("corrupt signature");
+    assert_signature_refusal_leaves_dest_unchanged(&corrupted, "signature-pin-mismatch");
+
+    let foreign = fixture("publish-foreign-signature", "1.2.3");
+    let foreign_dir = foreign.root.join("replacement-key");
+    fs::create_dir_all(&foreign_dir).expect("foreign key dir");
+    let (_, foreign_key, foreign_pin) = write_identity(&foreign_dir, PASSPHRASE);
+    sign_ok(
+        &foreign.dest,
+        &foreign_key,
+        &foreign_pin,
+        PASSPHRASE.as_bytes(),
+    );
+    assert_signature_refusal_leaves_dest_unchanged(&foreign, "signature-pin-mismatch");
+}
+
+#[test]
+fn validated_release_set_captures_member_bytes_before_later_source_mutation() {
+    let fixture = fixture("publish-captured-member", "1.2.3");
+    let manifest = discover_manifest(&fixture.dest).expect("manifest");
+    let signature = capture_signature(&fixture.dest, &manifest, true)
+        .expect("signature")
+        .expect("required signature");
+    verify_manifest_signature(&manifest, &signature).expect("signature verifies");
+    let validated =
+        validate_release_set(&fixture.dest, &manifest, Some(&signature)).expect("release set");
+    let name = format!("{}.rpm", fixture.basename);
+    let captured = validated
+        .members
+        .get(&name)
+        .expect("captured member")
+        .clone();
+
+    fs::write(fixture.dest.join(&name), b"mutated after validation").expect("mutate member");
+
+    assert_eq!(validated.members.get(&name), Some(&captured));
+    assert_ne!(
+        fs::read(fixture.dest.join(&name)).expect("mutated member"),
+        captured
     );
 }
 
