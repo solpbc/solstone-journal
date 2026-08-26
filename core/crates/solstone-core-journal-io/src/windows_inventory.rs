@@ -586,8 +586,7 @@ fn with_witness<'root, T>(
         Ok(value)
     });
     let cleanup = witness.cancel_and_drain();
-    cleanup?;
-    result
+    result.and_then(|value| cleanup.map(|()| value))
 }
 
 struct NamespaceWitness<'root> {
