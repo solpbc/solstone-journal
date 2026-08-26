@@ -218,7 +218,9 @@ impl FlatDirectory {
                     path: diagnostic_path.clone(),
                 });
             }
-            if identity_from_stat(&before) != identity_from_stat(&after) {
+            if identity_from_stat(&before, &diagnostic_component)?
+                != identity_from_stat(&after, &diagnostic_path)?
+            {
                 return Err(FlatDirectoryError::IdentityChanged {
                     path: diagnostic_path.clone(),
                 });
@@ -240,7 +242,7 @@ impl FlatDirectory {
             });
         }
         Ok(Self {
-            identity: identity_from_stat(&stat),
+            identity: identity_from_stat(&stat, &diagnostic_path)?,
             directory,
             diagnostic_path,
         })
@@ -262,7 +264,7 @@ impl FlatDirectory {
             )
         })?;
         if kind_from_stat(&stat) != JournalEntryKind::Directory
-            || identity_from_stat(&stat) != self.identity
+            || identity_from_stat(&stat, &self.diagnostic_path)? != self.identity
         {
             return Err(FlatDirectoryError::IdentityChanged {
                 path: self.diagnostic_path.clone(),
@@ -355,7 +357,7 @@ pub(crate) fn read_observed_file_unchecked(
     };
     let before = fstat(&fd)
         .map_err(|error| errno_error("stat opened observed file", path.clone(), error))?;
-    let entry = entry_from_stat(name.to_os_string(), &before);
+    let entry = entry_from_stat(name.to_os_string(), &before, &path)?;
     if entry.kind != JournalEntryKind::RegularFile {
         return Err(FlatDirectoryError::NotRegular { path });
     }
@@ -387,7 +389,11 @@ pub(crate) fn read_observed_file_unchecked(
             error,
         )
     })?;
-    let after_entry = entry_from_stat(name.to_os_string(), &after);
+    let after_entry = entry_from_stat(
+        name.to_os_string(),
+        &after,
+        &directory.diagnostic_entry(name),
+    )?;
     if !same_entry_metadata(&entry, &after_entry) {
         return Err(FlatDirectoryError::IdentityChanged {
             path: directory.diagnostic_entry(name),
@@ -414,7 +420,11 @@ pub(crate) fn stat_entry(
     name: &OsStr,
 ) -> Result<Option<FlatDirectoryEntry>, FlatDirectoryError> {
     match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Ok(stat) => Ok(Some(entry_from_stat(name.to_os_string(), &stat))),
+        Ok(stat) => Ok(Some(entry_from_stat(
+            name.to_os_string(),
+            &stat,
+            &directory.diagnostic_entry(name),
+        )?)),
         Err(Errno::ENOENT) => Ok(None),
         Err(error) => Err(errno_error(
             "stat flat-directory entry",
@@ -499,34 +509,44 @@ fn validate_portable_name(name: &OsStr) -> Result<(), FlatDirectoryError> {
     })
 }
 
-fn entry_from_stat(name: OsString, stat: &FileStat) -> FlatDirectoryEntry {
-    FlatDirectoryEntry {
-        name,
-        kind: kind_from_stat(stat),
-        device: stat.st_dev,
-        inode: stat.st_ino,
-        size: stat.st_size as u64,
-        mtime: native_mtime(stat),
-    }
+fn checked_identifier(
+    value: impl TryInto<u64>,
+    operation: &'static str,
+    path: &Path,
+) -> Result<u64, FlatDirectoryError> {
+    value.try_into().map_err(|_| FlatDirectoryError::Io {
+        operation,
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidData, "identity value out of range"),
+    })
 }
 
-fn identity_from_stat(stat: &FileStat) -> ObjectIdentity {
-    ObjectIdentity::from_device_inode(stat.st_dev, stat.st_ino)
+fn entry_from_stat(
+    name: OsString,
+    stat: &FileStat,
+    path: &Path,
+) -> Result<FlatDirectoryEntry, FlatDirectoryError> {
+    Ok(FlatDirectoryEntry {
+        name,
+        kind: kind_from_stat(stat),
+        device: checked_identifier(stat.st_dev, "read flat-directory entry identity", path)?,
+        inode: checked_identifier(stat.st_ino, "read flat-directory entry identity", path)?,
+        size: stat.st_size as u64,
+        mtime: native_mtime(stat),
+    })
+}
+
+fn identity_from_stat(stat: &FileStat, path: &Path) -> Result<ObjectIdentity, FlatDirectoryError> {
+    Ok(ObjectIdentity::from_device_inode(
+        checked_identifier(stat.st_dev, "read flat-directory identity", path)?,
+        checked_identifier(stat.st_ino, "read flat-directory identity", path)?,
+    ))
 }
 
 fn kind_from_stat(stat: &FileStat) -> JournalEntryKind {
     JournalEntryKind::from_mode(SFlag::from_bits_truncate(stat.st_mode))
 }
 
-#[cfg(target_os = "macos")]
-fn native_mtime(stat: &FileStat) -> NativeMtime {
-    NativeMtime {
-        seconds: stat.st_mtimespec.tv_sec,
-        nanoseconds: stat.st_mtimespec.tv_nsec,
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
 fn native_mtime(stat: &FileStat) -> NativeMtime {
     NativeMtime {
         seconds: stat.st_mtime,
@@ -546,10 +566,11 @@ fn errno_error(operation: &'static str, path: PathBuf, error: Errno) -> FlatDire
 mod tests {
     use std::collections::VecDeque;
     use std::ffi::OsString;
-    use std::fs;
+    use std::fs::{self, File, FileTimes};
     use std::io::{self, Read};
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::{MetadataExt, symlink};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use nix::sys::stat::Mode;
     use nix::unistd::mkfifo;
@@ -601,17 +622,31 @@ mod tests {
         let temporary = TempDir::new();
         let descendant = temporary.path().join("flat");
         fs::create_dir(&descendant).unwrap();
+        let original_metadata = fs::metadata(&descendant).unwrap();
+        let original_identity = (original_metadata.dev(), original_metadata.ino());
         let root = JournalRoot::open(temporary.path()).unwrap();
+        let moved_descendant = temporary.path().join("flat-original");
         let replacement = descendant.clone();
+        let moved_for_hook = moved_descendant.clone();
         let (result, fired) = run_with_flat_directory_hook(
             FlatDirectoryTestPrimitive::BeforeDescendantOpen,
             move || {
-                fs::remove_dir(&replacement).unwrap();
+                fs::rename(&replacement, moved_for_hook).unwrap();
                 fs::create_dir(&replacement).unwrap();
             },
             || FlatDirectory::open(&root, Path::new("flat")),
         );
         assert!(fired);
+        let moved_metadata = fs::metadata(&moved_descendant).unwrap();
+        assert_eq!(
+            (moved_metadata.dev(), moved_metadata.ino()),
+            original_identity
+        );
+        let fresh_metadata = fs::metadata(&descendant).unwrap();
+        assert_ne!(
+            (fresh_metadata.dev(), fresh_metadata.ino()),
+            original_identity
+        );
         assert!(matches!(
             result,
             Err(FlatDirectoryError::IdentityChanged { .. })
@@ -671,6 +706,58 @@ mod tests {
         let mut bytes = vec![0; 10];
         read_exact(&mut reader, &mut bytes).unwrap();
         assert_eq!(bytes, b"short-read");
+    }
+
+    #[test]
+    fn checked_identifier_accepts_a_valid_value() {
+        assert_eq!(
+            checked_identifier(7_i32, "read test identity", Path::new("entry")).unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn checked_identifier_rejects_an_out_of_range_value() {
+        let error =
+            checked_identifier(-1_i32, "read test identity", Path::new("entry")).unwrap_err();
+        match error {
+            FlatDirectoryError::Io {
+                operation,
+                path,
+                source,
+            } => {
+                assert_eq!(operation, "read test identity");
+                assert_eq!(path, Path::new("entry"));
+                assert_eq!(source.kind(), io::ErrorKind::InvalidData);
+                assert_eq!(source.to_string(), "identity value out of range");
+            }
+            error => panic!("expected identity conversion error, got {error:?}"),
+        }
+    }
+
+    #[test]
+    fn observed_read_round_trips_native_mtime_exactly() {
+        let (temporary, _root, flat) = root_and_flat();
+        let entry_path = temporary.path().join("flat/record");
+        fs::write(&entry_path, b"record").unwrap();
+        let seconds = 1_700_000_001;
+        let nanoseconds = 123_456_789;
+        let modified = UNIX_EPOCH + Duration::new(seconds, nanoseconds);
+        File::options()
+            .write(true)
+            .open(&entry_path)
+            .unwrap()
+            .set_times(FileTimes::new().set_modified(modified))
+            .unwrap();
+
+        let observed = read_observed_file(&flat, OsStr::new("record"))
+            .unwrap()
+            .unwrap();
+        let expected_mtime = NativeMtime {
+            seconds: seconds.try_into().unwrap(),
+            nanoseconds: nanoseconds.into(),
+        };
+        assert_eq!(observed.entry.mtime, expected_mtime);
     }
 
     #[test]
