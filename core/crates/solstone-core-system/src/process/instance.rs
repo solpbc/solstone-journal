@@ -7,6 +7,7 @@
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
+use std::time::Instant;
 
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
@@ -202,6 +203,13 @@ pub trait ProcessInstanceSource: Send + Sync {
     fn inspect(&self, pid: u32) -> InspectResult;
     fn census(&self) -> InstanceCensus;
 
+    fn census_until(&self, deadline: Instant) -> InstanceCensus {
+        if Instant::now() >= deadline {
+            return InstanceCensus::Incomplete(Vec::new());
+        }
+        self.census()
+    }
+
     fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
         match self.inspect(expected.pid) {
             InspectResult::Unverifiable => InstanceVerdict::Unverifiable,
@@ -227,6 +235,11 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
 
     fn census(&self) -> InstanceCensus {
         census_native()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn census_until(&self, deadline: Instant) -> InstanceCensus {
+        census_macos_until(deadline)
     }
 }
 
@@ -434,10 +447,7 @@ fn census_linux() -> InstanceCensus {
 
 #[cfg(target_os = "macos")]
 fn inspect_macos(pid: u32) -> InspectResult {
-    match super::macos_proc::read_bsd_info(pid) {
-        Ok(info) => super::macos_proc::inspect_from_macos_bsd_info(info),
-        Err(_) => InspectResult::Unverifiable,
-    }
+    super::macos_proc::inspect_from_macos_bsd_info_result(super::macos_proc::read_bsd_info(pid))
 }
 
 #[cfg(target_os = "macos")]
@@ -460,25 +470,78 @@ fn census_macos() -> InstanceCensus {
             complete = false;
             continue;
         };
-        match inspect_macos(pid) {
-            InspectResult::Present {
-                instance,
-                execution,
-                ppid: Some(ppid),
-                pgid: Some(pgid),
-            } => {
-                rows.push(CensusRow {
-                    instance,
-                    ppid,
-                    pgid,
-                    execution,
-                });
-            }
-            InspectResult::Absent => {}
-            InspectResult::Present { .. } | InspectResult::Unverifiable => complete = false,
-        }
+        complete &= collect_macos_census_row(pid, &mut rows);
     }
     finalize_census(rows, complete)
+}
+
+#[cfg(target_os = "macos")]
+fn census_macos_until(deadline: Instant) -> InstanceCensus {
+    if Instant::now() >= deadline {
+        return InstanceCensus::Incomplete(Vec::new());
+    }
+    let Some(pids) = list_macos_pids_until(deadline) else {
+        return InstanceCensus::Incomplete(Vec::new());
+    };
+    let mut rows = Vec::new();
+    let mut complete = true;
+    for pid in pids {
+        if Instant::now() >= deadline {
+            return InstanceCensus::Incomplete(rows);
+        }
+        let Ok(pid) = u32::try_from(pid) else {
+            complete = false;
+            continue;
+        };
+        complete &= collect_macos_census_row(pid, &mut rows);
+    }
+    finalize_census(rows, complete)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn list_macos_pids_until(deadline: Instant) -> Option<Vec<libc::pid_t>> {
+    if Instant::now() >= deadline {
+        return None;
+    }
+    let capacity = usize::try_from(unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) })
+        .ok()
+        .filter(|capacity| *capacity > 0)?;
+    if Instant::now() >= deadline {
+        return None;
+    }
+    let byte_len = i32::try_from(capacity.checked_mul(std::mem::size_of::<libc::pid_t>())?).ok()?;
+    let mut pids = vec![0; capacity];
+    let listed =
+        usize::try_from(unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), byte_len) })
+            .ok()?;
+    if listed == 0 || listed >= capacity {
+        return None;
+    }
+    pids.truncate(listed);
+    Some(pids)
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_census_row(pid: u32, rows: &mut Vec<CensusRow>) -> bool {
+    match inspect_macos(pid) {
+        InspectResult::Present {
+            instance,
+            execution,
+            ppid: Some(ppid),
+            pgid: Some(pgid),
+        } => {
+            rows.push(CensusRow {
+                instance,
+                ppid,
+                pgid,
+                execution,
+            });
+            true
+        }
+        InspectResult::Absent => true,
+        InspectResult::Present { .. } | InspectResult::Unverifiable => false,
+    }
 }
 
 /// macOS orphan-candidate table. Separate from the birth/liveness sample because

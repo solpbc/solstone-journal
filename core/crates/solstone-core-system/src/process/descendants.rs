@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,
+    time::Instant,
 };
 
 use super::{
@@ -30,8 +31,12 @@ pub struct ProcessTreeSnapshot {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub fn snapshot(pid: i32) -> io::Result<ProcessTreeSnapshot> {
-    match SystemProcessInstanceSource.census() {
+pub fn snapshot(
+    pid: i32,
+    source: &dyn ProcessInstanceSource,
+    deadline: Option<Instant>,
+) -> io::Result<ProcessTreeSnapshot> {
+    match deadline.map_or_else(|| source.census(), |deadline| source.census_until(deadline)) {
         InstanceCensus::Complete(rows) => tree_from_census(pid, &rows),
         InstanceCensus::Incomplete(_) => Err(io::Error::other("process census incomplete")),
     }
@@ -84,5 +89,123 @@ pub fn own_pgid() -> Option<i32> {
     match SystemProcessInstanceSource.inspect(std::process::id()) {
         InspectResult::Present { pgid, .. } => pgid,
         InspectResult::Absent | InspectResult::Unverifiable => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CensusCall {
+        Unbounded,
+        Bounded,
+    }
+
+    struct FakeSource {
+        census: InstanceCensus,
+        census_until: InstanceCensus,
+        calls: Mutex<Vec<CensusCall>>,
+    }
+
+    impl ProcessInstanceSource for FakeSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            InspectResult::Unverifiable
+        }
+
+        fn census(&self) -> InstanceCensus {
+            self.calls
+                .lock()
+                .expect("calls lock")
+                .push(CensusCall::Unbounded);
+            self.census.clone()
+        }
+
+        fn census_until(&self, _deadline: Instant) -> InstanceCensus {
+            self.calls
+                .lock()
+                .expect("calls lock")
+                .push(CensusCall::Bounded);
+            self.census_until.clone()
+        }
+    }
+
+    struct PanicCensusSource;
+
+    impl ProcessInstanceSource for PanicCensusSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            InspectResult::Unverifiable
+        }
+
+        fn census(&self) -> InstanceCensus {
+            panic!("expired deadline must not call census")
+        }
+    }
+
+    fn row(pid: u32, ppid: u32, pgid: i32) -> CensusRow {
+        CensusRow {
+            instance: super::super::ProcessInstance {
+                pid,
+                birth: ProcessBirth::linux(u64::from(pid), 1, 100),
+            },
+            ppid,
+            pgid,
+            execution: super::super::ExecutionState::Running,
+        }
+    }
+
+    #[test]
+    fn snapshot_without_deadline_uses_complete_unbounded_census() {
+        let source = FakeSource {
+            census: InstanceCensus::Complete(vec![row(10, 1, 10), row(11, 10, 10)]),
+            census_until: InstanceCensus::Incomplete(Vec::new()),
+            calls: Mutex::new(Vec::new()),
+        };
+
+        let tree = snapshot(10, &source, None).expect("complete census snapshot");
+
+        assert_eq!(tree.parent_pid, 10);
+        assert_eq!(
+            tree.descendants,
+            vec![Descendant {
+                pid: 11,
+                pgid: Some(10)
+            }]
+        );
+        assert_eq!(
+            *source.calls.lock().expect("calls lock"),
+            vec![CensusCall::Unbounded]
+        );
+    }
+
+    #[test]
+    fn snapshot_with_deadline_uses_bounded_census_and_rejects_partial_rows() {
+        let source = FakeSource {
+            census: InstanceCensus::Complete(vec![row(10, 1, 10)]),
+            census_until: InstanceCensus::Incomplete(vec![row(10, 1, 10)]),
+            calls: Mutex::new(Vec::new()),
+        };
+
+        let error = snapshot(
+            10,
+            &source,
+            Some(Instant::now() + std::time::Duration::from_secs(1)),
+        )
+        .expect_err("incomplete census must fail closed");
+
+        assert_eq!(error.to_string(), "process census incomplete");
+        assert_eq!(
+            *source.calls.lock().expect("calls lock"),
+            vec![CensusCall::Bounded]
+        );
+    }
+
+    #[test]
+    fn census_until_short_circuits_an_expired_deadline() {
+        assert_eq!(
+            PanicCensusSource.census_until(Instant::now()),
+            InstanceCensus::Incomplete(Vec::new())
+        );
     }
 }

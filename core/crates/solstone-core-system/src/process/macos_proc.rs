@@ -26,7 +26,17 @@ pub(crate) enum MacosProcError {
     // exercise that platform-specific path.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Unavailable,
+    NoSuchProcess,
     InvalidBirth,
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn classify_proc_pidinfo_failure(wrote: i32, errno: Option<i32>) -> MacosProcError {
+    if wrote <= 0 && errno == Some(libc::ESRCH) {
+        MacosProcError::NoSuchProcess
+    } else {
+        MacosProcError::Unavailable
+    }
 }
 
 /// Convert Darwin's `(seconds, microseconds)` birth tuple into the opaque
@@ -73,6 +83,19 @@ pub(crate) fn inspect_from_macos_bsd_info(info: MacosBsdInfo) -> InspectResult {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn inspect_from_macos_bsd_info_result(
+    result: Result<MacosBsdInfo, MacosProcError>,
+) -> InspectResult {
+    match result {
+        Ok(info) => inspect_from_macos_bsd_info(info),
+        Err(MacosProcError::NoSuchProcess) => InspectResult::Absent,
+        Err(MacosProcError::Unavailable | MacosProcError::InvalidBirth) => {
+            InspectResult::Unverifiable
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 pub(crate) fn read_bsd_info(pid: u32) -> Result<MacosBsdInfo, MacosProcError> {
@@ -93,7 +116,10 @@ pub(crate) fn read_bsd_info(pid: u32) -> Result<MacosBsdInfo, MacosProcError> {
         )
     };
     if wrote != expected {
-        return Err(MacosProcError::Unavailable);
+        let errno = (wrote <= 0)
+            .then(std::io::Error::last_os_error)
+            .and_then(|error| error.raw_os_error());
+        return Err(classify_proc_pidinfo_failure(wrote, errno));
     }
     Ok(MacosBsdInfo {
         pid: u32::try_from(raw.pbi_pid).map_err(|_| MacosProcError::Unavailable)?,
@@ -144,6 +170,29 @@ mod tests {
         unavailable.start_tvusec = 1_000_000;
         assert_eq!(
             inspect_from_macos_bsd_info(unavailable),
+            InspectResult::Unverifiable
+        );
+    }
+
+    #[test]
+    fn ac40_macos_pidinfo_esrch_is_absent_but_other_failures_are_unverifiable() {
+        assert_eq!(
+            inspect_from_macos_bsd_info_result(Err(classify_proc_pidinfo_failure(
+                0,
+                Some(libc::ESRCH),
+            ))),
+            InspectResult::Absent
+        );
+        for (wrote, errno) in [(0, Some(libc::EPERM)), (1, Some(libc::ESRCH)), (0, None)] {
+            assert_eq!(
+                inspect_from_macos_bsd_info_result(Err(classify_proc_pidinfo_failure(
+                    wrote, errno,
+                ))),
+                InspectResult::Unverifiable
+            );
+        }
+        assert_eq!(
+            inspect_from_macos_bsd_info_result(Err(MacosProcError::InvalidBirth)),
             InspectResult::Unverifiable
         );
     }

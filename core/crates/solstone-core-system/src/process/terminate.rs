@@ -142,10 +142,11 @@ fn terminate_exact_unix(
     if i32::try_from(child.id()).ok() != Some(parent_pid) {
         return Err(TerminationError::ExactInstanceUnavailable);
     }
-    let tree = snapshot(parent_pid).map_err(|_| TerminationError::ProcessTreeNotReaped {
-        reason: "cleanup_unproven",
-        survivors: Vec::new(),
-    })?;
+    let tree =
+        snapshot(parent_pid, source, None).map_err(|_| TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: Vec::new(),
+        })?;
     let guard = SignalGuard::current();
     signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
     let deadline = Instant::now() + timeout;
@@ -196,9 +197,11 @@ fn terminate_exact_unix_until(
     if i32::try_from(child.id()).ok() != Some(parent_pid) {
         return Err(TerminationError::ExactInstanceUnavailable);
     }
-    let tree = snapshot(parent_pid).map_err(|_| TerminationError::ProcessTreeNotReaped {
-        reason: "cleanup_unproven",
-        survivors: Vec::new(),
+    let tree = snapshot(parent_pid, source, Some(deadline)).map_err(|_| {
+        TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: Vec::new(),
+        }
     })?;
     let guard = SignalGuard::current();
     signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
@@ -241,7 +244,8 @@ fn terminate_unix(
 ) -> Result<TerminationOutcome, TerminationError> {
     let parent_pid =
         i32::try_from(child.id()).map_err(|_| io::Error::other("invalid child pid"))?;
-    let snapshot_result = snapshot(parent_pid);
+    let source = SystemProcessInstanceSource;
+    let snapshot_result = snapshot(parent_pid, &source, None);
     let snapshot_uncertain = snapshot_result.is_err();
     let tree = snapshot_result.unwrap_or(ProcessTreeSnapshot {
         parent_pid,
@@ -250,7 +254,6 @@ fn terminate_unix(
         descendant_births: HashMap::new(),
     });
     let guard = SignalGuard::current();
-    let source = SystemProcessInstanceSource;
 
     // Parent PID, parent PGID, and confirmed descendant PIDs.
     signal_tree(&tree, SignalKind::Terminate, &guard, &source);
