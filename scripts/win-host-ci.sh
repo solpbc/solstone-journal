@@ -8,6 +8,16 @@ GIT=${GIT:-git}
 SCP=${SCP:-scp}
 SSH=${SSH:-ssh}
 ssh_output_file=
+cloud_sync_test=${JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST:-}
+
+case "$cloud_sync_test" in
+  '') cloud_sync_test=0 ;;
+  0|1) ;;
+  *)
+    echo "ERROR: win-host-ci: JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST must be unset, empty, 0, or 1" >&2
+    exit 1
+    ;;
+esac
 
 cleanup() {
   original_status=$1
@@ -120,7 +130,7 @@ else
   echo "ERROR: win-host-ci: SSH output file creation failed" >&2
   exit 1
 fi
-remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&C:\\sol\\sj-ci.cmd\""
+remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&C:\\sol\\sj-ci.cmd\""
 if "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \
@@ -140,6 +150,13 @@ fi
 normalized_output=$(awk '{ sub(/\r$/, ""); print }' "$ssh_output_file")
 head_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { count++ } END { print count + 0 }')
 cargo_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { count++ } END { print count + 0 }')
+cloud_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=/ { count++ } END { print count + 0 }')
+if [ "$cloud_sync_test" -eq 1 ]; then
+  expected_cloud_evidence=passed
+else
+  expected_cloud_evidence=skipped
+fi
+expected_cloud_evidence_count=$(printf '%s\n' "$normalized_output" | awk -v expected="$expected_cloud_evidence" '$0 == "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=" expected { count++ } END { print count + 0 }')
 ok_count=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { count++ } END { print count + 0 }')
 if [ "$head_count" -ne 1 ]; then
   echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_HEAD line, found $head_count; rerun the box gate for the transferred binding" >&2
@@ -147,6 +164,10 @@ if [ "$head_count" -ne 1 ]; then
 fi
 if [ "$cargo_count" -ne 1 ]; then
   echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_CARGO_LOCK_SHA256 line, found $cargo_count; rerun the box gate for the transferred binding" >&2
+  exit 1
+fi
+if [ "$cloud_evidence_count" -ne 1 ] || [ "$expected_cloud_evidence_count" -ne 1 ]; then
+  echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=$expected_cloud_evidence line, found $cloud_evidence_count evidence-key lines and $expected_cloud_evidence_count exact matches; rerun the complete box gate" >&2
   exit 1
 fi
 if [ "$ok_count" -ne 1 ]; then
@@ -167,10 +188,13 @@ fi
 
 head_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { print NR }')
 cargo_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { print NR }')
+cloud_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=/ { print NR }')
 ok_line=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { print NR }')
-if [ "$head_line" -ge "$ok_line" ] || [ "$cargo_line" -ge "$ok_line" ]; then
-  echo "ERROR: win-host-ci: source-binding acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
+if [ "$head_line" -ge "$ok_line" ] ||
+  [ "$cargo_line" -ge "$ok_line" ] ||
+  [ "$cloud_evidence_line" -ge "$ok_line" ]; then
+  echo "ERROR: win-host-ci: source-binding and Cloud Files evidence acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
   exit 1
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence"

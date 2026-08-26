@@ -20,6 +20,9 @@ powershell -NoProfile -Command "if ($env:EXPECTED_JOURNAL_COMMIT -notmatch '^[0-
 
 call :verify_source_binding || exit /b 1
 
+if not defined JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST set "JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0"
+powershell -NoProfile -Command "if ($env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST -notmatch '^[01]$') { exit 1 }" || ( echo ERROR: JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST must be 0 or 1; rerun through win-host-ci & exit /b 1 )
+
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" ( echo ERROR: vswhere not found at "%VSWHERE%" & exit /b 1 )
 set "VSINSTALL="
@@ -31,18 +34,18 @@ echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
+set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
+if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
+  echo === cargo test --locked journal-io Cloud Files sync-root registration ===
+  cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1
+  set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed"
+) else (
+  echo === Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it ===
+)
 echo === cargo test --locked (journal-io library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
-set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it"
-if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
-  echo === cargo test --locked (journal-io Cloud Files sync-root registration) ===
-  cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1
-  set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=Cloud Files sync-root registration test passed"
-) else (
-  echo === Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it ===
-)
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
@@ -58,7 +61,8 @@ call :verify_source_binding || exit /b 1
 
 echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
-echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run ===
+echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
+echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run ===
 exit /b 0
 
 :require_journal_test

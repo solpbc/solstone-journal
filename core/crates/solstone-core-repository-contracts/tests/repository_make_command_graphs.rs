@@ -1432,6 +1432,10 @@ fn windows_transport_fixture(name: &str) -> TempDir {
         &scripts.join("sync-win-host.sh"),
         include_str!("../../../../scripts/sync-win-host.sh"),
     );
+    write_executable(
+        &scripts.join("win-host-ci.sh"),
+        include_str!("../../../../scripts/win-host-ci.sh"),
+    );
     fs::create_dir(temp.path.join("core")).expect("create fixture core directory");
     fs::write(temp.path.join("core/Cargo.lock"), b"version = 4\n")
         .expect("write fixture Cargo.lock");
@@ -1444,6 +1448,7 @@ fn windows_transport_fixture(name: &str) -> TempDir {
             "core/Cargo.lock",
             "scripts/check-win-sync-tree.sh",
             "scripts/sync-win-host.sh",
+            "scripts/win-host-ci.sh",
         ][..],
         &["commit", "-q", "-m", "fixture"][..],
     ] {
@@ -1469,6 +1474,77 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
         "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_SCP_LOG\"\n",
     );
     (shim, log)
+}
+
+fn write_transport_ssh_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
+    let shim = temp.path.join(".git/ssh-shim");
+    let log = temp.path.join(".git/ssh.log");
+    write_executable(
+        &shim,
+        r#"#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$SOLSTONE_SSH_LOG"
+snapshot_sha=$(sed -n 's/^  "commit": "\([0-9a-f]*\)",$/\1/p' target/win-host-ci-source-binding.json)
+cargo_lock_sha256=$(sed -n 's/^  "cargo_lock_sha256": "\([0-9a-f]*\)"$/\1/p' target/win-host-ci-source-binding.json)
+case "$*" in
+  *'set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1&&'*) expected=passed ;;
+  *'set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0&&'*) expected=skipped ;;
+  *) expected=missing-forward ;;
+esac
+printf 'JOURNAL_WIN_CI_HEAD=%s\n' "$snapshot_sha"
+printf 'JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%s\n' "$cargo_lock_sha256"
+case "${SOLSTONE_SSH_SCENARIO:-valid}" in
+  valid) printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected" ;;
+  missing) ;;
+  duplicate)
+    printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected"
+    printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected"
+    ;;
+  wrong)
+    if [ "$expected" = passed ]; then wrong=skipped; else wrong=passed; fi
+    printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$wrong"
+    ;;
+  unknown) printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=unknown\n' ;;
+  prefixed) printf 'prefix-JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected" ;;
+  suffixed) printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s-suffix\n' "$expected" ;;
+  post) printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ===' ;;
+  *) exit 97 ;;
+esac
+if [ "${SOLSTONE_SSH_SCENARIO:-valid}" != post ]; then
+  printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
+else
+  printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$expected"
+fi
+"#,
+    );
+    (shim, log)
+}
+
+fn run_windows_driver(
+    temp: &TempDir,
+    scp: &Path,
+    scp_log: &Path,
+    ssh: &Path,
+    ssh_log: &Path,
+    opt_in: Option<&str>,
+    scenario: &str,
+) -> std::process::Output {
+    let mut command = Command::new("sh");
+    command
+        .arg("scripts/win-host-ci.sh")
+        .current_dir(&temp.path)
+        .env("WIN_REMOTE_HOST", "fake@example.invalid")
+        .env("SCP", scp)
+        .env("SSH", ssh)
+        .env("SOLSTONE_SCP_LOG", scp_log)
+        .env("SOLSTONE_SSH_LOG", ssh_log)
+        .env("SOLSTONE_SSH_SCENARIO", scenario);
+    if let Some(value) = opt_in {
+        command.env("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST", value);
+    } else {
+        command.env_remove("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST");
+    }
+    command.output().expect("run Windows native-gate driver")
 }
 
 #[test]
@@ -1564,6 +1640,211 @@ fn windows_native_sync_binds_and_transfers_the_exact_dirty_tree() {
 }
 
 #[test]
+fn windows_native_driver_rejects_invalid_cloud_opt_in_before_transport() {
+    for (index, invalid) in [
+        "2",
+        "01",
+        "true",
+        " ",
+        "1&echo injected",
+        "$(echo injected)",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let temp = windows_transport_fixture(&format!("windows-native-driver-invalid-{index}"));
+        let sync_log = temp.path.join(".git/sync.log");
+        write_executable(
+            &temp.path.join("scripts/sync-win-host.sh"),
+            "#!/bin/sh\nprintf 'invoked\\n' > .git/sync.log\nexit 99\n",
+        );
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_transport_ssh_shim(&temp);
+        let output = run_windows_driver(
+            &temp,
+            &scp,
+            &scp_log,
+            &ssh,
+            &ssh_log,
+            Some(invalid),
+            "valid",
+        );
+        assert!(
+            !output.status.success(),
+            "invalid opt-in {invalid:?} passed"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("must be unset, empty, 0, or 1"),
+            "invalid opt-in {invalid:?} did not reach the input boundary: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!sync_log.exists(), "invalid opt-in invoked sync");
+        assert!(!scp_log.exists(), "invalid opt-in invoked scp");
+        assert!(!ssh_log.exists(), "invalid opt-in invoked ssh");
+    }
+}
+
+#[test]
+fn windows_native_driver_forwards_only_normalized_cloud_opt_in() {
+    for (index, opt_in, expected) in [
+        (0, None, "0"),
+        (1, Some(""), "0"),
+        (2, Some("0"), "0"),
+        (3, Some("1"), "1"),
+    ] {
+        let temp = windows_transport_fixture(&format!("windows-native-driver-forward-{index}"));
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_transport_ssh_shim(&temp);
+        let output = run_windows_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, opt_in, "valid");
+        assert!(
+            output.status.success(),
+            "normalized opt-in {opt_in:?} failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let ssh_call = fs::read_to_string(&ssh_log).expect("read ssh command");
+        let forwarded = format!("set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST={expected}&&");
+        assert_eq!(
+            ssh_call
+                .matches("set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=")
+                .count(),
+            1,
+            "opt-in {opt_in:?} produced an ambiguous remote assignment"
+        );
+        assert_eq!(
+            ssh_call.matches(&forwarded).count(),
+            1,
+            "opt-in {opt_in:?} was not forwarded as one literal {expected} byte"
+        );
+        let evidence = if expected == "1" { "passed" } else { "skipped" };
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains("JOURNAL_WIN_HOST_CI_VERIFIED commit=")
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("cloud_sync_evidence={evidence}"))
+        );
+    }
+}
+
+#[test]
+fn windows_native_driver_rejects_ambiguous_cloud_evidence() {
+    for scenario in [
+        "missing",
+        "duplicate",
+        "wrong",
+        "unknown",
+        "prefixed",
+        "suffixed",
+        "post",
+    ] {
+        let temp = windows_transport_fixture(&format!("windows-native-driver-{scenario}"));
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_transport_ssh_shim(&temp);
+        let output = run_windows_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, Some("1"), scenario);
+        assert!(
+            !output.status.success(),
+            "ambiguous evidence scenario {scenario} passed:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+}
+
+fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
+    let integration = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
+    let passed = "set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
+    let evidence = "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
+    let ok_prefix = "echo === JOURNAL_WIN_CI_OK:";
+    let lines = runner.lines().map(str::trim).collect::<Vec<_>>();
+
+    let unique_position = |needle: &str| -> Result<usize, String> {
+        let positions = lines
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| (*line == needle).then_some(index))
+            .collect::<Vec<_>>();
+        if positions.len() == 1 {
+            Ok(positions[0])
+        } else {
+            Err(format!(
+                "expected one {needle:?}, found {}",
+                positions.len()
+            ))
+        }
+    };
+
+    let integration_position = unique_position(integration)?;
+    let passed_position = unique_position(passed)?;
+    let evidence_position = unique_position(evidence)?;
+    let ok_positions = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| line.starts_with(ok_prefix).then_some(index))
+        .collect::<Vec<_>>();
+    if ok_positions.len() != 1 {
+        return Err(format!(
+            "expected one JOURNAL_WIN_CI_OK marker, found {}",
+            ok_positions.len()
+        ));
+    }
+    if integration_position >= passed_position {
+        return Err("passed evidence precedes its gated integration command".to_owned());
+    }
+    if passed_position >= evidence_position || evidence_position >= ok_positions[0] {
+        return Err("evidence assignment/echo/OK ordering is invalid".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn windows_native_runner_evidence_validator_rejects_false_green_mutations() {
+    let runner = include_str!("../../../../scripts/win-ci.cmd");
+    validate_windows_runner_contract(runner).expect("live Windows runner evidence contract");
+
+    let integration = "  cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
+    let passed = "  set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
+    let evidence = "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
+    let ok = runner
+        .lines()
+        .find(|line| line.starts_with("echo === JOURNAL_WIN_CI_OK:"))
+        .expect("live OK marker");
+    let mutations = [
+        (
+            "early passed assignment",
+            runner.replacen(
+                &format!("{integration}\n{passed}"),
+                &format!("{passed}\n{integration}"),
+                1,
+            ),
+        ),
+        (
+            "duplicate evidence echo",
+            runner.replacen(evidence, &format!("{evidence}\n{evidence}"), 1),
+        ),
+        (
+            "skipped integration command",
+            runner.replacen(integration, "", 1),
+        ),
+        (
+            "post-OK evidence",
+            runner.replacen(
+                &format!("{evidence}\n{ok}"),
+                &format!("{ok}\n{evidence}"),
+                1,
+            ),
+        ),
+    ];
+    for (name, mutation) in mutations {
+        assert_ne!(mutation, runner, "mutation fixture {name} changed nothing");
+        assert!(
+            validate_windows_runner_contract(&mutation).is_err(),
+            "runner validator accepted {name}"
+        );
+    }
+}
+
+#[test]
 fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     let root = repo_root();
     let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
@@ -1603,10 +1884,19 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         assert!(runner.contains(command), "Windows runner missing {command}");
     }
     assert!(runner.contains("if \"%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%\"==\"1\""));
+    assert!(
+        runner
+            .contains("if ($env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST -notmatch '^[01]$') { exit 1 }")
+    );
+    assert!(runner.contains("set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped\""));
+    assert!(runner.contains("set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\""));
     assert!(runner.contains(
-        "Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it"
+        "echo === cargo test --locked journal-io Cloud Files sync-root registration ==="
     ));
-    assert!(runner.contains("Cloud Files sync-root registration test passed"));
+    assert!(!runner.contains(
+        "echo === cargo test --locked (journal-io Cloud Files sync-root registration) ==="
+    ));
+    validate_windows_runner_contract(&runner).expect("Windows runner evidence contract");
     for test in [
         "config_strip_matches_python_control_whitespace",
         "ensure_journal_dir_reports_non_directory_parent",
@@ -1632,7 +1922,7 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         "Windows runner must verify the exact source both before and after native work"
     );
     assert!(runner.contains(
-        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
+        "JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS/ReFS native evidence not run"
     ));
     assert!(!sync.contains("swbuild.bundle"));
     assert!(!driver.contains("C:\\\\sol\\\\sw-ci.cmd"));
