@@ -261,6 +261,7 @@ function fixture(document) {
   hint.textContent = '';
   const keyControl = add(operated, 'label', { 'data-hosted-restore-key-control': '' });
   const key = add(keyControl, 'textarea', { 'data-restore-hosted-input': '', 'aria-describedby': heading.id });
+  const keyReassurance = add(operated, 'p', { 'data-hosted-restore-key-reassurance': '' });
   const outcome = add(operated, 'p', { id: 'backup-restore-hosted-outcome', 'data-hosted-restore-outcome': '', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', hidden: '' });
   outcome.textContent = '';
   const primary = add(operated, 'button', { class: 'primary', 'data-action': 'restore-hosted-unbound-start', disabled: '' });
@@ -270,7 +271,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, outcome, primary, attemptCancel, panelCancel, banner };
+  return { root, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner };
 }
 
 function createHarness(options = {}) {
@@ -413,11 +414,47 @@ function asyncCase(name, fn) {
 
 testCase('workspace has only the new restore lane contract', () => {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets', 'workspace.html'), 'utf8');
+  const restoreStart = workspace.indexOf('data-backup-panel="restore"');
+  const restoreSection = workspace.slice(restoreStart, workspace.indexOf('</article>', restoreStart));
+  const operatedStart = workspace.indexOf('data-restore-lane-panel="operated"');
+  const operatedSection = workspace.slice(operatedStart, workspace.indexOf('data-restore-lane-panel="byo"', operatedStart));
+  const byoStart = workspace.indexOf('data-restore-lane-panel="byo"');
+  const byoSection = workspace.slice(byoStart, workspace.indexOf('</form>', byoStart));
   assert.ok(workspace.includes('data-restore-lane="byo"'));
   assert.ok(workspace.includes('data-restore-lane-panel="operated"'));
   assert.ok(workspace.includes('data-action="restore-hosted-unbound-start"'));
   assert.ok(!workspace.includes('data-action="restore-hosted"'));
   assert.ok(!workspace.includes('hosted.restore_hint'));
+  assert.ok(workspace.includes('data-copy="restore.hosted.byo_desc"'));
+  assert.ok(workspace.includes('data-copy="restore.hosted.operated_desc"'));
+  assert.ok(workspace.includes('data-copy="restore.hosted.key_label"'));
+  assert.ok(workspace.includes('data-copy="restore.hosted.key_reassurance"'));
+  assert.ok(workspace.includes('data-copy="restore.hosted.primary"'));
+  assert.ok(workspace.includes('id="backup-restore-source-question"'));
+  assert.ok(workspace.includes('aria-labelledby="backup-restore-source-question"'));
+  assert.ok(workspace.includes('data-hosted-restore-key-reassurance'));
+  assert.ok(!restoreSection.includes('data-copy="destination.modes.byo.desc"'));
+  assert.ok(!restoreSection.includes('data-copy="destination.modes.hosted.desc"'));
+  assert.ok(!operatedSection.includes('data-copy="confirm.prompt"'));
+  assert.ok(!operatedSection.includes('data-copy="action_labels.restore"'));
+  assert.ok(byoSection.includes('data-copy="restore.hosted.key_label"'));
+  assert.ok(!byoSection.includes('data-copy="confirm.prompt"'));
+});
+
+testCase('operated restore copy stays on its governed keys', () => {
+  const source = fs.readFileSync(path.join(crateDir, 'assets', 'backup.js'), 'utf8');
+  for (const literal of [
+    "where is the encrypted copy you're restoring from?",
+    'storage you bring yourself, reached with credentials you provide.',
+    'storage sol pbc runs, reached from your services.',
+    'enter your recovery key, then sign in to your services and confirm the restore.',
+    'this journal uses your key and never sends it to sol pbc.',
+    'sign in to restore →',
+    "sol pbc isn't holding an encrypted copy for the sign-in you used.",
+    'sol pbc deleted that copy once 30 days had passed since encrypted backup stopped.',
+    "that recovery key didn't unlock the backup. check the key, then try signing in again.",
+    "the sign-in window didn't open. try again, and check whether your browser blocked it.",
+  ]) assert.ok(source.includes(JSON.stringify(literal)));
 });
 
 asyncCase('restore lanes start unselected, stay isolated, and use roving tabindex', async () => {
@@ -471,6 +508,7 @@ asyncCase('rapid hosted restore clicks issue one prepare request', async () => {
   });
   await ready(harness);
   selectOperated(harness);
+  assert.ok(!harness.keyReassurance.hidden);
   setKey(harness, 'recovery key');
   click(harness.primary);
   click(harness.primary);
@@ -618,8 +656,8 @@ asyncCase('no hosted backup refusal is contained in the operated lane', async ()
   setKey(harness, 'recovery key');
   await startToPolling(harness);
   await harness.runTimer(800);
-  assert.strictEqual(harness.outcome.textContent, "there isn't an operated backup available for this journal.");
-  assert.ok(harness.keyControl.hidden && harness.primary.hidden);
+  assert.strictEqual(harness.outcome.textContent, "sol pbc isn't holding an encrypted copy for the sign-in you used.");
+  assert.ok(harness.keyControl.hidden && harness.keyReassurance.hidden && harness.primary.hidden);
   assert.strictEqual(harness.operatedLane.getAttribute('aria-checked'), 'true');
   assert.ok(harness.panelCancel && harness.banner.hidden);
 });
@@ -631,8 +669,8 @@ asyncCase('expired hosted backup refusal is contained in the operated lane', asy
   setKey(harness, 'recovery key');
   await startToPolling(harness);
   await harness.runTimer(800);
-  assert.strictEqual(harness.outcome.textContent, 'the operated backup is no longer available to restore.');
-  assert.ok(harness.keyControl.hidden && harness.primary.hidden && harness.banner.hidden);
+  assert.strictEqual(harness.outcome.textContent, 'sol pbc deleted that copy once 30 days had passed since encrypted backup stopped.');
+  assert.ok(harness.keyControl.hidden && harness.keyReassurance.hidden && harness.primary.hidden && harness.banner.hidden);
 });
 
 asyncCase('needs subscription leaves the operated lane quiet', async () => {
@@ -653,7 +691,7 @@ asyncCase('operated auth failure uses copy distinct from the shared reason', asy
   setKey(harness, 'recovery key');
   await startToPolling(harness);
   await harness.runTimer(800);
-  assert.strictEqual(harness.outcome.textContent, "that recovery key didn't unlock the operated backup. check your saved key and try again.");
+  assert.strictEqual(harness.outcome.textContent, "that recovery key didn't unlock the backup. check the key, then try signing in again.");
   assert.notStrictEqual(harness.outcome.textContent, "that recovery key didn't unlock the backup. check the key first, then the destination details.");
 });
 

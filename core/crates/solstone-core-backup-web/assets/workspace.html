@@ -313,22 +313,22 @@
 
     <article class="backup-panel" data-backup-panel="restore" hidden>
       <h2 data-copy="action_labels.restore"></h2>
-      <p class="backup-note" data-copy="restore.hosted.choose_lane"></p>
+      <p id="backup-restore-source-question" class="backup-note" data-copy="restore.hosted.choose_lane"></p>
 
-      <div class="backup-restore-lanes" role="radiogroup" aria-label="restore source">
+      <div class="backup-restore-lanes" role="radiogroup" aria-labelledby="backup-restore-source-question">
         <button type="button" class="backup-restore-lane" data-restore-lane="byo" role="radio" aria-checked="false" tabindex="0">
           <span class="backup-restore-lane-head">
             <span class="backup-restore-lane-radio" aria-hidden="true"></span>
             <span class="backup-restore-lane-title" data-copy="destination.modes.byo.title"></span>
           </span>
-          <span class="backup-restore-lane-desc" data-copy="destination.modes.byo.desc"></span>
+          <span class="backup-restore-lane-desc" data-copy="restore.hosted.byo_desc"></span>
         </button>
         <button type="button" class="backup-restore-lane" data-restore-lane="operated" role="radio" aria-checked="false" tabindex="-1">
           <span class="backup-restore-lane-head">
             <span class="backup-restore-lane-radio" aria-hidden="true"></span>
             <span class="backup-restore-lane-title" data-copy="destination.modes.hosted.title"></span>
           </span>
-          <span class="backup-restore-lane-desc" data-copy="destination.modes.hosted.desc"></span>
+          <span class="backup-restore-lane-desc" data-copy="restore.hosted.operated_desc"></span>
         </button>
       </div>
 
@@ -336,12 +336,13 @@
         <h4 id="backup-restore-hosted-heading" data-copy="restore.hosted.lane_title"></h4>
         <p class="backup-note" data-hosted-restore-hint data-copy="restore.hosted.lane_intro"></p>
         <label data-hosted-restore-key-control>
-          <span data-copy="confirm.prompt"></span>
+          <span data-copy="restore.hosted.key_label"></span>
           <textarea data-restore-hosted-input name="recovery_key" autocomplete="off" spellcheck="false" aria-describedby="backup-restore-hosted-heading"></textarea>
         </label>
+        <p class="backup-note" data-hosted-restore-key-reassurance data-copy="restore.hosted.key_reassurance"></p>
         <p id="backup-restore-hosted-outcome" class="backup-hosted-restore-outcome" data-hosted-restore-outcome role="status" aria-live="polite" aria-atomic="true" hidden></p>
         <div class="backup-panel-actions">
-          <button type="button" class="primary" data-action="restore-hosted-unbound-start" data-copy="action_labels.restore" disabled></button>
+          <button type="button" class="primary" data-action="restore-hosted-unbound-start" data-copy="restore.hosted.primary" disabled></button>
           <button type="button" data-action="cancel-hosted-restore-attempt" data-copy="action_labels.cancel" hidden></button>
         </div>
       </div>
@@ -381,7 +382,7 @@
             </label>
           </div>
           <label>
-            <span data-copy="confirm.prompt"></span>
+            <span data-copy="restore.hosted.key_label"></span>
             <textarea name="recovery_key" data-restore-key-input autocomplete="off" spellcheck="false"></textarea>
           </label>
           <p class="backup-status-message" data-restore-status></p>

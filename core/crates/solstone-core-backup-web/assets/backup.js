@@ -7,9 +7,9 @@
     "brand_lock": "your journal is always private, only yours.",
     "intro": {
       "title": "encrypted backup",
-      "subtitle": "make an encrypted copy of your journal somewhere safe — only you can read it.",
+      "subtitle": "make an encrypted copy of your journal somewhere safe. only you can read it.",
       "bullets": [
-        "end-to-end encrypted",
+        "encrypted on your device before it leaves",
         "optional, always",
         "delete anytime"
       ],
@@ -17,23 +17,23 @@
       "steps": "you'll save a recovery key, then choose where your backup lives."
     },
     "educate": {
-      "stakes": "if you lose your recovery key, no one can recover your journal — not even sol pbc."
+      "stakes": "if you lose your recovery key, no one can recover your journal. not even sol pbc."
     },
     "key": {
-      "theft_honesty": "anyone with your recovery key can read everything in your backup — store it like a master password.",
+      "theft_honesty": "anyone with your recovery key can read everything in your backup. store it like a master password.",
       "pm_caution": "only store your recovery key in a password manager you trust. sol pbc doesn't recommend a specific one.",
       "save_password_manager": "save to my password manager",
       "copy_label": "copy",
       "continue": "continue",
-      "clipboard_caveat": "copying puts your recovery key on the clipboard — clear it after you save it."
+      "clipboard_caveat": "copying puts your recovery key on the clipboard. clear it after you save it."
     },
     "confirm": {
       "prompt": "enter the recovery key you just recorded.",
       "escape": "see key again"
     },
     "destination": {
-      "repository_hint": "the restic repository for your bucket — e.g. s3:s3.amazonaws.com/your-bucket",
-      "object_lock_warning": "don't enable Compliance-mode Object Lock on the bucket — it conflicts with backup pruning and lock cleanup. if you need immutability, use Governance mode.",
+      "repository_hint": "the restic repository for your bucket, e.g. s3:s3.amazonaws.com/your-bucket",
+      "object_lock_warning": "don't enable Compliance-mode Object Lock on the bucket. it conflicts with backup pruning and lock cleanup. if you need immutability, use Governance mode.",
       "object_lock_summary": "bucket setup notes",
       "field_labels": {
         "repository": "repository",
@@ -62,13 +62,13 @@
         "hosted": {
           "title": "operated by sol pbc",
           "desc": "sol pbc runs the off-device part for you.",
-          "note": "sol pbc only ever holds an encrypted copy it can't read.",
+          "note": "sol pbc only ever holds an encrypted copy that was encrypted on your device before it leaves.",
           "cta": "set up backup →"
         }
       }
     },
     "hosted": {
-      "setup_hint": "turning this on sets up encrypted backup, operated by sol pbc — you turn it on on the services page that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
+      "setup_hint": "turning this on sets up encrypted backup, operated by sol pbc. turn it on from the services page that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
       "location_label": "operated by sol pbc",
       "manage_label": "manage in your services →",
       "manage_url": "https://services.solstone.app/services/backup"
@@ -108,20 +108,25 @@
     "restore": {
       "expectation": "a large restore can take a while. you can leave this page open while it runs.",
       "hosted": {
-        "choose_lane": "choose where the encrypted backup you want to restore comes from.",
+        "choose_lane": "where is the encrypted copy you're restoring from?",
+        "byo_desc": "storage you bring yourself, reached with credentials you provide.",
+        "operated_desc": "storage sol pbc runs, reached from your services.",
         "lane_title": "restore from sol pbc",
-        "lane_intro": "enter your recovery key to open the services page and restore the encrypted copy sol pbc keeps for you.",
+        "lane_intro": "enter your recovery key, then sign in to your services and confirm the restore.",
+        "key_label": "your recovery key",
+        "key_reassurance": "this journal uses your key and never sends it to sol pbc.",
+        "primary": "sign in to restore →",
         "state_b": "waiting for the services page to approve your restore…",
         "state_b_refused": {
-          "no_hosted_backup": "there isn't an operated backup available for this journal.",
-          "hosted_backup_expired": "the operated backup is no longer available to restore."
+          "no_hosted_backup": "sol pbc isn't holding an encrypted copy for the sign-in you used.",
+          "hosted_backup_expired": "sol pbc deleted that copy once 30 days had passed since encrypted backup stopped."
         },
         "status_retryable": "something went wrong. you can try again.",
         "errors": {
-          "auth_failed": "that recovery key didn't unlock the operated backup. check your saved key and try again.",
+          "auth_failed": "that recovery key didn't unlock the backup. check the key, then try signing in again.",
           "cancelled": "restore cancelled. you can try again."
         },
-        "popup_preflight_failed": "your browser couldn't open the services page. allow popups, then try again.",
+        "popup_preflight_failed": "the sign-in window didn't open. try again, and check whether your browser blocked it.",
         "key_required": "enter your recovery key before continuing."
       }
     },
@@ -149,11 +154,11 @@
     },
     "offload": {
       "title": "media offload",
-      "stakes": "after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them — not even sol pbc.",
+      "stakes": "after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them. not even sol pbc.",
       "stalled_lead": "offload is paused: your backup isn't working. nothing has been deleted.",
       "backup_only_label": "in your backup",
-      "restore_expectation": "restoring {size} from your backup — a large restore can take a while.",
-      "disable_note": "this stops. days already in your backup stay there — protected and restorable.",
+      "restore_expectation": "restoring {size} from your backup. a large restore can take a while.",
+      "disable_note": "this stops. days already in your backup stay there, protected and restorable.",
       "unavailable_lead": "can't read offload status right now.",
       "action_error": "media offload couldn't finish. check backup setup, then try again.",
       "invalid_limits": "enter a positive number for each limit, then save again.",
@@ -493,6 +498,7 @@
       field: root.querySelector('[data-restore-hosted-input]'),
       hint: root.querySelector('[data-hosted-restore-hint]'),
       keyControl: root.querySelector('[data-hosted-restore-key-control]'),
+      keyReassurance: root.querySelector('[data-hosted-restore-key-reassurance]'),
       primary: root.querySelector('[data-action="restore-hosted-unbound-start"]'),
       attemptCancel: root.querySelector('[data-action="cancel-hosted-restore-attempt"]'),
       outcome: root.querySelector('[data-hosted-restore-outcome]'),
@@ -530,11 +536,12 @@
   }
 
   function renderHostedRestoreAttempt() {
-    const { field, hint, keyControl, primary, attemptCancel, outcome } = hostedRestoreControls();
+    const { field, hint, keyControl, keyReassurance, primary, attemptCancel, outcome } = hostedRestoreControls();
     if (!field || !primary || !outcome) return;
     const refused = hostedRestoreAttempt.stage === 'terminal' && hostedRestoreAttempt.refusedReason;
     if (hint) hint.hidden = Boolean(refused);
     if (keyControl) keyControl.hidden = Boolean(refused);
+    if (keyReassurance) keyReassurance.hidden = Boolean(refused);
     primary.hidden = Boolean(refused);
     primary.disabled = Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '';
     if (attemptCancel) attemptCancel.hidden = !hostedRestoreAttempt.capability || Boolean(refused);
