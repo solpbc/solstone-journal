@@ -29,7 +29,10 @@ use backend::Backend;
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use unix::{AcquisitionPrimitive, run_with_acquisition_fault};
 #[cfg(all(windows, feature = "test-hooks"))]
-pub use windows::{WindowsAcquisitionPrimitive, run_with_windows_acquisition_fault};
+pub use windows::{
+    WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
+    run_with_windows_acquisition_trace,
+};
 
 /// The no-follow file kind observed for a journal entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

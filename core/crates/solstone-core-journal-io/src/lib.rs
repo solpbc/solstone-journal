@@ -99,7 +99,10 @@ pub use journal_root::{
     JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity, WindowsRefusalCategory,
 };
 #[cfg(all(windows, feature = "test-hooks"))]
-pub use journal_root::{WindowsAcquisitionPrimitive, run_with_windows_acquisition_fault};
+pub use journal_root::{
+    WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
+    run_with_windows_acquisition_trace,
+};
 #[cfg(unix)]
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,

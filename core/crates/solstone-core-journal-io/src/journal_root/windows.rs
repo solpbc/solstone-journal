@@ -18,9 +18,10 @@ use windows_sys::Win32::Storage::CloudFilters::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FILE_READ_ATTRIBUTES,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo,
-    GetDriveTypeW, GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_OVERLAPPED, FILE_ID_INFO,
+    FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo, GetDriveTypeW,
+    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING,
 };
 use windows_sys::Win32::System::WindowsProgramming::{
     DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE,
@@ -53,6 +54,27 @@ pub enum WindowsAcquisitionPrimitive {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DirectoryOpenPurpose {
+    RetainedRoot,
+    Verification,
+}
+
+impl DirectoryOpenPurpose {
+    const fn access_and_flags(self) -> (u32, u32) {
+        match self {
+            Self::RetainedRoot => (
+                FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OVERLAPPED,
+            ),
+            Self::Verification => (
+                FILE_READ_ATTRIBUTES,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowsFilesystemKind {
     Ntfs,
     Refs,
@@ -79,9 +101,7 @@ struct TraceState {
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) struct TraceOutcome {
-    #[cfg(test)]
     pub(crate) successful: Vec<WindowsAcquisitionPrimitive>,
-    #[cfg(test)]
     pub(crate) attempted: Vec<WindowsAcquisitionPrimitive>,
     #[cfg(test)]
     pub(crate) barrier_fired: bool,
@@ -129,6 +149,29 @@ impl Drop for TraceGuard {
             trace.borrow_mut().take();
         });
     }
+}
+
+#[cfg(feature = "test-hooks")]
+#[derive(Debug, Eq, PartialEq)]
+pub struct WindowsAcquisitionTrace {
+    pub attempted: Vec<WindowsAcquisitionPrimitive>,
+    pub successful: Vec<WindowsAcquisitionPrimitive>,
+    pub fault_consumed: bool,
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn run_with_windows_acquisition_trace<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, WindowsAcquisitionTrace) {
+    let (result, outcome) = trace_scenario(None, None, operation);
+    (
+        result,
+        WindowsAcquisitionTrace {
+            attempted: outcome.attempted,
+            successful: outcome.successful,
+            fault_consumed: outcome.fault_consumed,
+        },
+    )
 }
 
 #[cfg(feature = "test-hooks")]
@@ -183,9 +226,7 @@ pub(crate) fn trace_scenario<T>(
     (
         result,
         TraceOutcome {
-            #[cfg(test)]
             successful: state.successful,
-            #[cfg(test)]
             attempted: state.attempted,
             #[cfg(test)]
             barrier_fired: state.barrier_fired,
@@ -430,6 +471,7 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
     let authoritative = open_directory(
         &validated.wide,
         WindowsAcquisitionPrimitive::RequestedRootOpen,
+        DirectoryOpenPurpose::RetainedRoot,
     )
     .map_err(|source| source_io("open journal root", root, source))?;
     let attributes = attribute_tag(
@@ -562,6 +604,7 @@ fn verify_ancestors_and_target(
         let handle = open_directory(
             &level,
             WindowsAcquisitionPrimitive::VerificationAncestorOpen,
+            DirectoryOpenPurpose::Verification,
         )
         .map_err(|source| after_authority(root, "open journal root ancestor", source))?;
         let attributes = attribute_tag(
@@ -574,8 +617,12 @@ fn verify_ancestors_and_target(
         require_verified_directory(root, attributes)?;
     }
     append_component(&mut level, target);
-    let handle = open_directory(&level, WindowsAcquisitionPrimitive::FinalTargetOpen)
-        .map_err(|source| after_authority(root, "open verified journal root", source))?;
+    let handle = open_directory(
+        &level,
+        WindowsAcquisitionPrimitive::FinalTargetOpen,
+        DirectoryOpenPurpose::Verification,
+    )
+    .map_err(|source| after_authority(root, "open verified journal root", source))?;
     let attributes = attribute_tag(
         &handle,
         WindowsAcquisitionPrimitive::FinalTargetAttributeTag,
@@ -620,7 +667,7 @@ fn verify_root_self_open(
     attributes_primitive: WindowsAcquisitionPrimitive,
     identity_primitive: WindowsAcquisitionPrimitive,
 ) -> Result<ObjectIdentity, JournalRootError> {
-    let handle = open_directory(wide, open_primitive)
+    let handle = open_directory(wide, open_primitive, DirectoryOpenPurpose::Verification)
         .map_err(|source| after_authority(root, "open verified drive root", source))?;
     let attributes = attribute_tag(&handle, attributes_primitive)
         .map_err(|source| after_authority(root, "query verified drive root attributes", source))?;
@@ -642,18 +689,23 @@ fn append_component(path: &mut Vec<u16>, component: &OsString) {
     path.push(0);
 }
 
-fn open_directory(wide: &[u16], primitive: WindowsAcquisitionPrimitive) -> io::Result<OwnedHandle> {
+fn open_directory(
+    wide: &[u16],
+    primitive: WindowsAcquisitionPrimitive,
+    purpose: DirectoryOpenPurpose,
+) -> io::Result<OwnedHandle> {
+    let (access, flags) = purpose.access_and_flags();
     let handle = traced_win32(primitive, || {
         // SAFETY: `wide` is NUL-terminated and the remaining parameters are documented constants for `CreateFileW`.
         #[allow(unsafe_code)]
         let handle = unsafe {
             CreateFileW(
                 wide.as_ptr(),
-                FILE_READ_ATTRIBUTES,
+                access,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 std::ptr::null(),
                 OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                flags,
                 std::ptr::null_mut(),
             )
         };
@@ -1330,6 +1382,49 @@ mod tests {
 
         assert!(!accepts_only_legacy_pair(invalid_function));
         assert!(classify_cloud_sync_root_result(root, invalid_function).is_ok());
+    }
+
+    #[test]
+    fn retained_root_open_profile_requests_exact_access_and_flags() {
+        let (access, flags) = DirectoryOpenPurpose::RetainedRoot.access_and_flags();
+        assert_eq!(
+            access,
+            FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE
+        );
+        assert_eq!(
+            flags,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OVERLAPPED
+        );
+    }
+
+    #[test]
+    fn verification_directory_open_profile_remains_attribute_only() {
+        let (access, flags) = DirectoryOpenPurpose::Verification.access_and_flags();
+        assert_eq!(access, FILE_READ_ATTRIBUTES);
+        assert_eq!(
+            flags,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+        );
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn requested_root_open_fault_refuses_admission() {
+        let (_temporary, root_path) = fixture("requested-root-fault");
+        let (result, consumed) = run_with_windows_acquisition_fault(
+            WindowsAcquisitionPrimitive::RequestedRootOpen,
+            1,
+            5,
+            || JournalRoot::open(&root_path),
+        );
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(JournalRootError::Io {
+                operation: "open journal root",
+                ..
+            })
+        ));
     }
 
     #[test]
