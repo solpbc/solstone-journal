@@ -145,7 +145,7 @@ fn assert_python_era_provenance(root: &Path) -> Result<(), String> {
 fn basis(cid: &str) -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
-        cid: LinkedDeviceCid::try_from(cid).expect("fixture did"),
+        cid: LinkedDeviceCid::try_from(cid).expect("fixture cid"),
     }
 }
 
