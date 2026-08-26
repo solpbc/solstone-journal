@@ -19,7 +19,7 @@ solstone-core-entity.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-journal-stats-cli.workspace = true
-solstone-core-observer.workspace = true
+solstone-core-sol-link = { workspace = true, features = ["host"] }
 solstone-core-system-health.workspace = true
 solstone-core-thinking.workspace = true
 

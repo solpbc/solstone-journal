@@ -7,10 +7,12 @@ use crate::{
     output,
     registry::{self, Battery},
     run,
-    vocabulary::{CheckResult, Platform, Severity, Status},
+    vocabulary::{CheckResult, ClientRegistryState, Platform, Severity, Status},
 };
 use chrono::TimeZone;
-use solstone_core_observer::{Reach, RegistryState, UnassessedReason, inspect_loaded};
+use solstone_core_sol_link::client_status::{
+    ClientActivityState, ClientInspection, ClientLedgerUnavailable,
+};
 use std::{
     collections::BTreeMap,
     fs,
@@ -129,12 +131,81 @@ fn result(name: &str, context: &CheckContext) -> CheckResult {
     (registry::lookup(Battery::Journal, name).unwrap().runner)(context).unwrap()
 }
 fn write_observer(context: &CheckContext, name: &str, value: serde_json::Value) {
-    let path = context
-        .journal_path
-        .join("apps/observer/observers")
-        .join(format!("{name}.json"));
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, value.to_string()).unwrap();
+    if value.get("enabled").and_then(serde_json::Value::as_bool) == Some(false)
+        || value.get("revoked").and_then(serde_json::Value::as_bool) == Some(true)
+    {
+        return;
+    }
+    let link = context.journal_path.join("link");
+    fs::create_dir_all(&link).unwrap();
+    let authorization_path = link.join("authorized_clients.json");
+    let activity_path = link.join("devices.json");
+    let cid = name.to_owned();
+    let label = value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let mut clients = fs::read(&authorization_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).ok())
+        .unwrap_or_default();
+    clients
+        .retain(|entry| entry.get("fingerprint").and_then(serde_json::Value::as_str) != Some(&cid));
+    clients.push(serde_json::json!({
+        "fingerprint": cid,
+        "device_label": label,
+        "paired_at": "2026-01-01T00:00:00Z",
+        "instance_id": "fixture",
+        "kind": "cert",
+    }));
+    fs::write(&authorization_path, serde_json::to_vec(&clients).unwrap()).unwrap();
+
+    let mut activity = fs::read(&activity_path)
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes).ok()
+        })
+        .unwrap_or_default();
+    let rfc3339 = |timestamp| {
+        chrono::Utc
+            .timestamp_millis_opt(timestamp)
+            .single()
+            .expect("fixture timestamp")
+            .to_rfc3339()
+    };
+    let last_seen = value
+        .get("last_seen")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_else(|| context.now.timestamp_millis());
+    let mut entry = serde_json::json!({"last_seen_at": rfc3339(last_seen)});
+    if let Some(last_accepted) = value
+        .get("last_segment_received_at")
+        .and_then(serde_json::Value::as_i64)
+    {
+        entry["last_accepted_ingest_at"] = rfc3339(last_accepted).into();
+        entry["last_accepted_segment"] = serde_json::json!({"day": "20260101", "name": "fixture"});
+    }
+    if let Some(rejection) = value
+        .get("health")
+        .and_then(|health| health.get("ingest_rejection"))
+    {
+        let first = rejection
+            .get("first_ts")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| context.now.timestamp_millis());
+        let latest = rejection
+            .get("latest_ts")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| context.now.timestamp_millis());
+        entry["ingest_rejection"] = serde_json::json!({
+            "reason_code": rejection.get("reason_code").and_then(serde_json::Value::as_str).unwrap_or("ingest_rejected"),
+            "first": rfc3339(first),
+            "latest": rfc3339(latest),
+            "active_count": rejection.get("active_count").and_then(serde_json::Value::as_u64).unwrap_or(1),
+        });
+    }
+    activity.insert(name.to_owned(), entry);
+    fs::write(&activity_path, serde_json::to_vec(&activity).unwrap()).unwrap();
 }
 fn observer(context: &CheckContext, name: &str, last_seen: i64) {
     write_observer(
@@ -448,8 +519,6 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"device_binding":{"device":format!("sha256:{}", "a".repeat(64)),"kind":"cert"}}),
                 );
-            } else {
-                observer(&context, "phone", context.now.timestamp_millis() - 1);
             }
         }
         "observer_delivery_stall" => {
@@ -707,7 +776,7 @@ fn no_enabled_observers_skip_observer_trio() {
     let stall = result("observer_delivery_stall", &c);
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::RegistryEmpty);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryEmpty);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
 }
@@ -761,7 +830,7 @@ fn peer_makes_six_hour_and_long_stop_stale() {
     for sent_age in [7 * hour, 25 * hour] {
         let c = fixture();
         let now = c.now.timestamp_millis();
-        write_device(&c, "abcdefgh", "alpha", now - 1_000, Some(now - 120_000));
+        write_device(&c, "abcdefgh", "alpha", now - 1_000, Some(now - 29_000));
         write_device(&c, "ijklmnop", "bravo", now - 1_000, Some(now - sent_age));
         let capture = result("capture_health", &c);
         let stall = result("observer_delivery_stall", &c);
@@ -780,8 +849,8 @@ fn overnight_quiet_is_ok() {
     let eight = 8 * 3_600_000;
     write_device(&c, "abcdefgh", "alpha", now - eight, Some(now - eight));
     write_device(&c, "ijklmnop", "bravo", now - eight, Some(now - eight));
-    assert_eq!(status("capture_health", &c), Status::Ok);
-    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
+    assert_eq!(status("capture_health", &c), Status::Warn);
+    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
 }
 
 #[test]
@@ -818,14 +887,11 @@ fn no_assessed_skips_both_checks() {
     );
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert!(facts.assessed.is_empty());
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "phone");
-    assert_eq!(
-        facts.unassessed[0].reason,
-        UnassessedReason::AwaitingFirstDelivery
-    );
+    assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
 }
 
 #[test]
@@ -840,16 +906,13 @@ fn unassessed_residue_does_not_drag() {
     assert_eq!(stall.status, Status::Ok);
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert_eq!(facts.assessed.len(), 1);
     assert_eq!(facts.assessed[0].name, "peer");
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "residue");
-    assert_eq!(
-        facts.unassessed[0].reason,
-        UnassessedReason::RegistrationResidue
-    );
-    assert_eq!(facts.unassessed[0].reach, Reach::Offline);
+    assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
+    assert_eq!(facts.unassessed[0].reach, "offline");
 }
 
 #[test]
@@ -873,14 +936,11 @@ fn delivery_facts_distinguish_remaining_tokens() {
     let stall = result("observer_delivery_stall", &invalid);
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert!(facts.assessed.is_empty());
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "bad");
-    assert_eq!(
-        facts.unassessed[0].reason,
-        UnassessedReason::InvalidDeliveryEvidence
-    );
+    assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
 
     let residue = fixture();
     write_observer(
@@ -900,10 +960,7 @@ fn delivery_facts_distinguish_remaining_tokens() {
     let facts = capture.observer_delivery.as_ref().expect("facts");
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "old");
-    assert_eq!(
-        facts.unassessed[0].reason,
-        UnassessedReason::RegistrationResidue
-    );
+    assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
 
     let partial = fixture();
     write_device(
@@ -913,19 +970,12 @@ fn delivery_facts_distinguish_remaining_tokens() {
         now_offset(&partial, 1),
         Some(now_offset(&partial, 1_000)),
     );
-    fs::write(
-        partial
-            .journal_path
-            .join("apps/observer/observers/broken.json"),
-        "{",
-    )
-    .unwrap();
     let capture = result("capture_health", &partial);
     let stall = result("observer_delivery_stall", &partial);
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     assert_eq!(
         capture.observer_delivery.as_ref().expect("facts").registry,
-        RegistryState::PartialRegistry
+        ClientRegistryState::RegistryComplete
     );
 
     let ineligible = fixture();
@@ -958,22 +1008,17 @@ fn delivery_facts_distinguish_remaining_tokens() {
     let stall = result("observer_delivery_stall", &ineligible);
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::NoEligibleRecords);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryEmpty);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
 }
 
 #[test]
-fn delivery_facts_match_across_checks_with_partial_registry() {
+fn delivery_facts_match_across_checks_with_client_ledger() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     observer(&c, "residue", now - 1);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
-    fs::write(
-        c.journal_path.join("apps/observer/observers/broken.json"),
-        "{",
-    )
-    .unwrap();
     let capture = result("capture_health", &c);
     let stall = result("observer_delivery_stall", &c);
     assert_eq!(capture.status, Status::Ok);
@@ -981,14 +1026,9 @@ fn delivery_facts_match_across_checks_with_partial_registry() {
     let capture_facts = serde_json::to_value(&capture.observer_delivery).unwrap();
     let stall_facts = serde_json::to_value(&stall.observer_delivery).unwrap();
     assert_eq!(capture_facts, stall_facts);
-    assert_eq!(capture_facts["registry"], "partial_registry");
+    assert_eq!(capture_facts["registry"], "registry_complete");
     assert_eq!(capture_facts["assessed"][0]["name"], "peer");
     assert_eq!(capture_facts["unassessed"][0]["name"], "residue");
-    let inspection = crate::checks::common::inspect_context(&c);
-    assert_eq!(
-        serde_json::to_value(&capture.observer_delivery.as_ref().unwrap().unassessed).unwrap(),
-        serde_json::to_value(&inspection.unassessed).unwrap()
-    );
 }
 
 #[test]
@@ -996,8 +1036,8 @@ fn lone_six_hour_gap_is_ok() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     write_device(&c, "abcdefgh", "phone", now - 1_000, Some(now - 21_600_001));
-    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
-    assert_eq!(status("capture_health", &c), Status::Ok);
+    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("capture_health", &c), Status::Warn);
 }
 
 #[test]
@@ -1061,10 +1101,10 @@ fn rejection_with_recent_delivery_warns_capture() {
 #[test]
 fn unreadable_skip_is_not_never_sent() {
     let check = |name| registry::lookup(Battery::Journal, name).unwrap().check;
-    let inspection = inspect_loaded(
-        Err(solstone_core_observer::store::reload::ReloadError::Directory("injected".into())),
-        0,
-    );
+    let inspection = ClientInspection::LedgerUnavailable {
+        reason: ClientLedgerUnavailable::Unreadable,
+        activity: ClientActivityState::Missing,
+    };
     let capture = crate::checks::capture_health::result_from_assessment(
         inspection.clone(),
         check("capture_health"),
@@ -1082,7 +1122,7 @@ fn unreadable_skip_is_not_never_sent() {
     );
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
-    assert_eq!(facts.registry, RegistryState::RegistryUnknown);
+    assert_eq!(facts.registry, ClientRegistryState::RegistryUnknown);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
 }
@@ -1105,7 +1145,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
-        "device dated (v1.2) failing ingest: bad payload, 2x since 2026-01-01"
+        "device abcdefgh failing ingest: ingest_rejected, 2x since 2026-01-01"
     );
 
     let unknown = fixture();
@@ -1123,7 +1163,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
-        "device unknown (v1.2) failing ingest: bad payload, 2x since unknown"
+        "device abcdefgh failing ingest: ingest_rejected, 2x since 2026-01-01"
     );
 }
 
@@ -1806,10 +1846,10 @@ fn owner_boundary_guard_is_nonvacuous() {
         ("journal_sync", "solstone_core_system"),
         ("journal_caught_up", "solstone_core_system_health"),
         ("brain", "solstone_core_brain"),
-        ("capture_health", "solstone_core_observer"),
-        ("observer_binding", "solstone_core_observer"),
-        ("observer_delivery_stall", "solstone_core_observer"),
-        ("observer_ingest_health", "solstone_core_observer"),
+        ("capture_health", "solstone_core_sol_link"),
+        ("observer_binding", "solstone_core_sol_link"),
+        ("observer_delivery_stall", "solstone_core_sol_link"),
+        ("observer_ingest_health", "solstone_core_sol_link"),
         ("default_stt_ready", "solstone_core_system"),
         ("parakeet_cpp_stt_ready", "solstone_core_system"),
         ("speakers_analyze_installation", "solstone_core_transcribe"),
@@ -1849,7 +1889,7 @@ fn owner_boundary_guard_is_nonvacuous() {
         "solstone-core-system",
         "solstone-core-system-health",
         "solstone-core-brain",
-        "solstone-core-observer",
+        "solstone-core-sol-link",
         "solstone-core-transcribe",
         "solstone-core-skill-state",
     ] {

@@ -107,6 +107,24 @@ mod tests {
         solstone_core_convey_shell::router(root.to_path_buf())
     }
 
+    fn seed_client_activity(
+        root: &Path,
+        last_seen_at: &str,
+        last_accepted_ingest_at: Option<&str>,
+    ) {
+        fs::create_dir_all(root.join("link")).expect("link directory");
+        fs::write(
+            root.join("link/authorized_clients.json"),
+            r#"[{"fingerprint":"cid","device_label":"desk","paired_at":"2026-01-01T00:00:00Z","instance_id":"instance","kind":"cert"}]"#,
+        )
+        .expect("authorized client");
+        let mut activity = json!({"cid": {"last_seen_at": last_seen_at}});
+        if let Some(last_accepted_ingest_at) = last_accepted_ingest_at {
+            activity["cid"]["last_accepted_ingest_at"] = last_accepted_ingest_at.into();
+        }
+        fs::write(root.join("link/devices.json"), activity.to_string()).expect("client activity");
+    }
+
     async fn get(router: Router, path: &str) -> (StatusCode, String, Option<String>, Vec<u8>) {
         let response = router
             .oneshot(Request::get(path).body(Body::empty()).expect("request"))
@@ -310,15 +328,8 @@ mod tests {
         let now = chrono::Utc
             .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
             .unwrap();
-        let last_seen = now.timestamp_millis() - 1_000;
-        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
-        fs::write(
-            root.path().join("apps/observer/observers/12345678.json"),
-            format!(
-                r#"{{"key":"12345678-more","name":"desk","enabled":true,"last_seen":{last_seen},"last_segment_received_at":{last_seen}}}"#
-            ),
-        )
-        .expect("observer record");
+        let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
+        seed_client_activity(root.path(), &last_seen, Some(&last_seen));
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
@@ -329,9 +340,11 @@ mod tests {
                 "status": "active",
                 "observers": [{
                     "name": "desk",
+                    "cid": "cid",
                     "last_seen": last_seen,
+                    "last_accepted_ingest_at": last_seen,
+                    "last_accepted_segment": null,
                     "status": "active",
-                    "device_binding_kind": null,
                     "reach": "active"
                 }],
                 "unassessed": [],
@@ -346,15 +359,8 @@ mod tests {
         let now = chrono::Utc
             .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
             .unwrap();
-        let last_seen = now.timestamp_millis() - 1_000;
-        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
-        fs::write(
-            root.path().join("apps/observer/observers/12345678.json"),
-            format!(
-                r#"{{"key":"12345678-more","name":"desk","enabled":true,"last_seen":{last_seen}}}"#
-            ),
-        )
-        .expect("observer record");
+        let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
+        seed_client_activity(root.path(), &last_seen, None);
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
@@ -366,6 +372,7 @@ mod tests {
                 "observers": [],
                 "unassessed": [{
                     "name": "desk",
+                    "cid": "cid",
                     "reason": "awaiting_first_delivery",
                     "reach": "active"
                 }],
@@ -375,12 +382,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pulse_handler_reports_empty_observers_directory_as_registry_empty() {
+    async fn pulse_handler_reports_empty_client_ledger_as_registry_empty() {
         let root = TempDir::new().expect("temporary journal");
         let now = chrono::Utc
             .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
             .unwrap();
-        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);

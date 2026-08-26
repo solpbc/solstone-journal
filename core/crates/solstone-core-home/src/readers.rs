@@ -19,10 +19,9 @@ use solstone_core_facets::{
 };
 use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
-use solstone_core_observer::store::load_observers;
-use solstone_core_observer::store::load_observers_with_inventory;
-use solstone_core_observer::{
-    DeliveryAssessment, DeliveryInspection, RegistryState, inspect_loaded, rollup_owner_states,
+use solstone_core_sol_link::client_status::{
+    ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
+    ConnectionFreshness, inspect_clients_at, rollup_client_capture_states,
 };
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
@@ -854,66 +853,154 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
     summary
 }
 
-/// Resolve the current capture-health rollup from native observer records.
+/// Resolve the current capture-health rollup from certificate-authorized clients.
 pub fn get_capture_health(context: &HomeContext) -> Value {
-    capture_health_json(&inspect_loaded(
-        load_observers_with_inventory(context.journal_root()),
+    capture_health_json(&inspect_clients_at(
+        context.journal_root(),
         context.now_ms(),
     ))
 }
 
-pub(crate) fn capture_health_json(inspection: &DeliveryInspection) -> Value {
-    if inspection.registry == RegistryState::RegistryUnknown {
+pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
+    let (rows, activity, registry) = match inspection {
+        ClientInspection::LedgerUnavailable { .. } => {
+            return json!({
+                "status": "unknown",
+                "observers": [],
+                "unassessed": [],
+                "registry": "registry_unknown",
+            });
+        }
+        ClientInspection::Empty { clients, activity } => {
+            (clients.as_slice(), *activity, "registry_empty")
+        }
+        ClientInspection::Ready { clients, activity } => {
+            (clients.as_slice(), *activity, "registry_complete")
+        }
+    };
+    if matches!(
+        activity,
+        ClientActivityState::Unreadable | ClientActivityState::Malformed
+    ) {
         return json!({
             "status": "unknown",
             "observers": [],
-            "unassessed": [],
-            "registry": "registry_unknown",
+            "unassessed": rows.iter().map(unassessed_client_row).collect::<Vec<_>>(),
+            "registry": registry,
         });
     }
-    let unassessed =
-        serde_json::to_value(&inspection.unassessed).expect("unassessed observers serialize");
-    let Some(status) = rollup_owner_states(&inspection.assessed) else {
+    let unassessed = rows
+        .iter()
+        .filter(|row| row.capture_state == ClientCaptureState::NoCapture)
+        .map(unassessed_client_row)
+        .collect::<Vec<_>>();
+    let Some(status) = rollup_client_capture_states(rows) else {
         return json!({
             "status": "no_observers",
             "observers": [],
             "unassessed": unassessed,
-            "registry": inspection.registry.as_str(),
+            "registry": registry,
         });
     };
-    let observers: Vec<Value> = inspection.assessed.iter().map(home_observer_row).collect();
+    let observers: Vec<Value> = rows
+        .iter()
+        .filter(|row| is_assessed_capture(row))
+        .map(home_observer_row)
+        .collect();
     json!({
-        "status": status.as_str(),
+        "status": capture_state_name(status),
         "observers": observers,
         "unassessed": unassessed,
-        "registry": inspection.registry.as_str(),
+        "registry": registry,
     })
 }
 
-fn home_observer_row(row: &DeliveryAssessment) -> Value {
+fn home_observer_row(row: &ClientAssessment) -> Value {
     let mut summary = json!({
-        "name": row.name,
-        "last_seen": row.last_seen,
-        "status": row.state.as_str(),
-        "device_binding_kind": row.device_binding_kind,
-        "reach": row.reach.as_str(),
+        "name": client_name(row),
+        "cid": row.cid,
+        "last_seen": row.last_seen_at,
+        "last_accepted_ingest_at": row.last_accepted_ingest_at,
+        "last_accepted_segment": row.last_accepted_segment,
+        "status": capture_state_name(row.capture_state),
+        "reach": reach_name(row),
     });
     if let Some(rejection) = &row.ingest_rejection {
-        summary["ingest_rejection"] = Value::Object(rejection.clone());
-    }
-    if let Some(beacon) = &row.beacon {
-        summary["beacon"] = Value::Object(beacon.clone());
+        summary["ingest_rejection"] =
+            serde_json::to_value(rejection).expect("rejection serializes");
     }
     summary
 }
 
-/// Newest millisecond observer timestamp across enabled, non-revoked records.
+fn unassessed_client_row(row: &ClientAssessment) -> Value {
+    json!({
+        "name": client_name(row),
+        "cid": row.cid,
+        "reason": match row.capture_state {
+            ClientCaptureState::NoCapture => "awaiting_first_delivery",
+            ClientCaptureState::Unknown => "activity_unavailable",
+            ClientCaptureState::Degraded
+            | ClientCaptureState::Active
+            | ClientCaptureState::Stale
+            | ClientCaptureState::Offline => unreachable!("assessed capture state"),
+        },
+        "reach": reach_name(row),
+    })
+}
+
+fn is_assessed_capture(row: &ClientAssessment) -> bool {
+    matches!(
+        row.capture_state,
+        ClientCaptureState::Degraded
+            | ClientCaptureState::Active
+            | ClientCaptureState::Stale
+            | ClientCaptureState::Offline
+    )
+}
+
+fn client_name(row: &ClientAssessment) -> String {
+    let label = row.client_entry.display_label();
+    if label.is_empty() {
+        row.cid.clone()
+    } else {
+        label
+    }
+}
+
+fn capture_state_name(state: ClientCaptureState) -> &'static str {
+    match state {
+        ClientCaptureState::Unknown => "unknown",
+        ClientCaptureState::NoCapture => "no_capture",
+        ClientCaptureState::Degraded => "degraded",
+        ClientCaptureState::Active => "active",
+        ClientCaptureState::Stale => "stale",
+        ClientCaptureState::Offline => "offline",
+    }
+}
+
+fn reach_name(row: &ClientAssessment) -> &'static str {
+    match row.connection {
+        ConnectionFreshness::Unknown => "unknown",
+        ConnectionFreshness::Known { reach, .. } => match reach {
+            solstone_core_sol_link::client_status::ClientReach::Active => "active",
+            solstone_core_sol_link::client_status::ClientReach::Stale => "stale",
+            solstone_core_sol_link::client_status::ClientReach::Offline => "offline",
+        },
+    }
+}
+
+/// Newest accepted client ingest timestamp across paired clients.
 pub fn last_observe_relative_seconds(context: &HomeContext) -> Option<i64> {
-    load_observers(context.journal_root())
-        .ok()?
-        .into_iter()
-        .filter(|record| !record.revoked() && record.enabled() != Some(false))
-        .filter_map(|record| record.last_seen())
+    let rows = match inspect_clients_at(context.journal_root(), context.now_ms()) {
+        ClientInspection::Empty { clients, .. } | ClientInspection::Ready { clients, .. } => {
+            clients
+        }
+        ClientInspection::LedgerUnavailable { .. } => return None,
+    };
+    rows.into_iter()
+        .filter_map(|record| record.last_accepted_ingest_at)
+        .filter_map(|timestamp| DateTime::parse_from_rfc3339(&timestamp).ok())
+        .map(|timestamp| timestamp.timestamp_millis())
         .max()
         .map(|last_seen| (context.now_ms() - last_seen) / 1000)
 }
@@ -1034,7 +1121,8 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use solstone_core_observer::store::record::ObserverRecord;
+    use solstone_core_sol_link::client_status::{ClientReach, ConnectionGroup, ConnectionState};
+    use solstone_core_sol_link::ledger::ClientEntry;
     use tempfile::TempDir;
 
     fn context(root: &std::path::Path) -> HomeContext {
@@ -1487,308 +1575,135 @@ mod tests {
         );
     }
 
-    fn health(records: &[ObserverRecord], now: i64) -> Value {
-        capture_health_json(&inspect_loaded(
-            Ok(solstone_core_observer::store::ObserverLoad {
-                records: records.to_vec(),
-                regular_json_entries: records.len(),
-            }),
-            now,
-        ))
-    }
-
-    fn rec(
-        name: &str,
-        last_seen: Option<i64>,
-        last_sent: Option<i64>,
-        rejecting: bool,
-    ) -> ObserverRecord {
-        let mut value = json!({
-            "key": format!("{name}-keyxx"),
-            "name": name,
-            "enabled": true,
-        });
-        if let Some(stamp) = last_seen {
-            value["last_seen"] = json!(stamp);
+    fn assessment(
+        cid: &str,
+        capture_state: ClientCaptureState,
+        capture_elapsed_ms: Option<i64>,
+        reach: ClientReach,
+    ) -> ClientAssessment {
+        ClientAssessment {
+            cid: cid.to_owned(),
+            client_entry: ClientEntry::new(
+                cid,
+                cid,
+                "2026-01-01T00:00:00Z",
+                "instance",
+                Default::default(),
+            ),
+            last_seen_at: None,
+            last_accepted_ingest_at: None,
+            last_accepted_segment: None,
+            ingest_rejection: None,
+            connection: ConnectionFreshness::Known {
+                state: ConnectionState::Connected,
+                group: ConnectionGroup::Active,
+                elapsed_ms: Some(1),
+                clock_skew: false,
+                label: "connected",
+                reach,
+            },
+            capture_state,
+            capture_elapsed_ms,
         }
-        if let Some(stamp) = last_sent {
-            value["last_segment_received_at"] = json!(stamp);
-        }
-        if rejecting {
-            value["health"] = json!({"ingest_rejection": {"active_count": 1}});
-        }
-        ObserverRecord::from_value(value).unwrap()
-    }
-
-    #[test]
-    fn get_capture_health_follows_delivery_states() {
-        let now = 1_000_000_000;
-        let hour = 3_600_000;
-        let seen = Some(now - 1_000);
-        let status = |records: &[ObserverRecord]| health(records, now)["status"].clone();
-        assert_eq!(
-            status(&[rec("a", seen, Some(now - 89 * hour), false)]),
-            "offline"
-        );
-        assert_eq!(
-            status(&[
-                rec("a", seen, Some(now - 120_000), false),
-                rec("b", seen, Some(now - 7 * hour), false),
-            ]),
-            "stale"
-        );
-        assert_eq!(
-            status(&[
-                rec("a", seen, Some(now - 120_000), false),
-                rec("b", seen, Some(now - 25 * hour), false),
-            ]),
-            "stale"
-        );
-        assert_eq!(
-            status(&[
-                rec("a", Some(now - 8 * hour), Some(now - 8 * hour), false),
-                rec("b", Some(now - 8 * hour), Some(now - 8 * hour), false),
-            ]),
-            "active"
-        );
-        assert_eq!(
-            status(&[rec("a", seen, Some(now - 25 * hour), false)]),
-            "offline"
-        );
-        let fleet = (0..4)
-            .map(|index| {
-                rec(
-                    &format!("d{index}"),
-                    Some(now - 200_000),
-                    Some(now - 41 * hour),
-                    false,
-                )
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(status(&fleet), "offline");
-        let never = health(&[rec("never", seen, None, false)], now);
-        assert_eq!(never["status"], "no_observers");
-        assert_eq!(never["observers"], json!([]));
-        assert_eq!(never["registry"], "registry_complete");
-        assert_eq!(
-            never["unassessed"],
-            json!([{
-                "name": "never",
-                "reason": "awaiting_first_delivery",
-                "reach": "active"
-            }])
-        );
-        assert_eq!(
-            never["unassessed"],
-            serde_json::to_value(
-                &inspect_loaded(
-                    Ok(solstone_core_observer::store::ObserverLoad {
-                        records: vec![rec("never", seen, None, false)],
-                        regular_json_entries: 1,
-                    }),
-                    now,
-                )
-                .unassessed
-            )
-            .unwrap()
-        );
-        assert_eq!(
-            status(&[
-                rec("residue", seen, None, false),
-                rec("peer", seen, Some(now - 120_000), false),
-            ]),
-            "active"
-        );
-        let residue = health(
-            &[
-                rec("residue", seen, None, false),
-                rec("peer", seen, Some(now - 120_000), false),
-            ],
-            now,
-        );
-        assert_eq!(residue["observers"].as_array().unwrap().len(), 1);
-        assert_eq!(residue["observers"][0]["name"], "peer");
-        assert_eq!(residue["unassessed"][0]["name"], "residue");
-        assert_eq!(status(&[rec("rej", seen, None, true)]), "degraded");
-        assert_eq!(
-            status(&[rec("rej", seen, Some(now - 120_000), true)]),
-            "degraded"
-        );
-        let mixed = health(
-            &[
-                rec("night", Some(now - 8 * hour), Some(now - 8 * hour), false),
-                rec("stop", Some(now - 25 * hour), Some(now - 25 * hour), false),
-            ],
-            now,
-        );
-        assert_eq!(mixed["status"], "stale");
-        assert_eq!(mixed["observers"].as_array().unwrap().len(), 2);
-        assert_eq!(mixed["observers"][0]["reach"], "offline");
-        assert!(mixed["unassessed"].as_array().unwrap().is_empty());
-        let unknown = capture_health_json(&inspect_loaded(
-            Err(solstone_core_observer::store::reload::ReloadError::Directory("x".into())),
-            now,
-        ));
-        assert_eq!(unknown["status"], "unknown");
-        assert_eq!(unknown["observers"], json!([]));
-        assert_eq!(unknown["unassessed"], json!([]));
-        assert_eq!(unknown["registry"], "registry_unknown");
-
-        let invalid = ObserverRecord::from_value(json!({
-            "key": "bad-keyxx",
-            "name": "bad",
-            "enabled": true,
-            "last_seen": now - 1_000,
-            "last_segment_received_at": "not-a-stamp",
-        }))
-        .unwrap();
-        let invalid = health(&[invalid], now);
-        assert_eq!(invalid["status"], "no_observers");
-        assert_eq!(invalid["registry"], "registry_complete");
-        assert_eq!(
-            invalid["unassessed"],
-            json!([{
-                "name": "bad",
-                "reason": "invalid_delivery_evidence",
-                "reach": "active"
-            }])
-        );
-
-        let disabled = ObserverRecord::from_value(json!({
-            "key": "off-keyxx",
-            "name": "off",
-            "enabled": false,
-            "last_seen": now - 1_000,
-            "last_segment_received_at": now - 1_000,
-        }))
-        .unwrap();
-        let disabled = health(&[disabled], now);
-        assert_eq!(disabled["status"], "no_observers");
-        assert_eq!(disabled["observers"], json!([]));
-        assert_eq!(disabled["unassessed"], json!([]));
-        assert_eq!(disabled["registry"], "no_eligible_records");
     }
 
     #[test]
-    fn observer_reader_uses_milliseconds_and_the_29000_ms_active_window() {
+    fn capture_health_projects_client_capture_states() {
+        let inspection = ClientInspection::Ready {
+            clients: vec![
+                assessment(
+                    "awaiting",
+                    ClientCaptureState::NoCapture,
+                    None,
+                    ClientReach::Active,
+                ),
+                assessment(
+                    "active",
+                    ClientCaptureState::Active,
+                    Some(1_000),
+                    ClientReach::Active,
+                ),
+                assessment(
+                    "stale",
+                    ClientCaptureState::Stale,
+                    Some(120_000),
+                    ClientReach::Stale,
+                ),
+            ],
+            activity: ClientActivityState::Present,
+        };
+        let health = capture_health_json(&inspection);
+        assert_eq!(health["status"], "stale");
+        assert_eq!(health["registry"], "registry_complete");
+        assert_eq!(health["observers"].as_array().unwrap().len(), 2);
+        assert_eq!(health["unassessed"][0]["name"], "awaiting");
+        assert_eq!(health["unassessed"][0]["reason"], "awaiting_first_delivery");
+
+        let degraded = ClientInspection::Ready {
+            clients: vec![assessment(
+                "failing",
+                ClientCaptureState::Degraded,
+                None,
+                ClientReach::Active,
+            )],
+            activity: ClientActivityState::Present,
+        };
+        assert_eq!(capture_health_json(&degraded)["status"], "degraded");
+    }
+
+    #[test]
+    fn capture_health_keeps_activity_failure_distinct_from_no_capture() {
+        let unknown = ClientInspection::Ready {
+            clients: vec![assessment(
+                "phone",
+                ClientCaptureState::Unknown,
+                None,
+                ClientReach::Offline,
+            )],
+            activity: ClientActivityState::Malformed,
+        };
+        let health = capture_health_json(&unknown);
+        assert_eq!(health["status"], "unknown");
+        assert_eq!(health["registry"], "registry_complete");
+        assert_eq!(health["unassessed"][0]["reason"], "activity_unavailable");
+
+        let missing = ClientInspection::Ready {
+            clients: vec![assessment(
+                "phone",
+                ClientCaptureState::NoCapture,
+                None,
+                ClientReach::Offline,
+            )],
+            activity: ClientActivityState::Missing,
+        };
+        assert_eq!(capture_health_json(&missing)["status"], "no_observers");
+    }
+
+    #[test]
+    fn client_reader_uses_accepted_ingest_for_capture_health_and_last_observe() {
         let root = TempDir::new().unwrap();
         let home_context = context(root.path());
-        let empty = get_capture_health(&home_context);
-        assert_eq!(empty["status"], "no_observers");
-        assert_eq!(empty["registry"], "registry_empty");
-        assert_eq!(empty["unassessed"], json!([]));
         let now = home_context.now_ms();
+        let timestamp = Utc
+            .timestamp_millis_opt(now - 29_000)
+            .single()
+            .unwrap()
+            .to_rfc3339();
         write(
             root.path(),
-            "apps/observer/observers/12345678.json",
-            &format!(
-                r#"{{"key":"123456789","name":"inside-window","last_seen":{},"last_segment_received_at":{},"enabled":true}}"#,
-                now - 29_000,
-                now - 29_000
-            ),
+            "link/authorized_clients.json",
+            r#"[{"fingerprint":"cid","device_label":"phone","paired_at":"2026-01-01T00:00:00Z","instance_id":"instance","kind":"cert"}]"#,
+        );
+        write(
+            root.path(),
+            "link/devices.json",
+            &json!({"cid": {"last_seen_at": timestamp, "last_accepted_ingest_at": timestamp}})
+                .to_string(),
         );
         let health = get_capture_health(&home_context);
         assert_eq!(health["status"], "active");
-        assert_eq!(health["observers"][0]["reach"], "active");
-        assert_eq!(health["registry"], "registry_complete");
-        assert_eq!(health["unassessed"], json!([]));
+        assert_eq!(health["observers"][0]["name"], "phone");
         assert_eq!(last_observe_relative_seconds(&home_context), Some(29));
-        let seconds_root = TempDir::new().unwrap();
-        let seconds_context = context(seconds_root.path());
-        write(
-            seconds_root.path(),
-            "apps/observer/observers/87654321.json",
-            &format!(
-                r#"{{"key":"876543219","name":"seconds","last_seen":{},"enabled":true}}"#,
-                now / 1000
-            ),
-        );
-        assert_eq!(
-            get_capture_health(&seconds_context)["status"],
-            "no_observers"
-        );
-    }
-
-    #[test]
-    fn observer_reader_skips_malformed_records_and_last_seen_types() {
-        let root = TempDir::new().unwrap();
-        let context = context(root.path());
-        write(root.path(), "apps/observer/observers/12345678.json", "{");
-        write(
-            root.path(),
-            "apps/observer/observers/87654321.json",
-            r#"{"key":"876543219","last_seen":"not-milliseconds","enabled":true}"#,
-        );
-        let health = get_capture_health(&context);
-        assert_eq!(health["status"], "no_observers");
-        assert_eq!(health["registry"], "partial_registry");
-        assert_eq!(
-            health["unassessed"],
-            json!([{
-                "name": "unknown",
-                "reason": "registration_residue",
-                "reach": "offline"
-            }])
-        );
-        assert!(
-            !health["unassessed"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|row| row["name"] == "12345678")
-        );
-        assert_eq!(last_observe_relative_seconds(&context), None);
-    }
-
-    #[test]
-    fn observer_journal_spot_check_assessed_and_awaiting_first_delivery() {
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/convey_home_observer_journal");
-        let now = Utc
-            .timestamp_millis_opt(1_786_749_913_793)
-            .single()
-            .unwrap();
-        let context = HomeContext::new(&fixture, now);
-        let assessed = get_capture_health(&context);
-        assert_eq!(assessed["registry"], "registry_complete");
-        assert_eq!(assessed["status"], "active");
-        assert_eq!(assessed["observers"].as_array().unwrap().len(), 1);
-        assert_eq!(assessed["unassessed"], json!([]));
-
-        let source =
-            fs::read_to_string(fixture.join("apps/observer/observers/12345678.json")).unwrap();
-        let root = TempDir::new().unwrap();
-        write(
-            root.path(),
-            "apps/observer/observers/12345678.json",
-            &source,
-        );
-        let copied = get_capture_health(&HomeContext::new(root.path(), now));
-        assert_eq!(copied["registry"], "registry_complete");
-        assert_eq!(copied["observers"].as_array().unwrap().len(), 1);
-
-        let mut value: Value = serde_json::from_str(&source).unwrap();
-        value
-            .as_object_mut()
-            .unwrap()
-            .remove("last_segment_received_at");
-        write(
-            root.path(),
-            "apps/observer/observers/12345678.json",
-            &value.to_string(),
-        );
-        let awaiting = get_capture_health(&HomeContext::new(root.path(), now));
-        assert_eq!(awaiting["status"], "no_observers");
-        assert_eq!(awaiting["registry"], "registry_complete");
-        assert_eq!(awaiting["observers"], json!([]));
-        assert_eq!(
-            awaiting["unassessed"],
-            json!([{
-                "name": "desk",
-                "reason": "awaiting_first_delivery",
-                "reach": "active"
-            }])
-        );
     }
 
     #[test]

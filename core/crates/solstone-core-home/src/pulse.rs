@@ -851,11 +851,21 @@ mod tests {
     }
 
     #[test]
-    fn observer_fixture_is_active_at_twenty_nine_seconds() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/convey_home_observer_journal");
+    fn client_capture_is_active_at_twenty_nine_seconds() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("link")).unwrap();
+        fs::write(
+            root.path().join("link/authorized_clients.json"),
+            r#"[{"fingerprint":"cid","device_label":"phone","paired_at":"2026-08-13T00:00:00Z","instance_id":"fixture","kind":"cert"}]"#,
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("link/devices.json"),
+            r#"{"cid":{"last_seen_at":"2026-08-14T23:24:44.793Z","last_accepted_ingest_at":"2026-08-14T23:24:44.793Z"}}"#,
+        )
+        .unwrap();
         let context = HomeContext::new(
-            root,
+            root.path(),
             Utc.timestamp_millis_opt(1_786_749_913_793)
                 .single()
                 .unwrap(),

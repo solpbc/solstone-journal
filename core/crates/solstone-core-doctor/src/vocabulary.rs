@@ -4,7 +4,39 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use solstone_core_observer::ObserverDeliveryFacts;
+
+/// Capture-delivery facts attached to capture checks for machine consumers.
+///
+/// The field keeps its established `observer_delivery` wire name while its
+/// evidence now comes from certificate-authorized clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ClientDeliveryFacts {
+    pub registry: ClientRegistryState,
+    pub assessed: Vec<AssessedClientFact>,
+    pub unassessed: Vec<UnassessedClientFact>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientRegistryState {
+    RegistryUnknown,
+    RegistryEmpty,
+    RegistryComplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AssessedClientFact {
+    pub name: String,
+    pub state: String,
+    pub reach: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnassessedClientFact {
+    pub name: String,
+    pub reason: String,
+    pub reach: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -56,7 +88,7 @@ pub struct CheckResult {
     pub platform: Option<String>,
     pub execution_error: Option<ExecutionError>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub observer_delivery: Option<ObserverDeliveryFacts>,
+    pub observer_delivery: Option<ClientDeliveryFacts>,
 }
 pub fn make_result(
     check: Check,

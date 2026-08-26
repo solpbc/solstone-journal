@@ -1653,9 +1653,16 @@
 	    return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
 	  }
 
-	  function registeredObserverMeta(observer) {
-	    if (!observer.last_seen) return 'never seen';
-	    const deltaMs = Date.now() - observer.last_seen;
+	  function registeredClientMeta(client) {
+	    const lastCapture = client.last_accepted_ingest_at && Date.parse(client.last_accepted_ingest_at);
+	    if (Number.isFinite(lastCapture)) {
+	      const deltaMs = Date.now() - lastCapture;
+	      if (deltaMs < 0) return 'last added from future';
+	      return `last added ${relativeTime(deltaMs)} ago`;
+	    }
+	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
+	    if (!Number.isFinite(lastSeen)) return 'no capture yet';
+	    const deltaMs = Date.now() - lastSeen;
 	    if (deltaMs < 0) return 'last seen from future';
 	    return `last reported ${relativeTime(deltaMs)} ago`;
 	  }
@@ -1733,8 +1740,8 @@
 	    });
 	  }
 
-  function renderRegisteredObservers(observers) {
-    if (!observers || observers.length === 0) {
+  function renderRegisteredClients(clients) {
+    if (!clients || clients.length === 0) {
       elements.registeredObserversCard.classList.add('hidden');
       elements.registeredObserversStrip.innerHTML = '';
       return;
@@ -1742,21 +1749,28 @@
 
     elements.registeredObserversCard.classList.remove('hidden');
     elements.registeredObserversStrip.innerHTML = '';
-    for (const observer of observers) {
-      let stateClass = ['connected', 'stale', 'disconnected', 'revoked'].includes(observer.state)
-        ? observer.state
+    for (const client of clients) {
+      let stateClass = ['connected', 'stale', 'disconnected'].includes(client.state)
+        ? client.state
         : 'disconnected';
-      let labelText = observer.label;
-      if (observer.failing) {
+      let labelText = client.capture_state || client.label || 'unknown';
+      if (client.capture_state === 'active') stateClass = 'connected';
+      if (client.capture_state === 'stale') stateClass = 'stale';
+      if (client.capture_state === 'offline') stateClass = 'disconnected';
+      if (client.failing) {
         stateClass = 'failing';
         labelText = 'failing';
+      } else if (client.capture_state === 'no_capture') {
+        labelText = 'no capture yet';
+      } else if (client.capture_state === 'unknown') {
+        labelText = 'capture unknown';
       }
       const row = document.createElement('div');
       row.className = 'registered-observer-row';
 
       const nameEl = document.createElement('span');
       nameEl.className = 'registered-observer-name';
-      nameEl.textContent = observer.name || observer.prefix || 'unnamed device';
+      nameEl.textContent = client.display_label || client.device_label || client.cid_short || client.cid || 'unnamed device';
       row.appendChild(nameEl);
 
       const labelEl = document.createElement('span');
@@ -1764,14 +1778,14 @@
       labelEl.textContent = labelText;
       row.appendChild(labelEl);
 
-      if (observer.failing && observer.ingest_rejection) {
-        const rej = observer.ingest_rejection;
+      if (client.failing && client.ingest_rejection) {
+        const rej = client.ingest_rejection;
         const parts = [];
         if (typeof rej.active_count === 'number' && isFinite(rej.active_count)
-            && typeof rej.first_ts === 'number' && isFinite(rej.first_ts)) {
-          parts.push(rej.active_count + ' rejected since ' + monthDay(rej.first_ts));
+            && typeof rej.first === 'string' && Number.isFinite(Date.parse(rej.first))) {
+          parts.push(rej.active_count + ' rejected since ' + monthDay(Date.parse(rej.first)));
         }
-        if (rej.version) parts.push('v' + rej.version);
+        if (rej.reason_code) parts.push(rej.reason_code);
         if (parts.length) {
           const detailEl = document.createElement('span');
           detailEl.className = 'registered-observer-detail';
@@ -1780,17 +1794,17 @@
         }
         const recoveryEl = document.createElement('span');
         recoveryEl.className = 'registered-observer-recovery';
-        recoveryEl.textContent = 'update or restart the solstone app on ' + (observer.name || 'that device');
+        recoveryEl.textContent = 'update or restart the solstone app on ' + (client.display_label || client.device_label || 'that device');
         row.appendChild(recoveryEl);
       }
 
       const metaEl = document.createElement('span');
       metaEl.className = 'registered-observer-meta';
-      metaEl.textContent = registeredObserverMeta(observer);
+      metaEl.textContent = registeredClientMeta(client);
       row.appendChild(metaEl);
 
       const skewEl = document.createElement('span');
-      skewEl.className = 'registered-observer-skew' + (observer.clock_skew ? '' : ' hidden');
+      skewEl.className = 'registered-observer-skew' + (client.clock_skew ? '' : ' hidden');
       skewEl.textContent = 'clock skew';
 	      row.appendChild(skewEl);
 
@@ -1813,14 +1827,14 @@
     }
   }
 
-  async function loadRegisteredObservers() {
+  async function loadRegisteredClients() {
     try {
-      const response = await fetch('/app/network/api/observers');
+      const response = await fetch('/app/network/api/clients');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
-      renderRegisteredObservers(payload?.observers || []);
+      renderRegisteredClients(payload?.clients || []);
     } catch (err) {
-      console.warn('Failed to load registered observers:', err);
+      console.warn('Failed to load registered clients:', err);
     }
   }
 
@@ -2802,8 +2816,8 @@
   // Sweep stale agents and imports every 60s
   let staleSweepTimer = setInterval(sweepStale, 60000);
 
-  loadRegisteredObservers();
-  let registeredObserversTimer = setInterval(loadRegisteredObservers, 60000);
+  loadRegisteredClients();
+  let registeredObserversTimer = setInterval(loadRegisteredClients, 60000);
 
   // Connection health indicator — updated every 5s
   let connectionHealthTimer = setInterval(updateConnectionHealth, 5000);
@@ -2829,8 +2843,8 @@
         startElapsedTimer();
       }
       staleSweepTimer = setInterval(sweepStale, 60000);
-      loadRegisteredObservers();
-      registeredObserversTimer = setInterval(loadRegisteredObservers, 60000);
+      loadRegisteredClients();
+      registeredObserversTimer = setInterval(loadRegisteredClients, 60000);
       connectionHealthTimer = setInterval(updateConnectionHealth, 5000);
     }
   });

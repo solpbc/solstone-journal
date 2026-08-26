@@ -19,7 +19,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-brain.workspace = true
-solstone-core-observer.workspace = true
+solstone-core-sol-link = { workspace = true, features = ["host"] }
 solstone-core-transcribe.workspace = true
 solstone-core-skill-state.workspace = true
 plist.workspace = true

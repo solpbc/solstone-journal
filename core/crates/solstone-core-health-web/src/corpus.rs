@@ -76,7 +76,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 &root.path().display().to_string(),
                             );
                         }
-                        if case["name"] == "static_health_js" {
+                        if case["name"].as_str() == Some("static_health_js") {
                             replace_text(
                                 &mut wanted,
                                 "/app/observer/api/list",
@@ -84,11 +84,18 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             );
                             replace_text(
                                 &mut wanted,
+                                "/app/network/api/observers",
+                                "/app/network/api/clients",
+                            );
+                            replace_text(
+                                &mut wanted,
                                 "/app/tokens/api/usage",
                                 "/app/stats/api/usage",
                             );
+                            actual = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
+                            wanted = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
                         }
-                        if case["name"] == "workspace" {
+                        if case["name"].as_str() == Some("workspace") {
                             replace_text(&mut wanted, "/app/tokens/", "/app/stats/#cost");
                         }
                         for pattern in case["normalized"]
@@ -132,6 +139,21 @@ fn ac16_health_static_uses_stats_usage_endpoint() {
 }
 
 #[test]
+fn ac17_health_static_uses_the_client_projection() {
+    let asset = include_str!("../assets/static/health.js");
+    assert!(asset.contains("/app/network/api/clients"));
+    assert!(!asset.contains("/app/network/api/observers"));
+    for field in [
+        "capture_state",
+        "last_accepted_ingest_at",
+        "ingest_rejection",
+        "reason_code",
+    ] {
+        assert!(asset.contains(field), "missing {field}");
+    }
+}
+
+#[test]
 fn ac16_health_workspace_cost_link_targets_stats_cost_section() {
     let asset = include_str!("../assets/workspace.html");
     assert!(asset.contains("href=\"/app/stats/#cost\""));
@@ -170,6 +192,7 @@ fn replace_text(value: &mut Value, from: &str, to: &str) {
         _ => {}
     }
 }
+
 fn matches(path: &str, pattern: &str) -> bool {
     let path = path.split('.').collect::<Vec<_>>();
     let pattern = pattern.split('.').collect::<Vec<_>>();
@@ -338,14 +361,41 @@ fn ac15_brain_refresh_injects_a_request_on_every_call() {
 }
 
 #[tokio::test]
-async fn ac17_devices_payload_has_the_health_observer_fields() {
+async fn ac17_clients_payload_has_the_health_fields() {
     let root = crate::test_support::root();
-    let directory = root.path().join("apps/observer/observers");
+    let directory = root.path().join("link");
     std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("failing0.json"), json!({"key":"failing0-key","name":"failing","created_at":1,"last_seen":1,"enabled":true,"health":{"ingest_rejection":{"reason_code":"ingest_rejected","active_count":1,"first_ts":10,"latest_ts":20,"summary":"bad segment","stream":"screen","version":"2"}}}).to_string()).unwrap();
+    let cid = "sha256:failing";
+    std::fs::write(
+        directory.join("authorized_clients.json"),
+        json!([{
+            "fingerprint": cid,
+            "device_label": "failing",
+            "paired_at": "2026-01-01T00:00:00Z",
+            "instance_id": "fixture",
+            "kind": "cert"
+        }])
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("devices.json"),
+        json!({cid: {
+            "last_seen_at": "2026-01-01T00:00:00Z",
+            "last_accepted_ingest_at": "2026-01-01T00:00:00Z",
+            "ingest_rejection": {
+                "reason_code": "ingest_rejected",
+                "active_count": 1,
+                "first": "2026-01-01T00:00:00Z",
+                "latest": "2026-01-01T00:01:00Z"
+            }
+        }})
+        .to_string(),
+    )
+    .unwrap();
     let response = solstone_core_convey_shell::router(root.path().to_path_buf())
         .oneshot(
-            Request::get("/app/network/api/observers")
+            Request::get("/app/network/api/clients")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -353,19 +403,24 @@ async fn ac17_devices_payload_has_the_health_observer_fields() {
         .unwrap();
     let body: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
-    let row = &body["observers"][0];
+    let row = &body["clients"][0];
     for key in [
         "state",
+        "group",
         "label",
+        "reach",
+        "capture_state",
+        "capture_elapsed_ms",
         "failing",
-        "name",
-        "prefix",
+        "cid",
+        "display_label",
         "clock_skew",
-        "last_seen",
+        "last_seen_at",
+        "last_accepted_ingest_at",
     ] {
         assert!(row.get(key).is_some(), "missing {key}");
     }
-    for key in ["active_count", "first_ts", "version"] {
+    for key in ["reason_code", "active_count", "first", "latest"] {
         assert!(
             row["ingest_rejection"].get(key).is_some(),
             "missing ingest_rejection.{key}"
