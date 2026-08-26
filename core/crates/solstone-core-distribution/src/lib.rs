@@ -13,6 +13,7 @@ pub mod inspect;
 pub mod inventory;
 pub mod lanes;
 pub mod macho;
+pub mod manifest_verify;
 pub mod onnx_runtime;
 pub mod pdfium;
 pub mod produce;

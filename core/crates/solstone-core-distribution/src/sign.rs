@@ -1,26 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
 
-use minisign::{PublicKey, PublicKeyBox, SecretKey, SecretKeyBox, SignatureBox};
-use serde::Deserialize;
+use minisign::{PublicKey, SecretKey, SecretKeyBox};
 
-use crate::digest::sha256_hex;
+use crate::manifest_verify::{
+    ManifestVerifyError, SignatureSource, capture_signature, discover_manifest,
+    validate_release_set, verify_manifest_signature,
+};
 
-const PRODUCT_PIN: &str = include_str!("../../../../packaging/keys/solstone-journal-release.pub");
 const KEY_ENV: &str = "SOLSTONE_JOURNAL_MINISIGN_KEY";
-#[cfg(feature = "test-fixture-pin")]
-const PIN_OVERRIDE_ENV: &str = "SOLSTONE_JOURNAL_MINISIGN_PIN";
 const UNTRUSTED_COMMENT: &str = "signature from solstone-journal release key";
-const MANIFEST_SUFFIX: &str = ".manifest.json";
 const MINISIG_SUFFIX: &str = ".minisig";
 const PARTIAL_SUFFIX: &str = ".partial";
-const ARCHIVE_SUFFIXES: &[&str] = &[".tar.gz", ".deb", ".rpm", ".pkg"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignRefusal {
@@ -30,12 +26,6 @@ pub enum SignRefusal {
     UnreadableKey,
     MissingPassphrase,
     WrongPassphrase,
-    MissingManifest,
-    AmbiguousManifest,
-    UnparseableManifest,
-    ListedArchiveAbsent,
-    ListedDigestMismatch,
-    ExtraUnlistedArchive,
     VerifyAfterSign,
 }
 
@@ -49,51 +39,42 @@ impl SignRefusal {
             Self::UnreadableKey => "unreadable-key",
             Self::MissingPassphrase => "missing-passphrase",
             Self::WrongPassphrase => "wrong-passphrase",
-            Self::MissingManifest => "missing-manifest",
-            Self::AmbiguousManifest => "ambiguous-manifest",
-            Self::UnparseableManifest => "unparseable-manifest",
-            Self::ListedArchiveAbsent => "listed-archive-absent",
-            Self::ListedDigestMismatch => "listed-digest-mismatch",
-            Self::ExtraUnlistedArchive => "extra-unlisted-archive",
             Self::VerifyAfterSign => "verify-after-sign",
         }
     }
 }
 
 #[derive(Debug)]
-pub struct SignError {
-    kind: SignRefusal,
-    detail: String,
+pub enum SignError {
+    Refusal { kind: SignRefusal, detail: String },
+    Manifest(ManifestVerifyError),
 }
 
 impl SignError {
     fn new(kind: SignRefusal, detail: impl Into<String>) -> Self {
-        Self {
+        Self::Refusal {
             kind,
             detail: detail.into(),
         }
     }
 }
 
+impl From<ManifestVerifyError> for SignError {
+    fn from(error: ManifestVerifyError) -> Self {
+        Self::Manifest(error)
+    }
+}
+
 impl fmt::Display for SignError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}\n  {}", self.kind.as_str(), self.detail)
+        match self {
+            Self::Refusal { kind, detail } => write!(formatter, "{}\n  {detail}", kind.as_str()),
+            Self::Manifest(error) => error.fmt(formatter),
+        }
     }
 }
 
 impl std::error::Error for SignError {}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Manifest {
-    #[allow(dead_code)]
-    product: String,
-    #[allow(dead_code)]
-    version: String,
-    #[allow(dead_code)]
-    target: String,
-    files: BTreeMap<String, String>,
-}
 
 struct TempSig {
     path: PathBuf,
@@ -109,30 +90,18 @@ impl Drop for TempSig {
 }
 
 pub fn run(dir: &Path) -> Result<PathBuf, SignError> {
-    let basename = discover_basename(dir)?;
-    let manifest_name = format!("{basename}{MANIFEST_SUFFIX}");
-    let manifest_path = dir.join(&manifest_name);
-    let manifest_bytes = fs::read(&manifest_path).map_err(|error| {
-        SignError::new(
-            SignRefusal::UnparseableManifest,
-            format!("could not read {}: {error}", manifest_path.display()),
-        )
-    })?;
-    let manifest: Manifest = serde_json::from_slice(&manifest_bytes).map_err(|error| {
-        SignError::new(
-            SignRefusal::UnparseableManifest,
-            format!("could not parse {}: {error}", manifest_path.display()),
-        )
-    })?;
-    check_completeness(dir, &manifest)?;
+    let manifest = discover_manifest(dir)?;
+    let existing_signature = capture_signature(dir, &manifest, false)?;
+    validate_release_set(dir, &manifest, existing_signature.as_ref())?;
 
     let key_path = load_key_path()?;
     let passphrase = load_passphrase(&key_path)?;
     let secret = load_secret_key(&key_path, passphrase)?;
 
-    let dest = dir.join(format!("{basename}{MANIFEST_SUFFIX}{MINISIG_SUFFIX}"));
+    let dest = dir.join(format!("{}{}", manifest.name, MINISIG_SUFFIX));
     let temp = dir.join(format!(
-        "{basename}{MANIFEST_SUFFIX}{MINISIG_SUFFIX}{PARTIAL_SUFFIX}"
+        "{}{}{}",
+        manifest.name, MINISIG_SUFFIX, PARTIAL_SUFFIX
     ));
     let mut guard = TempSig {
         path: temp,
@@ -143,7 +112,7 @@ pub fn run(dir: &Path) -> Result<PathBuf, SignError> {
     let signature = minisign::sign(
         public.as_ref(),
         &secret,
-        Cursor::new(manifest_bytes.as_slice()),
+        Cursor::new(manifest.bytes.as_slice()),
         None,
         Some(UNTRUSTED_COMMENT),
     )
@@ -160,20 +129,23 @@ pub fn run(dir: &Path) -> Result<PathBuf, SignError> {
         )
     })?;
 
-    let pin = resolve_pin()?;
-    let signature_box = SignatureBox::from_file(&guard.path).map_err(|error| {
+    let bytes = fs::read(&guard.path).map_err(|error| {
         SignError::new(
             SignRefusal::VerifyAfterSign,
-            format!("could not read {}: {error}", guard.path.display()),
+            format!("could not re-read {}: {error}", guard.path.display()),
         )
     })?;
-    let on_disk = fs::File::open(&manifest_path).map_err(|error| {
-        SignError::new(
-            SignRefusal::VerifyAfterSign,
-            format!("could not re-read {}: {error}", manifest_path.display()),
-        )
-    })?;
-    minisign::verify(&pin, &signature_box, on_disk, true, false, false).map_err(|error| {
+    let signature = SignatureSource::captured(
+        guard.path.clone(),
+        guard
+            .path
+            .file_name()
+            .expect("temporary signature has a filename")
+            .to_string_lossy()
+            .into_owned(),
+        bytes,
+    );
+    verify_manifest_signature(&manifest, &signature).map_err(|error| {
         SignError::new(
             SignRefusal::VerifyAfterSign,
             format!(
@@ -191,126 +163,6 @@ pub fn run(dir: &Path) -> Result<PathBuf, SignError> {
     })?;
     guard.persist = true;
     Ok(dest)
-}
-
-fn discover_basename(dir: &Path) -> Result<String, SignError> {
-    let entries = fs::read_dir(dir).map_err(|error| {
-        SignError::new(
-            SignRefusal::MissingManifest,
-            format!("could not read {}: {error}", dir.display()),
-        )
-    })?;
-    let mut manifests = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|error| {
-            SignError::new(
-                SignRefusal::MissingManifest,
-                format!("could not read {}: {error}", dir.display()),
-            )
-        })?;
-        if !entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.ends_with(MANIFEST_SUFFIX) {
-            manifests.push(name);
-        }
-    }
-    match manifests.as_slice() {
-        [] => Err(SignError::new(
-            SignRefusal::MissingManifest,
-            format!("no *{MANIFEST_SUFFIX} in {}", dir.display()),
-        )),
-        [name] => Ok(name
-            .strip_suffix(MANIFEST_SUFFIX)
-            .expect("suffix checked")
-            .to_owned()),
-        _ => {
-            manifests.sort();
-            Err(SignError::new(
-                SignRefusal::AmbiguousManifest,
-                format!(
-                    "multiple *{MANIFEST_SUFFIX} in {}: {}",
-                    dir.display(),
-                    manifests.join(", ")
-                ),
-            ))
-        }
-    }
-}
-
-fn check_completeness(dir: &Path, manifest: &Manifest) -> Result<(), SignError> {
-    for (name, expected) in &manifest.files {
-        if !is_safe_archive_name(name) {
-            return Err(SignError::new(
-                SignRefusal::UnparseableManifest,
-                "listed archive name is not a single filename".to_owned(),
-            ));
-        }
-        let path = dir.join(name);
-        if !path.is_file() {
-            return Err(SignError::new(
-                SignRefusal::ListedArchiveAbsent,
-                name.clone(),
-            ));
-        }
-        let actual = sha256_hex(&fs::read(&path).map_err(|error| {
-            SignError::new(SignRefusal::ListedArchiveAbsent, format!("{name}: {error}"))
-        })?);
-        if actual != *expected {
-            return Err(SignError::new(
-                SignRefusal::ListedDigestMismatch,
-                name.clone(),
-            ));
-        }
-    }
-
-    let mut extras = Vec::new();
-    let entries = fs::read_dir(dir).map_err(|error| {
-        SignError::new(
-            SignRefusal::ExtraUnlistedArchive,
-            format!("could not read {}: {error}", dir.display()),
-        )
-    })?;
-    for entry in entries {
-        let entry = entry.map_err(|error| {
-            SignError::new(
-                SignRefusal::ExtraUnlistedArchive,
-                format!("could not read {}: {error}", dir.display()),
-            )
-        })?;
-        if !entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if is_archive_name(&name) && !manifest.files.contains_key(&name) {
-            extras.push(name);
-        }
-    }
-    extras.sort();
-    if !extras.is_empty() {
-        return Err(SignError::new(
-            SignRefusal::ExtraUnlistedArchive,
-            extras.join(", "),
-        ));
-    }
-    Ok(())
-}
-
-fn is_safe_archive_name(name: &str) -> bool {
-    !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
-}
-
-fn is_archive_name(name: &str) -> bool {
-    ARCHIVE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
 }
 
 fn load_key_path() -> Result<PathBuf, SignError> {
@@ -391,10 +243,7 @@ fn load_secret_key(key_path: &Path, passphrase: String) -> Result<SecretKey, Sig
     boxed.into_secret_key(Some(passphrase)).map_err(|error| {
         let message = error.to_string();
         if message.contains("Wrong password") {
-            SignError::new(
-                SignRefusal::WrongPassphrase,
-                format!("{}", key_path.display()),
-            )
+            SignError::new(SignRefusal::WrongPassphrase, key_path.display().to_string())
         } else {
             SignError::new(
                 SignRefusal::UnreadableKey,
@@ -402,83 +251,4 @@ fn load_secret_key(key_path: &Path, passphrase: String) -> Result<SecretKey, Sig
             )
         }
     })
-}
-
-fn parse_pin(text: &str) -> Result<PublicKey, SignError> {
-    let boxed = PublicKeyBox::from_string(text).map_err(|error| {
-        SignError::new(
-            SignRefusal::VerifyAfterSign,
-            format!("could not parse public pin: {error}"),
-        )
-    })?;
-    PublicKey::from_box(boxed).map_err(|error| {
-        SignError::new(
-            SignRefusal::VerifyAfterSign,
-            format!("could not parse public pin: {error}"),
-        )
-    })
-}
-
-#[cfg(not(feature = "test-fixture-pin"))]
-fn resolve_pin() -> Result<PublicKey, SignError> {
-    parse_pin(PRODUCT_PIN)
-}
-
-#[cfg(feature = "test-fixture-pin")]
-fn resolve_pin() -> Result<PublicKey, SignError> {
-    let text = match std::env::var(PIN_OVERRIDE_ENV) {
-        Ok(path) if !path.is_empty() => fs::read_to_string(&path).map_err(|error| {
-            SignError::new(
-                SignRefusal::VerifyAfterSign,
-                format!("could not read {PIN_OVERRIDE_ENV} {path}: {error}"),
-            )
-        })?,
-        _ => PRODUCT_PIN.to_owned(),
-    };
-    parse_pin(&text)
-}
-
-#[cfg(test)]
-mod pin_source {
-    const SOURCE: &str = include_str!("sign.rs");
-    const OVERRIDE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_PIN");
-    const FEATURE_ON: &str = "#[cfg(feature = \"test-fixture-pin\")]";
-    const FEATURE_OFF: &str = "#[cfg(not(feature = \"test-fixture-pin\"))]";
-
-    #[test]
-    fn pin_override_env_lives_only_in_the_fixture_pin_feature_sibling() {
-        assert_eq!(SOURCE.matches(OVERRIDE).count(), 1);
-        let mut off_body = String::new();
-        let mut in_off = false;
-        for line in SOURCE.lines() {
-            let trimmed = line.trim();
-            if trimmed == FEATURE_OFF
-                || trimmed.starts_with("#[cfg(all(test, not(feature = \"test-fixture-pin\")))]")
-            {
-                in_off = true;
-                continue;
-            }
-            if trimmed == FEATURE_ON {
-                in_off = false;
-                continue;
-            }
-            if in_off {
-                off_body.push_str(line);
-                off_body.push('\n');
-            }
-        }
-        assert!(!off_body.contains(OVERRIDE));
-    }
-}
-
-#[cfg(all(test, not(feature = "test-fixture-pin")))]
-mod tests {
-    use super::{PRODUCT_PIN, parse_pin, resolve_pin};
-
-    #[test]
-    fn default_resolve_pin_returns_the_compiled_product_pin() {
-        let resolved = resolve_pin().expect("compiled pin parses");
-        let expected = parse_pin(PRODUCT_PIN).expect("product pin parses");
-        assert_eq!(resolved, expected);
-    }
 }
