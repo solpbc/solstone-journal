@@ -1390,6 +1390,10 @@ fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -
             eprintln!("supervisor: sync retained observation failure");
             eprintln!("supervisor: sync retained observation failure detail: {error:?}");
         }
+        SyncTickOutcome::StaleHeartbeatCollectionFailure(error) => {
+            eprintln!("supervisor: stale heartbeat collection failure");
+            eprintln!("supervisor: stale heartbeat collection failure detail: {error:?}");
+        }
     }
     outcome
 }

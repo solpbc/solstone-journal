@@ -36,3 +36,23 @@ pub fn identity_root_from_current_executable() -> Result<PathBuf, String> {
 pub fn owner_base_at_home(home: PathBuf) -> Result<OwnerBase, IdentityError> {
     OwnerBase::at_home(home, PlatformTag::current())
 }
+
+/// Locked recovery guidance shared by direct service and hosted-supervisor
+/// installation-binding refusals.
+pub fn installation_recovery_copy(detail: &str) -> String {
+    format!(
+        "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::installation_recovery_copy;
+
+    #[test]
+    fn installation_recovery_copy_is_locked() {
+        let copy = installation_recovery_copy("binding detail");
+        assert!(copy.contains("run `journal setup` to check it."));
+        assert!(copy.ends_with("details: binding detail"));
+    }
+}

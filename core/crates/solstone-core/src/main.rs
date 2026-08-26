@@ -62,6 +62,9 @@ mod service;
 mod service_logs;
 mod settings;
 use solstone_core::supervisor;
+use solstone_core_system::lifecycle::{
+    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY,
+};
 mod thinking;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -149,15 +152,27 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     };
     match runtime.block_on(supervisor::run_hosted(&journal, options, None)) {
         supervisor::SupervisorHostOutcome::Refused {
-            reason: supervisor::SupervisorBootRefusal::SyncConflict,
-        } => {
-            eprintln!("supervisor: refusing boot, live foreign writer detected");
-            ExitCode::from(1)
-        }
-        supervisor::SupervisorHostOutcome::Refused {
             reason: supervisor::SupervisorBootRefusal::SyncScan(copy),
         } => {
             eprintln!("{copy}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::InstallationBinding(refusal),
+        } => {
+            eprintln!("{refusal}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::AdmissionWaitTerminal,
+        } => {
+            eprintln!("{ADMISSION_WAIT_TERMINAL_COPY}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::AdmissionWaitUnverifiable,
+        } => {
+            eprintln!("{ADMISSION_WAIT_UNVERIFIABLE_COPY}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
         supervisor::SupervisorHostOutcome::Refused { reason } => {
@@ -189,7 +204,8 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
         supervisor::ShutdownCause::Sync(
             supervisor::SyncFailureKind::RenewalFailure
             | supervisor::SyncFailureKind::CompleteScanFailure
-            | supervisor::SyncFailureKind::RetainedObservationFailure,
+            | supervisor::SyncFailureKind::RetainedObservationFailure
+            | supervisor::SyncFailureKind::StaleHeartbeatCollectionFailure,
         ) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::ParentLost(_) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::Signal(_) => 0,
@@ -5506,6 +5522,7 @@ mod tests {
             supervisor::SyncFailureKind::RenewalFailure,
             supervisor::SyncFailureKind::CompleteScanFailure,
             supervisor::SyncFailureKind::RetainedObservationFailure,
+            supervisor::SyncFailureKind::StaleHeartbeatCollectionFailure,
         ] {
             assert_eq!(
                 exit_code_for_shutdown_cause(supervisor::ShutdownCause::Sync(kind)),

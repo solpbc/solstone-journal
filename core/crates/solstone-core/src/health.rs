@@ -17,7 +17,7 @@ use solstone_core_local::install::ced_readiness::{
 use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
-use solstone_core_system::lifecycle::machine_id;
+use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
     SyncRescanDiagnosis, describe_sync_rescan, sanitize_for_terminal,
 };
@@ -87,11 +87,18 @@ fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |duration| duration.as_secs_f64());
-    match describe_sync_rescan(journal, STATUS_SYNC_DIAGNOSTIC_FILENAME, &machine_id(), now) {
+    let process_source = SystemProcessInstanceSource;
+    match describe_sync_rescan(
+        journal,
+        STATUS_SYNC_DIAGNOSTIC_FILENAME,
+        now,
+        &process_source,
+    ) {
         SyncRescanDiagnosis::Clean(_) => None,
-        SyncRescanDiagnosis::Conflict(message) | SyncRescanDiagnosis::Unsafe(message) => {
-            Some(message)
-        }
+        SyncRescanDiagnosis::Waiting(message)
+        | SyncRescanDiagnosis::HeartbeatNeedsAttention(message)
+        | SyncRescanDiagnosis::AdmissionWaitNeedsAttention(message)
+        | SyncRescanDiagnosis::Unsafe(message) => Some(message),
     }
 }
 

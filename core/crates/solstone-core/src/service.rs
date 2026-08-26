@@ -14,6 +14,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use solstone_core::installation_context::installation_recovery_copy;
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
     GuardFields, OwnerBase, PlatformTag, load_installation_binding,
@@ -26,7 +27,8 @@ use solstone_core_journal_io::{
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
 };
-use solstone_core_system::lifecycle::{clear_readiness, machine_id, wait_ready};
+use solstone_core_system::lifecycle::{clear_readiness, wait_ready};
+use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
 use crate::{discover_binary_home, resolve_process_journal_path};
@@ -151,9 +153,7 @@ fn load_existing_installation_guard(home: &Path) -> Result<GuardFields, String> 
 }
 
 fn service_install_recovery(detail: String) -> String {
-    format!(
-        "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
-    )
+    installation_recovery_copy(&detail)
 }
 
 fn platform() -> Result<Platform, String> {
@@ -576,25 +576,24 @@ fn ready_timeout_message(journal: &Path) -> String {
 
 fn is_final_sync_diagnosis(message: &str) -> bool {
     message.starts_with("Installation: needs attention\n")
-        || message.starts_with(
-            "Refusing to start - another solstone service is active on this journal.\n",
-        )
 }
 
 fn sync_rescan_diagnosis(journal: &Path) -> Option<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |duration| duration.as_secs_f64());
+    let process_source = SystemProcessInstanceSource;
     match describe_sync_rescan(
         journal,
         SERVICE_SYNC_DIAGNOSTIC_FILENAME,
-        &machine_id(),
         now,
+        &process_source,
     ) {
         SyncRescanDiagnosis::Clean(_) => None,
-        SyncRescanDiagnosis::Conflict(message) | SyncRescanDiagnosis::Unsafe(message) => {
-            Some(message)
-        }
+        SyncRescanDiagnosis::Waiting(message)
+        | SyncRescanDiagnosis::HeartbeatNeedsAttention(message)
+        | SyncRescanDiagnosis::AdmissionWaitNeedsAttention(message)
+        | SyncRescanDiagnosis::Unsafe(message) => Some(message),
     }
 }
 
@@ -1760,7 +1759,10 @@ mod tests {
             "Installation: needs attention\nyour journal contains an item that can't be checked safely."
         ));
         assert!(is_final_sync_diagnosis(
-            "Refusing to start - another solstone service is active on this journal.\nHost: peer"
+            "Installation: needs attention\nstartup status couldn't be verified."
+        ));
+        assert!(!is_final_sync_diagnosis(
+            "Installation: waiting\na recent heartbeat from another run is present."
         ));
         assert!(!is_final_sync_diagnosis(READY_TIMEOUT_MESSAGE));
     }
@@ -1816,7 +1818,7 @@ mod tests {
 
         assert_eq!(
             error,
-            "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: the saved installation record is unreadable"
+            installation_recovery_copy("the saved installation record is unreadable")
         );
     }
 

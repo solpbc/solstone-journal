@@ -8,6 +8,7 @@
 //! ParentDeathBackstop is deleted; it has no remaining production route. Any new caller must be classified
 //! here before selecting exact or legacy termination.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ use solstone_core_installation_identity::{
 use solstone_core_system::lifecycle::{
     ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
     ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SupervisorBootAdmission,
-    SyncTickOutcome,
+    SyncTickOutcome, WriterId,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
@@ -37,6 +38,7 @@ pub enum SyncFailureKind {
     RenewalFailure,
     CompleteScanFailure,
     RetainedObservationFailure,
+    StaleHeartbeatCollectionFailure,
 }
 
 impl SyncFailureKind {
@@ -49,6 +51,9 @@ impl SyncFailureKind {
             SyncTickOutcome::RenewalFailure(_) => Self::RenewalFailure,
             SyncTickOutcome::CompleteScanFailure(_) => Self::CompleteScanFailure,
             SyncTickOutcome::RetainedObservationFailure(_) => Self::RetainedObservationFailure,
+            SyncTickOutcome::StaleHeartbeatCollectionFailure(_) => {
+                Self::StaleHeartbeatCollectionFailure
+            }
         }
     }
 }
@@ -73,6 +78,20 @@ pub enum InstallationBindingRefusal {
     JournalTokenMismatch,
 }
 
+impl fmt::Display for InstallationBindingRefusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let detail = match self {
+            Self::LoadFailed => "the saved installation binding could not be loaded",
+            Self::JournalTokenMismatch => {
+                "the saved installation binding is for a different journal"
+            }
+        };
+        formatter.write_str(&crate::installation_context::installation_recovery_copy(
+            detail,
+        ))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LifecycleBootError {
     Failed(String),
@@ -80,7 +99,6 @@ pub enum LifecycleBootError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorBootRefusal {
-    SyncConflict,
     /// The pre-formatted, terminal-safe copy for an unsafe or incomplete sync
     /// scan at boot, produced by `format_sync_scan_failure_copy`.
     SyncScan(String),
@@ -88,6 +106,8 @@ pub enum SupervisorBootRefusal {
     ParentLostBeforeReadiness(ParentLossReason),
     SiblingBinaryResolution(SiblingBinaryResolutionError),
     InstallationBinding(InstallationBindingRefusal),
+    AdmissionWaitTerminal,
+    AdmissionWaitUnverifiable,
     Lifecycle(LifecycleBootError),
 }
 
@@ -121,6 +141,11 @@ struct HostedSupervisorAdmission {
     parent_watch: Option<ParentWatch>,
 }
 
+struct HostedInstallationBinding {
+    generation: Generation,
+    writer_id: WriterId,
+}
+
 /// Run the complete Rust-owned supervisor lifecycle inside the caller's Tokio
 /// runtime. `parent` distinguishes hosted execution from normal foreground
 /// execution without adding a CLI surface.
@@ -129,8 +154,8 @@ pub async fn run_hosted(
     options: SupervisorOptions,
     parent: Option<DeclaredParent>,
 ) -> SupervisorHostOutcome {
-    let generation = match load_generation(journal) {
-        Ok(generation) => generation,
+    let binding = match load_generation(journal) {
+        Ok(binding) => binding,
         Err(reason) => return SupervisorHostOutcome::Refused { reason },
     };
     let journal_binary = match runtime::preflight_journal_binary(&options) {
@@ -141,16 +166,26 @@ pub async fn run_hosted(
             };
         }
     };
-    let admission = match SupervisorBootAdmission::acquire(journal) {
+    let admission = match SupervisorBootAdmission::acquire(journal, binding.writer_id.clone()) {
         Ok(admission) => admission,
-        Err(LifecycleError::SyncConflict(_)) => {
-            return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::SyncConflict,
-            };
-        }
         Err(LifecycleError::SyncScan(failure)) => {
             return SupervisorHostOutcome::Refused {
                 reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure)),
+            };
+        }
+        Err(LifecycleError::AdmissionWaitTerminal(_) | LifecycleError::AdmissionWaitMarkerLive) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::AdmissionWaitTerminal,
+            };
+        }
+        Err(
+            LifecycleError::AdmissionWaitMarkerNeedsAttention(_)
+            | LifecycleError::AdmissionWaitProcessIdentity
+            | LifecycleError::AdmissionWaitMarkerCleanup(_)
+            | LifecycleError::AdmissionWaitMarkerPublication(_),
+        ) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::AdmissionWaitUnverifiable,
             };
         }
         Err(error) => {
@@ -184,7 +219,7 @@ pub async fn run_hosted(
     };
     let admitted = HostedSupervisorAdmission {
         lifecycle,
-        _generation: generation,
+        _generation: binding.generation,
         parent_watch,
     };
     let outcome = match runtime::boot_and_tick(
@@ -269,7 +304,7 @@ fn classify_shutdown(cause: ShutdownCause, outcome: ShutdownOutcome) -> Supervis
     SupervisorHostOutcome::OrderlyShutdown { cause }
 }
 
-fn load_generation(journal: &Path) -> Result<Generation, SupervisorBootRefusal> {
+fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
     let home = std::env::var_os("HOME").ok_or(SupervisorBootRefusal::InstallationBinding(
         InstallationBindingRefusal::LoadFailed,
     ))?;
@@ -295,7 +330,13 @@ fn load_generation(journal: &Path) -> Result<Generation, SupervisorBootRefusal> 
             InstallationBindingRefusal::JournalTokenMismatch,
         ));
     }
-    Ok(binding.generation)
+    let writer_id = WriterId::parse(&binding.id.as_hex()).map_err(|_| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed)
+    })?;
+    Ok(HostedInstallationBinding {
+        generation: binding.generation,
+        writer_id,
+    })
 }
 
 impl From<runtime::JournalBinaryPreflightError> for SiblingBinaryResolutionError {
@@ -316,7 +357,8 @@ mod tests {
 
     use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
     use super::{
-        ShutdownCause, SupervisorHostOutcome, SupervisorSignal, SyncFailureKind, classify_shutdown,
+        InstallationBindingRefusal, ShutdownCause, SupervisorHostOutcome, SupervisorSignal,
+        SyncFailureKind, classify_shutdown,
     };
     use solstone_core_system::lifecycle::{
         ArtifactClearOutcome, DeclaredParent, ParentLossReason, ParentWatch, ParentWatchStatus,
@@ -530,5 +572,21 @@ mod tests {
             assert_eq!(receipt.nonce, nonce);
             assert_eq!(receipt.outcome, outcome);
         }
+    }
+
+    #[test]
+    fn installation_binding_refusal_uses_the_shared_recovery_copy() {
+        assert_eq!(
+            InstallationBindingRefusal::LoadFailed.to_string(),
+            crate::installation_context::installation_recovery_copy(
+                "the saved installation binding could not be loaded"
+            )
+        );
+        assert_eq!(
+            InstallationBindingRefusal::JournalTokenMismatch.to_string(),
+            crate::installation_context::installation_recovery_copy(
+                "the saved installation binding is for a different journal"
+            )
+        );
     }
 }

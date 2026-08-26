@@ -92,17 +92,49 @@ fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     panic!("supervisor did not bind Callosum");
 }
 
-fn foreign_heartbeat(journal: &TempJournal) {
+fn foreign_heartbeat(journal: &TempJournal) -> (PathBuf, Vec<u8>) {
     let sync = journal.0.join("health/sync");
     fs::create_dir_all(&sync).expect("sync directory");
-    fs::write(
-        sync.join("foreign-host.check"),
-        format!(
+    let path = sync.join("foreign-host.check");
+    let body = format!(
             r#"{{"schema":1,"machine_id":"foreign-machine","hostname":"foreign-host","pid":4242,"wall_time":"now","solstone_version":"1","interval_seconds":15,"journal_path":"{}"}}"#,
             journal.0.display()
-        ),
-    )
-    .expect("foreign heartbeat");
+        )
+    .into_bytes();
+    fs::write(&path, &body).expect("foreign heartbeat");
+    (path, body)
+}
+
+fn age_heartbeat_to_near_expiry(path: &PathBuf) {
+    let file = fs::File::open(path).expect("open foreign heartbeat");
+    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(59)))
+        .expect("age foreign heartbeat");
+}
+
+fn renew_heartbeat_when_wait_marker_appears(
+    journal: &TempJournal,
+    heartbeat_path: PathBuf,
+    heartbeat_body: Vec<u8>,
+) -> thread::JoinHandle<()> {
+    let sync = journal.0.join("health/sync");
+    thread::spawn(move || {
+        for _ in 0..1_600 {
+            let marker_present = fs::read_dir(&sync).is_ok_and(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name.starts_with("solstone-wait-v2-"))
+                })
+            });
+            if marker_present {
+                fs::write(&heartbeat_path, &heartbeat_body).expect("renew foreign heartbeat");
+                return;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        panic!("admission-wait marker did not appear");
+    })
 }
 
 fn start_hosted(journal: &TempJournal) -> (std::process::Child, PathBuf, PathBuf, String) {
@@ -537,15 +569,62 @@ fn ac7_second_instance_refused_first_survives() {
 }
 
 #[test]
+fn two_empty_journal_boots_never_both_reach_readiness() {
+    let journal = TempJournal::new();
+    let mut first = start(&journal);
+    let first_pid = first.id();
+    let mut second = start(&journal);
+    let second_pid = second.id();
+    let ready = journal.0.join("health/supervisor.ready");
+
+    for _ in 0..1_600 {
+        if ready.exists() {
+            let admitted_pid: u32 = fs::read_to_string(journal.0.join("health/supervisor.pid"))
+                .expect("ready supervisor pid")
+                .trim()
+                .parse()
+                .expect("numeric ready supervisor pid");
+            assert!(
+                admitted_pid == first_pid || admitted_pid == second_pid,
+                "only one of the two competing supervisors may publish readiness"
+            );
+            let loser = if admitted_pid == first_pid {
+                &mut second
+            } else {
+                &mut first
+            };
+            for _ in 0..200 {
+                if loser.try_wait().expect("loser status").is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            panic!("the non-ready competing supervisor remained live");
+        }
+
+        let first_exited = first.try_wait().expect("first status").is_some();
+        let second_exited = second.try_wait().expect("second status").is_some();
+        if first_exited && second_exited {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("competing supervisors did not settle");
+}
+
+#[test]
 fn ac8_live_foreign_writer_blocks_boot_without_pid() {
     let journal = TempJournal::new();
-    foreign_heartbeat(&journal);
-    let status = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+    let (heartbeat_path, heartbeat_body) = foreign_heartbeat(&journal);
+    age_heartbeat_to_near_expiry(&heartbeat_path);
+    let renewal =
+        renew_heartbeat_when_wait_marker_appears(&journal, heartbeat_path, heartbeat_body);
+    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .env(
             "SOLSTONE_LOCAL_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
@@ -557,9 +636,13 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         )
-        .status()
+        .output()
         .expect("supervisor runs");
-    assert_eq!(status.code(), Some(1));
+    renewal.join().expect("foreign heartbeat renewal");
+    assert_eq!(output.status.code(), Some(75));
+    assert!(String::from_utf8_lossy(&output.stderr).contains(
+        "a recent heartbeat from another run is present.\nto protect your journal, solstone did not start while it is present.\nwait a moment, then try again."
+    ));
     assert!(!journal.0.join("health/supervisor.pid").exists());
 }
 
@@ -612,13 +695,17 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
     assert!(!unbound.wait().expect("unbound launcher wait").success());
 
     let conflict_journal = TempJournal::new();
-    foreign_heartbeat(&conflict_journal);
+    let (heartbeat_path, heartbeat_body) = foreign_heartbeat(&conflict_journal);
+    age_heartbeat_to_near_expiry(&heartbeat_path);
+    let renewal =
+        renew_heartbeat_when_wait_marker_appears(&conflict_journal, heartbeat_path, heartbeat_body);
     let (mut conflict, _, conflict_outcome, conflict_nonce) = start_hosted(&conflict_journal);
     let conflict_outcome = wait_for_outcome(&conflict_outcome, &conflict_nonce);
+    renewal.join().expect("foreign heartbeat renewal");
     assert!(matches!(
         conflict_outcome,
         SupervisorHostOutcome::Refused {
-            reason: SupervisorBootRefusal::SyncConflict
+            reason: SupervisorBootRefusal::AdmissionWaitTerminal
         }
     ));
     assert!(!conflict_journal.0.join("health/supervisor.pid").exists());
