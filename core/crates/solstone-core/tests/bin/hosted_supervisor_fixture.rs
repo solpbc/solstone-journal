@@ -8,7 +8,9 @@
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
-use solstone_core::supervisor::{SupervisorHostOutcome, run_hosted};
+use solstone_core::supervisor::{
+    SupervisorHostOutcome, receipt::write_hosted_supervisor_receipt, run_hosted,
+};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_system::lifecycle::DeclaredParent;
 use solstone_core_system::process::{ProcessBirth, ProcessInstance};
@@ -27,7 +29,12 @@ fn options() -> SupervisorOptions {
     }
 }
 
-fn run_hosted_fixture(journal: PathBuf, outcome: PathBuf, parent: DeclaredParent) -> ExitCode {
+fn run_hosted_fixture(
+    journal: PathBuf,
+    outcome: PathBuf,
+    nonce: String,
+    parent: DeclaredParent,
+) -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -40,7 +47,7 @@ fn run_hosted_fixture(journal: PathBuf, outcome: PathBuf, parent: DeclaredParent
         }
     };
     let result = runtime.block_on(run_hosted(&journal, options(), Some(parent)));
-    if let Err(error) = std::fs::write(&outcome, format!("{result:?}\n")) {
+    if let Err(error) = write_hosted_supervisor_receipt(&outcome, &nonce, &result) {
         eprintln!("hosted fixture: outcome write failed: {error}");
         return ExitCode::from(75);
     }
@@ -48,11 +55,12 @@ fn run_hosted_fixture(journal: PathBuf, outcome: PathBuf, parent: DeclaredParent
         SupervisorHostOutcome::OrderlyShutdown { .. }
         | SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout { .. }
         | SupervisorHostOutcome::ParentLost { .. } => ExitCode::SUCCESS,
+        SupervisorHostOutcome::LifecycleShutdownFailed { .. } => ExitCode::from(70),
         SupervisorHostOutcome::Refused { .. } => ExitCode::from(75),
     }
 }
 
-fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf) -> ExitCode {
+fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: String) -> ExitCode {
     let executable = match std::env::current_exe() {
         Ok(executable) => executable,
         Err(error) => {
@@ -64,6 +72,7 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf) -> ExitC
         .arg("host")
         .arg(journal)
         .arg(outcome)
+        .arg(nonce)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -81,6 +90,7 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf) -> ExitC
     }
     match child.wait() {
         Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) if status.code() == Some(70) => ExitCode::from(70),
         Ok(_) => ExitCode::from(75),
         Err(error) => {
             eprintln!("hosted fixture: child wait failed: {error}");
@@ -103,6 +113,9 @@ fn main() -> ExitCode {
             let Some(outcome) = args.next().map(PathBuf::from) else {
                 return ExitCode::from(64);
             };
+            let Some(nonce) = args.next().and_then(|value| value.into_string().ok()) else {
+                return ExitCode::from(64);
+            };
             if args.next().is_some() {
                 return ExitCode::from(64);
             }
@@ -113,10 +126,13 @@ fn main() -> ExitCode {
                     return ExitCode::from(75);
                 }
             };
-            run_hosted_fixture(journal, outcome, parent)
+            run_hosted_fixture(journal, outcome, nonce, parent)
         }
         "host-with-parent" => {
             let Some(outcome) = args.next().map(PathBuf::from) else {
+                return ExitCode::from(64);
+            };
+            let Some(nonce) = args.next().and_then(|value| value.into_string().ok()) else {
                 return ExitCode::from(64);
             };
             let Some(pid) = args
@@ -139,6 +155,7 @@ fn main() -> ExitCode {
             run_hosted_fixture(
                 journal,
                 outcome,
+                nonce,
                 DeclaredParent::from_instance(ProcessInstance {
                     pid,
                     birth: ProcessBirth::linux(start_ticks, 1, 100),
@@ -152,10 +169,13 @@ fn main() -> ExitCode {
             let Some(outcome) = args.next().map(PathBuf::from) else {
                 return ExitCode::from(64);
             };
+            let Some(nonce) = args.next().and_then(|value| value.into_string().ok()) else {
+                return ExitCode::from(64);
+            };
             if args.next().is_some() {
                 return ExitCode::from(64);
             }
-            run_launcher(journal, child_pid, outcome)
+            run_launcher(journal, child_pid, outcome, nonce)
         }
         _ => ExitCode::from(64),
     }

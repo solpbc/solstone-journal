@@ -6,10 +6,20 @@
 use std::fs;
 use std::io::Read;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use solstone_core::supervisor::{
+    InstallationBindingRefusal, ShutdownCause, SupervisorBootRefusal, SupervisorHostOutcome,
+    SupervisorSignal,
+    receipt::{
+        HostedSupervisorReceiptReadError, read_hosted_supervisor_receipt,
+        write_hosted_supervisor_receipt,
+    },
+};
+use solstone_core_system::lifecycle::ParentAdmissionFailure;
 
 use super::supervisor_guard::SupervisorGuard;
 
@@ -106,7 +116,7 @@ fn foreign_heartbeat(journal: &TempJournal) {
     .expect("foreign heartbeat");
 }
 
-fn start_hosted(journal: &TempJournal) -> (std::process::Child, PathBuf, PathBuf) {
+fn start_hosted(journal: &TempJournal) -> (std::process::Child, PathBuf, PathBuf, String) {
     let home = super::installation_binding::admit_for(&journal.0);
     start_hosted_with_home(journal, home)
 }
@@ -114,9 +124,10 @@ fn start_hosted(journal: &TempJournal) -> (std::process::Child, PathBuf, PathBuf
 fn start_hosted_with_home(
     journal: &TempJournal,
     home: PathBuf,
-) -> (std::process::Child, PathBuf, PathBuf) {
+) -> (std::process::Child, PathBuf, PathBuf, String) {
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
+    let nonce = next_receipt_nonce(&outcome);
     let launcher = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
     ))
@@ -124,6 +135,7 @@ fn start_hosted_with_home(
     .arg(&journal.0)
     .arg(&child_pid)
     .arg(&outcome)
+    .arg(&nonce)
     .stdin(Stdio::null())
     .stdout(Stdio::null())
     .stderr(Stdio::piped())
@@ -140,7 +152,7 @@ fn start_hosted_with_home(
     )
     .spawn()
     .expect("hosted launcher starts");
-    (launcher, child_pid, outcome)
+    (launcher, child_pid, outcome, nonce)
 }
 
 fn wait_for_ready_from_launcher(journal: &TempJournal, launcher: &mut std::process::Child) {
@@ -161,24 +173,84 @@ fn wait_for_ready_from_launcher(journal: &TempJournal, launcher: &mut std::proce
     panic!("hosted supervisor did not become ready");
 }
 
-fn wait_for_outcome(path: &std::path::Path) -> String {
-    for _ in 0..1_600 {
-        if let Ok(outcome) = fs::read_to_string(path) {
-            return outcome;
+enum PendingOutcome {
+    Missing,
+    DifferentNonce(String),
+    Malformed(String),
+}
+
+fn next_receipt_nonce(outcome: &Path) -> String {
+    let nonce = format!(
+        "{}-{:x}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    );
+    if outcome.exists() {
+        let existing = read_hosted_supervisor_receipt(outcome)
+            .unwrap_or_else(|error| panic!("existing hosted receipt is unreadable: {error}"));
+        assert_ne!(
+            existing.nonce, nonce,
+            "fresh hosted receipt nonce collided with the existing receipt"
+        );
+    }
+    nonce
+}
+
+fn poll_for_outcome(
+    path: &Path,
+    expected_nonce: &str,
+    attempts: usize,
+) -> Result<SupervisorHostOutcome, PendingOutcome> {
+    let mut pending = PendingOutcome::Missing;
+    for _ in 0..attempts {
+        match read_hosted_supervisor_receipt(path) {
+            Ok(receipt) if receipt.nonce == expected_nonce => return Ok(receipt.outcome),
+            Ok(receipt) => pending = PendingOutcome::DifferentNonce(receipt.nonce),
+            Err(HostedSupervisorReceiptReadError::Missing { .. }) => {}
+            Err(error) => pending = PendingOutcome::Malformed(error.to_string()),
         }
         thread::sleep(Duration::from_millis(5));
     }
-    panic!("hosted outcome was not retained at {}", path.display());
+    Err(pending)
 }
 
-fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> String {
+fn wait_for_outcome(path: &Path, expected_nonce: &str) -> SupervisorHostOutcome {
+    match poll_for_outcome(path, expected_nonce, 1_600) {
+        Ok(outcome) => outcome,
+        Err(PendingOutcome::Missing) => {
+            panic!(
+                "timed out waiting for hosted supervisor receipt at {}",
+                path.display()
+            )
+        }
+        Err(PendingOutcome::DifferentNonce(actual)) => panic!(
+            "found hosted supervisor receipt for a different/prior run at {}: expected nonce {:?}, found {:?}",
+            path.display(),
+            expected_nonce,
+            actual
+        ),
+        Err(PendingOutcome::Malformed(detail)) => {
+            panic!(
+                "found malformed hosted supervisor receipt at {}: {detail}",
+                path.display()
+            )
+        }
+    }
+}
+
+fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> SupervisorHostOutcome {
     let outcome = journal.0.join("declared-parent.outcome");
+    let nonce = next_receipt_nonce(&outcome);
     let status = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
     ))
     .args(["host-with-parent"])
     .arg(&journal.0)
     .arg(&outcome)
+    .arg(&nonce)
     .arg(pid.to_string())
     .arg(ticks.to_string())
     .stdin(Stdio::null())
@@ -198,10 +270,34 @@ fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> String
     .status()
     .expect("declared-parent host runs");
     assert_eq!(status.code(), Some(75));
-    let result = wait_for_outcome(&outcome);
+    let result = wait_for_outcome(&outcome, &nonce);
     assert!(!journal.0.join("health/supervisor.pid").exists());
     assert!(!journal.0.join("health/supervisor.ready").exists());
     result
+}
+
+#[test]
+fn ac2_stale_receipt_cannot_be_accepted_for_a_new_nonce() {
+    let journal = TempJournal::new();
+    let outcome = journal.0.join("stale-hosted.outcome");
+    let stale_nonce = "stale-receipt-nonce";
+    write_hosted_supervisor_receipt(
+        &outcome,
+        stale_nonce,
+        &SupervisorHostOutcome::OrderlyShutdown {
+            cause: ShutdownCause::Signal(SupervisorSignal::SigTerm),
+        },
+    )
+    .expect("write stale hosted receipt");
+
+    let fresh_nonce = next_receipt_nonce(&outcome);
+    assert_ne!(fresh_nonce, stale_nonce);
+    match poll_for_outcome(&outcome, &fresh_nonce, 3) {
+        Err(PendingOutcome::DifferentNonce(found)) => assert_eq!(found, stale_nonce),
+        Ok(outcome) => panic!("stale receipt was accepted for fresh nonce: {outcome:?}"),
+        Err(PendingOutcome::Missing) => panic!("stale receipt disappeared while polling"),
+        Err(PendingOutcome::Malformed(error)) => panic!("stale receipt was malformed: {error}"),
+    }
 }
 
 #[test]
@@ -216,10 +312,14 @@ fn ac4_parent_mismatch_refuses_before_lifecycle_publication() {
     let unrelated_pid = unrelated.id();
     let unrelated_journal = TempJournal::new();
     let unrelated_outcome = run_hosted_with_parent(&unrelated_journal, unrelated_pid, 1);
-    assert!(
-        unrelated_outcome.contains("DirectParentMismatch"),
-        "{unrelated_outcome}"
-    );
+    assert!(matches!(
+        unrelated_outcome,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::ParentLiveness(
+                ParentAdmissionFailure::DirectParentMismatch { .. }
+            )
+        }
+    ));
     let _ = nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(unrelated_pid as i32),
         nix::sys::signal::Signal::SIGKILL,
@@ -228,17 +328,23 @@ fn ac4_parent_mismatch_refuses_before_lifecycle_publication() {
 
     let wrong_journal = TempJournal::new();
     let wrong_outcome = run_hosted_with_parent(&wrong_journal, u32::MAX, 1);
-    assert!(
-        wrong_outcome.contains("DirectParentMismatch"),
-        "{wrong_outcome}"
-    );
+    assert!(matches!(
+        wrong_outcome,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::ParentLiveness(
+                ParentAdmissionFailure::DirectParentMismatch { .. }
+            )
+        }
+    ));
 
     let reused_journal = TempJournal::new();
     let reused_outcome = run_hosted_with_parent(&reused_journal, std::process::id(), 0);
-    assert!(
-        reused_outcome.contains("NotLiveOrReused"),
-        "{reused_outcome}"
-    );
+    assert!(matches!(
+        reused_outcome,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::ParentLiveness(ParentAdmissionFailure::NotLiveOrReused)
+        }
+    ));
 }
 
 #[test]
@@ -248,6 +354,7 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     let marker = journal.0.join("pause-before-parent-check");
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
+    let nonce = next_receipt_nonce(&outcome);
     let mut launcher = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
     ))
@@ -255,6 +362,7 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     .arg(&journal.0)
     .arg(&child_pid)
     .arg(&outcome)
+    .arg(&nonce)
     .stdin(Stdio::null())
     .stdout(Stdio::null())
     .stderr(Stdio::null())
@@ -294,8 +402,13 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     )
     .expect("kill launcher parent");
     fs::write(format!("{}.go", marker.display()), b"go\n").expect("release final parent check");
-    let result = wait_for_outcome(&outcome);
-    assert!(result.contains("ParentLostBeforeReadiness"), "{result}");
+    let result = wait_for_outcome(&outcome, &nonce);
+    assert!(matches!(
+        result,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::ParentLostBeforeReadiness(_)
+        }
+    ));
     assert!(!journal.0.join("health/supervisor.pid").exists());
     assert!(!journal.0.join("health/supervisor.ready").exists());
     let _ = launcher.wait();
@@ -318,7 +431,7 @@ fn ac1_ac4_hosted_and_foreground_supervisors_record_the_resident_pid() {
     assert_eq!(foreground_pid, foreground.id());
 
     let hosted_journal = TempJournal::new();
-    let (mut launcher, child_pid_path, outcome_path) = start_hosted(&hosted_journal);
+    let (mut launcher, child_pid_path, outcome_path, nonce) = start_hosted(&hosted_journal);
     wait_for_ready_from_launcher(&hosted_journal, &mut launcher);
     let hosted_pid: u32 = fs::read_to_string(hosted_journal.0.join("health/supervisor.pid"))
         .expect("hosted pid")
@@ -342,11 +455,8 @@ fn ac1_ac4_hosted_and_foreground_supervisors_record_the_resident_pid() {
         nix::sys::signal::Signal::SIGKILL,
     )
     .expect("kill hosted parent");
-    let outcome = wait_for_outcome(&outcome_path);
-    assert!(
-        outcome.contains("ParentLost"),
-        "retained hosted outcome: {outcome}"
-    );
+    let outcome = wait_for_outcome(&outcome_path, &nonce);
+    assert!(matches!(outcome, SupervisorHostOutcome::ParentLost { .. }));
     assert!(!hosted_journal.0.join("health/supervisor.ready").exists());
     assert!(!hosted_journal.0.join("health/supervisor.pid").exists());
     let _ = launcher.wait();
@@ -497,24 +607,31 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
     let unbound_journal = TempJournal::new();
     let unbound_home = unbound_journal.0.join("unbound-home");
     fs::create_dir_all(&unbound_home).expect("unbound home");
-    let (mut unbound, _, unbound_outcome) = start_hosted_with_home(&unbound_journal, unbound_home);
-    let unbound_outcome = wait_for_outcome(&unbound_outcome);
-    assert!(
-        unbound_outcome.contains("InstallationBinding(LoadFailed)"),
-        "unbound hosted outcome: {unbound_outcome}"
-    );
+    let (mut unbound, _, unbound_outcome, unbound_nonce) =
+        start_hosted_with_home(&unbound_journal, unbound_home);
+    let unbound_outcome = wait_for_outcome(&unbound_outcome, &unbound_nonce);
+    assert!(matches!(
+        unbound_outcome,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::InstallationBinding(
+                InstallationBindingRefusal::LoadFailed
+            )
+        }
+    ));
     assert!(!unbound_journal.0.join("health/supervisor.pid").exists());
     assert!(!unbound_journal.0.join("health/supervisor.ready").exists());
     assert!(!unbound.wait().expect("unbound launcher wait").success());
 
     let conflict_journal = TempJournal::new();
     foreign_heartbeat(&conflict_journal);
-    let (mut conflict, _, conflict_outcome) = start_hosted(&conflict_journal);
-    let conflict_outcome = wait_for_outcome(&conflict_outcome);
-    assert!(
-        conflict_outcome.contains("Refused { reason: SyncConflict }"),
-        "sync-conflict hosted outcome: {conflict_outcome}"
-    );
+    let (mut conflict, _, conflict_outcome, conflict_nonce) = start_hosted(&conflict_journal);
+    let conflict_outcome = wait_for_outcome(&conflict_outcome, &conflict_nonce);
+    assert!(matches!(
+        conflict_outcome,
+        SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::SyncConflict
+        }
+    ));
     assert!(!conflict_journal.0.join("health/supervisor.pid").exists());
     assert!(!conflict_journal.0.join("health/supervisor.ready").exists());
     assert!(!conflict.wait().expect("conflict launcher wait").success());
