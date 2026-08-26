@@ -270,7 +270,6 @@
         "journal-stats",
         "maintenance",
         "navigate",
-        "observer",
         "reprocess",
         "restart-convey",
         "schedule",

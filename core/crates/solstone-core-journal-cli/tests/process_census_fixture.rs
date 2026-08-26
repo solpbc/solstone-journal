@@ -15,7 +15,7 @@ const PROCESS_CENSUS_JSON: &str =
 const EXPECTED_PREDECESSOR_COMMIT: &str = "d8200fdf34e4af31f106c7f28fb73cd439d0081b";
 const EXPECTED_PREDECESSOR_BLOB: &str = "ea62371d5c320329724d051032efbe20f165b25f";
 const EXPECTED_CENSUS_SHA256: &str =
-    "7d26270656c99e10447de1fc6667887a4491f0d2ce6f8437163dfc28d0fb6227";
+    "fea838c1d959d4c57f4500599cef380119d8ecb9309034157c4b1a806d7db477";
 
 fn entries<'a>(fixture: &'a Value, key: &str) -> Result<&'a Vec<Value>, String> {
     fixture[key]
@@ -101,8 +101,8 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
 
     let commands = entries(fixture, "commands")?;
     let aliases = entries(fixture, "aliases")?;
-    if commands.len() != 42 || aliases.len() != 2 {
-        return Err("expected 42 process commands and two aliases".to_owned());
+    if commands.len() != 41 || aliases.len() != 2 {
+        return Err("expected 41 process commands and two aliases".to_owned());
     }
     if commands
         .iter()
@@ -122,7 +122,7 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
         .filter(|entry| entry["surface"] == "universal")
         .map(|entry| text(entry, "token"))
         .collect::<Result<_, _>>()?;
-    if service_commands.len() != 39
+    if service_commands.len() != 38
         || universal_commands != BTreeSet::from(["check", "contract", "doctor"])
         || commands
             .iter()
@@ -152,7 +152,7 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
     }
 
     let command_tokens = token_set(commands)?;
-    if !command_tokens.is_disjoint(&alias_tokens) || command_tokens.len() + alias_tokens.len() != 44
+    if !command_tokens.is_disjoint(&alias_tokens) || command_tokens.len() + alias_tokens.len() != 43
     {
         return Err("process tokens must be unique".to_owned());
     }
@@ -191,8 +191,8 @@ fn process_census_is_hash_bound_and_complete() {
 
 #[test]
 fn production_process_table_matches_the_hash_bound_census() {
-    assert_eq!(production_processes::PROCESS_SPECS.len(), 44);
-    assert_eq!(production_processes::process_tokens().count(), 44);
+    assert_eq!(production_processes::PROCESS_SPECS.len(), 43);
+    assert_eq!(production_processes::process_tokens().count(), 43);
     for spec in production_processes::PROCESS_SPECS {
         assert_eq!(
             production_processes::process_spec_for(spec.token),

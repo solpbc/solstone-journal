@@ -27,7 +27,7 @@
     "flow_content": null,
     "flow_updated_at": null,
     "health_glance": {"cta": null, "headline": "2 things need your attention", "issues": [{"href": "/app/health", "severity": "amber", "text": "i can't tell if your journal is caught up right now."}, {"href": "/app/health/#brain", "severity": "amber", "text": "thinking status unavailable"}], "last_observation": null, "severity": "amber", "verdict": "attention"},
-    "capture_health": {"status": "no_observers", "observers": [], "unassessed": [], "registry": "registry_empty"},
+    "capture_health": {"status": "no_clients", "clients": [], "unassessed": [], "registry": "registry_empty"},
     "home_state": "welcome",
     "journal_age_days": 0,
     "latest_weekly_reflection": null,

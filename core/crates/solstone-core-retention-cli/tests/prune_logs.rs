@@ -90,10 +90,6 @@ fn populate_all_classes(journal: &Journal) {
     journal.file("awareness/20260101.jsonl", b"old awareness\n");
     journal.file("config/actions/20260101.jsonl", b"old action\n");
     journal.file("facets/work/logs/20260101.jsonl", b"old facet\n");
-    journal.file(
-        "apps/observer/observers/laptop/hist/20260101.jsonl",
-        b"old observer\n",
-    );
     journal.file("health/pruning-runs/20260101.jsonl", b"old pruning run\n");
     journal.file(
         "task_log.txt",
@@ -139,7 +135,7 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
         receipt["detail"]["plan"]["by_class"]
             .as_object()
             .map(|map| map.len()),
-        Some(11)
+        Some(10)
     );
     assert_eq!(
         receipt["detail"]["plan"]["compactions"]["root_task_log"]["rewritten"],
@@ -168,7 +164,6 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
         "awareness/20260101.jsonl",
         "config/actions/20260101.jsonl",
         "facets/work/logs/20260101.jsonl",
-        "apps/observer/observers/laptop/hist/20260101.jsonl",
         "health/pruning-runs/20260101.jsonl",
     ] {
         assert!(!journal.root.join(rel).exists(), "{rel} was not removed");

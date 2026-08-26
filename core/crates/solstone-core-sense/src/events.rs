@@ -26,9 +26,6 @@ pub fn detected(
     ]);
     fields.insert("day".into(), json!(context.key.day));
     fields.insert("segment".into(), json!(context.key.segment));
-    if let Some(observer) = &context.observer {
-        fields.insert("observer".into(), json!(observer));
-    }
     if let Some(stream) = &context.key.stream {
         fields.insert("stream".into(), json!(stream));
     }
@@ -46,9 +43,6 @@ pub fn observed(state: &SegmentState, note: Option<&str>) -> Map<String, Value> 
     ]);
     if state.context.batch {
         fields.insert("batch".into(), Value::Bool(true));
-    }
-    if let Some(observer) = &state.context.observer {
-        fields.insert("observer".into(), json!(observer));
     }
     if let Some(stream) = &state.context.key.stream {
         fields.insert("stream".into(), json!(stream));
@@ -95,7 +89,8 @@ mod tests {
                 stream: Some("s".into()),
                 segment: "120000_1".into(),
             },
-            observer: Some("o".into()),
+            cid: Some("cid".into()),
+            source: Some("source".into()),
             batch: false,
             meta: None,
         };
@@ -111,7 +106,7 @@ mod tests {
         assert_eq!(v["ref"], "r");
         assert_eq!(v["day"], "20260101");
         assert_eq!(v["segment"], "120000_1");
-        assert_eq!(v["observer"], "o");
+        assert!(v.get("observer").is_none());
         assert_eq!(v["stream"], "s");
     }
 
@@ -123,7 +118,8 @@ mod tests {
                 stream: None,
                 segment: "120000_1".into(),
             },
-            observer: None,
+            cid: None,
+            source: None,
             batch: false,
             meta: None,
         };
@@ -148,7 +144,8 @@ mod tests {
                 stream: None,
                 segment: "s".into(),
             },
-            observer: None,
+            cid: None,
+            source: None,
             batch: false,
             meta: None,
         };

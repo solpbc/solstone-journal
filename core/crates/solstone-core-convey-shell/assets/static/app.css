@@ -64,7 +64,7 @@ html {
 
 /* Shared shell tokens. */
 :root {
-  /* Semantic status palette — observer is the first consumer. */
+  /* Semantic status palette — client is the first consumer. */
   --status-active: var(--success);
   --status-stale: var(--warn);
   --status-error: var(--danger);

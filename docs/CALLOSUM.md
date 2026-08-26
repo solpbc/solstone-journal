@@ -44,7 +44,7 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 ### `work` - Talent-run, reflection, and support-draft events
 **Source:** talent-run and support-draft producers. There is no native producer on this tract today; the vocabulary is closed so a future dispatcher cannot silently grow it.
 **Events:** `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `result`, `reflection_ready`, `support_draft`, `support_submit_claim`
-**Purpose:** Live talent-run status, thinking `reflection_ready`, and support draft/submit-claim. Unknown event kinds are rejected. Closedness lives in `callosum.work.event` (`classification: closed`, `unknown_value_behavior: reject`), published in the OpenAPI `x-vocabularies` and the observer-client `manifest.json` `vocabularies[]`. The registry-level `callosum.tract_event` stays extensible. This tract used to be named `chat`; it was renamed rather than folded into `cortex` (1:1 with the cogitate wire contract), `think` (the daily-think pipeline, not live run status), or `support` (an open registry list). `work` is also an owner-facing facet id — tract and facet are different namespaces.
+**Purpose:** Live talent-run status, thinking `reflection_ready`, and support draft/submit-claim. Unknown event kinds are rejected. Closedness lives in `callosum.work.event` (`classification: closed`, `unknown_value_behavior: reject`), published in the OpenAPI `x-vocabularies` and the client-ingest `manifest.json` `vocabularies[]`. The registry-level `callosum.tract_event` stays extensible. This tract used to be named `chat`; it was renamed rather than folded into `cortex` (1:1 with the cogitate wire contract), `think` (the daily-think pipeline, not live run status), or `support` (an open registry list). `work` is also an owner-facing facet id — tract and facet are different namespaces.
 
 ### `supervisor` - Process lifecycle management
 **Source:** `solstone-core-system` (supervisor)
@@ -77,7 +77,7 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 ### `observe` - Multimodal capture and processing
 **Sources:**
-- Capture: standalone observer services (solstone-linux, solstone-tmux, solstone-macos) upload vian observer ingest
+- Capture: linked-device clients (solstone-linux, solstone-tmux, solstone-macos) upload through native client ingest
 - Processing: native `journal sense`, `solstone-core-describe`, native `journal transcribe`
 
 **Events:**
@@ -92,10 +92,12 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 | `memory_throttle_started` | sense | Handler waiting for memory headroom |
 | `memory_throttle_completed` | sense | Handler admitted or stopped after memory throttle |
 
-**Common fields:** `day`, `segment`, `observer` (for observer uploads), `stream` (stream name, e.g., `"archon"`, `"import.apple"`)
+**Common fields:** `day`, `segment`, `stream` (stream name, e.g., `"archon"`, `"import.apple"`)
 **`observing` event fields:**
-- `meta` (dict, optional): Metadata dict from observer. Contains `host`, `platform`, and any client-provided fields (e.g., `facet`, `setting`). Passed to handlers via `SEGMENT_META` env var and unrolled into JSONL metadata headers.
-- `stream` (str, optional): Stream name identifying the segment source. Set by observers, observer ingest, and importer.
+- `cid` (str): Linked-device client identity for this ingest.
+- `source` (str): Client-supplied source selected with `cid` when binding the native stream.
+- `meta` (dict, optional): Metadata dict from the ingest request. Contains any client-provided fields (e.g., `facet`, `setting`). Passed to handlers via `SEGMENT_META` env var and unrolled into JSONL metadata headers.
+- `stream` (str, optional): Native stream name identifying the segment source.
 
 **`observed` event fields:**
 - `stream` (str, optional): Stream name, forwarded from the originating `observing` event.
@@ -217,7 +219,7 @@ See `solstone-core-system` for the observe→think trigger and the activity→th
 Long-running services emit `status` events every 5 seconds for health monitoring:
 - Supervisor checks event freshness to detect stale processes
 - UI displays live state from status events
-- See status emission methods in observer, sense, cortex for examples
+- See status emission methods in sense and cortex for examples
 
 ### Request/Response via Callosum
 

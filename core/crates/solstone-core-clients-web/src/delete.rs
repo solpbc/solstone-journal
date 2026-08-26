@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use axum::Json;
@@ -13,11 +12,12 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_journal_io::Removed;
-use solstone_core_observer::remove_history_rows_for_stream;
 use solstone_core_retention::door;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::tombstone::RemovalReason;
-use solstone_core_segment::{delete_stream_record, hold_source_mutation};
+use solstone_core_segment::{
+    delete_stream_record, hold_source_mutation, list_stream_records_tolerant,
+};
 
 use crate::not_confirmed::collect_not_confirmed;
 use crate::receipt::{Issue, Receipt, ReceiptTarget, Removed as RemovedCounts, owner_issue};
@@ -75,10 +75,6 @@ fn erase_location(journal: &Path) -> Receipt {
     let scan_complete = scan.complete;
     let mut not_removed = scan.incomplete;
     let selected = scan.targets;
-    let occupied_streams: BTreeSet<String> = selected
-        .iter()
-        .map(|item| item.target.stream.clone())
-        .collect();
     let attempted: Vec<Target> = selected.iter().map(|item| item.target.clone()).collect();
     let deleted_at = Utc::now().to_rfc3339();
 
@@ -127,7 +123,7 @@ fn erase_location(journal: &Path) -> Receipt {
     let days = completed
         .iter()
         .map(|item| item.target.day.as_str())
-        .collect::<BTreeSet<_>>()
+        .collect::<std::collections::BTreeSet<_>>()
         .len() as u64;
     // originals, segments, and tombstones are equal by construction: one
     // completed target is one segment that went, one tombstone that remains
@@ -148,23 +144,10 @@ fn erase_location(journal: &Path) -> Receipt {
         }
     };
 
-    let history_rows = if any_failed {
-        0
-    } else {
-        let history = remove_history_rows_for_stream(journal, "location");
-        for failure in history.failures {
-            not_removed.push(Issue {
-                what: "observer history".to_owned(),
-                plain_reason: failure.reason,
-            });
-        }
-        history.removed as u64
-    };
-
     let stream_identity =
         unlink_location_stream(journal, any_failed, scan_complete, &mut not_removed);
 
-    let not_confirmed = collect_not_confirmed(journal, &attempted, &occupied_streams);
+    let not_confirmed = collect_not_confirmed(journal, &attempted);
 
     Receipt {
         target: ReceiptTarget {
@@ -173,7 +156,6 @@ fn erase_location(journal: &Path) -> Receipt {
         },
         removed: RemovedCounts {
             days,
-            history_rows,
             index_chunks,
             mixed_segments,
             originals,
@@ -221,17 +203,28 @@ fn unlink_location_stream(
     if !remaining.targets.is_empty() {
         return 0;
     }
-    match delete_stream_record(journal, "location") {
-        Ok(Removed::Unlinked) => 1,
-        Ok(Removed::AlreadyAbsent) => 0,
-        Err(_) => {
-            not_removed.push(Issue {
+    let records = match list_stream_records_tolerant(journal) {
+        Ok(records) if records.anomalies.is_empty() => records.records,
+        Ok(_) | Err(_) => {
+            not_removed.push(incomplete_stream_inventory_issue());
+            return 0;
+        }
+    };
+    let mut removed = 0;
+    for (name, record) in records {
+        if record.get("source").and_then(serde_json::Value::as_str) != Some("location") {
+            continue;
+        }
+        match delete_stream_record(journal, &name) {
+            Ok(Removed::Unlinked) => removed += 1,
+            Ok(Removed::AlreadyAbsent) => {}
+            Err(_) => not_removed.push(Issue {
                 what: "location stream state".to_owned(),
-                plain_reason: "the stream record could not be removed".to_owned(),
-            });
-            0
+                plain_reason: format!("the stream record {name} could not be removed"),
+            }),
         }
     }
+    removed
 }
 
 fn incomplete_scan_issue() -> Issue {
@@ -239,6 +232,15 @@ fn incomplete_scan_issue() -> Issue {
         what: "chronicle listing".to_owned(),
         plain_reason: "the journal could not be listed completely, so remaining \
                        location data could not be ruled out"
+            .to_owned(),
+    }
+}
+
+fn incomplete_stream_inventory_issue() -> Issue {
+    Issue {
+        what: "location stream state".to_owned(),
+        plain_reason: "the stream-record inventory could not be read completely, so location \
+                       stream identities were left unchanged"
             .to_owned(),
     }
 }

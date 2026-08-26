@@ -18,8 +18,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         }
     };
     // A client projection row is keyed by the authorization certificate CID.
-    // The old observer-record ambiguity (an observer lacking or sharing a
-    // device binding) is therefore structurally impossible.
+    // Legacy registry-record ambiguity is therefore structurally impossible.
     let detail = format!(
         "active client records={}; unbound=0; certificate cid binding is authoritative",
         records.len()

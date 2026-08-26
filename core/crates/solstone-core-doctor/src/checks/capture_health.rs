@@ -67,7 +67,7 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
             Some("open /app/health to inspect each device"),
         )
     };
-    result.observer_delivery = Some(facts);
+    result.client_delivery = Some(facts);
     result
 }
 

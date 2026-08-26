@@ -990,18 +990,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-observer"
-package = "solstone-core-observer"
-set = "component"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-clients-web"
 package = "solstone-core-clients-web"
 set = "component"
@@ -2721,9 +2709,9 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-ingest::observer_listing"
+id = "solstone-core-ingest::ingest_listing"
 package = "solstone-core-ingest"
-target = "observer_listing"
+target = "ingest_listing"
 set = "component"
 areas = ["ingest"]
 platforms = ["linux", "macos"]
@@ -2956,20 +2944,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-journal-bin::journal_observer_native_cutover"
-package = "solstone-core-journal-bin"
-target = "journal_observer_native_cutover"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-serial_group = "local-services"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-journal-bin::journal_settings_native_cutover"
 package = "solstone-core-journal-bin"
 target = "journal_settings_native_cutover"
@@ -3069,20 +3043,6 @@ areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-observer::observer_prune_contracts"
-package = "solstone-core-observer"
-target = "observer_prune_contracts"
-set = "component"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"

@@ -45,8 +45,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route("/app/health/api/retry-import", post(actions::retry_import))
         .route(
-            "/app/health/api/restart-observer",
-            post(move |body| actions::restart_observer(restart_root.clone(), body)),
+            "/app/health/api/restart-capture",
+            post(move |body| actions::restart_capture(restart_root.clone(), body)),
         )
         .route(
             "/app/health/api/reprocess",

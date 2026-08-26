@@ -42,22 +42,15 @@ pub enum ReasonCode {
     StreamMarkerBumpFailed,
     LocationLockUnavailable,
     NotifyFailed,
-    ObserverStampFailed,
     JournalReadFailed,
     MalformedEvidenceRow,
-    AmbiguousDeviceObserver,
-    ObserverHistoryTorn,
-    ObserverHistoryUnreadable,
-    ObserverRegistryUnreadable,
-    ObserverRecordUnreadable,
     AmbiguousSegmentFileName,
     ForeignStreamBinding,
-    UnattributedStreamBlocksMint,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 47] = [
+    const ALL: [Self; 40] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -94,17 +87,10 @@ impl ReasonCode {
         Self::StreamMarkerBumpFailed,
         Self::LocationLockUnavailable,
         Self::NotifyFailed,
-        Self::ObserverStampFailed,
         Self::JournalReadFailed,
         Self::MalformedEvidenceRow,
-        Self::AmbiguousDeviceObserver,
-        Self::ObserverHistoryTorn,
-        Self::ObserverHistoryUnreadable,
-        Self::ObserverRegistryUnreadable,
-        Self::ObserverRecordUnreadable,
         Self::AmbiguousSegmentFileName,
         Self::ForeignStreamBinding,
-        Self::UnattributedStreamBlocksMint,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -145,17 +131,10 @@ impl ReasonCode {
             Self::StreamMarkerBumpFailed => "stream_marker_bump_failed",
             Self::LocationLockUnavailable => "location_lock_unavailable",
             Self::NotifyFailed => "notify_failed",
-            Self::ObserverStampFailed => "observer_stamp_failed",
             Self::JournalReadFailed => "journal_read_failed",
             Self::MalformedEvidenceRow => "malformed_evidence_row",
-            Self::AmbiguousDeviceObserver => "ambiguous_device_observer",
-            Self::ObserverHistoryTorn => "observer_history_torn",
-            Self::ObserverHistoryUnreadable => "observer_history_unreadable",
-            Self::ObserverRegistryUnreadable => "observer_registry_unreadable",
-            Self::ObserverRecordUnreadable => "observer_record_unreadable",
             Self::AmbiguousSegmentFileName => "ambiguous_segment_file_name",
             Self::ForeignStreamBinding => "foreign_stream_binding",
-            Self::UnattributedStreamBlocksMint => "unattributed_stream_blocks_mint",
         }
     }
 }

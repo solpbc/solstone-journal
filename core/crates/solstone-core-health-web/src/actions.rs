@@ -37,7 +37,7 @@ pub async fn retry_import(body: Option<Json<Value>>) -> axum::response::Response
         .into_response()
 }
 
-pub async fn restart_observer(
+pub async fn restart_capture(
     root: std::path::PathBuf,
     body: Option<Json<Value>>,
 ) -> axum::response::Response {
@@ -50,12 +50,12 @@ pub async fn restart_observer(
         return missing("Missing service");
     };
     if service != "sense" {
-        return invalid("Unknown observer service");
+        return invalid("Unknown capture service");
     }
-    restart_observer_with(service, |envelope| send(&root, envelope))
+    restart_capture_with(service, |envelope| send(&root, envelope))
 }
 
-pub fn restart_observer_with<F>(service: &str, mut transport: F) -> axum::response::Response
+pub fn restart_capture_with<F>(service: &str, mut transport: F) -> axum::response::Response
 where
     F: FnMut(&solstone_core_callosum::CallosumEnvelope) -> bool,
 {
@@ -70,7 +70,7 @@ where
     let sent = transport(&envelope);
     if !sent {
         return error_envelope(
-            "observer_restart_failed",
+            "capture_restart_failed",
             "couldn't restart processing.",
             "Could not reach the supervisor",
             StatusCode::SERVICE_UNAVAILABLE,

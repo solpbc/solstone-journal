@@ -341,9 +341,14 @@ impl SenseDispatcher {
             .get("stream")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
-        let observer = message
+        let cid = message
             .extra
-            .get("observer")
+            .get("cid")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let source = message
+            .extra
+            .get("source")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
         let batch = message
@@ -366,7 +371,8 @@ impl SenseDispatcher {
                 stream: stream.clone(),
                 segment: segment.to_owned(),
             },
-            observer,
+            cid,
+            source,
             batch,
             meta,
         };
@@ -650,9 +656,6 @@ fn run_job(
         "SOL_SEGMENT".into(),
         segment_context.key.segment.clone().into(),
     );
-    if let Some(observer) = &segment_context.observer {
-        environment.insert("OBSERVER_NAME".into(), observer.into());
-    }
     if let Some(meta) = &segment_context.meta {
         environment.insert(
             "SEGMENT_META".into(),
@@ -1178,7 +1181,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: false,
                 meta: None,
             }),
@@ -1245,7 +1249,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: false,
                 meta: None,
             }),
@@ -1272,7 +1277,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: true,
                 meta: None,
             }),
@@ -1298,7 +1304,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: true,
                 meta: None,
             }),
@@ -1339,7 +1346,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: true,
                 meta: None,
             }),
@@ -1385,7 +1393,8 @@ mod tests {
             key.clone(),
             SegmentState::new(SegmentContext {
                 key: key.clone(),
-                observer: None,
+                cid: None,
+                source: None,
                 batch: false,
                 meta: None,
             }),

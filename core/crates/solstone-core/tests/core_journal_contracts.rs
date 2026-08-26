@@ -17,7 +17,5 @@ mod indexer;
 mod indexer_search;
 #[path = "journal_config.rs"]
 mod journal_config;
-#[path = "observer_reachability.rs"]
-mod observer_reachability;
 #[path = "top_production_reach.rs"]
 mod top_production_reach;

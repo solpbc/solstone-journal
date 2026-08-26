@@ -1,5 +1,5 @@
 {
-  "schema": "solstone.observer-client-contract-vectors.v2",
+  "schema": "solstone.client-ingest-contract-vectors.v2",
   "vectors": [
     {
       "decision": {
@@ -8,8 +8,8 @@
         "kind": "ingest_status",
         "status": "ok"
       },
-      "fixture_id": "declared.observer.ingestUpload.status.ok",
-      "id": "observer.ingestUpload.status.ok",
+      "fixture_id": "declared.client.ingestUpload.status.ok",
+      "id": "client.ingestUpload.status.ok",
       "kind": "declared",
       "pointers": [
         "/status"
@@ -22,8 +22,8 @@
         "kind": "ingest_status",
         "status": "duplicate"
       },
-      "fixture_id": "declared.observer.ingestUpload.status.duplicate",
-      "id": "observer.ingestUpload.status.duplicate",
+      "fixture_id": "declared.client.ingestUpload.status.duplicate",
+      "id": "client.ingestUpload.status.duplicate",
       "kind": "declared",
       "pointers": [
         "/status"
@@ -36,8 +36,8 @@
         "kind": "ingest_status",
         "status": "collision"
       },
-      "fixture_id": "declared.observer.ingestUpload.status.collision",
-      "id": "observer.ingestUpload.status.collision",
+      "fixture_id": "declared.client.ingestUpload.status.collision",
+      "id": "client.ingestUpload.status.collision",
       "kind": "declared",
       "pointers": [
         "/status"
@@ -50,8 +50,8 @@
         "kind": "ingest_status",
         "status": "conflict"
       },
-      "fixture_id": "declared.observer.ingestUpload.status.conflict",
-      "id": "observer.ingestUpload.status.conflict",
+      "fixture_id": "declared.client.ingestUpload.status.conflict",
+      "id": "client.ingestUpload.status.conflict",
       "kind": "declared",
       "pointers": [
         "/status"
@@ -64,8 +64,8 @@
         "kind": "ingest_status",
         "status": "failed"
       },
-      "fixture_id": "declared.observer.ingestUpload.status.failed",
-      "id": "observer.ingestUpload.status.failed",
+      "fixture_id": "declared.client.ingestUpload.status.failed",
+      "id": "client.ingestUpload.status.failed",
       "kind": "declared",
       "pointers": [
         "/status"

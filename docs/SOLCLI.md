@@ -335,7 +335,7 @@ not the codebase. See [APPS.md](APPS.md).
 |-------|----------|
 | Think (processing) | `import`, `think`, `planner`, `indexer`, `supervisor`, `schedule`, `maintenance`, `top`, `health`, `status`, `notify`, `heartbeat` |
 | Service | `service` (+ aliases `up`, `down`, `start`), `navigate`, `identity`, `settings`, `install-provider`, `thinking set-lane` |
-| Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
+| Observe (capture) | `transcribe`, `describe`, `sense`, `transfer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
 | Schedule (read-only) | `schedule` |

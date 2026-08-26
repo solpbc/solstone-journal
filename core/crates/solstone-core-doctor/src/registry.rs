@@ -79,14 +79,14 @@ fn brain(c: &CheckContext) -> RunnerResult {
 fn capture(c: &CheckContext) -> RunnerResult {
     checks::capture_health::run(c, CHECK_CAPTURE)
 }
-fn binding(c: &CheckContext) -> RunnerResult {
-    checks::observer_binding::run(c, CHECK_BINDING)
+fn client_binding(c: &CheckContext) -> RunnerResult {
+    checks::client_binding::run(c, CHECK_CLIENT_BINDING)
 }
-fn delivery(c: &CheckContext) -> RunnerResult {
-    checks::observer_delivery_stall::run(c, CHECK_DELIVERY)
+fn client_delivery(c: &CheckContext) -> RunnerResult {
+    checks::client_delivery_stall::run(c, CHECK_CLIENT_DELIVERY)
 }
-fn ingest(c: &CheckContext) -> RunnerResult {
-    checks::observer_ingest_health::run(c, CHECK_INGEST)
+fn client_ingest(c: &CheckContext) -> RunnerResult {
+    checks::client_ingest_health::run(c, CHECK_CLIENT_INGEST)
 }
 fn orphan(c: &CheckContext) -> RunnerResult {
     checks::orphan_segment_pdf::run(c, CHECK_ORPHAN)
@@ -171,18 +171,18 @@ const CHECK_CAPTURE: Check = Check {
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const CHECK_BINDING: Check = Check {
-    name: "observer_binding",
+const CHECK_CLIENT_BINDING: Check = Check {
+    name: "client_binding",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const CHECK_DELIVERY: Check = Check {
-    name: "observer_delivery_stall",
+const CHECK_CLIENT_DELIVERY: Check = Check {
+    name: "client_delivery_stall",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const CHECK_INGEST: Check = Check {
-    name: "observer_ingest_health",
+const CHECK_CLIENT_INGEST: Check = Check {
+    name: "client_ingest_health",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -273,18 +273,18 @@ pub static JOURNAL: &[RegistryEntry] = &[
         deferred: None,
     },
     RegistryEntry {
-        check: CHECK_BINDING,
-        runner: binding,
+        check: CHECK_CLIENT_BINDING,
+        runner: client_binding,
         deferred: None,
     },
     RegistryEntry {
-        check: CHECK_DELIVERY,
-        runner: delivery,
+        check: CHECK_CLIENT_DELIVERY,
+        runner: client_delivery,
         deferred: None,
     },
     RegistryEntry {
-        check: CHECK_INGEST,
-        runner: ingest,
+        check: CHECK_CLIENT_INGEST,
+        runner: client_ingest,
         deferred: None,
     },
     RegistryEntry {

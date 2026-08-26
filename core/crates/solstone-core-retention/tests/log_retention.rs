@@ -177,10 +177,9 @@ fn expanded_classes_walk_exactly_one_level() {
     // Dated by the expanded day component, not the filename.
     bed.file("chronicle/20260101/health/observer.log", b"old");
     bed.file("chronicle/20260804/health/observer.log", b"fresh");
-    // Dated by the stem, one level under facets/ and observers/.
+    // Dated by the stem, one level under facets/.
     bed.file("facets/work/logs/20260101.jsonl", b"old");
     bed.file("facets/work/logs/20260804.jsonl", b"fresh");
-    bed.file("apps/observer/observers/screen/hist/20260101.jsonl", b"old");
     // ⛔ Two levels deep: must not be reached.
     bed.file("facets/work/logs/nested/20260101.jsonl", b"deep");
 
@@ -188,7 +187,6 @@ fn expanded_classes_walk_exactly_one_level() {
     assert_eq!(
         rels(&built.prunable),
         vec![
-            "apps/observer/observers/screen/hist/20260101.jsonl",
             "chronicle/20260101/health/observer.log",
             "facets/work/logs/20260101.jsonl",
         ]
@@ -570,7 +568,6 @@ fn every_class_in_the_table_can_produce_a_target() {
     bed.file("awareness/20260101.jsonl", b"a");
     bed.file("config/actions/20260101.jsonl", b"a");
     bed.file("facets/work/logs/20260101.jsonl", b"a");
-    bed.file("apps/observer/observers/screen/hist/20260101.jsonl", b"a");
     bed.file("health/pruning-runs/20260101.jsonl", b"a");
 
     let built = bed.plan(7, "2026-08-05");

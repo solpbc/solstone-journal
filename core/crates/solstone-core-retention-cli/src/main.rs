@@ -13,10 +13,9 @@
 //! executing a Rust binary. So a binary is the seam.
 //!
 //! ⚠ The pattern is worth naming: **a converted crate is not converted until something
-//! reaches it.** A sibling crate had the identical gap —
-//! `solstone-core-observer-delete`, "owner-authorized deletion of location-data source
-//! files", called by nothing. It was deleted rather than wired, because the
-//! segment-scoped ruling of 2026-08-05 forbids the partial delete it implemented. ⛔
+//! reaches it.** A prior deletion candidate had the identical gap: it was deleted
+//! rather than wired because the segment-scoped ruling of 2026-08-05 forbids the
+//! partial delete it implemented. ⛔
 //! Nothing in the gate set detects a crate that compiles, passes its tests, and is
 //! reachable from nowhere.
 //!

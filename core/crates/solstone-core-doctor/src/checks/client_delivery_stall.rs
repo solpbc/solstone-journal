@@ -71,7 +71,7 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
             )
         }
     };
-    result.observer_delivery = Some(facts);
+    result.client_delivery = Some(facts);
     result
 }
 

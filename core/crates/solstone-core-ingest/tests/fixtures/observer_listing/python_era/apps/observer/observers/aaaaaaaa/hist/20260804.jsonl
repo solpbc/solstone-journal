@@ -1,3 +1,0 @@
-{"ts": 1786598573692, "segment": "120000_60", "stream": "laptop", "files": [{"submitted": "present.flac", "written": "present.flac", "size": 21, "sha256": "eda7fdb4a0af7d39f0612fa66006f7007a8ee95399515943215b0fe1035f2db7", "disposition": "written"}]}
-{"ts": 1786598573692, "segment": "120100_60", "stream": "laptop", "files": [{"submitted": "processed.flac", "written": "processed.flac", "size": 23, "sha256": "c808ad960f2a0bc38b82913142183f04279488cc3d1c29c52c72f496e06dbaee", "disposition": "written"}]}
-{"ts": 1786598573692, "segment": "120200_60", "stream": "laptop", "files": [{"submitted": "gone.flac", "written": "gone.flac", "size": 11, "sha256": "95713e9cbdd1dfcb2d4080c2537f418d43ca0da25f0d7d6631f4f7c97b89dc47", "disposition": "written"}]}

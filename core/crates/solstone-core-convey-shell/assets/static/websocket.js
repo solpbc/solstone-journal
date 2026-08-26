@@ -197,7 +197,7 @@
     {"ws": "*", "capture": "degraded", "unviewed": "*", "variant": "mark-attention", "label": "a device needs attention"},
     {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label": "attention"},
     {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-attention", "label": "a device hasn't reached your journal"},
-    {"ws": "*", "capture": "no_observers", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
+    {"ws": "*", "capture": "no_clients", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
     {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "going in"},
     {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "can't confirm"}
   ];

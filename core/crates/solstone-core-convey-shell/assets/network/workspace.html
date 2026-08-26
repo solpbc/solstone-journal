@@ -345,7 +345,7 @@
 
   .link-toast { position: fixed; bottom: 2em; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 0.75em 1.5em; border-radius: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1100; }
 
-.observer-card {
+.client-card {
   border: 1px solid var(--facet-border, #e5e0db);
   border-left: 3px solid transparent;
   border-radius: 8px;
@@ -354,41 +354,41 @@
   margin-bottom: 1.5em;
   transition: background-color 0.15s ease, border-left-color 0.15s ease;
 }
-.observer-card.stale {
+.client-card.stale {
   background: color-mix(in srgb, var(--status-stale) 10%, white);
   border-left-color: var(--status-stale);
 }
-.observer-card.revoked {
+.client-card.revoked {
   background: color-mix(in srgb, var(--status-inactive) 10%, white);
   border-left-color: var(--status-inactive);
 }
-.observer-card.revoked .observer-name {
+.client-card.revoked .client-name {
   text-decoration: line-through;
   color: #5a6268;
 }
-.observer-card.disconnected {
+.client-card.disconnected {
   background: color-mix(in srgb, var(--status-error) 10%, white);
   border-left-color: var(--status-error);
 }
-.observer-card.connected {
+.client-card.connected {
   background: color-mix(in srgb, var(--status-active) 10%, white);
   border-left-color: var(--status-active);
 }
-.observer-header {
+.client-header {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 0.5em;
 }
-.observer-name {
+.client-name {
   font-weight: 600;
   font-size: 1.1em;
 }
-.observer-source {
+.client-source {
   color: var(--text-muted, #5a6268);
   font-size: 0.9em;
 }
-.observer-status {
+.client-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -403,59 +403,59 @@
 }
 
 /* ── Transition: ambient status dot ── */
-.observer-status::before {
+.client-status::before {
   content: '';
   width: 10px;
   height: 10px;
   border-radius: 50%;
   transition: background-color 0.6s ease;
 }
-.observer-status::after {
+.client-status::after {
   font-size: 0.95em;
   font-weight: 700;
   line-height: 1;
 }
-.observer-status.connected {
+.client-status.connected {
   background: color-mix(in srgb, var(--status-active) 12%, transparent);
   color: var(--status-active);
 }
-.observer-status.connected::before {
+.client-status.connected::before {
   background: var(--status-active);
 }
-.observer-status.connected::after {
+.client-status.connected::after {
   content: '✓';
 }
-.observer-status.stale {
+.client-status.stale {
   background: color-mix(in srgb, var(--status-stale) 12%, transparent);
   color: var(--status-stale);
 }
-.observer-status.stale::before {
+.client-status.stale::before {
   background: var(--status-stale);
 }
-.observer-status.stale::after {
+.client-status.stale::after {
   content: '⚠';
 }
-.observer-status.disconnected {
+.client-status.disconnected {
   background: color-mix(in srgb, var(--status-error) 12%, transparent);
   color: var(--status-error);
 }
-.observer-status.disconnected::before {
+.client-status.disconnected::before {
   background: var(--status-error);
 }
-.observer-status.disconnected::after {
+.client-status.disconnected::after {
   content: '✗';
 }
-.observer-status.revoked {
+.client-status.revoked {
   background: color-mix(in srgb, var(--status-inactive) 12%, transparent);
   color: var(--status-inactive);
 }
-.observer-status.revoked::before {
+.client-status.revoked::before {
   background: var(--status-inactive);
 }
-.observer-status.revoked::after {
+.client-status.revoked::after {
   content: '—';
 }
-.observer-live-pip {
+.client-live-pip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -468,45 +468,45 @@
   font-weight: 700;
   text-transform: uppercase;
 }
-.observer-live-pip::before {
+.client-live-pip::before {
   content: '';
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--status-active);
 }
-.observer-stats {
+.client-stats {
   font-size: 0.9em;
   color: #666;
   margin-bottom: 1em;
 }
-.observer-stats dl {
+.client-stats dl {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0 2em;
 }
-.observer-stats dl > div {
+.client-stats dl > div {
   display: flex;
   gap: 0.3em;
 }
-.observer-stats dt {
+.client-stats dt {
   color: #8a8078;
   font-weight: 500;
   font-size: 0.85em;
 }
-.observer-stats dt::after {
+.client-stats dt::after {
   content: ':';
 }
-.observer-stats dd {
+.client-stats dd {
   margin: 0;
 }
-.observer-actions {
+.client-actions {
   display: flex;
   gap: 8px;
   min-height: 44px;
 }
-.observer-actions button {
+.client-actions button {
   padding: 8px 16px;
   border: 1px solid var(--facet-border, #e5e0db);
   border-radius: 4px;
@@ -516,20 +516,20 @@
   font-weight: 500;
   min-height: 44px;
 }
-.observer-actions button:hover {
+.client-actions button:hover {
   background: rgba(0,0,0,0.05);
 }
-.observer-actions button.danger {
+.client-actions button.danger {
   color: #dc3545;
   border-color: #dc3545;
 }
-.observer-actions button.danger:hover {
+.client-actions button.danger:hover {
   background: #f8d7da;
 }
-.observer-actions button:active {
+.client-actions button:active {
   background: rgba(0,0,0,0.08);
 }
-.observer-actions button.danger:active {
+.client-actions button.danger:active {
   background: #f1b0b7;
 }
 
@@ -679,21 +679,21 @@
   line-height: 1.5;
 }
 
-.no-observers {
+.no-clients {
   text-align: center;
   padding: 3em 1em;
   color: #666;
 }
-.no-observers-icon {
+.no-clients-icon {
   font-size: 3em;
   margin-bottom: 1em;
   opacity: 0.5;
 }
-.no-observers-text {
+.no-clients-text {
   font-size: 1.1em;
   margin-bottom: 0.5em;
 }
-.no-observers-hint {
+.no-clients-hint {
   font-size: 0.85em;
   color: #999;
   margin-bottom: 1.5em;
@@ -706,7 +706,7 @@
   letter-spacing: 0.01em;
 }
 
-.observer-group-header {
+.client-group-header {
   margin: 0 0 0.75em;
   color: #5a6268;
   font-size: 0.85em;
@@ -714,13 +714,13 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.observer-group-header:not(:first-child) {
+.client-group-header:not(:first-child) {
   margin-top: 2em;
 }
 
 /* ── Responsive: Tablet (≤768px) ── */
 @media (max-width: 768px) {
-  .observer-header {
+  .client-header {
     flex-wrap: wrap;
     gap: 8px;
   }
@@ -728,11 +728,11 @@
 
 /* ── Responsive: Mobile (≤480px) ── */
 @media (max-width: 480px) {
-  .observer-stats dl {
+  .client-stats dl {
     flex-direction: column;
     gap: 4px;
   }
-  .observer-actions {
+  .client-actions {
     flex-wrap: wrap;
   }
   .command-box {
@@ -813,7 +813,7 @@
 }
 
 /* ── Transitions: interactive elements ── */
-.observer-actions button,
+.client-actions button,
 .copy-btn,
 .modal-close,
 .modal-actions button,
@@ -1628,7 +1628,7 @@ function groupFor(client) {
 }
 
 function groupHeaderHTML(group) {
-  return `<h3 class="observer-group-header" data-group="${group}">${GROUP_LABELS[group]}</h3>`;
+  return `<h3 class="client-group-header" data-group="${group}">${GROUP_LABELS[group]}</h3>`;
 }
 
 function clientCardHTML(client) {
@@ -1638,15 +1638,15 @@ function clientCardHTML(client) {
   const connectionLabel = client.label || client.state || 'unknown';
   const ariaLabel = [displayName, connectionLabel, captureLabel(client)].filter(Boolean).join(', ');
   return `
-    <div class="observer-card ${connectionClassName}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
-      <div class="observer-header">
-        <span class="observer-name">${escapeHtml(displayName)}</span>
-        <span class="observer-source">${escapeHtml(client.cid_short)}</span>
-        <span class="observer-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span>
-        <span class="observer-status ${captureClassName}">${escapeHtml(captureLabel(client))}</span>
+    <div class="client-card ${connectionClassName}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+      <div class="client-header">
+        <span class="client-name">${escapeHtml(displayName)}</span>
+        <span class="client-source">${escapeHtml(client.cid_short)}</span>
+        <span class="client-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span>
+        <span class="client-status ${captureClassName}">${escapeHtml(captureLabel(client))}</span>
       </div>
-      <div class="observer-stats">${clientStatsHTML(client)}</div>
-      <div class="observer-actions">
+      <div class="client-stats">${clientStatsHTML(client)}</div>
+      <div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
       </div>
     </div>
@@ -1698,7 +1698,7 @@ async function loadClients() {
     const activeEl = document.activeElement;
     let focusSelector = null;
     if (activeEl && clientsList.contains(activeEl)) {
-      const card = activeEl.closest('.observer-card');
+      const card = activeEl.closest('.client-card');
       if (card) {
         const cid = card.getAttribute('data-cid');
         const buttons = [...card.querySelectorAll('button')];
@@ -1728,12 +1728,12 @@ async function loadClients() {
   }
 }
 
-function observerNameFor(button) {
-  return button.closest('.observer-card')?.querySelector('.observer-name')?.textContent || 'this device';
+function clientNameFor(button) {
+  return button.closest('.client-card')?.querySelector('.client-name')?.textContent || 'this device';
 }
 
 async function unpairClient(cid, button) {
-  const name = observerNameFor(button);
+  const name = clientNameFor(button);
   if (!confirm(`remove "${name}"? this disconnects that device from your journal.`)) {
     return;
   }

@@ -6,7 +6,7 @@ Quick reference for debugging and diagnosing issues. For detailed specifications
 
 ```bash
 # Check if supervisor services are running
-pgrep -af "sol:observer|sol:sense|sol:supervisor"
+pgrep -af "sol:sense|sol:supervisor"
 
 # Check Callosum socket exists
 ls -la journal/health/callosum.sock
@@ -16,7 +16,7 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 ```
 
 **Healthy state:**
-- All three processes running
+- Both processes running
 - `callosum.sock` exists
 - `supervisor.status` events show no stale heartbeats
 - No `_active.jsonl` files older than a few minutes
@@ -105,7 +105,6 @@ The supervisor (`journal supervisor`) manages these services:
 | Service | Command | Purpose | Auto-restart |
 |---------|---------|---------|--------------|
 | Callosum | (in-process) | Message bus for inter-service events | No |
-| Observer | `journal observer` | Screen/audio capture (platform-detected) | Yes |
 | Sense | `journal sense` | File detection, processing dispatch | Yes |
 
 Cortex (agent execution) connects to Callosum but runs independently via `journal cortex`.
@@ -128,8 +127,8 @@ See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) f
 **Symlink structure:** Journal-level symlinks point to current day's logs. Day-level symlinks point to current process instance (by ref).
 
 ```bash
-# Tail current observer log
-tail -f journal/health/observer.log
+# Tail current sense log
+tail -f journal/health/sense.log
 
 # Find today's logs
 ls -la journal/$(date +%Y%m%d)/health/
@@ -139,21 +138,24 @@ ls -la journal/$(date +%Y%m%d)/health/
 
 ## Health Signals
 
-Health uses a **fail-fast model**: observers exit if they detect problems, and supervisor restarts them. Health is simply whether the observer is running and sending status events.
+Health uses linked-device evidence: whether a paired client is still adding to
+the journal, not whether a retired local observer process recently checked in.
 
-`journal doctor` also runs the `observer_ingest_health` advisory check. It warns
-when the journal has recorded an active observer ingest rejection, but never
-blocks. Remediation is to update or restart the observer, then confirm a valid
+`journal doctor` also runs the `client_ingest_health` advisory check. It warns
+when the journal has recorded an active client ingest rejection, but never
+blocks. Remediation is to update or restart the client, then confirm a valid
 upload clears the active rejection.
-`journal doctor` reports `capture_health` and `observer_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal, not from whether a process recently checked in.
-Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
+`journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
+Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
 
 | Signal | Healthy when | Stale when |
 |--------|--------------|------------|
 | `hear` | Status received within threshold | No status for 60+ seconds |
 | `see` | Status received within threshold | No status for 60+ seconds |
 
-Both signals track the same thing: is the observer alive and communicating? If the observer has capture problems (e.g., screencast files not growing), it exits gracefully and supervisor restarts it.
+Both signals track whether a paired client is reaching the journal. If capture
+is not reaching the journal, update or restart the client and then send a new
+segment.
 
 Staleness threshold: 60 seconds (configurable via `--threshold`).
 
@@ -170,7 +172,7 @@ with the allowlisted fields `name`, `stream_type`, `version`, `uptime`,
 `last_successful_sync`, `pending_queue_depth`, `recent_error_count`, and
 `last_error_reason`. It is emitted at startup and every 5 seconds, including
 when healthy-idle, contains no captured content or file paths, and is distinct
-from platform upload observer beacons and journal-detected ingest rejections.
+from linked-device uploads and journal-detected ingest rejections.
 
 The supervisor checks for `observe.status` event freshness and includes `stale_heartbeats` in its own status.
 
@@ -213,13 +215,13 @@ See [CORTEX.md](CORTEX.md) for complete event schemas and agent configuration.
 
 ## Common Issues
 
-### Observer not capturing
+### Capture not reaching the journal
 
 ```bash
-# Check observer log for errors
-tail -50 journal/health/observer.log | grep -i error
+# Check sense log for errors
+tail -50 journal/health/sense.log | grep -i error
 
-# Check if observer is emitting status (supervisor.status will show stale_heartbeats)
+# Check if sense is emitting status (supervisor.status will show stale_heartbeats)
 # Health is derived from solstone.observe.status Callosum events
 ```
 

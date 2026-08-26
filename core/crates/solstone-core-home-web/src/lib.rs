@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pulse_handler_returns_capture_health_for_a_seeded_observer() {
+    async fn pulse_handler_returns_capture_health_for_a_seeded_client() {
         let root = TempDir::new().expect("temporary journal");
         let now = chrono::Utc
             .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
@@ -338,7 +338,7 @@ mod tests {
             body["capture_health"],
             json!({
                 "status": "active",
-                "observers": [{
+                "clients": [{
                     "name": "desk",
                     "cid": "cid",
                     "last_seen": last_seen,
@@ -368,8 +368,8 @@ mod tests {
         assert_eq!(
             body["capture_health"],
             json!({
-                "status": "no_observers",
-                "observers": [],
+                "status": "no_clients",
+                "clients": [],
                 "unassessed": [{
                     "name": "desk",
                     "cid": "cid",
@@ -394,8 +394,8 @@ mod tests {
         assert_eq!(
             body["capture_health"],
             json!({
-                "status": "no_observers",
-                "observers": [],
+                "status": "no_clients",
+                "clients": [],
                 "unassessed": [],
                 "registry": "registry_empty"
             })

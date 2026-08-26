@@ -5,11 +5,11 @@
 //!
 //! # Declared divergences
 //!
-//! Day stats use `chronicle/<day>/stats.json`; the no-observer CTA is
-//! `/app/network/` and the no-observer glance is `calm`/`neutral` rather than
+//! Day stats use `chronicle/<day>/stats.json`; the no-client CTA is
+//! `/app/network/` and the no-client glance is `calm`/`neutral` rather than
 //! the frozen `ok`/`green`; weekly reflections omit their dead `url`; awareness
 //! reads never create `awareness/`; briefing lateness is a function of supplied phase
-//! and time; observer timestamps are milliseconds rather than bridge seconds;
+//! and time; client timestamps are milliseconds rather than bridge seconds;
 //! pipeline `failed` and `outstanding_failed` stay distinct; and calendar math
 //! is pinned to UTC.
 //!

@@ -1,49 +1,49 @@
 {
   "fixtures": [
     {
-      "id": "declared.observer.ingestUpload.status.ok",
+      "id": "declared.client.ingestUpload.status.ok",
       "kind": "declared",
       "payload": {
         "status": "ok"
       },
       "provenance": {
         "http_status": 200,
-        "vocabulary": "observer.ingestUpload.status"
+        "vocabulary": "client.ingestUpload.status"
       },
       "schema_validation": {
         "valid": true
       }
     },
     {
-      "id": "declared.observer.ingestUpload.status.duplicate",
+      "id": "declared.client.ingestUpload.status.duplicate",
       "kind": "declared",
       "payload": {
         "status": "duplicate"
       },
       "provenance": {
         "http_status": 200,
-        "vocabulary": "observer.ingestUpload.status"
+        "vocabulary": "client.ingestUpload.status"
       },
       "schema_validation": {
         "valid": true
       }
     },
     {
-      "id": "declared.observer.ingestUpload.status.collision",
+      "id": "declared.client.ingestUpload.status.collision",
       "kind": "declared",
       "payload": {
         "status": "collision"
       },
       "provenance": {
         "http_status": 200,
-        "vocabulary": "observer.ingestUpload.status"
+        "vocabulary": "client.ingestUpload.status"
       },
       "schema_validation": {
         "valid": true
       }
     },
     {
-      "id": "declared.observer.ingestUpload.status.conflict",
+      "id": "declared.client.ingestUpload.status.conflict",
       "kind": "declared",
       "payload": {
         "detail": "held sidecar bytes conflict",
@@ -53,21 +53,21 @@
       },
       "provenance": {
         "http_status": 409,
-        "vocabulary": "observer.ingestUpload.status"
+        "vocabulary": "client.ingestUpload.status"
       },
       "schema_validation": {
         "valid": true
       }
     },
     {
-      "id": "declared.observer.ingestUpload.status.failed",
+      "id": "declared.client.ingestUpload.status.failed",
       "kind": "declared",
       "payload": {
         "status": "failed"
       },
       "provenance": {
         "http_status": 500,
-        "vocabulary": "observer.ingestUpload.status"
+        "vocabulary": "client.ingestUpload.status"
       },
       "schema_validation": {
         "note": "vocabulary-only status value; the full Error payload requires error, reason_code, and detail, and the authority enumerates no HTTP 500 reason code",
@@ -75,5 +75,5 @@
       }
     }
   ],
-  "schema": "solstone.observer-client-contract-fixtures.v2"
+  "schema": "solstone.client-ingest-contract-fixtures.v2"
 }

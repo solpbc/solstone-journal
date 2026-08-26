@@ -176,7 +176,7 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     .await
     .expect("Convey binds");
 
-    let mut peers = accept_subscribers(&listener, 2).await;
+    let mut peers = accept_subscribers(&listener, 1).await;
     let now = current_epoch_millis();
     send_health(
         &mut peers,

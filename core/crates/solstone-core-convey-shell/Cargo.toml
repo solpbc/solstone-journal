@@ -123,7 +123,6 @@ solstone-core-journal-config-write = { workspace = true, optional = true }
 solstone-core-identity = { workspace = true, optional = true }
 solstone-core-model-pricing.workspace = true
 solstone-core-npy.workspace = true
-solstone-core-observer.workspace = true
 solstone-core-clients-web.workspace = true
 solstone-core-records-web.workspace = true
 solstone-core-speaker-id.workspace = true

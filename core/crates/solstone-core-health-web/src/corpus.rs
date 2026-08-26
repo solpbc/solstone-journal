@@ -97,6 +97,20 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                         }
                         if case["name"].as_str() == Some("workspace") {
                             replace_text(&mut wanted, "/app/tokens/", "/app/stats/#cost");
+                            for (legacy, current) in [
+                                ("/app/observer/", "/app/network/"),
+                                ("registered-observers", "registered-clients"),
+                                ("registered-observer", "registered-client"),
+                                ("registeredObserversCard", "registeredClientsCard"),
+                                ("registeredObserversStrip", "registeredClientsStrip"),
+                                ("observersCard", "clientsCard"),
+                                ("observersGrid", "clientsGrid"),
+                                ("observers", "clients"),
+                                ("observer-host", "client-host"),
+                                ("observer-stream", "client-stream"),
+                            ] {
+                                replace_text(&mut wanted, legacy, current);
+                            }
                         }
                         for pattern in case["normalized"]
                             .as_array()
@@ -327,10 +341,10 @@ async fn ac9_brain_missing_and_unavailable_stay_distinct() {
 }
 
 #[tokio::test]
-async fn ac13_restart_observer_injects_one_restart_request_each_time() {
+async fn ac13_restart_capture_injects_one_restart_request_each_time() {
     let calls = std::cell::RefCell::new(Vec::new());
     for _ in 0..2 {
-        let response = crate::actions::restart_observer_with("sense", |envelope| {
+        let response = crate::actions::restart_capture_with("sense", |envelope| {
             calls.borrow_mut().push(envelope.clone());
             true
         });

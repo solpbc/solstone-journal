@@ -87,7 +87,7 @@ fn status_mark_table_maps_every_contract_condition_to_its_stem() {
     assert_row(
         &rows[7],
         "*",
-        json!("no_observers"),
+        json!("no_clients"),
         json!("*"),
         "mark-paused",
     );

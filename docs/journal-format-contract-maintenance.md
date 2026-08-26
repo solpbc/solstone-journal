@@ -1,6 +1,6 @@
 # Journal Format Contract Maintenance
 
-## Adding an observer with a new format
+## Adding a client with a new format
 
 Define a new schema whose floor, the `$defs.header` and `$defs.record`
 `required` arrays, captures only what every producer of that format can meet.
@@ -17,7 +17,7 @@ make check-contract
 
 ## Forward-compatibility governing principle
 
-The ingest contract is a published interface consumed by native observers.
+The ingest contract is a published interface consumed by native clients.
 Adding a `required` field is an intentional, deliberately-made, documented
 breaking change because it rejects existing producers. It requires a forward
 maintenance migration or a coordinated producer upgrade. There is no

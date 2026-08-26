@@ -184,8 +184,8 @@ window.whenShellReady(() => {
       });
   }
 
-  function formatObserverLastReported(observers) {
-    const seen = observers.filter(o => typeof o.last_seen === 'number');
+  function formatClientLastReported(clients) {
+    const seen = clients.filter(o => typeof o.last_seen === 'number');
     if (!seen.length) return '';
     const lastSeen = Math.max(...seen.map(o => o.last_seen));
     return relativeTime(Date.now() - lastSeen) + ' ago';
@@ -195,12 +195,12 @@ window.whenShellReady(() => {
     return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
   }
 
-	  function restartObserverFromStatusPane(button, resultEl) {
+	  function restartCaptureFromStatusPane(button, resultEl) {
 	    button.disabled = true;
 	    button.textContent = 'reconnecting…';
 	    resultEl.textContent = '';
-	    // Observer rows are per registration key; supervisor restarts the shared sense worker.
-	    window.apiJson('/app/health/api/restart-observer', {
+	    // Client rows are per registration key; supervisor restarts the shared sense worker.
+	    window.apiJson('/app/health/api/restart-capture', {
 	      method: 'POST',
 	      headers: { 'Content-Type': 'application/json' },
 	      body: JSON.stringify({ service: 'sense' })
@@ -230,7 +230,7 @@ window.whenShellReady(() => {
 		    } else if (status === 'degraded') {
 		      text.textContent = '';
 		      text.style.color = '';
-		      const degraded = (capture.observers || []).filter(o => o.status === 'degraded' && o.ingest_rejection);
+		      const degraded = (capture.clients || []).filter(o => o.status === 'degraded' && o.ingest_rejection);
 		      const appendLine = (value, cssText) => {
 		        const line = document.createElement('div');
 		        line.textContent = value;
@@ -295,10 +295,10 @@ window.whenShellReady(() => {
 		      }
 		      return;
 		    } else if (status === 'stale') {
-		      const stale = (capture.observers || []).filter(o => o.status === 'stale');
+		      const stale = (capture.clients || []).filter(o => o.status === 'stale');
 	      const names = stale.map(o => o.name).filter(Boolean).join(', ');
 	      const label = stale.length === 1 ? 'device' : 'devices';
-	      const lastReported = formatObserverLastReported(stale);
+	      const lastReported = formatClientLastReported(stale);
 	      text.textContent = `${label} ${names || 'device'} last reported ${lastReported || 'recently'}`;
 	      text.style.color = '#f59e0b';
 	      const button = document.createElement('button');
@@ -307,7 +307,7 @@ window.whenShellReady(() => {
 	      button.style.cssText = 'margin-left: 0.5rem; font-size: 12px; padding: 0.15rem 0.45rem; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;';
 	      const result = document.createElement('span');
 	      result.style.cssText = 'margin-left: 0.4rem; font-size: 12px;';
-	      button.addEventListener('click', () => restartObserverFromStatusPane(button, result));
+	      button.addEventListener('click', () => restartCaptureFromStatusPane(button, result));
 	      text.appendChild(button);
 	      text.appendChild(result);
 	      return;
@@ -316,7 +316,7 @@ window.whenShellReady(() => {
     } else {
       text.style.color = '#9ca3af';
     }
-	    if (status === 'no_observers') {
+	    if (status === 'no_clients') {
 	      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
 	    } else if (status === 'active' || status === 'offline') {
 	      text.textContent = 'device ' + status;

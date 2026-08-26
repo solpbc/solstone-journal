@@ -3104,7 +3104,6 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-maintenance",
  "solstone-core-npy",
- "solstone-core-observer",
  "solstone-core-operational-logs",
  "solstone-core-reprocess-cli",
  "solstone-core-segment",
@@ -3365,7 +3364,6 @@ dependencies = [
  "solstone-core-cli-boundary",
  "solstone-core-doctor",
  "solstone-core-format",
- "solstone-core-observer",
  "solstone-core-operational-logs",
  "solstone-core-setup",
  "solstone-core-system-health",
@@ -3393,7 +3391,6 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-ingest",
  "solstone-core-journal-io",
- "solstone-core-observer",
  "solstone-core-retention",
  "solstone-core-segment",
  "tempfile",
@@ -3539,7 +3536,6 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-model-pricing",
  "solstone-core-npy",
- "solstone-core-observer",
  "solstone-core-records-web",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
@@ -4089,7 +4085,6 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-ingest-contract",
  "solstone-core-ingest-resolve",
- "solstone-core-observer",
  "solstone-core-segment",
  "solstone-core-sol-link",
  "tempfile",
@@ -4297,23 +4292,6 @@ dependencies = [
  "ffmpeg-next",
  "ffmpeg-sys-next",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "solstone-core-observer"
-version = "2.0.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "sha2",
- "solstone-core-facets",
- "solstone-core-indexer-store",
- "solstone-core-ingest-resolve",
- "solstone-core-journal-config-write",
- "solstone-core-journal-io",
- "solstone-core-segment",
- "tempfile",
 ]
 
 [[package]]

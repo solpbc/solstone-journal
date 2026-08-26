@@ -10,6 +10,9 @@ pub mod windows_crosscheck;
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
+#[path = "contracts/client_ingest_contract_bundle.rs"]
+mod client_ingest_contract_bundle;
+#[cfg(test)]
 #[path = "contracts/convey_shell_assets.rs"]
 mod convey_shell_assets;
 #[cfg(test)]
@@ -42,9 +45,6 @@ mod distribution_workspace_bins;
 #[cfg(test)]
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
-#[cfg(test)]
-#[path = "contracts/observer_client_contract_bundle.rs"]
-mod observer_client_contract_bundle;
 #[cfg(test)]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;

@@ -136,8 +136,6 @@ mod speakers;
 mod speakers_analyze_client;
 #[cfg(test)]
 mod status_mark;
-#[cfg(feature = "host")]
-mod sync_persist;
 #[cfg(any(test, feature = "test-hooks"))]
 pub use speakers_analyze_client::drive_discovery_cluster_helper;
 mod speakers_attribution;
@@ -231,7 +229,6 @@ pub struct ConveyServeHandle {
     door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
-    sync_persist_task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "host")]
@@ -253,7 +250,6 @@ impl ConveyServeHandle {
         self.loopback_task.abort();
         self.door.shutdown();
         self.link_health_task.abort();
-        self.sync_persist_task.abort();
     }
     pub async fn stop_authorization_refresh(&mut self) {
         self.door.stop_authorization_refresh().await;
@@ -357,9 +353,6 @@ pub async fn bind_with_authorization(
         options.journal_root.clone(),
         link_health_cache.clone(),
     ));
-    let sync_persist_task = tokio::spawn(sync_persist::subscribe_sync_persist(
-        options.journal_root.clone(),
-    ));
     let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
         journal_root: options.journal_root,
         port: options.door_port,
@@ -392,7 +385,6 @@ pub async fn bind_with_authorization(
         door,
         loopback_task,
         link_health_task,
-        sync_persist_task,
     })
 }
 
