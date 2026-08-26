@@ -47,7 +47,7 @@ impl InventoryBudget {
         self.maximum_depth
     }
 
-    /// Maximum UTF-8 byte length for one archive-member component.
+    /// Maximum UTF-8 byte length for one complete archive member name.
     #[must_use]
     pub const fn maximum_member_utf8_bytes(self) -> usize {
         self.maximum_member_utf8_bytes

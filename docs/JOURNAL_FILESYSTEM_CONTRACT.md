@@ -81,26 +81,28 @@ handle, and arms `ReadDirectoryChangesW` with `bWatchSubtree=TRUE` and file-
 and directory-name notifications. The root is revalidated again before the
 result stands.
 
-The watch is an operation-wide refusal witness for both admitted NTFS and ReFS
-roots. A completed watch, `ERROR_NOTIFY_ENUM_DIR`, a zero-byte synchronous
-completion, or inability to arm/check/cancel the watch refuses the whole
-operation. There is no pre/post pathname listing fallback. The root's own
-identity revalidation remains necessary because directory change notifications
-do not report every change to the watched directory object itself.
+The watch is runtime-probed for each admitted NTFS or ReFS root. A completed
+watch, `ERROR_NOTIFY_ENUM_DIR`, a zero-byte synchronous completion, or
+inability to arm/check/cancel the watch refuses the whole operation; an
+unsupported watch makes the capability `Unsupported` for that filesystem.
+There is no pre/post pathname listing fallback. The root's own identity
+revalidation remains necessary because directory change notifications do not
+report every change to the watched directory object itself.
 
 Recursive Windows inventory uses retained-relative child handles and
 `FileIdExtdDirectoryInfo`; every child is checked as a non-reparse directory or
 regular file and matched to its volume-serial plus 128-bit file identity before
-acceptance. A checked file read revalidates every directory in its frozen route,
-reads the full member, and then checks the route, member identity, and witness
-before returning any bytes. Windows retains the Gate-1 ancestor-swap and
+acceptance. A checked file read verifies every directory in its frozen route
+before reading, then rechecks the leaf metadata, root, and witness before
+returning any bytes. Windows retains the Gate-1 ancestor-swap and
 Cloud-Files-after-ancestor-rename limitation above; this source layer does not
 claim to strengthen it.
 
 `InventoryBudget` bounds complete source operations: total observed entries
 before portable policy filtering, recursive depth (admitted root is zero), one
-member's UTF-8 length, native relative UTF-16 path length, and cumulative bytes
-returned by a checked-read session. Exceeding any limit refuses the complete
+portable slash-joined archive member's UTF-8 length, native relative UTF-16
+path length, and cumulative bytes returned by a checked-read session. Exceeding
+any limit refuses the complete
 inventory or checked read; callers never receive a partial snapshot or partial
 member bytes.
 

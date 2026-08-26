@@ -502,7 +502,7 @@ mod tests {
 
     #[cfg(feature = "test-hooks")]
     #[test]
-    fn witness_faults_refuse_inventory_and_checked_bytes() {
+    fn witness_arm_failure_refuses_inventory_without_fallback() {
         use solstone_core_journal_io::{
             WindowsInventoryPrimitive, run_with_windows_inventory_fault,
         };
@@ -517,13 +517,26 @@ mod tests {
             result,
             Err(ArchiveError::UnsupportedJournal { .. })
         ));
+    }
 
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn post_read_witness_refusal_releases_no_checked_bytes() {
+        use solstone_core_journal_io::{
+            WindowsInventoryPrimitive, run_with_windows_inventory_fault,
+        };
+
+        let (_temporary, root) = fixture("post-read-witness");
         let source = ArchiveSource::open(&root).expect("open ordinary source");
         let entry = source
             .inventory()
             .entries()
             .first()
             .expect("inventory entry");
+        // `WindowsCheckedReadSession::read` reaches its first `WitnessCheck` only
+        // after a successful exact read and leaf metadata comparison. Injecting
+        // this failure therefore proves the checked-read boundary returns an
+        // error instead of releasing those already-read bytes.
         let (result, consumed) =
             run_with_windows_inventory_fault(WindowsInventoryPrimitive::WitnessCheck, 1, 1, || {
                 source.open_file(entry)

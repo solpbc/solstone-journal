@@ -41,6 +41,7 @@ use crate::{
 
 const DIRECTORY_BUFFER_BYTES: usize = 64 * 1024;
 const WATCH_BUFFER_BYTES: usize = 64 * 1024;
+const WATCH_BUFFER_DWORDS: usize = WATCH_BUFFER_BYTES / size_of::<u32>();
 
 /// Native post-admission primitives covered by the Windows inventory test hook.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -457,6 +458,7 @@ pub fn enumerate_windows_inventory(
             root,
             listed_root.as_raw_handle(),
             PathBuf::new(),
+            String::new(),
             Vec::new(),
             0,
             budget,
@@ -615,7 +617,7 @@ fn with_witness<T>(
 
 struct NamespaceWitness {
     handle: OwnedHandle,
-    buffer: Vec<u8>,
+    buffer: Vec<u32>,
     overlapped: OVERLAPPED,
     armed: bool,
     root: PathBuf,
@@ -647,19 +649,19 @@ impl NamespaceWitness {
         let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
         let mut witness = Self {
             handle,
-            buffer: vec![0; WATCH_BUFFER_BYTES],
+            buffer: vec![0; WATCH_BUFFER_DWORDS],
             overlapped: OVERLAPPED::default(),
             armed: false,
             root: root.canonical_path().to_path_buf(),
         };
         traced_inventory(WindowsInventoryPrimitive::WatchArm, || {
-            // SAFETY: the witness owns the asynchronous directory handle, buffer, and OVERLAPPED for the request lifetime; the buffer is DWORD-aligned by `Vec<u8>` allocation and remains live until drain.
+            // SAFETY: the witness owns the asynchronous directory handle, `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and `OVERLAPPED` remain live until the request drains.
             #[allow(unsafe_code)]
             let result = unsafe {
                 ReadDirectoryChangesW(
                     witness.handle.as_raw_handle(),
                     witness.buffer.as_mut_ptr().cast(),
-                    witness.buffer.len() as u32,
+                    WATCH_BUFFER_BYTES as u32,
                     1,
                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
                     std::ptr::null_mut(),
@@ -800,6 +802,7 @@ fn walk_directory(
     root: &JournalRoot,
     directory: std::os::windows::io::RawHandle,
     relative: PathBuf,
+    member: String,
     route: Vec<WindowsRouteComponent>,
     depth: usize,
     budget: InventoryBudget,
@@ -814,7 +817,7 @@ fn walk_directory(
         usage
             .observe_entry(budget)
             .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
-        let name = checked_name(&listed.name, &relative, budget)?;
+        let (name, child_member) = checked_name(&listed.name, &relative, &member, budget)?;
         let mut child_path = relative.clone();
         child_path.push(&name);
         let next_depth = depth
@@ -862,6 +865,7 @@ fn walk_directory(
                 root,
                 listed_child.as_raw_handle(),
                 child_path,
+                child_member,
                 child_route,
                 next_depth,
                 budget,
@@ -927,48 +931,58 @@ fn parse_directory_buffer(
     let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
     let mut offset = 0usize;
     loop {
-        if buffer.len().saturating_sub(offset) < header_bytes {
-            return Err(invalid_directory_buffer(relative));
-        }
-        // SAFETY: `offset` has at least the fixed record prefix available. `read_unaligned` avoids imposing alignment on the byte buffer.
-        #[allow(unsafe_code)]
-        let header = unsafe {
-            (buffer.as_ptr().add(offset).cast::<FILE_ID_EXTD_DIR_INFO>()).read_unaligned()
-        };
-        let name_bytes = usize::try_from(header.FileNameLength)
-            .map_err(|_| invalid_directory_buffer(relative))?;
+        let remaining = buffer
+            .get(offset..)
+            .ok_or_else(|| invalid_directory_buffer(relative))?;
+        let header = remaining
+            .get(..header_bytes)
+            .ok_or_else(|| invalid_directory_buffer(relative))?;
+        let name_bytes = usize::try_from(directory_u32(
+            header,
+            offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength),
+            relative,
+        )?)
+        .map_err(|_| invalid_directory_buffer(relative))?;
         if name_bytes % size_of::<u16>() != 0 {
             return Err(invalid_directory_buffer(relative));
         }
         let record_bytes = header_bytes
             .checked_add(name_bytes)
             .ok_or_else(|| invalid_directory_buffer(relative))?;
-        if record_bytes > buffer.len().saturating_sub(offset) {
-            return Err(invalid_directory_buffer(relative));
-        }
-        let name_units = name_bytes / size_of::<u16>();
-        // SAFETY: the checked record extent contains exactly `name_units` UTF-16 units beginning at the flexible-array offset; unaligned reads are copied before decoding.
-        #[allow(unsafe_code)]
-        let name = unsafe {
-            let pointer = buffer.as_ptr().add(offset + header_bytes).cast::<u16>();
-            std::slice::from_raw_parts(pointer, name_units)
-                .iter()
-                .map(|unit| u16::from_le(*unit))
-                .collect::<Vec<_>>()
-        };
+        let record = remaining
+            .get(..record_bytes)
+            .ok_or_else(|| invalid_directory_buffer(relative))?;
+        let name = record[header_bytes..]
+            .chunks_exact(size_of::<u16>())
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect::<Vec<_>>();
         let name = String::from_utf16(&name).map_err(|_| WindowsInventoryError::InvalidName {
             path: relative.to_path_buf(),
         })?;
+        let file_id_start = offset_of!(FILE_ID_EXTD_DIR_INFO, FileId);
+        let file_id_end = file_id_start
+            .checked_add(16)
+            .ok_or_else(|| invalid_directory_buffer(relative))?;
+        let file_id = record
+            .get(file_id_start..file_id_end)
+            .ok_or_else(|| invalid_directory_buffer(relative))?
+            .try_into()
+            .map_err(|_| invalid_directory_buffer(relative))?;
         entries.push(ListedEntry {
             name: OsString::from(name),
-            file_id: header.FileId.Identifier,
+            file_id,
         });
-        if header.NextEntryOffset == 0 {
+        let next_entry_offset = directory_u32(
+            header,
+            offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset),
+            relative,
+        )?;
+        if next_entry_offset == 0 {
             break;
         }
-        let next = usize::try_from(header.NextEntryOffset)
-            .map_err(|_| invalid_directory_buffer(relative))?;
-        if next < record_bytes || next > buffer.len().saturating_sub(offset) {
+        let next =
+            usize::try_from(next_entry_offset).map_err(|_| invalid_directory_buffer(relative))?;
+        if next < record_bytes || next > remaining.len() {
             return Err(invalid_directory_buffer(relative));
         }
         offset = offset
@@ -976,6 +990,22 @@ fn parse_directory_buffer(
             .ok_or_else(|| invalid_directory_buffer(relative))?;
     }
     Ok(())
+}
+
+fn directory_u32(
+    header: &[u8],
+    field_offset: usize,
+    relative: &Path,
+) -> Result<u32, WindowsInventoryError> {
+    let field_end = field_offset
+        .checked_add(size_of::<u32>())
+        .ok_or_else(|| invalid_directory_buffer(relative))?;
+    let field: [u8; 4] = header
+        .get(field_offset..field_end)
+        .ok_or_else(|| invalid_directory_buffer(relative))?
+        .try_into()
+        .map_err(|_| invalid_directory_buffer(relative))?;
+    Ok(u32::from_le_bytes(field))
 }
 
 fn invalid_directory_buffer(relative: &Path) -> WindowsInventoryError {
@@ -992,8 +1022,9 @@ fn invalid_directory_buffer(relative: &Path) -> WindowsInventoryError {
 fn checked_name(
     name: &OsStr,
     parent: &Path,
+    parent_member: &str,
     budget: InventoryBudget,
-) -> Result<OsString, WindowsInventoryError> {
+) -> Result<(OsString, String), WindowsInventoryError> {
     let text = name
         .to_str()
         .ok_or_else(|| WindowsInventoryError::InvalidName {
@@ -1002,12 +1033,17 @@ fn checked_name(
     check_portable_component(text).map_err(|_| WindowsInventoryError::InvalidName {
         path: parent.join(name),
     })?;
-    InventoryUsage::check_member(budget, text)
+    let member = if parent_member.is_empty() {
+        text.to_owned()
+    } else {
+        format!("{parent_member}/{text}")
+    };
+    InventoryUsage::check_member(budget, &member)
         .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
     let path = parent.join(name);
     InventoryUsage::check_relative_path(budget, &path)
         .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
-    Ok(name.to_os_string())
+    Ok((name.to_os_string(), member))
 }
 
 fn open_relative(
@@ -1498,7 +1534,7 @@ mod tests {
     #[test]
     fn malformed_names_and_reparse_attributes_are_refused_by_adapters() {
         assert!(matches!(
-            checked_name(OsStr::new("bad:name"), Path::new(""), budget()),
+            checked_name(OsStr::new("bad:name"), Path::new(""), "", budget()),
             Err(WindowsInventoryError::InvalidName { .. })
         ));
         let attributes = FILE_ATTRIBUTE_TAG_INFO {
@@ -1516,6 +1552,42 @@ mod tests {
             Err(WindowsInventoryError::Io {
                 operation: "parse retained directory listing",
                 ..
+            })
+        ));
+    }
+
+    #[test]
+    fn short_final_directory_record_is_decoded_without_struct_read() {
+        let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
+        let mut record = vec![0; header_bytes + size_of::<u16>()];
+        record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength)
+            ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength) + size_of::<u32>()]
+            .copy_from_slice(&(size_of::<u16>() as u32).to_le_bytes());
+        record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileId)
+            ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileId) + 16]
+            .copy_from_slice(&[0x5A; 16]);
+        record[header_bytes..].copy_from_slice(&('x' as u16).to_le_bytes());
+
+        let mut entries = Vec::new();
+        parse_directory_buffer(&record, Path::new(""), &mut entries).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, OsString::from("x"));
+        assert_eq!(entries[0].file_id, [0x5A; 16]);
+    }
+
+    #[test]
+    fn member_limit_counts_the_complete_slash_joined_name() {
+        let (_, parent_member) =
+            checked_name(OsStr::new("one"), Path::new(""), "", budget()).unwrap();
+        assert!(matches!(
+            checked_name(
+                OsStr::new("two"),
+                Path::new("one"),
+                &parent_member,
+                InventoryBudget::new(32, 8, 6, 1024, 1024),
+            ),
+            Err(WindowsInventoryError::BudgetExceeded {
+                limit: InventoryBudgetLimit::MemberUtf8Bytes
             })
         ));
     }
