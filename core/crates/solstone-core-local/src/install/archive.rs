@@ -42,6 +42,9 @@ pub fn extract_tar_gz(archive: &Path, destination: &Path) -> Result<(), ArchiveE
                 link.display()
             )));
         }
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent)?;
+        }
         entry.unpack(output)?;
     }
     Ok(())

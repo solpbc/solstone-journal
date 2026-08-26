@@ -1478,6 +1478,91 @@ fn extraction_refuses_symlink_and_hardlink_escapes_without_parent_changes() {
     }
 }
 
+#[test]
+fn extraction_creates_missing_parent_for_regular_file_entry() {
+    let root = temp("missing-dirent-file");
+    let archive_path = root.join("missing-dirent-file.tar.gz");
+    let contents = b"NVIDIA CUDA EULA";
+    let file = fs::File::create(&archive_path).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_gnu();
+    header.set_size(contents.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder
+        .append_data(
+            &mut header,
+            "licenses/NVIDIA-CUDA-EULA-13.3.txt",
+            contents.as_slice(),
+        )
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
+
+    let destination = root.join("dest");
+    let extraction = archive::extract_tar_gz(&archive_path, &destination);
+    assert!(
+        extraction.is_ok(),
+        "failed to extract fixture: {extraction:?}"
+    );
+    assert_eq!(
+        fs::read(destination.join("licenses/NVIDIA-CUDA-EULA-13.3.txt")).unwrap(),
+        contents
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn extraction_creates_missing_parent_for_symlink_entry() {
+    let root = temp("missing-dirent-symlink");
+    let archive_path = root.join("missing-dirent-symlink.tar.gz");
+    let contents = b"NVIDIA CUDA EULA";
+    let file = fs::File::create(&archive_path).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+
+    let mut link_header = tar::Header::new_gnu();
+    link_header.set_entry_type(tar::EntryType::Symlink);
+    link_header.set_size(0);
+    link_header.set_mode(0o777);
+    link_header
+        .set_link_name("NVIDIA-CUDA-EULA-13.3.txt")
+        .unwrap();
+    link_header.set_cksum();
+    builder
+        .append_data(&mut link_header, "licenses/CUDA-EULA.txt", std::io::empty())
+        .unwrap();
+
+    let mut file_header = tar::Header::new_gnu();
+    file_header.set_size(contents.len() as u64);
+    file_header.set_mode(0o644);
+    file_header.set_cksum();
+    builder
+        .append_data(
+            &mut file_header,
+            "licenses/NVIDIA-CUDA-EULA-13.3.txt",
+            contents.as_slice(),
+        )
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
+
+    let destination = root.join("dest");
+    let extraction = archive::extract_tar_gz(&archive_path, &destination);
+    assert!(
+        extraction.is_ok(),
+        "failed to extract fixture: {extraction:?}"
+    );
+    let link = destination.join("licenses/CUDA-EULA.txt");
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read(link).unwrap(), contents);
+    let _ = fs::remove_dir_all(root);
+}
+
 fn write_nested_vulkan_tar(path: &std::path::Path) {
     let file = fs::File::create(path).unwrap();
     let encoder = GzEncoder::new(file, Compression::default());
