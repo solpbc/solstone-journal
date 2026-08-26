@@ -22,7 +22,7 @@ use solstone_core_system::lifecycle::{
 use solstone_core_system::lifecycle::{
     AdmissionWaitMarker, AdmissionWaitReason, FRESH_WINDOW_SECONDS, Heartbeat, HeartbeatV2, RunId,
     ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle, SyncCheckResult,
-    SyncRescan, WriterId, admission_wait_marker_filename, append_supervisor_log,
+    SyncPeerIdentity, SyncRescan, WriterId, admission_wait_marker_filename, append_supervisor_log,
     compact_log_if_oversized, rescan_sync_read_only, sanitize_hostname, shutdown,
     sync_conflict_event, v2_heartbeat_filename, write_sync_heartbeat,
 };
@@ -652,8 +652,49 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
             .all(|peer| { peer.source_filename != OsStr::new("self.check") })
     );
     let event = sync_conflict_event(&first).expect("tick event");
-    assert_eq!(event.machine_id_prefix, "foreign");
+    assert_eq!(
+        event.identity,
+        SyncPeerIdentity::LegacyV1 {
+            legacy_machine_id_prefix: "foreign".to_owned(),
+        }
+    );
     assert_eq!(event.hostname, "foreign-host");
+}
+
+#[test]
+fn v2_tick_conflict_event_carries_writer_and_run_identity() {
+    let bed = Bed::new("v2-tick-conflict");
+    let heartbeat = HeartbeatV2::new(
+        writer_id(),
+        RunId::parse("fedcba9876543210fedcba9876543210").expect("run ID"),
+        "foreign-v2-host".to_owned(),
+        42,
+        "1234.5".to_owned(),
+        "test".to_owned(),
+        15,
+        "/foreign-journal".to_owned(),
+    );
+    let filename = v2_heartbeat_filename(&heartbeat.writer_id, &heartbeat.run_id);
+    write_fixture_heartbeat(
+        &bed.root,
+        &filename,
+        &serde_json::to_vec(&heartbeat).expect("v2 heartbeat JSON"),
+    );
+
+    let result = rescan_sync(&bed.root, "self.check", None, now_seconds()).expect("scan");
+    assert!(result.is_tick_conflict(Some(&result.snapshot)));
+    let event = sync_conflict_event(&result).expect("v2 tick event");
+    assert_eq!(event.hostname, "foreign-v2-host");
+    assert_eq!(event.journal_path, "/foreign-journal");
+    assert_eq!(event.pid, Some(42));
+    assert_eq!(event.wall_time.as_deref(), Some("1234.5"));
+    assert_eq!(
+        event.identity,
+        SyncPeerIdentity::V2 {
+            writer_id_prefix: "01234567".to_owned(),
+            run_id: "fedcba9876543210fedcba9876543210".to_owned(),
+        }
+    );
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

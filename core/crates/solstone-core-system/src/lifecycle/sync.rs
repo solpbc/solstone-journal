@@ -506,13 +506,156 @@ pub struct SyncPeerObservation {
     pub is_live: bool,
 }
 
+/// Schema-discriminated identity suitable for diagnostic surfaces.
+///
+/// V1-style records retain their historical machine ID under an explicitly
+/// legacy name. V2 records expose the installation writer prefix and the
+/// per-boot run ID; neither is ever projected as a machine ID.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SyncPeerIdentity {
+    LegacyV1 {
+        legacy_machine_id_prefix: String,
+    },
+    UnknownFuture {
+        legacy_machine_id_prefix: String,
+    },
+    V2 {
+        writer_id_prefix: String,
+        run_id: String,
+    },
+    Unidentified,
+}
+
+impl SyncPeerIdentity {
+    pub const fn schema_name(&self) -> &'static str {
+        match self {
+            Self::LegacyV1 { .. } => "v1",
+            Self::UnknownFuture { .. } => "unknown-future",
+            Self::V2 { .. } => "v2",
+            Self::Unidentified => "unidentified",
+        }
+    }
+
+    pub fn legacy_machine_id_prefix(&self) -> Option<&str> {
+        match self {
+            Self::LegacyV1 {
+                legacy_machine_id_prefix,
+            }
+            | Self::UnknownFuture {
+                legacy_machine_id_prefix,
+            } => Some(legacy_machine_id_prefix),
+            Self::V2 { .. } | Self::Unidentified => None,
+        }
+    }
+
+    pub fn writer_id_prefix(&self) -> Option<&str> {
+        match self {
+            Self::V2 {
+                writer_id_prefix, ..
+            } => Some(writer_id_prefix),
+            Self::LegacyV1 { .. } | Self::UnknownFuture { .. } | Self::Unidentified => None,
+        }
+    }
+
+    pub fn run_id(&self) -> Option<&str> {
+        match self {
+            Self::V2 { run_id, .. } => Some(run_id),
+            Self::LegacyV1 { .. } | Self::UnknownFuture { .. } | Self::Unidentified => None,
+        }
+    }
+
+    pub fn display_prefix(&self) -> &str {
+        match self {
+            Self::LegacyV1 {
+                legacy_machine_id_prefix,
+            }
+            | Self::UnknownFuture {
+                legacy_machine_id_prefix,
+            } => legacy_machine_id_prefix,
+            Self::V2 {
+                writer_id_prefix, ..
+            } => writer_id_prefix,
+            Self::Unidentified => "(unknown)",
+        }
+    }
+
+    pub const fn is_unidentified(&self) -> bool {
+        matches!(self, Self::Unidentified)
+    }
+}
+
+/// Diagnostic fields extracted from a peer without collapsing v1 and v2
+/// identity into one ambiguous machine-ID field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncPeerDiagnostic {
+    pub hostname: String,
+    pub journal_path: String,
+    pub pid: Option<u32>,
+    pub wall_time: Option<String>,
+    pub identity: SyncPeerIdentity,
+}
+
+/// Extract diagnostic data, returning `Unidentified` for non-authoritative or
+/// malformed records.
+#[must_use]
+pub fn sync_peer_diagnostic(peer: &SyncPeerObservation) -> SyncPeerDiagnostic {
+    match &peer.classification {
+        HeartbeatClassification::SchemaV1(heartbeat) => legacy_sync_peer_diagnostic(
+            heartbeat,
+            SyncPeerIdentity::LegacyV1 {
+                legacy_machine_id_prefix: machine_id_prefix(&heartbeat.machine_id),
+            },
+        ),
+        HeartbeatClassification::UnknownFuture(heartbeat) => legacy_sync_peer_diagnostic(
+            heartbeat,
+            SyncPeerIdentity::UnknownFuture {
+                legacy_machine_id_prefix: machine_id_prefix(&heartbeat.machine_id),
+            },
+        ),
+        HeartbeatClassification::SchemaV2(heartbeat) => SyncPeerDiagnostic {
+            hostname: heartbeat.hostname.clone(),
+            journal_path: heartbeat.journal_path.clone(),
+            pid: Some(heartbeat.pid),
+            wall_time: Some(heartbeat.wall_time.clone()),
+            identity: SyncPeerIdentity::V2 {
+                writer_id_prefix: identifier_prefix(&heartbeat.writer_id.as_hex()),
+                run_id: heartbeat.run_id.as_hex(),
+            },
+        },
+        HeartbeatClassification::IdentityMismatch(_)
+        | HeartbeatClassification::AdmissionWaitMarker(_)
+        | HeartbeatClassification::AdmissionWaitMarkerIdentityMismatch(_)
+        | HeartbeatClassification::AdmissionWaitMarkerMalformed
+        | HeartbeatClassification::BoundedMalformed => SyncPeerDiagnostic {
+            hostname: String::new(),
+            journal_path: String::new(),
+            pid: None,
+            wall_time: None,
+            identity: SyncPeerIdentity::Unidentified,
+        },
+    }
+}
+
+fn legacy_sync_peer_diagnostic(
+    heartbeat: &Heartbeat,
+    identity: SyncPeerIdentity,
+) -> SyncPeerDiagnostic {
+    SyncPeerDiagnostic {
+        hostname: heartbeat.hostname.clone(),
+        journal_path: heartbeat.journal_path.clone(),
+        pid: Some(heartbeat.pid),
+        wall_time: Some(heartbeat.wall_time.clone()),
+        identity,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SyncConflictEvent {
     pub hostname: String,
     pub journal_path: String,
     pub pid: Option<u32>,
-    pub machine_id_prefix: String,
-    pub wall_time: String,
+    pub wall_time: Option<String>,
+    pub identity: SyncPeerIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -539,25 +682,26 @@ pub enum SyncRescan {
 
 pub fn sync_conflict_event(result: &SyncCheckResult) -> Option<SyncConflictEvent> {
     result.live_peer_observations.first().map(|writer| {
-        let heartbeat = writer.heartbeat.as_ref();
+        let diagnostic = sync_peer_diagnostic(writer);
         SyncConflictEvent {
-            hostname: heartbeat
-                .map_or_else(|| "(unknown)".to_owned(), |value| value.hostname.clone()),
-            journal_path: heartbeat.map_or_else(String::new, |value| value.journal_path.clone()),
-            pid: heartbeat.map(|value| value.pid),
-            machine_id_prefix: machine_id_prefix(
-                heartbeat.map_or("", |value| value.machine_id.as_str()),
-            ),
-            wall_time: heartbeat.map_or_else(String::new, |value| value.wall_time.clone()),
+            hostname: diagnostic.hostname,
+            journal_path: diagnostic.journal_path,
+            pid: diagnostic.pid,
+            wall_time: diagnostic.wall_time,
+            identity: diagnostic.identity,
         }
     })
 }
 
 fn machine_id_prefix(machine_id: &str) -> String {
-    if machine_id.is_empty() {
+    identifier_prefix(machine_id)
+}
+
+fn identifier_prefix(identifier: &str) -> String {
+    if identifier.is_empty() {
         "(unknown)".to_owned()
     } else {
-        machine_id.chars().take(8).collect()
+        identifier.chars().take(8).collect()
     }
 }
 
@@ -805,7 +949,7 @@ fn classification_heartbeat(classification: &HeartbeatClassification) -> Option<
 }
 
 fn classify_heartbeat(name: &OsStr, bytes: &[u8]) -> HeartbeatClassification {
-    if is_admission_wait_marker_candidate(name) {
+    if is_admission_wait_marker_filename_candidate(name) {
         return classify_admission_wait_marker(name, bytes);
     }
 
@@ -843,9 +987,8 @@ fn classify_heartbeat(name: &OsStr, bytes: &[u8]) -> HeartbeatClassification {
     }
 }
 
-fn is_admission_wait_marker_candidate(name: &OsStr) -> bool {
-    name.to_str()
-        .is_some_and(|name| name.starts_with("solstone-wait-v2-"))
+pub fn is_admission_wait_marker_filename_candidate(name: &OsStr) -> bool {
+    name.as_encoded_bytes().starts_with(b"solstone-wait-v2-")
 }
 
 fn classify_admission_wait_marker(name: &OsStr, bytes: &[u8]) -> HeartbeatClassification {
@@ -904,6 +1047,8 @@ fn lower_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
 
     use sha2::{Digest, Sha256};
     use tempfile::Builder;
@@ -1043,6 +1188,46 @@ mod tests {
             ),
             HeartbeatClassification::AdmissionWaitMarkerIdentityMismatch(_)
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_marker_shaped_filename_is_marker_malformed_not_generic_malformed() {
+        let mut filename = b"solstone-wait-v2-".to_vec();
+        filename.push(0xff);
+        filename.extend_from_slice(b".check");
+        let filename = OsString::from_vec(filename);
+
+        assert!(matches!(
+            classify_heartbeat(&filename, b"{}"),
+            HeartbeatClassification::AdmissionWaitMarkerMalformed
+        ));
+    }
+
+    #[test]
+    fn peer_diagnostics_preserve_legacy_and_v2_identity_kinds() {
+        let legacy = sync_peer_diagnostic(&SyncPeerObservation {
+            source_filename: OsString::from("legacy.check"),
+            classification: HeartbeatClassification::UnknownFuture(heartbeat(9, "abcdefgh9")),
+            heartbeat: None,
+            is_live: false,
+        });
+        assert_eq!(
+            legacy.identity,
+            SyncPeerIdentity::UnknownFuture {
+                legacy_machine_id_prefix: "abcdefgh".to_owned(),
+            }
+        );
+
+        let unidentified = sync_peer_diagnostic(&SyncPeerObservation {
+            source_filename: OsString::from("broken.check"),
+            classification: HeartbeatClassification::BoundedMalformed,
+            heartbeat: None,
+            is_live: false,
+        });
+        assert!(unidentified.identity.is_unidentified());
+        assert!(unidentified.hostname.is_empty());
+        assert!(unidentified.journal_path.is_empty());
     }
 
     #[test]

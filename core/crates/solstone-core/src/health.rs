@@ -444,7 +444,10 @@ struct ScheduleWireRow {
 #[derive(Deserialize)]
 struct StaleHeartbeatDetailWireRow {
     hostname: String,
-    machine_id_prefix: String,
+    heartbeat_schema: String,
+    legacy_machine_id_prefix: Option<String>,
+    writer_id_prefix: Option<String>,
+    run_id: Option<String>,
     journal_path: String,
     pid: Option<u32>,
     wall_time: Option<String>,
@@ -623,6 +626,35 @@ mod tests {
         assert_eq!(
             render_status(&status),
             "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\n"
+        );
+    }
+
+    #[test]
+    fn status_decodes_v2_stale_heartbeat_identity_without_machine_id_fields() {
+        let mut value = status_value();
+        value["stale_heartbeat_details"] = json!([
+            {
+                "hostname": "foreign-host",
+                "heartbeat_schema": "v2",
+                "legacy_machine_id_prefix": null,
+                "writer_id_prefix": "01234567",
+                "run_id": "fedcba9876543210fedcba9876543210",
+                "journal_path": "/foreign-journal",
+                "pid": 42,
+                "wall_time": "1234.5",
+                "malformed": false,
+                "reason_code": "stale-heartbeat"
+            }
+        ]);
+
+        let status: SupervisorStatus = serde_json::from_value(value).unwrap();
+        let detail = &status.stale_heartbeat_details[0];
+        assert_eq!(detail.heartbeat_schema, "v2");
+        assert_eq!(detail.legacy_machine_id_prefix, None);
+        assert_eq!(detail.writer_id_prefix.as_deref(), Some("01234567"));
+        assert_eq!(
+            detail.run_id.as_deref(),
+            Some("fedcba9876543210fedcba9876543210")
         );
     }
 

@@ -4,6 +4,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_system::lifecycle::{SyncPeerIdentity, sync_peer_diagnostic};
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
@@ -50,14 +51,15 @@ fn render_sync_rescan(
             let detail = result
                 .as_ref()
                 .and_then(|result| result.peer_observations.last())
-                .and_then(|peer| peer.heartbeat.as_ref())
+                .map(sync_peer_diagnostic)
+                .filter(|writer| !writer.identity.is_unidentified())
                 .map_or_else(
                     || clean.to_owned(),
                     |writer| {
                         format!(
-                            "{clean}\n  last foreign writer: {} (machine {}...)",
+                            "{clean}\n  last foreign writer: {} ({})",
                             writer.hostname,
-                            writer.machine_id.chars().take(8).collect::<String>()
+                            doctor_identity_label(&writer.identity)
                         )
                     },
                 );
@@ -66,12 +68,32 @@ fn render_sync_rescan(
     }
 }
 
+fn doctor_identity_label(identity: &SyncPeerIdentity) -> String {
+    match identity {
+        SyncPeerIdentity::LegacyV1 {
+            legacy_machine_id_prefix,
+        }
+        | SyncPeerIdentity::UnknownFuture {
+            legacy_machine_id_prefix,
+        } => format!("legacy machine {legacy_machine_id_prefix}..."),
+        SyncPeerIdentity::V2 {
+            writer_id_prefix,
+            run_id,
+        } => format!("writer {writer_id_prefix}... run {run_id}"),
+        SyncPeerIdentity::Unidentified => "unidentified heartbeat".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
     use std::path::PathBuf;
 
     use chrono::Utc;
-    use solstone_core_system::lifecycle::{SyncCheckResult, SyncSnapshot};
+    use solstone_core_system::lifecycle::{
+        HeartbeatClassification, HeartbeatV2, RunId, SyncCheckResult, SyncPeerObservation,
+        SyncSnapshot, WriterId,
+    };
     use solstone_core_system_health::SyncRescanDiagnosis;
 
     use super::{Check, CheckContext, Status, render_sync_rescan};
@@ -161,5 +183,43 @@ mod tests {
         )
         .unwrap();
         assert_eq!(complete.status, Status::Ok);
+    }
+
+    #[test]
+    fn clean_rescan_labels_a_v2_peer_with_writer_and_run_identity() {
+        let heartbeat = HeartbeatV2::new(
+            WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID"),
+            RunId::parse("fedcba9876543210fedcba9876543210").expect("run ID"),
+            "foreign-host".to_owned(),
+            42,
+            "1234.5".to_owned(),
+            "test".to_owned(),
+            15,
+            "/foreign-journal".to_owned(),
+        );
+        let result = render_sync_rescan(
+            &context(),
+            check(),
+            SyncRescanDiagnosis::Clean(Some(SyncCheckResult {
+                snapshot: SyncSnapshot::default(),
+                peer_observations: vec![SyncPeerObservation {
+                    source_filename: OsString::from("foreign.check"),
+                    classification: HeartbeatClassification::SchemaV2(heartbeat),
+                    heartbeat: None,
+                    is_live: false,
+                }],
+                live_peer_observations: Vec::new(),
+            })),
+        )
+        .unwrap();
+
+        assert_eq!(result.status, Status::Ok);
+        assert!(result.detail.contains("foreign-host"));
+        assert!(
+            result
+                .detail
+                .contains("writer 01234567... run fedcba9876543210fedcba9876543210")
+        );
+        assert!(!result.detail.contains("machine"));
     }
 }

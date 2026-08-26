@@ -398,9 +398,7 @@ fn admission_wait_scan_failure(failure: sync::SyncScanFailure) -> LifecycleError
     let marker_filename = match &failure {
         sync::SyncScanFailure::UnsafeEntry { name, .. }
         | sync::SyncScanFailure::IncompleteSnapshot { name, .. }
-            if name
-                .to_str()
-                .is_some_and(|name| name.starts_with("solstone-wait-v2-")) =>
+            if sync::is_admission_wait_marker_filename_candidate(name) =>
         {
             Some(name.clone())
         }

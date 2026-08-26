@@ -51,11 +51,12 @@ pub use sync::{
     HEARTBEAT_SCHEMA_V2, Heartbeat, HeartbeatClassification, HeartbeatV2,
     MAX_SYNC_DIRECTORY_ENTRIES, MAX_SYNC_HEARTBEAT_BYTES, RunId, RunIdGenerationError,
     SyncCheckResult, SyncConflictEvent, SyncDirectoryOperation, SyncIncompleteSnapshotReason,
-    SyncPeerObservation, SyncReadOperation, SyncRescan, SyncScanFailure, SyncSnapshot,
-    SyncUnsafeReason, V2HeartbeatFilenameError, WriterId, WriterIdParseError,
-    admission_wait_marker_filename, parse_admission_wait_marker_filename,
+    SyncPeerDiagnostic, SyncPeerIdentity, SyncPeerObservation, SyncReadOperation, SyncRescan,
+    SyncScanFailure, SyncSnapshot, SyncUnsafeReason, V2HeartbeatFilenameError, WriterId,
+    WriterIdParseError, admission_wait_marker_filename,
+    is_admission_wait_marker_filename_candidate, parse_admission_wait_marker_filename,
     parse_v2_heartbeat_filename, rescan_sync_read_only, sanitize_hostname, sync_conflict_event,
-    v2_heartbeat_filename,
+    sync_peer_diagnostic, v2_heartbeat_filename,
 };
 
 /// Result of a supervisor heartbeat renewal and complete peer scan.

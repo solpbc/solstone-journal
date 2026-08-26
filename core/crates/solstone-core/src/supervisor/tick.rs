@@ -16,6 +16,7 @@ use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
     SupervisorLifecycle, SyncPeerObservation, SyncTickOutcome, sync_conflict_event,
+    sync_peer_diagnostic,
 };
 use solstone_core_system::process::{ProcessInstanceSource, SystemProcessInstanceSource};
 use solstone_core_system::process::{
@@ -682,15 +683,16 @@ fn is_crashed_phase(phase: RuntimePhase) -> bool {
 }
 
 fn stale_heartbeat_wire_input(writer: &SyncPeerObservation) -> StaleHeartbeatWireInput {
-    let heartbeat = writer.heartbeat.as_ref();
+    let diagnostic = sync_peer_diagnostic(writer);
+    let malformed = diagnostic.identity.is_unidentified();
     StaleHeartbeatWireInput {
         source_filename: writer.source_filename.as_encoded_bytes().to_vec(),
-        hostname: heartbeat.map_or_else(String::new, |value| value.hostname.clone()),
-        machine_id: heartbeat.map_or_else(String::new, |value| value.machine_id.clone()),
-        journal_path: heartbeat.map_or_else(String::new, |value| value.journal_path.clone()),
-        pid: heartbeat.map(|value| value.pid),
-        wall_time: heartbeat.map(|value| value.wall_time.clone()),
-        malformed: heartbeat.is_none(),
+        hostname: diagnostic.hostname,
+        identity: diagnostic.identity,
+        journal_path: diagnostic.journal_path,
+        pid: diagnostic.pid,
+        wall_time: diagnostic.wall_time,
+        malformed,
     }
 }
 
@@ -1361,21 +1363,26 @@ fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -
             update_completed_sync_state(state, lifecycle);
             eprintln!("supervisor: sync conflict");
             if let Some(conflict) = sync_conflict_event(result) {
-                emit(
-                    &state.server,
-                    "supervisor",
-                    "sync_conflict",
-                    Map::from_iter([
-                        ("hostname".into(), json!(conflict.hostname)),
-                        ("journal_path".into(), json!(conflict.journal_path)),
-                        ("pid".into(), json!(conflict.pid)),
-                        (
-                            "machine_id_prefix".into(),
-                            json!(conflict.machine_id_prefix),
-                        ),
-                        ("wall_time".into(), json!(conflict.wall_time)),
-                    ]),
-                );
+                let mut fields = Map::from_iter([
+                    ("hostname".into(), json!(conflict.hostname)),
+                    ("journal_path".into(), json!(conflict.journal_path)),
+                    ("pid".into(), json!(conflict.pid)),
+                    ("wall_time".into(), json!(conflict.wall_time)),
+                    (
+                        "heartbeat_schema".into(),
+                        json!(conflict.identity.schema_name()),
+                    ),
+                ]);
+                if let Some(prefix) = conflict.identity.legacy_machine_id_prefix() {
+                    fields.insert("legacy_machine_id_prefix".into(), json!(prefix));
+                }
+                if let Some(prefix) = conflict.identity.writer_id_prefix() {
+                    fields.insert("writer_id_prefix".into(), json!(prefix));
+                }
+                if let Some(run_id) = conflict.identity.run_id() {
+                    fields.insert("run_id".into(), json!(run_id));
+                }
+                emit(&state.server, "supervisor", "sync_conflict", fields);
             }
         }
         SyncTickOutcome::RenewalFailure(error) => {
@@ -1414,6 +1421,7 @@ fn update_completed_sync_state(state: &mut SupervisorState, lifecycle: &Supervis
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::ffi::OsString;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -1422,6 +1430,9 @@ mod tests {
 
     use chrono::NaiveDate;
     use solstone_core_system::cap::CapResolver;
+    use solstone_core_system::lifecycle::{
+        HeartbeatClassification, HeartbeatV2, RunId, SyncPeerIdentity, WriterId,
+    };
     use solstone_core_system::partition::Partition;
     use solstone_core_system::process::{
         ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
@@ -1673,6 +1684,39 @@ mod tests {
             recent_tasks: Vec::new(),
             queues: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn stale_v2_peer_projects_schema_discriminated_identity() {
+        let heartbeat = HeartbeatV2::new(
+            WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID"),
+            RunId::parse("fedcba9876543210fedcba9876543210").expect("run ID"),
+            "foreign-host".to_owned(),
+            42,
+            "1234.5".to_owned(),
+            "test".to_owned(),
+            15,
+            "/foreign-journal".to_owned(),
+        );
+        let input = stale_heartbeat_wire_input(&SyncPeerObservation {
+            source_filename: OsString::from("foreign.check"),
+            classification: HeartbeatClassification::SchemaV2(heartbeat),
+            heartbeat: None,
+            is_live: false,
+        });
+
+        assert_eq!(input.hostname, "foreign-host");
+        assert_eq!(input.journal_path, "/foreign-journal");
+        assert_eq!(input.pid, Some(42));
+        assert_eq!(input.wall_time.as_deref(), Some("1234.5"));
+        assert!(!input.malformed);
+        assert_eq!(
+            input.identity,
+            SyncPeerIdentity::V2 {
+                writer_id_prefix: "01234567".to_owned(),
+                run_id: "fedcba9876543210fedcba9876543210".to_owned(),
+            }
+        );
     }
 
     #[test]

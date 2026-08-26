@@ -4880,7 +4880,6 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-format",
- "solstone-core-installation-identity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",

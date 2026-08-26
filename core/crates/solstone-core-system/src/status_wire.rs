@@ -4,6 +4,7 @@
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::lifecycle::SyncPeerIdentity;
 use crate::provider_runtime::{ProviderName, ReasonCode, RuntimePhase};
 use crate::queue::TaskQueueStatusSnapshot;
 use crate::schedule::ScheduleStatus;
@@ -50,7 +51,7 @@ pub struct CrashedServiceCandidate {
 pub struct StaleHeartbeatWireInput {
     pub source_filename: Vec<u8>,
     pub hostname: String,
-    pub machine_id: String,
+    pub identity: SyncPeerIdentity,
     pub journal_path: String,
     pub pid: Option<u32>,
     pub wall_time: Option<String>,
@@ -105,7 +106,10 @@ struct ScheduleWireRow {
 #[derive(Serialize)]
 struct StaleHeartbeatDetailWireRow {
     hostname: String,
-    machine_id_prefix: String,
+    heartbeat_schema: String,
+    legacy_machine_id_prefix: Option<String>,
+    writer_id_prefix: Option<String>,
+    run_id: Option<String>,
     journal_path: String,
     pid: Option<u32>,
     wall_time: Option<String>,
@@ -116,16 +120,9 @@ struct StaleHeartbeatDetailWireRow {
 fn row(value: impl Serialize) -> Value {
     serde_json::to_value(value).expect("status wire rows are serializable")
 }
-fn machine_id_prefix(machine_id: &str) -> String {
-    if machine_id.is_empty() {
-        "(unknown)".to_owned()
-    } else {
-        machine_id.chars().take(8).collect()
-    }
-}
 fn stale_display(stale: &StaleHeartbeatWireInput) -> String {
     let identity = if stale.hostname.is_empty() {
-        machine_id_prefix(&stale.machine_id)
+        stale.identity.display_prefix().to_owned()
     } else {
         stale.hostname.clone()
     };
@@ -257,7 +254,13 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
         .map(|stale| {
             row(StaleHeartbeatDetailWireRow {
                 hostname: stale.hostname,
-                machine_id_prefix: machine_id_prefix(&stale.machine_id),
+                heartbeat_schema: stale.identity.schema_name().to_owned(),
+                legacy_machine_id_prefix: stale
+                    .identity
+                    .legacy_machine_id_prefix()
+                    .map(str::to_owned),
+                writer_id_prefix: stale.identity.writer_id_prefix().map(str::to_owned),
+                run_id: stale.identity.run_id().map(str::to_owned),
                 journal_path: stale.journal_path,
                 pid: (!stale.malformed).then_some(stale.pid).flatten(),
                 wall_time: (!stale.malformed).then_some(stale.wall_time).flatten(),
@@ -395,7 +398,7 @@ mod tests {
     fn stale(
         source_filename: Vec<u8>,
         hostname: &str,
-        machine_id: &str,
+        identity: SyncPeerIdentity,
         journal_path: &str,
         pid: Option<u32>,
         wall_time: Option<&str>,
@@ -404,7 +407,7 @@ mod tests {
         StaleHeartbeatWireInput {
             source_filename,
             hostname: hostname.into(),
-            machine_id: machine_id.into(),
+            identity,
             journal_path: journal_path.into(),
             pid,
             wall_time: wall_time.map(str::to_owned),
@@ -446,13 +449,23 @@ mod tests {
                 stale(
                     vec![0xff],
                     "",
-                    "0123456789",
+                    SyncPeerIdentity::LegacyV1 {
+                        legacy_machine_id_prefix: "01234567".to_owned(),
+                    },
                     "/one",
                     Some(10),
                     Some(""),
                     false,
                 ),
-                stale(b"a".to_vec(), "", "", "/two", Some(99), Some("raw"), true),
+                stale(
+                    b"a".to_vec(),
+                    "",
+                    SyncPeerIdentity::Unidentified,
+                    "/two",
+                    Some(99),
+                    Some("raw"),
+                    true,
+                ),
             ],
             schedules: vec![schedule(
                 "weekly",
@@ -469,9 +482,35 @@ mod tests {
 
     fn stale_rows() -> Vec<StaleHeartbeatWireInput> {
         vec![
-            stale(vec![0xff], "z-host", "", "/z", Some(3), Some("z"), false),
-            stale(b"a".to_vec(), "", "abcdefgh9", "/a", None, Some(""), false),
-            stale(vec![0, 0xff], "", "", "/zero", None, None, true),
+            stale(
+                vec![0xff],
+                "z-host",
+                SyncPeerIdentity::Unidentified,
+                "/z",
+                Some(3),
+                Some("z"),
+                false,
+            ),
+            stale(
+                b"a".to_vec(),
+                "",
+                SyncPeerIdentity::LegacyV1 {
+                    legacy_machine_id_prefix: "abcdefgh".to_owned(),
+                },
+                "/a",
+                None,
+                Some(""),
+                false,
+            ),
+            stale(
+                vec![0, 0xff],
+                "",
+                SyncPeerIdentity::Unidentified,
+                "/zero",
+                None,
+                None,
+                true,
+            ),
         ]
     }
 
@@ -481,7 +520,7 @@ mod tests {
         assert_eq!(
             output,
             expected(
-                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","machine_id_prefix":"(unknown)","journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","machine_id_prefix":"01234567","journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12}"#
+                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12}"#
             )
         );
     }
@@ -633,6 +672,34 @@ mod tests {
             output["stale_heartbeat_details"][1]["reason_code"],
             "stale-heartbeat"
         );
+    }
+
+    #[test]
+    fn v2_stale_heartbeat_details_keep_writer_and_run_identity() {
+        let mut input = input(vec![]);
+        input.stale_heartbeats = vec![stale(
+            b"solstone-v2.check".to_vec(),
+            "foreign-host",
+            SyncPeerIdentity::V2 {
+                writer_id_prefix: "01234567".to_owned(),
+                run_id: "fedcba9876543210fedcba9876543210".to_owned(),
+            },
+            "/foreign-journal",
+            Some(42),
+            Some("1234.5"),
+            false,
+        )];
+
+        let output = Value::Object(project_supervisor_status(input));
+        let detail = &output["stale_heartbeat_details"][0];
+        assert_eq!(detail["heartbeat_schema"], "v2");
+        assert_eq!(detail["writer_id_prefix"], "01234567");
+        assert_eq!(detail["run_id"], "fedcba9876543210fedcba9876543210");
+        assert_eq!(detail["legacy_machine_id_prefix"], Value::Null);
+        assert_eq!(detail["pid"], 42);
+        assert_eq!(detail["wall_time"], "1234.5");
+        assert_eq!(detail["malformed"], false);
+        assert_eq!(detail["reason_code"], "stale-heartbeat");
     }
 
     #[test]

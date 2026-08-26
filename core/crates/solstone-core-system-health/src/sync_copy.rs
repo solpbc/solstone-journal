@@ -11,7 +11,7 @@ use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind};
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TRANSIENT_COPY, HeartbeatClassification, SyncCheckResult,
     SyncIncompleteSnapshotReason, SyncRescan, SyncScanFailure, SyncUnsafeReason,
-    rescan_sync_read_only,
+    is_admission_wait_marker_filename_candidate, rescan_sync_read_only,
 };
 use solstone_core_system::process::{InstanceVerdict, ProcessInstanceSource};
 
@@ -120,8 +120,7 @@ fn admission_wait_marker_scan_failure(failure: &SyncScanFailure) -> bool {
             return false;
         }
     };
-    name.to_str()
-        .is_some_and(|name| name.starts_with("solstone-wait-v2-"))
+    is_admission_wait_marker_filename_candidate(name)
 }
 
 fn diagnose_complete_rescan(
