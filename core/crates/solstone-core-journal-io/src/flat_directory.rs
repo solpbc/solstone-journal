@@ -1,0 +1,513 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Descriptor-bound, non-mutating access to one flat journal directory.
+
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io::{self, Read};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::{Component, Path, PathBuf};
+
+use nix::errno::Errno;
+use nix::fcntl::{AtFlags, OFlag, openat};
+use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
+
+use crate::errors::FlatDirectoryError;
+use crate::journal_root::{JournalEntryKind, JournalRoot, ObjectIdentity};
+use crate::name_admission::{NameAdmissionReason, check_portable_component};
+
+const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
+    .union(OFlag::O_DIRECTORY)
+    .union(OFlag::O_CLOEXEC)
+    .union(OFlag::O_NOFOLLOW);
+const FILE_FLAGS: OFlag = OFlag::O_RDONLY
+    .union(OFlag::O_NONBLOCK)
+    .union(OFlag::O_CLOEXEC)
+    .union(OFlag::O_NOFOLLOW);
+
+/// A native-precision modification timestamp from a no-follow Unix stat result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeMtime {
+    /// Whole seconds in the platform stat timestamp.
+    pub seconds: i64,
+    /// Nanoseconds in the platform stat timestamp.
+    pub nanoseconds: i64,
+}
+
+/// Metadata for one direct entry in a [`FlatDirectory`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlatDirectoryEntry {
+    /// The direct entry name, with no path interpretation.
+    pub name: OsString,
+    /// No-follow filesystem kind.
+    pub kind: JournalEntryKind,
+    /// Device number from the no-follow stat result.
+    pub device: u64,
+    /// Inode number from the no-follow stat result.
+    pub inode: u64,
+    /// Byte size from the no-follow stat result.
+    pub size: u64,
+    /// Native-precision modification time from the no-follow stat result.
+    pub mtime: NativeMtime,
+}
+
+/// Complete stable observation of a direct regular-file entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileObservation {
+    /// Entry metadata observed before and after the complete read.
+    pub entry: FlatDirectoryEntry,
+    /// Exact bytes read while the stable metadata remained unchanged.
+    pub bytes: Vec<u8>,
+}
+
+/// An acquired directory descriptor for direct-entry operations only.
+pub struct FlatDirectory {
+    directory: OwnedFd,
+    identity: ObjectIdentity,
+    diagnostic_path: PathBuf,
+}
+
+impl FlatDirectory {
+    /// Descend from `root` through a nonempty portable relative directory path.
+    ///
+    /// Every component is checked and opened relative to an already verified
+    /// descriptor. [`JournalRoot::canonical_path`] contributes only diagnostic
+    /// metadata to errors; it is never reopened or used as authority.
+    pub fn open(root: &JournalRoot, relative: &Path) -> Result<Self, FlatDirectoryError> {
+        let components = portable_relative_components(relative)?;
+        root.revalidate()
+            .map_err(|_| FlatDirectoryError::IdentityChanged {
+                path: root.canonical_path().to_path_buf(),
+            })?;
+
+        let mut diagnostic_path = root.canonical_path().to_path_buf();
+        let mut opened: Option<OwnedFd> = None;
+
+        for component in components {
+            diagnostic_path.push(component);
+            let diagnostic_component = diagnostic_path.clone();
+            let before = {
+                let parent: &dyn AsFd = match &opened {
+                    Some(directory) => directory,
+                    None => root,
+                };
+                match fstatat(parent, component, AtFlags::AT_SYMLINK_NOFOLLOW) {
+                    Ok(stat) => stat,
+                    Err(Errno::ELOOP) => {
+                        return Err(FlatDirectoryError::SymlinkRefused {
+                            path: diagnostic_component,
+                        });
+                    }
+                    Err(error) => {
+                        return Err(errno_error(
+                            "stat flat-directory descendant",
+                            diagnostic_component,
+                            error,
+                        ));
+                    }
+                }
+            };
+            match kind_from_stat(&before) {
+                JournalEntryKind::Symlink => {
+                    return Err(FlatDirectoryError::SymlinkRefused {
+                        path: diagnostic_component,
+                    });
+                }
+                JournalEntryKind::Directory => {}
+                _ => {
+                    return Err(FlatDirectoryError::NotDirectory {
+                        path: diagnostic_component,
+                    });
+                }
+            }
+            let next = {
+                let parent: &dyn AsFd = match &opened {
+                    Some(directory) => directory,
+                    None => root,
+                };
+                match openat(parent, component, DIRECTORY_FLAGS, Mode::empty()) {
+                    Ok(fd) => fd,
+                    Err(Errno::ELOOP) => {
+                        return Err(FlatDirectoryError::SymlinkRefused {
+                            path: diagnostic_path.clone(),
+                        });
+                    }
+                    Err(error) => {
+                        return Err(errno_error(
+                            "open flat-directory descendant",
+                            diagnostic_path.clone(),
+                            error,
+                        ));
+                    }
+                }
+            };
+            let after = fstat(&next).map_err(|error| {
+                errno_error(
+                    "stat opened flat-directory descendant",
+                    diagnostic_path.clone(),
+                    error,
+                )
+            })?;
+            if kind_from_stat(&after) != JournalEntryKind::Directory {
+                return Err(FlatDirectoryError::NotDirectory {
+                    path: diagnostic_path.clone(),
+                });
+            }
+            if identity_from_stat(&before) != identity_from_stat(&after) {
+                return Err(FlatDirectoryError::IdentityChanged {
+                    path: diagnostic_path.clone(),
+                });
+            }
+            opened = Some(next);
+        }
+
+        let directory = opened.expect("nonempty components open one descriptor");
+        let stat = fstat(&directory).map_err(|error| {
+            errno_error(
+                "stat retained flat directory",
+                diagnostic_path.clone(),
+                error,
+            )
+        })?;
+        if kind_from_stat(&stat) != JournalEntryKind::Directory {
+            return Err(FlatDirectoryError::NotDirectory {
+                path: diagnostic_path,
+            });
+        }
+        Ok(Self {
+            identity: identity_from_stat(&stat),
+            directory,
+            diagnostic_path,
+        })
+    }
+
+    /// Return the identity frozen when this flat directory was acquired.
+    #[must_use]
+    pub fn identity(&self) -> ObjectIdentity {
+        self.identity
+    }
+
+    /// Confirm the retained descriptor still names the acquired directory identity.
+    pub fn revalidate(&self) -> Result<(), FlatDirectoryError> {
+        let stat = fstat(self).map_err(|error| {
+            errno_error(
+                "revalidate flat directory",
+                self.diagnostic_path.clone(),
+                error,
+            )
+        })?;
+        if kind_from_stat(&stat) != JournalEntryKind::Directory
+            || identity_from_stat(&stat) != self.identity
+        {
+            return Err(FlatDirectoryError::IdentityChanged {
+                path: self.diagnostic_path.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Return the recorded diagnostic spelling, which is not source authority.
+    #[must_use]
+    pub(crate) fn diagnostic_path(&self) -> &Path {
+        &self.diagnostic_path
+    }
+
+    pub(crate) fn diagnostic_entry(&self, name: &OsStr) -> PathBuf {
+        self.diagnostic_path.join(name)
+    }
+}
+
+impl AsFd for FlatDirectory {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.directory.as_fd()
+    }
+}
+
+/// List direct entries, returning `None` instead of a partial list above `maximum`.
+pub fn list_flat_directory(
+    directory: &FlatDirectory,
+    maximum: usize,
+) -> Result<Option<Vec<FlatDirectoryEntry>>, FlatDirectoryError> {
+    directory.revalidate()?;
+    let mut opened = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+        .map_err(|error| {
+            errno_error(
+                "open flat directory for listing",
+                directory.diagnostic_path().to_path_buf(),
+                error,
+            )
+        })?;
+    let mut entries = Vec::new();
+    for listed in opened.iter() {
+        let listed = listed.map_err(|error| {
+            errno_error(
+                "iterate flat directory",
+                directory.diagnostic_path().to_path_buf(),
+                error,
+            )
+        })?;
+        let bytes = listed.file_name().to_bytes();
+        if matches!(bytes, b"." | b"..") {
+            continue;
+        }
+        if entries.len() == maximum {
+            return Ok(None);
+        }
+        let name = OsString::from_vec(bytes.to_vec());
+        let entry = stat_entry(directory, &name)?.ok_or_else(|| {
+            FlatDirectoryError::EnumerationChanged {
+                path: directory.diagnostic_entry(&name),
+            }
+        })?;
+        entries.push(entry);
+    }
+    entries.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
+    Ok(Some(entries))
+}
+
+/// Read one direct regular file while proving stable metadata and exact bytes.
+pub fn read_observed_file(
+    directory: &FlatDirectory,
+    name: &OsStr,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    read_observed_file_unchecked(directory, name)
+}
+
+pub(crate) fn read_observed_file_unchecked(
+    directory: &FlatDirectory,
+    name: &OsStr,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    directory.revalidate()?;
+    let path = directory.diagnostic_entry(name);
+    let fd = match openat(directory, name, FILE_FLAGS, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(Errno::ELOOP) => return Err(FlatDirectoryError::NotRegular { path }),
+        Err(error) => return Err(errno_error("open observed file", path, error)),
+    };
+    let before = fstat(&fd)
+        .map_err(|error| errno_error("stat opened observed file", path.clone(), error))?;
+    let entry = entry_from_stat(name.to_os_string(), &before);
+    if entry.kind != JournalEntryKind::RegularFile {
+        return Err(FlatDirectoryError::NotRegular { path });
+    }
+    let size = usize::try_from(entry.size).map_err(|_| FlatDirectoryError::Io {
+        operation: "size observed file buffer",
+        path: path.clone(),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            "observed file exceeds address space",
+        ),
+    })?;
+    let mut file = File::from(fd);
+    let mut bytes = vec![0; size];
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match file.read(&mut bytes[offset..]) {
+            Ok(0) => {
+                return Err(FlatDirectoryError::IdentityChanged { path });
+            }
+            Ok(read) => offset += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(source) => {
+                return Err(FlatDirectoryError::Io {
+                    operation: "read observed file",
+                    path,
+                    source,
+                });
+            }
+        }
+    }
+    let after = fstat(&file).map_err(|error| {
+        errno_error(
+            "restat observed file",
+            directory.diagnostic_entry(name),
+            error,
+        )
+    })?;
+    let after_entry = entry_from_stat(name.to_os_string(), &after);
+    if !same_entry_metadata(&entry, &after_entry) {
+        return Err(FlatDirectoryError::IdentityChanged {
+            path: directory.diagnostic_entry(name),
+        });
+    }
+    Ok(Some(FileObservation { entry, bytes }))
+}
+
+pub(crate) fn stat_entry(
+    directory: &FlatDirectory,
+    name: &OsStr,
+) -> Result<Option<FlatDirectoryEntry>, FlatDirectoryError> {
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => Ok(Some(entry_from_stat(name.to_os_string(), &stat))),
+        Err(Errno::ENOENT) => Ok(None),
+        Err(error) => Err(errno_error(
+            "stat flat-directory entry",
+            directory.diagnostic_entry(name),
+            error,
+        )),
+    }
+}
+
+pub(crate) fn same_entry_metadata(left: &FlatDirectoryEntry, right: &FlatDirectoryEntry) -> bool {
+    left.kind == right.kind
+        && left.device == right.device
+        && left.inode == right.inode
+        && left.size == right.size
+        && left.mtime == right.mtime
+}
+
+pub(crate) fn same_observation(left: &FileObservation, right: &FileObservation) -> bool {
+    same_entry_metadata(&left.entry, &right.entry) && left.bytes == right.bytes
+}
+
+fn portable_relative_components(relative: &Path) -> Result<Vec<&OsStr>, FlatDirectoryError> {
+    let mut components = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(name) => {
+                validate_portable_name(name)?;
+                components.push(name);
+            }
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => {
+                return Err(FlatDirectoryError::InvalidRelativePath {
+                    path: relative.to_path_buf(),
+                    reason: "path must be a nonempty sequence of normal portable components",
+                });
+            }
+        }
+    }
+    if components.is_empty() {
+        return Err(FlatDirectoryError::InvalidRelativePath {
+            path: relative.to_path_buf(),
+            reason: "path must be a nonempty sequence of normal portable components",
+        });
+    }
+    Ok(components)
+}
+
+fn validate_portable_name(name: &OsStr) -> Result<(), FlatDirectoryError> {
+    let text = name
+        .to_str()
+        .ok_or_else(|| FlatDirectoryError::InvalidName {
+            name: name.to_os_string(),
+            reason: NameAdmissionReason::NotUtf8,
+        })?;
+    check_portable_component(text).map_err(|reason| FlatDirectoryError::InvalidName {
+        name: name.to_os_string(),
+        reason,
+    })
+}
+
+fn entry_from_stat(name: OsString, stat: &FileStat) -> FlatDirectoryEntry {
+    FlatDirectoryEntry {
+        name,
+        kind: kind_from_stat(stat),
+        device: stat.st_dev,
+        inode: stat.st_ino,
+        size: stat.st_size as u64,
+        mtime: native_mtime(stat),
+    }
+}
+
+fn identity_from_stat(stat: &FileStat) -> ObjectIdentity {
+    ObjectIdentity::from_device_inode(stat.st_dev, stat.st_ino)
+}
+
+fn kind_from_stat(stat: &FileStat) -> JournalEntryKind {
+    JournalEntryKind::from_mode(SFlag::from_bits_truncate(stat.st_mode))
+}
+
+#[cfg(target_os = "macos")]
+fn native_mtime(stat: &FileStat) -> NativeMtime {
+    NativeMtime {
+        seconds: stat.st_mtimespec.tv_sec,
+        nanoseconds: stat.st_mtimespec.tv_nsec,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_mtime(stat: &FileStat) -> NativeMtime {
+    NativeMtime {
+        seconds: stat.st_mtime,
+        nanoseconds: stat.st_mtime_nsec,
+    }
+}
+
+fn errno_error(operation: &'static str, path: PathBuf, error: Errno) -> FlatDirectoryError {
+    FlatDirectoryError::Io {
+        operation,
+        path,
+        source: io::Error::from_raw_os_error(error as i32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    fn root_and_flat() -> (TempDir, JournalRoot, FlatDirectory) {
+        let temporary = TempDir::new();
+        fs::create_dir(temporary.path().join("flat")).unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let flat = FlatDirectory::open(&root, Path::new("flat")).unwrap();
+        (temporary, root, flat)
+    }
+
+    #[test]
+    fn acquisition_refuses_empty_parent_and_symlink_components() {
+        let temporary = TempDir::new();
+        fs::create_dir(temporary.path().join("directory")).unwrap();
+        symlink("directory", temporary.path().join("link")).unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        assert!(matches!(
+            FlatDirectory::open(&root, Path::new("")),
+            Err(FlatDirectoryError::InvalidRelativePath { .. })
+        ));
+        assert!(matches!(
+            FlatDirectory::open(&root, Path::new("link")),
+            Err(FlatDirectoryError::SymlinkRefused { .. })
+        ));
+        assert!(matches!(
+            FlatDirectory::open(&root, Path::new("directory/..")),
+            Err(FlatDirectoryError::InvalidRelativePath { .. })
+        ));
+    }
+
+    #[test]
+    fn listing_uses_an_all_or_nothing_overflow_sentinel() {
+        let (temporary, _root, flat) = root_and_flat();
+        fs::write(temporary.path().join("flat/a"), b"a").unwrap();
+        fs::write(temporary.path().join("flat/b"), b"b").unwrap();
+        assert_eq!(list_flat_directory(&flat, 1).unwrap(), None);
+        let entries = list_flat_directory(&flat, 2).unwrap().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "a");
+        assert_eq!(entries[1].name, "b");
+    }
+
+    #[test]
+    fn observed_read_rejects_bad_names_and_returns_exact_bytes() {
+        let (temporary, _root, flat) = root_and_flat();
+        fs::write(temporary.path().join("flat/record"), b"bytes").unwrap();
+        let observed = read_observed_file(&flat, OsStr::new("record"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(observed.bytes, b"bytes");
+        assert_eq!(observed.entry.kind, JournalEntryKind::RegularFile);
+        assert!(matches!(
+            read_observed_file(&flat, OsStr::new("../record")),
+            Err(FlatDirectoryError::InvalidName { .. })
+        ));
+    }
+}

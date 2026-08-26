@@ -10,6 +10,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::name_admission::{ClaimName, NameAdmissionReason};
+
 /// Raised when a stable sidecar lock is not acquired before the deadline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockTimeout {
@@ -405,6 +407,304 @@ impl Error for AppendError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
+        }
+    }
+}
+
+/// Failure while acquiring, listing, or reading a descriptor-bound flat directory.
+#[derive(Debug)]
+pub enum FlatDirectoryError {
+    /// A descendant path was not a nonempty sequence of normal components.
+    InvalidRelativePath { path: PathBuf, reason: &'static str },
+    /// A direct entry name did not satisfy portable-component admission.
+    InvalidName {
+        name: OsString,
+        reason: NameAdmissionReason,
+    },
+    /// A requested descendant was not a directory.
+    NotDirectory { path: PathBuf },
+    /// A symlink was refused while descending to a directory.
+    SymlinkRefused { path: PathBuf },
+    /// An entry that must be read as a regular file was another kind.
+    NotRegular { path: PathBuf },
+    /// A retained directory or observed entry changed while it was being checked.
+    IdentityChanged { path: PathBuf },
+    /// A directory entry disappeared while an all-or-nothing listing was built.
+    EnumerationChanged { path: PathBuf },
+    /// A filesystem operation failed.
+    Io {
+        operation: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+impl fmt::Display for FlatDirectoryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidRelativePath { path, reason } => {
+                write!(
+                    formatter,
+                    "invalid flat-directory path {}: {reason}",
+                    path.display()
+                )
+            }
+            Self::InvalidName { name, reason } => {
+                write!(formatter, "invalid flat-directory entry {name:?}: {reason}")
+            }
+            Self::NotDirectory { path } => {
+                write!(
+                    formatter,
+                    "flat-directory descendant is not a directory: {}",
+                    path.display()
+                )
+            }
+            Self::SymlinkRefused { path } => {
+                write!(
+                    formatter,
+                    "flat-directory descendant is a symlink: {}",
+                    path.display()
+                )
+            }
+            Self::NotRegular { path } => {
+                write!(
+                    formatter,
+                    "flat-directory entry is not a regular file: {}",
+                    path.display()
+                )
+            }
+            Self::IdentityChanged { path } => {
+                write!(
+                    formatter,
+                    "flat-directory identity changed: {}",
+                    path.display()
+                )
+            }
+            Self::EnumerationChanged { path } => {
+                write!(
+                    formatter,
+                    "flat-directory entry vanished while listing: {}",
+                    path.display()
+                )
+            }
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => write!(
+                formatter,
+                "{operation} failed for {}: {source}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl Error for FlatDirectoryError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::InvalidRelativePath { .. }
+            | Self::InvalidName { .. }
+            | Self::NotDirectory { .. }
+            | Self::SymlinkRefused { .. }
+            | Self::NotRegular { .. }
+            | Self::IdentityChanged { .. }
+            | Self::EnumerationChanged { .. } => None,
+        }
+    }
+}
+
+/// The platform primitive required to claim a name without replacement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoReplacePrimitive {
+    /// Linux `renameat2(2)` with `RENAME_NOREPLACE`.
+    LinuxRenameAt2,
+    /// macOS `renameatx_np(2)` with `RENAME_EXCL`.
+    MacosRenameAtxNp,
+    /// Another Unix platform with no supported no-replace rename primitive.
+    UnsupportedUnix,
+}
+
+/// Why a claim operation proved it did not mutate either supplied name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClaimUnchangedReason {
+    /// The caller-supplied claim entry already existed.
+    ClaimNameOccupied,
+    /// The filesystem cannot perform the required no-replace rename primitive.
+    UnsupportedNoReplace { primitive: NoReplacePrimitive },
+    /// Reconciliation proved an ambiguous rename error did not apply the rename.
+    RenameNotAppliedAfterReconciliation,
+}
+
+/// The known disposition after the observed object changed during removal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IdentityChangeDisposition {
+    /// The changed claimed entry was restored to its original name.
+    Restored,
+    /// Restoration refused to overwrite a newly occupied original name.
+    RetainedClaim { claim: ClaimName },
+    /// The observed object no longer has a safely known location.
+    UnknownLocation,
+}
+
+/// Durability evidence associated with an identity-change outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClaimDurability {
+    /// No known local namespace transition was finalized and synced.
+    NotEstablished,
+    /// The known namespace transition was directory-synced.
+    Synced,
+    /// A directory sync was attempted but failed.
+    Uncertain,
+}
+
+/// Successful or explicitly non-destructive result of claimed removal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClaimRemovalOutcome {
+    /// The exact observed object was unlinked and the directory was synced.
+    Removed,
+    /// The exact observed object was unlinked, but directory sync failed.
+    RemovedDurabilityUncertain,
+    /// This invocation proved it did not mutate either supplied name.
+    Unchanged { reason: ClaimUnchangedReason },
+    /// The observed object changed, was restored, or has an unknown location.
+    IdentityChanged {
+        /// The proven disposition of the observed object.
+        disposition: IdentityChangeDisposition,
+        /// Durability evidence for that disposition.
+        durability: ClaimDurability,
+    },
+}
+
+/// Failure while claiming or removing one observed file entry.
+#[derive(Debug)]
+pub enum ClaimRemovalError {
+    /// The original name was not a portable component.
+    InvalidOriginalName {
+        name: OsString,
+        reason: NameAdmissionReason,
+    },
+    /// The supplied original name differs from the observation's name.
+    ObservationNameMismatch {
+        original: OsString,
+        observed: OsString,
+    },
+    /// The caller-supplied claim name is already an alias of the original entry.
+    AliasedClaimName {
+        original: OsString,
+        claim: ClaimName,
+        device: u64,
+        inode: u64,
+    },
+    /// Inspection of the claimed entry failed after a successful claim.
+    PostClaimInspection {
+        claim: ClaimName,
+        source: FlatDirectoryError,
+    },
+    /// Inspection before claim or while restoring failed.
+    Preflight { source: FlatDirectoryError },
+    /// Inspection required to reconcile an ambiguous rename failed.
+    Reconciliation {
+        original: OsString,
+        claim: ClaimName,
+        source: FlatDirectoryError,
+    },
+    /// Both names matched during reconciliation, so no safe conclusion was possible.
+    ReconciliationInconclusive {
+        original: OsString,
+        claim: ClaimName,
+    },
+    /// A restore operation failed while retaining the claim name for the caller.
+    RestoreFailure { claim: ClaimName, source: io::Error },
+    /// Unlinking the successfully claimed name failed.
+    UnlinkFailure { claim: ClaimName, source: io::Error },
+    /// A filesystem operation failed.
+    Io {
+        operation: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+impl fmt::Display for ClaimRemovalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidOriginalName { name, reason } => {
+                write!(formatter, "invalid original entry {name:?}: {reason}")
+            }
+            Self::ObservationNameMismatch { original, observed } => write!(
+                formatter,
+                "original entry {original:?} does not match observation name {observed:?}"
+            ),
+            Self::AliasedClaimName {
+                original,
+                claim,
+                device,
+                inode,
+            } => write!(
+                formatter,
+                "claim {claim:?} aliases original {original:?} at ({device}, {inode})"
+            ),
+            Self::PostClaimInspection { claim, source } => {
+                write!(
+                    formatter,
+                    "could not inspect retained claim {claim:?}: {source}"
+                )
+            }
+            Self::Preflight { source } => {
+                write!(formatter, "could not preflight claimed removal: {source}")
+            }
+            Self::Reconciliation {
+                original,
+                claim,
+                source,
+            } => write!(
+                formatter,
+                "could not reconcile original {original:?} and claim {claim:?}: {source}"
+            ),
+            Self::ReconciliationInconclusive { original, claim } => write!(
+                formatter,
+                "cannot reconcile original {original:?} and claim {claim:?} safely"
+            ),
+            Self::RestoreFailure { claim, source } => {
+                write!(
+                    formatter,
+                    "could not restore retained claim {claim:?}: {source}"
+                )
+            }
+            Self::UnlinkFailure { claim, source } => {
+                write!(
+                    formatter,
+                    "could not unlink claimed entry {claim:?}: {source}"
+                )
+            }
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => write!(
+                formatter,
+                "{operation} failed for {}: {source}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl Error for ClaimRemovalError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::PostClaimInspection { source, .. }
+            | Self::Preflight { source }
+            | Self::Reconciliation { source, .. } => Some(source),
+            Self::RestoreFailure { source, .. }
+            | Self::UnlinkFailure { source, .. }
+            | Self::Io { source, .. } => Some(source),
+            Self::InvalidOriginalName { .. }
+            | Self::ObservationNameMismatch { .. }
+            | Self::AliasedClaimName { .. }
+            | Self::ReconciliationInconclusive { .. } => None,
         }
     }
 }

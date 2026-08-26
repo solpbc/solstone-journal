@@ -16,9 +16,13 @@ compile_error!(
 pub mod append;
 #[cfg(unix)]
 pub mod atomic;
+#[cfg(unix)]
+pub mod claim_remove;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;
+#[cfg(unix)]
+pub mod flat_directory;
 #[cfg(unix)]
 pub mod health_marker;
 #[cfg(unix)]
@@ -50,6 +54,13 @@ pub use atomic::{
 };
 #[cfg(unix)]
 pub use atomic::{BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound};
+#[cfg(unix)]
+pub use claim_remove::claim_and_remove_observed;
+#[cfg(all(unix, feature = "test-hooks"))]
+pub use claim_remove::{
+    ClaimRemovalPrimitive, run_with_claim_removal_barrier, run_with_claim_removal_fault,
+    run_with_two_claim_removal_barriers,
+};
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
@@ -57,8 +68,15 @@ pub use deconflict::{
 pub use entry::sync_dir_bound;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
-    AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
-    MalformedDataError, PathError, PathEscapeError, ReadError, SegmentIdentityError, SnapshotError,
+    AppendError, AtomicWriteError, ClaimDurability, ClaimRemovalError, ClaimRemovalOutcome,
+    ClaimUnchangedReason, ExistingParentLockError, FlatDirectoryError, IdentityChangeDisposition,
+    LeaseError, LockError, LockTimeout, MalformedDataError, NoReplacePrimitive, PathError,
+    PathEscapeError, ReadError, SegmentIdentityError, SnapshotError,
+};
+#[cfg(unix)]
+pub use flat_directory::{
+    FileObservation, FlatDirectory, FlatDirectoryEntry, NativeMtime, list_flat_directory,
+    read_observed_file,
 };
 #[cfg(unix)]
 pub use health_marker::{
@@ -85,8 +103,8 @@ pub use locking::{
     acquire_existing_parent_lock, hold_lock,
 };
 pub use name_admission::{
-    ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason, NoFollowEntryKind,
-    StreamName, check_portable_component,
+    ClaimName, ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason,
+    NoFollowEntryKind, StreamName, check_portable_component,
 };
 #[cfg(unix)]
 pub use paths::create_directory_bound;

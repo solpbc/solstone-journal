@@ -23,9 +23,12 @@ use nix::sys::signal::{Signal, kill};
 use nix::sys::stat::{Mode, umask};
 use nix::unistd::Pid;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, ExistingParentLock, ExistingParentLockError, LeaseOptions, LockError,
-    LockOptions, StagedDirOptions, acquire_existing_parent_lock, acquire_file_lease,
-    atomic_replace, hold_lock, publish_staged_dir,
+    AtomicWriteOptions, ClaimDurability, ClaimName, ClaimRemovalOutcome, ClaimRemovalPrimitive,
+    ExistingParentLock, ExistingParentLockError, FlatDirectory, IdentityChangeDisposition,
+    JournalRoot, LeaseOptions, LockError, LockOptions, StagedDirOptions,
+    acquire_existing_parent_lock, acquire_file_lease, atomic_replace, claim_and_remove_observed,
+    hold_lock, publish_staged_dir, read_observed_file, run_with_claim_removal_barrier,
+    run_with_two_claim_removal_barriers,
 };
 
 #[test]
@@ -551,4 +554,207 @@ fn invalid_name_lock_is_released_when_the_holder_dies() {
     )
     .unwrap();
     assert!(started.elapsed() < Duration::from_millis(200));
+}
+
+fn claim_name(operation: u64) -> ClaimName {
+    ClaimName::parse(&format!("!solstone-claim-00000001-{operation:016x}")).unwrap()
+}
+
+fn claim_directory(temporary: &tempfile::TempDir) -> FlatDirectory {
+    fs::create_dir(temporary.path().join("flat")).unwrap();
+    let root = JournalRoot::open(temporary.path()).unwrap();
+    FlatDirectory::open(&root, Path::new("flat")).unwrap()
+}
+
+#[test]
+fn claim_barriers_preserve_the_observed_object_or_a_new_original() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let directory = claim_directory(&temporary);
+    let entry = temporary.path().join("flat/entry");
+
+    fs::write(&entry, b"observed").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let changed_entry = entry.clone();
+    let (result, fired) = run_with_claim_removal_barrier(
+        ClaimRemovalPrimitive::BeforeClaim,
+        1,
+        move || fs::write(changed_entry, b"changed-before-claim").unwrap(),
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim_name(1)),
+    );
+    assert!(fired);
+    assert_eq!(
+        result.unwrap(),
+        ClaimRemovalOutcome::IdentityChanged {
+            disposition: IdentityChangeDisposition::Restored,
+            durability: ClaimDurability::Synced,
+        }
+    );
+    assert_eq!(fs::read(&entry).unwrap(), b"changed-before-claim");
+
+    fs::write(&entry, b"observed-again").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let replacement = entry.clone();
+    let (result, fired) = run_with_claim_removal_barrier(
+        ClaimRemovalPrimitive::AfterClaim,
+        1,
+        move || fs::write(replacement, b"replacement-after-claim").unwrap(),
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim_name(2)),
+    );
+    assert!(fired);
+    assert_eq!(result.unwrap(), ClaimRemovalOutcome::Removed);
+    assert_eq!(fs::read(&entry).unwrap(), b"replacement-after-claim");
+}
+
+#[test]
+fn claim_inspection_unlink_and_restore_barriers_never_overwrite_an_original() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let directory = claim_directory(&temporary);
+    let entry = temporary.path().join("flat/entry");
+
+    fs::write(&entry, b"observed").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let claim = claim_name(3);
+    let claim_path = temporary.path().join("flat").join(claim.as_str());
+    let replacement = entry.clone();
+    let (result, fired) = run_with_claim_removal_barrier(
+        ClaimRemovalPrimitive::BeforeInspection,
+        1,
+        move || {
+            fs::write(claim_path, b"changed-claim").unwrap();
+            fs::write(replacement, b"replacement-before-restore").unwrap();
+        },
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+    );
+    assert!(fired);
+    assert_eq!(
+        result.unwrap(),
+        ClaimRemovalOutcome::IdentityChanged {
+            disposition: IdentityChangeDisposition::RetainedClaim {
+                claim: claim.clone(),
+            },
+            durability: ClaimDurability::Synced,
+        }
+    );
+    assert_eq!(fs::read(&entry).unwrap(), b"replacement-before-restore");
+    assert_eq!(
+        fs::read(temporary.path().join("flat").join(claim.as_str())).unwrap(),
+        b"changed-claim"
+    );
+
+    fs::remove_file(temporary.path().join("flat").join(claim.as_str())).unwrap();
+    fs::write(&entry, b"observed-unlink").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let replacement = entry.clone();
+    let (result, fired) = run_with_claim_removal_barrier(
+        ClaimRemovalPrimitive::BeforeUnlink,
+        1,
+        move || fs::write(replacement, b"replacement-before-unlink").unwrap(),
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim_name(4)),
+    );
+    assert!(fired);
+    assert_eq!(result.unwrap(), ClaimRemovalOutcome::Removed);
+    assert_eq!(fs::read(&entry).unwrap(), b"replacement-before-unlink");
+
+    fs::write(&entry, b"observed-restore").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let changed = entry.clone();
+    let replacement = entry.clone();
+    let claim = claim_name(5);
+    let (result, fired) = run_with_two_claim_removal_barriers(
+        ClaimRemovalPrimitive::BeforeClaim,
+        1,
+        move || fs::write(changed, b"changed-before-restore").unwrap(),
+        ClaimRemovalPrimitive::BeforeRestore,
+        1,
+        move || fs::write(replacement, b"replacement-during-restore").unwrap(),
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim),
+    );
+    assert_eq!(fired, 2);
+    assert_eq!(
+        result.unwrap(),
+        ClaimRemovalOutcome::IdentityChanged {
+            disposition: IdentityChangeDisposition::RetainedClaim {
+                claim: claim.clone(),
+            },
+            durability: ClaimDurability::Synced,
+        }
+    );
+    assert_eq!(fs::read(&entry).unwrap(), b"replacement-during-restore");
+}
+
+#[test]
+fn concurrent_claimers_report_unknown_for_the_loser() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let directory = Arc::new(claim_directory(&temporary));
+    let entry = temporary.path().join("flat/entry");
+    fs::write(&entry, b"observed").unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    let (claimed_tx, claimed_rx) = mpsc::channel();
+    let (loser_tx, loser_rx) = mpsc::channel();
+    let loser_directory = Arc::clone(&directory);
+    let loser_prior = prior.clone();
+    let loser = thread::spawn(move || {
+        claimed_rx.recv().unwrap();
+        let result = claim_and_remove_observed(
+            &loser_directory,
+            OsStr::new("entry"),
+            &loser_prior,
+            &claim_name(7),
+        );
+        loser_tx.send(result).unwrap();
+    });
+    let (winner, fired) = run_with_claim_removal_barrier(
+        ClaimRemovalPrimitive::AfterClaim,
+        1,
+        move || {
+            claimed_tx.send(()).unwrap();
+            let result = loser_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert_eq!(
+                result.unwrap(),
+                ClaimRemovalOutcome::IdentityChanged {
+                    disposition: IdentityChangeDisposition::UnknownLocation,
+                    durability: ClaimDurability::NotEstablished,
+                }
+            );
+        },
+        || claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim_name(6)),
+    );
+    assert!(fired);
+    assert_eq!(winner.unwrap(), ClaimRemovalOutcome::Removed);
+    loser.join().unwrap();
+}
+
+#[test]
+fn bound_flat_directory_survives_parent_path_replacement() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let journal = temporary.path().join("journal");
+    let parent = journal.join("parent");
+    fs::create_dir_all(parent.join("flat")).unwrap();
+    fs::write(parent.join("flat/entry"), b"observed").unwrap();
+    let root = JournalRoot::open(&journal).unwrap();
+    let directory = FlatDirectory::open(&root, Path::new("parent/flat")).unwrap();
+    let prior = read_observed_file(&directory, OsStr::new("entry"))
+        .unwrap()
+        .unwrap();
+    fs::rename(&parent, journal.join("moved")).unwrap();
+    fs::create_dir_all(parent.join("flat")).unwrap();
+    fs::write(parent.join("flat/entry"), b"replacement").unwrap();
+    assert_eq!(
+        claim_and_remove_observed(&directory, OsStr::new("entry"), &prior, &claim_name(8)).unwrap(),
+        ClaimRemovalOutcome::Removed
+    );
+    assert!(!journal.join("moved/flat/entry").exists());
+    assert_eq!(fs::read(parent.join("flat/entry")).unwrap(), b"replacement");
 }

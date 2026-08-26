@@ -15,7 +15,8 @@ serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["fs"] }
+libc = { workspace = true }
+nix = { workspace = true, features = ["dir", "fs"] }
 
 [features]
 test-hooks = []
@@ -26,8 +27,10 @@ tempfile = "3.24.0"
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["signal"] }
 
-[lints]
-workspace = true
+# The no-replace platform syscalls have narrowly audited FFI boundaries; keep
+# the workspace prohibition in force elsewhere and allow those functions only.
+[lints.rust]
+unsafe_code = "deny"
 
 [[test]]
 name = "journal_io_lock_component"

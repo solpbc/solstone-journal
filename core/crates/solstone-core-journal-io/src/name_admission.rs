@@ -4,7 +4,7 @@
 //! Portable stream/segment name admission and case-insensitive collision scan.
 
 use std::error::Error;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -17,6 +17,8 @@ use crate::errors::PathEscapeError;
 /// Variant order is evaluation order. First match wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameAdmissionReason {
+    /// The name is not valid UTF-8 text.
+    NotUtf8,
     /// The name is empty.
     Empty,
     /// `.` and `..` are not valid names.
@@ -40,11 +42,14 @@ pub enum NameAdmissionReason {
     /// Stream names must start with a lowercase ASCII letter or digit and then
     /// use only lowercase ASCII letters, digits, dots, underscores, or hyphens.
     StreamGrammar,
+    /// Claim names must use the reserved operation-claim grammar.
+    ClaimGrammar,
 }
 
 impl fmt::Display for NameAdmissionReason {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::NotUtf8 => "the name is not valid UTF-8 text",
             Self::Empty => "the name is empty",
             Self::DotComponent => "'.' and '..' are not valid names",
             Self::RootOrPrefix => "the name must be a single relative component",
@@ -57,6 +62,9 @@ impl fmt::Display for NameAdmissionReason {
             Self::TrailingDotOrSpace => "the name ends in a dot or space",
             Self::StreamGrammar => {
                 "stream names must start with a lowercase ASCII letter or digit and then use only lowercase ASCII letters, digits, dots, underscores, or hyphens"
+            }
+            Self::ClaimGrammar => {
+                "claim names must be !solstone-claim- followed by 8 lowercase hexadecimal bytes, a hyphen, and 16 lowercase hexadecimal bytes"
             }
         })
     }
@@ -75,6 +83,37 @@ impl StreamName {
     }
 
     /// Borrow the admitted name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A caller-owned operation-unique claim name.
+///
+/// Its leading `!` is never a valid first byte under [`check_stream_grammar`],
+/// which requires a lowercase ASCII letter or digit. ASCII `!` is unchanged by
+/// case folding and NFC/NFD normalization, so a valid product entry can never
+/// compare equal to a `ClaimName` under case- or normalization-insensitive
+/// comparison.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimName(String);
+
+impl ClaimName {
+    /// Admit an exact reserved claim-name spelling.
+    pub fn parse(candidate: &str) -> Result<Self, NameAdmissionReason> {
+        check_portable_component(candidate)?;
+        check_claim_grammar(candidate)?;
+        Ok(Self(candidate.to_owned()))
+    }
+
+    /// Borrow the admitted claim name as an operating-system component.
+    #[must_use]
+    pub fn as_os_str(&self) -> &OsStr {
+        OsStr::new(&self.0)
+    }
+
+    /// Borrow the admitted claim name as UTF-8 text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -156,6 +195,28 @@ fn check_stream_grammar(candidate: &str) -> Result<(), NameAdmissionReason> {
             && *byte != b'-'
     }) {
         return Err(NameAdmissionReason::StreamGrammar);
+    }
+    Ok(())
+}
+
+fn check_claim_grammar(candidate: &str) -> Result<(), NameAdmissionReason> {
+    const PREFIX: &str = "!solstone-claim-";
+    let Some(rest) = candidate.strip_prefix(PREFIX) else {
+        return Err(NameAdmissionReason::ClaimGrammar);
+    };
+    let Some((pid, operation)) = rest.split_once('-') else {
+        return Err(NameAdmissionReason::ClaimGrammar);
+    };
+    if pid.len() != 8
+        || operation.len() != 16
+        || !pid
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || !operation
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(NameAdmissionReason::ClaimGrammar);
     }
     Ok(())
 }
@@ -444,13 +505,36 @@ pub(crate) fn scan_directory_conflicts(
 #[cfg(test)]
 mod tests {
     use super::{
-        ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse, StreamName,
+        ClaimName, ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse, StreamName,
         check_lookup_component, check_portable_component, conflicts_for_candidate, decide_reuse,
         escape_name, scan_directory_conflicts,
     };
     use crate::test_support::TempDir;
     use std::ffi::OsString;
     use std::fs;
+
+    #[test]
+    fn claim_name_uses_the_exact_reserved_disjoint_grammar() {
+        let valid = "!solstone-claim-0012abcd-0123456789abcdef";
+        assert_eq!(ClaimName::parse(valid).unwrap().as_str(), valid);
+        for invalid in [
+            "solstone-claim-0012abcd-0123456789abcdef",
+            "!solstone-claim-0012ABCD-0123456789abcdef",
+            "!solstone-claim-0012abcd-0123456789ABCDEF",
+            "!solstone-claim-0012abc-0123456789abcdef",
+            "!solstone-claim-0012abcd-0123456789abcde",
+            "!solstone-claim-0012abcd-0123456789abcdef-extra",
+        ] {
+            assert_eq!(
+                ClaimName::parse(invalid),
+                Err(NameAdmissionReason::ClaimGrammar)
+            );
+        }
+        assert_eq!(
+            StreamName::parse(valid),
+            Err(NameAdmissionReason::StreamGrammar)
+        );
+    }
 
     #[test]
     fn portable_policy_rejects_in_precedence_order() {

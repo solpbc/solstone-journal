@@ -90,7 +90,7 @@ fn journal_io_nix_edges_are_unix_target_gated() {
     assert!(!has_key(table(&doc, "dependencies"), "nix"));
     assert!(!has_key(table(&doc, "dev-dependencies"), "nix"));
     let unix_deps = target_unix(&doc, "dependencies").expect("unix dependencies");
-    assert_eq!(features(unix_deps, "nix"), ["fs"]);
+    assert_eq!(features(unix_deps, "nix"), ["dir", "fs"]);
     let unix_dev = target_unix(&doc, "dev-dependencies").expect("unix dev-dependencies");
     assert_eq!(features(unix_dev, "nix"), ["signal"]);
 }

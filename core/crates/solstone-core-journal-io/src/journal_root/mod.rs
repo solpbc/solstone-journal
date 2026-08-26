@@ -111,6 +111,13 @@ pub struct ObjectIdentity {
     ino: u64,
 }
 
+impl ObjectIdentity {
+    /// Construct an identity from a no-follow Unix stat result.
+    pub(crate) const fn from_device_inode(dev: u64, ino: u64) -> Self {
+        Self { dev, ino }
+    }
+}
+
 mod backend {
     use std::path::Path;
 

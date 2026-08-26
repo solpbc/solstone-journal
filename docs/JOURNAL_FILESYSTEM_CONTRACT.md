@@ -101,6 +101,55 @@ and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `
 Descendant walks remain the caller's (archive inventory).
 `is_day_key` is the single 8-digit day-key predicate.
 
+## Flat-directory capability
+
+`FlatDirectory` is a retained descriptor for one nonempty portable descendant
+directory below `JournalRoot`. Each component is admitted and opened with
+`O_NOFOLLOW` relative to the previous descriptor. Its diagnostic path is
+metadata, not authority. It operates on direct children only: no recursive
+walk, path reacquisition, or `AT_FDCWD` fallback.
+
+`list_flat_directory` returns sorted no-follow entry observations or `None`
+when the entry count exceeds its supplied bound; it never returns a partial
+list. `FlatDirectoryEntry` carries name, kind, device/inode, size, and native
+mtime precision. `read_observed_file` returns exact bytes only after regular
+kind, device/inode, size, and mtime agree before and after the read. Atime and
+ctime are deliberately not comparison fields.
+
+## Claimed removal
+
+`ClaimName` is caller-owned and exactly
+`!solstone-claim-<8 lowercase hex>-<16 lowercase hex>`. Leading `!` is
+outside product stream grammar even under case- or normalization-insensitive
+comparison. Callers own uniqueness, scanning, and retained-claim handling;
+claim names are visible.
+
+`claim_and_remove_observed` accepts a caller-supplied original name, prior
+observation, and claim name. It first rejects an aliasing claim, then uses a
+required no-replace rename into the claim slot. It unlinks only a matching
+claimed entry through the retained directory descriptor. It never removes the
+original name after a pathname stat.
+
+Outcomes are `Removed`, `RemovedDurabilityUncertain`, `Unchanged` (occupied
+claim slot, unsupported primitive, or reconciled no-op), and `IdentityChanged`
+(`Restored`, `RetainedClaim`, or `UnknownLocation`) with durability evidence.
+Original disappearance after a valid observation is `UnknownLocation`, never
+benign absence. Ambiguous rename errors are reconciled by no-follow observation
+of both direct names before any deletion decision.
+
+An already-open descriptor can still mutate the claimed object. This API does
+not provide hard-link ownership proof, advisory locking, persistent claim
+registry or cleanup, claim-name hiding, recursive removal, Windows support,
+heartbeat behavior, or archive refactoring.
+
+## No-replace platform support
+
+Linux uses `renameat2` with `RENAME_NOREPLACE` through the Linux syscall ABI;
+this covers GNU and musl targets. macOS uses descriptor-relative
+`renameatx_np` with `RENAME_EXCL`. Unsupported no-replace primitives or volumes
+return an explicit unchanged outcome; they never fall back to overwrite-capable
+rename.
+
 ## Lock sidecar naming
 
 `derive_sidecar_path` in `solstone-core-journal-io` appends `.lock` to
