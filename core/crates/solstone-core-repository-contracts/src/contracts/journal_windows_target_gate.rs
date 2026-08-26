@@ -45,7 +45,7 @@ fn target_windows<'a>(doc: &'a DocumentMut, kind: &str) -> Option<&'a Table> {
         .and_then(Item::as_table)
 }
 
-fn workspace_dependencies<'a>(doc: &'a DocumentMut) -> &'a Table {
+fn workspace_dependencies(doc: &DocumentMut) -> &Table {
     doc.get("workspace")
         .and_then(|item| item.get("dependencies"))
         .and_then(Item::as_table)
@@ -176,19 +176,16 @@ fn windows_crosscheck_keeps_journal_archive_exclusive_diagnostic() {
         let Some(package) = exclusion.get("package").and_then(Item::as_str) else {
             continue;
         };
-        match package {
-            "solstone-core-journal-archive" => {
-                saw_archive = true;
-                assert!(
-                    exclusion.get("expected_stderr").is_none(),
-                    "journal-archive exclusion still names expected_stderr"
-                );
-                assert_eq!(
-                    exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
-                    Some(archive_literal.as_str())
-                );
-            }
-            _ => {}
+        if package == "solstone-core-journal-archive" {
+            saw_archive = true;
+            assert!(
+                exclusion.get("expected_stderr").is_none(),
+                "journal-archive exclusion still names expected_stderr"
+            );
+            assert_eq!(
+                exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
+                Some(archive_literal.as_str())
+            );
         }
     }
     assert!(saw_archive, "missing journal-archive exclusion");

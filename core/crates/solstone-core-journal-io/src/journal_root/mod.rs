@@ -137,7 +137,7 @@ pub enum WindowsRefusalCategory {
     InvalidJournalName,
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 impl WindowsRefusalCategory {
     pub(crate) fn raw_hresult(&self) -> Option<i32> {
         match self {

@@ -1080,10 +1080,7 @@ fn checkpoint(_primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::process::Command;
     use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::{Duration, Instant};
 
     use super::*;
 
