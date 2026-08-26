@@ -3,7 +3,9 @@
 
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShutdownPhase {
     ReapManagedStarted,
     ReapManagedCompleted,
@@ -15,18 +17,33 @@ pub enum ShutdownPhase {
     JoinBusCompleted,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShutdownReport {
     pub phases: Vec<ShutdownPhase>,
     pub disposition: ShutdownDisposition,
     pub forced_phase: Option<ShutdownPhase>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ShutdownDisposition {
     #[default]
     Orderly,
     ForcedAfterGraceTimeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArtifactClearOutcome {
+    Cleared,
+    Skipped,
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShutdownOutcome {
+    pub report: ShutdownReport,
+    pub readiness: ArtifactClearOutcome,
+    pub self_heartbeat: ArtifactClearOutcome,
+    pub identity: ArtifactClearOutcome,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
