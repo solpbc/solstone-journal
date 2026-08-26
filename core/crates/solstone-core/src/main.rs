@@ -166,6 +166,17 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
             eprintln!("supervisor failed to boot: {reason:?}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
+        supervisor::SupervisorHostOutcome::LifecycleShutdownFailed {
+            cause,
+            readiness,
+            self_heartbeat,
+            identity,
+        } => {
+            eprintln!(
+                "supervisor lifecycle shutdown failed: cause={cause:?}, readiness={readiness:?}, self_heartbeat={self_heartbeat:?}, identity={identity:?}"
+            );
+            ExitCode::from(EXIT_INTERNAL_FAILURE)
+        }
         supervisor::SupervisorHostOutcome::ParentLost { .. } => ExitCode::from(EXIT_TEMPFAIL),
         supervisor::SupervisorHostOutcome::OrderlyShutdown { cause }
         | supervisor::SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout { cause, .. } => {
@@ -182,6 +193,7 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
             | supervisor::SyncFailureKind::CompleteScanFailure
             | supervisor::SyncFailureKind::RetainedObservationFailure,
         ) => EXIT_TEMPFAIL,
+        supervisor::ShutdownCause::ParentLost(_) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::Signal(_) => 0,
     }
 }

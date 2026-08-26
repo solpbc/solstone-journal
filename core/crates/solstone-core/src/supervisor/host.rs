@@ -10,26 +10,28 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_installation_identity::{
     Generation, journal_token_from_path, load_installation_binding, root_token_from_path,
 };
 use solstone_core_system::lifecycle::{
-    DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason, ParentWatch,
-    ShutdownDisposition, ShutdownPhase, ShutdownReport, SupervisorBootAdmission, SyncTickOutcome,
+    ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
+    ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SupervisorBootAdmission,
+    SyncTickOutcome,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
 
 use super::{runtime, tick};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorSignal {
     SigTerm,
     SigInt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyncFailureKind {
     Conflict,
     RenewalFailure,
@@ -51,31 +53,32 @@ impl SyncFailureKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShutdownCause {
     Signal(SupervisorSignal),
     Sync(SyncFailureKind),
+    ParentLost(ParentLossReason),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SiblingBinaryResolutionError {
     CurrentExecutable,
     MissingOrNotExecutable { path: PathBuf },
     InvalidLayout,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InstallationBindingRefusal {
     LoadFailed,
     JournalTokenMismatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LifecycleBootError {
     Failed(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorBootRefusal {
     SyncConflict,
     /// The pre-formatted, terminal-safe copy for an unsafe or incomplete sync
@@ -88,7 +91,7 @@ pub enum SupervisorBootRefusal {
     Lifecycle(LifecycleBootError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorHostOutcome {
     OrderlyShutdown {
         cause: ShutdownCause,
@@ -103,6 +106,12 @@ pub enum SupervisorHostOutcome {
     ParentLost {
         reason: ParentLossReason,
         shutdown: ShutdownDisposition,
+    },
+    LifecycleShutdownFailed {
+        cause: ShutdownCause,
+        readiness: ArtifactClearOutcome,
+        self_heartbeat: ArtifactClearOutcome,
+        identity: ArtifactClearOutcome,
     },
 }
 
@@ -212,34 +221,44 @@ pub async fn run_hosted(
         tick::SupervisorStopReason::Sync(sync_outcome) => {
             ShutdownCause::Sync(SyncFailureKind::classify(&sync_outcome))
         }
-        tick::SupervisorStopReason::ParentLost(reason) => {
-            let mut driver = outcome.state.into_shutdown_driver();
-            let report = outcome
-                .lifecycle
-                .shutdown(&mut driver, outcome.regime, false)
-                .ok();
-            return SupervisorHostOutcome::ParentLost {
-                reason,
-                shutdown: report.map_or(ShutdownDisposition::Orderly, |report| report.disposition),
-            };
-        }
+        tick::SupervisorStopReason::ParentLost(reason) => ShutdownCause::ParentLost(reason),
     };
     let sync_conflict = matches!(cause, ShutdownCause::Sync(SyncFailureKind::Conflict));
     let mut driver = outcome.state.into_shutdown_driver();
-    let report = outcome
+    let shutdown = outcome
         .lifecycle
-        .shutdown(&mut driver, outcome.regime, sync_conflict)
-        .ok();
-    shutdown_outcome(cause, report)
+        .shutdown(&mut driver, outcome.regime, sync_conflict);
+    classify_shutdown(cause, shutdown)
 }
 
-fn shutdown_outcome(cause: ShutdownCause, report: Option<ShutdownReport>) -> SupervisorHostOutcome {
-    if let Some(report) = report
-        && matches!(
-            report.disposition,
-            ShutdownDisposition::ForcedAfterGraceTimeout
-        )
+fn classify_shutdown(cause: ShutdownCause, outcome: ShutdownOutcome) -> SupervisorHostOutcome {
+    let ShutdownOutcome {
+        report,
+        readiness,
+        self_heartbeat,
+        identity,
+    } = outcome;
+    if matches!(&readiness, ArtifactClearOutcome::Failed(_))
+        || matches!(&self_heartbeat, ArtifactClearOutcome::Failed(_))
+        || matches!(&identity, ArtifactClearOutcome::Failed(_))
     {
+        return SupervisorHostOutcome::LifecycleShutdownFailed {
+            cause,
+            readiness,
+            self_heartbeat,
+            identity,
+        };
+    }
+    if let ShutdownCause::ParentLost(reason) = cause {
+        return SupervisorHostOutcome::ParentLost {
+            reason,
+            shutdown: report.disposition,
+        };
+    }
+    if matches!(
+        report.disposition,
+        ShutdownDisposition::ForcedAfterGraceTimeout
+    ) {
         return SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout {
             cause,
             phase: report
@@ -293,24 +312,113 @@ impl From<runtime::JournalBinaryPreflightError> for SiblingBinaryResolutionError
 
 #[cfg(test)]
 mod tests {
-    use super::{ShutdownCause, SupervisorHostOutcome, SupervisorSignal, shutdown_outcome};
-    use solstone_core_system::lifecycle::{ShutdownDisposition, ShutdownPhase, ShutdownReport};
+    use super::{
+        ShutdownCause, SupervisorHostOutcome, SupervisorSignal, SyncFailureKind, classify_shutdown,
+    };
+    use solstone_core_system::lifecycle::{
+        ArtifactClearOutcome, ParentLossReason, ShutdownDisposition, ShutdownOutcome,
+        ShutdownPhase, ShutdownReport,
+    };
+
+    fn shutdown_outcome(report: ShutdownReport) -> ShutdownOutcome {
+        ShutdownOutcome {
+            report,
+            readiness: ArtifactClearOutcome::Cleared,
+            self_heartbeat: ArtifactClearOutcome::Cleared,
+            identity: ArtifactClearOutcome::Cleared,
+        }
+    }
+
+    fn failed_shutdown_outcome(
+        readiness: ArtifactClearOutcome,
+        self_heartbeat: ArtifactClearOutcome,
+        identity: ArtifactClearOutcome,
+    ) -> ShutdownOutcome {
+        ShutdownOutcome {
+            report: ShutdownReport::default(),
+            readiness,
+            self_heartbeat,
+            identity,
+        }
+    }
 
     #[test]
     fn forced_shutdown_report_remains_a_distinct_host_outcome() {
-        let report = ShutdownReport {
+        let outcome = shutdown_outcome(ShutdownReport {
             phases: Vec::new(),
             disposition: ShutdownDisposition::ForcedAfterGraceTimeout,
             forced_phase: Some(ShutdownPhase::StopChildrenCompleted),
-        };
+        });
         assert_eq!(
-            shutdown_outcome(
-                ShutdownCause::Signal(SupervisorSignal::SigTerm),
-                Some(report)
-            ),
+            classify_shutdown(ShutdownCause::Signal(SupervisorSignal::SigTerm), outcome),
             SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout {
                 cause: ShutdownCause::Signal(SupervisorSignal::SigTerm),
                 phase: ShutdownPhase::StopChildrenCompleted,
+            }
+        );
+    }
+
+    #[test]
+    fn cleanup_failures_dominate_every_post_ready_cause() {
+        let cases = [
+            (
+                ShutdownCause::ParentLost(ParentLossReason::ExitedOrReused),
+                failed_shutdown_outcome(
+                    ArtifactClearOutcome::Failed("readiness".into()),
+                    ArtifactClearOutcome::Cleared,
+                    ArtifactClearOutcome::Cleared,
+                ),
+            ),
+            (
+                ShutdownCause::Signal(SupervisorSignal::SigTerm),
+                failed_shutdown_outcome(
+                    ArtifactClearOutcome::Cleared,
+                    ArtifactClearOutcome::Failed("heartbeat".into()),
+                    ArtifactClearOutcome::Cleared,
+                ),
+            ),
+            (
+                ShutdownCause::Sync(SyncFailureKind::RenewalFailure),
+                failed_shutdown_outcome(
+                    ArtifactClearOutcome::Cleared,
+                    ArtifactClearOutcome::Cleared,
+                    ArtifactClearOutcome::Failed("identity".into()),
+                ),
+            ),
+            (
+                ShutdownCause::Sync(SyncFailureKind::Conflict),
+                failed_shutdown_outcome(
+                    ArtifactClearOutcome::Failed("readiness".into()),
+                    ArtifactClearOutcome::Skipped,
+                    ArtifactClearOutcome::Skipped,
+                ),
+            ),
+        ];
+
+        for (cause, outcome) in cases {
+            assert!(matches!(
+                classify_shutdown(cause, outcome),
+                SupervisorHostOutcome::LifecycleShutdownFailed { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn parent_loss_stays_distinct_when_shutdown_is_forced() {
+        let outcome = shutdown_outcome(ShutdownReport {
+            phases: Vec::new(),
+            disposition: ShutdownDisposition::ForcedAfterGraceTimeout,
+            forced_phase: Some(ShutdownPhase::StopChildrenCompleted),
+        });
+
+        assert_eq!(
+            classify_shutdown(
+                ShutdownCause::ParentLost(ParentLossReason::ExitedOrReused),
+                outcome
+            ),
+            SupervisorHostOutcome::ParentLost {
+                reason: ParentLossReason::ExitedOrReused,
+                shutdown: ShutdownDisposition::ForcedAfterGraceTimeout,
             }
         );
     }

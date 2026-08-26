@@ -17,7 +17,7 @@ use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
     SupervisorLifecycle, SyncPeerObservation, SyncTickOutcome, sync_conflict_event,
 };
-use solstone_core_system::process::SystemProcessInstanceSource;
+use solstone_core_system::process::{ProcessInstanceSource, SystemProcessInstanceSource};
 use solstone_core_system::process::{
     ProcessObservation as SystemProcessObservation, ProcessObservationTuple,
     classify_process_observation,
@@ -84,6 +84,17 @@ pub(crate) enum SupervisorStopReason {
     Signal(SupervisorSignal),
     Sync(SyncTickOutcome),
     ParentLost(ParentLossReason),
+}
+
+fn check_parent_watch(
+    parent_watch: Option<&ParentWatch>,
+    source: &dyn ProcessInstanceSource,
+) -> Option<SupervisorStopReason> {
+    let watch = parent_watch?;
+    match watch.check(source) {
+        ParentWatchStatus::Live => None,
+        ParentWatchStatus::Lost(reason) => Some(SupervisorStopReason::ParentLost(reason)),
+    }
 }
 
 impl ShutdownSignals {
@@ -214,10 +225,10 @@ pub(crate) async fn run(
     let mut last_status = Instant::now() - state.timing.status_interval;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
-        if let Some(watch) = parent_watch
-            && let ParentWatchStatus::Lost(reason) = watch.check(&SystemProcessInstanceSource)
+        if let Some(reason) =
+            check_parent_watch(parent_watch.as_ref(), &SystemProcessInstanceSource)
         {
-            return SupervisorStopReason::ParentLost(reason);
+            return reason;
         }
         let app_samples = reconcile_app_processes(state);
         let tick = Instant::now();
@@ -1408,6 +1419,10 @@ mod tests {
     use chrono::NaiveDate;
     use solstone_core_system::cap::CapResolver;
     use solstone_core_system::partition::Partition;
+    use solstone_core_system::process::{
+        ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
+        ProcessInstanceSource,
+    };
     use solstone_core_system::queue::{
         ProcessState, ProcessStateProbe, TaskQueue, TaskQueueOptions,
     };
@@ -1478,6 +1493,106 @@ mod tests {
             ready: false,
             before_deadline_commit: None,
         })
+    }
+
+    struct ParentAdmissionSource {
+        self_result: InspectResult,
+        parent_result: InspectResult,
+    }
+
+    impl ProcessInstanceSource for ParentAdmissionSource {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            if pid == std::process::id() {
+                self.self_result
+            } else {
+                self.parent_result
+            }
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    struct ParentCheckSource {
+        result: InspectResult,
+    }
+
+    impl ProcessInstanceSource for ParentCheckSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            self.result
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    fn parent_instance(pid: u32, birth: u64) -> ProcessInstance {
+        ProcessInstance {
+            pid,
+            birth: ProcessBirth::linux(birth, 1, 100),
+        }
+    }
+
+    fn admitted_parent_watch() -> (ParentWatch, ProcessInstance) {
+        let parent = parent_instance(42, 10);
+        let source = ParentAdmissionSource {
+            self_result: InspectResult::Present {
+                instance: parent_instance(std::process::id(), 1),
+                execution: ExecutionState::Running,
+                ppid: Some(parent.pid),
+                pgid: None,
+            },
+            parent_result: InspectResult::Present {
+                instance: parent,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: None,
+            },
+        };
+        (
+            ParentWatch::admit(
+                solstone_core_system::lifecycle::DeclaredParent::from_instance(parent),
+                &source,
+            )
+            .expect("parent admission"),
+            parent,
+        )
+    }
+
+    #[test]
+    fn parent_watch_check_maps_live_and_lost_observations() {
+        let (watch, parent) = admitted_parent_watch();
+        let live = ParentCheckSource {
+            result: InspectResult::Present {
+                instance: parent,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: None,
+            },
+        };
+        assert!(check_parent_watch(Some(&watch), &live).is_none());
+
+        let unverifiable = ParentCheckSource {
+            result: InspectResult::Unverifiable,
+        };
+        assert!(matches!(
+            check_parent_watch(Some(&watch), &unverifiable),
+            Some(SupervisorStopReason::ParentLost(
+                ParentLossReason::Unverifiable
+            ))
+        ));
+
+        let exited = ParentCheckSource {
+            result: InspectResult::Absent,
+        };
+        assert!(matches!(
+            check_parent_watch(Some(&watch), &exited),
+            Some(SupervisorStopReason::ParentLost(
+                ParentLossReason::ExitedOrReused
+            ))
+        ));
     }
 
     #[test]
