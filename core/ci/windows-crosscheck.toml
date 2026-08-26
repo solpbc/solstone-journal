@@ -2,8 +2,8 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-workspace_packages = 132
-library_packages = 126
+workspace_packages = 131
+library_packages = 125
 
 [[exclusions]]
 package = "solstone-core-journal-archive"
