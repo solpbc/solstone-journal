@@ -115,10 +115,11 @@ proof revalidation walk descendants through `AsFd`. `ArchiveSource::open` maps
 `JournalRootError::Unsupported` is the explicit refusal for an unsupported
 backend policy; it is never a silent path-only mode. The Unix backend never
 emits it. Windows gate 1 uses it for reparse, filesystem, drive-type, and
-Cloud Files policy refusals. `CloudSyncRootStatusUnverifiable` carries the
-returned raw HRESULT when one exists, while `CloudSyncRootRegistered` denotes
-S_OK; `ReFS` roots do not issue a Cloud Files query. Ordinary permission and
-I/O failures remain `JournalRootError::Io`.
+Cloud Files policy refusals; each carries a `WindowsRefusalCategory`.
+`CloudSyncRootStatusUnverifiable` carries the returned raw HRESULT when one
+exists, while `CloudSyncRootRegistered` denotes S_OK; `ReFS` roots do not
+issue a Cloud Files query. Ordinary permission and I/O failures remain
+`JournalRootError::Io`.
 
 ## Future-backend obligations
 
