@@ -81,7 +81,7 @@
               "missing_required_field",
               "multipart_malformed",
               "multipart_part_too_large",
-              "observer_restart_failed",
+              "capture_restart_failed",
               "operation_erased",
               "operation_in_progress",
               "operation_no_longer_available",
@@ -238,7 +238,7 @@
   "info": {
     "description": "Generated from convey-clients.json. Covers only the four Rust-served linked-device devices/ingest operations.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "9.0.0",
+    "version": "10.0.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -247,7 +247,7 @@
     "/app/devices/ingest": {
       "post": {
         "description": "Upload one capture segment from a linked device as multipart form data. Identity is the linked-device mTLS certificate. The body has one JSON `envelope` part plus repeated `files` parts. Envelope grammar is `core/crates/solstone-core/src/contract/schemas/protocol.schema.json` (required `day`, `segment`, `files`; optional `source`, `meta`; `stream` and `observer` are forbidden). Each multipart part is at most 64 MiB; the total request is at most 128 MiB.",
-        "operationId": "observer.ingestUpload",
+        "operationId": "client.ingestUpload",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -446,14 +446,14 @@
         },
         "summary": "Upload one capture segment from a linked device",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/manifest": {
       "get": {
         "description": "Return days with uploaded linked-device segment history.",
-        "operationId": "observer.ingestManifest",
+        "operationId": "client.ingestManifest",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -555,14 +555,14 @@
         },
         "summary": "List linked-device ingest manifest days",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/manifest/{day}": {
       "get": {
         "description": "Return file names, sizes, sha256 hashes, and custody status for every segment on one day.",
-        "operationId": "observer.ingestManifestDay",
+        "operationId": "client.ingestManifestDay",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -697,14 +697,14 @@
         },
         "summary": "Read linked-device transfer manifest for a day",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/segments/{day}": {
       "get": {
         "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one; segment-level `original_key` carries the client's originally requested segment key when a collision remapped it.",
-        "operationId": "observer.ingestSegments",
+        "operationId": "client.ingestSegments",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -809,7 +809,7 @@
         },
         "summary": "List uploaded linked-device segments",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     }
@@ -826,9 +826,9 @@
         "processed"
       ]
     },
-    "observer.ingestUpload.status": {
+    "client.ingestUpload.status": {
       "classification": "closed",
-      "id": "observer.ingestUpload.status",
+      "id": "client.ingestUpload.status",
       "source_pointers": [
         "/paths/~1app~1devices~1ingest/post/responses/200/content/application~1json/schema/properties/status",
         "/paths/~1app~1devices~1ingest/post/responses/409"

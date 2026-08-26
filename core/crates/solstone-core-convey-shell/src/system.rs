@@ -12,7 +12,7 @@ pub async fn status() -> Response {
             "latest": "1.0.22",
             "update_available": false,
         },
-        "capture": {"observers": [], "status": "no_observers"},
+        "capture": {"clients": [], "status": "no_clients"},
         "ok": true,
     }))
     .into_response()

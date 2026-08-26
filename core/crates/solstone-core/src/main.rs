@@ -33,13 +33,12 @@ use solstone_core_cli::{
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE,
-    OBSERVER_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP,
-    SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
-    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP,
-    START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
-    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
-    SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    NAVIGATE_HELP, NAVIGATE_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions,
+    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
+    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
     THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
     TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
     TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
@@ -84,7 +83,6 @@ use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
-use solstone_core_observer::{CREATE_RETIRED_MESSAGE, ObserverCommand};
 mod talent_contract;
 mod talent_preview;
 mod warm;
@@ -166,6 +164,17 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
             eprintln!("supervisor failed to boot: {reason:?}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
+        supervisor::SupervisorHostOutcome::LifecycleShutdownFailed {
+            cause,
+            readiness,
+            self_heartbeat,
+            identity,
+        } => {
+            eprintln!(
+                "supervisor lifecycle shutdown failed: cause={cause:?}, readiness={readiness:?}, self_heartbeat={self_heartbeat:?}, identity={identity:?}"
+            );
+            ExitCode::from(EXIT_INTERNAL_FAILURE)
+        }
         supervisor::SupervisorHostOutcome::ParentLost { .. } => ExitCode::from(EXIT_TEMPFAIL),
         supervisor::SupervisorHostOutcome::OrderlyShutdown { cause }
         | supervisor::SupervisorHostOutcome::ForcedShutdownAfterGraceTimeout { cause, .. } => {
@@ -182,6 +191,7 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
             | supervisor::SyncFailureKind::CompleteScanFailure
             | supervisor::SyncFailureKind::RetainedObservationFailure,
         ) => EXIT_TEMPFAIL,
+        supervisor::ShutdownCause::ParentLost(_) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::Signal(_) => 0,
     }
 }
@@ -469,7 +479,6 @@ fn main() -> ExitCode {
                 ExitCode::from(code)
             }
         },
-        Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path }) => navigate::run(path),
         Ok(Command::NavigateHelp) => {
             print!("{NAVIGATE_HELP}");
@@ -574,25 +583,6 @@ fn main() -> ExitCode {
         Ok(Command::FacetCandidatesUsage) => {
             eprint!("{FACET_CANDIDATES_USAGE}");
             eprintln!("journal facet-candidates: error: invalid arguments");
-            ExitCode::from(2)
-        }
-        Ok(Command::ObserverHelp) => {
-            print!("{OBSERVER_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::ObserverPruneHelp) => {
-            print!("{OBSERVER_PRUNE_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::ObserverPruneUsage) => {
-            eprint!("{OBSERVER_PRUNE_USAGE}");
-            eprintln!("journal observer prune: error: invalid arguments");
-            ExitCode::from(2)
-        }
-        Ok(Command::ObserverUsage) => {
-            // argparse's usage-error exit code, matching the reference.
-            eprint!("{OBSERVER_USAGE}");
-            eprintln!("journal observer: error: invalid arguments");
             ExitCode::from(2)
         }
         Err(_) => {
@@ -1141,95 +1131,6 @@ fn run_schedule(_options: ScheduleOptions) -> ExitCode {
         eprintln!("{diagnostic}");
     }
     ExitCode::from(report.exit_code)
-}
-
-fn run_observer(command: ObserverCommand) -> ExitCode {
-    if matches!(command, ObserverCommand::Create) {
-        eprint!("{CREATE_RETIRED_MESSAGE}");
-        return ExitCode::from(2);
-    }
-    let journal = match resolve_journal_config_path(None) {
-        Ok(line) => line.path,
-        Err(error) => {
-            eprint_journal_path_error(error);
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
-    if let ObserverCommand::Prune {
-        day,
-        day_range,
-        all,
-        stream,
-        execute,
-        cross_start,
-    } = command
-    {
-        return run_observer_prune(&journal, day, day_range, all, stream, execute, cross_start);
-    }
-    match solstone_core_observer::execute(
-        &journal,
-        command,
-        solstone_core_observer::system_now_ms(),
-    ) {
-        Ok(output) => {
-            let mut stdout = io::stdout().lock();
-            if stdout.write_all(output.as_bytes()).is_err()
-                || stdout.write_all(b"\n").is_err()
-                || stdout.flush().is_err()
-            {
-                eprintln!("device failed: stdout I/O error");
-                ExitCode::from(EXIT_IOERR)
-            } else {
-                ExitCode::SUCCESS
-            }
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            if error.is_user_error() {
-                ExitCode::from(1)
-            } else {
-                ExitCode::from(EXIT_IOERR)
-            }
-        }
-    }
-}
-
-/// `prune`'s exit codes are 0 (clean run), 2 (refusals present), and 1 (usage
-/// or unexpected error) -- distinct from `run_observer`'s generic
-/// success/failure mapping, so it has its own small dispatcher.
-#[allow(clippy::too_many_arguments)]
-fn run_observer_prune(
-    journal: &Path,
-    day: Option<String>,
-    day_range: Option<(String, String)>,
-    all: bool,
-    stream: Option<String>,
-    execute: bool,
-    cross_start: bool,
-) -> ExitCode {
-    match solstone_core_observer::execute_prune(
-        journal,
-        day,
-        day_range,
-        all,
-        stream,
-        execute,
-        cross_start,
-        solstone_core_observer::system_now_ms(),
-    ) {
-        solstone_core_observer::PruneOutcome::Usage(message) => {
-            eprintln!("Error: {message}");
-            ExitCode::from(1)
-        }
-        solstone_core_observer::PruneOutcome::Report { text, exit_code } => {
-            let mut stdout = io::stdout().lock();
-            if stdout.write_all(text.as_bytes()).is_err() || stdout.flush().is_err() {
-                eprintln!("device prune failed: stdout I/O error");
-                return ExitCode::from(EXIT_IOERR);
-            }
-            ExitCode::from(exit_code as u8)
-        }
-    }
 }
 
 fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {

@@ -26,7 +26,8 @@ pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{
-    ShutdownDisposition, ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown,
+    ArtifactClearOutcome, ShutdownDisposition, ShutdownDriver, ShutdownOutcome, ShutdownPhase,
+    ShutdownRegime, ShutdownReport, shutdown,
 };
 pub use startup::{PreReadySupervisorLifecycle, SupervisorBootAdmission};
 pub use state::{
@@ -211,30 +212,45 @@ impl SupervisorLifecycle {
         driver: &mut dyn ShutdownDriver,
         regime: ShutdownRegime,
         sync_conflict: bool,
-    ) -> Result<ShutdownReport, LifecycleError> {
-        if let Err(error) = state::clear_ready(&self.journal) {
-            eprintln!("supervisor readiness cleanup failed: {error}");
-        }
-        if !sync_conflict {
+    ) -> ShutdownOutcome {
+        let readiness = match state::clear_ready(&self.journal) {
+            Ok(()) => ArtifactClearOutcome::Cleared,
+            Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
+        };
+        let clear_identity = || match state::clear_supervisor_identity(&self.journal) {
+            Ok(()) => ArtifactClearOutcome::Cleared,
+            Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
+        };
+        let (self_heartbeat, identity) = if sync_conflict {
+            (ArtifactClearOutcome::Skipped, ArtifactClearOutcome::Skipped)
+        } else {
             match state::clear_self_heartbeat(
                 &self.sync,
                 &self.heartbeat_filename,
                 self.retained_self_heartbeat.as_ref(),
             ) {
-                Ok(SelfHeartbeatRemoval::Removed | SelfHeartbeatRemoval::NoCleanupAuthority) => {
-                    if let Err(error) = state::clear_supervisor_identity(&self.journal) {
-                        eprintln!("supervisor identity cleanup failed: {error}");
-                    }
+                Ok(SelfHeartbeatRemoval::Removed) => {
+                    (ArtifactClearOutcome::Cleared, clear_identity())
                 }
-                Ok(outcome) => {
-                    eprintln!("supervisor heartbeat cleanup did not complete cleanly: {outcome}");
+                Ok(SelfHeartbeatRemoval::NoCleanupAuthority) => {
+                    (ArtifactClearOutcome::Skipped, clear_identity())
                 }
-                Err(error) => {
-                    eprintln!("supervisor heartbeat cleanup failed: {error}");
-                }
+                Ok(outcome) => (
+                    ArtifactClearOutcome::Failed(outcome.to_string()),
+                    ArtifactClearOutcome::Skipped,
+                ),
+                Err(error) => (
+                    ArtifactClearOutcome::Failed(error.to_string()),
+                    ArtifactClearOutcome::Skipped,
+                ),
             }
+        };
+        ShutdownOutcome {
+            report: shutdown::shutdown(driver, regime),
+            readiness,
+            self_heartbeat,
+            identity,
         }
-        Ok(shutdown::shutdown(driver, regime))
     }
 }
 
@@ -347,8 +363,9 @@ mod tests {
     use tempfile::Builder;
 
     use super::{
-        LifecycleError, ShutdownDisposition, ShutdownDriver, ShutdownPhase, ShutdownRegime,
-        SupervisorLifecycle, SyncTickOutcome, is_supervisor_up_with_start_time, state,
+        ArtifactClearOutcome, LifecycleError, ShutdownDisposition, ShutdownDriver, ShutdownPhase,
+        ShutdownRegime, SupervisorLifecycle, SyncTickOutcome, is_supervisor_up_with_start_time,
+        state,
     };
 
     fn temporary_journal() -> tempfile::TempDir {
@@ -356,6 +373,39 @@ mod tests {
             .prefix("solstone-lifecycle-tick-")
             .tempdir_in("/var/tmp")
             .expect("temporary journal")
+    }
+
+    struct Driver(Vec<&'static str>);
+
+    impl ShutdownDriver for Driver {
+        fn reap_managed(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+            self.0.push("reap");
+            ShutdownDisposition::Orderly
+        }
+
+        fn drain_tasks(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+            self.0.push("drain");
+            ShutdownDisposition::Orderly
+        }
+
+        fn stop_children(&mut self, _: Option<std::time::Duration>) -> ShutdownDisposition {
+            self.0.push("children");
+            ShutdownDisposition::Orderly
+        }
+
+        fn join_bus(&mut self, _: std::time::Duration) -> ShutdownDisposition {
+            self.0.push("bus");
+            ShutdownDisposition::Orderly
+        }
+    }
+
+    fn assert_driver_completed(driver: &Driver, phase: Option<&ShutdownPhase>) {
+        assert_eq!(
+            driver.0,
+            vec!["reap", "drain", "children", "bus"],
+            "the shutdown driver must run after cleanup failure"
+        );
+        assert_eq!(phase, Some(&ShutdownPhase::JoinBusCompleted));
     }
 
     #[test]
@@ -462,30 +512,6 @@ mod tests {
 
     #[test]
     fn shutdown_runs_driver_after_non_clean_heartbeat_cleanup() {
-        struct Driver(Vec<&'static str>);
-
-        impl ShutdownDriver for Driver {
-            fn reap_managed(&mut self, _: std::time::Duration) -> ShutdownDisposition {
-                self.0.push("reap");
-                ShutdownDisposition::Orderly
-            }
-
-            fn drain_tasks(&mut self, _: std::time::Duration) -> ShutdownDisposition {
-                self.0.push("drain");
-                ShutdownDisposition::Orderly
-            }
-
-            fn stop_children(&mut self, _: Option<std::time::Duration>) -> ShutdownDisposition {
-                self.0.push("children");
-                ShutdownDisposition::Orderly
-            }
-
-            fn join_bus(&mut self, _: std::time::Duration) -> ShutdownDisposition {
-                self.0.push("bus");
-                ShutdownDisposition::Orderly
-            }
-        }
-
         let journal = temporary_journal();
         let lifecycle = SupervisorLifecycle::boot(journal.path()).expect("boot");
         let heartbeat = journal
@@ -501,12 +527,41 @@ mod tests {
         );
 
         assert!(barrier_fired);
-        let report = result.expect("non-clean heartbeat cleanup is auxiliary");
-        assert_eq!(
-            driver.0,
-            vec!["reap", "drain", "children", "bus"],
-            "the shutdown driver must run after an ambiguous claim cleanup"
-        );
-        assert_eq!(report.phases.last(), Some(&ShutdownPhase::JoinBusCompleted));
+        assert!(matches!(
+            result.self_heartbeat,
+            ArtifactClearOutcome::Failed(_)
+        ));
+        assert_driver_completed(&driver, result.report.phases.last());
+    }
+
+    #[test]
+    fn shutdown_reports_readiness_cleanup_failure_and_runs_driver() {
+        let journal = temporary_journal();
+        let lifecycle = SupervisorLifecycle::boot(journal.path()).expect("boot");
+        let readiness = journal.path().join("health/supervisor.ready");
+        fs::create_dir(&readiness).expect("readiness directory");
+        fs::write(readiness.join("marker"), b"blocked").expect("non-empty readiness directory");
+        let mut driver = Driver(Vec::new());
+
+        let result = lifecycle.shutdown(&mut driver, ShutdownRegime::Standard, false);
+
+        assert!(matches!(result.readiness, ArtifactClearOutcome::Failed(_)));
+        assert_driver_completed(&driver, result.report.phases.last());
+    }
+
+    #[test]
+    fn shutdown_reports_identity_cleanup_failure_and_runs_driver() {
+        let journal = temporary_journal();
+        let lifecycle = SupervisorLifecycle::boot(journal.path()).expect("boot");
+        let identity = journal.path().join("health/supervisor.pid");
+        fs::remove_file(&identity).expect("remove supervisor pid");
+        fs::create_dir(&identity).expect("identity directory");
+        fs::write(identity.join("marker"), b"blocked").expect("non-empty identity directory");
+        let mut driver = Driver(Vec::new());
+
+        let result = lifecycle.shutdown(&mut driver, ShutdownRegime::Standard, false);
+
+        assert!(matches!(result.identity, ArtifactClearOutcome::Failed(_)));
+        assert_driver_completed(&driver, result.report.phases.last());
     }
 }

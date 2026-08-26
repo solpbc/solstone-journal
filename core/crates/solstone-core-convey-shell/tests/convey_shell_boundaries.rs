@@ -5,7 +5,5 @@
 mod boundary_relay;
 #[path = "boundary_speakers_helper.rs"]
 mod boundary_speakers_helper;
-#[path = "boundary_sync_persist.rs"]
-mod boundary_sync_persist;
 #[path = "boundary_tcp.rs"]
 mod boundary_tcp;

@@ -289,12 +289,9 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
         }
     };
     match AuthorizationLedger::new(&root.0).remove(&target) {
-        Ok(outcome) if outcome.authorized_removed => Json(json!({
-            "unpaired": target,
-            // Observer revoke is by name, not fingerprint; no mapping exists yet.
-            "revoked_observers": [],
-        }))
-        .into_response(),
+        Ok(outcome) if outcome.authorized_removed => {
+            Json(json!({"unpaired": target})).into_response()
+        }
         Ok(_) => refusal(
             "paired_device_not_found",
             "paired device not found",
@@ -1103,7 +1100,7 @@ mod tests {
             assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z", "{prefix}");
             assert!(
                 device.get("observer_handle").is_none(),
-                "{prefix}: observer handles are no longer exposed"
+                "{prefix}: legacy handles are no longer exposed"
             );
         }
     }
@@ -1608,10 +1605,7 @@ mod tests {
         let (status, body) =
             post_json(app, "/app/link/unpair", json!({"device_label": "phone"})).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            body,
-            json!({"unpaired": fingerprint, "revoked_observers": []})
-        );
+        assert_eq!(body, json!({"unpaired": fingerprint}));
 
         let temporary = TempDir::new();
         established_journal(temporary.path());
@@ -1624,7 +1618,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["unpaired"], fingerprint);
-        assert_eq!(body["revoked_observers"], json!([]));
+        assert!(body.get("revoked_observers").is_none());
 
         let temporary = TempDir::new();
         established_journal(temporary.path());
@@ -1745,7 +1739,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, json!({"unpaired": client_a, "revoked_observers": []}));
+        assert_eq!(body, json!({"unpaired": client_a}));
         assert_eq!(ledger_fingerprints(temporary.path()), [client_b]);
 
         let after_first = fs::read(ledger_path(temporary.path())).expect("ledger after first");
@@ -1784,7 +1778,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, json!({"unpaired": ordinal, "revoked_observers": []}));
+        assert_eq!(body, json!({"unpaired": ordinal}));
         assert!(ledger_fingerprints(temporary.path()).is_empty());
 
         let raw = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";

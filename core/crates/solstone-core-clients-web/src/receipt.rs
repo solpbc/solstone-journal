@@ -19,7 +19,6 @@ pub(crate) struct ReceiptTarget {
 #[derive(Serialize)]
 pub(crate) struct Removed {
     pub days: u64,
-    pub history_rows: u64,
     pub index_chunks: u64,
     pub mixed_segments: u64,
     pub originals: u64,

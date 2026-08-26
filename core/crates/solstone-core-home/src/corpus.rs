@@ -400,10 +400,10 @@ fn capture(name: &str) -> Value {
     match name {
         "none" => Value::Null,
         "no_observers" => {
-            json!({"status":"no_observers","observers":[],"unassessed":[],"registry":"registry_empty"})
+            json!({"status":"no_clients","clients":[],"unassessed":[],"registry":"registry_empty"})
         }
         "active" | "stale" | "offline" | "degraded" | "unknown" => {
-            json!({"status":name,"observers":[{"name":"laptop"}]})
+            json!({"status":name,"clients":[{"name":"laptop"}]})
         }
         _ => unreachable!(),
     }

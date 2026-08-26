@@ -4,8 +4,8 @@
 //! Generated-contract oracle for the served linked-device ingest surface.
 //!
 //! This deliberately projects only the four Rust-served devices/ingest
-//! operations. Pairing and root SSE are live but orthogonal, while the former
-//! observer routes have no live Rust implementation and must not be projected.
+//! operations. Pairing and root SSE are live but orthogonal, while retired
+//! legacy routes have no live Rust implementation and must not be projected.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "9.0.0";
-const BUNDLE_DIRECTORY: &str = "docs/openapi/observer-client-contract";
+const BUNDLE_SEMVER: &str = "10.0.0";
+const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str = "docs/openapi/convey-clients.json";
 const ARTIFACTS: [&str; 5] = [
     "manifest.json",
@@ -25,21 +25,21 @@ const ARTIFACTS: [&str; 5] = [
     "consumer-audit.json",
 ];
 const OPERATION_SPECS: [(&str, &str, &str); 4] = [
-    ("/app/devices/ingest", "post", "observer.ingestUpload"),
+    ("/app/devices/ingest", "post", "client.ingestUpload"),
     (
         "/app/devices/ingest/manifest",
         "get",
-        "observer.ingestManifest",
+        "client.ingestManifest",
     ),
     (
         "/app/devices/ingest/manifest/{day}",
         "get",
-        "observer.ingestManifestDay",
+        "client.ingestManifestDay",
     ),
     (
         "/app/devices/ingest/segments/{day}",
         "get",
-        "observer.ingestSegments",
+        "client.ingestSegments",
     ),
 ];
 const COMPONENT_CLOSURE: [&str; 4] = ["Error", "SegmentFile", "SegmentItem", "SegmentsEnvelope"];
@@ -154,7 +154,7 @@ fn selected_projection(authority: &Value) -> Value {
         "components": {"schemas": Value::Object(schemas)},
         "x-vocabularies": {
             "SegmentFile.status": segment_file_vocabulary(),
-            "observer.ingestUpload.status": ingest_status_vocabulary()
+            "client.ingestUpload.status": ingest_status_vocabulary()
         }
     })
 }
@@ -172,7 +172,7 @@ fn segment_file_vocabulary() -> Value {
 fn ingest_status_vocabulary() -> Value {
     json!({
         "classification": "closed",
-        "id": "observer.ingestUpload.status",
+        "id": "client.ingestUpload.status",
         "source_pointers": [
             "/paths/~1app~1devices~1ingest/post/responses/200/content/application~1json/schema/properties/status",
             "/paths/~1app~1devices~1ingest/post/responses/409"
@@ -227,14 +227,14 @@ fn consumer_audit() -> Value {
                 "classification": "legacy_v2_unmigrated",
                 "consumer": consumer,
                 "legacy_surface": legacy_surface,
-                "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+                "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
                 "revision": revision,
                 "source_files": source_files,
             }));
         }
     }
     json!({
-        "schema": "solstone.observer-client-contract-consumer-audit.v2",
+        "schema": "solstone.client-ingest-contract-consumer-audit.v2",
         "audited_commits": audited_commits,
         "direct_paths": direct_paths,
         "searched_files": searched_files,
@@ -260,14 +260,14 @@ fn behavior_vectors() -> Value {
                     "kind": "ingest_status",
                     "status": status,
                 },
-                "fixture_id": format!("declared.observer.ingestUpload.status.{status}"),
-                "id": format!("observer.ingestUpload.status.{status}"),
+                "fixture_id": format!("declared.client.ingestUpload.status.{status}"),
+                "id": format!("client.ingestUpload.status.{status}"),
                 "kind": "declared",
                 "pointers": ["/status"],
             })
         })
         .collect::<Vec<_>>();
-    json!({"schema": "solstone.observer-client-contract-vectors.v2", "vectors": vectors})
+    json!({"schema": "solstone.client-ingest-contract-vectors.v2", "vectors": vectors})
 }
 
 fn wire_behavior() -> Value {
@@ -301,18 +301,18 @@ fn wire_behavior() -> Value {
                 _ => (json!({"status": status}), json!({"valid": true})),
             };
             json!({
-                "id": format!("declared.observer.ingestUpload.status.{status}"),
+                "id": format!("declared.client.ingestUpload.status.{status}"),
                 "kind": "declared",
                 "payload": payload,
                 "provenance": {
                     "http_status": http_status,
-                    "vocabulary": "observer.ingestUpload.status",
+                    "vocabulary": "client.ingestUpload.status",
                 },
                 "schema_validation": schema_validation,
             })
         })
         .collect::<Vec<_>>();
-    json!({"schema": "solstone.observer-client-contract-fixtures.v2", "fixtures": fixtures})
+    json!({"schema": "solstone.client-ingest-contract-fixtures.v2", "fixtures": fixtures})
 }
 
 fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &ArtifactMap) -> Value {
@@ -331,25 +331,25 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
             {"consumer_identifier": "solstone-linux", "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef"},
             {"consumer_identifier": "solstone-browser", "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac"}
         ],
-        "bundle_schema_identity": "solstone.observer-client-contract-bundle.schema.v1",
+        "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
         "bundle_semver": BUNDLE_SEMVER,
         "component_closure": COMPONENT_CLOSURE,
         "consumer_identifiers": ["solstone-browser", "solstone-linux", "solstone-windows"],
         "files": files,
-        "generator_identity": "solstone.repository_contracts.observer_client_contract_bundle.v1",
+        "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
         "generator_inputs": [{
             "id": "openapi.convey_clients",
             "path": AUTHORITY_PATH,
             "role": "openapi_source",
             "sha256": sha256(authority_bytes)
         }],
-        "observer_protocol_version": 3,
+        "client_protocol_version": 3,
         "openapi_document_version": "1.0.0",
         "openapi_spec_version": openapi_spec_version,
         "operation_ids": OPERATION_SPECS.map(|(_, _, id)| id),
         "projection_path": "projection.openapi.json",
         "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
-        "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; deferred legacy observer operations are not projected.",
+        "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
         "supported_response_variants": [3],
         "vocabularies": [segment_file_vocabulary(), ingest_status_vocabulary()],
         "windows_linux_rollout_targets": [
@@ -411,7 +411,7 @@ fn under_bumped_manifest_semver_is_rejected() {
     let root = repository_root();
     let expected = expected_bundle(&root);
     let expected_manifest = &expected["manifest.json"];
-    for wrong_semver in ["8.0.0", "9.0.1"] {
+    for wrong_semver in ["9.0.0", "10.0.1"] {
         let mut manifest: Value =
             serde_json::from_slice(expected_manifest).expect("parse manifest");
         manifest["bundle_semver"] = Value::String(wrong_semver.to_owned());
@@ -424,7 +424,7 @@ fn under_bumped_manifest_semver_is_rejected() {
 
 #[test]
 #[ignore = "writes committed contract artifacts; run explicitly when regenerating"]
-fn regenerate_observer_client_contract_bundle() {
+fn regenerate_client_ingest_contract_bundle() {
     let root = repository_root();
     let expected = expected_bundle(&root);
     for path in ARTIFACTS {

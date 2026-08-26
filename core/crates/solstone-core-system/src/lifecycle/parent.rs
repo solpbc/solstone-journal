@@ -7,6 +7,7 @@ use crate::process::{
     InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
+use serde::{Deserialize, Serialize};
 
 /// A host's declaration of the process which must remain this process's direct
 /// parent. A PID alone is deliberately insufficient because it can be reused.
@@ -89,7 +90,7 @@ impl ParentWatch {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParentAdmissionFailure {
     DirectParentMismatch { declared_pid: u32, actual_ppid: u32 },
     NotLiveOrReused,
@@ -102,7 +103,7 @@ pub enum ParentWatchStatus {
     Lost(ParentLossReason),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParentLossReason {
     ExitedOrReused,
     Unverifiable,

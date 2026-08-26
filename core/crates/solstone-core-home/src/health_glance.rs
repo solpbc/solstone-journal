@@ -89,17 +89,17 @@ pub fn build_health_glance(
     }
 }
 
-pub fn observer_state(capture: &Value) -> &'static str {
+pub fn client_state(capture: &Value) -> &'static str {
     match capture.get("status").and_then(Value::as_str) {
         Some("active") => "active",
-        Some("no_observers") => "no_observers",
+        Some("no_clients") => "no_clients",
         _ => "unknown",
     }
 }
 
 fn capture_disposition(capture: &Value) -> CaptureDisposition {
-    let status = observer_state(capture);
-    if status != "active" && status != "no_observers" {
+    let status = client_state(capture);
+    if status != "active" && status != "no_clients" {
         return CaptureDisposition::Unavailable;
     }
     if unassessed_has_reason(capture, "invalid_delivery_evidence") {
@@ -110,7 +110,7 @@ fn capture_disposition(capture: &Value) -> CaptureDisposition {
     {
         return CaptureDisposition::Unavailable;
     }
-    if status == "no_observers" {
+    if status == "no_clients" {
         match capture.get("registry").and_then(Value::as_str) {
             Some("registry_empty" | "no_eligible_records" | "registry_complete") => {
                 CaptureDisposition::Calm(calm_kind(capture))
@@ -147,18 +147,18 @@ fn unassessed_has_reason(capture: &Value, reason: &str) -> bool {
 }
 
 fn assessed_empty_or_all_active(capture: &Value) -> bool {
-    let Some(observers) = capture.get("observers").and_then(Value::as_array) else {
+    let Some(clients) = capture.get("clients").and_then(Value::as_array) else {
         return true;
     };
-    observers.is_empty()
-        || observers
+    clients.is_empty()
+        || clients
             .iter()
             .all(|row| row.get("status").and_then(Value::as_str) == Some("active"))
 }
 
 fn affected_reach_sentence(capture: &Value) -> Option<&'static str> {
-    let observers = capture.get("observers").and_then(Value::as_array)?;
-    let affected: Vec<&Value> = observers
+    let clients = capture.get("clients").and_then(Value::as_array)?;
+    let affected: Vec<&Value> = clients
         .iter()
         .filter(|row| {
             matches!(
@@ -375,7 +375,7 @@ mod tests {
         json!({"name": name, "reason": reason, "reach": reach})
     }
 
-    fn observer(name: &str, status: &str, reach: &str) -> Value {
+    fn client(name: &str, status: &str, reach: &str) -> Value {
         json!({"name": name, "status": status, "reach": reach})
     }
 
@@ -409,32 +409,32 @@ mod tests {
     #[test]
     fn owner_signal_matrix() {
         let empty = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [],
             "registry": "registry_empty",
         });
         let awaiting = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [unassessed("phone", "awaiting_first_delivery", "active")],
             "registry": "registry_complete",
         });
         let residue_offline = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [unassessed("old", "registration_residue", "offline")],
             "registry": "registry_complete",
         });
         let residue_stale = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [unassessed("old", "registration_residue", "stale")],
             "registry": "registry_complete",
         });
         let no_eligible = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [],
             "registry": "no_eligible_records",
         });
@@ -486,44 +486,44 @@ mod tests {
         );
 
         let invalid_active = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
             "registry": "registry_complete",
         });
         let invalid_offline = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [unassessed("bad", "invalid_delivery_evidence", "offline")],
             "registry": "registry_complete",
         });
         let unknown = json!({
             "status": "unknown",
-            "observers": [],
+            "clients": [],
             "unassessed": [],
             "registry": "registry_unknown",
         });
         let partial_empty = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [],
             "registry": "partial_registry",
         });
         let partial_all_active = json!({
             "status": "active",
-            "observers": [observer("peer", "active", "active")],
+            "clients": [client("peer", "active", "active")],
             "unassessed": [],
             "registry": "partial_registry",
         });
         let invalid_beside_active = json!({
             "status": "active",
-            "observers": [observer("peer", "active", "active")],
+            "clients": [client("peer", "active", "active")],
             "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
             "registry": "registry_complete",
         });
         let missing_registry = json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": [],
         });
 
@@ -558,7 +558,7 @@ mod tests {
 
         let stale_with_invalid = json!({
             "status": "stale",
-            "observers": [observer("phone", "stale", "offline")],
+            "clients": [client("phone", "stale", "offline")],
             "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
             "registry": "registry_complete",
         });
@@ -576,7 +576,7 @@ mod tests {
 
         let offline_partial = json!({
             "status": "offline",
-            "observers": [observer("phone", "offline", "offline")],
+            "clients": [client("phone", "offline", "offline")],
             "unassessed": [],
             "registry": "partial_registry",
         });
@@ -593,7 +593,7 @@ mod tests {
 
         let degraded_invalid = json!({
             "status": "degraded",
-            "observers": [observer("rej", "degraded", "active")],
+            "clients": [client("rej", "degraded", "active")],
             "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
             "registry": "registry_complete",
         });
@@ -632,13 +632,13 @@ mod tests {
 
         let active_awaiting = json!({
             "status": "active",
-            "observers": [observer("phone", "active", "active")],
+            "clients": [client("phone", "active", "active")],
             "unassessed": [unassessed("new", "awaiting_first_delivery", "active")],
             "registry": "registry_complete",
         });
         let active_residue = json!({
             "status": "active",
-            "observers": [observer("phone", "active", "active")],
+            "clients": [client("phone", "active", "active")],
             "unassessed": [unassessed("old", "registration_residue", "offline")],
             "registry": "registry_complete",
         });
@@ -659,12 +659,12 @@ mod tests {
 
         let mut running = json!({
             "status": "stale",
-            "observers": [observer("phone", "stale", "active")],
+            "clients": [client("phone", "stale", "active")],
             "unassessed": [],
             "registry": "registry_complete",
         });
         let mut asleep = running.clone();
-        asleep["observers"][0]["reach"] = json!("offline");
+        asleep["clients"][0]["reach"] = json!("offline");
         let running_g = glance(&running);
         let asleep_g = glance(&asleep);
         assert_eq!(running_g["verdict"], asleep_g["verdict"]);
@@ -690,7 +690,7 @@ mod tests {
         assert!(!asleep_text.contains("contact"));
         assert!(!running_text.contains("heartbeat"));
 
-        running["observers"][0]["reach"] = json!("stale");
+        running["clients"][0]["reach"] = json!("stale");
         let stale_reach_g = glance(&running);
         assert!(
             stale_reach_g["issues"][0]["text"]
@@ -701,9 +701,9 @@ mod tests {
 
         let mixed = json!({
             "status": "stale",
-            "observers": [
-                observer("alpha", "stale", "active"),
-                observer("bravo", "stale", "offline"),
+            "clients": [
+                client("alpha", "stale", "active"),
+                client("bravo", "stale", "offline"),
             ],
             "unassessed": [],
             "registry": "registry_complete",
@@ -715,7 +715,7 @@ mod tests {
                 .contains("still running")
         );
 
-        let corpus_shaped = json!({"status": "stale", "observers": [{"name": "laptop"}]});
+        let corpus_shaped = json!({"status": "stale", "clients": [{"name": "laptop"}]});
         assert_eq!(glance(&corpus_shaped)["issues"][0]["text"], STALE_ISSUE);
 
         let checking = glance_at(

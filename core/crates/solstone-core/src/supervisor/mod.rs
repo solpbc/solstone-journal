@@ -4,6 +4,7 @@
 mod bus;
 mod config;
 mod host;
+pub mod receipt;
 mod runtime;
 mod shutdown;
 mod tick;

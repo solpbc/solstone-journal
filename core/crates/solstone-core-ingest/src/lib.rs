@@ -11,7 +11,7 @@
 //! D2: only a linked-device `AccessBasis` admits these routes.  Localhost has
 //! no device identity and is refused rather than being implicitly attributed.
 //!
-//! D3: this crate serves four of nine published `observer.*` operations:
+//! D3: this crate serves four published device-ingest operations:
 //! `ingestUpload`, `ingestSegments`, `ingestManifest`, and
 //! `ingestManifestDay`. `register` and bearer-credential issuance are removed
 //! by the hard cut; `ingestEvent` and `callosumStream` await a Rust Callosum
@@ -26,7 +26,6 @@
 
 mod listing;
 mod model;
-mod observer_evidence;
 mod read_routes;
 mod router;
 mod stream_identity;
@@ -43,7 +42,6 @@ mod architecture_tests {
         ("lib.rs", include_str!("lib.rs")),
         ("model.rs", include_str!("model.rs")),
         ("listing.rs", include_str!("listing.rs")),
-        ("observer_evidence.rs", include_str!("observer_evidence.rs")),
         ("read_routes.rs", include_str!("read_routes.rs")),
         ("router.rs", include_str!("router.rs")),
         ("stream_identity.rs", include_str!("stream_identity.rs")),

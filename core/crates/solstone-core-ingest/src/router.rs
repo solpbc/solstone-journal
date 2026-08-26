@@ -24,8 +24,6 @@ use solstone_core_ingest_resolve::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
     IngestNotice, IngestNotifier, Resolution, apply_plan, quarantine_failed, resolve_ingest,
 };
-use solstone_core_observer::store::write::save_observer;
-use solstone_core_observer::system_now_ms;
 use solstone_core_segment::{
     ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream, hold_source_mutation,
 };
@@ -34,7 +32,6 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
-use crate::observer_evidence::resolve_device_observer;
 use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
 use crate::stream_identity::bind_ingest_stream;
 use crate::validation::{
@@ -71,6 +68,8 @@ impl IngestNotifier for CallosumIngestNotifier {
     fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut extra = Map::new();
         extra.insert("day".to_owned(), Value::String(notice.day.to_owned()));
+        extra.insert("cid".to_owned(), Value::String(notice.cid.to_owned()));
+        extra.insert("source".to_owned(), Value::String(notice.source.to_owned()));
         extra.insert("stream".to_owned(), Value::String(notice.stream.to_owned()));
         extra.insert(
             "segment".to_owned(),
@@ -81,9 +80,6 @@ impl IngestNotifier for CallosumIngestNotifier {
             Value::Array(notice.files.iter().cloned().map(Value::String).collect()),
         );
         extra.insert("batch".to_owned(), Value::Bool(false));
-        if let Some(observer) = notice.observer {
-            extra.insert("observer".to_owned(), Value::String(observer.to_owned()));
-        }
         extra.insert("meta".to_owned(), Value::Object(notice.meta.clone()));
         let envelope = CallosumEnvelope {
             tract: "observe".to_owned(),
@@ -109,7 +105,12 @@ impl IngestNotifier for TestIngestNotifier {
 }
 
 fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
-    Arc::new(system_now_ms)
+    Arc::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64
+    })
 }
 
 /// Build the mergeable linked-device segment-arrival routes.
@@ -705,30 +706,9 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             ),
         );
     }
-    let observer = match stamp_observer(
-        state,
-        cid,
-        &envelope.day,
-        &applied.landed_segment,
-        applied.status,
-    ) {
-        Ok(observer) => observer,
-        Err(()) => {
-            return IngestCompletion::rejected(
-                ReasonCode::ObserverStampFailed,
-                outcome_error(
-                    "failed",
-                    ReasonCode::ObserverStampFailed,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "cannot stamp observer receipt",
-                ),
-            );
-        }
-    };
     if !announced_files.is_empty() {
         let notice = IngestNotice {
             cid,
-            observer: observer.as_deref(),
             source: &envelope.source,
             day: &envelope.day,
             stream: &bound.stream,
@@ -737,7 +717,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             meta: &envelope.meta,
         };
         if let Err(error) = state.notifier.notify(&notice) {
-            log::warn!("observer ingest notification failed: {error}");
+            log::warn!("ingest notification failed: {error}");
             return IngestCompletion::rejected(
                 ReasonCode::NotifyFailed,
                 outcome_error(
@@ -830,13 +810,8 @@ fn append_partial_and_fail(
         );
     }
     if !announced_files.is_empty() {
-        let observer = resolve_device_observer(&state.journal_root, cid)
-            .ok()
-            .flatten()
-            .and_then(|observer| observer.record.name().map(str::to_owned));
         let notice = IngestNotice {
             cid,
-            observer: observer.as_deref(),
             source: &envelope.source,
             day: &envelope.day,
             stream,
@@ -845,7 +820,7 @@ fn append_partial_and_fail(
             meta: &envelope.meta,
         };
         if let Err(error) = state.notifier.notify(&notice) {
-            log::warn!("partial observer ingest notification failed: {error}");
+            log::warn!("partial ingest notification failed: {error}");
         }
     }
     IngestCompletion::rejected(
@@ -883,38 +858,6 @@ fn append_device_ingest(
         extra: Map::new(),
     };
     append_durable_event(segment_path, &DurableEvent::DeviceIngest(event)).map_err(|_| ())
-}
-
-fn stamp_observer(
-    state: &IngestState,
-    cid: &str,
-    day: &str,
-    landed_segment: &str,
-    status: solstone_core_ingest_resolve::PlanStatus,
-) -> Result<Option<String>, ()> {
-    let mut observer = match resolve_device_observer(&state.journal_root, cid) {
-        Ok(None) => return Ok(None),
-        Ok(Some(observer)) => observer,
-        Err(_) => return Err(()),
-    };
-    let name = observer.record.name().map(str::to_owned);
-    let refresh = match status {
-        solstone_core_ingest_resolve::PlanStatus::Duplicate => {
-            observer.record.last_segment() != Some(landed_segment)
-        }
-        solstone_core_ingest_resolve::PlanStatus::Ok
-        | solstone_core_ingest_resolve::PlanStatus::Collision => true,
-    };
-    if !refresh {
-        return Ok(name);
-    }
-    observer.record.set_last_segment(landed_segment.to_owned());
-    observer.record.set_last_segment_day(day.to_owned());
-    observer
-        .record
-        .set_last_segment_received_at((state.now_ms)());
-    save_observer(&state.journal_root, &observer.record).map_err(|_| ())?;
-    Ok(name)
 }
 
 fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
@@ -1147,7 +1090,7 @@ mod tests {
         router, set_before_apply_hook, wall_clock_ms, write_envelope,
     };
     use crate::model::IncomingFile;
-    use solstone_core_segment::hold_source_mutation;
+    use solstone_core_segment::{SegmentError, hold_source_mutation};
     use solstone_core_sol_link::ledger::{
         AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, read_device_activity,
     };
@@ -1164,7 +1107,8 @@ mod tests {
     #[derive(Debug, Eq, PartialEq)]
     struct SpyNotice {
         files: Vec<String>,
-        observer: Option<String>,
+        cid: String,
+        source: String,
     }
 
     impl SpyNotifier {
@@ -1193,7 +1137,8 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.notices.lock().unwrap().push(SpyNotice {
                 files: notice.files.to_vec(),
-                observer: notice.observer.map(str::to_owned),
+                cid: notice.cid.to_owned(),
+                source: notice.source.to_owned(),
             });
             if self.fail_next.swap(false, Ordering::SeqCst) {
                 Err(Box::new(std::io::Error::other("bus unavailable")))
@@ -1408,129 +1353,9 @@ mod tests {
             .count()
     }
 
-    fn seed_observer(root: &Path, prefix: &str, name: &str, cid: &str, stream: &str) {
-        let directory = root.join("apps/observer/observers");
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join(format!("{prefix}.json")),
-            json!({
-                "key": format!("{prefix}-test-handle"),
-                "name": name,
-                "stream": stream,
-                "created_at": 4,
-                "revoked": false,
-                "device_binding": {"device": cid, "kind": "cert"},
-            })
-            .to_string(),
-        )
-        .unwrap();
-    }
-
-    struct ObserverStamp<'a> {
-        segment: &'a str,
-        day: &'a str,
-        received_at: i64,
-    }
-
-    fn seed_observer_stamped(
-        root: &Path,
-        prefix: &str,
-        name: &str,
-        cid: &str,
-        stream: &str,
-        stamp: ObserverStamp<'_>,
-    ) {
-        let directory = root.join("apps/observer/observers");
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join(format!("{prefix}.json")),
-            json!({
-                "key": format!("{prefix}-test-handle"),
-                "name": name,
-                "stream": stream,
-                "created_at": 4,
-                "revoked": false,
-                "device_binding": {"device": cid, "kind": "cert"},
-                "last_segment": stamp.segment,
-                "last_segment_day": stamp.day,
-                "last_segment_received_at": stamp.received_at,
-            })
-            .to_string(),
-        )
-        .unwrap();
-    }
-
-    fn seed_unattributed_stream(
-        root: &Path,
-        name: &str,
-        created_at: u64,
-        last_day: &str,
-        last_segment: &str,
-        seq: u64,
-    ) {
-        let directory = root.join("streams");
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join(format!("{name}.json")),
-            json!({
-                "name": name,
-                "kind": "observer",
-                "host": null,
-                "platform": null,
-                "created_at": created_at,
-                "last_day": last_day,
-                "last_segment": last_segment,
-                "seq": seq,
-            })
-            .to_string(),
-        )
-        .unwrap();
-    }
-
-    fn seed_attributed_stream(
-        root: &Path,
-        name: &str,
-        cid: &str,
-        created_at: u64,
-        last_day: &str,
-        last_segment: &str,
-        seq: u64,
-    ) {
-        let directory = root.join("streams");
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join(format!("{name}.json")),
-            json!({
-                "name": name,
-                "kind": "observer",
-                "host": null,
-                "platform": null,
-                "created_at": created_at,
-                "last_day": last_day,
-                "last_segment": last_segment,
-                "seq": seq,
-                "cid": cid,
-                "source": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
-    }
-
     fn stream_record(root: &Path, name: &str) -> Value {
         serde_json::from_str(
             &fs::read_to_string(root.join("streams").join(format!("{name}.json"))).unwrap(),
-        )
-        .unwrap()
-    }
-
-    fn observer_record(root: &Path, prefix: &str) -> Value {
-        serde_json::from_str(
-            &fs::read_to_string(
-                root.join("apps/observer/observers")
-                    .join(format!("{prefix}.json")),
-            )
-            .unwrap(),
         )
         .unwrap()
     }
@@ -2084,256 +1909,31 @@ mod tests {
         assert_eq!(state()["last_segment"], "120000_62");
     }
 
-    const FROZEN_NOW_MS: i64 = 1_700_000_000_000;
-
     #[tokio::test]
     async fn notification_failure_is_5xx_and_leaves_durable_writes() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let spy = SpyNotifier::fail_next();
-        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy.clone(), clock);
+        let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "notify_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
         assert!(
-            root.join("chronicle/20260804/desk/120000_1/events.jsonl")
+            root.join("chronicle/20260804/device/120000_1/events.jsonl")
                 .exists()
         );
-        let first = observer_record(&root, "aaaaaaaa");
-        let stamp = first["last_segment_received_at"].as_i64().expect("stamp");
-        assert!(stamp > 1_000_000_000_000);
-        assert!((stamp - FROZEN_NOW_MS).abs() < 60_000);
-        assert_eq!(first["last_segment_day"], "20260804");
-        assert_eq!(first["last_segment"], "120000_1");
-        assert_eq!(stream_record(&root, "desk")["seq"], 1);
+        assert_eq!(stream_record(&root, "device")["seq"], 1);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
 
-        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
         // All files are already held on retry, so it is not re-announced.
         assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
-        let retry = observer_record(&root, "aaaaaaaa");
-        assert_eq!(retry["last_segment_received_at"], stamp);
-        assert_eq!(stream_record(&root, "desk")["seq"], 1);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn stamp_failure_is_5xx_then_duplicate_fills_absent_fields() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        let spy = SpyNotifier::succeeding();
-        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy.clone(), clock);
-        let observers = root.join("apps/observer/observers");
-        fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
-        if save_probe_succeeds(&observers) {
-            fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
-            panic!("requires a non-root runner");
-        }
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(body["reason_code"], "observer_stamp_failed");
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(stream_record(&root, "desk")["seq"], 1);
-        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
-        let first = observer_record(&root, "aaaaaaaa");
-        assert!(
-            first
-                .get("last_segment_received_at")
-                .is_none_or(Value::is_null)
-        );
-        assert!(first.get("last_segment_day").is_none_or(Value::is_null));
-        assert!(first.get("last_segment").is_none_or(Value::is_null));
-
-        fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
-        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "duplicate");
-        // The recovering duplicate has no newly written content to announce.
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
-        assert_eq!(stream_record(&root, "desk")["seq"], 1);
-        let retry = observer_record(&root, "aaaaaaaa");
-        assert_eq!(retry["last_segment_received_at"], FROZEN_NOW_MS + 60_000);
-        assert_eq!(retry["last_segment_day"], "20260804");
-        assert_eq!(retry["last_segment"], "120000_1");
-    }
-
-    #[tokio::test]
-    async fn second_mint_refreshes_already_present_stamp() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer_stamped(
-            &root,
-            "aaaaaaaa",
-            "Desk",
-            CID_A,
-            "desk",
-            ObserverStamp {
-                segment: "090000_1",
-                day: "20260803",
-                received_at: FROZEN_NOW_MS - 3_600_000,
-            },
-        );
-        let spy = SpyNotifier::succeeding();
-        let (_now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy, clock);
-        let (status, body) = call_upload(
-            &app,
-            envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
-            "audio.flac",
-            b"sound",
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "ok");
-        let record = observer_record(&root, "aaaaaaaa");
-        let stamp = record["last_segment_received_at"].as_i64().expect("stamp");
-        assert!(stamp > 1_000_000_000_000);
-        assert!((stamp - FROZEN_NOW_MS).abs() < 60_000);
-        assert_eq!(record["last_segment_day"], "20260804");
-        assert_eq!(record["last_segment"], "120000_1");
-    }
-
-    #[tokio::test]
-    async fn heal_refreshes_stamp_without_changing_landed_segment() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        let spy = SpyNotifier::succeeding();
-        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy, clock);
-        let (status, body) = call_upload(
-            &app,
-            envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
-            "audio.flac",
-            b"sound",
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "ok");
-        let first = observer_record(&root, "aaaaaaaa");
-        let first_stamp = first["last_segment_received_at"].as_i64().expect("stamp");
-        assert!((first_stamp - FROZEN_NOW_MS).abs() < 60_000);
-        assert_eq!(first["last_segment_day"], "20260804");
-        assert_eq!(first["last_segment"], "120000_1");
-
-        now.store(FROZEN_NOW_MS + 3_600_000, Ordering::SeqCst);
-        let (status, body) = call_upload(
-            &app,
-            envelope("20260804", "120000_1", json!([{"submitted":"notes.json"}])),
-            "notes.json",
-            b"notes",
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "ok");
-        let record = observer_record(&root, "aaaaaaaa");
-        let stamp = record["last_segment_received_at"].as_i64().expect("stamp");
-        assert!((stamp - (FROZEN_NOW_MS + 3_600_000)).abs() < 60_000);
-        assert_eq!(record["last_segment_day"], "20260804");
-        assert_eq!(record["last_segment"], "120000_1");
-    }
-
-    #[tokio::test]
-    async fn duplicate_of_already_stamped_segment_does_not_refresh() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        let spy = SpyNotifier::succeeding();
-        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy, clock);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "ok");
-        let first = observer_record(&root, "aaaaaaaa");
-        let stamp = first["last_segment_received_at"].as_i64().expect("stamp");
-
-        now.store(FROZEN_NOW_MS + 3_600_000, Ordering::SeqCst);
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "duplicate");
-        let retry = observer_record(&root, "aaaaaaaa");
-        assert_eq!(retry["last_segment_received_at"], stamp);
-        assert_eq!(retry["last_segment"], "120000_1");
-        assert_eq!(retry["last_segment_day"], "20260804");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn duplicate_recovers_stale_stamp_then_stops_refreshing() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer_stamped(
-            &root,
-            "aaaaaaaa",
-            "Desk",
-            CID_A,
-            "desk",
-            ObserverStamp {
-                segment: "090000_1",
-                day: "20260803",
-                received_at: FROZEN_NOW_MS - 3_600_000,
-            },
-        );
-        let spy = SpyNotifier::succeeding();
-        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = api_router_with(&root, spy, clock);
-        let observers = root.join("apps/observer/observers");
-        fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
-        if save_probe_succeeds(&observers) {
-            fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
-            panic!("requires a non-root runner");
-        }
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(body["reason_code"], "observer_stamp_failed");
-        let first = observer_record(&root, "aaaaaaaa");
-        assert_eq!(first["last_segment"], "090000_1");
-        assert_eq!(first["last_segment_day"], "20260803");
-        assert_eq!(first["last_segment_received_at"], FROZEN_NOW_MS - 3_600_000);
-
-        fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
-        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
-        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "duplicate");
-        let recovered = observer_record(&root, "aaaaaaaa");
-        let recovered_stamp = recovered["last_segment_received_at"]
-            .as_i64()
-            .expect("recovered stamp");
-        assert!((recovered_stamp - (FROZEN_NOW_MS + 60_000)).abs() < 60_000);
-        assert_eq!(recovered["last_segment_day"], "20260804");
-        assert_eq!(recovered["last_segment"], "120000_1");
-
-        now.store(FROZEN_NOW_MS + 120_000, Ordering::SeqCst);
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "duplicate");
-        let retry = observer_record(&root, "aaaaaaaa");
-        assert_eq!(retry["last_segment_received_at"], recovered_stamp);
-    }
-
-    #[cfg(unix)]
-    fn save_probe_succeeds(observers: &Path) -> bool {
-        fs::write(observers.join(".stamp-probe"), b"x").is_ok()
+        assert_eq!(stream_record(&root, "device")["seq"], 1);
     }
 
     #[tokio::test]
@@ -2369,7 +1969,8 @@ mod tests {
             spy.notices.lock().unwrap().as_slice(),
             [SpyNotice {
                 files: vec!["audio.flac".to_owned()],
-                observer: None,
+                cid: CID_A.to_owned(),
+                source: String::new(),
             }]
         );
         let events =
@@ -2497,7 +2098,6 @@ mod tests {
     async fn partial_notice_keeps_reserved_meta_keys_nested() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let socket = root.join("health/callosum.sock");
         let server = CallosumSocketServer::bind(&socket).await.unwrap();
         let mut peer = CallosumSocketConnection::new(&socket, Map::new());
@@ -2541,10 +2141,12 @@ mod tests {
         assert_eq!(notice.event, "observing");
         assert_eq!(notice.extra["day"], "20260804");
         assert_eq!(notice.extra["segment"], "120000_1");
-        assert_eq!(notice.extra["stream"], "desk");
+        assert_eq!(notice.extra["cid"], CID_A);
+        assert_eq!(notice.extra["source"], "");
+        assert_eq!(notice.extra["stream"], "device");
         assert_eq!(notice.extra["files"], json!(["audio.flac"]));
         assert_eq!(notice.extra["batch"], false);
-        assert_eq!(notice.extra["observer"], "Desk");
+        assert!(notice.extra.get("observer").is_none());
         assert_eq!(notice.extra["meta"]["event"], "caller-event");
         assert_eq!(notice.extra["meta"]["batch"], "caller-batch");
         assert_eq!(notice.extra["meta"], meta);
@@ -2553,7 +2155,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_observer_skips_stamp_and_still_notifies() {
+    async fn ingest_notifies_without_registry_state() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let spy = SpyNotifier::succeeding();
@@ -2575,7 +2177,6 @@ mod tests {
         let mut peer = CallosumSocketConnection::new(&socket, Map::new());
         peer.start();
         wait_for_callosum_client(&server).await;
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
         let app = api_router(&root);
         let request = json!({
             "day": "20260804",
@@ -2592,11 +2193,13 @@ mod tests {
         assert_eq!(notice.tract, "observe");
         assert_eq!(notice.event, "observing");
         assert_eq!(notice.extra["day"], "20260804");
-        assert_eq!(notice.extra["stream"], "desk");
+        assert_eq!(notice.extra["cid"], CID_A);
+        assert_eq!(notice.extra["source"], "mobile");
+        assert_eq!(notice.extra["stream"], "device_mobile");
         assert_eq!(notice.extra["segment"], "120000_1");
         assert_eq!(notice.extra["files"], json!(["audio.flac"]));
         assert_eq!(notice.extra["batch"], false);
-        assert_eq!(notice.extra["observer"], "Desk");
+        assert!(notice.extra.get("observer").is_none());
         assert_eq!(notice.extra["meta"], json!({"kind": "v3"}));
         peer.stop().await;
         server.stop().await;
@@ -2633,7 +2236,8 @@ mod tests {
             spy.notices.lock().unwrap().last().unwrap(),
             &SpyNotice {
                 files: vec!["notes.json".to_owned()],
-                observer: None,
+                cid: CID_A.to_owned(),
+                source: String::new(),
             }
         );
     }
@@ -3361,7 +2965,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manifest_skips_malformed_device_ingest_events() {
+    async fn manifest_reports_malformed_device_ingest_events() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let app = router(&root);
@@ -3389,7 +2993,10 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["days"], json!({}));
+        assert_eq!(
+            body["days"],
+            json!({"20260804": {"error": "journal_read_failed"}})
+        );
     }
 
     #[tokio::test]
@@ -3417,175 +3024,24 @@ mod tests {
         );
     }
 
-    const SEEDED_CREATED_AT: u64 = 1_700_000_000;
-    const SEEDED_LAST_DAY: &str = "20260801";
-    const SEEDED_LAST_SEGMENT: &str = "090000_1";
-    const SEEDED_SEQ: u64 = 2;
-
-    #[tokio::test]
-    async fn ac1_adopts_unattributed_listing_stream() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        seed_unattributed_stream(
-            &root,
-            "desk",
-            SEEDED_CREATED_AT,
-            SEEDED_LAST_DAY,
-            SEEDED_LAST_SEGMENT,
-            SEEDED_SEQ,
-        );
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "ok");
-        assert!(
-            !root.join("streams/device.json").exists(),
-            "must not mint device beside the listing-resolved stream"
-        );
-        assert!(!root.join("streams/desk_2.json").exists());
-        let record = stream_record(&root, "desk");
-        assert_eq!(record["created_at"], SEEDED_CREATED_AT);
-        assert_eq!(record["seq"], SEEDED_SEQ + 1);
-        assert_eq!(record["last_day"], "20260804");
-        assert_eq!(record["last_segment"], body["segment"]);
-        assert_eq!(record["cid"], CID_A);
-        assert_eq!(record["source"], "");
-        let landed = body["segment"].as_str().unwrap();
-        let marker: Value = serde_json::from_str(
-            &fs::read_to_string(
-                root.join("chronicle/20260804/desk")
-                    .join(landed)
-                    .join("stream.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(marker["stream"], "desk");
-        assert_eq!(marker["prev_day"], SEEDED_LAST_DAY);
-        assert_eq!(marker["prev_segment"], SEEDED_LAST_SEGMENT);
-        assert_eq!(marker["seq"], SEEDED_SEQ + 1);
+    #[test]
+    fn named_bind_conflict_keeps_foreign_stream_refusal() {
+        let error =
+            crate::stream_identity::map_named_bind(Err(SegmentError::StreamBindingConflict {
+                name: "device".to_owned(),
+            }))
+            .expect_err("foreign stream binding is refused");
+        assert_eq!(error.0, crate::model::ReasonCode::ForeignStreamBinding);
+        assert_eq!(error.1, StatusCode::CONFLICT);
     }
 
-    #[tokio::test]
-    async fn ac2_duplicate_does_not_advance_attributed_listing_stream() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        seed_unattributed_stream(
-            &root,
-            "desk",
-            SEEDED_CREATED_AT,
-            SEEDED_LAST_DAY,
-            SEEDED_LAST_SEGMENT,
-            SEEDED_SEQ,
-        );
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        assert_eq!(
-            call_upload(&app, request.clone(), "audio.flac", b"sound")
-                .await
-                .1["status"],
-            "ok"
-        );
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["status"], "duplicate");
-        assert!(!root.join("streams/device.json").exists());
-        let record = stream_record(&root, "desk");
-        assert_eq!(record["seq"], SEEDED_SEQ + 1);
-        assert_eq!(record["cid"], CID_A);
-    }
-
-    #[tokio::test]
-    async fn ac3_second_cid_naming_the_same_stream_is_refused() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "Desk", CID_A, "desk");
-        seed_observer(&root, "bbbbbbbb", "Desk", CID_B, "desk");
-        seed_attributed_stream(
-            &root,
-            "desk",
-            CID_A,
-            SEEDED_CREATED_AT,
-            SEEDED_LAST_DAY,
-            SEEDED_LAST_SEGMENT,
-            SEEDED_SEQ,
-        );
-        let before = fs::read(root.join("streams/desk.json")).unwrap();
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload_as(&app, CID_B, request, "audio.flac", b"other").await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["reason_code"], "foreign_stream_binding");
-        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
-        assert!(!root.join("streams/device.json").exists());
-        assert!(!root.join("streams/desk_2.json").exists());
-    }
-
-    #[tokio::test]
-    async fn ac4_ambiguous_observers_refuse_the_write() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "aaaaaaaa", "One", CID_A, "one");
-        seed_observer(&root, "cccccccc", "Many", CID_A, "many");
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["reason_code"], "ambiguous_device_observer");
-        assert!(!root.join("streams/device.json").exists());
-    }
-
-    #[tokio::test]
-    async fn ac5_foreign_cid_on_named_stream_is_refused() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_observer(&root, "bbbbbbbb", "Desk", CID_B, "desk");
-        seed_attributed_stream(
-            &root,
-            "desk",
-            CID_A,
-            SEEDED_CREATED_AT,
-            SEEDED_LAST_DAY,
-            SEEDED_LAST_SEGMENT,
-            SEEDED_SEQ,
-        );
-        let before = fs::read(root.join("streams/desk.json")).unwrap();
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload_as(&app, CID_B, request, "audio.flac", b"other").await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["reason_code"], "foreign_stream_binding");
-        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
-        assert!(!root.join("streams/device.json").exists());
-        assert!(!root.join("streams/desk_2.json").exists());
-    }
-
-    #[tokio::test]
-    async fn ac6_no_observer_refuses_when_any_unattributed_record_exists() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        seed_unattributed_stream(
-            &root,
-            "desk",
-            SEEDED_CREATED_AT,
-            SEEDED_LAST_DAY,
-            SEEDED_LAST_SEGMENT,
-            SEEDED_SEQ,
-        );
-        let before = fs::read(root.join("streams/desk.json")).unwrap();
-        let app = router(&root);
-        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-        assert!(
-            !root.join("streams/device.json").exists(),
-            "must not mint device beside an unattributed record"
-        );
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["reason_code"], "unattributed_stream_blocks_mint");
-        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
-        assert!(!root.join("streams/desk_2.json").exists());
+    #[test]
+    fn named_bind_input_keeps_malformed_evidence_refusal() {
+        let error = crate::stream_identity::map_named_bind(Err(SegmentError::StreamInput(
+            "invalid stream component",
+        )))
+        .expect_err("invalid named stream input is refused");
+        assert_eq!(error.0, crate::model::ReasonCode::MalformedEvidenceRow);
+        assert_eq!(error.1, StatusCode::CONFLICT);
     }
 }

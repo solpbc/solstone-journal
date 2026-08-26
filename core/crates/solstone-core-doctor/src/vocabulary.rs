@@ -6,9 +6,6 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 /// Capture-delivery facts attached to capture checks for machine consumers.
-///
-/// The field keeps its established `observer_delivery` wire name while its
-/// evidence now comes from certificate-authorized clients.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ClientDeliveryFacts {
     pub registry: ClientRegistryState,
@@ -88,7 +85,7 @@ pub struct CheckResult {
     pub platform: Option<String>,
     pub execution_error: Option<ExecutionError>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub observer_delivery: Option<ClientDeliveryFacts>,
+    pub client_delivery: Option<ClientDeliveryFacts>,
 }
 pub fn make_result(
     check: Check,
@@ -104,7 +101,7 @@ pub fn make_result(
         fix: fix.map(Into::into),
         platform: None,
         execution_error: None,
-        observer_delivery: None,
+        client_delivery: None,
     }
 }
 pub fn truncate(text: &str, limit: usize) -> String {
@@ -141,7 +138,7 @@ pub fn run_check(
                     kind: error.kind,
                     message,
                 }),
-                observer_delivery: None,
+                client_delivery: None,
             }
         }
     }

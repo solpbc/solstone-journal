@@ -24,9 +24,12 @@ SERVICE_SENTINELS = frozenset({"think", "setup"})
 # Commands that remain in the pinned Python oracle but are now implemented as
 # root-native journal primitives. They are not journal-host process commands.
 NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
+# Commands introduced after the pinned Python oracle that are native journal
+# host commands rather than root-native primitives.
+NATIVE_ADDITIONAL_HOST_COMMANDS = frozenset({"thinking"})
 # Commands that remain in the pinned Python oracle but have been retired from
 # the live journal host grammar.
-RETIRED_HOST_COMMANDS = frozenset({"export", "warm", "maint"})
+RETIRED_HOST_COMMANDS = frozenset({"export", "warm", "maint", "observer"})
 # Declaration order is the duplicate-diagnostic section order.
 REGISTRY_SURFACE_POSITIONS = {"COMMANDS": 1, "ALIASES": 2}
 UNAVAILABLE_SURFACE = "<unavailable>"
@@ -200,9 +203,12 @@ def validate_no_duplicate_registry_keys(
 def extract(source_text: str | None = None) -> list[str]:
     partitions = extract_partitions(source_text)
     return sorted(
-        set(partitions.service_commands + partitions.service_aliases)
-        - NATIVE_ROOT_COMMANDS
-        - RETIRED_HOST_COMMANDS
+        (
+            set(partitions.service_commands + partitions.service_aliases)
+            - NATIVE_ROOT_COMMANDS
+            - RETIRED_HOST_COMMANDS
+        )
+        | NATIVE_ADDITIONAL_HOST_COMMANDS
     )
 
 

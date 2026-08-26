@@ -263,9 +263,11 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
         .expect("heartbeat")
         .expect("entry")
         .path();
-    lifecycle
-        .shutdown(&mut Driver, ShutdownRegime::Standard, false)
-        .expect("ordinary shutdown");
+    let outcome = lifecycle.shutdown(&mut Driver, ShutdownRegime::Standard, false);
+    assert!(matches!(
+        outcome.self_heartbeat,
+        solstone_core_system::lifecycle::ArtifactClearOutcome::Cleared
+    ));
     assert!(!heartbeat_path.exists());
 
     let conflict = Bed::new("conflict-shutdown");
@@ -276,9 +278,11 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
         .expect("heartbeat")
         .expect("entry")
         .path();
-    lifecycle
-        .shutdown(&mut Driver, ShutdownRegime::Standard, true)
-        .expect("conflict shutdown");
+    let outcome = lifecycle.shutdown(&mut Driver, ShutdownRegime::Standard, true);
+    assert!(matches!(
+        outcome.self_heartbeat,
+        solstone_core_system::lifecycle::ArtifactClearOutcome::Skipped
+    ));
     assert!(heartbeat_path.exists());
 }
 

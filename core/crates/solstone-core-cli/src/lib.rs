@@ -8,7 +8,6 @@ use solstone_core_cli_boundary::{
     JOURNAL_EXPORT_TOMBSTONE, TRANSFER_EXPORT_TOMBSTONE, TRANSFER_IMPORT_TOMBSTONE,
 };
 use solstone_core_format::segment::segment_key;
-use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
 #[cfg(test)]
 #[path = "../../solstone-core-system-health/tests/support/fixtures.rs"]
@@ -21,7 +20,7 @@ macro_rules! speaker_resolve_usage {
 }
 
 pub const USAGE: &str = concat!(
-    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
+    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
@@ -296,76 +295,6 @@ pub const GRAB_HELP: &str = concat!(
     "  --json         Emit JSON instead of table or plain output.\n",
     "  -v, --verbose  Enable verbose output\n",
     "  -d, --debug    Enable debug logging\n",
-);
-
-/// `journal observer`'s own usage block, captured verbatim from the Python
-/// reference. The native verb must not print `solstone-core`'s top-level usage
-/// when an owner mistypes an observer argument -- that names the wrong program.
-pub const OBSERVER_USAGE: &str = concat!(
-    "usage: journal observer [-h] [--json] [-v] [-d]\n",
-    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
-);
-
-/// `journal observer --help`, captured verbatim from the Python reference.
-/// The cut left the native verb with no help at all: `--help` fell through the
-/// observer parser (it is not one of its tokens) and became a usage error, so
-/// an owner asking for help got exit 2 and three lines instead of exit 0 and
-/// twenty-one.
-pub const OBSERVER_HELP: &str = concat!(
-    "usage: journal observer [-h] [--json] [-v] [-d]\n",
-    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
-    "\n",
-    "Manage observer registrations\n",
-    "\n",
-    "positional arguments:\n",
-    "  {create,list,rename,revoke,status,reconcile,prune}\n",
-    "    create              Explain retired manual observer creation\n",
-    "    list                List all registered observers\n",
-    "    rename              Rename an observer (affects future streams)\n",
-    "    revoke              Revoke an observer registration\n",
-    "    status              Show observer status details\n",
-    "    reconcile           Collapse duplicate registrations per stream (bound,\n",
-    "                        then busiest survives)\n",
-    "    prune               Find or delete provable duplicate observer segments\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --json                Output as JSON\n",
-    "  -v, --verbose         Enable verbose output\n",
-    "  -d, --debug           Enable debug logging\n",
-);
-
-/// `journal observer prune --help`, captured verbatim from the reference.
-/// Note it documents prune's own exit contract, which the native path honours:
-/// 0 clean, 2 refusals present, 1 usage/error.
-pub const OBSERVER_PRUNE_HELP: &str = concat!(
-    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
-    "                              [--stream STREAM] [--execute] [--cross-start]\n",
-    "\n",
-    "Find byte-identical same-start observer duplicate segments. Canonical is the\n",
-    "earliest same-start segment whose content is held by bytes or terminal proof.\n",
-    "Opt-in cross-start mode also uses server-authored segment_original provenance\n",
-    "after same-start pruning. Dry-run is the default and performs zero writes.\n",
-    "Exit codes: 0 clean, 2 refusals present, 1 usage/error.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --day DAY             Prune one day (YYYYMMDD)\n",
-    "  --day-range DAY_RANGE\n",
-    "                        Prune inclusive range A..B\n",
-    "  --all                 Scan every journal day\n",
-    "  --stream STREAM       Limit to one stream\n",
-    "  --execute             Delete provable duplicates; dry-run is the default.\n",
-    "  --cross-start         Also prune different-start duplicates proven by\n",
-    "                        server-authored segment_original provenance; runs\n",
-    "                        after same-start. Off by default.\n",
-);
-
-/// The usage block argparse prints when `journal observer prune` itself fails
-/// to parse. It is prune's own, not the observer-level one.
-pub const OBSERVER_PRUNE_USAGE: &str = concat!(
-    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
-    "                              [--stream STREAM] [--execute] [--cross-start]\n",
 );
 
 /// `journal transfer --help`, verbatim from the Python reference. The cut
@@ -874,7 +803,6 @@ pub enum Command {
     EngageUsage,
     EngageHelp,
     Service(ServiceParseOutcome),
-    Observer(ObserverCommand),
     Navigate { path: String },
     NavigateUsage,
     NavigateFacetRetired(&'static str),
@@ -901,10 +829,6 @@ pub enum Command {
     ContractBuildHelp,
     ContractCheckUsage,
     ContractCheckHelp,
-    ObserverUsage,
-    ObserverPruneUsage,
-    ObserverHelp,
-    ObserverPruneHelp,
     TransferUsage,
     TranscribeHelp,
     FacetCandidatesHelp,
@@ -1809,36 +1733,6 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("down") => Ok(Command::Service(
             parse_up_down_alias(rest, ServiceAction::Down, DOWN_HELP),
         )),
-        [command, rest @ ..] if command == OsStr::new("observer") => {
-            // Help is not one of the observer parser's tokens, so it must be
-            // intercepted here or it degrades into a usage error -- which is
-            // exactly what the cut shipped.
-            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
-            if let [first, others @ ..] = rest
-                && first == OsStr::new("prune")
-                && others.iter().any(help)
-            {
-                return Ok(Command::ObserverPruneHelp);
-            }
-            if rest.iter().any(help) {
-                return Ok(Command::ObserverHelp);
-            }
-            // The reference exits 2 with `journal observer`'s usage, not 64 with
-            // solstone-core's. Carry the failure as a command so main can render
-            // it faithfully instead of collapsing it into UsageError.
-            // A prune-level failure gets prune's usage block and prefix; an
-            // observer-level one gets the observer's. argparse distinguishes
-            // them and so must this.
-            let prune = matches!(rest.first(), Some(first) if first == OsStr::new("prune"));
-            Ok(parse_observer_args(rest).map_or(
-                if prune {
-                    Command::ObserverPruneUsage
-                } else {
-                    Command::ObserverUsage
-                },
-                Command::Observer,
-            ))
-        }
         _ => Err(UsageError),
     }
 }
@@ -7232,7 +7126,6 @@ mod tests {
             "indexer",
             "journal-config",
             "speaker-transcript-write",
-            "observer",
             "speaker-resolve",
             "local",
             "generate",

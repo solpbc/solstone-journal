@@ -14,7 +14,7 @@
   };
   const HEALTH_GLANCE_COPY = {
     "HEALTH_GLANCE_CATCHING_UP": "i'm catching up on {n} task(s) in the background. last update {age} ago.",
-    "HEALTH_GLANCE_OBSERVER_SILENT": "one of your devices hasn't reached your journal recently.",
+    "HEALTH_GLANCE_CLIENT_SILENT": "one of your devices hasn't reached your journal recently.",
     "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age} ago.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} service(s) need attention: {service_names}.",
@@ -85,7 +85,7 @@
     lastLogTs: null,
     lastAgentFinishTs: null,
     todayCostUSD: null,
-    observers: new Map(),       // keyed by stream name
+    clients: new Map(),       // keyed by stream name
     recentErrors: [],
     agentErrorsOk: true,
     recentErrorsFilter: null,
@@ -126,10 +126,10 @@
     transcribeStatus: document.getElementById('transcribeStatus'),
     transcribeDetail: document.getElementById('transcribeDetail'),
     observeSourceNote: document.getElementById('observeSourceNote'),
-    observersCard: document.getElementById('observersCard'),
-    observersGrid: document.getElementById('observersGrid'),
-    registeredObserversCard: document.getElementById('registeredObserversCard'),
-    registeredObserversStrip: document.getElementById('registeredObserversStrip'),
+    clientsCard: document.getElementById('clientsCard'),
+    clientsGrid: document.getElementById('clientsGrid'),
+    registeredClientsCard: document.getElementById('registeredClientsCard'),
+    registeredClientsStrip: document.getElementById('registeredClientsStrip'),
     observeContent: document.getElementById('observeContent'),
     observeEmpty: document.getElementById('observeEmpty'),
     cortexSection: document.getElementById('cortexSection'),
@@ -512,11 +512,11 @@
       };
     }
 
-    const observers = Array.from(state.observers.values());
-    if (observers.length > 0 && observers.every(observer => (now - observer.lastSeen) >= STALE_MS)) {
-      const ageMs = Math.min(...observers.map(observer => now - observer.lastSeen));
+    const clients = Array.from(state.clients.values());
+    if (clients.length > 0 && clients.every(client => (now - client.lastSeen) >= STALE_MS)) {
+      const ageMs = Math.min(...clients.map(client => now - client.lastSeen));
       return {
-        key: 'HEALTH_GLANCE_OBSERVER_SILENT',
+        key: 'HEALTH_GLANCE_CLIENT_SILENT',
         vars: { age: relativeTime(ageMs) },
       };
     }
@@ -1384,14 +1384,14 @@
   }
 
   // Update observe mode badge
-  function updateObserveMode(displayedObserver = null) {
-    if (state.observers.size === 0) {
+  function updateObserveMode(displayedClient = null) {
+    if (state.clients.size === 0) {
       elements.observeModeBadge.className = 'health-badge idle';
       elements.observeModeLabel.textContent = 'idle';
       return;
     }
 
-    const mode = (displayedObserver || state.observers.get(state.localHost))?.mode;
+    const mode = (displayedClient || state.clients.get(state.localHost))?.mode;
     const badge = elements.observeModeBadge;
     const label = elements.observeModeLabel;
 
@@ -1412,7 +1412,7 @@
 
   // Update observe card
   function updateObserve() {
-    if (state.observers.size === 0) {
+    if (state.clients.size === 0) {
       elements.observeEmpty.classList.remove('hidden');
       elements.observeContent.classList.add('hidden');
       elements.observeSourceNote.classList.add('hidden');
@@ -1424,13 +1424,13 @@
     elements.observeEmpty.classList.add('hidden');
     elements.observeContent.classList.remove('hidden');
 
-    const confirmedPrimary = state.localHost ? state.observers.get(state.localHost) : null;
-    const fallbackEntry = Array.from(state.observers.entries())
+    const confirmedPrimary = state.localHost ? state.clients.get(state.localHost) : null;
+    const fallbackEntry = Array.from(state.clients.entries())
       .filter(([stream]) => !stream.endsWith('.tmux'))
       .sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0))[0] || null;
     const displayedStream = confirmedPrimary ? state.localHost : (fallbackEntry ? fallbackEntry[0] : null);
     const primary = confirmedPrimary || (fallbackEntry ? fallbackEntry[1] : null);
-    const tmux = displayedStream ? state.observers.get(displayedStream + '.tmux') : null;
+    const tmux = displayedStream ? state.clients.get(displayedStream + '.tmux') : null;
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
     if (!confirmedLocal && displayedStream) {
       elements.observeSourceNote.textContent = state.localHost
@@ -1567,17 +1567,17 @@
     updateStatusSummary();
   }
 
-  // Update observers
-  function updateObservers() {
-    if (state.observers.size === 0) {
-      elements.observersCard.classList.add('hidden');
+  // Update clients
+  function updateClients() {
+    if (state.clients.size === 0) {
+      elements.clientsCard.classList.add('hidden');
       return;
     }
 
-    elements.observersCard.classList.remove('hidden');
+    elements.clientsCard.classList.remove('hidden');
 
     const byHost = new Map();
-    for (const [stream, data] of state.observers) {
+    for (const [stream, data] of state.clients) {
       const host = data.host || stream;
       if (!byHost.has(host)) byHost.set(host, []);
       byHost.get(host).push({ stream, data });
@@ -1585,17 +1585,17 @@
 
     const now = Date.now();
 
-    elements.observersGrid.innerHTML = '';
+    elements.clientsGrid.innerHTML = '';
     for (const [host, streams] of byHost) {
       const card = document.createElement('div');
-      card.className = 'observer-host-card';
+      card.className = 'client-host-card';
 
       const anyActive = streams.some(({ data }) => (now - data.lastSeen) < STALE_MS);
       if (anyActive) card.classList.add('active');
       if (!anyActive) card.classList.add('stale');
 
       const nameEl = document.createElement('div');
-      nameEl.className = 'observer-host-name';
+      nameEl.className = 'client-host-name';
       nameEl.textContent = host;
       const statusIcon = document.createElement('span');
       statusIcon.className = 'status-indicator ' + (anyActive ? 'active' : 'stale');
@@ -1609,14 +1609,14 @@
       const platform = streams[0]?.data?.platform || '';
       if (platform) {
         const platEl = document.createElement('div');
-        platEl.className = 'observer-host-platform';
+        platEl.className = 'client-host-platform';
         platEl.textContent = platform;
         card.appendChild(platEl);
       }
 
       for (const { stream, data } of streams) {
         const row = document.createElement('div');
-        row.className = 'observer-stream-row';
+        row.className = 'client-stream-row';
 
         const dotIdx = stream.indexOf('.');
         const qualifier = dotIdx >= 0 ? stream.slice(dotIdx + 1) : 'desktop';
@@ -1625,12 +1625,12 @@
         if (stale) row.classList.add('stale');
 
         const qualEl = document.createElement('div');
-        qualEl.className = 'observer-stream-qualifier';
+        qualEl.className = 'client-stream-qualifier';
         qualEl.textContent = qualifier;
         row.appendChild(qualEl);
 
         const modeEl = document.createElement('div');
-        modeEl.className = 'observer-stream-mode';
+        modeEl.className = 'client-stream-mode';
         modeEl.textContent = data.mode || '—';
         row.appendChild(modeEl);
 
@@ -1645,7 +1645,7 @@
         card.appendChild(row);
       }
 
-      elements.observersGrid.appendChild(card);
+      elements.clientsGrid.appendChild(card);
     }
   }
 
@@ -1667,13 +1667,13 @@
 	    return `last reported ${relativeTime(deltaMs)} ago`;
 	  }
 
-	  function requestObserverRestart(button, resultEl, errorEl) {
+	  function requestCaptureRestart(button, resultEl, errorEl) {
 	    button.disabled = true;
 	    button.textContent = 'restarting...';
 	    resultEl.textContent = '';
 	    errorEl.textContent = '';
-	    // Observer rows are per registration key; supervisor restarts the shared sense worker.
-	    window.apiJson('/app/health/api/restart-observer', {
+	    // Client rows are per registration key; supervisor restarts the shared sense worker.
+	    window.apiJson('/app/health/api/restart-capture', {
 	      method: 'POST',
 	      headers: { 'Content-Type': 'application/json' },
 	      body: JSON.stringify({ service: 'sense' })
@@ -1683,7 +1683,7 @@
 	        resultEl.textContent = 'restart requested';
 	      })
 	      .catch((err) => {
-	        window.logError(err, { context: 'health: restart-observer failed' });
+	        window.logError(err, { context: 'health: restart-capture failed' });
 	        button.disabled = false;
 	        button.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
 	        errorEl.innerHTML = window.SurfaceState.error({
@@ -1742,13 +1742,13 @@
 
   function renderRegisteredClients(clients) {
     if (!clients || clients.length === 0) {
-      elements.registeredObserversCard.classList.add('hidden');
-      elements.registeredObserversStrip.innerHTML = '';
+      elements.registeredClientsCard.classList.add('hidden');
+      elements.registeredClientsStrip.innerHTML = '';
       return;
     }
 
-    elements.registeredObserversCard.classList.remove('hidden');
-    elements.registeredObserversStrip.innerHTML = '';
+    elements.registeredClientsCard.classList.remove('hidden');
+    elements.registeredClientsStrip.innerHTML = '';
     for (const client of clients) {
       let stateClass = ['connected', 'stale', 'disconnected'].includes(client.state)
         ? client.state
@@ -1766,15 +1766,15 @@
         labelText = 'capture unknown';
       }
       const row = document.createElement('div');
-      row.className = 'registered-observer-row';
+      row.className = 'registered-client-row';
 
       const nameEl = document.createElement('span');
-      nameEl.className = 'registered-observer-name';
+      nameEl.className = 'registered-client-name';
       nameEl.textContent = client.display_label || client.device_label || client.cid_short || client.cid || 'unnamed device';
       row.appendChild(nameEl);
 
       const labelEl = document.createElement('span');
-      labelEl.className = `registered-observer-label ${stateClass}`;
+      labelEl.className = `registered-client-label ${stateClass}`;
       labelEl.textContent = labelText;
       row.appendChild(labelEl);
 
@@ -1788,42 +1788,42 @@
         if (rej.reason_code) parts.push(rej.reason_code);
         if (parts.length) {
           const detailEl = document.createElement('span');
-          detailEl.className = 'registered-observer-detail';
+          detailEl.className = 'registered-client-detail';
           detailEl.textContent = parts.join(' · ');
           row.appendChild(detailEl);
         }
         const recoveryEl = document.createElement('span');
-        recoveryEl.className = 'registered-observer-recovery';
+        recoveryEl.className = 'registered-client-recovery';
         recoveryEl.textContent = 'update or restart the solstone app on ' + (client.display_label || client.device_label || 'that device');
         row.appendChild(recoveryEl);
       }
 
       const metaEl = document.createElement('span');
-      metaEl.className = 'registered-observer-meta';
+      metaEl.className = 'registered-client-meta';
       metaEl.textContent = registeredClientMeta(client);
       row.appendChild(metaEl);
 
       const skewEl = document.createElement('span');
-      skewEl.className = 'registered-observer-skew' + (client.clock_skew ? '' : ' hidden');
+      skewEl.className = 'registered-client-skew' + (client.clock_skew ? '' : ' hidden');
       skewEl.textContent = 'clock skew';
 	      row.appendChild(skewEl);
 
 	      if (stateClass === 'stale') {
 	        const actionBtn = document.createElement('button');
 	        actionBtn.type = 'button';
-	        actionBtn.className = 'registered-observer-action';
+	        actionBtn.className = 'registered-client-action';
 	        actionBtn.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
 	        const resultEl = document.createElement('span');
-	        resultEl.className = 'registered-observer-result';
+	        resultEl.className = 'registered-client-result';
 	        const errorEl = document.createElement('span');
-	        errorEl.className = 'registered-observer-error';
-	        actionBtn.addEventListener('click', () => requestObserverRestart(actionBtn, resultEl, errorEl));
+	        errorEl.className = 'registered-client-error';
+	        actionBtn.addEventListener('click', () => requestCaptureRestart(actionBtn, resultEl, errorEl));
 	        row.appendChild(actionBtn);
 	        row.appendChild(resultEl);
 	        row.appendChild(errorEl);
 	      }
 
-	      elements.registeredObserversStrip.appendChild(row);
+	      elements.registeredClientsStrip.appendChild(row);
     }
   }
 
@@ -2448,10 +2448,10 @@
 
   function handleObserveEvent(msg) {
     if (!msg.stream) return;
-    const existing = state.observers.get(msg.stream) || {};
-    state.observers.set(msg.stream, { ...existing, ...msg, lastSeen: Date.now() });
+    const existing = state.clients.get(msg.stream) || {};
+    state.clients.set(msg.stream, { ...existing, ...msg, lastSeen: Date.now() });
     updateObserve();
-    updateObservers();
+    updateClients();
   }
 
   function handleImporterEvent(msg) {
@@ -2647,7 +2647,7 @@
 
     // Hide dashboard cards and suppress live log rendering
     const dashboard = document.querySelector('.health-dashboard');
-    dashboard.querySelectorAll('.vitals-bar, .observe-card, .observers-card, .registered-observers-card, .activity-grids, .think-card').forEach(el => el.style.display = 'none');
+    dashboard.querySelectorAll('.vitals-bar, .observe-card, .clients-card, .registered-clients-card, .activity-grids, .think-card').forEach(el => el.style.display = 'none');
     state.deepLinkMode = true;
     elements.logsSummaryBadge.style.display = 'none';
 
@@ -2817,7 +2817,7 @@
   let staleSweepTimer = setInterval(sweepStale, 60000);
 
   loadRegisteredClients();
-  let registeredObserversTimer = setInterval(loadRegisteredClients, 60000);
+  let registeredClientsTimer = setInterval(loadRegisteredClients, 60000);
 
   // Connection health indicator — updated every 5s
   let connectionHealthTimer = setInterval(updateConnectionHealth, 5000);
@@ -2829,8 +2829,8 @@
       staleSweepTimer = null;
       clearInterval(connectionHealthTimer);
       connectionHealthTimer = null;
-      clearInterval(registeredObserversTimer);
-      registeredObserversTimer = null;
+      clearInterval(registeredClientsTimer);
+      registeredClientsTimer = null;
       if (elapsedTimer) {
         clearInterval(elapsedTimer);
         elapsedTimer = null;
@@ -2844,7 +2844,7 @@
       }
       staleSweepTimer = setInterval(sweepStale, 60000);
       loadRegisteredClients();
-      registeredObserversTimer = setInterval(loadRegisteredClients, 60000);
+      registeredClientsTimer = setInterval(loadRegisteredClients, 60000);
       connectionHealthTimer = setInterval(updateConnectionHealth, 5000);
     }
   });

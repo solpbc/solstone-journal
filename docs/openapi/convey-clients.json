@@ -101,7 +101,7 @@
               "missing_required_field",
               "multipart_malformed",
               "multipart_part_too_large",
-              "observer_restart_failed",
+              "capture_restart_failed",
               "operation_erased",
               "operation_in_progress",
               "operation_no_longer_available",
@@ -6876,49 +6876,23 @@
             "content": {
               "application/json": {
                 "example": {
-                  "revoked_observers": [
-                    {
-                      "name": "phone-a",
-                      "prefix": "phone-a-"
-                    }
-                  ],
                   "unpaired": "sha256:abc123"
                 },
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
-                    "revoked_observers": {
-                      "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "name": {
-                            "type": "string"
-                          },
-                          "prefix": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "name",
-                          "prefix"
-                        ],
-                        "type": "object"
-                      },
-                      "type": "array"
-                    },
                     "unpaired": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "unpaired",
-                    "revoked_observers"
+                    "unpaired"
                   ],
                   "type": "object"
                 }
               }
             },
-            "description": "The revoked fingerprint and any observer records revoked with it."
+            "description": "The removed paired-device fingerprint."
           },
           "400": {
             "content": {
@@ -6968,7 +6942,7 @@
                 }
               }
             },
-            "description": "Observer revoke cascade failed after the device was unpaired.",
+            "description": "The paired-device record could not be removed.",
             "x-reason-codes": [
               "internal_error"
             ]
@@ -6983,7 +6957,7 @@
     "/app/devices/ingest": {
       "post": {
         "description": "Upload one capture segment from a linked device as multipart form data. Identity is the linked-device mTLS certificate. The body has one JSON `envelope` part plus repeated `files` parts. Envelope grammar is `core/crates/solstone-core/src/contract/schemas/protocol.schema.json` (required `day`, `segment`, `files`; optional `source`, `meta`; `stream` and `observer` are forbidden). Each multipart part is at most 64 MiB; the total request is at most 128 MiB.",
-        "operationId": "observer.ingestUpload",
+        "operationId": "client.ingestUpload",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -7182,14 +7156,14 @@
         },
         "summary": "Upload one capture segment from a linked device",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/manifest": {
       "get": {
         "description": "Return days with uploaded linked-device segment history.",
-        "operationId": "observer.ingestManifest",
+        "operationId": "client.ingestManifest",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -7291,14 +7265,14 @@
         },
         "summary": "List linked-device ingest manifest days",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/manifest/{day}": {
       "get": {
         "description": "Return file names, sizes, sha256 hashes, and custody status for every segment on one day.",
-        "operationId": "observer.ingestManifestDay",
+        "operationId": "client.ingestManifestDay",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -7433,14 +7407,14 @@
         },
         "summary": "Read linked-device transfer manifest for a day",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/ingest/segments/{day}": {
       "get": {
         "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one; segment-level `original_key` carries the client's originally requested segment key when a collision remapped it.",
-        "operationId": "observer.ingestSegments",
+        "operationId": "client.ingestSegments",
         "parameters": [
           {
             "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
@@ -7545,13 +7519,13 @@
         },
         "summary": "List uploaded linked-device segments",
         "tags": [
-          "observer"
+          "client"
         ]
       }
     },
     "/app/devices/source/{source}": {
       "delete": {
-        "description": "Erase every journal segment that holds location.jsonl as a whole segment, leaving tombstone.json. Removal runs only through retention's door; this route selects the set. mixed_segments is a cost disclosure, never a disposition: mixed segments are still removed whole. Authorization is derived from AccessBasis::LinkedDevice, established by the paired-device TLS client certificate; no bearer token or observer header is accepted. The receipt includes removed.tombstones and does not include removed.in_segment_derived.",
+        "description": "Erase every journal segment that holds location.jsonl as a whole segment, leaving tombstone.json. Removal runs only through retention's door; this route selects the set. mixed_segments is a cost disclosure, never a disposition: mixed segments are still removed whole. Authorization is derived from AccessBasis::LinkedDevice, established by the paired-device TLS client certificate; no bearer token or request header is accepted. The receipt includes removed.tombstones and does not include removed.in_segment_derived.",
         "operationId": "clients.deleteSource",
         "parameters": [
           {
@@ -7574,7 +7548,6 @@
                   "not_removed": [],
                   "removed": {
                     "days": 0,
-                    "history_rows": 0,
                     "index_chunks": 0,
                     "mixed_segments": 0,
                     "originals": 0,

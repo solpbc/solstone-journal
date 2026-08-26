@@ -18,7 +18,8 @@ pub struct SegmentKey {
 #[derive(Clone, Debug)]
 pub struct SegmentContext {
     pub key: SegmentKey,
-    pub observer: Option<String>,
+    pub cid: Option<String>,
+    pub source: Option<String>,
     pub batch: bool,
     pub meta: Option<Map<String, Value>>,
 }

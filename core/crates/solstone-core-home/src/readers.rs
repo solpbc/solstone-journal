@@ -866,7 +866,7 @@ pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
         ClientInspection::LedgerUnavailable { .. } => {
             return json!({
                 "status": "unknown",
-                "observers": [],
+                "clients": [],
                 "unassessed": [],
                 "registry": "registry_unknown",
             });
@@ -884,7 +884,7 @@ pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
     ) {
         return json!({
             "status": "unknown",
-            "observers": [],
+            "clients": [],
             "unassessed": rows.iter().map(unassessed_client_row).collect::<Vec<_>>(),
             "registry": registry,
         });
@@ -896,26 +896,26 @@ pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
         .collect::<Vec<_>>();
     let Some(status) = rollup_client_capture_states(rows) else {
         return json!({
-            "status": "no_observers",
-            "observers": [],
+            "status": "no_clients",
+            "clients": [],
             "unassessed": unassessed,
             "registry": registry,
         });
     };
-    let observers: Vec<Value> = rows
+    let clients: Vec<Value> = rows
         .iter()
         .filter(|row| is_assessed_capture(row))
-        .map(home_observer_row)
+        .map(home_client_row)
         .collect();
     json!({
         "status": capture_state_name(status),
-        "observers": observers,
+        "clients": clients,
         "unassessed": unassessed,
         "registry": registry,
     })
 }
 
-fn home_observer_row(row: &ClientAssessment) -> Value {
+fn home_client_row(row: &ClientAssessment) -> Value {
     let mut summary = json!({
         "name": client_name(row),
         "cid": row.cid,
@@ -1635,7 +1635,7 @@ mod tests {
         let health = capture_health_json(&inspection);
         assert_eq!(health["status"], "stale");
         assert_eq!(health["registry"], "registry_complete");
-        assert_eq!(health["observers"].as_array().unwrap().len(), 2);
+        assert_eq!(health["clients"].as_array().unwrap().len(), 2);
         assert_eq!(health["unassessed"][0]["name"], "awaiting");
         assert_eq!(health["unassessed"][0]["reason"], "awaiting_first_delivery");
 
@@ -1676,7 +1676,7 @@ mod tests {
             )],
             activity: ClientActivityState::Missing,
         };
-        assert_eq!(capture_health_json(&missing)["status"], "no_observers");
+        assert_eq!(capture_health_json(&missing)["status"], "no_clients");
     }
 
     #[test]
@@ -1702,7 +1702,7 @@ mod tests {
         );
         let health = get_capture_health(&home_context);
         assert_eq!(health["status"], "active");
-        assert_eq!(health["observers"][0]["name"], "phone");
+        assert_eq!(health["clients"][0]["name"], "phone");
         assert_eq!(last_observe_relative_seconds(&home_context), Some(29));
     }
 

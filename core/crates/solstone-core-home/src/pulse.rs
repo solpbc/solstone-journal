@@ -566,15 +566,12 @@ mod tests {
         let mut expected_pulse = reference["pulse"].clone();
         assert_eq!(
             expected_pulse.pointer("/health_glance/cta/href"),
-            Some(&json!("/app/observer/"))
+            Some(&json!("/app/network/"))
         );
         assert_eq!(
             payload.pointer("/health_glance/cta/href"),
             Some(&json!("/app/network/"))
         );
-        *expected_pulse
-            .pointer_mut("/health_glance/cta/href")
-            .unwrap() = json!("/app/network/");
         assert_eq!(
             expected_pulse.pointer("/health_glance/verdict"),
             Some(&json!("ok"))
@@ -889,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    fn seeded_fixture_keeps_the_no_observer_cta_branch() {
+    fn seeded_fixture_keeps_the_no_client_cta_branch() {
         let root =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_seeded_journal");
         let context = HomeContext::new(

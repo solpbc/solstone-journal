@@ -482,7 +482,7 @@ async fn no_matching_handler_completes_promptly_and_does_not_leak_segment_state(
 }
 
 #[tokio::test]
-async fn child_receives_segment_environment_from_observing_event() {
+async fn child_receives_only_supported_segment_environment_from_observing_event() {
     let root = tempfile::tempdir().expect("journal");
     std::fs::create_dir_all(root.path().join("config")).expect("config");
     std::fs::write(
@@ -502,12 +502,13 @@ async fn child_receives_segment_environment_from_observing_event() {
     .await;
     wait_for_clients(&server).await;
     let mut event = observing(&["audio.flac"]);
-    event.insert("observer".into(), json!("capture-agent"));
+    event.insert("cid".into(), json!("sha256:test"));
+    event.insert("source".into(), json!("capture-agent"));
     assert!(peer.emit("observe", "observing", event));
     let _ = next_event(&mut peer, "observe", "observed").await;
     let marker = std::fs::read_to_string(segment.join("audio.flac.handler")).expect("marker");
     assert!(marker.contains("SOL_SEGMENT=120000_2\n"));
-    assert!(marker.contains("OBSERVER_NAME=capture-agent\n"));
+    assert!(!marker.contains("OBSERVER_NAME="));
     assert!(marker.contains("SEGMENT_META={\"stream\":\"default\"}\n"));
     marker
         .lines()

@@ -1,21 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Read-only, replay-safe observer listing assembly.
+//! Read-only, replay-safe device-ingest listing assembly.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
 use solstone_core_callosum::{DeviceIngestEvent, read_device_ingest_events};
 use solstone_core_ingest_resolve::SegmentTerminalProof;
 use solstone_core_segment::{
     ContentName, SegmentDir, TerminalProofVerifier, is_safe_stream_component, list_segments,
-};
-
-use crate::observer_evidence::{
-    HistoryEvidence, ObserverEvidenceError, ResolvedObserver, fallback_stream,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -59,7 +54,6 @@ pub(crate) struct DayListing {
 
 #[derive(Debug)]
 pub(crate) enum ListingError {
-    Malformed,
     AmbiguousName,
     JournalRead,
 }
@@ -72,6 +66,7 @@ pub(crate) fn native_events(
     day: &str,
     stream: Option<&str>,
     cid: &str,
+    source: &str,
 ) -> Result<Vec<DeviceIngestEvent>, ListingError> {
     let Some(stream) = stream else {
         return Ok(Vec::new());
@@ -82,64 +77,37 @@ pub(crate) fn native_events(
         .into_iter()
         .filter(|segment| segment.stream().matches(stream))
     {
+        let identity = segment
+            .record_identity()
+            .map_err(|_| ListingError::JournalRead)?;
         let report =
             read_device_ingest_events(segment.path()).map_err(|_| ListingError::JournalRead)?;
-        events.extend(report.records.into_iter().filter(|event| event.cid == cid));
+        if report.unparseable > 0 {
+            return Err(ListingError::JournalRead);
+        }
+        for event in report.records {
+            if event.cid != cid
+                || event.source != source
+                || event.stream != stream
+                || event.day != day
+                || event.segment != identity.name
+            {
+                return Err(ListingError::JournalRead);
+            }
+            events.push(event);
+        }
     }
     Ok(events)
 }
 
-/// Combine Python sync history with every native durable event per segment.
+/// Combine every native durable event per segment.
 pub(crate) fn merge_day_listing(
     journal_root: &Path,
     day: &str,
-    observer: Option<&ResolvedObserver>,
-    history: HistoryEvidence,
     events: Vec<DeviceIngestEvent>,
 ) -> Result<DayListing, ListingError> {
-    let fallback = observer
-        .map(fallback_stream)
-        .transpose()
-        .map_err(map_evidence_error)?;
     let mut by_segment: BTreeMap<String, SegmentAccumulator> = BTreeMap::new();
-    for record in history.records {
-        let object = record.as_object().ok_or(ListingError::Malformed)?;
-        if object.get("type").and_then(Value::as_str) == Some("observed") {
-            continue;
-        }
-        let segment = required_string(object.get("segment"))?;
-        if history.pruned_segments.contains(segment) {
-            continue;
-        }
-        let stream = match object.get("stream") {
-            Some(value) => required_string(Some(value))?.to_owned(),
-            None => fallback.clone().ok_or(ListingError::Malformed)?,
-        };
-        let original_key = object
-            .get("segment_original")
-            .map(|value| required_string(Some(value)).map(str::to_owned))
-            .transpose()?;
-        let files: &[Value] = match object.get("files") {
-            Some(files) => files.as_array().ok_or(ListingError::Malformed)?,
-            None => &[],
-        };
-        let accumulator = by_segment.entry(segment.to_owned()).or_default();
-        if accumulator.original_key.is_none() {
-            accumulator.original_key = original_key;
-        }
-        for file in files {
-            let object = file.as_object().ok_or(ListingError::Malformed)?;
-            if object.get("disposition").and_then(Value::as_str) == Some("received_not_written") {
-                continue;
-            }
-            let entry = project_history_file(journal_root, day, &stream, segment, object)?;
-            accumulator.insert(entry);
-        }
-    }
     for event in events {
-        if event.day != day {
-            continue;
-        }
         let accumulator = by_segment.entry(event.segment.clone()).or_default();
         for file in event.files {
             let entry = project_event_file(journal_root, day, &event.stream, &event.segment, file)?;
@@ -149,42 +117,18 @@ pub(crate) fn merge_day_listing(
     }
     let mut segments = Vec::new();
     for (key, accumulator) in by_segment {
-        // Native-era segments list observed:false because the reference computes
-        // it from history observed rows and the native writer emits none. Apply
-        // a historical marker after the two evidence stores have been unioned.
-        let observed = history.observed_segments.contains(&key);
         let original_key = accumulator.original_key.clone();
         let files = accumulator.reduce_effective_names()?;
         if !files.is_empty() {
             segments.push(ListingSegment {
                 key,
-                observed,
+                observed: false,
                 original_key,
                 files,
             });
         }
     }
     Ok(DayListing { segments })
-}
-
-fn project_history_file(
-    journal_root: &Path,
-    day: &str,
-    stream: &str,
-    segment: &str,
-    object: &serde_json::Map<String, Value>,
-) -> Result<ListingFile, ListingError> {
-    let written = required_string(object.get("written"))?;
-    let submitted = required_string(object.get("submitted"))?;
-    let size = required_u64(object.get("size"))?;
-    let sha256 = required_string(object.get("sha256"))?.to_owned();
-    Ok(ListingFile {
-        name: written.to_owned(),
-        size,
-        sha256,
-        submitted_name: (submitted != written).then(|| submitted.to_owned()),
-        status: resolve_file_status(journal_root, day, stream, segment, written, size)?,
-    })
 }
 
 fn project_event_file(
@@ -210,9 +154,7 @@ fn project_event_file(
 /// automatic re-upload repair; now it reads present forever and nothing repairs
 /// it. That loss is accepted because clients compare their own attestations,
 /// and a per-request full-journal read is an outage, not a check; repair belongs
-/// to a scrub. SegmentDir::resolve's DEFAULT_STREAM special case diverges from
-/// Python's always-interposed stream, but is unreachable today because history
-/// rows carry a real stream name.
+/// to a scrub.
 fn resolve_file_status(
     journal_root: &Path,
     day: &str,
@@ -221,9 +163,9 @@ fn resolve_file_status(
     written: &str,
     size: u64,
 ) -> Result<FileStatus, ListingError> {
-    let name = ContentName::new(written).map_err(|_| ListingError::Malformed)?;
+    let name = ContentName::new(written).map_err(|_| ListingError::JournalRead)?;
     if !is_safe_stream_component(segment) || !is_safe_stream_component(stream) {
-        return Err(ListingError::Malformed);
+        return Err(ListingError::JournalRead);
     }
     let segment = SegmentDir::resolve(journal_root, day, segment, stream)
         .map_err(|_| ListingError::JournalRead)?;
@@ -292,32 +234,12 @@ impl SegmentAccumulator {
     }
 }
 
-fn required_string(value: Option<&Value>) -> Result<&str, ListingError> {
-    value.and_then(Value::as_str).ok_or(ListingError::Malformed)
-}
-
-fn required_u64(value: Option<&Value>) -> Result<u64, ListingError> {
-    value.and_then(Value::as_u64).ok_or(ListingError::Malformed)
-}
-
-fn map_evidence_error(error: ObserverEvidenceError) -> ListingError {
-    match error {
-        ObserverEvidenceError::Malformed => ListingError::Malformed,
-        _ => ListingError::JournalRead,
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
 
-    use serde_json::json;
-
-    use super::{
-        FileStatus, HistoryEvidence, ListingError, ListingFile, SegmentAccumulator,
-        merge_day_listing, resolve_file_status,
-    };
+    use super::{FileStatus, ListingError, ListingFile, SegmentAccumulator, resolve_file_status};
 
     fn entry(
         name: &str,
@@ -380,30 +302,6 @@ mod tests {
         let files = held.reduce_effective_names().expect("one held twin");
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].status, FileStatus::Present);
-    }
-
-    #[test]
-    fn received_not_written_is_dropped_before_same_name_different_sha_reduction() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let root = dir.path();
-        let segment = root.join("chronicle/20260804/laptop/120000_60");
-        fs::create_dir_all(&segment).expect("segment directory");
-        fs::write(segment.join("audio.flac"), b"held").expect("held media");
-        let history = HistoryEvidence {
-            records: vec![json!({
-                "segment": "120000_60",
-                "stream": "laptop",
-                "files": [
-                    {"submitted":"audio.flac", "written":"audio.flac", "size":4, "sha256":"held", "disposition":"written"},
-                    {"submitted":"audio.flac", "written":"audio.flac", "size":4, "sha256":"audit", "disposition":"received_not_written"}
-                ]
-            })],
-            ..HistoryEvidence::default()
-        };
-        let listing = merge_day_listing(root, "20260804", None, history, Vec::new())
-            .expect("audit-only row must not make the name ambiguous");
-        assert_eq!(listing.segments[0].files.len(), 1);
-        assert_eq!(listing.segments[0].files[0].sha256, "held");
     }
 
     #[test]

@@ -273,7 +273,7 @@ Cogitate talents have access to all `solstone` commands. The following infrastru
 - `journal config`
 - `journal cortex`
 - `journal brain refresh`
-- `journal observer` / `solstone observe-*`
+- `solstone observe-*`
 - `journal sense`
 - `journal transcribe` / `journal describe`
 - `journal indexer --reset`

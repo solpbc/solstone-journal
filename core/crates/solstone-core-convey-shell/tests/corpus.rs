@@ -210,6 +210,17 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "observer");
 }
 
+fn apply_client_capture_projection_rename(expected: &mut Value) {
+    let capture = expected["capture"]
+        .as_object_mut()
+        .expect("frozen system status contains capture");
+    let observers = capture
+        .remove("observers")
+        .expect("frozen system status contains observers");
+    capture.insert("clients".to_owned(), observers);
+    capture.insert("status".to_owned(), Value::String("no_clients".to_owned()));
+}
+
 /// Permanent documented divergence, introduced 2026-08-24, with no expiry
 /// condition: the frozen corpus preserves the deleted reference's per-app
 /// `starred` preference, while the native shell has no backing route for it.
@@ -618,6 +629,9 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_chat_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
                     strip_permanent_launcher_metadata_from_actual(&mut actual);
+                }
+                if phase == "established" && path == "/api/system/status" {
+                    apply_client_capture_projection_rename(&mut expected);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");

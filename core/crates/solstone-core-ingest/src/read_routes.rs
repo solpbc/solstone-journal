@@ -13,10 +13,6 @@ use solstone_core_segment::{list_days, lookup_stream};
 
 use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
 use crate::model::ReasonCode;
-use crate::observer_evidence::{
-    ObserverEvidenceError, ResolvedObserver, observer_history_days, read_history_day,
-    resolve_device_observer,
-};
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_day, validate_protocol, validate_source};
 
@@ -30,7 +26,7 @@ pub async fn ingest_manifest(
         Ok(value) => value,
         Err((code, status, detail)) => return refusal(code, status, detail),
     };
-    let mut days = match list_days(&state.journal_root) {
+    let days = match list_days(&state.journal_root) {
         Ok(days) => days
             .into_iter()
             .map(|(day, _)| day)
@@ -43,16 +39,12 @@ pub async fn ingest_manifest(
             );
         }
     };
-    match observer_history_days(&state.journal_root, context.observer.as_ref()) {
-        Ok(history_days) => days.extend(history_days),
-        Err(error) => return evidence_refusal(error),
-    }
     let mut result = Map::new();
     for day in days {
         let listing = match day_listing(
             &state,
             &context.cid,
-            context.observer.as_ref(),
+            &context.source,
             context.native_stream.as_deref(),
             &day,
         ) {
@@ -86,7 +78,7 @@ pub async fn ingest_manifest_day(
     let listing = match day_listing(
         &state,
         &context.cid,
-        context.observer.as_ref(),
+        &context.source,
         context.native_stream.as_deref(),
         &day,
     ) {
@@ -118,7 +110,7 @@ pub async fn ingest_segments(
     let listing = match day_listing(
         &state,
         &context.cid,
-        context.observer.as_ref(),
+        &context.source,
         context.native_stream.as_deref(),
         &day,
     ) {
@@ -147,7 +139,7 @@ pub async fn ingest_segments(
 
 struct ListingContext {
     cid: String,
-    observer: Option<ResolvedObserver>,
+    source: String,
     native_stream: Option<String>,
 }
 
@@ -172,10 +164,9 @@ fn listing_context(
             "cannot resolve journal stream".to_owned(),
         )
     })?;
-    let observer = resolve_device_observer(&state.journal_root, &cid).map_err(evidence_error)?;
     Ok(ListingContext {
         cid,
-        observer,
+        source,
         native_stream,
     })
 }
@@ -183,16 +174,12 @@ fn listing_context(
 fn day_listing(
     state: &IngestState,
     cid: &str,
-    observer: Option<&ResolvedObserver>,
+    source: &str,
     native_stream: Option<&str>,
     day: &str,
-) -> Result<DayListing, DayReadError> {
-    let history =
-        read_history_day(&state.journal_root, observer, day).map_err(DayReadError::Evidence)?;
-    let events = native_events(&state.journal_root, day, native_stream, cid)
-        .map_err(DayReadError::Listing)?;
-    merge_day_listing(&state.journal_root, day, observer, history, events)
-        .map_err(DayReadError::Listing)
+) -> Result<DayListing, ListingError> {
+    let events = native_events(&state.journal_root, day, native_stream, cid, source)?;
+    merge_day_listing(&state.journal_root, day, events)
 }
 
 fn files_value(files: &[ListingFile]) -> Value {
@@ -220,83 +207,19 @@ fn files_value(files: &[ListingFile]) -> Value {
     )
 }
 
-pub(crate) fn evidence_error(error: ObserverEvidenceError) -> (ReasonCode, StatusCode, String) {
+fn day_refusal(error: ListingError) -> Response {
+    listing_refusal(error)
+}
+
+fn day_read_reason(error: ListingError) -> ReasonCode {
     match error {
-        ObserverEvidenceError::RegistryUnreadable => (
-            ReasonCode::ObserverRegistryUnreadable,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot enumerate observer registry".to_owned(),
-        ),
-        ObserverEvidenceError::RecordUnreadable => (
-            ReasonCode::ObserverRecordUnreadable,
-            StatusCode::CONFLICT,
-            "observer registry contains unreadable records".to_owned(),
-        ),
-        ObserverEvidenceError::Ambiguous { prefixes } => (
-            ReasonCode::AmbiguousDeviceObserver,
-            StatusCode::CONFLICT,
-            format!(
-                "multiple observers bind this device ({}); resolve with observer revoke <prefix>",
-                prefixes.join(", ")
-            ),
-        ),
-        ObserverEvidenceError::HistoryUnreadable => (
-            ReasonCode::ObserverHistoryUnreadable,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot read observer history".to_owned(),
-        ),
-        ObserverEvidenceError::HistoryTorn => (
-            ReasonCode::ObserverHistoryTorn,
-            StatusCode::CONFLICT,
-            "observer history is torn".to_owned(),
-        ),
-        ObserverEvidenceError::Malformed => (
-            ReasonCode::MalformedEvidenceRow,
-            StatusCode::CONFLICT,
-            "observer evidence has an unsupported shape".to_owned(),
-        ),
-        ObserverEvidenceError::JournalRead => (
-            ReasonCode::JournalReadFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot read observer history".to_owned(),
-        ),
-    }
-}
-
-fn evidence_refusal(error: ObserverEvidenceError) -> Response {
-    let (code, status, detail) = evidence_error(error);
-    refusal(code, status, detail)
-}
-
-enum DayReadError {
-    Evidence(ObserverEvidenceError),
-    Listing(ListingError),
-}
-
-fn day_refusal(error: DayReadError) -> Response {
-    match error {
-        DayReadError::Evidence(error) => evidence_refusal(error),
-        DayReadError::Listing(error) => listing_refusal(error),
-    }
-}
-
-fn day_read_reason(error: DayReadError) -> ReasonCode {
-    match error {
-        DayReadError::Evidence(error) => evidence_error(error).0,
-        DayReadError::Listing(error) => match error {
-            ListingError::Malformed => ReasonCode::MalformedEvidenceRow,
-            ListingError::AmbiguousName => ReasonCode::AmbiguousSegmentFileName,
-            ListingError::JournalRead => ReasonCode::JournalReadFailed,
-        },
+        ListingError::AmbiguousName => ReasonCode::AmbiguousSegmentFileName,
+        ListingError::JournalRead => ReasonCode::JournalReadFailed,
     }
 }
 
 fn listing_refusal(error: ListingError) -> Response {
     let (code, detail) = match error {
-        ListingError::Malformed => (
-            ReasonCode::MalformedEvidenceRow,
-            "observer evidence has an unsupported shape",
-        ),
         ListingError::AmbiguousName => (
             ReasonCode::AmbiguousSegmentFileName,
             "multiple files have the same effective name",

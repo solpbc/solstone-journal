@@ -18,7 +18,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
       "legacy_surface": "observer_v2_register",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
@@ -28,7 +28,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
       "legacy_surface": "observer_ingest_v2_upload",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
@@ -38,7 +38,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
       "legacy_surface": "observer_ingest_v2_event",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
@@ -48,7 +48,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
       "legacy_surface": "observer_ingest_v2_segments",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
@@ -58,7 +58,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
       "legacy_surface": "observer_v2_register",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
@@ -68,7 +68,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
       "legacy_surface": "observer_ingest_v2_upload",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
@@ -78,7 +78,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
       "legacy_surface": "observer_ingest_v2_event",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
@@ -88,7 +88,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
       "legacy_surface": "observer_ingest_v2_segments",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
@@ -98,7 +98,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
       "legacy_surface": "observer_v2_register",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -109,7 +109,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
       "legacy_surface": "observer_ingest_v2_upload",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -120,7 +120,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
       "legacy_surface": "observer_ingest_v2_event",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -131,7 +131,7 @@
       "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
       "legacy_surface": "observer_ingest_v2_segments",
-      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
+      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -139,7 +139,7 @@
       ]
     }
   ],
-  "schema": "solstone.observer-client-contract-consumer-audit.v2",
+  "schema": "solstone.client-ingest-contract-consumer-audit.v2",
   "searched_files": [
     {
       "consumer": "solstone-browser",

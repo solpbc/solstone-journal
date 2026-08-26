@@ -4,7 +4,7 @@ Multimodal desktop records and AI-assisted analysis.
 
 ## Linked-device architecture
 
-Linked-device clients send segments to the journal through protocol v3 at [`POST /app/devices/ingest`](openapi/observer-client-contract/projection.openapi.json). Each multipart request has one JSON `envelope` part and its `files` parts, sends `X-Solstone-Protocol-Version: 3`, and authenticates with the linked-device mTLS identity. The linked-device contract is the source for the request and authorization rules. Each client runs independently; the solstone app stores and processes the resulting journal.
+Linked-device clients send segments to the journal through protocol v3 at [`POST /app/devices/ingest`](openapi/client-ingest-contract/projection.openapi.json). Each multipart request has one JSON `envelope` part and its `files` parts, sends `X-Solstone-Protocol-Version: 3`, and authenticates with the linked-device mTLS identity. The linked-device contract is the source for the request and authorization rules. Each client runs independently; the solstone app stores and processes the resulting journal.
 
 | Linked-device client | What it records | Repo | Runs as |
 |----------|-----------------|------|---------|
@@ -12,28 +12,10 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 | **solstone-macos** | Screen + audio on macOS | `solstone-macos` | Native menu bar app |
 | **solstone-tmux** | Tmux terminal sessions | `solstone-tmux` | systemd user service / standalone |
 
-### Managing device records
-
-```bash
-# List all registered device records
-journal observer list
-
-# Check a device record
-journal observer status <name>
-
-# Rename a device record
-journal observer rename <old> <new>
-
-# Revoke a device record key
-journal observer revoke <name>
-```
-
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `journal observer` | Manage device records (see above) |
-| `journal observer prune` | Dry-run or execute safe cleanup of duplicate segments |
 | `journal transcribe` | Audio transcription (native STT + speaker embeddings) |
 | `journal describe` | Visual analysis of screen recordings |
 | `journal grab` | Walk available screen frames and optionally write frame images |
@@ -89,7 +71,7 @@ Each client is a standalone package in its own repository, with its own recordin
 - **`solstone-macos`** records screen and audio on macOS; it is a native menu-bar app.
 - **`solstone-tmux`** records tmux terminal sessions; it runs as a systemd user service.
 
-All linked-device segments use the same [protocol-v3 contract](openapi/observer-client-contract/projection.openapi.json). Device association and the linked-device mTLS identity authorize uploads and reconciliation. Legacy device-record keys do not authorize this path.
+All linked-device segments use the same [protocol-v3 contract](openapi/client-ingest-contract/projection.openapi.json). Device association and the linked-device mTLS identity authorize uploads and reconciliation. Legacy device-record keys do not authorize this path.
 
 The journal derives duplicate identity from the segment directory on disk, not
 from an append-only history index. For an upload, the server looks
@@ -107,7 +89,7 @@ Segment listings filter those audit-only records so clients never treat
 journal-authored marker files as proof that their own marker bytes are held.
 
 Every resolution into an existing candidate records `duplicate`. The
-[reconciliation contract](openapi/observer-client-contract/projection.openapi.json)
+[reconciliation contract](openapi/client-ingest-contract/projection.openapi.json)
 then lets `/app/devices/ingest/segments/<day>` corroborate that result for
 linked-device clients before they remove local files, including segments that
 were originally created by import or transfer.
@@ -120,51 +102,6 @@ but whose same-stem JSONL sidecar at that segment path carries a terminal
 without `ingest.json` use that proof to dedupe absent raw media, then graduate to
 a manifest on the next resolution. Anything else is `missing` and remains
 eligible for upload healing.
-
-### Duplicate-segment pruning
-
-`journal observer prune [--day YYYYMMDD | --day-range A..B | --all] [--stream NAME] [--execute] [--cross-start]`
-finds byte-identical duplicate segments from the old ingest suffix-ladder
-defect. Dry-run is the default and performs zero writes: no manifest healing, no
-history append, no index deletion, and no health marker touch. `--execute`
-re-derives groups, canonical held-ness, per-file hashes, and device attribution
-from disk before deleting anything; dry-run output is advisory only.
-
-Duplicate groups are restricted to one `(day, stream, HHMMSS start)` candidate
-set. This matches the ingest planner's `HHMMSS_300`, `HHMMSS_301`, ...
-collision ladder and prevents data loss from grouping unrelated windows that
-happen to have identical bytes, such as two silent recordings at different times.
-Within that same-start set, identity is the set of `(name, sha256, size)` content
-files: valid `ingest.json` files define content exactly; legacy manifest-less
-segments use present media files; manifest-less non-media-only segments refuse.
-The canonical is deterministic: the earliest same-start segment whose content
-is held by present bytes or terminal processing proof.
-
-`--cross-start` is opt-in. After same-start planning or execution, it also
-considers different-start candidates proven by server-authored
-`segment_original` provenance in receipt history. The named origin is
-resolved through existing pruned history to a surviving canonical, and the same
-content, chain, held-ness, and device-attribution gates apply.
-
-Prune fails closed. It refuses unverifiable canonicals, near-duplicates, unknown
-non-derived files, marker-less candidates, and ambiguous stream-to-device
-attribution. Recognized derived outputs are same-stem media sidecars, `events.jsonl`,
-`timeline.json`, and files under `talents/`. A proof-held canonical is allowed:
-when a canonical holds media only by terminal processing proof and a candidate is
-the last physical copy, the CLI marks that candidate as `last-physical-copy` in
-both dry-run and execute output and includes a summary count.
-
-Execute deletes index rows for each pruned segment, repairs stream-chain
-predecessors atomically on surviving `stream.json` markers, preserves stream
-state metadata and monotonic `seq`, and touches `chronicle/<day>/health/stream.updated`.
-It never renumbers survivor marker `seq` values. Prune appends the `pruned`
-history record before deleting the directory; if deletion then fails, the group
-stops loudly and the next successful run dedupes the existing record and
-converges.
-Legacy receipt stats such as `segments_received` and `bytes_received` are not
-decremented; pruning records storage cleanup, not the original receipt event.
-Exit codes are `0` for a clean run, `2` when refusals are present, and `1` for
-usage or unexpected errors.
 
 ### Local diagnostics
 

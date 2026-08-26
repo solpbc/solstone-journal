@@ -406,7 +406,7 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         Some(payload),
     ) {
-        Ok(response) => unpair_success_output(&response),
+        Ok(_) => stdout_line("Unpaired."),
         Err(error) => {
             if error.reason_code() == Some("paired_device_not_found") {
                 let message = if target.starts_with("sha256:") {
@@ -423,71 +423,9 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
             if let Some(promoted) = promote_invalid_state_detail(&error) {
                 return link_error(promoted);
             }
-            if let Some(output) = unpair_partial_failure_output(&error) {
-                return output;
-            }
             link_error(error)
         }
     }
-}
-
-fn unpair_success_output(response: &Value) -> CommandOutput {
-    let mut lines = vec!["Unpaired.".to_string()];
-    let names = revoked_observer_names(response);
-    if names.is_empty() {
-        lines.push("No bound observer streams were revoked.".to_string());
-    } else {
-        lines.push(format!("Revoked observer streams: {}", names.join(", ")));
-    }
-    stdout(lines)
-}
-
-fn unpair_partial_failure_output(error: &ClientError) -> Option<CommandOutput> {
-    if error.reason_code() != Some("internal_error") {
-        return None;
-    }
-    let payload = error.payload()?;
-    if payload.get("failed_operation").and_then(Value::as_str) != Some("observer_revoke") {
-        return None;
-    }
-    payload.get("unpaired").and_then(Value::as_str)?;
-    let mut stdout_value = String::new();
-    push_line(&mut stdout_value, "Unpaired.");
-    let names = revoked_observer_names(payload);
-    if names.is_empty() {
-        push_line(
-            &mut stdout_value,
-            "No bound observer streams were revoked before failure.",
-        );
-    } else {
-        push_line(
-            &mut stdout_value,
-            format!(
-                "Revoked observer streams before failure: {}",
-                names.join(", ")
-            ),
-        );
-    }
-    Some(CommandOutput {
-        stdout: stdout_value,
-        stderr: "Error: failed to revoke all bound observer streams.\n".to_string(),
-        exit: 1,
-    })
-}
-
-fn revoked_observer_names(response: &Value) -> Vec<String> {
-    response
-        .get("revoked_observers")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.get("name").and_then(Value::as_str))
-                .filter(|name| !name.is_empty())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn devices(ctx: CommandContext<'_>) -> Result<Vec<Value>, ClientError> {

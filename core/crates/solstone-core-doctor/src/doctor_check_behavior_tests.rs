@@ -67,9 +67,9 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "task_pace",
     "brain",
     "capture_health",
-    "observer_binding",
-    "observer_delivery_stall",
-    "observer_ingest_health",
+    "client_binding",
+    "client_delivery_stall",
+    "client_ingest_health",
     "orphan_segment_pdf",
     "default_stt_ready",
     "parakeet_cpp_stt_ready",
@@ -130,7 +130,7 @@ fn status(name: &str, context: &CheckContext) -> Status {
 fn result(name: &str, context: &CheckContext) -> CheckResult {
     (registry::lookup(Battery::Journal, name).unwrap().runner)(context).unwrap()
 }
-fn write_observer(context: &CheckContext, name: &str, value: serde_json::Value) {
+fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::Value) {
     if value.get("enabled").and_then(serde_json::Value::as_bool) == Some(false)
         || value.get("revoked").and_then(serde_json::Value::as_bool) == Some(true)
     {
@@ -207,8 +207,8 @@ fn write_observer(context: &CheckContext, name: &str, value: serde_json::Value) 
     activity.insert(name.to_owned(), entry);
     fs::write(&activity_path, serde_json::to_vec(&activity).unwrap()).unwrap();
 }
-fn observer(context: &CheckContext, name: &str, last_seen: i64) {
-    write_observer(
+fn write_unassessed_client(context: &CheckContext, name: &str, last_seen: i64) {
+    write_client_fixture(
         context,
         "abcdefgh",
         serde_json::json!({
@@ -499,53 +499,53 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
         "capture_health" => {
             let now = context.now.timestamp_millis();
             if ok {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-1}),
                 );
             } else {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-86_400_001}),
                 );
             }
         }
-        "observer_binding" => {
+        "client_binding" => {
             if ok {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"device_binding":{"device":format!("sha256:{}", "a".repeat(64)),"kind":"cert"}}),
                 );
             }
         }
-        "observer_delivery_stall" => {
+        "client_delivery_stall" => {
             let now = context.now.timestamp_millis();
             if ok {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-1_000}),
                 );
             } else {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-1_000}),
                 );
-                write_observer(
+                write_client_fixture(
                     &context,
                     "ijklmnop",
                     serde_json::json!({"key":"ijklmnop-key","name":"tablet","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-21_600_001}),
                 );
             }
         }
-        "observer_ingest_health" => {
-            observer(&context, "phone", context.now.timestamp_millis() - 1);
+        "client_ingest_health" => {
+            write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
             if !ok {
-                write_observer(
+                write_client_fixture(
                     &context,
                     "abcdefgh",
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"health":{"ingest_rejection":{"version":"1.2","summary":"bad payload","active_count":2}}}),
@@ -603,9 +603,9 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "task_pace"
                     | "brain"
                     | "capture_health"
-                    | "observer_binding"
-                    | "observer_delivery_stall"
-                    | "observer_ingest_health"
+                    | "client_binding"
+                    | "client_delivery_stall"
+                    | "client_ingest_health"
                     | "orphan_segment_pdf"
                     | "default_stt_ready"
                     | "parakeet_cpp_stt_ready"
@@ -624,9 +624,9 @@ fn check_severity_table_matches_reference() {
         ("task_pace", Severity::Advisory),
         ("brain", Severity::Advisory),
         ("capture_health", Severity::Advisory),
-        ("observer_binding", Severity::Advisory),
-        ("observer_delivery_stall", Severity::Advisory),
-        ("observer_ingest_health", Severity::Advisory),
+        ("client_binding", Severity::Advisory),
+        ("client_delivery_stall", Severity::Advisory),
+        ("client_ingest_health", Severity::Advisory),
         ("orphan_segment_pdf", Severity::Advisory),
         ("default_stt_ready", Severity::Advisory),
         ("parakeet_cpp_stt_ready", Severity::Advisory),
@@ -653,9 +653,9 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ("capture_health", SecondBranch::DifferentStatus),
         // The Python reference reports both binding branches as OK; changing
         // the unbound stream branch into a warning would be a regression.
-        ("observer_binding", SecondBranch::DifferentDetail),
-        ("observer_delivery_stall", SecondBranch::DifferentStatus),
-        ("observer_ingest_health", SecondBranch::DifferentStatus),
+        ("client_binding", SecondBranch::DifferentDetail),
+        ("client_delivery_stall", SecondBranch::DifferentStatus),
+        ("client_ingest_health", SecondBranch::DifferentStatus),
         ("orphan_segment_pdf", SecondBranch::DifferentStatus),
         ("default_stt_ready", SecondBranch::DifferentStatus),
         ("parakeet_cpp_stt_ready", SecondBranch::DifferentStatus),
@@ -763,19 +763,19 @@ fn orphan_pdf_depth_transcript_and_dot_entry_matrix() {
     assert_eq!(status("orphan_segment_pdf", &c), Status::Warn);
 }
 #[test]
-fn no_enabled_observers_skip_observer_trio() {
+fn no_enabled_clients_skip_client_delivery_and_ingest_checks() {
     let c = fixture();
     for name in [
         "capture_health",
-        "observer_delivery_stall",
-        "observer_ingest_health",
+        "client_delivery_stall",
+        "client_ingest_health",
     ] {
         assert_eq!(status(name, &c), Status::Skip);
     }
     let capture = result("capture_health", &c);
-    let stall = result("observer_delivery_stall", &c);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    let stall = result("client_delivery_stall", &c);
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryEmpty);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
@@ -798,7 +798,7 @@ fn write_device(
     if let Some(stamp) = last_sent {
         value["last_segment_received_at"] = serde_json::json!(stamp);
     }
-    write_observer(context, prefix, value);
+    write_client_fixture(context, prefix, value);
 }
 
 #[test]
@@ -815,7 +815,7 @@ fn lone_long_stop_warns_both_checks() {
             Some(now - sent_age),
         );
         let capture = result("capture_health", &c);
-        let stall = result("observer_delivery_stall", &c);
+        let stall = result("client_delivery_stall", &c);
         assert_eq!(capture.status, Status::Warn);
         assert!(capture.detail.contains("rollup=attention"));
         assert!(capture.detail.contains("phone"));
@@ -833,7 +833,7 @@ fn peer_makes_six_hour_and_long_stop_stale() {
         write_device(&c, "abcdefgh", "alpha", now - 1_000, Some(now - 29_000));
         write_device(&c, "ijklmnop", "bravo", now - 1_000, Some(now - sent_age));
         let capture = result("capture_health", &c);
-        let stall = result("observer_delivery_stall", &c);
+        let stall = result("client_delivery_stall", &c);
         assert_eq!(capture.status, Status::Warn);
         assert!(capture.detail.contains("bravo"));
         assert!(!capture.detail.contains("alpha"));
@@ -850,7 +850,7 @@ fn overnight_quiet_is_ok() {
     write_device(&c, "abcdefgh", "alpha", now - eight, Some(now - eight));
     write_device(&c, "ijklmnop", "bravo", now - eight, Some(now - eight));
     assert_eq!(status("capture_health", &c), Status::Warn);
-    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
 }
 
 #[test]
@@ -869,15 +869,15 @@ fn fleet_long_stop_stall_is_warn() {
             Some(now - 41 * 3_600_000),
         );
     }
-    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
 }
 
 #[test]
 fn no_assessed_skips_both_checks() {
     let c = fixture();
-    observer(&c, "phone", c.now.timestamp_millis() - 1);
+    write_unassessed_client(&c, "phone", c.now.timestamp_millis() - 1);
     let capture = result("capture_health", &c);
-    let stall = result("observer_delivery_stall", &c);
+    let stall = result("client_delivery_stall", &c);
     assert_eq!(capture.status, Status::Skip);
     assert_eq!(stall.status, Status::Skip);
     assert!(capture.detail.contains("rollup=no_senders"));
@@ -885,8 +885,8 @@ fn no_assessed_skips_both_checks() {
         stall.detail,
         "the solstone app hasn't added anything to your journal yet"
     );
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert!(facts.assessed.is_empty());
     assert_eq!(facts.unassessed.len(), 1);
@@ -898,14 +898,14 @@ fn no_assessed_skips_both_checks() {
 fn unassessed_residue_does_not_drag() {
     let c = fixture();
     let now = c.now.timestamp_millis();
-    observer(&c, "residue", now - 200_000);
+    write_unassessed_client(&c, "residue", now - 200_000);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
     let capture = result("capture_health", &c);
-    let stall = result("observer_delivery_stall", &c);
+    let stall = result("client_delivery_stall", &c);
     assert_eq!(capture.status, Status::Ok);
     assert_eq!(stall.status, Status::Ok);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert_eq!(facts.assessed.len(), 1);
     assert_eq!(facts.assessed[0].name, "peer");
@@ -920,7 +920,7 @@ fn delivery_facts_distinguish_remaining_tokens() {
     let now_offset = |context: &CheckContext, delta: i64| context.now.timestamp_millis() - delta;
 
     let invalid = fixture();
-    write_observer(
+    write_client_fixture(
         &invalid,
         "abcdefgh",
         serde_json::json!({
@@ -933,9 +933,9 @@ fn delivery_facts_distinguish_remaining_tokens() {
         }),
     );
     let capture = result("capture_health", &invalid);
-    let stall = result("observer_delivery_stall", &invalid);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    let stall = result("client_delivery_stall", &invalid);
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryComplete);
     assert!(facts.assessed.is_empty());
     assert_eq!(facts.unassessed.len(), 1);
@@ -943,7 +943,7 @@ fn delivery_facts_distinguish_remaining_tokens() {
     assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
 
     let residue = fixture();
-    write_observer(
+    write_client_fixture(
         &residue,
         "abcdefgh",
         serde_json::json!({
@@ -955,9 +955,9 @@ fn delivery_facts_distinguish_remaining_tokens() {
         }),
     );
     let capture = result("capture_health", &residue);
-    let stall = result("observer_delivery_stall", &residue);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    let stall = result("client_delivery_stall", &residue);
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "old");
     assert_eq!(facts.unassessed[0].reason, "awaiting_first_delivery");
@@ -971,15 +971,15 @@ fn delivery_facts_distinguish_remaining_tokens() {
         Some(now_offset(&partial, 1_000)),
     );
     let capture = result("capture_health", &partial);
-    let stall = result("observer_delivery_stall", &partial);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let stall = result("client_delivery_stall", &partial);
+    assert_eq!(capture.client_delivery, stall.client_delivery);
     assert_eq!(
-        capture.observer_delivery.as_ref().expect("facts").registry,
+        capture.client_delivery.as_ref().expect("facts").registry,
         ClientRegistryState::RegistryComplete
     );
 
     let ineligible = fixture();
-    write_observer(
+    write_client_fixture(
         &ineligible,
         "abcdefgh",
         serde_json::json!({
@@ -991,7 +991,7 @@ fn delivery_facts_distinguish_remaining_tokens() {
             "last_segment_received_at": now_offset(&ineligible, 1),
         }),
     );
-    write_observer(
+    write_client_fixture(
         &ineligible,
         "ijklmnop",
         serde_json::json!({
@@ -1005,9 +1005,9 @@ fn delivery_facts_distinguish_remaining_tokens() {
         }),
     );
     let capture = result("capture_health", &ineligible);
-    let stall = result("observer_delivery_stall", &ineligible);
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    let stall = result("client_delivery_stall", &ineligible);
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryEmpty);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
@@ -1017,14 +1017,14 @@ fn delivery_facts_distinguish_remaining_tokens() {
 fn delivery_facts_match_across_checks_with_client_ledger() {
     let c = fixture();
     let now = c.now.timestamp_millis();
-    observer(&c, "residue", now - 1);
+    write_unassessed_client(&c, "residue", now - 1);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
     let capture = result("capture_health", &c);
-    let stall = result("observer_delivery_stall", &c);
+    let stall = result("client_delivery_stall", &c);
     assert_eq!(capture.status, Status::Ok);
     assert_eq!(stall.status, Status::Ok);
-    let capture_facts = serde_json::to_value(&capture.observer_delivery).unwrap();
-    let stall_facts = serde_json::to_value(&stall.observer_delivery).unwrap();
+    let capture_facts = serde_json::to_value(&capture.client_delivery).unwrap();
+    let stall_facts = serde_json::to_value(&stall.client_delivery).unwrap();
     assert_eq!(capture_facts, stall_facts);
     assert_eq!(capture_facts["registry"], "registry_complete");
     assert_eq!(capture_facts["assessed"][0]["name"], "peer");
@@ -1036,14 +1036,14 @@ fn lone_six_hour_gap_is_ok() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     write_device(&c, "abcdefgh", "phone", now - 1_000, Some(now - 21_600_001));
-    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
     assert_eq!(status("capture_health", &c), Status::Warn);
 }
 
 #[test]
 fn rejection_without_last_sent_warns_capture() {
     let alone = fixture();
-    write_observer(
+    write_client_fixture(
         &alone,
         "abcdefgh",
         serde_json::json!({
@@ -1053,22 +1053,22 @@ fn rejection_without_last_sent_warns_capture() {
         }),
     );
     let capture = result("capture_health", &alone);
-    let stall = result("observer_delivery_stall", &alone);
+    let stall = result("client_delivery_stall", &alone);
     assert_eq!(capture.status, Status::Warn);
     assert_ne!(stall.status, Status::Skip);
     assert_eq!(stall.status, Status::Ok);
     assert!(capture.detail.contains("having trouble adding"));
     assert!(!capture.detail.contains("still running"));
     assert!(!capture.detail.contains("asleep"));
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.assessed.len(), 1);
     assert_eq!(facts.assessed[0].name, "rej");
     assert!(facts.unassessed.is_empty());
 
     let with_peer = fixture();
     let now = with_peer.now.timestamp_millis();
-    write_observer(
+    write_client_fixture(
         &with_peer,
         "abcdefgh",
         serde_json::json!({
@@ -1085,7 +1085,7 @@ fn rejection_without_last_sent_warns_capture() {
 fn rejection_with_recent_delivery_warns_capture() {
     let c = fixture();
     let now = c.now.timestamp_millis();
-    write_observer(
+    write_client_fixture(
         &c,
         "abcdefgh",
         serde_json::json!({
@@ -1109,9 +1109,9 @@ fn unreadable_skip_is_not_never_sent() {
         inspection.clone(),
         check("capture_health"),
     );
-    let stall = crate::checks::observer_delivery_stall::result_from_assessment(
+    let stall = crate::checks::client_delivery_stall::result_from_assessment(
         inspection,
-        check("observer_delivery_stall"),
+        check("client_delivery_stall"),
     );
     assert_eq!(capture.status, Status::Skip);
     assert_eq!(stall.status, Status::Skip);
@@ -1120,20 +1120,20 @@ fn unreadable_skip_is_not_never_sent() {
         stall.detail,
         "the solstone app hasn't added anything to your journal yet"
     );
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.registry, ClientRegistryState::RegistryUnknown);
     assert!(facts.assessed.is_empty());
     assert!(facts.unassessed.is_empty());
 }
 
 #[test]
-fn observer_binding_skips_when_authorization_ledger_is_unavailable() {
+fn client_binding_skips_when_authorization_ledger_is_unavailable() {
     let context = fixture();
     let ledger = context.journal_path.join("link/authorized_clients.json");
     fs::create_dir_all(&ledger).unwrap();
 
-    let row = result("observer_binding", &context);
+    let row = result("client_binding", &context);
 
     assert_eq!(row.status, Status::Skip);
     assert_eq!(
@@ -1143,9 +1143,9 @@ fn observer_binding_skips_when_authorization_ledger_is_unavailable() {
 }
 
 #[test]
-fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
+fn client_ingest_health_formats_rejection_date_and_unknown_fallback() {
     let dated = fixture();
-    write_observer(
+    write_client_fixture(
         &dated,
         "abcdefgh",
         serde_json::json!({
@@ -1156,7 +1156,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
             }}
         }),
     );
-    let row = result("observer_ingest_health", &dated);
+    let row = result("client_ingest_health", &dated);
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
@@ -1164,7 +1164,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     );
 
     let unknown = fixture();
-    write_observer(
+    write_client_fixture(
         &unknown,
         "abcdefgh",
         serde_json::json!({
@@ -1174,7 +1174,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
             }}
         }),
     );
-    let row = result("observer_ingest_health", &unknown);
+    let row = result("client_ingest_health", &unknown);
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
@@ -1617,7 +1617,7 @@ fn vad_runtime_ready_accepts_closed_stdin_usage_contract() {
 fn stall_warn_omits_duplicate_and_queue_clauses() {
     let context = fixture();
     let now = context.now.timestamp_millis();
-    write_observer(
+    write_client_fixture(
         &context,
         "abcdefgh",
         serde_json::json!({
@@ -1628,7 +1628,7 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
             "health": {"beacon": {"pending_queue_depth": 4}}
         }),
     );
-    let row = result("observer_delivery_stall", &context);
+    let row = result("client_delivery_stall", &context);
     assert_eq!(row.status, Status::Warn);
     assert!(!row.detail.contains("duplicate"));
     assert!(!row.detail.contains("pending queue"));
@@ -1648,7 +1648,7 @@ fn write_stalled_fleet(context: &CheckContext, name: impl Fn(usize) -> String, s
             Some(now - 41 * 3_600_000),
         );
     }
-    write_observer(
+    write_client_fixture(
         context,
         "residu01",
         serde_json::json!({
@@ -1662,8 +1662,8 @@ fn write_stalled_fleet(context: &CheckContext, name: impl Fn(usize) -> String, s
 }
 
 fn assert_facts_survive_in_json_and_not_text(capture: &CheckResult, stall: &CheckResult) {
-    assert_eq!(capture.observer_delivery, stall.observer_delivery);
-    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(capture.client_delivery, stall.client_delivery);
+    let facts = capture.client_delivery.as_ref().expect("facts");
     assert_eq!(facts.assessed.len(), 4);
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "unseen-residue");
@@ -1685,11 +1685,11 @@ fn assert_facts_survive_in_json_and_not_text(capture: &CheckResult, stall: &Chec
     for row in &facts.assessed {
         assert!(jsonl.contains(&row.name));
     }
-    assert!(jsonl.contains("observer_delivery"));
+    assert!(jsonl.contains("client_delivery"));
     assert!(
         serde_json::to_value(stall)
             .unwrap()
-            .get("observer_delivery")
+            .get("client_delivery")
             .is_some()
     );
     let mut text = Vec::new();
@@ -1715,7 +1715,7 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     let context = fixture();
     write_stalled_fleet(&context, |index| format!("d{index}"), 200_000);
     let capture = result("capture_health", &context);
-    let stall = result("observer_delivery_stall", &context);
+    let stall = result("client_delivery_stall", &context);
     assert_eq!(capture.status, Status::Warn);
     assert_eq!(stall.status, Status::Warn);
     assert!(
@@ -1737,7 +1737,7 @@ fn delivery_facts_survive_400_truncation_with_reach_clause() {
     let long = "x".repeat(66);
     write_stalled_fleet(&context, |index| format!("{long}{index}"), 200_000);
     let capture = result("capture_health", &context);
-    let stall = result("observer_delivery_stall", &context);
+    let stall = result("client_delivery_stall", &context);
     assert_eq!(capture.status, Status::Warn);
     assert_eq!(stall.status, Status::Warn);
     assert!(
@@ -1787,11 +1787,11 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     );
 
     let running_capture = result("capture_health", &running);
-    let running_stall = result("observer_delivery_stall", &running);
+    let running_stall = result("client_delivery_stall", &running);
     let stale_capture = result("capture_health", &stale);
-    let stale_stall = result("observer_delivery_stall", &stale);
+    let stale_stall = result("client_delivery_stall", &stale);
     let asleep_capture = result("capture_health", &asleep);
-    let asleep_stall = result("observer_delivery_stall", &asleep);
+    let asleep_stall = result("client_delivery_stall", &asleep);
 
     assert_eq!(running_capture.status, Status::Warn);
     assert_eq!(running_stall.status, Status::Warn);
@@ -1800,17 +1800,11 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     assert_eq!(asleep_capture.status, Status::Warn);
     assert_eq!(asleep_stall.status, Status::Warn);
     assert_eq!(
-        running_capture.observer_delivery,
-        running_stall.observer_delivery
+        running_capture.client_delivery,
+        running_stall.client_delivery
     );
-    assert_eq!(
-        stale_capture.observer_delivery,
-        stale_stall.observer_delivery
-    );
-    assert_eq!(
-        asleep_capture.observer_delivery,
-        asleep_stall.observer_delivery
-    );
+    assert_eq!(stale_capture.client_delivery, stale_stall.client_delivery);
+    assert_eq!(asleep_capture.client_delivery, asleep_stall.client_delivery);
     assert_eq!(running_capture.fix, stale_capture.fix);
     assert_eq!(running_capture.fix, asleep_capture.fix);
     assert_eq!(running_stall.fix, stale_stall.fix);
@@ -1834,9 +1828,9 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     assert!(running_capture.detail.contains("rollup=attention"));
     assert!(running_capture.detail.contains("phone"));
 
-    let running_facts = serde_json::to_value(&running_capture.observer_delivery).unwrap();
-    let stale_facts = serde_json::to_value(&stale_capture.observer_delivery).unwrap();
-    let asleep_facts = serde_json::to_value(&asleep_capture.observer_delivery).unwrap();
+    let running_facts = serde_json::to_value(&running_capture.client_delivery).unwrap();
+    let stale_facts = serde_json::to_value(&stale_capture.client_delivery).unwrap();
+    let asleep_facts = serde_json::to_value(&asleep_capture.client_delivery).unwrap();
     assert_eq!(running_facts["assessed"][0]["reach"], "active");
     assert_eq!(stale_facts["assessed"][0]["reach"], "stale");
     assert_eq!(asleep_facts["assessed"][0]["reach"], "offline");
@@ -1862,9 +1856,9 @@ fn owner_boundary_guard_is_nonvacuous() {
         ("journal_caught_up", "solstone_core_system_health"),
         ("brain", "solstone_core_brain"),
         ("capture_health", "solstone_core_sol_link"),
-        ("observer_binding", "solstone_core_sol_link"),
-        ("observer_delivery_stall", "solstone_core_sol_link"),
-        ("observer_ingest_health", "solstone_core_sol_link"),
+        ("client_binding", "solstone_core_sol_link"),
+        ("client_delivery_stall", "solstone_core_sol_link"),
+        ("client_ingest_health", "solstone_core_sol_link"),
         ("default_stt_ready", "solstone_core_system"),
         ("parakeet_cpp_stt_ready", "solstone_core_system"),
         ("speakers_analyze_installation", "solstone_core_transcribe"),
@@ -1888,10 +1882,7 @@ fn owner_boundary_guard_is_nonvacuous() {
         .unwrap();
         if matches!(
             module,
-            "capture_health"
-                | "observer_binding"
-                | "observer_delivery_stall"
-                | "observer_ingest_health"
+            "capture_health" | "client_binding" | "client_delivery_stall" | "client_ingest_health"
         ) {
             source.push_str(include_str!("checks/common.rs"));
         }

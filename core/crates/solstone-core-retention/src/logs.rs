@@ -186,17 +186,6 @@ pub const CLASSES: &[Class] = &[
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
     },
-    Class {
-        name: "observer_history",
-        location: Location::Expand {
-            base: "apps/observer/observers",
-            tail: Some("hist"),
-        },
-        extensions: &["jsonl"],
-        dated_by: DatedBy::Stem,
-        entry: EntryKind::File,
-        exempt_stem_suffixes: &[],
-    },
     // 🔴 The row the reference does not have.
     Class {
         name: "pruning_runs",

@@ -557,21 +557,21 @@ h2.card-title {
 }
 
 /* Observations card */
-.observers-card {
+.clients-card {
   border-left: 4px solid #22c55e;
 }
 
-.observers-card.hidden {
+.clients-card.hidden {
   display: none;
 }
 
-.observers-grid {
+.clients-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1em;
 }
 
-.observer-host-card {
+.client-host-card {
   background: #f3f4f6;
   border-radius: 8px;
   padding: 1em;
@@ -582,28 +582,28 @@ h2.card-title {
   border-left: 4px solid transparent;
 }
 
-.observer-host-card.active {
+.client-host-card.active {
   background: #f3f4f6;
   border-left-color: #22c55e;
 }
 
-.observer-host-card.stale {
+.client-host-card.stale {
   background: #fefce8;
   border-left-color: #f59e0b;
 }
 
-.observer-host-name {
+.client-host-name {
   font-size: 0.95em;
   font-weight: 600;
   color: #111827;
 }
 
-.observer-host-platform {
+.client-host-platform {
   font-size: 0.8em;
   color: #6b7280;
 }
 
-.observer-stream-row {
+.client-stream-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -611,12 +611,12 @@ h2.card-title {
   font-size: 0.7em;
 }
 
-.observer-stream-qualifier {
+.client-stream-qualifier {
   color: #6b7280;
   min-width: 48px;
 }
 
-.observer-stream-mode {
+.client-stream-mode {
   color: #374151;
 }
 
@@ -625,31 +625,31 @@ h2.card-title {
   font-size: 0.7em;
 }
 
-.registered-observers-card { border-left: 4px solid #9ca3af; }
-.registered-observers-card.hidden { display: none; }
-.registered-observers-strip { display: flex; flex-direction: column; gap: 0.5em; }
-.registered-observer-row { display: flex; align-items: center; gap: 0.6em; padding: 0.65em 0.75em; background: #f9fafb; border-radius: 8px; }
-.registered-observer-name { font-weight: 600; color: #111827; }
+.registered-clients-card { border-left: 4px solid #9ca3af; }
+.registered-clients-card.hidden { display: none; }
+.registered-clients-strip { display: flex; flex-direction: column; gap: 0.5em; }
+.registered-client-row { display: flex; align-items: center; gap: 0.6em; padding: 0.65em 0.75em; background: #f9fafb; border-radius: 8px; }
+.registered-client-name { font-weight: 600; color: #111827; }
 
-.registered-observer-label,
-.registered-observer-skew {
+.registered-client-label,
+.registered-client-skew {
   font-size: 0.72em;
   border-radius: 999px;
   padding: 0.2em 0.55em;
 }
 
-.registered-observer-label.connected { background: #dcfce7; color: #15803d; }
-.registered-observer-label.stale { background: #fef3c7; color: #b45309; }
-.registered-observer-label.disconnected,
-.registered-observer-label.revoked { background: #e5e7eb; color: #4b5563; }
-.registered-observer-label.failing { background: #fee2e2; color: #b91c1c; }
-.registered-observer-detail { color: #b91c1c; font-size: 0.78em; margin-left: 0.5em; }
-.registered-observer-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; }
+.registered-client-label.connected { background: #dcfce7; color: #15803d; }
+.registered-client-label.stale { background: #fef3c7; color: #b45309; }
+.registered-client-label.disconnected,
+.registered-client-label.revoked { background: #e5e7eb; color: #4b5563; }
+.registered-client-label.failing { background: #fee2e2; color: #b91c1c; }
+.registered-client-detail { color: #b91c1c; font-size: 0.78em; margin-left: 0.5em; }
+.registered-client-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; }
 
-.registered-observer-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; }
-.registered-observer-skew { background: #fef3c7; color: #b45309; }
-.registered-observer-skew.hidden { display: none; }
-.registered-observer-action {
+.registered-client-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; }
+.registered-client-skew { background: #fef3c7; color: #b45309; }
+.registered-client-skew.hidden { display: none; }
+.registered-client-action {
   border: 1px solid #d1d5db;
   border-radius: 4px;
   background: #fff;
@@ -658,15 +658,15 @@ h2.card-title {
   font-size: 0.75em;
   padding: 0.25em 0.55em;
 }
-.registered-observer-action:disabled {
+.registered-client-action:disabled {
   cursor: default;
   opacity: 0.65;
 }
-.registered-observer-result {
+.registered-client-result {
   color: #6b7280;
   font-size: 0.75em;
 }
-.registered-observer-error .surface-state {
+.registered-client-error .surface-state {
   margin: 0;
   padding: 0.4rem 0.5rem;
 }
@@ -1224,7 +1224,7 @@ h2.card-title {
     gap: 0.75em;
   }
 
-  .observers-grid {
+  .clients-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 
@@ -1331,7 +1331,7 @@ h2.card-title {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .observers-grid {
+  .clients-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1483,7 +1483,7 @@ h2.card-title {
     <div id="observeEmpty">
       <div class="surface-state surface-state--empty">
         <h2 class="surface-state-heading">the solstone app isn't running on any device yet.</h2>
-        <div class="surface-state-action"><a href="/app/observer/">set up a device →</a></div>
+        <div class="surface-state-action"><a href="/app/network/">set up a device →</a></div>
       </div>
     </div>
     <div class="observe-content hidden" id="observeContent">
@@ -1521,20 +1521,20 @@ h2.card-title {
   </div>
 
   <!-- Observations card -->
-  <div class="dashboard-card observers-card hidden" id="observersCard">
+  <div class="dashboard-card clients-card hidden" id="clientsCard">
     <div class="card-header">
       <div class="card-title">
         what's going into your journal
       </div>
     </div>
-    <div class="observers-grid" id="observersGrid"></div>
+    <div class="clients-grid" id="clientsGrid"></div>
   </div>
 
-  <div class="dashboard-card registered-observers-card hidden" id="registeredObserversCard">
+  <div class="dashboard-card registered-clients-card hidden" id="registeredClientsCard">
     <div class="card-header">
       <div class="card-title">your devices</div>
     </div>
-    <div class="registered-observers-strip" id="registeredObserversStrip"></div>
+    <div class="registered-clients-strip" id="registeredClientsStrip"></div>
   </div>
 
   <section class="backlog-needs-hand" id="backlogNeedsHand" data-backlog-stuck-rows hidden>

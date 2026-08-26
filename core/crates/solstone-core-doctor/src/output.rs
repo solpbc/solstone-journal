@@ -80,10 +80,10 @@ pub fn emit_jsonl_to(
             Status::Skip => "skipped",
         };
         let mut event = json!({"event":"check.completed","ts":now(),"name":r.name,"severity":r.severity,"status":status,"detail":r.detail,"fix":r.fix.clone().unwrap_or_default(),"execution_error":r.execution_error});
-        if let Some(facts) = &r.observer_delivery {
+        if let Some(facts) = &r.client_delivery {
             event.as_object_mut().expect("object").insert(
-                "observer_delivery".to_owned(),
-                serde_json::to_value(facts).expect("observer delivery facts serialize"),
+                "client_delivery".to_owned(),
+                serde_json::to_value(facts).expect("client delivery facts serialize"),
             );
         }
         let _ = writeln!(writer, "{event}");
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn emit_text_to_bytes_match_former_println_lines() {
         let check = Check {
-            name: "observer_delivery_stall",
+            name: "client_delivery_stall",
             severity: Severity::Advisory,
             platforms: &[Platform::Linux],
         };
@@ -140,7 +140,7 @@ mod tests {
         }
 
         let check = Check {
-            name: "observer_delivery_stall",
+            name: "client_delivery_stall",
             severity: Severity::Advisory,
             platforms: &[Platform::Linux],
         };

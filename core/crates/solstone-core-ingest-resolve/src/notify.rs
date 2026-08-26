@@ -8,7 +8,6 @@ use serde_json::{Map, Value};
 /// Ingest notice assembled by the wire layer after a successful apply.
 pub struct IngestNotice<'a> {
     pub cid: &'a str,
-    pub observer: Option<&'a str>,
     pub source: &'a str,
     pub day: &'a str,
     pub stream: &'a str,
@@ -18,7 +17,7 @@ pub struct IngestNotice<'a> {
 }
 
 /// Post-durability bus seam. A notify failure must never roll back or
-/// invalidate already-durable journal writes (event, advance, stamp). The
+/// invalidate already-durable journal writes (event and stream advance). The
 /// caller surfaces a non-ok HTTP response when notify fails; on-disk state
 /// is unaffected.
 pub trait IngestNotifier: Send + Sync {
