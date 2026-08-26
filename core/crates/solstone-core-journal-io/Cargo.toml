@@ -46,3 +46,10 @@ required-features = ["test-hooks"]
 name = "windows_cloud_sync_root_registration"
 path = "tests/windows_cloud_sync_root_registration.rs"
 required-features = ["test-hooks"]
+
+# This external control needs the feature-gated runtime trace API, which automatic test
+# discovery cannot declare as a target requirement.
+[[test]]
+name = "windows_ordinary_owner_inventory"
+path = "tests/windows_ordinary_owner_inventory.rs"
+required-features = ["test-hooks"]
