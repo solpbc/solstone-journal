@@ -5,10 +5,11 @@
 :: First native Windows journal gate. It proves the source-bound MSVC transport
 :: and the portable journal/config substrate only. It builds journal-io,
 :: journal, and journal-config; runs journal-io library and lock-component
-:: tests, journal-config unit tests, and journal library tests. The side-effecting
-:: Cloud Files registration test is separately opt-in. Archive, publication,
-:: locking beyond the named component, Callosum, packaging, install, signing,
-:: smoke, and full NTFS/ReFS evidence remain later gates.
+:: tests, journal-config unit tests, and journal library tests. The ordinary-owner
+:: inventory control is mandatory; Cloud Files registration remains separately opt-in.
+:: ReFS archive traversal runs when its fixture root is configured. Publication,
+:: locking beyond the named component, Callosum, packaging, install, signing, and smoke
+:: remain later gates.
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
@@ -36,9 +37,15 @@ cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
-set "JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=skipped"
-set "JOURNAL_WIN_CI_REFS_WITNESS_ROOT="
-set "JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=unavailable"
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=failed"
+set "JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=unrun/skipped"
+set "JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=not-asserted"
+set "JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=unrun/skipped"
+set "JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=not-asserted"
+set "JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE=unrun/skipped"
+set "JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY=unsupported"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=unrun/skipped"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=not-asserted"
 if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
   echo === cargo test --locked journal-io Cloud Files sync-root registration ===
   cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1
@@ -46,25 +53,21 @@ if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
 ) else (
   echo === Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it ===
 )
-if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT (
-  for /f "tokens=1,* delims=|" %%A in ('powershell -NoProfile -Command "$root = $env:SOLSTONE_JOURNAL_WIN_REFS_ROOT; try { $item = Get-Item -LiteralPath $root -Force -ErrorAction Stop; if (-not $item.PSIsContainer) { exit 2 }; $volume = Get-Volume -FilePath $item.FullName -ErrorAction Stop; [Console]::Write($item.FullName + '|' + $volume.FileSystem) } catch { exit 1 }"') do (
-    set "JOURNAL_WIN_CI_REFS_WITNESS_ROOT=%%A"
-    set "JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%%B"
-  )
-  if not defined JOURNAL_WIN_CI_REFS_WITNESS_ROOT (
-    set "JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=unsupported"
-  ) else if /I not "%JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM%"=="ReFS" (
-    set "JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=unsupported"
-  ) else (
-    echo === cargo test --locked journal-io ReFS witness controls ===
-    cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib real_ntfs_and_refs_controls_skip_without_environment || exit /b 1
-    cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib real_ntfs_and_refs_witness_mutation_controls_skip_without_environment || exit /b 1
-    cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib real_ntfs_and_refs_witness_overflow_controls_skip_without_environment || exit /b 1
-    set "JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=passed"
-  )
-) else (
-  echo === ReFS witness controls not run; set SOLSTONE_JOURNAL_WIN_REFS_ROOT to a ReFS fixture directory ===
-)
+echo === cargo test --locked journal-io ordinary-owner inventory control ===
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_LOG=core\target\journal-win-ci-ordinary-owner-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" 2>&1
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%"
+findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS=%ERRORLEVEL%"
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT set "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS=%ERRORLEVEL%"
+del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
+if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS%"=="0" goto :ordinary_owner_failed
+if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS%"=="0" goto :ordinary_owner_failed
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS%"=="0" goto :ordinary_owner_failed
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed"
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT call :run_refs_matrix || exit /b 1
 echo === cargo test --locked (journal-io library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
 echo === cargo test --locked (journal-io lock component) ===
@@ -85,10 +88,45 @@ call :verify_source_binding || exit /b 1
 echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
-echo JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE=%JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE%
-echo JOURNAL_WIN_CI_REFS_WITNESS_ROOT=%JOURNAL_WIN_CI_REFS_WITNESS_ROOT%
-echo JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM=%JOURNAL_WIN_CI_REFS_WITNESS_FILESYSTEM%
-echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; ReFS witness evidence %JOURNAL_WIN_CI_REFS_WITNESS_EVIDENCE%; archive publication locking beyond the named lock component Callosum packaging install signing smoke and full NTFS native evidence not run ===
+echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT (
+  echo JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=%JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE%
+  echo JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=%JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY%
+  echo JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=%JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE%
+  echo JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=%JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY%
+  echo JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE=%JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE%
+  echo JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY=%JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY%
+  echo JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=%JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE%
+  echo JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=%JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY%
+)
+echo === JOURNAL_WIN_CI_OK: native Windows MSVC build passed for solstone-core-journal-io solstone-core-journal and solstone-core-journal-config; journal-io library and lock-component tests and journal library tests including config_strip_matches_python_control_whitespace and ensure_journal_dir_reports_non_directory_parent passed; ordinary-owner inventory evidence %JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%; Cloud Files sync-root registration evidence %JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%; ReFS enumeration evidence %JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE% capability %JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY%; ReFS revalidation evidence %JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE% capability %JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY%; ReFS claimed-removal evidence %JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE% capability %JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY%; ReFS archive traversal evidence %JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE% capability %JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY%; publication locking beyond the named lock component Callosum packaging install signing and smoke not run ===
+exit /b 0
+
+:ordinary_owner_failed
+set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=failed"
+echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
+echo ERROR: ordinary-owner inventory control did not both exit successfully and emit JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed
+exit /b 1
+
+:run_refs_matrix
+set "JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=executed/pass"
+set "JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=available"
+set "JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=executed/pass"
+set "JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=available"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=executed/refusal"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=unsupported"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TEMP=%TEMP%"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TMP=%TMP%"
+set "TEMP=%SOLSTONE_JOURNAL_WIN_REFS_ROOT%"
+set "TMP=%SOLSTONE_JOURNAL_WIN_REFS_ROOT%"
+echo === cargo test --locked journal-archive ReFS source traversal ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-archive --lib source_freezes_portable_members_and_checked_bytes -- --nocapture
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_STATUS=%ERRORLEVEL%"
+set "TEMP=%JOURNAL_WIN_CI_REFS_ARCHIVE_TEMP%"
+set "TMP=%JOURNAL_WIN_CI_REFS_ARCHIVE_TMP%"
+if not "%JOURNAL_WIN_CI_REFS_ARCHIVE_STATUS%"=="0" exit /b 1
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=executed/pass"
+set "JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=available"
 exit /b 0
 
 :require_journal_test
