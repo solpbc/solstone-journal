@@ -34,7 +34,6 @@ pub struct CheckContext {
     pub now: DateTime<Utc>,
     pub host_arch: String,
     pub hostname: String,
-    pub machine_id: Option<String>,
     /// The repository root, when the doctor is running from a source checkout.
     /// This is what the developer journal is resolved against.
     pub checkout_root: Option<PathBuf>,
@@ -89,7 +88,6 @@ impl CheckContext {
         let hostname = solstone_core_system::lifecycle::sanitize_hostname(
             &std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
         );
-        let machine_id = solstone_core_system::lifecycle::machine_id();
         Ok(Self {
             callosum_socket_path: journal_path.join("health/callosum.sock"),
             home_dir,
@@ -99,7 +97,6 @@ impl CheckContext {
             now: Utc::now(),
             host_arch: env::consts::ARCH.to_owned(),
             hostname,
-            machine_id: (!machine_id.is_empty()).then_some(machine_id),
             checkout_root,
             payload_root,
             port,

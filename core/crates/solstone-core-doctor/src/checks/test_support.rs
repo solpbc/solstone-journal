@@ -56,7 +56,6 @@ pub(crate) fn context() -> StagedContext {
             now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
             host_arch: "x86_64".into(),
             hostname: "test-host".into(),
-            machine_id: Some("test-machine".into()),
             checkout_root: None,
             payload_root: None,
             port: 5015,

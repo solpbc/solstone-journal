@@ -4,6 +4,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
@@ -15,14 +16,15 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
+    let process_source = SystemProcessInstanceSource;
     render_sync_rescan(
         context,
         check,
         describe_sync_rescan(
             &context.journal_path,
             "doctor.check",
-            context.machine_id.as_deref().unwrap_or(""),
             context.now.timestamp() as f64,
+            &process_source,
         ),
     )
 }
@@ -33,22 +35,18 @@ fn render_sync_rescan(
     diagnosis: SyncRescanDiagnosis,
 ) -> RunnerResult {
     match diagnosis {
-        SyncRescanDiagnosis::Conflict(message) => {
+        SyncRescanDiagnosis::Waiting(message) => {
+            Ok(make_result(check, Status::Warn, message, None::<String>))
+        }
+        SyncRescanDiagnosis::HeartbeatNeedsAttention(message)
+        | SyncRescanDiagnosis::AdmissionWaitNeedsAttention(message) => {
             Ok(make_result(check, Status::Fail, message, None::<String>))
         }
         SyncRescanDiagnosis::Unsafe(message) => {
             Ok(make_result(check, Status::Fail, message, None::<String>))
         }
         SyncRescanDiagnosis::Clean(result) => {
-            let prefix = context
-                .machine_id
-                .as_deref()
-                .map(|value| value.chars().take(8).collect::<String>())
-                .unwrap_or_else(|| "(unknown)".into());
-            let clean = format!(
-                "this device only ({}, machine {}...)",
-                context.hostname, prefix
-            );
+            let clean = format!("this device only ({})", context.hostname);
             let detail = result
                 .as_ref()
                 .and_then(|result| result.peer_observations.last())
@@ -88,7 +86,6 @@ mod tests {
             now: Utc::now(),
             host_arch: String::new(),
             hostname: "host".to_owned(),
-            machine_id: Some("12345678abcdef".to_owned()),
             checkout_root: None,
             payload_root: None,
             port: 0,
@@ -110,21 +107,39 @@ mod tests {
     }
 
     #[test]
-    fn rescan_diagnosis_has_clean_conflict_and_unsafe_doctor_branches() {
+    fn rescan_diagnosis_renders_waiting_and_needs_attention_branches() {
         let context = context();
         let clean =
             render_sync_rescan(&context, check(), SyncRescanDiagnosis::Clean(None)).unwrap();
         assert_eq!(clean.status, Status::Ok);
         assert!(clean.detail.starts_with("this device only"));
 
-        let conflict = render_sync_rescan(
+        let heartbeat_needs_attention = render_sync_rescan(
             &context,
             check(),
-            SyncRescanDiagnosis::Conflict("conflict copy".to_owned()),
+            SyncRescanDiagnosis::HeartbeatNeedsAttention("attention copy".to_owned()),
         )
         .unwrap();
-        assert_eq!(conflict.status, Status::Fail);
-        assert_eq!(conflict.detail, "conflict copy");
+        assert_eq!(heartbeat_needs_attention.status, Status::Fail);
+        assert_eq!(heartbeat_needs_attention.detail, "attention copy");
+
+        let waiting = render_sync_rescan(
+            &context,
+            check(),
+            SyncRescanDiagnosis::Waiting("waiting copy".to_owned()),
+        )
+        .unwrap();
+        assert_eq!(waiting.status, Status::Warn);
+        assert_eq!(waiting.detail, "waiting copy");
+
+        let needs_attention = render_sync_rescan(
+            &context,
+            check(),
+            SyncRescanDiagnosis::AdmissionWaitNeedsAttention("attention copy".to_owned()),
+        )
+        .unwrap();
+        assert_eq!(needs_attention.status, Status::Fail);
+        assert_eq!(needs_attention.detail, "attention copy");
 
         let unsafe_entry = render_sync_rescan(
             &context,
