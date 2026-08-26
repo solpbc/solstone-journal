@@ -106,6 +106,21 @@ pub enum SelfHeartbeatRemoval {
     NotCleanError { source: ClaimRemovalError },
 }
 
+/// Failure to remove a retained admission-wait marker through the only safe
+/// identity-bound claim primitive.
+#[derive(Debug, Error)]
+pub enum AdmissionWaitMarkerCleanupError {
+    #[error("admission-wait marker has no retained observation")]
+    MissingObservation,
+    #[error("admission-wait marker was not cleanly removed: {outcome:?}")]
+    Outcome { outcome: ClaimRemovalOutcome },
+    #[error("could not claim and remove admission-wait marker: {source}")]
+    Claim {
+        #[source]
+        source: ClaimRemovalError,
+    },
+}
+
 impl fmt::Display for SelfHeartbeatRemoval {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -205,12 +220,48 @@ pub fn clear_self_heartbeat(
     }
 }
 
+/// Claim-remove a wait marker only when the exact published observation was
+/// retained. Any outcome other than a durably removed marker is a failure.
+pub(crate) fn clear_admission_wait_marker(
+    sync: &FlatDirectory,
+    filename: &str,
+    retained: Option<&FileObservation>,
+) -> Result<(), LifecycleError> {
+    validate_heartbeat_filename(filename)?;
+    let prior = retained.ok_or({
+        LifecycleError::AdmissionWaitMarkerCleanup(
+            AdmissionWaitMarkerCleanupError::MissingObservation,
+        )
+    })?;
+    let claim = next_claim_name()?;
+    admission_wait_marker_cleanup_result(claim_and_remove_observed(
+        sync,
+        OsStr::new(filename),
+        prior,
+        &claim,
+    ))
+}
+
+fn admission_wait_marker_cleanup_result(
+    result: Result<ClaimRemovalOutcome, ClaimRemovalError>,
+) -> Result<(), LifecycleError> {
+    match result {
+        Ok(ClaimRemovalOutcome::Removed) => Ok(()),
+        Ok(outcome) => Err(LifecycleError::AdmissionWaitMarkerCleanup(
+            AdmissionWaitMarkerCleanupError::Outcome { outcome },
+        )),
+        Err(source) => Err(LifecycleError::AdmissionWaitMarkerCleanup(
+            AdmissionWaitMarkerCleanupError::Claim { source },
+        )),
+    }
+}
+
 fn heartbeat_name(filename: &str) -> Result<&OsStr, HeartbeatWriteError> {
     validate_heartbeat_filename(filename).map_err(|_| HeartbeatWriteError::InvalidFilename)?;
     Ok(OsStr::new(filename))
 }
 
-fn validate_heartbeat_filename(filename: &str) -> Result<(), LifecycleError> {
+pub(crate) fn validate_heartbeat_filename(filename: &str) -> Result<(), LifecycleError> {
     let candidate = Path::new(filename);
     if filename.is_empty()
         || filename.starts_with('.')
@@ -223,7 +274,7 @@ fn validate_heartbeat_filename(filename: &str) -> Result<(), LifecycleError> {
     Ok(())
 }
 
-fn next_claim_name() -> Result<ClaimName, LifecycleError> {
+pub(crate) fn next_claim_name() -> Result<ClaimName, LifecycleError> {
     let sequence = SELF_HEARTBEAT_CLAIM_SEQUENCE
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
             value.checked_add(1)
@@ -423,8 +474,12 @@ pub(crate) fn remove_test_supervisor_journal(root: PathBuf) {
 
 #[cfg(test)]
 mod tests {
+    use solstone_core_journal_io::{
+        ClaimDurability, ClaimRemovalOutcome, ClaimUnchangedReason, IdentityChangeDisposition,
+    };
     use tempfile::Builder;
 
+    use super::super::sync::{self, Heartbeat, HeartbeatV2, RunId, WriterId};
     use super::*;
 
     fn temporary() -> tempfile::TempDir {
@@ -478,6 +533,95 @@ mod tests {
             SelfHeartbeatRemoval::Removed
         ));
         assert!(!temporary.path().join("health/sync/self.check").exists());
+    }
+
+    #[test]
+    fn verified_v2_self_cleanup_preserves_a_coexisting_v1_heartbeat() {
+        let temporary = temporary();
+        let sync_directory = bound_sync(temporary.path());
+        let writer_id = WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID");
+        let run_id = RunId::parse("fedcba9876543210fedcba9876543210").expect("run ID");
+        let filename = sync::v2_heartbeat_filename(&writer_id, &run_id);
+        let heartbeat = HeartbeatV2::new(
+            writer_id,
+            run_id,
+            "self".to_owned(),
+            7,
+            "100".to_owned(),
+            "test".to_owned(),
+            15,
+            "/journal".to_owned(),
+        );
+        let observation = write_sync_heartbeat(
+            &sync_directory,
+            &filename,
+            &serde_json::to_vec(&heartbeat).expect("v2 heartbeat JSON"),
+        )
+        .expect("publish and retain v2 heartbeat");
+        let foreign_v1 = Heartbeat {
+            schema: sync::HEARTBEAT_SCHEMA_V1,
+            machine_id: "legacy-machine".to_owned(),
+            hostname: "foreign".to_owned(),
+            pid: 8,
+            wall_time: "100".to_owned(),
+            solstone_version: "test".to_owned(),
+            interval_seconds: 15,
+            journal_path: "/journal".to_owned(),
+        };
+        let foreign_v1_bytes = serde_json::to_vec(&foreign_v1).expect("v1 heartbeat JSON");
+        let foreign_v1_path = temporary.path().join("health/sync/foreign-v1.check");
+        fs::write(&foreign_v1_path, &foreign_v1_bytes).expect("foreign v1 heartbeat");
+
+        assert!(matches!(
+            clear_self_heartbeat(&sync_directory, &filename, Some(&observation))
+                .expect("claim removal"),
+            SelfHeartbeatRemoval::Removed
+        ));
+        assert!(
+            !temporary
+                .path()
+                .join("health/sync")
+                .join(&filename)
+                .exists()
+        );
+        assert_eq!(
+            fs::read(foreign_v1_path).expect("foreign v1 remains"),
+            foreign_v1_bytes
+        );
+    }
+
+    #[test]
+    fn admission_wait_marker_is_retained_then_claim_removed() {
+        let temporary = temporary();
+        let sync = bound_sync(temporary.path());
+        let filename = "solstone-wait-v2-0123456789abcdef0123456789abcdef-fedcba9876543210fedcba9876543210.check";
+        let observation =
+            write_sync_heartbeat(&sync, filename, b"wait marker").expect("publish and retain");
+
+        clear_admission_wait_marker(&sync, filename, Some(&observation)).expect("claim removal");
+        assert!(!temporary.path().join("health/sync").join(filename).exists());
+    }
+
+    #[test]
+    fn every_non_removed_marker_claim_outcome_is_a_visible_failure() {
+        let outcomes = [
+            ClaimRemovalOutcome::RemovedDurabilityUncertain,
+            ClaimRemovalOutcome::Unchanged {
+                reason: ClaimUnchangedReason::ClaimNameOccupied,
+            },
+            ClaimRemovalOutcome::IdentityChanged {
+                disposition: IdentityChangeDisposition::UnknownLocation,
+                durability: ClaimDurability::NotEstablished,
+            },
+        ];
+        for outcome in outcomes {
+            assert!(matches!(
+                admission_wait_marker_cleanup_result(Ok(outcome)),
+                Err(LifecycleError::AdmissionWaitMarkerCleanup(
+                    AdmissionWaitMarkerCleanupError::Outcome { .. }
+                ))
+            ));
+        }
     }
 
     #[cfg(feature = "test-hooks")]

@@ -10,9 +10,10 @@ use std::time::Duration;
 
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// PID together with the native birth token observed for that PID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessInstance {
     pub pid: u32,
     pub birth: ProcessBirth,
@@ -65,6 +66,61 @@ impl PartialEq for ProcessBirth {
 }
 
 impl Eq for ProcessBirth {}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum ProcessBirthWire {
+    Linux {
+        start_ticks: u64,
+        btime: u64,
+        clk_tck: u64,
+    },
+    Macos {
+        epoch_micros: i64,
+    },
+}
+
+impl Serialize for ProcessBirth {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match self.inner {
+            ProcessBirthInner::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+            } => ProcessBirthWire::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+            },
+            ProcessBirthInner::Macos { epoch_micros } => ProcessBirthWire::Macos { epoch_micros },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ProcessBirth {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let inner = match ProcessBirthWire::deserialize(deserializer)? {
+            ProcessBirthWire::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+            } => ProcessBirthInner::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+            },
+            ProcessBirthWire::Macos { epoch_micros } => ProcessBirthInner::Macos { epoch_micros },
+        };
+        Ok(Self { inner })
+    }
+}
 
 impl ProcessBirth {
     pub fn epoch_seconds(&self) -> f64 {
@@ -510,6 +566,22 @@ mod tests {
             ppid: Some(1),
             pgid: Some(7),
         }
+    }
+
+    #[test]
+    fn process_instance_wire_round_trip_preserves_the_birth_token() {
+        let instance = ProcessInstance {
+            pid: 7,
+            birth: ProcessBirth::linux(1234, 1_000, 100),
+        };
+        let decoded: ProcessInstance =
+            serde_json::from_slice(&serde_json::to_vec(&instance).expect("serialize instance"))
+                .expect("deserialize instance");
+        assert_eq!(decoded, instance);
+        assert_eq!(
+            decoded.birth.epoch_seconds(),
+            instance.birth.epoch_seconds()
+        );
     }
 
     #[test]

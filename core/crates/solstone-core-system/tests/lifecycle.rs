@@ -13,16 +13,21 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use solstone_core_journal_io::{FlatDirectory, JournalRoot, create_or_open_flat_directory_bound};
 #[cfg(target_os = "linux")]
 use solstone_core_system::lifecycle::sweep_orphans;
-use solstone_core_system::lifecycle::{
-    Heartbeat, ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle, SyncCheckResult,
-    SyncRescan, append_supervisor_log, compact_log_if_oversized, format_conflict_message,
-    rescan_sync_read_only, sanitize_hostname, shutdown, sync_conflict_event, write_sync_heartbeat,
-};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
-    LifecycleError, OrphanSweepOutcome, is_supervisor_up, readiness_is_valid,
-    recorded_supervisor_pid, wait_ready_with,
+    AdmissionWaitClock, AdmissionWaitTerminalReason, LifecycleError, OrphanSweepOutcome,
+    SupervisorBootAdmission, is_supervisor_up, readiness_is_valid, recorded_supervisor_pid,
+    wait_ready_with,
 };
+use solstone_core_system::lifecycle::{
+    AdmissionWaitMarker, AdmissionWaitReason, FRESH_WINDOW_SECONDS, Heartbeat, HeartbeatV2, RunId,
+    ShutdownDriver, ShutdownPhase, ShutdownRegime, SupervisorLifecycle, SyncCheckResult,
+    SyncRescan, WriterId, admission_wait_marker_filename, append_supervisor_log,
+    compact_log_if_oversized, rescan_sync_read_only, sanitize_hostname, shutdown,
+    sync_conflict_event, v2_heartbeat_filename, write_sync_heartbeat,
+};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use solstone_core_system::process::{ProcessBirth, ProcessInstance, SystemProcessInstanceSource};
 
 const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
 
@@ -106,6 +111,10 @@ fn now_seconds() -> f64 {
         .as_secs_f64()
 }
 
+fn writer_id() -> WriterId {
+    WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID")
+}
+
 fn heartbeat(journal: &std::path::Path, machine_id: &str) -> Heartbeat {
     Heartbeat {
         schema: 1,
@@ -140,11 +149,10 @@ fn bound_sync(journal: &std::path::Path) -> FlatDirectory {
 fn rescan_sync(
     journal: &std::path::Path,
     self_filename: &str,
-    self_machine_id: &str,
     previous: Option<&solstone_core_system::lifecycle::SyncSnapshot>,
     now: f64,
 ) -> Result<SyncCheckResult, solstone_core_system::lifecycle::SyncScanFailure> {
-    match rescan_sync_read_only(journal, self_filename, self_machine_id, previous, now)? {
+    match rescan_sync_read_only(journal, self_filename, previous, now)? {
         SyncRescan::Absent => panic!("sync directory should be present for this fixture"),
         SyncRescan::Complete(result) => Ok(result),
     }
@@ -159,6 +167,32 @@ fn write_fixture_heartbeat(journal: &std::path::Path, filename: &str, body: &[u8
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac6_ac7_singleton_admission_is_real_process_safe() {
+    struct FreshWindowClock {
+        wall_start: f64,
+        calls: u8,
+    }
+
+    impl AdmissionWaitClock for FreshWindowClock {
+        fn wall_seconds(&mut self) -> f64 {
+            self.calls = self.calls.saturating_add(1);
+            if self.calls == 1 {
+                self.wall_start
+            } else {
+                self.wall_start + FRESH_WINDOW_SECONDS + 0.1
+            }
+        }
+
+        fn monotonic_seconds(&mut self) -> f64 {
+            if self.calls <= 1 {
+                0.0
+            } else {
+                FRESH_WINDOW_SECONDS + 0.1
+            }
+        }
+
+        fn sleep_until(&mut self, _: f64) {}
+    }
+
     let bed = Bed::new("singleton");
     let ready = bed.root.join("first-ready");
     let mut first = Command::new(FIXTURE)
@@ -186,7 +220,23 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
     );
     first.kill().expect("kill holder");
     first.wait().expect("reap holder");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("lock released after process exit");
+    let mut clock = FreshWindowClock {
+        wall_start: now_seconds(),
+        calls: 0,
+    };
+    let process_source = SystemProcessInstanceSource;
+    let lifecycle = SupervisorBootAdmission::acquire_with(
+        &bed.root,
+        writer_id(),
+        &mut clock,
+        &process_source,
+        &mut |_| {},
+    )
+    .expect("lock released after the foreign heartbeat freshness window")
+    .activate()
+    .expect("activate lifecycle")
+    .publish_heartbeat()
+    .expect("publish heartbeat");
     assert_eq!(lifecycle.journal(), bed.root);
 }
 
@@ -194,9 +244,9 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
 #[test]
 fn ac7_single_process_lease_lives_with_supervisor_value() {
     let bed = Bed::new("lease-lifetime");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("first boot");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("first boot");
     assert!(matches!(
-        SupervisorLifecycle::boot(&bed.root),
+        SupervisorLifecycle::boot(&bed.root, writer_id()),
         Err(LifecycleError::AlreadyRunning)
     ));
     drop(lifecycle);
@@ -205,23 +255,46 @@ fn ac7_single_process_lease_lives_with_supervisor_value() {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts() {
+    struct ImmediateClock {
+        wall: f64,
+    }
+
+    impl AdmissionWaitClock for ImmediateClock {
+        fn wall_seconds(&mut self) -> f64 {
+            self.wall
+        }
+
+        fn monotonic_seconds(&mut self) -> f64 {
+            0.0
+        }
+
+        fn sleep_until(&mut self, _: f64) {}
+    }
+
     let conflicting = Bed::new("boot-conflict");
     write_fixture_heartbeat(
         &conflicting.root,
         "foreign.check",
         &serde_json::to_vec(&heartbeat(&conflicting.root, "foreign")).expect("json"),
     );
-    let Err(conflict) = SupervisorLifecycle::boot(&conflicting.root) else {
+    let mut clock = ImmediateClock {
+        wall: now_seconds(),
+    };
+    let process_source = SystemProcessInstanceSource;
+    let Err(conflict) = SupervisorBootAdmission::acquire_with(
+        &conflicting.root,
+        writer_id(),
+        &mut clock,
+        &process_source,
+        &mut |_| {},
+    ) else {
         panic!("expected sync conflict");
     };
-    let LifecycleError::SyncConflict(result) = conflict else {
-        panic!("expected sync conflict");
+    let LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ActivityRemains) =
+        conflict
+    else {
+        panic!("expected terminal admission refusal");
     };
-    assert!(format_conflict_message(&result).contains("Refusing to start"));
-    assert_eq!(
-        sync_conflict_event(&result).expect("tick event").hostname,
-        "foreign-host"
-    );
     assert!(recorded_supervisor_pid(&conflicting.root).is_none());
 
     struct Driver;
@@ -252,7 +325,7 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
         }
     }
     let ordinary = Bed::new("ordinary-shutdown");
-    let lifecycle = SupervisorLifecycle::boot(&ordinary.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&ordinary.root, writer_id()).expect("boot");
     assert!(matches!(
         lifecycle.last_orphan_sweep(),
         OrphanSweepOutcome::Completed(report) if report.targeted == 0
@@ -271,7 +344,7 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
     assert!(!heartbeat_path.exists());
 
     let conflict = Bed::new("conflict-shutdown");
-    let lifecycle = SupervisorLifecycle::boot(&conflict.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&conflict.root, writer_id()).expect("boot");
     let heartbeat_path = fs::read_dir(conflict.root.join("health/sync"))
         .expect("sync")
         .next()
@@ -290,7 +363,7 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
 #[test]
 fn ac8_ac17_identity_and_readiness_are_pid_bound() {
     let bed = Bed::new("readiness");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     let mut extra = serde_json::Map::new();
     extra.insert("pid".to_owned(), serde_json::json!(0));
     extra.insert("ready_at".to_owned(), serde_json::json!(0));
@@ -313,7 +386,7 @@ fn ac8_ac17_identity_and_readiness_are_pid_bound() {
 #[test]
 fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
     let bed = Bed::new("identity-rules");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     lifecycle
         .signal_ready(1.0, serde_json::Map::new())
         .expect("ready");
@@ -347,7 +420,7 @@ fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
 #[test]
 fn ac17_wait_ready_uses_injected_clock_and_poll() {
     let bed = Bed::new("wait-ready");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     let ticks = std::cell::Cell::new(0_u64);
     let marker = wait_ready_with(
         &bed.root,
@@ -374,7 +447,7 @@ fn ac17_wait_ready_uses_injected_clock_and_poll() {
 #[test]
 fn ac3_ac8_stale_pid_identity_is_rejected() {
     let bed = Bed::new("stale-pid");
-    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("boot");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
     lifecycle
         .signal_ready(1.0, serde_json::Map::new())
         .expect("ready");
@@ -537,7 +610,7 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
         &serde_json::to_vec(&heartbeat).expect("heartbeat json"),
     );
     let now = now_seconds();
-    let first = rescan_sync(&bed.root, "self.check", "self", None, now).expect("check");
+    let first = rescan_sync(&bed.root, "self.check", None, now).expect("check");
     assert!(first.is_boot_conflict());
     assert!(!first.is_tick_conflict(None));
     assert!(first.is_tick_conflict(Some(&first.snapshot)));
@@ -551,8 +624,8 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
         .expect("self heartbeat json"),
     );
     fs::write(sync.join("broken.check"), b"{").expect("broken heartbeat");
-    let malformed = rescan_sync(&bed.root, "self.check", "self", Some(&first.snapshot), now)
-        .expect("check malformed");
+    let malformed =
+        rescan_sync(&bed.root, "self.check", Some(&first.snapshot), now).expect("check malformed");
     assert!(
         malformed
             .peer_observations
@@ -564,25 +637,268 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
         malformed
             .peer_observations
             .iter()
-            .all(|peer| { peer.source_filename != OsStr::new("same-machine.check") })
+            .any(|peer| peer.source_filename == OsStr::new("same-machine.check"))
     );
     write_fixture_heartbeat(
         &bed.root,
         "self.check",
         &serde_json::to_vec(&heartbeat).expect("filename guard json"),
     );
-    let guarded = rescan_sync(&bed.root, "self.check", "", None, now).expect("guarded");
+    let guarded = rescan_sync(&bed.root, "self.check", None, now).expect("guarded");
     assert!(
         guarded
             .peer_observations
             .iter()
             .all(|peer| { peer.source_filename != OsStr::new("self.check") })
     );
-    let message = format_conflict_message(&first);
     let event = sync_conflict_event(&first).expect("tick event");
-    assert!(message.contains("Refusing to start"));
     assert_eq!(event.machine_id_prefix, "foreign");
     assert_eq!(event.hostname, "foreign-host");
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn gc_collects_only_the_stable_stale_run_from_a_same_writer_crash_loop() {
+    struct TickClock {
+        wall_seconds: f64,
+        monotonic_seconds: f64,
+    }
+
+    impl AdmissionWaitClock for TickClock {
+        fn wall_seconds(&mut self) -> f64 {
+            self.wall_seconds
+        }
+
+        fn monotonic_seconds(&mut self) -> f64 {
+            self.monotonic_seconds
+        }
+
+        fn sleep_until(&mut self, _: f64) {
+            panic!("runtime ticks must not sleep")
+        }
+    }
+
+    fn v2_heartbeat(run_id: &str, wall_time: f64, hostname: &str) -> HeartbeatV2 {
+        HeartbeatV2::new(
+            writer_id(),
+            RunId::parse(run_id).expect("run ID"),
+            hostname.to_owned(),
+            7,
+            wall_time.to_string(),
+            "test".to_owned(),
+            15,
+            "/journal".to_owned(),
+        )
+    }
+
+    let bed = Bed::new("stale-heartbeat-gc-crash-loop");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let now = 100_000.0;
+    let stale = v2_heartbeat(
+        "11111111111111111111111111111111",
+        now - 86_401.0,
+        "stale-run",
+    );
+    let unstable = v2_heartbeat(
+        "22222222222222222222222222222222",
+        now - 86_401.0,
+        "crash-loop-run",
+    );
+    let stale_filename = v2_heartbeat_filename(&stale.writer_id, &stale.run_id);
+    let unstable_filename = v2_heartbeat_filename(&unstable.writer_id, &unstable.run_id);
+    write_fixture_heartbeat(
+        &bed.root,
+        &stale_filename,
+        &serde_json::to_vec(&stale).expect("stale heartbeat"),
+    );
+    write_fixture_heartbeat(
+        &bed.root,
+        &unstable_filename,
+        &serde_json::to_vec(&unstable).expect("unstable heartbeat"),
+    );
+
+    let mut clock = TickClock {
+        wall_seconds: now,
+        monotonic_seconds: 10.0,
+    };
+    assert!(matches!(
+        lifecycle.tick_sync_with(None, &mut clock),
+        solstone_core_system::lifecycle::SyncTickOutcome::Healthy
+    ));
+    let previous = lifecycle
+        .last_completed_sync_result()
+        .expect("first complete tick")
+        .snapshot
+        .clone();
+
+    let unstable_replacement = v2_heartbeat(
+        "22222222222222222222222222222222",
+        now - 86_401.0,
+        "crash-loop-run-replaced",
+    );
+    write_fixture_heartbeat(
+        &bed.root,
+        &unstable_filename,
+        &serde_json::to_vec(&unstable_replacement).expect("replacement heartbeat"),
+    );
+    clock.wall_seconds += 1.0;
+    clock.monotonic_seconds += 1.0;
+    assert!(matches!(
+        lifecycle.tick_sync_with(Some(&previous), &mut clock),
+        solstone_core_system::lifecycle::SyncTickOutcome::Conflict(_)
+    ));
+
+    assert!(!bed.root.join("health/sync").join(&stale_filename).exists());
+    assert!(
+        bed.root
+            .join("health/sync")
+            .join(&unstable_filename)
+            .exists()
+    );
+    assert!(
+        bed.root
+            .join("health/sync")
+            .join(lifecycle.heartbeat_filename())
+            .exists()
+    );
+    let completed = lifecycle
+        .last_completed_sync_result()
+        .expect("second complete tick");
+    assert!(
+        !completed
+            .snapshot
+            .files
+            .contains_key(OsStr::new(&stale_filename))
+    );
+    assert!(
+        completed
+            .snapshot
+            .files
+            .contains_key(OsStr::new(&unstable_filename))
+    );
+    assert!(
+        completed
+            .snapshot
+            .files
+            .contains_key(OsStr::new(lifecycle.heartbeat_filename()))
+    );
+    assert!(
+        completed
+            .peer_observations
+            .iter()
+            .all(|peer| peer.source_filename != OsStr::new(&stale_filename))
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn gc_never_collects_non_v2_or_admission_marker_records() {
+    struct TickClock {
+        wall_seconds: f64,
+        monotonic_seconds: f64,
+    }
+
+    impl AdmissionWaitClock for TickClock {
+        fn wall_seconds(&mut self) -> f64 {
+            self.wall_seconds
+        }
+
+        fn monotonic_seconds(&mut self) -> f64 {
+            self.monotonic_seconds
+        }
+
+        fn sleep_until(&mut self, _: f64) {
+            panic!("runtime ticks must not sleep")
+        }
+    }
+
+    let bed = Bed::new("stale-heartbeat-gc-non-v2");
+    let mut lifecycle = SupervisorLifecycle::boot(&bed.root, writer_id()).expect("boot");
+    let now = 100_000.0;
+    let old_v1 = Heartbeat {
+        schema: 1,
+        machine_id: "legacy".to_owned(),
+        hostname: "legacy".to_owned(),
+        pid: 7,
+        wall_time: (now - 86_401.0).to_string(),
+        solstone_version: "test".to_owned(),
+        interval_seconds: 15,
+        journal_path: "/journal".to_owned(),
+    };
+    let unknown_future = Heartbeat {
+        schema: 3,
+        ..old_v1.clone()
+    };
+    let mismatch_body = HeartbeatV2::new(
+        WriterId::parse("fedcba9876543210fedcba9876543210").expect("other writer ID"),
+        RunId::parse("33333333333333333333333333333333").expect("other run ID"),
+        "mismatch".to_owned(),
+        7,
+        (now - 86_401.0).to_string(),
+        "test".to_owned(),
+        15,
+        "/journal".to_owned(),
+    );
+    let mismatch_filename = v2_heartbeat_filename(
+        &writer_id(),
+        &RunId::parse("44444444444444444444444444444444").expect("filename run ID"),
+    );
+    let marker = AdmissionWaitMarker::new(
+        writer_id(),
+        RunId::parse("55555555555555555555555555555555").expect("marker run ID"),
+        ProcessInstance {
+            pid: 7,
+            birth: ProcessBirth::linux(10, 100, 100),
+        },
+        AdmissionWaitReason::FreshNonSelfHeartbeat,
+    );
+    let marker_filename = admission_wait_marker_filename(&marker.writer_id, &marker.run_id);
+    let fixtures = [
+        (
+            "legacy.check".to_owned(),
+            serde_json::to_vec(&old_v1).expect("legacy heartbeat"),
+        ),
+        (
+            "future.check".to_owned(),
+            serde_json::to_vec(&unknown_future).expect("future heartbeat"),
+        ),
+        (
+            mismatch_filename.clone(),
+            serde_json::to_vec(&mismatch_body).expect("mismatch heartbeat"),
+        ),
+        (
+            marker_filename.clone(),
+            serde_json::to_vec(&marker).expect("wait marker"),
+        ),
+        ("malformed.check".to_owned(), b"{".to_vec()),
+    ];
+    for (filename, body) in &fixtures {
+        write_fixture_heartbeat(&bed.root, filename, body);
+    }
+
+    let mut clock = TickClock {
+        wall_seconds: now,
+        monotonic_seconds: 10.0,
+    };
+    let _ = lifecycle.tick_sync_with(None, &mut clock);
+    let previous = lifecycle
+        .last_completed_sync_result()
+        .expect("first complete tick")
+        .snapshot
+        .clone();
+    clock.wall_seconds += 1.0;
+    clock.monotonic_seconds += 1.0;
+    let _ = lifecycle.tick_sync_with(Some(&previous), &mut clock);
+
+    for (filename, _) in &fixtures {
+        assert!(bed.root.join("health/sync").join(filename).exists());
+    }
+    assert!(
+        bed.root
+            .join("health/sync")
+            .join(lifecycle.heartbeat_filename())
+            .exists()
+    );
 }
 
 #[test]
@@ -602,17 +918,10 @@ fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
     let bed = Bed::new("stale-sync");
     let body = serde_json::to_vec(&heartbeat(&bed.root, "foreign")).expect("json");
     write_fixture_heartbeat(&bed.root, "foreign.check", &body);
-    let current =
-        rescan_sync(&bed.root, "self.check", "self", None, now_seconds()).expect("current");
+    let current = rescan_sync(&bed.root, "self.check", None, now_seconds()).expect("current");
     let stale_now = now_seconds() + 61.0;
-    let stale = rescan_sync(
-        &bed.root,
-        "self.check",
-        "self",
-        Some(&current.snapshot),
-        stale_now,
-    )
-    .expect("stale");
+    let stale =
+        rescan_sync(&bed.root, "self.check", Some(&current.snapshot), stale_now).expect("stale");
     assert_eq!(stale.peer_observations.len(), 1);
     assert!(!stale.peer_observations[0].is_live);
     assert!(!stale.is_boot_conflict());
@@ -622,16 +931,10 @@ fn ac19_ac20_stale_heartbeats_are_history_unless_changed_on_tick() {
         .get_mut(OsStr::new("foreign.check"))
         .expect("file")
         .bytes = b"different".to_vec();
-    let tick = rescan_sync(
-        &bed.root,
-        "self.check",
-        "self",
-        Some(&changed_snapshot),
-        stale_now,
-    )
-    .expect("changed tick");
+    let tick = rescan_sync(&bed.root, "self.check", Some(&changed_snapshot), stale_now)
+        .expect("changed tick");
     assert!(tick.peer_observations[0].is_live);
-    let boot = rescan_sync(&bed.root, "self.check", "self", None, stale_now).expect("boot");
+    let boot = rescan_sync(&bed.root, "self.check", None, stale_now).expect("boot");
     assert!(!boot.peer_observations[0].is_live);
 }
 

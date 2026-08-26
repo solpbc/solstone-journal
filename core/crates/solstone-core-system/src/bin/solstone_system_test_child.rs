@@ -8,7 +8,12 @@ use std::process::Command;
 use std::time::Duration;
 
 use solstone_core_system::lifecycle::SupervisorLifecycle;
+use solstone_core_system::lifecycle::WriterId;
 use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
+
+fn writer_id() -> WriterId {
+    WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID")
+}
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -60,14 +65,15 @@ fn main() {
         "hold-supervisor-lock" => {
             let journal = args.next().expect("journal path");
             let ready_path = args.next().expect("ready path");
-            let _lifecycle = SupervisorLifecycle::boot(&journal).expect("acquire supervisor lock");
+            let _lifecycle =
+                SupervisorLifecycle::boot(&journal, writer_id()).expect("acquire supervisor lock");
             std::fs::write(ready_path, "ready").expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
         }
         "try-supervisor-lock" => {
             let journal = args.next().expect("journal path");
             let result_path = args.next().expect("result path");
-            let value = match SupervisorLifecycle::boot(&journal) {
+            let value = match SupervisorLifecycle::boot(&journal, writer_id()) {
                 Ok(_lifecycle) => "acquired",
                 Err(error) if error.to_string() == "supervisor already running" => {
                     "already-running"

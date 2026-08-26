@@ -4871,6 +4871,7 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "filetime",
+ "getrandom 0.3.4",
  "libc",
  "nix",
  "serde",
@@ -4879,6 +4880,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-format",
+ "solstone-core-installation-identity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
