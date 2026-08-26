@@ -5,11 +5,12 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{archive, fit_report};
+use super::{archive, fit_report, rfdetr_compiled_expectation};
 
 pub const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
 pub const ENGINE_PROVENANCE_REF: &str = "ec73712e";
@@ -34,6 +35,7 @@ const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
 const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
 const MODEL_SIZE: u64 = 63_439_488;
 const SIDECAR: &str = ".rfdetr-install.json";
+const MACOS_DELIVERY_SLOT_ID: &str = "rfdetr-macos-metal-arm64";
 
 #[derive(Debug, Clone, Copy)]
 pub struct EngineSpec {
@@ -41,6 +43,7 @@ pub struct EngineSpec {
     pub tarball_sha256: &'static str,
     pub tarball_size: u64,
     pub binary_sha256: &'static str,
+    pub expected_member_path: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -131,31 +134,62 @@ fn extract_path(journal: &Path, key: &str) -> PathBuf {
     binary_path(journal, key).parent().unwrap().join(".extract")
 }
 
-fn engine_spec(key: &str) -> &'static EngineSpec {
+fn engine_spec(key: &str) -> Result<&'static EngineSpec, RfdetrInstallError> {
     const X64: EngineSpec = EngineSpec {
         filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
         tarball_sha256: RFDETR_ENGINE_LINUX_CPU_X64_TARBALL_SHA256,
         tarball_size: 952_974,
         binary_sha256: RFDETR_ENGINE_LINUX_CPU_X64_BINARY_SHA256,
+        expected_member_path: None,
     };
     const ARM64: EngineSpec = EngineSpec {
         filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
         tarball_sha256: RFDETR_ENGINE_LINUX_CPU_ARM64_TARBALL_SHA256,
         tarball_size: 869_316,
         binary_sha256: RFDETR_ENGINE_LINUX_CPU_ARM64_BINARY_SHA256,
-    };
-    const MACOS: EngineSpec = EngineSpec {
-        filename: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
-        tarball_sha256: RFDETR_ENGINE_MACOS_METAL_ARM64_TARBALL_SHA256,
-        tarball_size: 994_991,
-        binary_sha256: RFDETR_ENGINE_MACOS_METAL_ARM64_BINARY_SHA256,
+        expected_member_path: None,
     };
     match key {
-        "linux-cpu-x64" => &X64,
-        "linux-cpu-arm64" => &ARM64,
-        "macos-metal-arm64" => &MACOS,
+        "linux-cpu-x64" => Ok(&X64),
+        "linux-cpu-arm64" => Ok(&ARM64),
+        "macos-metal-arm64" => macos_engine_spec(),
         _ => unreachable!("only rfdetr_artifact_key outputs reach engine_spec"),
     }
+}
+
+fn build_macos_engine_spec(
+    contract: Option<rfdetr_compiled_expectation::CompiledDeliveryContract>,
+) -> Result<EngineSpec, RfdetrInstallError> {
+    let contract = contract.ok_or_else(|| {
+        RfdetrInstallError::new(
+            "compiled_delivery_contract_missing",
+            "compiled rf-detr delivery contract missing",
+            65,
+        )
+    })?;
+    if contract.slot_id != MACOS_DELIVERY_SLOT_ID {
+        return Err(RfdetrInstallError::new(
+            "compiled_delivery_contract_invalid",
+            format!(
+                "compiled rf-detr delivery contract slot {:?} does not match {:?}",
+                contract.slot_id, MACOS_DELIVERY_SLOT_ID
+            ),
+            65,
+        ));
+    }
+    Ok(EngineSpec {
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        tarball_sha256: contract.archive_sha256,
+        tarball_size: contract.archive_size,
+        binary_sha256: contract.executable_sha256,
+        expected_member_path: Some(contract.executable_member_path),
+    })
+}
+
+fn macos_engine_spec() -> Result<&'static EngineSpec, RfdetrInstallError> {
+    static SPEC: OnceLock<EngineSpec> = OnceLock::new();
+    let spec = build_macos_engine_spec(rfdetr_compiled_expectation::MACOS_DELIVERY_CONTRACT)?;
+    Ok(SPEC.get_or_init(|| spec))
 }
 
 fn model_spec() -> &'static ModelSpec {
@@ -361,7 +395,7 @@ pub fn check_rfdetr_model(
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         return Ok(RfdetrInstallRecord::PlatformUnavailable);
     };
-    check_rfdetr_model_with_rows(journal, key, engine_spec(key), model_spec())
+    check_rfdetr_model_with_rows(journal, key, engine_spec(key)?, model_spec())
 }
 
 fn check_rfdetr_model_with_rows(
@@ -451,7 +485,10 @@ fn install_rfdetr_with_sources(
         log::info!("rf-detr.cpp platform unavailable on {os_name}/{arch}");
         return Ok(record);
     };
-    let (engine, model) = spec_override.unwrap_or((engine_spec(key), model_spec()));
+    let (engine, model) = match spec_override {
+        Some(pair) => pair,
+        None => (engine_spec(key)?, model_spec()),
+    };
     if !force && let Ok(record) = check_rfdetr_model_with_rows(journal, key, engine, model) {
         return Ok(record);
     }
@@ -502,6 +539,7 @@ fn install_rfdetr_with_sources(
                 65,
             )
         })?;
+        require_expected_member_path(&extract, &found, engine.expected_member_path)?;
         verify(&found, engine.binary_sha256, None, BINARY)?;
         #[cfg(unix)]
         {
@@ -549,6 +587,32 @@ fn install_rfdetr_with_sources(
     result
 }
 
+fn require_expected_member_path(
+    extract: &Path,
+    found: &Path,
+    expected: Option<&str>,
+) -> Result<(), RfdetrInstallError> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    let relative = found.strip_prefix(extract).map_err(|error| {
+        RfdetrInstallError::new(
+            "member_path_mismatch",
+            format!("rf-detr binary was outside extraction root: {error}"),
+            65,
+        )
+    })?;
+    let actual = relative.to_string_lossy().replace('\\', "/");
+    if actual == expected {
+        return Ok(());
+    }
+    Err(RfdetrInstallError::new(
+        "member_path_mismatch",
+        format!("rf-detr binary member {actual:?} does not match {expected:?}"),
+        65,
+    ))
+}
+
 fn copy_verified(
     source: &Path,
     destination: &Path,
@@ -582,7 +646,16 @@ mod tests {
     fn digest(bytes: &[u8]) -> &'static str {
         Box::leak(format!("{:x}", Sha256::digest(bytes)).into_boxed_str())
     }
+
     fn fixture(binary: &[u8], model: &[u8]) -> (tempfile::TempDir, EngineSpec, ModelSpec) {
+        fixture_with_member(binary, model, BINARY)
+    }
+
+    fn fixture_with_member(
+        binary: &[u8],
+        model: &[u8],
+        member_path: &str,
+    ) -> (tempfile::TempDir, EngineSpec, ModelSpec) {
         let root = tempfile::tempdir().unwrap();
         let archive_path = root.path().join("fixture.tar.gz");
         let file = fs::File::create(&archive_path).unwrap();
@@ -592,7 +665,9 @@ mod tests {
         header.set_size(binary.len() as u64);
         header.set_mode(0o755);
         header.set_cksum();
-        archive.append_data(&mut header, BINARY, binary).unwrap();
+        archive
+            .append_data(&mut header, member_path, binary)
+            .unwrap();
         archive.into_inner().unwrap().finish().unwrap();
         let archive_bytes = fs::read(&archive_path).unwrap();
         fs::write(root.path().join(MODEL_FILE), model).unwrap();
@@ -603,6 +678,7 @@ mod tests {
                 tarball_sha256: digest(&archive_bytes),
                 tarball_size: archive_bytes.len() as u64,
                 binary_sha256: digest(binary),
+                expected_member_path: None,
             },
             ModelSpec {
                 sha256: digest(model),
@@ -641,7 +717,98 @@ mod tests {
             rfdetr_artifact_key("linux", "aarch64"),
             Some("linux-cpu-arm64")
         );
-        assert_eq!(engine_spec("linux-cpu-x64").tarball_size, 952_974);
+        assert_eq!(
+            engine_spec("linux-cpu-x64")
+                .expect("linux engine spec")
+                .tarball_size,
+            952_974
+        );
+        assert!(
+            engine_spec("linux-cpu-arm64")
+                .expect("linux engine spec")
+                .expected_member_path
+                .is_none()
+        );
+    }
+
+    fn compiled_contract(
+        slot_id: &'static str,
+    ) -> rfdetr_compiled_expectation::CompiledDeliveryContract {
+        rfdetr_compiled_expectation::CompiledDeliveryContract {
+            delivery_contract_sha256: "delivery-contract",
+            slot_id,
+            archive_sha256: "signed-archive",
+            archive_size: 1_234,
+            executable_member_path: "fixture/rfdetr-cli",
+            executable_sha256: "signed-executable",
+        }
+    }
+
+    #[test]
+    fn macos_engine_spec_requires_a_compiled_delivery_contract() {
+        assert_eq!(
+            build_macos_engine_spec(None).unwrap_err().reason_code,
+            "compiled_delivery_contract_missing"
+        );
+        assert_eq!(
+            build_macos_engine_spec(Some(compiled_contract("wrong-slot")))
+                .unwrap_err()
+                .reason_code,
+            "compiled_delivery_contract_invalid"
+        );
+
+        let spec = build_macos_engine_spec(Some(compiled_contract(MACOS_DELIVERY_SLOT_ID)))
+            .expect("valid compiled delivery contract");
+        assert_eq!(
+            spec.filename,
+            "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz"
+        );
+        assert_eq!(spec.tarball_sha256, "signed-archive");
+        assert_eq!(spec.tarball_size, 1_234);
+        assert_eq!(spec.binary_sha256, "signed-executable");
+        assert_eq!(spec.expected_member_path, Some("fixture/rfdetr-cli"));
+    }
+
+    #[test]
+    fn macos_install_fails_closed_without_the_compiled_delivery_contract() {
+        assert!(
+            rfdetr_compiled_expectation::MACOS_DELIVERY_CONTRACT.is_none(),
+            "this unit build must use the build-script contract stub"
+        );
+        let journal = tempfile::tempdir().unwrap();
+        assert_eq!(
+            check_rfdetr_model(journal.path(), "darwin", "arm64")
+                .unwrap_err()
+                .reason_code,
+            "compiled_delivery_contract_missing"
+        );
+        assert_eq!(
+            install_rfdetr(journal.path(), "darwin", "arm64", false)
+                .unwrap_err()
+                .reason_code,
+            "compiled_delivery_contract_missing"
+        );
+    }
+
+    #[test]
+    fn expected_member_path_refuses_a_different_binary_member() {
+        let journal = tempfile::tempdir().unwrap();
+        let (assets, mut engine, model) =
+            fixture_with_member(b"binary", b"model", "wrong/rfdetr-cli");
+        engine.expected_member_path = Some("expected/rfdetr-cli");
+        assert_eq!(
+            install_fixture(journal.path(), assets.path(), &engine, &model, true)
+                .unwrap_err()
+                .reason_code,
+            "member_path_mismatch"
+        );
+
+        engine.expected_member_path = Some("wrong/rfdetr-cli");
+        assert_eq!(
+            install_fixture(journal.path(), assets.path(), &engine, &model, true)
+                .expect("declared member path passes"),
+            RfdetrInstallRecord::Installed
+        );
     }
     #[test]
     fn unsupported_platform_only_writes_a_sidecar_on_install() {

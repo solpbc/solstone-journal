@@ -24,6 +24,7 @@ pub mod metal_candidate;
 pub mod migration;
 pub mod pins;
 pub mod readiness;
+pub(crate) mod rfdetr_compiled_expectation;
 pub mod rfdetr_install;
 pub mod rfdetr_readiness;
 pub mod status;
