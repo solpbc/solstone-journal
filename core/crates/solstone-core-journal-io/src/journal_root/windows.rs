@@ -9,7 +9,8 @@ use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle,
 use std::path::{Component, Path, PathBuf, Prefix};
 
 use windows_sys::Win32::Foundation::{
-    ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT, ERROR_NOT_A_CLOUD_FILE, INVALID_HANDLE_VALUE,
+    ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT, ERROR_INVALID_FUNCTION, ERROR_NOT_A_CLOUD_FILE,
+    INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::CloudFilters::{
     CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
@@ -799,7 +800,8 @@ fn classify_cloud_sync_root_result(root: &Path, result: i32) -> Result<(), Journ
         )),
         result
             if result == hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT)
-                || result == hresult_from_win32(ERROR_NOT_A_CLOUD_FILE) =>
+                || result == hresult_from_win32(ERROR_NOT_A_CLOUD_FILE)
+                || result == hresult_from_win32(ERROR_INVALID_FUNCTION) =>
         {
             Ok(())
         }
@@ -1080,6 +1082,7 @@ mod tests {
                 hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT),
                 Ok(()),
             ),
+            (hresult_from_win32(ERROR_INVALID_FUNCTION), Ok(())),
             (hresult_from_win32(ERROR_NOT_A_CLOUD_FILE), Ok(())),
             (
                 access_denied,
@@ -1169,6 +1172,19 @@ mod tests {
 
         assert!(!accepts_only_not_under_sync_root(not_a_cloud_file));
         assert!(classify_cloud_sync_root_result(root, not_a_cloud_file).is_ok());
+    }
+
+    #[test]
+    fn cloud_file_invalid_function_regression_requires_error_1_admission() {
+        let root = Path::new(r"C:\journal");
+        let invalid_function = hresult_from_win32(ERROR_INVALID_FUNCTION);
+        let accepts_only_legacy_pair = |result| {
+            result == hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT)
+                || result == hresult_from_win32(ERROR_NOT_A_CLOUD_FILE)
+        };
+
+        assert!(!accepts_only_legacy_pair(invalid_function));
+        assert!(classify_cloud_sync_root_result(root, invalid_function).is_ok());
     }
 
     #[test]

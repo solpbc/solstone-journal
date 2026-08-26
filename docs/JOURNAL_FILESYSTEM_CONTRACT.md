@@ -54,12 +54,12 @@ Filesystem admission is a strict `NTFS`/`ReFS` allow-list, and volume admission
 is a strict fixed-drive allow-list; each wildcard refuses rather than admits.
 `NTFS` roots undergo Cloud Files classification; `ReFS` roots are admitted
 without a `CfGetSyncRootInfoByPath` call. For `NTFS`, a registered sync root
-refuses; HRESULTs `ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT` (390) and
-`ERROR_NOT_A_CLOUD_FILE` (376) admit; every other HRESULT refuses as
-unverifiable. `GetDriveTypeW` and `CfGetSyncRootInfoByPath` are
-classification-only queries against the already-validated path spelling, never
-identity reacquisition; identity comes exclusively from `FileIdInfo` on the
-retained handle.
+refuses; HRESULTs `ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT` (390),
+`ERROR_NOT_A_CLOUD_FILE` (376), and `ERROR_INVALID_FUNCTION` (1)
+admit; every other HRESULT refuses as unverifiable. `GetDriveTypeW` and
+`CfGetSyncRootInfoByPath` are classification-only queries against the
+already-validated path spelling, never identity reacquisition; identity comes
+exclusively from `FileIdInfo` on the retained handle.
 
 > **Known Windows gate-1 limitation:** the Win32 surface used here has no
 > descriptor-relative open equivalent to Unix's `openat` + `O_NOFOLLOW` chain,
