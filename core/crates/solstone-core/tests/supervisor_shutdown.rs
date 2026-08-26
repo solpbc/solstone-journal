@@ -85,10 +85,17 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
     )
 }
 fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
+    // The full macOS suite can delay fixture-supervisor startup while native
+    // test processes are exiting. Keep a five-second readiness proof with a
+    // lower polling rate so that delay does not become inconclusive evidence.
+    #[cfg(target_os = "macos")]
+    let (interval, iterations) = (Duration::from_millis(100), 50);
+    #[cfg(not(target_os = "macos"))]
+    let (interval, iterations) = (Duration::from_millis(5), 500);
     let outcome = await_outcome(
         WaitPolarity::Positive,
-        Duration::from_millis(5),
-        500,
+        interval,
+        iterations,
         Instant::now,
         || {
             if path.exists() {

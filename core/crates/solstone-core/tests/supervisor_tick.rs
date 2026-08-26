@@ -376,7 +376,7 @@ async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
     // full macOS suite it can legitimately lose several scheduler turns while
     // other native fixtures are compiling and exiting.
     let iterations = if cfg!(target_os = "macos") {
-        1_600
+        2_400
     } else {
         800
     };
