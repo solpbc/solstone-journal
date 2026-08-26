@@ -50,7 +50,7 @@
       "id": "openapi.convey_clients",
       "path": "docs/openapi/convey-clients.json",
       "role": "openapi_source",
-      "sha256": "87142493f4d7ed195f1cb25c3975af5157682ca18dd577bfe1fc9ba6c6d5ffc1"
+      "sha256": "64da12b94cddc6e819918455155fbebf98ed7224bfbd82b9a565cc1e24c64f19"
     }
   ],
   "observer_protocol_version": 3,
