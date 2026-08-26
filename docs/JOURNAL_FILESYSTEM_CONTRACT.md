@@ -40,11 +40,12 @@ canonical path to reacquire.
 
 ### Windows retained handle and gate-1 admission
 
-Windows gate 1 admits only a journal root and its portable final name. It opens
-the exact requested path with `CreateFileW` using `FILE_FLAG_BACKUP_SEMANTICS |
-FILE_FLAG_OPEN_REPARSE_POINT`. A reparse point at the root or any inspected
-ancestor is refused; unlike Unix, this gate does not admit a leaf symlink or
-junction.
+Windows gate 1 admits only a journal root and its portable final name. Its
+authoritative requested-root open uses `CreateFileW` with
+`FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE` and
+`FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT |
+FILE_FLAG_OVERLAPPED`. A reparse point at the root or any inspected ancestor is
+refused; unlike Unix, this gate does not admit a leaf symlink or junction.
 
 Admission has two passes: an authoritative open captures attributes and
 `FileIdInfo`, then an independent absolute-path walk opens every ancestor and
@@ -73,13 +74,17 @@ exclusively from `FileIdInfo` on the retained handle.
 
 ### Windows retained-handle source operations
 
-Windows source inventory and checked reads retain the admitted root handle and
-never reopen a descendant by the caller's pathname. Each witnessed operation
-first revalidates that root (including NTFS Cloud Files classification by
-retained handle), creates a watch handle by `ReOpenFile` from that retained
-handle, and arms `ReadDirectoryChangesW` with `bWatchSubtree=TRUE` and file-
-and directory-name notifications. The root is revalidated again before the
-result stands.
+Windows source inventory and checked reads retain one admitted root handle.
+Admission opens that handle once with `FILE_READ_ATTRIBUTES |
+FILE_LIST_DIRECTORY | FILE_TRAVERSE` and `FILE_FLAG_BACKUP_SEMANTICS |
+FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OVERLAPPED`, sufficient for every
+post-admission operation. Each witnessed operation first revalidates that root
+(including NTFS Cloud Files classification by retained handle). Root listing,
+the checked-read relative-open parent seed, and the namespace watcher borrow
+that retained handle; no second root handle is opened. The watcher arms
+`ReadDirectoryChangesW` with `bWatchSubtree=TRUE` and file- and
+directory-name notifications. The root is revalidated again before the result
+stands.
 
 The watch is runtime-probed for each admitted NTFS or ReFS root. A completed
 watch, `ERROR_NOTIFY_ENUM_DIR`, a zero-byte synchronous completion, or
@@ -89,14 +94,18 @@ There is no pre/post pathname listing fallback. The root's own identity
 revalidation remains necessary because directory change notifications do not
 report every change to the watched directory object itself.
 
-Recursive Windows inventory uses retained-relative child handles and
-`FileIdExtdDirectoryInfo`; every child is checked as a non-reparse directory or
-regular file and matched to its volume-serial plus 128-bit file identity before
-acceptance. A checked file read verifies every directory in its frozen route
-before reading, then rechecks the leaf metadata, root, and witness before
-returning any bytes. Windows retains the Gate-1 ancestor-swap and
-Cloud-Files-after-ancestor-rename limitation above; this source layer does not
-claim to strengthen it.
+Recursive Windows inventory uses parent-relative child handles through the
+handle-relative `NtCreateFile` route and `FileIdExtdDirectoryInfo`; every child
+is checked as a non-reparse directory or regular file and matched to its
+volume-serial plus 128-bit file identity before acceptance. To list a
+descendant directory, inventory opens the same child name again relative to the
+same verified parent with listing access, then rechecks that second handle's
+identity against the first verification handle before recursing. It never
+reopens an already-open handle or uses a pathname fallback. A checked file read
+verifies every directory in its frozen route before reading, then rechecks the
+leaf metadata, root, and witness before returning any bytes. Windows retains
+the Gate-1 ancestor-swap and Cloud-Files-after-ancestor-rename limitation
+above; this source layer does not claim to strengthen it.
 
 `InventoryBudget` bounds complete source operations: total observed entries
 before portable policy filtering, recursive depth (admitted root is zero), one
