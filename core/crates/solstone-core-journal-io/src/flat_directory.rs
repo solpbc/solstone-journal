@@ -14,9 +14,10 @@ use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, openat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 
-use crate::errors::FlatDirectoryError;
+use crate::errors::{FlatDirectoryError, PathError};
 use crate::journal_root::{JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity};
 use crate::name_admission::{NameAdmissionReason, check_portable_component};
+use crate::paths::create_directory_bound;
 
 const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
@@ -145,104 +146,28 @@ impl FlatDirectory {
         })?;
 
         let mut diagnostic_path = root.canonical_path().to_path_buf();
-        let mut opened: Option<OwnedFd> = None;
+        let mut opened: Option<(OwnedFd, ObjectIdentity)> = None;
 
         for component in components {
             diagnostic_path.push(component);
-            let diagnostic_component = diagnostic_path.clone();
-            let before = {
-                let parent: &dyn AsFd = match &opened {
-                    Some(directory) => directory,
-                    None => root,
-                };
-                match fstatat(parent, component, AtFlags::AT_SYMLINK_NOFOLLOW) {
-                    Ok(stat) => stat,
-                    Err(Errno::ELOOP) => {
-                        return Err(FlatDirectoryError::SymlinkRefused {
-                            path: diagnostic_component,
-                        });
-                    }
-                    Err(error) => {
-                        return Err(errno_error(
-                            "stat flat-directory descendant",
-                            diagnostic_component,
-                            error,
-                        ));
-                    }
-                }
+            let parent: &dyn AsFd = match &opened {
+                Some((directory, _)) => directory,
+                None => root,
             };
-            match kind_from_stat(&before) {
-                JournalEntryKind::Symlink => {
-                    return Err(FlatDirectoryError::SymlinkRefused {
-                        path: diagnostic_component,
-                    });
-                }
-                JournalEntryKind::Directory => {}
-                _ => {
-                    return Err(FlatDirectoryError::NotDirectory {
-                        path: diagnostic_component,
-                    });
-                }
-            }
-            flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeDescendantOpen);
-            let next = {
-                let parent: &dyn AsFd = match &opened {
-                    Some(directory) => directory,
-                    None => root,
-                };
-                match openat(parent, component, DIRECTORY_FLAGS, Mode::empty()) {
-                    Ok(fd) => fd,
-                    Err(Errno::ELOOP) => {
-                        return Err(FlatDirectoryError::SymlinkRefused {
-                            path: diagnostic_path.clone(),
-                        });
-                    }
-                    Err(error) => {
-                        return Err(errno_error(
-                            "open flat-directory descendant",
-                            diagnostic_path.clone(),
-                            error,
-                        ));
-                    }
-                }
-            };
-            let after = fstat(&next).map_err(|error| {
-                errno_error(
-                    "stat opened flat-directory descendant",
-                    diagnostic_path.clone(),
-                    error,
-                )
-            })?;
-            if kind_from_stat(&after) != JournalEntryKind::Directory {
-                return Err(FlatDirectoryError::NotDirectory {
-                    path: diagnostic_path.clone(),
-                });
-            }
-            if identity_from_stat(&before, &diagnostic_component)?
-                != identity_from_stat(&after, &diagnostic_path)?
-            {
-                return Err(FlatDirectoryError::IdentityChanged {
-                    path: diagnostic_path.clone(),
-                });
-            }
+            let next = open_verified_child_directory(parent, component, &diagnostic_path)?
+                .ok_or_else(|| {
+                    errno_error(
+                        "stat flat-directory descendant",
+                        diagnostic_path.clone(),
+                        Errno::ENOENT,
+                    )
+                })?;
             opened = Some(next);
         }
 
-        let directory = opened.expect("nonempty components open one descriptor");
-        let stat = fstat(&directory).map_err(|error| {
-            errno_error(
-                "stat retained flat directory",
-                diagnostic_path.clone(),
-                error,
-            )
-        })?;
-        if kind_from_stat(&stat) != JournalEntryKind::Directory {
-            return Err(FlatDirectoryError::NotDirectory {
-                path: diagnostic_path,
-            });
-        }
+        let (directory, identity) = opened.expect("nonempty components open one descriptor");
         Ok(Self {
-            identity: identity_from_stat(&stat, &diagnostic_path)?,
+            identity,
             directory,
             diagnostic_path,
         })
@@ -282,6 +207,51 @@ impl FlatDirectory {
     pub(crate) fn diagnostic_entry(&self, name: &OsStr) -> PathBuf {
         self.diagnostic_path.join(name)
     }
+}
+
+/// Create or accept one direct portable child directory beneath a bound parent.
+pub fn create_or_open_flat_directory_bound(
+    parent: &impl AsFd,
+    name: &OsStr,
+    mode: u32,
+    diagnostic_parent: &Path,
+) -> Result<FlatDirectory, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    let diagnostic_path = diagnostic_parent.join(name);
+    create_directory_bound(parent, name, mode)
+        .map_err(|error| map_create_directory_error(error, diagnostic_path.clone()))?;
+    let Some((directory, identity)) =
+        open_verified_child_directory(parent, name, &diagnostic_path)?
+    else {
+        return Err(FlatDirectoryError::EnumerationChanged {
+            path: diagnostic_path,
+        });
+    };
+    Ok(FlatDirectory {
+        directory,
+        identity,
+        diagnostic_path,
+    })
+}
+
+/// Open one direct portable child directory beneath a bound parent without creating it.
+pub fn open_flat_directory_bound(
+    parent: &impl AsFd,
+    name: &OsStr,
+    diagnostic_parent: &Path,
+) -> Result<Option<FlatDirectory>, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    let diagnostic_path = diagnostic_parent.join(name);
+    let Some((directory, identity)) =
+        open_verified_child_directory(parent, name, &diagnostic_path)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(FlatDirectory {
+        directory,
+        identity,
+        diagnostic_path,
+    }))
 }
 
 impl AsFd for FlatDirectory {
@@ -338,13 +308,30 @@ pub fn read_observed_file(
     directory: &FlatDirectory,
     name: &OsStr,
 ) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    read_observed_file_bounded(directory, name, usize::MAX)
+}
+
+/// Read one direct regular file while proving stable metadata and enforcing a byte limit.
+pub fn read_observed_file_bounded(
+    directory: &FlatDirectory,
+    name: &OsStr,
+    maximum: usize,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
     validate_portable_name(name)?;
-    read_observed_file_unchecked(directory, name)
+    read_observed_file_unchecked_bounded(directory, name, maximum)
 }
 
 pub(crate) fn read_observed_file_unchecked(
     directory: &FlatDirectory,
     name: &OsStr,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    read_observed_file_unchecked_bounded(directory, name, usize::MAX)
+}
+
+fn read_observed_file_unchecked_bounded(
+    directory: &FlatDirectory,
+    name: &OsStr,
+    maximum: usize,
 ) -> Result<Option<FileObservation>, FlatDirectoryError> {
     directory.revalidate()?;
     let path = directory.diagnostic_entry(name);
@@ -362,6 +349,14 @@ pub(crate) fn read_observed_file_unchecked(
         return Err(FlatDirectoryError::NotRegular { path });
     }
     flat_directory_test_hook(FlatDirectoryTestPrimitive::AfterObservedFileStat);
+    if (entry.size as u128) > (maximum as u128) {
+        return Err(FlatDirectoryError::SizeLimitExceeded {
+            path,
+            kind: entry.kind,
+            size: entry.size,
+            limit: maximum,
+        });
+    }
     let size = usize::try_from(entry.size).map_err(|_| FlatDirectoryError::Io {
         operation: "size observed file buffer",
         path: path.clone(),
@@ -492,6 +487,92 @@ fn map_root_revalidation_error(
             operation: "revalidate journal root",
             path: root,
             source: io::Error::other(reason),
+        },
+    }
+}
+
+fn open_verified_child_directory(
+    parent: &(impl AsFd + ?Sized),
+    name: &OsStr,
+    diagnostic_path: &Path,
+) -> Result<Option<(OwnedFd, ObjectIdentity)>, FlatDirectoryError> {
+    let before = match fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(Errno::ELOOP) => {
+            return Err(FlatDirectoryError::SymlinkRefused {
+                path: diagnostic_path.to_path_buf(),
+            });
+        }
+        Err(error) => {
+            return Err(errno_error(
+                "stat flat-directory descendant",
+                diagnostic_path.to_path_buf(),
+                error,
+            ));
+        }
+    };
+    match kind_from_stat(&before) {
+        JournalEntryKind::Symlink => {
+            return Err(FlatDirectoryError::SymlinkRefused {
+                path: diagnostic_path.to_path_buf(),
+            });
+        }
+        JournalEntryKind::Directory => {}
+        _ => {
+            return Err(FlatDirectoryError::NotDirectory {
+                path: diagnostic_path.to_path_buf(),
+            });
+        }
+    }
+    flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeDescendantOpen);
+    let directory = match openat(parent, name, DIRECTORY_FLAGS, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::ELOOP) => {
+            return Err(FlatDirectoryError::SymlinkRefused {
+                path: diagnostic_path.to_path_buf(),
+            });
+        }
+        Err(error) => {
+            return Err(errno_error(
+                "open flat-directory descendant",
+                diagnostic_path.to_path_buf(),
+                error,
+            ));
+        }
+    };
+    let after = fstat(&directory).map_err(|error| {
+        errno_error(
+            "stat opened flat-directory descendant",
+            diagnostic_path.to_path_buf(),
+            error,
+        )
+    })?;
+    if kind_from_stat(&after) != JournalEntryKind::Directory {
+        return Err(FlatDirectoryError::NotDirectory {
+            path: diagnostic_path.to_path_buf(),
+        });
+    }
+    let identity = identity_from_stat(&before, diagnostic_path)?;
+    if identity != identity_from_stat(&after, diagnostic_path)? {
+        return Err(FlatDirectoryError::IdentityChanged {
+            path: diagnostic_path.to_path_buf(),
+        });
+    }
+    Ok(Some((directory, identity)))
+}
+
+fn map_create_directory_error(error: PathError, path: PathBuf) -> FlatDirectoryError {
+    match error {
+        PathError::Io { source, .. } => FlatDirectoryError::Io {
+            operation: "create flat-directory child",
+            path,
+            source,
+        },
+        error => FlatDirectoryError::Io {
+            operation: "create flat-directory child",
+            path,
+            source: io::Error::new(io::ErrorKind::InvalidInput, error.to_string()),
         },
     }
 }
@@ -654,6 +735,50 @@ mod tests {
     }
 
     #[test]
+    fn bound_child_open_creates_accepts_and_observes_absence_without_creation() {
+        let temporary = TempDir::new();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+
+        assert!(
+            open_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path())
+                .unwrap()
+                .is_none()
+        );
+        assert!(!temporary.path().join("health").exists());
+
+        let health = create_or_open_flat_directory_bound(
+            &root,
+            OsStr::new("health"),
+            0o700,
+            root.canonical_path(),
+        )
+        .unwrap();
+        let accepted = create_or_open_flat_directory_bound(
+            &root,
+            OsStr::new("health"),
+            0o700,
+            root.canonical_path(),
+        )
+        .unwrap();
+        let reopened =
+            open_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path())
+                .unwrap()
+                .expect("created child is openable");
+
+        assert_eq!(health.identity(), accepted.identity());
+        assert_eq!(health.identity(), reopened.identity());
+        assert!(matches!(
+            create_or_open_flat_directory_bound(
+                &root,
+                OsStr::new("health/sync"),
+                0o700,
+                root.canonical_path(),
+            ),
+            Err(FlatDirectoryError::InvalidName { .. })
+        ));
+    }
+
+    #[test]
     fn listing_uses_an_all_or_nothing_overflow_sentinel_at_both_boundaries() {
         let (temporary, _root, flat) = root_and_flat();
         fs::write(temporary.path().join("flat/a"), b"a").unwrap();
@@ -713,6 +838,55 @@ mod tests {
         assert_eq!(
             checked_identifier(7_i32, "read test identity", Path::new("entry")).unwrap(),
             7
+        );
+    }
+
+    #[test]
+    fn bounded_observed_read_enforces_the_post_open_size_limit() {
+        let (temporary, _root, flat) = root_and_flat();
+        let entry = temporary.path().join("flat/record");
+        let exact = vec![b'x'; 16 * 1024];
+        fs::write(&entry, &exact).unwrap();
+        assert_eq!(
+            read_observed_file_bounded(&flat, OsStr::new("record"), exact.len())
+                .unwrap()
+                .expect("exact limit reads")
+                .bytes,
+            exact
+        );
+
+        let over_limit = (16 * 1024) + 1;
+        fs::write(&entry, vec![b'y'; over_limit]).unwrap();
+        assert!(matches!(
+            read_observed_file_bounded(&flat, OsStr::new("record"), 16 * 1024),
+            Err(FlatDirectoryError::SizeLimitExceeded {
+                kind: JournalEntryKind::RegularFile,
+                size,
+                limit: 16_384,
+                ..
+            }) if size == over_limit as u64
+        ));
+
+        fs::write(&entry, b"small").unwrap();
+        let replacement = entry.clone();
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeObservedFileOpen,
+            move || fs::write(replacement, vec![b'z'; over_limit]).unwrap(),
+            || read_observed_file_bounded(&flat, OsStr::new("record"), 16 * 1024),
+        );
+        assert!(fired);
+        assert!(matches!(
+            result,
+            Err(FlatDirectoryError::SizeLimitExceeded {
+                kind: JournalEntryKind::RegularFile,
+                size,
+                limit: 16_384,
+                ..
+            }) if size == over_limit as u64
+        ));
+        assert_eq!(
+            read_observed_file_bounded(&flat, OsStr::new("missing"), 16 * 1024).unwrap(),
+            None
         );
     }
 

@@ -27,9 +27,9 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, ClaimDurability, ClaimName, ClaimRemovalOutcome, ClaimRemovalPrimitive,
     ExistingParentLock, ExistingParentLockError, FlatDirectory, IdentityChangeDisposition,
     JournalRoot, LeaseOptions, LockError, LockOptions, StagedDirOptions,
-    acquire_existing_parent_lock, acquire_file_lease, atomic_replace, claim_and_remove_observed,
-    hold_lock, publish_staged_dir, read_observed_file, run_with_claim_removal_barrier,
-    run_with_two_claim_removal_barriers,
+    acquire_existing_parent_lock, acquire_file_lease, atomic_replace, atomic_replace_bound,
+    claim_and_remove_observed, hold_lock, publish_staged_dir, read_observed_file,
+    run_with_claim_removal_barrier, run_with_two_claim_removal_barriers,
 };
 
 #[test]
@@ -74,6 +74,55 @@ fn atomic_replace_survives_kill_at_every_boundary() {
             contents == b"old-content" || contents == b"new-content",
             "{step}"
         );
+    }
+}
+
+#[test]
+fn bound_atomic_pause_helper() {
+    let Some(parent) = std::env::var_os("JOURNAL_IO_BOUND_PAUSE_PARENT") else {
+        return;
+    };
+    let root = JournalRoot::open(Path::new(&parent)).unwrap();
+    let directory = FlatDirectory::open(&root, Path::new("bound")).unwrap();
+    atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600).unwrap();
+}
+
+fn wait_for_pause_marker(marker: &Path, step: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if fs::read(marker).ok().as_deref() == Some(step.as_bytes()) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("bound publication did not pause at {step}");
+}
+
+#[test]
+fn bound_atomic_replace_subprocess_kill_leaves_only_safe_states() {
+    for (step, expected) in [("temp-create", b"old".as_slice()), ("rename", b"new")] {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let parent = temporary.path().join("bound");
+        let target = parent.join("unit.service");
+        let marker = temporary.path().join("pause-marker");
+        fs::create_dir(&parent).unwrap();
+        fs::write(&target, b"old").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "bound_atomic_pause_helper", "--nocapture"])
+            .env("JOURNAL_IO_BOUND_PAUSE_PARENT", temporary.path())
+            .env("JOURNAL_IO_TEST_PAUSE_AT", step)
+            .env("JOURNAL_IO_TEST_MARKER", &marker)
+            .spawn()
+            .unwrap();
+        wait_for_pause_marker(&marker, step);
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), expected);
+        assert!(fs::read_dir(&parent).unwrap().all(|entry| {
+            let name = entry.unwrap().file_name();
+            name == OsStr::new("unit.service") || name.as_encoded_bytes().starts_with(b".tmp_")
+        }));
     }
 }
 

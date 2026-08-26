@@ -24,6 +24,166 @@ use crate::errors::AtomicWriteError;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// Ordered checkpoints used by bound-publication fault and pause tests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundPublicationPrimitive {
+    /// The exclusive stage-file creation.
+    TempCreate,
+    /// Writing the replacement bytes into the stage file.
+    Write,
+    /// Syncing the completed stage file.
+    FileSync,
+    /// Renaming the stage into the destination name.
+    Rename,
+    /// Syncing the bound parent directory after publication.
+    ParentSync,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct BoundPublicationTraceState {
+    attempted: Vec<BoundPublicationPrimitive>,
+    fault: Option<BoundPublicationFault>,
+    fault_consumed: bool,
+    barriers: Vec<BoundPublicationBarrier>,
+    barriers_fired: usize,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct BoundPublicationFault {
+    primitive: BoundPublicationPrimitive,
+    ordinal: usize,
+    error: Errno,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct BoundPublicationBarrier {
+    primitive: BoundPublicationPrimitive,
+    ordinal: usize,
+    callback: Box<dyn FnOnce()>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static BOUND_PUBLICATION_TRACE: std::cell::RefCell<Option<BoundPublicationTraceState>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+/// Run `op` with one injected errno at an ordinal bound-publication checkpoint.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_bound_publication_fault<T>(
+    primitive: BoundPublicationPrimitive,
+    ordinal: usize,
+    raw_errno: i32,
+    op: impl FnOnce() -> T,
+) -> (T, bool) {
+    BOUND_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundPublicationTraceState {
+            attempted: Vec::new(),
+            fault: Some(BoundPublicationFault {
+                primitive,
+                ordinal,
+                error: Errno::from_raw(raw_errno),
+            }),
+            fault_consumed: false,
+            barriers: Vec::new(),
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound publication trace remains active")
+    });
+    (result, state.fault_consumed)
+}
+
+/// Run `op` with one deterministic bound-publication barrier callback.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_bound_publication_barrier<T>(
+    primitive: BoundPublicationPrimitive,
+    ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, bool) {
+    BOUND_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundPublicationTraceState {
+            attempted: Vec::new(),
+            fault: None,
+            fault_consumed: false,
+            barriers: vec![BoundPublicationBarrier {
+                primitive,
+                ordinal,
+                callback: Box::new(callback),
+            }],
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound publication trace remains active")
+    });
+    (result, state.barriers_fired == 1)
+}
+
+/// Run `op` with two deterministic bound-publication barrier callbacks.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_two_bound_publication_barriers<T>(
+    first_primitive: BoundPublicationPrimitive,
+    first_ordinal: usize,
+    first_callback: impl FnOnce() + 'static,
+    second_primitive: BoundPublicationPrimitive,
+    second_ordinal: usize,
+    second_callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, usize) {
+    BOUND_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundPublicationTraceState {
+            attempted: Vec::new(),
+            fault: None,
+            fault_consumed: false,
+            barriers: vec![
+                BoundPublicationBarrier {
+                    primitive: first_primitive,
+                    ordinal: first_ordinal,
+                    callback: Box::new(first_callback),
+                },
+                BoundPublicationBarrier {
+                    primitive: second_primitive,
+                    ordinal: second_ordinal,
+                    callback: Box::new(second_callback),
+                },
+            ],
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound publication trace remains active")
+    });
+    (result, state.barriers_fired)
+}
+
 /// Successful publication states returned by [`atomic_replace_detailed`].
 #[derive(Debug)]
 pub enum DetailedAtomicOutcome {
@@ -351,11 +511,18 @@ fn publish_into_bound_directory(
 ) -> Result<Option<io::Error>, DetailedAtomicError> {
     let path = Path::new(name);
     inspect_destination(directory, name, path)?;
+    checkpoint(BoundPublicationPrimitive::TempCreate)
+        .map_err(|source| detailed_error(path, "create stage", source))?;
     let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, path)?;
+    pause_at("temp-create");
     let operation = (|| -> io::Result<()> {
+        checkpoint(BoundPublicationPrimitive::Write)?;
         stage_file.write_all(contents)?;
+        pause_at("write");
         stage_file.set_permissions(fs::Permissions::from_mode(mode))?;
+        checkpoint(BoundPublicationPrimitive::FileSync)?;
         sync_file(&stage_file)?;
+        pause_at("fsync-file");
         Ok(())
     })();
     drop(stage_file);
@@ -368,6 +535,10 @@ fn publish_into_bound_directory(
             source,
         ));
     }
+    pause_at("close");
+    checkpoint(BoundPublicationPrimitive::Rename).map_err(|source| {
+        cleanup_stage_error(directory, path, stage_name.clone(), "publish stage", source)
+    })?;
     renameat(directory, stage_name.as_os_str(), directory, name).map_err(|source| {
         cleanup_stage_error(
             directory,
@@ -377,9 +548,15 @@ fn publish_into_bound_directory(
             errno_io(source),
         )
     })?;
-    Ok(fsync(directory)
+    pause_at("rename");
+    if let Err(source) = checkpoint(BoundPublicationPrimitive::ParentSync) {
+        return Ok(Some(source));
+    }
+    let sync_error = fsync(directory)
         .err()
-        .map(|error| io::Error::from_raw_os_error(error as i32)))
+        .map(|error| io::Error::from_raw_os_error(error as i32));
+    pause_at("fsync-bound-parent-dir");
+    Ok(sync_error)
 }
 
 /// Atomically replace `path` with durably prepared `contents`.
@@ -851,9 +1028,62 @@ fn pause_at(step: &str) {
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn pause_at(_step: &str) {}
 
+#[cfg(any(test, feature = "test-hooks"))]
+fn checkpoint(primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
+    let (fault, barrier) = BOUND_PUBLICATION_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return (None, None);
+        };
+        state.attempted.push(primitive);
+        let ordinal = state
+            .attempted
+            .iter()
+            .filter(|candidate| **candidate == primitive)
+            .count();
+        let inject = state
+            .fault
+            .as_ref()
+            .is_some_and(|fault| fault.primitive == primitive && fault.ordinal == ordinal);
+        if inject {
+            let fault = state.fault.take().expect("matching fault is present");
+            state.fault_consumed = true;
+            (Some(fault.error), None)
+        } else {
+            let barrier = state
+                .barriers
+                .iter()
+                .position(|barrier| barrier.primitive == primitive && barrier.ordinal == ordinal);
+            if let Some(index) = barrier {
+                let barrier = state.barriers.remove(index);
+                state.barriers_fired += 1;
+                (None, Some(barrier.callback))
+            } else {
+                (None, None)
+            }
+        }
+    });
+    if let Some(error) = fault {
+        return Err(io::Error::from_raw_os_error(error as i32));
+    }
+    if let Some(callback) = barrier {
+        callback();
+    }
+    Ok(())
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn checkpoint(_primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::process::Command;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -1206,6 +1436,86 @@ mod tests {
         assert_eq!(
             fs::read(temporary.path().join("record.bin")).unwrap(),
             b"payload"
+        );
+    }
+
+    #[test]
+    fn bound_publication_faults_preserve_or_report_publication_state() {
+        for primitive in [
+            BoundPublicationPrimitive::TempCreate,
+            BoundPublicationPrimitive::Write,
+            BoundPublicationPrimitive::FileSync,
+            BoundPublicationPrimitive::Rename,
+            BoundPublicationPrimitive::ParentSync,
+        ] {
+            let temporary = TempDir::new();
+            let target = temporary.path().join("unit.service");
+            fs::write(&target, b"old").unwrap();
+            let directory = open_directory(temporary.path());
+
+            let (result, fault_consumed) =
+                run_with_bound_publication_fault(primitive, 1, Errno::EIO as i32, || {
+                    atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600)
+                });
+
+            assert!(fault_consumed, "{primitive:?} fault was not consumed");
+            match primitive {
+                BoundPublicationPrimitive::ParentSync => {
+                    assert!(matches!(
+                        result,
+                        Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { ref source })
+                            if source.raw_os_error() == Some(Errno::EIO as i32)
+                    ));
+                    assert_eq!(fs::read(&target).unwrap(), b"new");
+                }
+                _ => {
+                    assert!(result.is_err(), "{primitive:?} unexpectedly published");
+                    assert_eq!(fs::read(&target).unwrap(), b"old");
+                }
+            }
+            assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+                let name = entry.unwrap().file_name();
+                name == OsStr::new("unit.service")
+            }));
+        }
+    }
+
+    #[test]
+    fn bound_publication_barriers_fire_in_checkpoint_order() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let first = Arc::clone(&observed);
+        let second = Arc::clone(&observed);
+
+        let (result, barriers_fired) = run_with_two_bound_publication_barriers(
+            BoundPublicationPrimitive::TempCreate,
+            1,
+            move || {
+                first
+                    .lock()
+                    .unwrap()
+                    .push(BoundPublicationPrimitive::TempCreate)
+            },
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            move || {
+                second
+                    .lock()
+                    .unwrap()
+                    .push(BoundPublicationPrimitive::ParentSync)
+            },
+            || atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600),
+        );
+
+        assert!(matches!(result, Ok(BoundAtomicOutcome::Published)));
+        assert_eq!(barriers_fired, 2);
+        assert_eq!(
+            observed.lock().unwrap().as_slice(),
+            [
+                BoundPublicationPrimitive::TempCreate,
+                BoundPublicationPrimitive::ParentSync,
+            ]
         );
     }
 }

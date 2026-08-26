@@ -140,6 +140,11 @@ and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `
 Descendant walks remain the caller's (archive inventory).
 `is_day_key` is the single 8-digit day-key predicate.
 
+Bound publication stages use names that cannot be confused with their
+destination's leading visibility convention: an ordinary destination stages as
+`.tmp_<pid>_<sequence>.tmp`, while a dot-prefixed destination stages as
+`_tmp_<pid>_<sequence>.tmp`.
+
 ## Flat-directory capability
 
 `FlatDirectory` is a retained descriptor for one nonempty portable descendant

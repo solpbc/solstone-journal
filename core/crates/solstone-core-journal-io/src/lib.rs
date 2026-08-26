@@ -53,6 +53,11 @@ pub use atomic::{
 };
 #[cfg(unix)]
 pub use atomic::{BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound};
+#[cfg(all(unix, feature = "test-hooks"))]
+pub use atomic::{
+    BoundPublicationPrimitive, run_with_bound_publication_barrier,
+    run_with_bound_publication_fault, run_with_two_bound_publication_barriers,
+};
 #[cfg(unix)]
 pub use claim_remove::claim_and_remove_observed;
 #[cfg(all(unix, feature = "test-hooks"))]
@@ -74,8 +79,9 @@ pub use errors::{
 };
 #[cfg(unix)]
 pub use flat_directory::{
-    FileObservation, FlatDirectory, FlatDirectoryEntry, NativeMtime, list_flat_directory,
-    read_observed_file,
+    FileObservation, FlatDirectory, FlatDirectoryEntry, NativeMtime,
+    create_or_open_flat_directory_bound, list_flat_directory, open_flat_directory_bound,
+    read_observed_file, read_observed_file_bounded,
 };
 #[cfg(unix)]
 pub use health_marker::{

@@ -183,6 +183,9 @@ fn acquire_lock_in_parent(
             Ok(guard) => {
                 run_race_hook(AFTER_LOCK_FLOCK);
                 verify_final_lock_entry(parent_fd, name, &guard, existing, path)?;
+                if timeout.is_zero() {
+                    return Ok(guard);
+                }
                 if Instant::now() >= deadline {
                     drop(guard);
                     return Err(timeout_error(path, timeout));
@@ -847,19 +850,50 @@ mod tests {
     }
 
     #[test]
-    fn existing_parent_lock_matching_identity_yields_timeout_at_expiry() {
+    fn existing_parent_lock_matching_identity_succeeds_at_zero_timeout() {
         let temporary = TempDir::new();
         let parent = temporary.path().join("locks");
         fs::create_dir(&parent).unwrap();
         let entry = parent.join("lock");
         fs::write(&entry, b"lock").unwrap();
         fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
-        let error = acquire(&parent, OsStr::new("lock"), Duration::ZERO).unwrap_err();
+        let _lock = acquire(&parent, OsStr::new("lock"), Duration::ZERO).unwrap();
+    }
+
+    #[test]
+    fn existing_parent_lock_contended_at_zero_timeout_does_not_poll() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let parent_fd = nix::fcntl::openat(
+            nix::fcntl::AT_FDCWD,
+            &parent,
+            super::PARENT_OPEN_FLAGS,
+            nix::sys::stat::Mode::empty(),
+        )
+        .unwrap();
+        let _held = acquire_existing_parent_lock_bound(
+            &parent_fd,
+            OsStr::new("lock"),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+
+        let started = Instant::now();
+        let error = acquire_existing_parent_lock_bound(
+            &parent_fd,
+            OsStr::new("lock"),
+            Duration::ZERO,
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
         assert!(matches!(
             error,
             ExistingParentLockError::Timeout(LockTimeout { timeout, .. })
                 if timeout == Duration::ZERO
         ));
+        assert!(started.elapsed() < Duration::from_millis(500));
     }
 
     #[cfg(target_os = "linux")]

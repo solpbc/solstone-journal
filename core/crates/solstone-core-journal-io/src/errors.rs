@@ -10,6 +10,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::journal_root::JournalEntryKind;
 use crate::name_admission::{ClaimName, NameAdmissionReason};
 
 /// Raised when a stable sidecar lock is not acquired before the deadline.
@@ -427,6 +428,13 @@ pub enum FlatDirectoryError {
     SymlinkRefused { path: PathBuf },
     /// An entry that must be read as a regular file was another kind.
     NotRegular { path: PathBuf },
+    /// An observed regular file exceeded the caller-supplied byte limit.
+    SizeLimitExceeded {
+        path: PathBuf,
+        kind: JournalEntryKind,
+        size: u64,
+        limit: usize,
+    },
     /// A retained directory or observed entry changed while it was being checked.
     IdentityChanged { path: PathBuf },
     /// A directory entry disappeared while an all-or-nothing listing was built.
@@ -473,6 +481,16 @@ impl fmt::Display for FlatDirectoryError {
                     path.display()
                 )
             }
+            Self::SizeLimitExceeded {
+                path,
+                kind,
+                size,
+                limit,
+            } => write!(
+                formatter,
+                "flat-directory entry exceeds observed-read limit: {} is {kind:?}, {size} bytes exceeds {limit}",
+                path.display()
+            ),
             Self::IdentityChanged { path } => {
                 write!(
                     formatter,
@@ -509,6 +527,7 @@ impl Error for FlatDirectoryError {
             | Self::NotDirectory { .. }
             | Self::SymlinkRefused { .. }
             | Self::NotRegular { .. }
+            | Self::SizeLimitExceeded { .. }
             | Self::IdentityChanged { .. }
             | Self::EnumerationChanged { .. } => None,
         }
