@@ -231,8 +231,6 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         commit: &request.expected.commit,
         lock_sha256: &request.expected.lock_sha256,
     };
-    write_sidecars(&partial, &request.os, &release, &request.basename)
-        .map_err(|error| PromoteError::new(error.to_string()))?;
     if let Some(signing) = &signing {
         fs::write(
             partial.join(format!("{}.signing.json", request.basename)),
@@ -240,6 +238,8 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         )
         .map_err(|error| PromoteError::new(error.to_string()))?;
     }
+    write_sidecars(&partial, &request.os, &release, &request.basename)
+        .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Checksums)?;
     checkpoint(request, PromoteStep::Manifest)?;
 

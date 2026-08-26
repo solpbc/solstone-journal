@@ -140,6 +140,28 @@ pub fn artifact_sidecars(basename: &str) -> [String; 3] {
     ]
 }
 
+/// Members protected by the checksum sidecar. The receipt is a first-class
+/// macOS release fact, so it is covered alongside the containers and release
+/// declaration rather than being an unsigned afterthought.
+#[must_use]
+pub fn checksum_members_for_os(os: &str, basename: &str) -> Vec<String> {
+    let mut names = artifact_archives_for_os(os, basename);
+    names.push(format!("{basename}.release"));
+    if os == OS_MACOS {
+        names.push(format!("{basename}.signing.json"));
+    }
+    names
+}
+
+/// Members protected by the manifest. The manifest never protects itself (or
+/// its eventual minisign signature), but it does bind the checksum sidecar.
+#[must_use]
+pub fn manifest_members_for_os(os: &str, basename: &str) -> Vec<String> {
+    let mut names = checksum_members_for_os(os, basename);
+    names.push(format!("{basename}.sha256"));
+    names
+}
+
 #[must_use]
 pub fn artifact_set(basename: &str) -> [String; 6] {
     let [tar, deb, rpm] = artifact_archives(basename);
