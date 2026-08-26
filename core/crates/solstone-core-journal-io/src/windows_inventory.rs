@@ -9,7 +9,7 @@ use std::fmt;
 use std::io::{self, Read};
 use std::mem::{offset_of, size_of};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
@@ -24,12 +24,12 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED,
-    FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_DIR_NAME,
-    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FILE_TYPE_DISK, FileAttributeTagInfo,
-    FileIdExtdDirectoryInfo, FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    GetFileType, ReOpenFile, ReadDirectoryChangesW, SYNCHRONIZE,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
+    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
+    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdExtdDirectoryInfo, FileIdInfo,
+    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
@@ -46,15 +46,22 @@ const WATCH_BUFFER_DWORDS: usize = WATCH_BUFFER_BYTES / size_of::<u32>();
 /// Native post-admission primitives covered by the Windows inventory test hook.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowsInventoryPrimitive {
-    WatchReopen,
+    BorrowAdmittedRootForListing,
+    BorrowAdmittedRootForRelativeOpen,
+    BorrowAdmittedRootForWatch,
     WatchArm,
     DirectoryList,
     BeforeDescendantOpen,
     DescendantOpen,
+    BeforeDescendantListingOpen,
+    DescendantListingOpen,
+    DescendantListingIdentityRecheck,
     DescendantAttributeTag,
     DescendantFileId,
     DescendantFileType,
     WitnessCheck,
+    WitnessCancelIoEx,
+    WitnessDrainCompleted,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -69,9 +76,7 @@ struct InventoryInjectedFault {
 struct InventoryTraceState {
     attempted: Vec<WindowsInventoryPrimitive>,
     successful: Vec<WindowsInventoryPrimitive>,
-    #[cfg(test)]
     barrier: Option<(WindowsInventoryPrimitive, Box<dyn FnOnce()>)>,
-    #[cfg(test)]
     barrier_fired: bool,
     #[cfg(test)]
     force_namespace_change: bool,
@@ -125,24 +130,19 @@ fn attempt_inventory(primitive: WindowsInventoryPrimitive) -> io::Result<()> {
 
 #[cfg(any(test, feature = "test-hooks"))]
 fn record_inventory_success(primitive: WindowsInventoryPrimitive) {
-    #[cfg(test)]
     let callback = INVENTORY_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let state = trace.as_mut()?;
         state.successful.push(primitive);
         (state.barrier.as_ref().map(|(at, _)| *at) == Some(primitive)).then(|| {
+            #[cfg(test)]
+            {
+                state.force_namespace_change = true;
+            }
             state.barrier_fired = true;
-            state.force_namespace_change = true;
             state.barrier.take().expect("pending inventory barrier").1
         })
     });
-    #[cfg(not(test))]
-    INVENTORY_TRACE.with(|trace| {
-        if let Some(state) = trace.borrow_mut().as_mut() {
-            state.successful.push(primitive);
-        }
-    });
-    #[cfg(test)]
     if let Some(callback) = callback {
         callback();
     }
@@ -201,50 +201,54 @@ pub fn run_with_windows_inventory_fault<T>(
     raw_error: i32,
     operation: impl FnOnce() -> T,
 ) -> (T, bool) {
-    INVENTORY_TRACE.with(|trace| {
-        assert!(
-            trace.borrow().is_none(),
-            "Windows inventory trace is already active"
-        );
-        *trace.borrow_mut() = Some(InventoryTraceState {
-            attempted: Vec::new(),
-            successful: Vec::new(),
-            #[cfg(test)]
-            barrier: None,
-            #[cfg(test)]
-            barrier_fired: false,
-            #[cfg(test)]
-            force_namespace_change: false,
-            fault: Some(InventoryInjectedFault {
-                primitive,
-                ordinal,
-                raw_error,
-            }),
-            fault_consumed: false,
-        });
-    });
-    let guard = InventoryTraceGuard;
-    let result = operation();
-    let consumed = INVENTORY_TRACE.with(|trace| {
-        trace
-            .borrow_mut()
-            .take()
-            .expect("Windows inventory trace remains active")
-            .fault_consumed
-    });
-    drop(guard);
-    (result, consumed)
+    let (result, outcome) = trace_inventory_scenario(
+        None,
+        Some(InventoryInjectedFault {
+            primitive,
+            ordinal,
+            raw_error,
+        }),
+        operation,
+    );
+    (result, outcome.fault_consumed)
 }
 
-#[cfg(test)]
+#[cfg(feature = "test-hooks")]
+#[derive(Debug, Eq, PartialEq)]
+pub struct WindowsInventoryTrace {
+    pub attempted: Vec<WindowsInventoryPrimitive>,
+    pub successful: Vec<WindowsInventoryPrimitive>,
+    pub fault_consumed: bool,
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn run_with_windows_inventory_trace<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, WindowsInventoryTrace) {
+    let (result, outcome) = trace_inventory_scenario(None, None, operation);
+    (
+        result,
+        WindowsInventoryTrace {
+            attempted: outcome.attempted,
+            successful: outcome.successful,
+            fault_consumed: outcome.fault_consumed,
+        },
+    )
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 struct InventoryTraceOutcome {
+    attempted: Vec<WindowsInventoryPrimitive>,
     successful: Vec<WindowsInventoryPrimitive>,
+    #[cfg(test)]
     barrier_fired: bool,
+    fault_consumed: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn trace_inventory_scenario<T>(
     barrier: Option<(WindowsInventoryPrimitive, Box<dyn FnOnce()>)>,
+    fault: Option<InventoryInjectedFault>,
     operation: impl FnOnce() -> T,
 ) -> (T, InventoryTraceOutcome) {
     INVENTORY_TRACE.with(|trace| {
@@ -257,8 +261,9 @@ fn trace_inventory_scenario<T>(
             successful: Vec::new(),
             barrier,
             barrier_fired: false,
+            #[cfg(test)]
             force_namespace_change: false,
-            fault: None,
+            fault,
             fault_consumed: false,
         });
     });
@@ -274,8 +279,11 @@ fn trace_inventory_scenario<T>(
     (
         result,
         InventoryTraceOutcome {
+            attempted: state.attempted,
             successful: state.successful,
+            #[cfg(test)]
             barrier_fired: state.barrier_fired,
+            fault_consumed: state.fault_consumed,
         },
     )
 }
@@ -453,7 +461,10 @@ pub fn enumerate_windows_inventory(
     with_witness(root, |witness| {
         let mut usage = InventoryUsage::new();
         let mut entries = Vec::new();
-        let listed_root = reopen_root_for_listing(root)?;
+        let listed_root = borrow_admitted_root(
+            root,
+            WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
+        )?;
         walk_directory(
             root,
             listed_root.as_raw_handle(),
@@ -471,56 +482,17 @@ pub fn enumerate_windows_inventory(
     })
 }
 
-fn reopen_root_for_listing(root: &JournalRoot) -> Result<OwnedHandle, WindowsInventoryError> {
-    let reopened = traced_inventory(WindowsInventoryPrimitive::DescendantOpen, || {
-        // SAFETY: `root` retains the admitted root and these documented flags request a second read-only directory-list handle for that same object.
-        #[allow(unsafe_code)]
-        let result = unsafe {
-            ReOpenFile(
-                root.as_handle().as_raw_handle(),
-                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_FLAG_BACKUP_SEMANTICS,
-            )
-        };
-        (result != INVALID_HANDLE_VALUE)
-            .then_some(result)
-            .ok_or_else(io::Error::last_os_error)
+fn borrow_admitted_root<'root>(
+    root: &'root JournalRoot,
+    primitive: WindowsInventoryPrimitive,
+) -> Result<BorrowedHandle<'root>, WindowsInventoryError> {
+    traced_inventory(primitive, || Ok(root.as_handle())).map_err(|source| {
+        WindowsInventoryError::Io {
+            operation: "borrow admitted journal root",
+            path: root.canonical_path().to_path_buf(),
+            source,
+        }
     })
-    .map_err(|source| WindowsInventoryError::Io {
-        operation: "reopen retained journal root for listing",
-        path: root.canonical_path().to_path_buf(),
-        source,
-    })?;
-    // SAFETY: `ReOpenFile` returned one owned valid handle and the conversion occurs exactly once.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedHandle::from_raw_handle(reopened) })
-}
-
-fn reopen_root_for_relative_open(root: &JournalRoot) -> Result<OwnedHandle, WindowsInventoryError> {
-    let reopened = traced_inventory(WindowsInventoryPrimitive::DescendantOpen, || {
-        // SAFETY: `root` retains the admitted root and these documented flags request a read-only traversal handle for that same object.
-        #[allow(unsafe_code)]
-        let result = unsafe {
-            ReOpenFile(
-                root.as_handle().as_raw_handle(),
-                FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_FLAG_BACKUP_SEMANTICS,
-            )
-        };
-        (result != INVALID_HANDLE_VALUE)
-            .then_some(result)
-            .ok_or_else(io::Error::last_os_error)
-    })
-    .map_err(|source| WindowsInventoryError::Io {
-        operation: "reopen retained journal root for relative traversal",
-        path: root.canonical_path().to_path_buf(),
-        source,
-    })?;
-    // SAFETY: `ReOpenFile` returned one owned valid handle and the conversion occurs exactly once.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedHandle::from_raw_handle(reopened) })
 }
 
 /// Per-session accounting for checked Windows file reads.
@@ -602,51 +574,34 @@ pub fn read_windows_inventory_file(
     WindowsCheckedReadSession::new(budget).read(root, entry)
 }
 
-fn with_witness<T>(
-    root: &JournalRoot,
-    operation: impl FnOnce(&mut NamespaceWitness) -> Result<T, WindowsInventoryError>,
+fn with_witness<'root, T>(
+    root: &'root JournalRoot,
+    operation: impl FnOnce(&mut NamespaceWitness<'root>) -> Result<T, WindowsInventoryError>,
 ) -> Result<T, WindowsInventoryError> {
     root.revalidate().map_err(WindowsInventoryError::Root)?;
     let mut witness = NamespaceWitness::arm(root)?;
-    let result = operation(&mut witness)?;
-    root.revalidate().map_err(WindowsInventoryError::Root)?;
-    witness.check()?;
-    witness.cancel_and_drain()?;
-    Ok(result)
+    let result = operation(&mut witness).and_then(|value| {
+        root.revalidate().map_err(WindowsInventoryError::Root)?;
+        witness.check()?;
+        Ok(value)
+    });
+    let cleanup = witness.cancel_and_drain();
+    cleanup?;
+    result
 }
 
-struct NamespaceWitness {
-    handle: OwnedHandle,
+struct NamespaceWitness<'root> {
+    handle: BorrowedHandle<'root>,
     buffer: Vec<u32>,
     overlapped: OVERLAPPED,
     armed: bool,
     root: PathBuf,
 }
 
-impl NamespaceWitness {
-    fn arm(root: &JournalRoot) -> Result<Self, WindowsInventoryError> {
-        let handle = traced_inventory(WindowsInventoryPrimitive::WatchReopen, || {
-            // SAFETY: `root` retains the admitted directory handle, and these documented flags only request a new asynchronous directory-list handle for that same object.
-            #[allow(unsafe_code)]
-            let handle = unsafe {
-                ReOpenFile(
-                    root.as_handle().as_raw_handle(),
-                    FILE_LIST_DIRECTORY,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
-                )
-            };
-            (handle != INVALID_HANDLE_VALUE)
-                .then_some(handle)
-                .ok_or_else(io::Error::last_os_error)
-        })
-        .map_err(|source| WindowsInventoryError::Unsupported {
-            operation: "reopen retained journal root for namespace witness",
-            source,
-        })?;
-        // SAFETY: `ReOpenFile` returned one owned, non-invalid handle.
-        #[allow(unsafe_code)]
-        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+impl<'root> NamespaceWitness<'root> {
+    fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
+        let handle =
+            borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
         let mut witness = Self {
             handle,
             buffer: vec![0; WATCH_BUFFER_DWORDS],
@@ -655,7 +610,7 @@ impl NamespaceWitness {
             root: root.canonical_path().to_path_buf(),
         };
         traced_inventory(WindowsInventoryPrimitive::WatchArm, || {
-            // SAFETY: the witness owns the asynchronous directory handle, `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and `OVERLAPPED` remain live until the request drains.
+            // SAFETY: the witness borrows the retained asynchronous directory handle, `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and `OVERLAPPED` remain live until the request drains.
             #[allow(unsafe_code)]
             let result = unsafe {
                 ReadDirectoryChangesW(
@@ -755,44 +710,52 @@ impl NamespaceWitness {
         if !self.armed {
             return Ok(());
         }
-        // SAFETY: the outstanding request uses this exact `OVERLAPPED`, which remains allocated until the drain below completes.
-        #[allow(unsafe_code)]
-        let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
-        if cancelled == 0
-            && io::Error::last_os_error().raw_os_error() != Some(ERROR_NOT_FOUND as i32)
-        {
-            return Err(WindowsInventoryError::Unsupported {
-                operation: "cancel recursive namespace witness",
-                source: io::Error::last_os_error(),
-            });
-        }
-        let mut bytes = 0;
-        // SAFETY: the request was either completed or cancellation was requested above, and both the request's `OVERLAPPED` and output length remain live for this drain.
-        #[allow(unsafe_code)]
-        let drained = unsafe {
-            GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
-        };
-        if drained != 0 {
-            self.armed = false;
-            return Err(WindowsInventoryError::NamespaceChanged {
-                path: self.root.clone(),
-            });
-        }
-        {
-            let source = io::Error::last_os_error();
-            if source.raw_os_error() != Some(ERROR_OPERATION_ABORTED as i32) {
-                return Err(WindowsInventoryError::Unsupported {
-                    operation: "drain recursive namespace witness",
-                    source,
-                });
+        traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
+            // SAFETY: the outstanding request uses this exact `OVERLAPPED`, which remains allocated until the drain below completes.
+            #[allow(unsafe_code)]
+            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
+            if cancelled != 0 {
+                return Ok(());
             }
-        }
+            let source = io::Error::last_os_error();
+            (source.raw_os_error() == Some(ERROR_NOT_FOUND as i32))
+                .then_some(())
+                .ok_or(source)
+        })
+        .map_err(|source| WindowsInventoryError::Unsupported {
+            operation: "cancel recursive namespace witness",
+            source,
+        })?;
+        let mut bytes = 0;
+        let drained = traced_inventory(WindowsInventoryPrimitive::WitnessDrainCompleted, || {
+            // SAFETY: the request was either completed or cancellation was requested above, and both the request's `OVERLAPPED` and output length remain live for this drain.
+            #[allow(unsafe_code)]
+            let drained = unsafe {
+                GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
+            };
+            if drained != 0 {
+                return Ok(Some(bytes));
+            }
+            let source = io::Error::last_os_error();
+            (source.raw_os_error() == Some(ERROR_OPERATION_ABORTED as i32))
+                .then_some(None)
+                .ok_or(source)
+        })
+        .map_err(|source| WindowsInventoryError::Unsupported {
+            operation: "drain recursive namespace witness",
+            source,
+        })?;
         self.armed = false;
-        Ok(())
+        drained
+            .is_none()
+            .then_some(())
+            .ok_or_else(|| WindowsInventoryError::NamespaceChanged {
+                path: self.root.clone(),
+            })
     }
 }
 
-impl Drop for NamespaceWitness {
+impl Drop for NamespaceWitness<'_> {
     fn drop(&mut self) {
         let _ = self.cancel_and_drain();
     }
@@ -841,6 +804,9 @@ fn walk_directory(
             JournalEntryKind::RegularFile
         };
         let metadata = file_metadata(&child, &child_path)?;
+        let listed_child = (kind == JournalEntryKind::Directory)
+            .then(|| open_relative_for_directory_listing(directory, &name, identity, &child_path))
+            .transpose()?;
         let mut child_route = route.clone();
         child_route.push(WindowsRouteComponent {
             name,
@@ -855,12 +821,7 @@ fn walk_directory(
             last_write_time: metadata.last_write_time,
             route: child_route.clone(),
         });
-        if kind == JournalEntryKind::Directory {
-            let listed_child = reopen_directory_for_listing(&child, &child_path)?;
-            let listed_identity = file_id(&listed_child, &child_path)?;
-            if listed_identity != identity {
-                return Err(WindowsInventoryError::IdentityChanged { path: child_path });
-            }
+        if let Some(listed_child) = listed_child {
             walk_directory(
                 root,
                 listed_child.as_raw_handle(),
@@ -1116,33 +1077,58 @@ fn open_relative(
     Ok(unsafe { OwnedHandle::from_raw_handle(handle) })
 }
 
-fn reopen_directory_for_listing(
-    handle: &OwnedHandle,
+fn open_relative_for_directory_listing(
+    parent: std::os::windows::io::RawHandle,
+    name: &OsStr,
+    expected_identity: ObjectIdentity,
     path: &Path,
 ) -> Result<OwnedHandle, WindowsInventoryError> {
-    let reopened = traced_inventory(WindowsInventoryPrimitive::DescendantOpen, || {
-        // SAFETY: `handle` is a retained verified directory and the documented flags request a new read-only directory-list handle for that same object.
-        #[allow(unsafe_code)]
-        let result = unsafe {
-            ReOpenFile(
-                handle.as_raw_handle(),
-                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_FLAG_BACKUP_SEMANTICS,
-            )
-        };
-        (result != INVALID_HANDLE_VALUE)
-            .then_some(result)
-            .ok_or_else(io::Error::last_os_error)
+    inventory_barrier(WindowsInventoryPrimitive::BeforeDescendantListingOpen);
+    let handle = open_relative(
+        parent,
+        name,
+        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+        true,
+        path,
+    )?;
+    let handle = traced_inventory(WindowsInventoryPrimitive::DescendantListingOpen, || {
+        Ok(handle)
     })
     .map_err(|source| WindowsInventoryError::Io {
-        operation: "reopen retained directory for listing",
+        operation: "trace retained relative directory listing open",
         path: path.to_path_buf(),
         source,
     })?;
-    // SAFETY: `ReOpenFile` returned one owned valid handle and the conversion occurs exactly once.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedHandle::from_raw_handle(reopened) })
+    let attributes = attribute_tag(&handle, path)?;
+    require_no_reparse(attributes, path)?;
+    if !is_directory(attributes) {
+        return Err(WindowsInventoryError::NotDirectory {
+            path: path.to_path_buf(),
+        });
+    }
+    let identity = file_id(&handle, path)?;
+    let matches = identity == expected_identity;
+    match traced_inventory(
+        WindowsInventoryPrimitive::DescendantListingIdentityRecheck,
+        || {
+            matches.then_some(()).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "descendant directory identity changed before listing",
+                )
+            })
+        },
+    ) {
+        Ok(()) => Ok(handle),
+        Err(_) if !matches => Err(WindowsInventoryError::IdentityChanged {
+            path: path.to_path_buf(),
+        }),
+        Err(source) => Err(WindowsInventoryError::Io {
+            operation: "reverify retained relative directory identity",
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 fn relative_open_error(path: &Path, source: io::Error) -> WindowsInventoryError {
@@ -1271,7 +1257,12 @@ fn reopen_verified_route(
     entry: &WindowsInventoryEntry,
     leaf_access: u32,
 ) -> Result<OwnedHandle, WindowsInventoryError> {
-    let mut parent = reopen_root_for_relative_open(root)?;
+    let retained_root = borrow_admitted_root(
+        root,
+        WindowsInventoryPrimitive::BorrowAdmittedRootForRelativeOpen,
+    )?;
+    let mut parent = retained_root.as_raw_handle();
+    let mut owned_parent = None;
     for (index, component) in entry.route.iter().enumerate() {
         let leaf = index + 1 == entry.route.len();
         let access = if leaf {
@@ -1279,13 +1270,7 @@ fn reopen_verified_route(
         } else {
             FILE_READ_ATTRIBUTES | FILE_TRAVERSE
         };
-        let handle = open_relative(
-            parent.as_raw_handle(),
-            &component.name,
-            access,
-            false,
-            &entry.relative_path,
-        )?;
+        let handle = open_relative(parent, &component.name, access, false, &entry.relative_path)?;
         let attributes = attribute_tag(&handle, &entry.relative_path)?;
         require_no_reparse(attributes, &entry.relative_path)?;
         let identity = file_id(&handle, &entry.relative_path)?;
@@ -1307,12 +1292,11 @@ fn reopen_verified_route(
                 });
             }
         }
-        parent = handle;
+        parent = handle.as_raw_handle();
+        owned_parent = Some(handle);
     }
-    (!entry.route.is_empty()).then_some(parent).ok_or_else(|| {
-        WindowsInventoryError::IdentityChanged {
-            path: entry.relative_path.clone(),
-        }
+    owned_parent.ok_or_else(|| WindowsInventoryError::IdentityChanged {
+        path: entry.relative_path.clone(),
     })
 }
 
@@ -1474,6 +1458,7 @@ mod tests {
                     WindowsInventoryPrimitive::WatchArm,
                     Box::new(move || mutation(&path)),
                 )),
+                None,
                 || enumerate_windows_inventory(&root, budget()),
             );
             assert!(trace.barrier_fired);
@@ -1529,6 +1514,33 @@ mod tests {
             result,
             Err(WindowsInventoryError::NamespaceChanged { .. })
         ));
+    }
+
+    #[test]
+    fn operation_error_cancels_and_drains_the_witness_before_returning() {
+        let (_temporary, root) = fixture();
+        let (result, trace) = trace_inventory_scenario(
+            None,
+            Some(InventoryInjectedFault {
+                primitive: WindowsInventoryPrimitive::DirectoryList,
+                ordinal: 1,
+                raw_error: 5,
+            }),
+            || enumerate_windows_inventory(&root, budget()),
+        );
+        assert!(trace.fault_consumed);
+        assert!(matches!(result, Err(WindowsInventoryError::Io { .. })));
+        let cancel = trace
+            .successful
+            .iter()
+            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessCancelIoEx)
+            .expect("operation error explicitly cancels the witness");
+        let drain = trace
+            .successful
+            .iter()
+            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessDrainCompleted)
+            .expect("operation error explicitly drains the witness");
+        assert!(cancel < drain);
     }
 
     #[test]
@@ -1651,6 +1663,7 @@ mod tests {
                     fs::write(callback_directory.join("two/leaf.txt"), b"replacement").unwrap();
                 }),
             )),
+            None,
             || read_windows_inventory_file(&root, &leaf, budget()),
         );
         assert!(trace.barrier_fired);
@@ -1658,6 +1671,94 @@ mod tests {
             result,
             Err(WindowsInventoryError::IdentityChanged { .. })
         ));
+    }
+
+    #[test]
+    fn descendant_listing_open_rechecks_the_verified_identity() {
+        let (temporary, root) = fixture();
+        let original = root.canonical_path().join("one");
+        let moved = temporary.path().join("one-original");
+        let callback_original = original.clone();
+        let callback_moved = moved.clone();
+        let (result, trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantListingOpen,
+                Box::new(move || {
+                    fs::rename(&callback_original, &callback_moved)
+                        .expect("move verified directory before listing open");
+                    fs::create_dir(&callback_original)
+                        .expect("create replacement directory before listing open");
+                }),
+            )),
+            None,
+            || enumerate_windows_inventory(&root, budget()),
+        );
+        assert!(trace.barrier_fired);
+        assert!(
+            trace
+                .successful
+                .contains(&WindowsInventoryPrimitive::DescendantListingOpen)
+        );
+        assert!(
+            trace
+                .attempted
+                .contains(&WindowsInventoryPrimitive::DescendantListingIdentityRecheck)
+        );
+        assert!(
+            !trace
+                .successful
+                .contains(&WindowsInventoryPrimitive::DescendantListingIdentityRecheck)
+        );
+        assert!(matches!(
+            result,
+            Err(WindowsInventoryError::IdentityChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn real_ntfs_and_refs_in_place_mutation_refuses_checked_read_without_stale_bytes() {
+        for variable in ["JOURNAL_WIN_CI_NTFS_ROOT", "SOLSTONE_JOURNAL_WIN_REFS_ROOT"] {
+            let Ok(parent) = std::env::var(variable) else {
+                continue;
+            };
+            let temporary = tempfile::Builder::new()
+                .prefix("solstone-journal-in-place-mutation-")
+                .tempdir_in(parent)
+                .unwrap_or_else(|error| panic!("create {variable} mutation fixture: {error}"));
+            let root_path = temporary.path().join("journal");
+            fs::create_dir(&root_path)
+                .unwrap_or_else(|error| panic!("create {variable} journal fixture: {error}"));
+            let file_path = root_path.join("leaf.txt");
+            fs::write(&file_path, b"leaf")
+                .unwrap_or_else(|error| panic!("write {variable} observed file: {error}"));
+            let root = JournalRoot::open(&root_path)
+                .unwrap_or_else(|error| panic!("admit {variable} fixture: {error}"));
+            let inventory = enumerate_windows_inventory(&root, budget())
+                .unwrap_or_else(|error| panic!("inventory {variable} fixture: {error}"));
+            let leaf = inventory
+                .entries()
+                .iter()
+                .find(|entry| entry.relative_path() == Path::new("leaf.txt"))
+                .expect("fixture inventory contains observed file")
+                .clone();
+            let (result, trace) = trace_inventory_scenario(
+                Some((
+                    WindowsInventoryPrimitive::DescendantFileId,
+                    Box::new(move || {
+                        fs::write(&file_path, b"muta")
+                            .expect("mutate observed file in place without rename");
+                    }),
+                )),
+                None,
+                || read_windows_inventory_file(&root, &leaf, budget()),
+            );
+            assert!(trace.barrier_fired, "{variable} mutation barrier fired");
+            assert!(matches!(
+                result,
+                Err(WindowsInventoryError::IdentityChanged { .. })
+                    | Err(WindowsInventoryError::NamespaceChanged { .. })
+            ));
+        }
     }
 
     #[test]

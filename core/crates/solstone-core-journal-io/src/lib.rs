@@ -153,4 +153,7 @@ pub use windows_inventory::{
     enumerate_windows_inventory, read_windows_inventory_file,
 };
 #[cfg(all(windows, feature = "test-hooks"))]
-pub use windows_inventory::{WindowsInventoryPrimitive, run_with_windows_inventory_fault};
+pub use windows_inventory::{
+    WindowsInventoryPrimitive, WindowsInventoryTrace, run_with_windows_inventory_fault,
+    run_with_windows_inventory_trace,
+};
