@@ -21,20 +21,9 @@ use solstone_core::supervisor::{
 };
 use solstone_core_system::lifecycle::ParentAdmissionFailure;
 
-use super::supervisor_guard::SupervisorGuard;
+use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
 
 struct TempJournal(PathBuf);
-
-fn temporary_root() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        PathBuf::from("/var/tmp")
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std::env::temp_dir()
-    }
-}
 
 impl TempJournal {
     fn new() -> Self {

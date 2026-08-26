@@ -312,13 +312,55 @@ impl From<runtime::JournalBinaryPreflightError> for SiblingBinaryResolutionError
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
+    use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
     use super::{
         ShutdownCause, SupervisorHostOutcome, SupervisorSignal, SyncFailureKind, classify_shutdown,
     };
     use solstone_core_system::lifecycle::{
-        ArtifactClearOutcome, ParentLossReason, ShutdownDisposition, ShutdownOutcome,
-        ShutdownPhase, ShutdownReport,
+        ArtifactClearOutcome, DeclaredParent, ParentLossReason, ParentWatch, ParentWatchStatus,
+        ShutdownDisposition, ShutdownOutcome, ShutdownPhase, ShutdownReport,
     };
+    use solstone_core_system::process::{
+        ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
+        ProcessInstanceSource,
+    };
+
+    struct Source {
+        self_result: InspectResult,
+        parent_result: InspectResult,
+    }
+
+    impl ProcessInstanceSource for Source {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            if pid == std::process::id() {
+                self.self_result
+            } else {
+                self.parent_result
+            }
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    fn instance(pid: u32, birth: u64) -> ProcessInstance {
+        ProcessInstance {
+            pid,
+            birth: ProcessBirth::linux(birth, 1, 100),
+        }
+    }
+
+    fn present(instance: ProcessInstance, ppid: Option<u32>) -> InspectResult {
+        InspectResult::Present {
+            instance,
+            execution: ExecutionState::Running,
+            ppid,
+            pgid: None,
+        }
+    }
 
     fn shutdown_outcome(report: ShutdownReport) -> ShutdownOutcome {
         ShutdownOutcome {
@@ -421,5 +463,72 @@ mod tests {
                 shutdown: ShutdownDisposition::ForcedAfterGraceTimeout,
             }
         );
+    }
+
+    #[test]
+    fn parent_loss_receipts_replace_stale_outcomes_for_lost_parent_observations() {
+        let expected_parent = instance(42, 10);
+        let admitted_source = Source {
+            self_result: present(instance(std::process::id(), 1), Some(expected_parent.pid)),
+            parent_result: present(expected_parent, Some(1)),
+        };
+        let watch = ParentWatch::admit(
+            DeclaredParent::from_instance(expected_parent),
+            &admitted_source,
+        )
+        .expect("parent admitted");
+
+        let temporary = tempdir().expect("temporary receipt directory");
+        let receipt_path = temporary.path().join("hosted.outcome");
+        let stale = SupervisorHostOutcome::OrderlyShutdown {
+            cause: ShutdownCause::Signal(SupervisorSignal::SigTerm),
+        };
+        write_hosted_supervisor_receipt(&receipt_path, "stale-nonce", &stale)
+            .expect("stale receipt");
+        assert_eq!(
+            read_hosted_supervisor_receipt(&receipt_path)
+                .expect("stale receipt reads")
+                .nonce,
+            "stale-nonce"
+        );
+
+        let cases = [
+            (
+                Source {
+                    self_result: InspectResult::Unverifiable,
+                    parent_result: present(instance(expected_parent.pid, 11), Some(1)),
+                },
+                ParentLossReason::ExitedOrReused,
+            ),
+            (
+                Source {
+                    self_result: InspectResult::Unverifiable,
+                    parent_result: InspectResult::Unverifiable,
+                },
+                ParentLossReason::Unverifiable,
+            ),
+        ];
+        for (index, (source, reason)) in cases.into_iter().enumerate() {
+            assert_eq!(watch.check(&source), ParentWatchStatus::Lost(reason));
+            let outcome = classify_shutdown(
+                ShutdownCause::ParentLost(reason),
+                shutdown_outcome(ShutdownReport::default()),
+            );
+            assert_eq!(
+                outcome,
+                SupervisorHostOutcome::ParentLost {
+                    reason,
+                    shutdown: ShutdownDisposition::Orderly,
+                }
+            );
+
+            let nonce = format!("parent-loss-{index}");
+            write_hosted_supervisor_receipt(&receipt_path, &nonce, &outcome)
+                .expect("parent-loss receipt");
+            let receipt =
+                read_hosted_supervisor_receipt(&receipt_path).expect("parent-loss receipt reads");
+            assert_eq!(receipt.nonce, nonce);
+            assert_eq!(receipt.outcome, outcome);
+        }
     }
 }

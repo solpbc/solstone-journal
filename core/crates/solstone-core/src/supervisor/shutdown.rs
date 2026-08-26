@@ -63,6 +63,9 @@ impl ShutdownDriver for SupervisorShutdownDriver {
             super::tick::reconcile_providers(&mut self.state);
             std::thread::sleep(Duration::from_millis(10));
         }
+        if provider_running(&self.state) {
+            disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+        }
         self.state.reap_managed();
         disposition
     }

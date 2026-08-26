@@ -9,3 +9,5 @@ mod supervisor_boot;
 mod supervisor_guard;
 #[path = "supervisor_providers.rs"]
 mod supervisor_providers;
+#[path = "support/temporary_root.rs"]
+mod temporary_root;

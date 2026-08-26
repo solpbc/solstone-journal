@@ -698,7 +698,7 @@ fn ac34_shutdown_order_is_explicit() {
         vec![
             Some(Duration::from_secs(3)),
             Some(Duration::from_secs(10)),
-            None,
+            Some(Duration::from_secs(2)),
             Some(Duration::from_secs(5)),
         ]
     );

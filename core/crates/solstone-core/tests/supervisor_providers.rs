@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use solstone_core_local::install::{archive, manifest, pins};
 
-use super::supervisor_guard::SupervisorGuard;
+use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
 
 struct TempJournal(PathBuf);
 impl TempJournal {
@@ -23,7 +23,7 @@ impl TempJournal {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-supervisor-providers-{stamp}"));
+        let root = temporary_root().join(format!("solstone-core-supervisor-providers-{stamp}"));
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -31,8 +31,9 @@ impl TempJournal {
         )
         .expect("journal config");
         install_native_local_readiness(&root);
-        let parakeet_paths =
-            solstone_core_local::install::pins::parakeet_paths(&root, "x86_64-unknown-linux-gnu");
+        let parakeet_artifact_key =
+            pins::parakeet_artifact_key("linux", "x86_64").expect("fixture parakeet artifact key");
+        let parakeet_paths = pins::parakeet_paths(&root, &parakeet_artifact_key);
         let binary = PathBuf::from(
             parakeet_paths["binary_path_cpu"]
                 .as_str()
@@ -49,19 +50,23 @@ impl TempJournal {
 
 fn install_native_local_readiness(root: &std::path::Path) {
     let cache = pins::cache_root(root);
-    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+    let (platform_key, release_tag, _, _, binary_name) = pins::LLAMA_SERVER_PINS
+        .iter()
+        .find(|pin| pin.0.ends_with("-apple-darwin"))
+        .expect("Darwin llama-server pin");
+    let runtime = cache.join("bin").join(platform_key).join(release_tag);
     let model = cache.join("models/local__qwen3.5-4b");
     fs::create_dir_all(&runtime).expect("runtime directory");
     fs::create_dir_all(&model).expect("model directory");
-    fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").expect("runtime");
-    archive::make_executable(&runtime.join("llama-server")).expect("executable runtime");
+    fs::write(runtime.join(binary_name), b"#!/bin/sh\nexit 0\n").expect("runtime");
+    archive::make_executable(&runtime.join(binary_name)).expect("executable runtime");
     fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
     fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
     let runtime_manifest = manifest::build_manifest(
         "local",
         "llama-server-vulkan",
         "test",
-        json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
+        json!({"pin_identity":pins::vulkan_identity(platform_key).unwrap()}),
         manifest::runtime_inventory(&runtime, &[]).unwrap(),
         None,
         None,
