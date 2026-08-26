@@ -580,9 +580,63 @@ targets = ["macos-arm64"]
         assert!(error.to_string().contains("mode mutation"));
     }
 
+    /// This reuses one checkout to model separate producer invocations. A
+    /// `produce::run`-level proof would require a detached checkout, build,
+    /// and real Apple signing credentials, which are not hermetic here.
     #[test]
-    fn source_swap_between_validation_and_signing_refuses_without_output() {
+    fn separate_seal_invocations_do_not_leak_signed_derivatives() {
         let (_temporary, checkout, inventory, _) = synthetic_checkout();
+        let first = seal_declared_archives(
+            &checkout,
+            &inventory,
+            "macos-arm64",
+            &FakeArchiveMemberSigner::new("invocation-one"),
+        )
+        .expect("first invocation seals");
+        let first_archive = first.archives.first().expect("first sealed archive");
+        let first_bytes = first_archive.bytes.clone();
+        let first_sha256 = first_archive.sha256.clone();
+
+        let second = seal_declared_archives(
+            &checkout,
+            &inventory,
+            "macos-arm64",
+            &FakeArchiveMemberSigner::new("invocation-two"),
+        )
+        .expect("second invocation seals");
+        let second_archive = second.archives.first().expect("second sealed archive");
+
+        assert_eq!(first.archives[0].bytes, first_bytes);
+        assert_eq!(first.archives[0].sha256, first_sha256);
+        assert_ne!(second_archive.bytes, first_bytes);
+        assert_ne!(second_archive.sha256, first_sha256);
+
+        let slot = archive_slot(&inventory);
+        let sealed =
+            validate_gzip_archive(&second_archive.staged_dest, &second_archive.bytes, slot)
+                .expect("second sealed archive reopens");
+        let executable = sealed
+            .members
+            .iter()
+            .find(|member| member.path == SYNTHETIC_EXECUTABLE)
+            .expect("second signed executable");
+        assert!(
+            executable.bytes.ends_with(
+                format!("\nSOLSTONE-FAKE-ARCHIVE-SIGNATURE:invocation-two:{SYNTHETIC_EXECUTABLE}")
+                    .as_bytes()
+            )
+        );
+        assert!(
+            !executable
+                .bytes
+                .windows(b"SOLSTONE-FAKE-ARCHIVE-SIGNATURE:invocation-one".len())
+                .any(|bytes| bytes == b"SOLSTONE-FAKE-ARCHIVE-SIGNATURE:invocation-one")
+        );
+    }
+
+    #[test]
+    fn source_swap_between_validation_and_signing_refuses_then_restoring_source_seals() {
+        let (_temporary, checkout, inventory, original) = synthetic_checkout();
         let signer = FakeArchiveMemberSigner::new("swap");
         let mut swap = |source: &Path| fs::write(source, b"swapped archive").expect("swap source");
         let result = seal_declared_archives_with_hook(
@@ -599,5 +653,10 @@ targets = ["macos-arm64"]
                 .to_string()
                 .contains("digest")
         );
+
+        fs::write(checkout.join("assets/synthetic.tar.gz"), original)
+            .expect("restore unsigned source");
+        seal_declared_archives(&checkout, &inventory, "macos-arm64", &signer)
+            .expect("restored source seals");
     }
 }

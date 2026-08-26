@@ -732,6 +732,7 @@ mod tests {
             tarball_sha256: engine_sha256,
             tarball_size: engine_bytes.len() as u64,
             binary_sha256: engine_sha256,
+            expected_member_path: None,
         };
         let model = ModelSpec {
             sha256: model_sha256,

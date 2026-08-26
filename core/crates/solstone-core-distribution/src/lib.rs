@@ -834,6 +834,64 @@ fn promotion_is_atomic_after_each_successive_write() {
 
 #[cfg(test)]
 #[test]
+fn macos_missing_archive_chain_refuses_before_signing_and_preserves_destination() {
+    let root = tempfile::Builder::new()
+        .prefix("solstone-distribution-macos-chain-gate-")
+        .tempdir_in("/var/tmp")
+        .expect("temporary promotion root");
+    let dest = root.path().join("dest");
+    let work = root.path().join("work");
+    fs::create_dir_all(&dest).expect("create destination");
+    fs::write(dest.join("marker"), b"previous-tree").expect("write destination marker");
+    let before = promote::snapshot_dir(&dest).expect("snapshot destination");
+    let request = promote::PromoteRequest {
+        dest: dest.clone(),
+        work,
+        tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
+        version: "1.0.22".into(),
+        basename: committed_inventory()
+            .artifact
+            .render("1.0.22", "macos", "arm64"),
+        os: inventory::OS_MACOS.into(),
+        arch: "macos-arm64".into(),
+        deb_arch: "amd64".into(),
+        rpm_arch: "x86_64".into(),
+        dirty: false,
+        observed: provenance::Provenance {
+            commit: "aaa".into(),
+            lock_sha256: "bbb".into(),
+        },
+        expected: provenance::Provenance {
+            commit: "aaa".into(),
+            lock_sha256: "bbb".into(),
+        },
+        fail_after: None,
+        apple: Some(inventory::Apple {
+            team_id: "fixture-team".into(),
+            app_identity: "fixture-app".into(),
+            installer_identity: "fixture-installer".into(),
+            notary_profile: "fixture-profile".into(),
+            keychain: "fixture.keychain".into(),
+            pkg_identifier: "pbc.solstone.fixture".into(),
+            install_location: "/usr/local".into(),
+            codesign_path: "codesign".into(),
+            xcode: "xcode".into(),
+            notarytool: "notarytool".into(),
+        }),
+    };
+
+    // This host has no Apple signing toolchain. Reaching the named chain
+    // refusal proves promotion stopped before it could try codesign or pkgbuild.
+    let error = promote::promote(&request).expect_err("missing chain refuses before signing");
+    assert!(error.message.contains("could not read archive chain"));
+    assert_eq!(
+        promote::snapshot_dir(&dest).expect("snapshot destination"),
+        before
+    );
+}
+
+#[cfg(test)]
+#[test]
 fn emitted_basenames_follow_inventory_template_for_both_targets() {
     let inventory = committed_inventory();
     let version = env!("CARGO_PKG_VERSION");
