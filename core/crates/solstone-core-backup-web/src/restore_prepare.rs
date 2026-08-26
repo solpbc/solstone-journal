@@ -62,7 +62,7 @@ pub(crate) fn prepare(
     shared: &SharedRestorePrepare,
     operations: &SharedOperationSlot,
 ) -> Result<Prepared, Response> {
-    let _ = take_expired(shared, operations);
+    reconcile(shared, operations);
     let mut guard = shared.lock().expect("restore prepare lock");
     if guard.is_some() {
         return Err(refusal(
@@ -227,7 +227,10 @@ fn take_expired(
         let mut guard = shared.lock().expect("restore prepare lock");
         guard
             .as_ref()
-            .is_some_and(|lease| lease.issued_at.elapsed() >= expiry_window(lease.stage))
+            .and_then(|lease| {
+                expiry_window(lease.stage).map(|window| lease.issued_at.elapsed() >= window)
+            })
+            .unwrap_or(false)
             .then(|| guard.take())
             .flatten()
     };
@@ -239,11 +242,16 @@ fn take_expired(
     expired
 }
 
-fn expiry_window(stage: RestorePrepareStage) -> Duration {
-    if stage == RestorePrepareStage::Prepared {
-        RESTORE_PREPARE_RECLAIM_WINDOW
-    } else {
-        RESTORE_PREPARE_CONSENT_WINDOW
+/// Returns the lease's own reap window, or `None` if this stage's lifetime is governed
+/// elsewhere. `Activated` is never reaped here — an activated lease's lifetime is governed
+/// by `operation::HANDOFF_TTL` via `handoff_poll`, not by `restore_prepare`'s own timeout.
+fn expiry_window(stage: RestorePrepareStage) -> Option<Duration> {
+    match stage {
+        RestorePrepareStage::Prepared => Some(RESTORE_PREPARE_RECLAIM_WINDOW),
+        RestorePrepareStage::Keyed | RestorePrepareStage::Armed => {
+            Some(RESTORE_PREPARE_CONSENT_WINDOW)
+        }
+        RestorePrepareStage::Activated => None,
     }
 }
 

@@ -2374,6 +2374,80 @@ async fn restore_prepare_cancellation_and_expiry_clear_deferred_restore_state() 
 }
 
 #[tokio::test]
+async fn restore_prepare_activated_lease_is_exempt_from_consent_window_expiry() {
+    let root = crate::test_support::root("fresh");
+    let http = Arc::new(HttpScript::default());
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        http.clone(),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    crate::restore_prepare::backdate_restore_prepare_issued_at(
+        &deps.restore_prepare,
+        crate::restore_prepare::RESTORE_PREPARE_CONSENT_WINDOW + Duration::from_secs(1),
+    );
+
+    let (_, body) = get_status_json(&deps).await;
+    assert!(crate::operation::is_busy(&deps.operations));
+    assert_ne!(body["operation"]["phase"], "error");
+}
+
+#[tokio::test]
+async fn restore_prepare_activated_lease_is_cleared_once_operation_terminates() {
+    let root = crate::test_support::root("fresh");
+    let http = Arc::new(HttpScript::default());
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        http.clone(),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    let generation = crate::operation::generation_of(&deps.operations).unwrap();
+    crate::operation::finish(&deps.operations, generation, "done", None, None);
+
+    let _ = get_status_json(&deps).await;
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted/cancel",
+        Some(json!({"capability": capability})),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "restore_prepare_invalid_capability");
+}
+
+#[tokio::test]
+async fn restore_prepare_prepare_self_heals_a_terminated_activated_lease() {
+    let root = crate::test_support::root("fresh");
+    let http = Arc::new(HttpScript::default());
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![])),
+        http.clone(),
+        None,
+    );
+    let capability = prepare_unbound_restore(&deps).await;
+    let _ = key_unbound_restore(&deps, &capability).await;
+    let _ = arm_unbound_restore(&deps, &capability).await;
+    let _ = activate_unbound_restore(&deps, &capability).await;
+    let generation = crate::operation::generation_of(&deps.operations).unwrap();
+    crate::operation::finish(&deps.operations, generation, "done", None, None);
+
+    let (status, body) = post_json(&deps, "/app/backup/restore-hosted/prepare", None).await;
+    assert_eq!(status, 200);
+    assert!(body["capability"].as_str().is_some());
+}
+
+#[tokio::test]
 async fn hosted_restore_refused_poll_outcomes_clear_handoff_state_without_restore_work() {
     for reason_code in ["no_hosted_backup", "hosted_backup_expired"] {
         let root = crate::test_support::root("fresh");
