@@ -95,7 +95,7 @@ pub fn terminate_exact_instance(
 /// As with [`terminate_exact_instance`], every signal remains guarded by a
 /// fresh exact-instance observation. A deadline expiry reports the existing
 /// forced-shutdown error rather than widening authority to a replacement.
-pub fn terminate_exact_instance_until(
+pub(crate) fn terminate_exact_instance_until(
     child: &mut Child,
     expected: ProcessInstance,
     deadline: Instant,

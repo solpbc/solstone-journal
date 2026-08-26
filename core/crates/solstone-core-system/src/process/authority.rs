@@ -133,7 +133,7 @@ impl LaunchAuthority {
     }
 
     /// Terminate a managed child without opening a wait beyond `deadline`.
-    pub fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
+    pub(crate) fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
         match self.inner_mut() {
             Inner::Managed(process) => process
                 .terminate_exact_until(deadline)
@@ -186,22 +186,18 @@ impl LaunchAuthority {
     }
 
     /// Clean up a managed child only while the caller's shared deadline remains.
-    pub fn cleanup_until(&mut self, deadline: Instant) -> bool {
+    pub(crate) fn cleanup_until(&mut self, deadline: Instant) -> bool {
         match self.inner_mut() {
             Inner::Managed(process) => process.cleanup_until(deadline),
             Inner::Raw { child, .. } => child.try_wait().ok().flatten().is_some(),
         }
     }
 
-    /// Discard the retained authority after a bounded shutdown expires so drop
-    /// cannot begin a new service-length termination window.
-    pub fn detach_after_bounded_shutdown(&mut self) {
-        match self.inner.as_mut() {
-            Some(Inner::Managed(process)) => process.detach_after_bounded_shutdown(),
-            Some(Inner::Raw { .. }) => {
-                let _ = self.inner.take();
-            }
-            None => {}
+    /// Mark a managed authority so drop cannot begin a new service-length
+    /// termination window after a bounded shutdown expires.
+    pub(crate) fn detach_after_bounded_shutdown(&mut self) {
+        if let Some(Inner::Managed(process)) = self.inner.as_mut() {
+            process.detach_after_bounded_shutdown();
         }
     }
 

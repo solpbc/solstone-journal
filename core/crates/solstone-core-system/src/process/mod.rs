@@ -42,7 +42,7 @@ pub(crate) use terminate::signal_pid;
 pub use terminate::{
     CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
     TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, signal_exact_instance,
-    terminate, terminate_exact_instance, terminate_exact_instance_until,
+    terminate, terminate_exact_instance,
 };
 
 /// Match Python `Popen.returncode`: normal exits are non-negative and signals

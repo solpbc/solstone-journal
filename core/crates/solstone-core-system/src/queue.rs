@@ -688,21 +688,30 @@ impl TaskQueue {
             .map(|(reference, _)| reference.clone())
             .collect::<Vec<_>>();
         let (completed_send, completed_receive) = std::sync::mpsc::channel();
+        let mut forced = false;
         for (_, process) in snapshot {
+            if Instant::now() >= deadline {
+                forced = true;
+                break;
+            }
             let completed_send = completed_send.clone();
-            thread::spawn(move || {
-                let mut process = process.lock().expect("managed process lock poisoned");
-                let forced = process.terminate_exact_until(deadline).is_err()
-                    || !process.cleanup_until(deadline);
-                if forced {
-                    process.detach_after_bounded_shutdown();
-                }
-                let _ = completed_send.send(forced);
-            });
+            if thread::Builder::new()
+                .spawn(move || {
+                    let mut process = process.lock().expect("managed process lock poisoned");
+                    let forced = process.terminate_exact_until(deadline).is_err()
+                        || !process.cleanup_until(deadline);
+                    if forced {
+                        process.detach_after_bounded_shutdown();
+                    }
+                    let _ = completed_send.send(forced);
+                })
+                .is_err()
+            {
+                forced = true;
+            }
         }
         drop(completed_send);
 
-        let mut forced = false;
         for _ in 0..active_count {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
