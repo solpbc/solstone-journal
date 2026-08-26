@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "machine_id": "8f2b6aa217a24ccd9e3bf15e58fc1b4a",
+  "hostname": "atlas-workstation",
+  "pid": 4271,
+  "wall_time": "1712345678.125",
+  "solstone_version": "1.9.4",
+  "interval_seconds": 15,
+  "journal_path": "/home/sol/journal"
+}
