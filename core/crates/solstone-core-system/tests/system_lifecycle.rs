@@ -3,5 +3,8 @@
 
 #[path = "lifecycle.rs"]
 mod lifecycle;
+#[cfg(target_os = "macos")]
+#[path = "macos_process_census.rs"]
+mod macos_process_census;
 #[path = "managed_process.rs"]
 mod managed_process;
