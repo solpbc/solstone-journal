@@ -14,6 +14,15 @@ pub const CLIENT_ACTIVE_MS: i64 = 30_000;
 pub const CLIENT_STALE_MS: i64 = 120_000;
 pub const CLIENT_FUTURE_CLOCK_DRIFT_TOLERANCE_MS: i64 = 300_000;
 
+/// Capture freshness measures accepted-ingest age against the five-minute segment
+/// seal/upload cadence with a delivery margin for upload lag. Connection freshness
+/// measures `last_seen_at` against per-request liveness, so these thresholds must
+/// not be merged with the connection thresholds above.
+const CAPTURE_SEGMENT_CADENCE_MS: i64 = 300_000;
+const CAPTURE_DELIVERY_MARGIN_MS: i64 = 60_000;
+pub const CLIENT_CAPTURE_ACTIVE_MS: i64 = CAPTURE_SEGMENT_CADENCE_MS + CAPTURE_DELIVERY_MARGIN_MS;
+pub const CLIENT_CAPTURE_STALE_MS: i64 = CLIENT_CAPTURE_ACTIVE_MS + CAPTURE_SEGMENT_CADENCE_MS;
+
 /// Whether `link/devices.json` supplied activity data for an inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientActivityState {
@@ -295,9 +304,9 @@ fn capture_freshness(
     };
     let state = if age_ms < -CLIENT_FUTURE_CLOCK_DRIFT_TOLERANCE_MS {
         ClientCaptureState::Offline
-    } else if age_ms < CLIENT_ACTIVE_MS {
+    } else if age_ms < CLIENT_CAPTURE_ACTIVE_MS {
         ClientCaptureState::Active
-    } else if age_ms < CLIENT_STALE_MS {
+    } else if age_ms < CLIENT_CAPTURE_STALE_MS {
         ClientCaptureState::Stale
     } else {
         ClientCaptureState::Offline
@@ -318,6 +327,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use serde_json::json;
+    use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
     use super::*;
 
@@ -427,6 +437,117 @@ mod tests {
         };
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0].cid, "a");
+    }
+
+    #[test]
+    fn capture_freshness_is_active_at_thirty_seconds() {
+        assert_eq!(
+            capture_freshness_at_age(30_000, false),
+            (ClientCaptureState::Active, Some(30_000))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_active_at_two_minutes() {
+        assert_eq!(
+            capture_freshness_at_age(120_000, false),
+            (ClientCaptureState::Active, Some(120_000))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_active_at_299_999_milliseconds() {
+        assert_eq!(
+            capture_freshness_at_age(299_999, false),
+            (ClientCaptureState::Active, Some(299_999))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_active_at_359_999_milliseconds() {
+        assert_eq!(
+            capture_freshness_at_age(359_999, false),
+            (ClientCaptureState::Active, Some(359_999))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_stale_at_six_minutes() {
+        assert_eq!(
+            capture_freshness_at_age(360_000, false),
+            (ClientCaptureState::Stale, Some(360_000))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_stale_at_659_999_milliseconds() {
+        assert_eq!(
+            capture_freshness_at_age(659_999, false),
+            (ClientCaptureState::Stale, Some(659_999))
+        );
+    }
+
+    #[test]
+    fn capture_freshness_is_offline_at_eleven_minutes() {
+        assert_eq!(
+            capture_freshness_at_age(660_000, false),
+            (ClientCaptureState::Offline, Some(660_000))
+        );
+    }
+
+    #[test]
+    fn connection_freshness_is_stale_at_thirty_seconds() {
+        assert!(matches!(
+            connection_freshness_at_age(30_000),
+            ConnectionFreshness::Known {
+                state: ConnectionState::Stale,
+                group: ConnectionGroup::Stale,
+                elapsed_ms: Some(30_000),
+                clock_skew: false,
+                label: "not reporting",
+                reach: ClientReach::Stale,
+            }
+        ));
+    }
+
+    #[test]
+    fn connection_freshness_is_disconnected_at_two_minutes() {
+        assert!(matches!(
+            connection_freshness_at_age(120_000),
+            ConnectionFreshness::Known {
+                state: ConnectionState::Disconnected,
+                group: ConnectionGroup::Inactive,
+                elapsed_ms: Some(120_000),
+                clock_skew: false,
+                label: "offline",
+                reach: ClientReach::Offline,
+            }
+        ));
+    }
+
+    #[test]
+    fn capture_rejection_wins_past_offline_threshold() {
+        assert_eq!(
+            capture_freshness_at_age(660_001, true),
+            (ClientCaptureState::Degraded, Some(660_001))
+        );
+    }
+
+    fn capture_freshness_at_age(age_ms: i64, rejecting: bool) -> (ClientCaptureState, Option<i64>) {
+        let timestamp = timestamp_at_age(age_ms);
+        capture_freshness(Some(&timestamp), rejecting, NOW_MS)
+    }
+
+    fn connection_freshness_at_age(age_ms: i64) -> ConnectionFreshness {
+        let timestamp = timestamp_at_age(age_ms);
+        connection_freshness(Some(&timestamp), NOW_MS)
+    }
+
+    fn timestamp_at_age(age_ms: i64) -> String {
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(NOW_MS - age_ms) * 1_000_000)
+            .expect("test timestamp")
+            .format(&Rfc3339)
+            .expect("RFC3339 timestamp")
     }
 
     fn write_clients(root: &Path, cids: &[&str]) {
