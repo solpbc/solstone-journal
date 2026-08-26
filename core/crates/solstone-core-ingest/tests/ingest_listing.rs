@@ -282,6 +282,86 @@ async fn native_evidence_ignores_legacy_registry_tree() {
 }
 
 #[tokio::test]
+async fn native_ingest_ignores_combined_legacy_observer_artifacts() {
+    let journal = journal();
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let legacy_root = journal.path().join("apps/observer/observers");
+    let legacy_files = [
+        (
+            legacy_root.join("aaaaaaaa.json"),
+            json!({
+                "key": "aaaaaaaa-test-handle",
+                "name": "Desk",
+                "stream": "desk",
+                "created_at": 4,
+                "revoked": false,
+                "device_binding": {"device": CID_A, "kind": "cert"},
+                "last_segment": "090000_1",
+                "last_segment_day": "20260803",
+                "last_segment_received_at": 1,
+            })
+            .to_string()
+            .into_bytes(),
+        ),
+        (
+            legacy_root.join("aaaaaaaa/hist/20260803.jsonl"),
+            b"{\"type\":\"observed\",\"day\":\"20260803\",\"segment\":\"090000_1\",\"stream\":\"desk\"}\n"
+                .to_vec(),
+        ),
+        (
+            journal.path().join("streams/desk.json"),
+            json!({
+                "name": "desk",
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 4,
+                "last_day": "20260803",
+                "last_segment": "090000_1",
+                "seq": 7,
+            })
+            .to_string()
+            .into_bytes(),
+        ),
+    ];
+    for (path, contents) in &legacy_files {
+        fs::create_dir_all(path.parent().expect("legacy parent")).expect("legacy parent");
+        fs::write(path, contents).expect("legacy artifact");
+    }
+    let before = legacy_files
+        .iter()
+        .map(|(path, _)| fs::read(path).expect("legacy artifact"))
+        .collect::<Vec<_>>();
+
+    let app = api_router(journal.path());
+    let response = upload(&app, CID_A, DAY, "120000_1", "", "audio.flac", b"audio").await;
+    assert_eq!(response["status"], "ok");
+
+    let native_stream: Value = serde_json::from_slice(
+        &fs::read(journal.path().join("streams/device.json")).expect("native stream record"),
+    )
+    .expect("native stream record JSON");
+    assert_eq!(native_stream["cid"], CID_A);
+    assert_eq!(native_stream["source"], "");
+    assert_eq!(native_stream["seq"], 1);
+
+    let event = fs::read_to_string(event_path(journal.path(), DAY, "120000_1"))
+        .expect("native durable event");
+    let event: Value = serde_json::from_str(event.lines().next().expect("event row"))
+        .expect("native durable event JSON");
+    assert_eq!(event["record_type"], "device_ingest");
+    assert_eq!(event["cid"], CID_A);
+    assert_eq!(event["source"], "");
+    assert_eq!(event["stream"], "device");
+
+    for ((path, _), contents) in legacy_files.iter().zip(before) {
+        assert_eq!(fs::read(path).expect("legacy artifact"), contents);
+    }
+}
+
+#[tokio::test]
 async fn unparseable_durable_row_refuses_every_read_route() {
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))

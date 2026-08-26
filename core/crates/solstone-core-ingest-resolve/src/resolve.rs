@@ -76,9 +76,7 @@ pub struct ApplyPlan {
     pub landed_segment: String,
     pub segment: SegmentDir,
     pub files: Vec<PlannedFile>,
-    /// INDEPENDENT WRITE-PATH PARITY FIX: this isolated checkout carries Python's
-    /// directory-creation fact because it already changes ingest, not because
-    /// the observer read path depends on it.
+    /// Whether candidate preparation created the target segment directory.
     pub created_segment: bool,
 }
 
@@ -371,8 +369,7 @@ fn candidate_names(
     Ok(candidates)
 }
 
-/// Classify each incoming file exactly as Python observer ingest does in
-/// `utils.py:1291-1327` and `utils.py:1502-1511`.
+/// Classify incoming files using the native ingest content and processing rules.
 ///
 /// An existing target is held only when its digest matches; otherwise it is a
 /// content conflict for an incoming identity name and a sidecar conflict for
@@ -382,8 +379,8 @@ fn candidate_names(
 /// it is a content conflict for identity content and a new file otherwise.
 /// With no holding proof, identity content becomes missing content and every
 /// other file becomes a new file. Candidate outcome selection intentionally
-/// gives missing content priority over a coexisting sidecar conflict
-/// (`utils.py:1377-1390`); do not simplify that ordering.
+/// gives missing content priority over a coexisting sidecar conflict; do not
+/// simplify that ordering.
 fn classify_candidate(
     segment: &SegmentDir,
     files: &[IncomingFact],
