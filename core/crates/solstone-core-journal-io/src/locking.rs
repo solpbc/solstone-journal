@@ -4,20 +4,53 @@
 //! Stable sidecar advisory locks.
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
+#[cfg(unix)]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io;
+#[cfg(unix)]
 use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
+use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle};
 use std::path::{Component, Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{AT_FDCWD, AtFlags, Flock, FlockArg, OFlag, openat};
+#[cfg(unix)]
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
+#[cfg(windows)]
+use windows_sys::Wdk::Storage::FileSystem::{
+    FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT,
+    FILE_SYNCHRONOUS_IO_NONALERT,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{
+    ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo,
+    GetFileInformationByHandleEx, OPEN_ALWAYS, OPEN_EXISTING,
+};
 
 use crate::errors::{ExistingParentLockError, LockError, LockTimeout};
+#[cfg(windows)]
+use crate::windows_lock::{
+    WindowsLockGuard, is_contention as windows_contention, try_lock_exclusive, try_lock_shared,
+};
+#[cfg(windows)]
+use crate::windows_ntcreate::nt_create_relative;
 
 /// Python-compatible default lock-acquisition timeout.
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -35,6 +68,140 @@ pub struct LockOptions {
     pub mode: Option<u32>,
 }
 
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs::{self, File};
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::test_support::TempDir;
+    use crate::windows_lock::{
+        WindowsLockFileExSubstitution, try_lock_exclusive, with_forced_post_lock_identity_mismatch,
+        with_lock_file_ex_substitution, with_lock_file_ex_trace,
+    };
+
+    fn layout() -> (TempDir, PathBuf) {
+        let temporary = TempDir::new();
+        let locks = temporary.path().join("locks");
+        fs::create_dir(&locks).unwrap();
+        (temporary, locks)
+    }
+
+    #[test]
+    fn unpaired_surrogate_names_derive_independent_sidecars() {
+        let (_temporary, locks) = layout();
+        let first = locks.join(OsString::from_wide(&[b's' as u16, 0xD800]));
+        let second = locks.join(OsString::from_wide(&[b's' as u16, 0xD801]));
+        let first_guard = hold_lock(&first, LockOptions::default()).unwrap();
+        let second_guard = hold_lock(&second, LockOptions::default()).unwrap();
+        assert!(lock_is_held(&first).unwrap());
+        assert!(lock_is_held(&second).unwrap());
+        let entries = fs::read_dir(&locks)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_ne!(entries[0], entries[1]);
+        drop(first_guard);
+        drop(second_guard);
+    }
+
+    #[test]
+    fn lock_file_ex_trace_records_the_retained_handle() {
+        let (_temporary, locks) = layout();
+        let path = locks.join("trace.lock");
+        let file = open_windows_path(
+            &path,
+            GENERIC_READ | GENERIC_WRITE,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap();
+        let expected = file.as_raw_handle();
+        let (guard, trace) = with_lock_file_ex_trace(|| try_lock_exclusive(file).unwrap());
+        assert_eq!(trace, vec![expected]);
+        drop(guard);
+    }
+
+    #[test]
+    fn unlocked_lock_file_ex_substitution_is_falsifiable() {
+        let (_temporary, locks) = layout();
+        let path = locks.join("target");
+        let (guard, consumed) =
+            with_lock_file_ex_substitution(1, WindowsLockFileExSubstitution::Skip, || {
+                hold_lock(&path, LockOptions::default()).unwrap()
+            });
+        assert!(consumed);
+        let second = hold_lock(
+            &path,
+            LockOptions {
+                timeout: Duration::ZERO,
+                ..LockOptions::default()
+            },
+        );
+        assert!(
+            second.is_ok(),
+            "a skipped LockFileEx must leave the sidecar unlocked"
+        );
+        drop(second);
+        drop(guard);
+    }
+
+    #[test]
+    fn wrong_handle_lock_file_ex_substitution_is_falsifiable() {
+        let (_temporary, locks) = layout();
+        let target = locks.join("target");
+        let redirected = locks.join("redirected");
+        let redirect_file = open_windows_path(
+            &redirected,
+            GENERIC_READ | GENERIC_WRITE,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap();
+        let (guard, consumed) = with_lock_file_ex_substitution(
+            1,
+            WindowsLockFileExSubstitution::ReplaceHandle(redirect_file.as_raw_handle()),
+            || hold_lock(&target, LockOptions::default()).unwrap(),
+        );
+        assert!(consumed);
+        assert!(hold_lock(&target, LockOptions::default()).is_ok());
+        assert!(matches!(
+            try_lock_exclusive(File::open(&redirected).unwrap()),
+            Err((_, error)) if windows_contention(&error)
+        ));
+        drop(guard);
+        drop(redirect_file);
+    }
+
+    #[test]
+    fn forced_post_lock_identity_mismatch_releases_the_stale_lock() {
+        let (_temporary, locks) = layout();
+        let (result, consumed) = with_forced_post_lock_identity_mismatch(1, || {
+            acquire_existing_parent_lock(
+                &locks,
+                OsStr::new("entry"),
+                Duration::from_secs(1),
+                Duration::from_millis(10),
+            )
+        });
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(ExistingParentLockError::NamespaceChanged { .. })
+        ));
+        let fresh = acquire_existing_parent_lock(
+            &locks,
+            OsStr::new("entry"),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert!(fresh.is_ok());
+    }
+}
+
 impl Default for LockOptions {
     fn default() -> Self {
         Self {
@@ -45,10 +212,13 @@ impl Default for LockOptions {
     }
 }
 
-/// An exclusive `flock(2)` guard. Dropping it releases the lock.
+/// An exclusive advisory-lock guard. Dropping it releases the lock.
 #[derive(Debug)]
 pub struct FileLock {
+    #[cfg(unix)]
     _guard: Flock<File>,
+    #[cfg(windows)]
+    _guard: WindowsLockGuard,
     path: PathBuf,
 }
 
@@ -64,7 +234,10 @@ impl FileLock {
 /// Dropping this guard releases its advisory lock but does not remove the entry.
 #[derive(Debug)]
 pub struct ExistingParentLock {
+    #[cfg(unix)]
     _guard: Flock<File>,
+    #[cfg(windows)]
+    _guard: WindowsLockGuard,
     path: PathBuf,
 }
 
@@ -81,7 +254,10 @@ impl ExistingParentLock {
 /// There is no `path()`: the parent is a retained descriptor, not a pathname.
 #[derive(Debug)]
 pub struct BoundParentLock {
+    #[cfg(unix)]
     _guard: Flock<File>,
+    #[cfg(windows)]
+    _guard: WindowsLockGuard,
 }
 
 /// Acquire a caller-selected persistent lock entry under an existing parent.
@@ -91,6 +267,7 @@ pub struct BoundParentLock {
 /// not resolve or pin ancestors of `parent`, nor detect a non-cooperating
 /// mutation after final verification; cooperating callers never replace or
 /// unlink the persistent entry.
+#[cfg(unix)]
 pub fn acquire_existing_parent_lock(
     parent: &Path,
     name: &OsStr,
@@ -117,6 +294,7 @@ pub fn acquire_existing_parent_lock(
 /// The parent is the caller-supplied directory descriptor. This never opens a
 /// parent via `AT_FDCWD`. Cooperating callers never replace or unlink the
 /// persistent entry. The returned guard has no pathname.
+#[cfg(unix)]
 pub fn acquire_existing_parent_lock_bound(
     parent: &impl AsFd,
     name: &OsStr,
@@ -140,6 +318,7 @@ pub fn acquire_existing_parent_lock_bound(
     Ok(BoundParentLock { _guard: guard })
 }
 
+#[cfg(unix)]
 fn acquire_lock_in_parent(
     parent_fd: &impl AsFd,
     name: &NormalLockName,
@@ -208,6 +387,7 @@ fn acquire_lock_in_parent(
 ///
 /// The kernel releases the advisory lock automatically when this process dies,
 /// because the RAII guard owns the locked file descriptor.
+#[cfg(unix)]
 pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLock, LockError> {
     let path = path.as_ref();
     let parent = parent_dir(path);
@@ -258,6 +438,7 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
 /// Reports whether another process currently holds `path`'s sidecar lock.
 ///
 /// This probe never creates the sidecar; a missing sidecar means no lock is held.
+#[cfg(unix)]
 pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
     let path = path.as_ref();
     let parent = parent_dir(path);
@@ -301,15 +482,19 @@ fn derive_sidecar_path(parent: &Path, file_name: &OsStr) -> PathBuf {
     parent.join(name)
 }
 
+#[cfg(unix)]
 const PARENT_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
     .union(OFlag::O_CLOEXEC)
     .union(OFlag::O_NOFOLLOW);
+#[cfg(unix)]
 const ENTRY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_CLOEXEC)
     .union(OFlag::O_NOFOLLOW);
+#[cfg(unix)]
 const ENTRY_CREATE_FLAGS: OFlag = ENTRY_OPEN_FLAGS.union(OFlag::O_CREAT).union(OFlag::O_EXCL);
 
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LockEntryIdentity {
     device: nix::libc::dev_t,
@@ -334,6 +519,7 @@ impl NormalLockName {
     }
 }
 
+#[cfg(unix)]
 fn inspect_parent(parent: &Path) -> Result<LockEntryIdentity, ExistingParentLockError> {
     let status = match fstatat(AT_FDCWD, parent, AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(status) => status,
@@ -353,6 +539,7 @@ fn inspect_parent(parent: &Path) -> Result<LockEntryIdentity, ExistingParentLock
     Ok(identity(&status))
 }
 
+#[cfg(unix)]
 fn open_bound_parent(
     parent: &Path,
     inspected: LockEntryIdentity,
@@ -376,6 +563,7 @@ fn open_bound_parent(
     Ok(fd)
 }
 
+#[cfg(unix)]
 fn inspect_lock_entry(
     parent: &impl AsFd,
     name: &NormalLockName,
@@ -390,6 +578,7 @@ fn inspect_lock_entry(
     Ok(Some(identity(&status)))
 }
 
+#[cfg(unix)]
 fn verify_final_lock_entry(
     parent: &impl AsFd,
     name: &NormalLockName,
@@ -421,6 +610,7 @@ fn verify_final_lock_entry(
     Ok(opened_identity)
 }
 
+#[cfg(unix)]
 fn validate_lock_entry(status: &FileStat, path: &Path) -> Result<(), ExistingParentLockError> {
     if !is_kind(status, SFlag::S_IFREG) {
         return Err(ExistingParentLockError::UnsafeLockEntry {
@@ -437,6 +627,7 @@ fn validate_lock_entry(status: &FileStat, path: &Path) -> Result<(), ExistingPar
     Ok(())
 }
 
+#[cfg(unix)]
 fn identity(status: &FileStat) -> LockEntryIdentity {
     LockEntryIdentity {
         device: status.st_dev,
@@ -444,10 +635,12 @@ fn identity(status: &FileStat) -> LockEntryIdentity {
     }
 }
 
+#[cfg(unix)]
 fn is_kind(status: &FileStat, kind: SFlag) -> bool {
     SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT == kind
 }
 
+#[cfg(unix)]
 fn file_kind(status: &FileStat) -> &'static str {
     match SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT {
         SFlag::S_IFREG => "regular file",
@@ -459,21 +652,23 @@ fn file_kind(status: &FileStat) -> &'static str {
     }
 }
 
+#[cfg(unix)]
 fn permission_mode(status: &FileStat) -> u32 {
     // `mode_t` is u32 on Linux and u16 on Apple targets.
     mode_to_u32(status.st_mode & nix::libc::mode_t::from(0o7777u16))
 }
 
-#[cfg(target_vendor = "apple")]
+#[cfg(all(unix, target_vendor = "apple"))]
 fn mode_to_u32(mode: nix::libc::mode_t) -> u32 {
     u32::from(mode)
 }
 
-#[cfg(not(target_vendor = "apple"))]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 fn mode_to_u32(mode: nix::libc::mode_t) -> u32 {
     mode
 }
 
+#[cfg(unix)]
 fn is_contention(error: Errno) -> bool {
     error == Errno::EACCES || error == Errno::EAGAIN || error == Errno::EWOULDBLOCK
 }
@@ -498,6 +693,7 @@ fn wait_or_expire(
     Ok(())
 }
 
+#[cfg(unix)]
 fn existing_io(operation: &'static str, path: &Path, source: Errno) -> ExistingParentLockError {
     ExistingParentLockError::Io {
         operation,
@@ -506,32 +702,424 @@ fn existing_io(operation: &'static str, path: &Path, source: Errno) -> ExistingP
     }
 }
 
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LockEntryIdentity {
+    volume_serial: u64,
+    file_id: [u8; 16],
+}
+
+#[cfg(windows)]
+pub fn acquire_existing_parent_lock(
+    parent: &Path,
+    name: &OsStr,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<ExistingParentLock, ExistingParentLockError> {
+    let name =
+        NormalLockName::parse(name).ok_or_else(|| ExistingParentLockError::InvalidLockPath {
+            name: name.to_os_string(),
+        })?;
+    let path = parent.join(name.as_os_str());
+    let parent_handle = open_existing_parent_windows(parent)?;
+    let guard =
+        acquire_lock_in_parent_windows(&parent_handle, &name, &path, timeout, poll_interval)?;
+    Ok(ExistingParentLock {
+        _guard: guard,
+        path,
+    })
+}
+
+#[cfg(windows)]
+pub fn acquire_existing_parent_lock_bound(
+    parent: &impl AsHandle,
+    name: &OsStr,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<BoundParentLock, ExistingParentLockError> {
+    let name =
+        NormalLockName::parse(name).ok_or_else(|| ExistingParentLockError::InvalidLockPath {
+            name: name.to_os_string(),
+        })?;
+    let path = PathBuf::from(name.as_os_str());
+    validate_parent_handle_windows(parent, &path)?;
+    let guard = acquire_lock_in_parent_windows(parent, &name, &path, timeout, poll_interval)?;
+    Ok(BoundParentLock { _guard: guard })
+}
+
+#[cfg(windows)]
+fn acquire_lock_in_parent_windows(
+    parent: &impl AsHandle,
+    name: &NormalLockName,
+    path: &Path,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<WindowsLockGuard, ExistingParentLockError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let file = nt_create_relative(
+            parent.as_handle().as_raw_handle(),
+            name.as_os_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_OPEN_IF,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        )
+        .map(File::from)
+        .map_err(|source| existing_io("open persistent lock entry", path, source))?;
+        validate_lock_entry_windows(&file, path)?;
+
+        match try_lock_exclusive(file) {
+            Ok(guard) => {
+                verify_final_lock_entry_windows(parent, name, guard.file(), path)?;
+                if timeout.is_zero() {
+                    return Ok(guard);
+                }
+                if Instant::now() >= deadline {
+                    drop(guard);
+                    return Err(timeout_error(path, timeout));
+                }
+                return Ok(guard);
+            }
+            Err((file, error)) if windows_contention(&error) => {
+                drop(file);
+                wait_or_expire(deadline, poll_interval, path, timeout)?;
+            }
+            Err((file, source)) => {
+                drop(file);
+                return Err(existing_io("lock persistent entry", path, source));
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn open_existing_parent_windows(parent: &Path) -> Result<File, ExistingParentLockError> {
+    let file = open_windows_path(
+        parent,
+        FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+    )
+    .map_err(|source| match source.raw_os_error() {
+        Some(code)
+            if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32 =>
+        {
+            ExistingParentLockError::MissingParent {
+                parent: parent.to_path_buf(),
+            }
+        }
+        _ => existing_io("open persistent lock parent", parent, source),
+    })?;
+    validate_parent_file_windows(&file, parent)?;
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn validate_parent_handle_windows(
+    parent: &impl AsHandle,
+    diagnostic: &Path,
+) -> Result<(), ExistingParentLockError> {
+    let attributes = attribute_tag_windows(parent)
+        .map_err(|source| existing_io("stat bound persistent lock parent", diagnostic, source))?;
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
+        return Err(ExistingParentLockError::UnsafeParent {
+            parent: diagnostic.to_path_buf(),
+            kind: "not a directory",
+        });
+    }
+    if is_reparse_point_windows(attributes) {
+        return Err(ExistingParentLockError::UnsafeParent {
+            parent: diagnostic.to_path_buf(),
+            kind: "reparse point",
+        });
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_parent_file_windows(file: &File, parent: &Path) -> Result<(), ExistingParentLockError> {
+    validate_parent_handle_windows(file, parent)
+}
+
+#[cfg(windows)]
+fn verify_final_lock_entry_windows(
+    parent: &impl AsHandle,
+    name: &NormalLockName,
+    opened: &File,
+    path: &Path,
+) -> Result<(), ExistingParentLockError> {
+    let opened_identity = lock_entry_identity_windows(opened)
+        .map_err(|source| existing_io("stat opened persistent lock entry", path, source))?;
+    let named = nt_create_relative(
+        parent.as_handle().as_raw_handle(),
+        name.as_os_str(),
+        GENERIC_READ | FILE_READ_ATTRIBUTES,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    )
+    .map(File::from)
+    .map_err(|source| existing_io("open persistent lock entry", path, source))?;
+    validate_lock_entry_windows(&named, path)?;
+    let named_identity = lock_entry_identity_windows(&named)
+        .map_err(|source| existing_io("stat persistent lock entry", path, source))?;
+    if crate::windows_lock::force_post_lock_identity_mismatch() || opened_identity != named_identity
+    {
+        return Err(ExistingParentLockError::NamespaceChanged {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_lock_entry_windows(file: &File, path: &Path) -> Result<(), ExistingParentLockError> {
+    let attributes = attribute_tag_windows(file)
+        .map_err(|source| existing_io("stat persistent lock entry", path, source))?;
+    if is_reparse_point_windows(attributes) {
+        return Err(ExistingParentLockError::UnsafeLockEntry {
+            path: path.to_path_buf(),
+            kind: "reparse point",
+        });
+    }
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        return Err(ExistingParentLockError::UnsafeLockEntry {
+            path: path.to_path_buf(),
+            kind: "directory",
+        });
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn lock_entry_identity_windows(file: &impl AsHandle) -> io::Result<LockEntryIdentity> {
+    let mut info = windows_sys::Win32::Storage::FileSystem::FILE_ID_INFO::default();
+    // SAFETY: `info` is writable for its exact buffer size and `file` is a retained
+    // handle valid for GetFileInformationByHandleEx.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_handle().as_raw_handle(),
+            FileIdInfo,
+            (&mut info as *mut windows_sys::Win32::Storage::FileSystem::FILE_ID_INFO).cast(),
+            std::mem::size_of::<windows_sys::Win32::Storage::FileSystem::FILE_ID_INFO>() as u32,
+        )
+    };
+    (result != 0)
+        .then_some(LockEntryIdentity {
+            volume_serial: info.VolumeSerialNumber,
+            file_id: info.FileId.Identifier,
+        })
+        .ok_or_else(io::Error::last_os_error)
+}
+
+#[cfg(windows)]
+fn attribute_tag_windows(file: &impl AsHandle) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
+    let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
+    // SAFETY: `info` is writable for its exact buffer size and `file` is a retained
+    // handle valid for GetFileInformationByHandleEx.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_handle().as_raw_handle(),
+            FileAttributeTagInfo,
+            (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    (result != 0)
+        .then_some(info)
+        .ok_or_else(io::Error::last_os_error)
+}
+
+#[cfg(windows)]
+fn is_reparse_point_windows(attributes: FILE_ATTRIBUTE_TAG_INFO) -> bool {
+    attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(windows)]
+pub(crate) fn open_windows_path(
+    path: &Path,
+    desired_access: u32,
+    disposition: u32,
+    flags: u32,
+) -> io::Result<File> {
+    let mut wide = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    if wide.contains(&0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Windows lock path contains an interior NUL",
+        ));
+    }
+    wide.push(0);
+    // SAFETY: `wide` is NUL-terminated and remains live for the duration of CreateFileW;
+    // all other values are documented constants for a synchronous file open.
+    #[allow(unsafe_code)]
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            desired_access,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            disposition,
+            flags,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: CreateFileW returned one owned valid handle and the conversion occurs exactly once.
+    #[allow(unsafe_code)]
+    Ok(unsafe { File::from_raw_handle(handle) })
+}
+
+#[cfg(windows)]
+pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLock, LockError> {
+    let path = path.as_ref();
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    let file_name = path.file_name().ok_or_else(|| {
+        io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "lock path has no file name"),
+        )
+    })?;
+    let sidecar = derive_sidecar_path(parent, file_name);
+    let deadline = Instant::now() + options.timeout;
+    loop {
+        let file = open_windows_path(
+            &sidecar,
+            GENERIC_READ | GENERIC_WRITE,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .map_err(|source| io_error(path, source))?;
+        let attributes = attribute_tag_windows(&file).map_err(|source| io_error(path, source))?;
+        if is_reparse_point_windows(attributes) {
+            return Err(io_error(
+                path,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "lock sidecar is a reparse point",
+                ),
+            ));
+        }
+        match try_lock_exclusive(file) {
+            Ok(guard) => {
+                return Ok(FileLock {
+                    _guard: guard,
+                    path: path.to_path_buf(),
+                });
+            }
+            Err((file, error)) if windows_contention(&error) => {
+                drop(file);
+                if Instant::now() >= deadline {
+                    return Err(LockError::Timeout(LockTimeout {
+                        path: path.to_path_buf(),
+                        timeout: options.timeout,
+                    }));
+                }
+                thread::sleep(retry_delay(options.poll_interval));
+            }
+            Err((file, source)) => {
+                drop(file);
+                return Err(io_error(path, source));
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
+    let path = path.as_ref();
+    let parent = parent_dir(path);
+    let file_name = path.file_name().ok_or_else(|| {
+        io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "lock path has no file name"),
+        )
+    })?;
+    let sidecar = derive_sidecar_path(parent, file_name);
+    let file = match open_windows_path(
+        &sidecar,
+        GENERIC_READ,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+    ) {
+        Ok(file) => file,
+        Err(source)
+            if matches!(
+                source.raw_os_error(),
+                Some(code) if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(source) => return Err(io_error(path, source)),
+    };
+    let attributes = attribute_tag_windows(&file).map_err(|source| io_error(path, source))?;
+    if is_reparse_point_windows(attributes) {
+        return Err(io_error(
+            path,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "lock sidecar is a reparse point",
+            ),
+        ));
+    }
+    match try_lock_shared(file) {
+        Ok(guard) => {
+            drop(guard);
+            Ok(false)
+        }
+        Err((file, error)) if windows_contention(&error) => {
+            drop(file);
+            Ok(true)
+        }
+        Err((file, source)) => {
+            drop(file);
+            Err(io_error(path, source))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn existing_io(operation: &'static str, path: &Path, source: io::Error) -> ExistingParentLockError {
+    ExistingParentLockError::Io {
+        operation,
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
+#[cfg(unix)]
 const AFTER_PARENT_INSPECTION: usize = 0;
+#[cfg(unix)]
 const AFTER_LOCK_FLOCK: usize = 1;
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 type RaceHooks = [Option<fn()>; 2];
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 thread_local! {
     static RACE_HOOKS: std::cell::Cell<RaceHooks> =
         const { std::cell::Cell::new([None; 2]) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn run_race_hook(point: usize) {
     if let Some(callback) = RACE_HOOKS.with(|hooks| hooks.get()[point]) {
         callback();
     }
 }
 
-#[cfg(not(test))]
+#[cfg(all(unix, not(test)))]
 fn run_race_hook(_point: usize) {}
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 struct RaceHook(usize);
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl RaceHook {
     fn install(point: usize, callback: fn()) -> Self {
         RACE_HOOKS.with(|hooks| {
@@ -544,7 +1132,7 @@ impl RaceHook {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl Drop for RaceHook {
     fn drop(&mut self) {
         RACE_HOOKS.with(|hooks| {
@@ -588,7 +1176,7 @@ fn io_error(path: &Path, source: io::Error) -> LockError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::cell::RefCell;
     use std::collections::BTreeSet;

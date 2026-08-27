@@ -4,8 +4,8 @@ target = "x86_64-pc-windows-msvc"
 [baseline]
 # The census counts a package once as a library package when any target is `lib`; this mixed
 # lib+bin rail therefore changes both baselines by exactly one.
-workspace_packages = 132
-library_packages = 126
+workspace_packages = 133
+library_packages = 127
 
 [[exclusions]]
 package = "solstone-core-backfill-cli"
@@ -16,14 +16,14 @@ expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOpt
 [[exclusions]]
 package = "solstone-core-brain"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions, LockOptions, hold_lock, and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "solstone-core-convey-config"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions, LockOptions, hold_lock, and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "solstone-core-cortex-client"
@@ -34,14 +34,14 @@ expected_stderr = ["unresolved import `tokio::net::UnixStream`"]
 [[exclusions]]
 package = "solstone-core-identity"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, append_text, atomic_replace, and hold_lock."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::append_text`, `solstone_core_journal_io::atomic_replace`, `solstone_core_journal_io::hold_lock`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, append_text, and atomic_replace."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::append_text`, `solstone_core_journal_io::atomic_replace`"]
 
 [[exclusions]]
 package = "solstone-core-journal-config-write"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions, LockOptions, hold_lock, and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "solstone-core-retention"
@@ -58,8 +58,14 @@ expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOpt
 [[exclusions]]
 package = "solstone-core-speaker-id"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, LockOptions, atomic_replace, and hold_lock."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::atomic_replace`, `solstone_core_journal_io::hold_lock`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions and atomic_replace."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`"]
+
+[[exclusions]]
+package = "solstone-core-push"
+class = "sibling-owned-platform-backend"
+reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "solstone-core-service-unit"

@@ -8,28 +8,25 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{self, Read};
 use std::mem::{offset_of, size_of};
-use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 
-use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtCreateFile,
-    NtQueryDirectoryFile,
+    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
-    ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED, ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE,
-    OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, STATUS_SUCCESS, UNICODE_STRING,
+    ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED, ERROR_PATH_NOT_FOUND, RtlNtStatusToDosError,
+    STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
     FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
-    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW, SYNCHRONIZE,
+    FILE_READ_DATA, FILE_TRAVERSE, FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo,
+    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{
     CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
@@ -37,6 +34,7 @@ use windows_sys::Win32::System::IO::{
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
+use crate::windows_ntcreate::nt_create_relative;
 use crate::{
     InventoryBudget, InventoryBudgetLimit, JournalEntryKind, JournalRoot, JournalRootError,
     ObjectIdentity, check_portable_component,
@@ -1128,29 +1126,6 @@ fn open_relative(
     path: &Path,
 ) -> Result<OwnedHandle, WindowsInventoryError> {
     inventory_barrier(WindowsInventoryPrimitive::BeforeDescendantOpen);
-    let wide = name.encode_wide().collect::<Vec<_>>();
-    let byte_length = wide
-        .len()
-        .checked_mul(size_of::<u16>())
-        .and_then(|length| u16::try_from(length).ok())
-        .ok_or_else(|| WindowsInventoryError::InvalidName {
-            path: path.to_path_buf(),
-        })?;
-    let mut object_name = UNICODE_STRING {
-        Length: byte_length,
-        MaximumLength: byte_length,
-        Buffer: wide.as_ptr().cast_mut(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-        RootDirectory: parent,
-        ObjectName: &mut object_name,
-        Attributes: OBJ_CASE_INSENSITIVE,
-        SecurityDescriptor: std::ptr::null(),
-        SecurityQualityOfService: std::ptr::null(),
-    };
-    let mut handle = INVALID_HANDLE_VALUE;
-    let mut status = windows_sys::Win32::System::IO::IO_STATUS_BLOCK::default();
     let options = FILE_OPEN_REPARSE_POINT
         | FILE_OPEN_FOR_BACKUP_INTENT
         | FILE_SYNCHRONOUS_IO_NONALERT
@@ -1160,34 +1135,16 @@ fn open_relative(
             0
         };
     let handle = traced_inventory(WindowsInventoryPrimitive::DescendantOpen, || {
-        // SAFETY: `attributes` refers to the live UTF-16 component and retained parent handle; all output pointers refer to initialized local storage, and the synchronous request does not outlive them.
-        #[allow(unsafe_code)]
-        let result = unsafe {
-            NtCreateFile(
-                &mut handle,
-                desired_access | SYNCHRONIZE,
-                &attributes,
-                &mut status,
-                std::ptr::null(),
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_OPEN,
-                options,
-                std::ptr::null(),
-                0,
-            )
-        };
-        (result == STATUS_SUCCESS).then_some(handle).ok_or_else(|| {
-            // SAFETY: `RtlNtStatusToDosError` converts the just-returned NTSTATUS without borrowing any caller memory.
-            #[allow(unsafe_code)]
-            let error = unsafe { RtlNtStatusToDosError(result) };
-            io::Error::from_raw_os_error(error as i32)
-        })
+        nt_create_relative(
+            parent,
+            name,
+            desired_access | SYNCHRONIZE,
+            FILE_OPEN,
+            options,
+        )
     })
     .map_err(|source| relative_open_error(path, source))?;
-    // SAFETY: `NtCreateFile` returned one owned valid handle and the conversion occurs exactly once.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedHandle::from_raw_handle(handle) })
+    Ok(handle)
 }
 
 fn open_relative_for_directory_listing(
