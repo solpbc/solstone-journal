@@ -9,14 +9,24 @@ use std::path::Path;
 
 use serde::Serialize;
 
+#[cfg(unix)]
 use crate::atomic::{fsync_dir, sync_file};
 use crate::errors::AppendError;
+
+#[cfg(windows)]
+fn sync_file(file: &fs::File) -> io::Result<()> {
+    // `File::sync_all` is `FlushFileBuffers` on Windows.  The existing Unix append contract
+    // only requires the record-file sync to succeed; parent-directory sync after a create is
+    // best effort there, and Windows has no corresponding directory-handle operation here.
+    file.sync_all()
+}
 
 /// Append one newline-terminated text record through a single raw write.
 ///
 /// A successful return means exactly one complete record was appended and
 /// synced. A returned error can still leave a partial write on disk when the
 /// underlying single write reports a short byte count.
+#[cfg(unix)]
 pub fn append_text(path: impl AsRef<Path>, text: &str) -> Result<(), AppendError> {
     let mut contents = Vec::with_capacity(text.len() + 1);
     contents.extend_from_slice(text.as_bytes());
@@ -40,6 +50,7 @@ pub fn append_jsonl<T: Serialize>(path: impl AsRef<Path>, record: &T) -> Result<
 fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
     let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    #[cfg(unix)]
     let is_new = !path.exists();
     let mut file = OpenOptions::new()
         .append(true)
@@ -59,6 +70,7 @@ fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
         ));
     }
     sync_file(&file).map_err(|source| io_error(path, source))?;
+    #[cfg(unix)]
     if is_new {
         fsync_dir(parent);
     }
@@ -85,6 +97,7 @@ mod tests {
     use super::*;
     use crate::test_support::TempDir;
 
+    #[cfg(unix)]
     #[test]
     fn appends_one_complete_newline_terminated_record_per_call() {
         let temporary = TempDir::new();
@@ -98,6 +111,23 @@ mod tests {
         assert_eq!(
             contents.lines().collect::<Vec<_>>(),
             vec!["first", r#"{"second":true}"#]
+        );
+        assert!(contents.ends_with('\n'));
+    }
+
+    #[test]
+    fn appends_jsonl_as_one_complete_newline_terminated_record_per_call() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_jsonl(&path, &serde_json::json!({"first": true})).unwrap();
+        let first_len = fs::metadata(&path).unwrap().len();
+        append_jsonl(&path, &serde_json::json!({"second": true})).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(first_len, r#"{"first":true}"#.len() as u64 + 1);
+        assert_eq!(
+            contents.lines().collect::<Vec<_>>(),
+            vec![r#"{"first":true}"#, r#"{"second":true}"#]
         );
         assert!(contents.ends_with('\n'));
     }

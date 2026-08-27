@@ -12,7 +12,7 @@ compile_error!(
     "solstone-core-journal-io requires a Unix or Windows target: atomic write, locking, and lease durability guarantees have no portable backend"
 );
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod append;
 #[cfg(unix)]
 pub mod atomic;
@@ -46,8 +46,10 @@ pub mod windows_inventory;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+#[cfg(any(unix, windows))]
+pub use append::append_jsonl;
 #[cfg(unix)]
-pub use append::{append_jsonl, append_text};
+pub use append::append_text;
 #[cfg(unix)]
 pub use atomic::{
     AtomicWriteOptions, DetailedAtomicError, DetailedAtomicOutcome, JsonWriteOptions,
