@@ -114,6 +114,14 @@ impl CallosumOneShotSender {
                 while offset < bytes.len() {
                     let read = retry_io(deadline, || stream.read(&mut bytes[offset..]))?;
                     if read == 0 {
+                        // A nonblocking named-pipe client can observe a transient zero-length
+                        // read immediately after connect_sync() returns, before the server's
+                        // async accept has resumed far enough to write the greeting. That is not
+                        // peer closure. Only report EOF once no bytes have arrived by deadline.
+                        if Instant::now() < deadline {
+                            thread::sleep(Duration::from_millis(1));
+                            continue;
+                        }
                         return Err(std::io::Error::new(
                             ErrorKind::UnexpectedEof,
                             "Callosum pipe closed",
