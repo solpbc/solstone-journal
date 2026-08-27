@@ -13,6 +13,7 @@ use solstone_core_installation_identity::{
 };
 
 use crate::events::StepName;
+use crate::legacy_launcher;
 use crate::steps::service_artifact_path;
 use crate::wrapper::{parse_wrapper, wrapper_paths};
 
@@ -26,6 +27,7 @@ const SERVICE_GUARD_KEYS: [&str; 4] = [
 #[derive(Clone, Debug)]
 enum PresentArtifact {
     Unguarded,
+    LegacyLauncher,
     Guarded(GuardFields),
 }
 
@@ -35,6 +37,9 @@ pub struct SetupArtifactEvidence {
     artifacts: ArtifactBindingEvidence,
     wrapper_guards: Vec<GuardFields>,
     service_guard: Option<GuardFields>,
+    wrapper_unguarded: bool,
+    service_unguarded: bool,
+    legacy_transition: bool,
 }
 
 impl SetupArtifactEvidence {
@@ -47,21 +52,29 @@ impl SetupArtifactEvidence {
     pub fn repair_steps(&self, binding: &InstallationBinding) -> Vec<StepName> {
         let expected = GuardFields::from_binding(binding);
         let mut steps = Vec::new();
-        if self
-            .wrapper_guards
-            .iter()
-            .any(|guard| guard.same_identity(&expected) && guard != &expected)
+        if self.wrapper_unguarded
+            || self
+                .wrapper_guards
+                .iter()
+                .any(|guard| guard.same_identity(&expected) && guard != &expected)
         {
             steps.push(StepName::Wrapper);
         }
-        if self
-            .service_guard
-            .as_ref()
-            .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
+        if self.legacy_transition
+            || self.service_unguarded
+            || self
+                .service_guard
+                .as_ref()
+                .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
         {
             steps.push(StepName::Service);
         }
         steps
+    }
+
+    #[must_use]
+    pub const fn legacy_transition(&self) -> bool {
+        self.legacy_transition
     }
 }
 
@@ -84,17 +97,28 @@ pub fn gather_artifact_evidence(
     home_dir: &Path,
     expected_namespace: &NamespaceName,
 ) -> ArtifactBindingEvidence {
-    gather_setup_artifact_evidence(home_dir, expected_namespace).artifacts
+    gather_setup_artifact_evidence(home_dir, expected_namespace, false).artifacts
 }
 
 /// Classifies setup artifacts and retains guarded artifacts for targeted repair.
 pub fn gather_setup_artifact_evidence(
     home_dir: &Path,
     expected_namespace: &NamespaceName,
+    allow_legacy_launchers: bool,
 ) -> SetupArtifactEvidence {
     let wrapper_paths = wrapper_paths(home_dir);
-    let solstone = read_wrapper(&wrapper_paths.solstone);
-    let journal = read_wrapper(&wrapper_paths.journal);
+    let solstone = read_setup_wrapper(
+        home_dir,
+        &wrapper_paths.solstone,
+        "solstone",
+        allow_legacy_launchers,
+    );
+    let journal = read_setup_wrapper(
+        home_dir,
+        &wrapper_paths.journal,
+        "journal",
+        allow_legacy_launchers,
+    );
     let service = service_artifact_path(home_dir)
         .map(|path| read_service(&path))
         .unwrap_or(Ok(None));
@@ -105,6 +129,9 @@ pub fn gather_setup_artifact_evidence(
                 artifacts: ArtifactBindingEvidence::Malformed,
                 wrapper_guards: Vec::new(),
                 service_guard: None,
+                wrapper_unguarded: false,
+                service_unguarded: false,
+                legacy_transition: false,
             };
         }
     };
@@ -119,6 +146,16 @@ pub fn gather_setup_artifact_evidence(
         Some(PresentArtifact::Guarded(guard)) => Some(guard.clone()),
         _ => None,
     };
+    let wrapper_unguarded = [&solstone, &journal].into_iter().any(|artifact| {
+        matches!(
+            artifact,
+            Some(PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher)
+        )
+    });
+    let service_unguarded = matches!(&service, Some(PresentArtifact::Unguarded));
+    let legacy_transition = [&solstone, &journal]
+        .into_iter()
+        .any(|artifact| matches!(artifact, Some(PresentArtifact::LegacyLauncher)));
     let artifacts = solstone
         .into_iter()
         .chain(journal)
@@ -128,6 +165,26 @@ pub fn gather_setup_artifact_evidence(
         artifacts: classify(Ok(artifacts), expected_namespace),
         wrapper_guards,
         service_guard,
+        wrapper_unguarded,
+        service_unguarded,
+        legacy_transition,
+    }
+}
+
+fn read_setup_wrapper(
+    home_dir: &Path,
+    path: &Path,
+    command: &str,
+    allow_legacy_launchers: bool,
+) -> Result<Option<PresentArtifact>, ()> {
+    match read_wrapper(path) {
+        Ok(artifact) => Ok(artifact),
+        Err(()) if allow_legacy_launchers => legacy_launcher::classify(home_dir, path, command)
+            .map_err(|_| ())
+            .and_then(|artifact| {
+                artifact.map_or(Err(()), |_| Ok(Some(PresentArtifact::LegacyLauncher)))
+            }),
+        Err(()) => Err(()),
     }
 }
 
@@ -167,22 +224,21 @@ fn classify(
     if artifacts.is_empty() {
         return ArtifactBindingEvidence::Fresh;
     }
-    if artifacts
-        .iter()
-        .all(|artifact| matches!(artifact, PresentArtifact::Unguarded))
-    {
+    if artifacts.iter().all(|artifact| {
+        matches!(
+            artifact,
+            PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher
+        )
+    }) {
         return ArtifactBindingEvidence::LegacyUnguarded;
     }
     let guards = artifacts
         .iter()
-        .map(|artifact| match artifact {
+        .filter_map(|artifact| match artifact {
             PresentArtifact::Guarded(fields) => Some(fields),
-            PresentArtifact::Unguarded => None,
+            PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher => None,
         })
-        .collect::<Option<Vec<_>>>();
-    let Some(guards) = guards else {
-        return ArtifactBindingEvidence::Ambiguous;
-    };
+        .collect::<Vec<_>>();
     let first = guards[0];
     if guards.iter().any(|guard| !guard.same_identity(first)) {
         return ArtifactBindingEvidence::Ambiguous;
@@ -256,6 +312,7 @@ mod tests {
     use solstone_core_installation_identity::{
         Generation, InstallationId, JournalToken, NamespaceName,
     };
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     fn fields() -> GuardFields {
         GuardFields {
@@ -308,5 +365,48 @@ mod tests {
             ),
             ArtifactBindingEvidence::Guarded(original)
         );
+    }
+
+    #[test]
+    fn exact_v1_launcher_is_admitted_only_by_the_setup_transition() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-identity-v1-launcher-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let legacy_bin = home.join(".local/share/uv/tools/solstone/bin");
+        let public_bin = home.join(".local/bin");
+        fs::create_dir_all(&legacy_bin).unwrap();
+        fs::create_dir_all(&public_bin).unwrap();
+        let launcher = legacy_bin.join("solstone");
+        fs::write(
+            &launcher,
+            concat!(
+                "#!/usr/bin/python3\n",
+                "# -*- coding: utf-8 -*-\n",
+                "import sys\n",
+                "from solstone.think.sol_cli import main\n",
+                "if __name__ == '__main__':\n",
+                "    if sys.argv[0].endswith('-script.pyw'):\n",
+                "        sys.argv[0] = sys.argv[0][:-11]\n",
+                "    elif sys.argv[0].endswith('.exe'):\n",
+                "        sys.argv[0] = sys.argv[0][:-4]\n",
+                "    sys.exit(main())\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        symlink(&launcher, public_bin.join("solstone")).unwrap();
+
+        let namespace = fields().namespace;
+        assert_eq!(
+            gather_artifact_evidence(&home, &namespace),
+            ArtifactBindingEvidence::Malformed
+        );
+        let setup = gather_setup_artifact_evidence(&home, &namespace, true);
+        assert_eq!(setup.artifacts(), &ArtifactBindingEvidence::LegacyUnguarded);
+        assert!(setup.legacy_transition());
+        let _ = fs::remove_dir_all(root);
     }
 }

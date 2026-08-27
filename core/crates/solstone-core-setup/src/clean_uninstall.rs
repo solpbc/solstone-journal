@@ -332,6 +332,7 @@ fn remove_wrappers(
         curdir: context.curdir.clone(),
         executable_dir: context.executable_dir.clone(),
         backup_dir: None,
+        legacy_replacement: false,
     };
     match uninstall_wrappers(&environment) {
         Ok(()) => result(

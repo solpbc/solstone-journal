@@ -385,37 +385,112 @@ PY
         ;;
 
     legacy-upgrade)
-        # Upgrade-over-legacy-state cell (the path that hid Ryan Bennett's
-        # 0.4.10->0.5.1 cutover bugs). Same as `install`, but BEFORE journal
-        # setup we seed a LEGACY non-symlink regular-file wrapper at
-        # ~/.local/bin/solstone — the accumulated manual-materialization state a
-        # clean install never has. Then we assert setup self-heals the foreign
-        # wrapper (managed wrapper + /tmp backup) through to a healthy
-        # service_identity. A clean install classifies the alias OWNED and
-        # never exercises the FOREIGN heal path, which is why the post-0.5.2
-        # 5-cell clean matrix couldn't catch the wrapper/identity class.
+        # V2-over-v1 crossover cell. Seed exact V1 console scripts plus a live
+        # historical systemd service, then prove one setup invocation replaces
+        # their runtime authority without changing any pre-existing journal
+        # artifact outside setup's closed write set.
         log "legacy-upgrade: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
-        log "legacy-upgrade: seed legacy non-symlink wrapper at ~/.local/bin/solstone"
-        # rm the uv symlink first — `cat >` through a symlink writes the target,
-        # not the alias. parse_wrapper has no managed-version marker to find, so
-        # check_alias classifies this regular file FOREIGN. The exec target is a
-        # deliberately-defunct path; provision_wrappers only READS the wrapper.
+        log "legacy-upgrade: seed exact V1 launchers, service, manifest, and owner content"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            rm -f ~/.local/bin/solstone
-            cat > ~/.local/bin/solstone <<WRAP
-#!/bin/bash
-# legacy hand-rolled wrapper from a prior manual materialization
-exec /opt/solstone-legacy-runtime/tools/solstone
-WRAP
-            chmod +x ~/.local/bin/solstone
-            test ! -L ~/.local/bin/solstone   # must be a regular file, not a symlink
+            legacy_bin="$HOME/.local/share/uv/tools/solstone/bin"
+            public_bin="$HOME/.local/bin"
+            mkdir -p "$legacy_bin" "$public_bin" \
+                "$HOME/.config/systemd/user" \
+                "$HOME/journal/20260826" "$HOME/journal/media" \
+                "$HOME/journal/identity/entities" "$HOME/journal/config" \
+                "$HOME/journal/health"
+
+            cat > "$legacy_bin/python3" <<'"'"'PYTHON'"'"'
+#!/bin/sh
+printf "%s\n" "$$" > "$HOME/journal/health/v1.pid"
+trap '"'"'if grep -q "^ExecStart=.*/sol supervisor 5015$" "$HOME/.config/systemd/user/solstone.service"; then
+    printf "%s\n" "stopped-before-publish" > /tmp/v1-stopped-before-publish
+fi
+exit 0'"'"' TERM INT
+while :; do sleep 1; done
+PYTHON
+            chmod 755 "$legacy_bin/python3"
+
+            for command in solstone sol; do
+                cat > "$legacy_bin/$command" <<WRAPPER
+#!$legacy_bin/python3
+# -*- coding: utf-8 -*-
+import sys
+from solstone.think.sol_cli import main
+if __name__ == '"'"'__main__'"'"':
+    if sys.argv[0].endswith('"'"'-script.pyw'"'"'):
+        sys.argv[0] = sys.argv[0][:-11]
+    elif sys.argv[0].endswith('"'"'.exe'"'"'):
+        sys.argv[0] = sys.argv[0][:-4]
+    sys.exit(main())
+WRAPPER
+                chmod 755 "$legacy_bin/$command"
+                ln -sfn "$legacy_bin/$command" "$public_bin/$command"
+            done
+
+            printf "%s\n" '"'"'{"owner":"ledger"}'"'"' > "$HOME/journal/ledger.jsonl"
+            printf "%s\n" '"'"'{"owner":"dated"}'"'"' > "$HOME/journal/20260826/owner.jsonl"
+            printf "%s" '"'"'owner-media-bytes'"'"' > "$HOME/journal/media/owner.bin"
+            printf "%s\n" '"'"'# owner entity'"'"' > "$HOME/journal/identity/entities/owner.md"
+            printf "%s\n" '"'"'{"owner_setting":true}'"'"' > "$HOME/journal/config/owner.json"
+            cat > "$HOME/journal/health/setup-state.json" <<'"'"'MANIFEST'"'"'
+{
+  "schema_version": 1,
+  "started_at": "2026-08-26T00:00:00Z",
+  "completed_at": "2026-08-26T00:00:01Z",
+  "mode": "non_interactive",
+  "args_resolved": {},
+  "steps": [
+    {"name":"wrapper","status":"ok","paths":[]},
+    {"name":"service","status":"ok","paths":[]}
+  ]
+}
+MANIFEST
+
+            cat > "$HOME/.config/systemd/user/solstone.service" <<UNIT
+[Unit]
+Description=Solstone Supervisor
+After=default.target
+
+[Service]
+Type=simple
+Environment=HOME=$HOME
+Environment=PATH=$public_bin:/usr/bin:/bin
+ExecStart=$public_bin/sol supervisor 5015
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+            systemctl --user daemon-reload
+            systemctl --user enable --now solstone.service
+            for _ in $(seq 1 50); do
+                test -s "$HOME/journal/health/v1.pid" && break
+                sleep 0.1
+            done
+            test -s "$HOME/journal/health/v1.pid"
+            cp "$HOME/journal/health/v1.pid" /tmp/v1.pid
+
+            cd "$HOME/journal"
+            find . -mindepth 1 \
+                ! -path '"'"'./config/journal.json'"'"' \
+                ! -path '"'"'./config/journal.json.lock'"'"' \
+                ! -path '"'"'./health/setup-state.json'"'"' \
+                ! -path '"'"'./.claude/skills'"'"' ! -path '"'"'./.claude/skills/*'"'"' \
+                ! -path '"'"'./.agents/skills'"'"' ! -path '"'"'./.agents/skills/*'"'"' \
+                -print0 > /tmp/journal-preexisting.paths
+            tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
+                --mtime=@0 --owner=0 --group=0 --numeric-owner \
+                -cf /tmp/journal-preexisting.before.tar
         '
 
-        log "legacy-upgrade: journal setup -y --skip-models --skip-skills"
-        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc 'journal setup -y --skip-models --skip-skills'
+        log "legacy-upgrade: one journal setup invocation"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
+            'journal setup -y --accept-existing-journal --skip-models --skip-skills'
 
         log "verify: systemctl --user is-active solstone"
         for _ in $(seq 1 30); do
@@ -431,13 +506,37 @@ WRAP
             exit 1
         fi
 
-        log "verify: foreign wrapper self-healed (managed wrapper + /tmp backup)"
+        log "verify: V1 stopped before publication; authority replaced with durable recovery copies"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            # the foreign wrapper has been replaced by a managed solstone wrapper
+            old_pid=$(cat /tmp/v1.pid)
+            ! kill -0 "$old_pid" 2>/dev/null
+            test -f /tmp/v1-stopped-before-publish
+            new_pid=$(systemctl --user show solstone.service --property=MainPID --value)
+            test "$new_pid" -gt 1
+            test "$new_pid" != "$old_pid"
+
             grep -q "^# managed-version:" ~/.local/bin/solstone
-            # and the legacy wrapper was preserved, not destroyed
-            ls /tmp/solstone.old-symlink-* >/dev/null 2>&1
+            grep -q "^# managed-version:" ~/.local/bin/journal
+            test ! -e ~/.local/bin/sol
+            test ! -L ~/.local/bin/sol
+            test -x ~/.local/share/uv/tools/solstone/bin/solstone
+            test -x ~/.local/share/uv/tools/solstone/bin/sol
+            compgen -G "$HOME/.local/share/solstone/setup-backups/solstone.old-symlink-*" >/dev/null
+            compgen -G "$HOME/.local/share/solstone/setup-backups/sol.old-symlink-*" >/dev/null
+            solstone_backup=$(compgen -G "$HOME/.local/share/solstone/setup-backups/solstone.old-symlink-*" | head -1)
+            sol_backup=$(compgen -G "$HOME/.local/share/solstone/setup-backups/sol.old-symlink-*" | head -1)
+            test -L "$solstone_backup"
+            test -L "$sol_backup"
+            test "$(readlink "$solstone_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/solstone"
+            test "$(readlink "$sol_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/sol"
+
+            grep -q "^ExecStart=.*/journal start 5015$" ~/.config/systemd/user/solstone.service
+            cd "$HOME/journal"
+            tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
+                --mtime=@0 --owner=0 --group=0 --numeric-owner \
+                -cf /tmp/journal-preexisting.after.tar
+            cmp /tmp/journal-preexisting.before.tar /tmp/journal-preexisting.after.tar
         '
 
         log "verify: full journal doctor reports service_identity ok"

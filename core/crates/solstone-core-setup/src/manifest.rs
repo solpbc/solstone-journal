@@ -67,9 +67,32 @@ pub fn legacy_manifest_evidence(path: &Path) -> LegacyManifestEvidence {
             LegacyManifestEvidence::Absent
         }
         Err(_) => LegacyManifestEvidence::Unreadable,
-        Ok(_) if read_manifest(path).is_some() => LegacyManifestEvidence::ValidProviderlessSchemaV1,
+        Ok(bytes) if exact_providerless_schema_v1(&bytes) => {
+            LegacyManifestEvidence::ValidProviderlessSchemaV1
+        }
         Ok(_) => LegacyManifestEvidence::Malformed,
     }
+}
+
+fn exact_providerless_schema_v1(bytes: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    let required = [
+        "schema_version",
+        "started_at",
+        "completed_at",
+        "mode",
+        "args_resolved",
+        "steps",
+    ];
+    object.len() == required.len()
+        && required.iter().all(|key| object.contains_key(*key))
+        && serde_json::from_value::<SetupManifest>(value)
+            .is_ok_and(|manifest| manifest.schema_version == SCHEMA_VERSION)
 }
 
 /// Index the last record for each externally supplied step name.
@@ -269,6 +292,38 @@ mod tests {
             legacy_manifest_evidence(&malformed),
             solstone_core_installation_identity::LegacyManifestEvidence::Malformed
         );
+        for (name, value) in [
+            (
+                "future-schema.json",
+                serde_json::json!({
+                    "schema_version": 2,
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "completed_at": null,
+                    "mode": "non_interactive",
+                    "args_resolved": {},
+                    "steps": []
+                }),
+            ),
+            (
+                "provider-bearing.json",
+                serde_json::json!({
+                    "schema_version": 1,
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "completed_at": null,
+                    "mode": "non_interactive",
+                    "args_resolved": {},
+                    "steps": [],
+                    "provider": "local"
+                }),
+            ),
+        ] {
+            let path = root.join(name);
+            fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+            assert_eq!(
+                legacy_manifest_evidence(&path),
+                solstone_core_installation_identity::LegacyManifestEvidence::Malformed
+            );
+        }
     }
 
     #[test]

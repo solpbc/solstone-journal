@@ -107,6 +107,8 @@ pub enum ErrorCode {
     StepSubprocessFailed,
     #[serde(rename = "step_subprocess_timeout")]
     StepSubprocessTimeout,
+    #[serde(rename = "wrapper_provision_failed")]
+    WrapperProvisionFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

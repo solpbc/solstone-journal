@@ -13,6 +13,7 @@ pub mod args;
 pub mod clean_uninstall;
 pub mod events;
 pub mod identity_evidence;
+mod legacy_launcher;
 pub mod manifest;
 pub mod steps;
 pub mod user_config;
@@ -72,6 +73,7 @@ impl ExistingJournalPrompt for TerminalPrompt {
 struct SetupIdentityAdmission {
     admission: SetupAdmission,
     repair_steps: Vec<StepName>,
+    legacy_replacement: bool,
 }
 
 fn terminal_confirm() -> bool {
@@ -151,11 +153,23 @@ fn admit_setup_identity(
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
 ) -> Result<SetupIdentityAdmission, IdentityError> {
+    if std::env::var_os("HOME").is_some_and(|home| std::path::PathBuf::from(home) == home_dir) {
+        legacy_launcher::validate_effective_path(home_dir, project_root, executable_dir).map_err(
+            |_| IdentityError::AdmissionRefused("PATH resolves outside the V2 installation"),
+        )?;
+    }
     let root = resolve_identity_root(executable_dir, project_root);
     let root_token = root_token_from_path(&root)?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
-    let artifacts = gather_setup_artifact_evidence(home_dir, &namespace);
     let manifest = legacy_manifest_evidence(&manifest_path(&resolved.journal_path));
+    let artifacts = gather_setup_artifact_evidence(
+        home_dir,
+        &namespace,
+        matches!(
+            manifest,
+            solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
+        ),
+    );
     if !home_dir.exists()
         && matches!(artifacts.artifacts(), ArtifactBindingEvidence::Fresh)
         && matches!(
@@ -177,9 +191,11 @@ fn admit_setup_identity(
         artifacts: artifacts.artifacts().clone(),
     })?;
     let repair_steps = artifacts.repair_steps(admission.binding());
+    let legacy_replacement = artifacts.legacy_transition();
     Ok(SetupIdentityAdmission {
         admission,
         repair_steps,
+        legacy_replacement,
     })
 }
 
@@ -360,8 +376,10 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     let resolved = resolve_setup(&args, &resolution);
     let mode = resolve_mode(&args, stdin_is_tty, stdout_is_tty);
     let mut effective_resolved = resolved.clone();
-    let (admission, identity_guard_repair_steps) = if resolved.should_short_circuit() {
-        (None, Vec::new())
+    let (admission, identity_guard_repair_steps, legacy_replacement) = if resolved
+        .should_short_circuit()
+    {
+        (None, Vec::new(), false)
     } else {
         let identity_admission =
             match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
@@ -383,6 +401,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         (
             Some(identity_admission.admission),
             identity_admission.repair_steps,
+            identity_admission.legacy_replacement,
         )
     };
     if !args.jsonl && resolved.should_short_circuit() {
@@ -410,6 +429,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             check_report_builder: seams.check_report_builder.as_ref(),
             installation_admission: None,
             identity_guard_repair_steps: Vec::new(),
+            legacy_replacement: false,
         };
         for line in render_plan(&plan_context, args.dry_run) {
             let _ = writeln!(stdout, "{line}");
@@ -445,6 +465,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             check_report_builder: seams.check_report_builder.as_ref(),
             installation_admission: admission,
             identity_guard_repair_steps,
+            legacy_replacement,
         };
         run_setup(&mut context, &step_specs())
     };
@@ -1290,6 +1311,7 @@ mod tests {
                 curdir: executable_dir.clone(),
                 executable_dir: executable_dir.clone(),
                 backup_dir: Some(root.join("backups")),
+                legacy_replacement: false,
             },
             &journal_two,
             updated.binding(),
@@ -1376,6 +1398,7 @@ mod tests {
             curdir: executable_dir.clone(),
             executable_dir: executable_dir.clone(),
             backup_dir: Some(root.join("backups")),
+            legacy_replacement: false,
         };
 
         let initial = admit_setup(SetupAdmissionRequest {

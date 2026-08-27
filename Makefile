@@ -680,6 +680,7 @@ check-rust-distribution-cleanroom:
 check-systemd-test:
 	@test -n "$$SOLSTONE_DIST_DIR" || { echo "check-systemd-test requires SOLSTONE_DIST_DIR (produced linux-x86_64 artifacts)" >&2; exit 2; }
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test install
+	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test legacy-upgrade
 
 # AR_<triple>/RANLIB_<triple> must point at zig wrappers before this recipe
 # invokes the producer: PATH poison covers `ar`, so cc/ffmpeg-sys-next/ort
