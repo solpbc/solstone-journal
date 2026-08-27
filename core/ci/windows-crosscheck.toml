@@ -56,12 +56,6 @@ reason = "Lane 2 owns the Unix-only durability-write backend used here for Atomi
 expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`"]
 
 [[exclusions]]
-package = "solstone-core-push"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
-
-[[exclusions]]
 package = "solstone-core-service-unit"
 class = "preserved-production-guarantee"
 reason = "The Unix installation-identity service guard owns GuardFields and service_guard_environment; a Windows service-unit backend is outside this lane."
@@ -94,8 +88,8 @@ expected_stderr = ["could not compile `solstone-core-pdf`", "RLIMIT_AS"]
 [[exclusions]]
 package = "solstone-core-push"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions, LockOptions, hold_lock, and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "ring"
