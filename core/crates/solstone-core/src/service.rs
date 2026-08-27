@@ -259,6 +259,9 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     }
     .map_err(|error| format!("service unit render failed: {error}"))?;
 
+    if matches!(runtime, RuntimeTruth::Managed { .. }) {
+        remove_runtime_registration(platform, &target)?;
+    }
     revalidate_initial(platform, &target, &initial)?;
     require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
     println!("wrote {}", path_display(&target));
@@ -277,23 +280,8 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
         }
         Platform::Darwin => {
             let uid = nix::unistd::Uid::effective().as_raw();
-            if matches!(runtime, RuntimeTruth::Managed { .. }) {
-                require_success(
-                    run_fixed(
-                        launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
-                        STOP_TIMEOUT,
-                    )?,
-                    "request launchd unload",
-                )?;
-                clear_readiness(&journal).map_err(|error| {
-                    format!("could not clear the service's ready state: {error}")
-                })?;
-                wait_runtime_absent(platform, &target)?;
-            } else {
-                clear_readiness(&journal).map_err(|error| {
-                    format!("could not clear the service's ready state: {error}")
-                })?;
-            }
+            clear_readiness(&journal)
+                .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
             require_success(
                 run_fixed(
                     launchctl(&["bootstrap", &format!("gui/{uid}"), path_text(&target)?]),
@@ -384,7 +372,8 @@ fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), 
             require_success(
                 run_fixed(systemctl(&["--user", "disable", UNIT]), MUTATION_TIMEOUT)?,
                 "disable stale service",
-            )
+            )?;
+            wait_runtime_quiescent(platform, target)
         }
         Platform::Darwin => {
             let uid = nix::unistd::Uid::effective().as_raw();
@@ -1019,14 +1008,15 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
         let current_launchers = [
             home.join(".local/bin/journal"),
             home.join(".local/bin/solstone"),
+            home.join(".local/bin/sol"),
         ];
-        if current_launchers.contains(&launcher) {
+        if candidate == canonical && current_launchers.contains(&launcher) {
             continue;
         }
         let program_only = arguments.is_none();
         if !matches!(
             launcher.file_name().and_then(OsStr::to_str),
-            Some("journal" | "solstone")
+            Some("journal" | "solstone" | "sol")
         ) || !stale_launchd_managed(dictionary, label, &launcher)
         {
             return Err("stale launchd unit is foreign or unrecognized".to_owned());
@@ -1210,7 +1200,7 @@ fn observe_runtime(platform: Platform, canonical: &Path) -> Result<RuntimeTruth,
 fn classify_systemd_runtime(
     result: &CommandResult,
     canonical: &Path,
-    launchers: &[PathBuf; 2],
+    launchers: &[PathBuf],
 ) -> Result<RuntimeTruth, String> {
     if result.code != 0 || !result.stderr.is_empty() {
         return Ok(RuntimeTruth::Unknown(result_message(result)));
@@ -1356,7 +1346,7 @@ fn systemd_runtime_exec_matches(value: &str, launcher: &Path) -> bool {
 fn observe_launchd_registration(
     label: &str,
     canonical: &Path,
-    launchers: &[PathBuf; 2],
+    launchers: &[PathBuf],
     program_only: bool,
 ) -> Result<RuntimeTruth, String> {
     let uid = nix::unistd::Uid::effective().as_raw();
@@ -1379,7 +1369,7 @@ fn classify_launchd_runtime(
     result: &CommandResult,
     label: &str,
     canonical: &Path,
-    launchers: &[PathBuf; 2],
+    launchers: &[PathBuf],
     uid: u32,
     program_only: bool,
 ) -> Result<RuntimeTruth, String> {
@@ -1438,7 +1428,7 @@ fn managed_command_tail(arguments: &[impl AsRef<str>]) -> bool {
     }
 }
 
-fn expected_launchers(platform: Platform, unit: &Path) -> Option<[PathBuf; 2]> {
+fn expected_launchers(platform: Platform, unit: &Path) -> Option<[PathBuf; 3]> {
     let home = match platform {
         Platform::Linux => unit.ancestors().nth(4),
         Platform::Darwin => unit.ancestors().nth(3),
@@ -1446,13 +1436,14 @@ fn expected_launchers(platform: Platform, unit: &Path) -> Option<[PathBuf; 2]> {
     Some([
         home.join(".local/bin/journal"),
         home.join(".local/bin/solstone"),
+        home.join(".local/bin/sol"),
     ])
 }
 
 fn wait_launchd_absent(
     label: &str,
     target: &Path,
-    launchers: &[PathBuf; 2],
+    launchers: &[PathBuf],
     program_only: bool,
 ) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -1492,6 +1483,25 @@ fn wait_runtime_absent(platform: Platform, target: &Path) -> Result<(), String> 
                 );
             }
             other => return Err(runtime_error("verify unload", other)),
+        }
+    }
+}
+
+fn wait_runtime_quiescent(platform: Platform, target: &Path) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match observe_runtime(platform, target)? {
+            RuntimeTruth::Absent => return Ok(()),
+            RuntimeTruth::Managed { active: false } if platform == Platform::Linux => return Ok(()),
+            RuntimeTruth::Managed { .. } | RuntimeTruth::Unknown(_)
+                if Instant::now() < deadline =>
+            {
+                thread::sleep(POLL_INTERVAL);
+            }
+            RuntimeTruth::Managed { .. } => {
+                return Err("the previous service did not stop before replacement".to_owned());
+            }
+            other => return Err(runtime_error("verify service stop", other)),
         }
     }
 }
@@ -1992,6 +2002,7 @@ mod tests {
         let launchers = [
             PathBuf::from("/home/owner/.local/bin/journal"),
             PathBuf::from("/home/owner/.local/bin/solstone"),
+            PathBuf::from("/home/owner/.local/bin/sol"),
         ];
         let absent = CommandResult {
             code: 0,
@@ -2033,6 +2044,28 @@ mod tests {
         assert_eq!(
             classify_systemd_runtime(&loaded, canonical, &launchers).unwrap(),
             RuntimeTruth::Managed { active: true }
+        );
+        let legacy_sol = CommandResult {
+            code: 0,
+            stdout: loaded_stdout
+                .replace("/.local/bin/solstone", "/.local/bin/sol")
+                .into_bytes(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_systemd_runtime(&legacy_sol, canonical, &launchers).unwrap(),
+            RuntimeTruth::Managed { active: true }
+        );
+        let near_twin = CommandResult {
+            code: 0,
+            stdout: loaded_stdout
+                .replace("/.local/bin/solstone", "/.local/bin/sol-old")
+                .into_bytes(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_systemd_runtime(&near_twin, canonical, &launchers).unwrap(),
+            RuntimeTruth::Foreign
         );
         let drop_in = CommandResult {
             code: 0,

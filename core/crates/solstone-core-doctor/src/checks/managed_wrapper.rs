@@ -9,12 +9,12 @@ use std::{
 /// Extract the `SOL_BIN` target from a managed source-install wrapper.
 ///
 /// This intentionally recognizes only the marker grammar emitted by
-/// `install_guard.py`: a version-1 through version-7 marker and a
+/// `install_guard.py`: a version-1 through version-8 marker and a
 /// single-quoted `SOL_BIN` assignment with shell-style embedded quote escapes.
 pub(crate) fn parse_sol_bin(content: &str) -> Option<PathBuf> {
     let has_marker = content.lines().any(|line| {
         line.strip_prefix("# managed-version: ")
-            .is_some_and(|version| matches!(version.as_bytes(), [b'1'..=b'7']))
+            .is_some_and(|version| matches!(version.as_bytes(), [b'1'..=b'8']))
     });
     if !has_marker {
         return None;
@@ -83,6 +83,10 @@ mod tests {
         assert_eq!(parse_sol_bin("SOL_BIN='/tmp/bin/journal'\n"), None);
         assert_eq!(
             parse_sol_bin("# managed-version: 8\nSOL_BIN='/tmp/bin/journal'\n"),
+            Some(PathBuf::from("/tmp/bin/journal"))
+        );
+        assert_eq!(
+            parse_sol_bin("# managed-version: 9\nSOL_BIN='/tmp/bin/journal'\n"),
             None
         );
     }

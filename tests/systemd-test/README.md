@@ -27,9 +27,11 @@ fast pre-flight before chasing solstone-specific failures.
 `install` runs the actual journal install path (the relocatable tree from
 [INSTALL.md](../../INSTALL.md), then `journal setup -y --skip-models --skip-skills`) and
 verifies the resulting `solstone.service` reaches `active` plus `journal
-service status` returns 0. `--skip-models / --skip-skills` are passed by default because
-Parakeet / Claude-skill installation is orthogonal to
-the systemd question; use `make full` to drop those flags.
+service status` reports a running service and live callosum clients. The command
+may still return nonzero for the model degradation this cell creates on
+purpose. `--skip-models / --skip-skills` are passed by default because Parakeet
+/ Claude-skill installation is orthogonal to the systemd question; use `make
+full` to drop those flags.
 
 `observer-ingest` is a retired v2 migration fixture. It invokes
 `/app/observer/register` and `/app/observer/ingest`, neither of which is a
@@ -43,18 +45,15 @@ For a pre-publish local tree gate, produce the linux-x86_64 artifacts with
 `solstone-distribution` and point the runner at that directory. The wheel
 path this test used to drive is retired; see [INSTALL.md](../../INSTALL.md).
 
-`legacy-upgrade` is `install` with one precondition added: before
-`journal setup` runs, it seeds a **legacy non-symlink regular-file wrapper**
-at `~/.local/bin/solstone` (the accumulated manual-materialization state a clean
-install never has — `cat`s a marker-less bash wrapper over the alias after
-`rm`-ing the uv symlink, so `check_alias` classifies it `FOREIGN`). It then
-asserts setup self-heals the foreign wrapper — replaced by a managed wrapper
-(`# managed-version:` marker), legacy content preserved at
-`/tmp/solstone.old-symlink-*` — and a full `journal doctor` reports
-`service_identity: ok`. This guards the wrapper/identity self-heal class
-(Ryan Bennett's 0.4.10→0.5.1 cutover #2) that the clean-install matrix can't
-exercise, because a clean install classifies the alias `OWNED` and never
-takes the `FOREIGN` heal path. Cell 6 in `operator verification guide` (org repo).
+`legacy-upgrade` installs V2 over an exact V1 runtime shape: generated
+`solstone` and `sol` console scripts, a running historical systemd unit, and a
+schema-1 setup manifest. One `journal setup` invocation must stop the old PID
+before replacing the unit, publish the V2 wrappers and service, retain the V1
+environment as recovery material, and create durable wrapper backups under
+`~/.local/share/solstone/setup-backups/`. The test inventories every
+pre-existing journal artifact outside setup's closed write set and verifies
+that the inventory is byte-for-byte identical afterward. It finishes with the
+same live service and `service_identity` checks as the clean-install path.
 
 ## the worked example
 

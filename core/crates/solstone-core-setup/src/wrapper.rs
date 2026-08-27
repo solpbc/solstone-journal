@@ -4,7 +4,7 @@
 //! Managed `solstone` and `journal` wrapper provisioning.
 
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 
@@ -13,6 +13,7 @@ use nix::fcntl::{Flock, FlockArg};
 use solstone_core_installation_identity::{GuardFields, InstallationBinding, wrapper_guard_lines};
 
 use crate::args::canonicalize_or_normalize;
+use crate::legacy_launcher;
 
 pub const WRAPPER_MARKER: &str = "# managed-version: 8";
 pub const WRAPPER_VERSION: u8 = 8;
@@ -79,8 +80,10 @@ pub struct WrapperEnvironment {
     pub home_dir: PathBuf,
     pub curdir: PathBuf,
     pub executable_dir: PathBuf,
-    /// Test-only override. `None` always means the literal production `/tmp`.
+    /// Test-only override. Production keeps recovery copies under the owner home.
     pub backup_dir: Option<PathBuf>,
+    /// Setup identity admission positively identified exact V1 launchers.
+    pub legacy_replacement: bool,
 }
 
 impl WrapperEnvironment {
@@ -88,7 +91,7 @@ impl WrapperEnvironment {
     pub fn backup_dir(&self) -> PathBuf {
         self.backup_dir
             .clone()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .unwrap_or_else(|| self.home_dir.join(".local/share/solstone/setup-backups"))
     }
 }
 
@@ -241,42 +244,74 @@ pub fn legacy_backup_path(
     )))
 }
 
-fn backup_alias_to_tmp(
-    alias: &Path,
-    binary: &str,
-    environment: &WrapperEnvironment,
-) -> Option<PathBuf> {
-    let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
+fn prepare_backup_directory(environment: &WrapperEnvironment) -> Result<PathBuf, WrapperError> {
     let directory = environment.backup_dir();
-    let outcome = (|| -> Result<PathBuf, WrapperError> {
-        fs::create_dir_all(&directory)?;
-        let backup = legacy_backup_path(binary, &directory, &timestamp)?;
-        if alias.is_symlink() {
-            symlink(fs::read_link(alias)?, &backup)?;
-        } else {
-            fs::copy(alias, &backup)?;
-            let mode = fs::metadata(alias)?.permissions().mode();
-            fs::set_permissions(&backup, fs::Permissions::from_mode(mode))?;
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata) if !metadata.file_type().is_dir() => {
+            return Err(WrapperError(format!(
+                "backup path is not a real directory: {}",
+                directory.display()
+            )));
         }
-        Ok(backup)
-    })();
-    match outcome {
-        Ok(path) => Some(path),
-        Err(error) => {
-            eprintln!(
-                "journal setup: could not back up {}: {error}",
-                alias.display()
-            );
-            None
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir_all(&directory)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    if environment.backup_dir.is_none() {
+        let resolved_home = fs::canonicalize(&environment.home_dir)?;
+        let resolved_directory = fs::canonicalize(&directory)?;
+        if !resolved_directory.starts_with(&resolved_home) {
+            return Err(WrapperError(format!(
+                "backup path resolves outside the owner home: {}",
+                directory.display()
+            )));
         }
     }
+    Ok(directory)
 }
 
-#[derive(Debug, Clone)]
+fn backup_snapshot(
+    snapshot: &PathSnapshot,
+    binary: &str,
+    directory: &Path,
+) -> Result<Option<PathBuf>, WrapperError> {
+    if matches!(snapshot, PathSnapshot::Absent) {
+        return Ok(None);
+    }
+    let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let backup = legacy_backup_path(binary, directory, &timestamp)?;
+    match snapshot {
+        PathSnapshot::Absent => unreachable!(),
+        PathSnapshot::Symlink(target) => symlink(target, &backup)?,
+        PathSnapshot::File { content, mode } => {
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&backup)?;
+            file.write_all(content)?;
+            file.set_permissions(fs::Permissions::from_mode(*mode))?;
+            file.sync_all()?;
+        }
+    }
+    File::open(directory)?.sync_all()?;
+    Ok(Some(backup))
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum PathSnapshot {
     Absent,
     Symlink(PathBuf),
     File { content: Vec<u8>, mode: u32 },
+}
+
+#[derive(Debug)]
+struct LegacyExpectation {
+    home: PathBuf,
+    path: PathBuf,
+    command: String,
+    launcher: legacy_launcher::LegacyLauncher,
 }
 
 fn snapshot_path(path: &Path) -> Result<PathSnapshot, WrapperError> {
@@ -285,6 +320,12 @@ fn snapshot_path(path: &Path) -> Result<PathSnapshot, WrapperError> {
     }
     if path.is_symlink() {
         return Ok(PathSnapshot::Symlink(fs::read_link(path)?));
+    }
+    if !path.is_file() {
+        return Err(WrapperError(format!(
+            "wrapper path is not a regular file or symlink: {}",
+            path.display()
+        )));
     }
     Ok(PathSnapshot::File {
         content: fs::read(path)?,
@@ -296,7 +337,10 @@ fn unlink_any(path: &Path) -> io::Result<()> {
     if path.is_symlink() || path.is_file() {
         fs::remove_file(path)
     } else if path.exists() {
-        fs::remove_dir_all(path)
+        Err(io::Error::other(format!(
+            "refusing to remove non-file wrapper path {}",
+            path.display()
+        )))
     } else {
         Ok(())
     }
@@ -308,11 +352,15 @@ fn restore_path(path: &Path, snapshot: &PathSnapshot) -> Result<(), WrapperError
         PathSnapshot::Absent => Ok(()),
         PathSnapshot::Symlink(target) => {
             symlink(target, path)?;
+            File::open(path.parent().unwrap_or(Path::new(".")))?.sync_all()?;
             Ok(())
         }
         PathSnapshot::File { content, mode } => {
-            fs::write(path, content)?;
-            fs::set_permissions(path, fs::Permissions::from_mode(*mode))?;
+            let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+            file.write_all(content)?;
+            file.set_permissions(fs::Permissions::from_mode(*mode))?;
+            file.sync_all()?;
+            File::open(path.parent().unwrap_or(Path::new(".")))?.sync_all()?;
             Ok(())
         }
     }
@@ -329,7 +377,21 @@ where
         .iter()
         .map(|(path, _)| snapshot_path(path).map(|snapshot| (path.clone(), snapshot)))
         .collect::<Result<Vec<_>, _>>()?;
+    write_wrappers_and_remove_with(contents, &[], &snapshots, &[], &mut replace)
+}
+
+fn write_wrappers_and_remove_with<F>(
+    contents: &[(PathBuf, String)],
+    removals: &[PathBuf],
+    snapshots: &[(PathBuf, PathSnapshot)],
+    legacy_expectations: &[LegacyExpectation],
+    replace: &mut F,
+) -> Result<(), WrapperError>
+where
+    F: FnMut(&Path, &Path) -> io::Result<()>,
+{
     let mut staged = Vec::new();
+    let mut mutation_started = false;
     let attempt = (|| -> Result<(), WrapperError> {
         for (index, (path, content)) in contents.iter().enumerate() {
             fs::create_dir_all(path.parent().unwrap_or(Path::new(".")))?;
@@ -340,18 +402,62 @@ where
                     .unwrap_or("wrapper"),
                 std::process::id()
             ));
-            fs::write(&staged_path, content)?;
-            fs::set_permissions(&staged_path, fs::Permissions::from_mode(0o755))?;
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&staged_path)?;
+            file.write_all(content.as_bytes())?;
+            file.set_permissions(fs::Permissions::from_mode(0o755))?;
+            file.sync_all()?;
             staged.push(staged_path);
         }
+        for (path, expected) in snapshots {
+            if snapshot_path(path)? != *expected {
+                return Err(WrapperError(format!(
+                    "wrapper changed before replacement: {}",
+                    path.display()
+                )));
+            }
+        }
+        for expected in legacy_expectations {
+            let current =
+                legacy_launcher::classify(&expected.home, &expected.path, &expected.command)
+                    .map_err(WrapperError)?;
+            if current.as_ref() != Some(&expected.launcher) {
+                return Err(WrapperError(format!(
+                    "legacy wrapper changed before replacement: {}",
+                    expected.path.display()
+                )));
+            }
+        }
         for ((path, _), staged_path) in contents.iter().zip(&staged) {
+            mutation_started = true;
             replace(staged_path, path)?;
+        }
+        for path in removals {
+            mutation_started = true;
+            unlink_any(path)?;
+        }
+        if let Some(directory) = contents.first().and_then(|(path, _)| path.parent()) {
+            File::open(directory)?.sync_all()?;
         }
         Ok(())
     })();
-    if attempt.is_err() {
-        for (path, snapshot) in &snapshots {
-            let _ = restore_path(path, snapshot);
+    if attempt.is_err() && mutation_started {
+        let mut restore_errors = Vec::new();
+        for (path, snapshot) in snapshots {
+            if let Err(error) = restore_path(path, snapshot) {
+                restore_errors.push(format!("{}: {error}", path.display()));
+            }
+        }
+        if !restore_errors.is_empty() {
+            for staged_path in staged {
+                let _ = unlink_any(&staged_path);
+            }
+            return Err(WrapperError(format!(
+                "wrapper replacement failed and restoration was incomplete: {}",
+                restore_errors.join("; ")
+            )));
         }
     }
     for staged_path in staged {
@@ -407,20 +513,97 @@ pub fn provision_wrappers(
     {
         return Ok(paths);
     }
-    for (binary, (state, _)) in &states {
+
+    let main_paths = [
+        ("solstone", paths.solstone.clone()),
+        ("journal", paths.journal.clone()),
+    ];
+    let legacy_mains = main_paths
+        .iter()
+        .map(|(command, path)| {
+            if environment.legacy_replacement {
+                legacy_launcher::classify(&environment.home_dir, path, command)
+            } else {
+                Ok(None)
+            }
+            .map(|launcher| ((*command).to_owned(), launcher))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(WrapperError)?;
+    let mut legacy_expectations = main_paths
+        .iter()
+        .zip(&legacy_mains)
+        .filter_map(|((command, path), (_, launcher))| {
+            launcher.clone().map(|launcher| LegacyExpectation {
+                home: environment.home_dir.clone(),
+                path: path.clone(),
+                command: (*command).to_owned(),
+                launcher,
+            })
+        })
+        .collect::<Vec<_>>();
+    for ((command, (state, _)), (_, legacy)) in states.iter().zip(&legacy_mains) {
         if matches!(
             state,
             AliasState::CrossRepo | AliasState::Dangling | AliasState::Foreign
-        ) {
-            let alias = if *binary == "solstone" {
-                &paths.solstone
-            } else {
-                &paths.journal
-            };
-            let _ = backup_alias_to_tmp(alias, binary, environment);
+        ) && legacy.is_none()
+        {
+            return Err(WrapperError(format!(
+                "refusing to replace unrecognized {command} wrapper"
+            )));
         }
     }
-    write_wrappers_atomically(&[
+
+    let mut removals = Vec::new();
+    for (command, companion, main) in [
+        (
+            "sol",
+            environment.home_dir.join(".local/bin/sol"),
+            legacy_mains[0].1.as_ref(),
+        ),
+        (
+            "mlx-vlm-server",
+            environment.home_dir.join(".local/bin/mlx-vlm-server"),
+            legacy_mains[1].1.as_ref(),
+        ),
+    ] {
+        let Some(main) = main else {
+            continue;
+        };
+        if let Some(companion_launcher) =
+            legacy_launcher::classify(&environment.home_dir, &companion, command)
+                .map_err(WrapperError)?
+            && main.same_installation(&companion_launcher)
+        {
+            removals.push(companion.clone());
+            legacy_expectations.push(LegacyExpectation {
+                home: environment.home_dir.clone(),
+                path: companion,
+                command: command.to_owned(),
+                launcher: companion_launcher,
+            });
+        }
+    }
+
+    let mut snapshot_paths = main_paths
+        .iter()
+        .map(|(_, path)| path.clone())
+        .collect::<Vec<_>>();
+    snapshot_paths.extend(removals.iter().cloned());
+    let snapshots = snapshot_paths
+        .iter()
+        .map(|path| snapshot_path(path).map(|snapshot| (path.clone(), snapshot)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let backup_directory = prepare_backup_directory(environment)?;
+    for (path, snapshot) in &snapshots {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("wrapper");
+        backup_snapshot(snapshot, name, &backup_directory)?;
+    }
+
+    let contents = [
         (
             paths.solstone.clone(),
             render_wrapper(
@@ -439,7 +622,14 @@ pub fn provision_wrappers(
                 &guard,
             ),
         ),
-    ])?;
+    ];
+    write_wrappers_and_remove_with(
+        &contents,
+        &removals,
+        &snapshots,
+        &legacy_expectations,
+        &mut |from, to| fs::rename(from, to),
+    )?;
     Ok(paths)
 }
 
@@ -634,7 +824,25 @@ mod tests {
             curdir: root.join("repo"),
             executable_dir: root.join("runtime"),
             backup_dir: Some(root.join("backups")),
+            legacy_replacement: false,
         }
+    }
+
+    fn legacy_python_launcher(command: &str) -> String {
+        let function = if command == "journal" {
+            "journal_main"
+        } else {
+            "main"
+        };
+        format!(
+            "#!/usr/bin/python3\n# -*- coding: utf-8 -*-\nimport sys\nfrom solstone.think.sol_cli import {function}\nif __name__ == '__main__':\n    if sys.argv[0].endswith('-script.pyw'):\n        sys.argv[0] = sys.argv[0][:-11]\n    elif sys.argv[0].endswith('.exe'):\n        sys.argv[0] = sys.argv[0][:-4]\n    sys.exit({function}())\n"
+        )
+    }
+
+    fn write_executable(path: &Path, content: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, content).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
     #[test]
     fn parses_rendered_wrapper_and_unescapes_sol_bin() {
@@ -693,14 +901,18 @@ mod tests {
         );
     }
     #[test]
-    fn backup_default_is_literal_tmp_and_collision_names_increment() {
+    fn backup_default_is_durable_under_home_and_collision_names_increment() {
         let env = WrapperEnvironment {
             home_dir: PathBuf::from("/ignored"),
             curdir: PathBuf::new(),
             executable_dir: PathBuf::new(),
             backup_dir: None,
+            legacy_replacement: false,
         };
-        assert_eq!(env.backup_dir(), PathBuf::from("/tmp"));
+        assert_eq!(
+            env.backup_dir(),
+            PathBuf::from("/ignored/.local/share/solstone/setup-backups")
+        );
         let path = root("backup-names");
         fs::write(path.join("solstone.old-symlink-20260101000000"), "x").unwrap();
         assert_eq!(
@@ -739,34 +951,18 @@ mod tests {
         assert!(!wrapper_paths(&env.home_dir).solstone.exists());
     }
     #[test]
-    fn dangling_alias_backup_preserves_the_link_target_then_is_overwritten() {
+    fn dangling_alias_is_refused_and_left_untouched() {
         let root = root("dangling");
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
         symlink("/missing-target", wrapper_paths(&env.home_dir).solstone).unwrap();
-        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
-        let backup = fs::read_dir(env.backup_dir())
-            .unwrap()
-            .flatten()
-            .find(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("solstone.old-symlink-")
-            })
-            .unwrap()
-            .path();
-        assert!(backup.is_symlink());
+        assert!(provision_wrappers(&env, Path::new("/journal"), &binding()).is_err());
         assert_eq!(
-            fs::read_link(backup).unwrap(),
+            fs::read_link(wrapper_paths(&env.home_dir).solstone).unwrap(),
             PathBuf::from("/missing-target")
         );
-        assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
-                .unwrap()
-                .contains(WRAPPER_MARKER)
-        );
+        assert!(!env.backup_dir().exists());
     }
     #[test]
     fn nonexistent_local_venv_symlink_alias_is_owned() {
@@ -801,7 +997,7 @@ mod tests {
         );
     }
     #[test]
-    fn foreign_alias_is_backed_up_and_absent_or_owned_aliases_are_not() {
+    fn owned_aliases_are_backed_up_and_absent_aliases_are_not() {
         let root = root("states");
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
@@ -809,7 +1005,16 @@ mod tests {
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
         fs::write(env.executable_dir.join("solstone"), "runtime").unwrap();
         fs::write(env.executable_dir.join("journal"), "runtime").unwrap();
-        fs::write(wrapper_paths(&env.home_dir).solstone, "foreign wrapper").unwrap();
+        fs::write(
+            wrapper_paths(&env.home_dir).solstone,
+            render_wrapper(
+                "solstone",
+                Path::new("/old"),
+                &env.executable_dir.join("solstone"),
+                &guard(),
+            ),
+        )
+        .unwrap();
         fs::write(
             wrapper_paths(&env.home_dir).journal,
             render_wrapper(
@@ -826,8 +1031,17 @@ mod tests {
             .flatten()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        assert_eq!(backups.len(), 1);
-        assert!(backups[0].starts_with("solstone.old-symlink-"));
+        assert_eq!(backups.len(), 2);
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("solstone.old-symlink-"))
+        );
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("journal.old-symlink-"))
+        );
         assert!(
             fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
                 .unwrap()
@@ -846,25 +1060,31 @@ mod tests {
         provision_wrappers(&absent, Path::new("/journal"), &binding()).unwrap();
         assert_eq!(
             fs::read_dir(absent.backup_dir()).unwrap().flatten().count(),
-            1
+            2
         );
     }
     #[test]
-    fn backup_failures_are_swallowed_and_wrappers_still_replace_aliases() {
+    fn backup_failure_aborts_before_wrapper_replacement() {
         let root = root("backup-failure");
         let mut env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
-        fs::write(wrapper_paths(&env.home_dir).solstone, "foreign").unwrap();
+        let old = render_wrapper(
+            "solstone",
+            Path::new("/old"),
+            &env.executable_dir.join("solstone"),
+            &guard(),
+        );
+        fs::write(wrapper_paths(&env.home_dir).solstone, &old).unwrap();
         let blocked = root.join("blocked-backups");
         fs::write(&blocked, "not a directory").unwrap();
         env.backup_dir = Some(blocked);
-        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
-        assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
-                .unwrap()
-                .contains(WRAPPER_MARKER)
+        assert!(provision_wrappers(&env, Path::new("/journal"), &binding()).is_err());
+        assert_eq!(
+            fs::read_to_string(wrapper_paths(&env.home_dir).solstone).unwrap(),
+            old
         );
+        assert!(!wrapper_paths(&env.home_dir).journal.exists());
     }
     #[test]
     fn worktree_leaves_aliases_unwritten() {
@@ -898,6 +1118,83 @@ mod tests {
             "macos-app-owned-or-foreign"
         );
         assert!(!wrapper_paths(&env.home_dir).solstone.exists());
+    }
+    #[test]
+    fn exact_v1_solstone_and_sol_are_backed_up_and_replaced_together() {
+        let root = root("v1-sol-companion");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        fs::create_dir_all(&env.curdir).unwrap();
+        let legacy_bin = env.home_dir.join(".local/share/uv/tools/solstone/bin");
+        let public_bin = env.home_dir.join(".local/bin");
+        fs::create_dir_all(&public_bin).unwrap();
+        for command in ["solstone", "sol"] {
+            let launcher = legacy_bin.join(command);
+            write_executable(&launcher, &legacy_python_launcher(command));
+            symlink(&launcher, public_bin.join(command)).unwrap();
+        }
+
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
+
+        assert!(
+            fs::read_to_string(public_bin.join("solstone"))
+                .unwrap()
+                .contains(WRAPPER_MARKER)
+        );
+        assert!(
+            fs::read_to_string(public_bin.join("journal"))
+                .unwrap()
+                .contains(WRAPPER_MARKER)
+        );
+        assert!(!public_bin.join("sol").exists());
+        let backups = fs::read_dir(env.backup_dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("solstone.old-symlink-"))
+        );
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("sol.old-symlink-"))
+        );
+    }
+
+    #[test]
+    fn legacy_referent_change_is_refused_without_rewriting_the_public_link() {
+        let root = root("legacy-referent-race");
+        let home = root.join("home");
+        let legacy = home.join("v1/bin/solstone");
+        let public = home.join(".local/bin/solstone");
+        write_executable(&legacy, &legacy_python_launcher("solstone"));
+        fs::create_dir_all(public.parent().unwrap()).unwrap();
+        symlink(&legacy, &public).unwrap();
+        let launcher = legacy_launcher::classify(&home, &public, "solstone")
+            .unwrap()
+            .unwrap();
+        let snapshot = snapshot_path(&public).unwrap();
+        fs::write(&legacy, "#!/bin/sh\nexit 9\n").unwrap();
+        let error = write_wrappers_and_remove_with(
+            &[(public.clone(), "new wrapper".into())],
+            &[],
+            &[(public.clone(), snapshot)],
+            &[LegacyExpectation {
+                home,
+                path: public.clone(),
+                command: "solstone".into(),
+                launcher,
+            }],
+            &mut |from, to| fs::rename(from, to),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("changed before replacement"));
+        assert!(public.is_symlink());
+        assert_eq!(fs::read_link(&public).unwrap(), legacy);
+        assert_eq!(fs::read_to_string(public).unwrap(), "#!/bin/sh\nexit 9\n");
     }
     #[test]
     fn atomic_failure_restores_every_snapshot_kind() {

@@ -220,6 +220,8 @@ pub struct SetupContext<'a> {
     pub installation_admission: Option<SetupAdmission>,
     /// Guard-drifted artifacts that must be reconciled even after a prior successful step.
     pub identity_guard_repair_steps: Vec<StepName>,
+    /// Exact V1 launchers admitted together with a provider-less schema-v1 manifest.
+    pub legacy_replacement: bool,
 }
 
 impl<'a> SetupContext<'a> {
@@ -348,12 +350,6 @@ impl StepResult {
     fn failed(name: StepName, paths: Vec<PathBuf>, now: String, error: StepError) -> Self {
         let mut result = Self::new(name, StepStatus::Failed, paths, now);
         result.error = Some(StepErrorPayload::Failure(error));
-        result
-    }
-
-    fn warning(name: StepName, paths: Vec<PathBuf>, now: String, warning: WrapperWarning) -> Self {
-        let mut result = Self::new(name, StepStatus::Warning, paths, now);
-        result.error = Some(StepErrorPayload::WrapperWarning(warning));
         result
     }
 
@@ -1461,6 +1457,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         curdir: context.project_root.clone(),
         executable_dir: context.install_bin_dir.clone(),
         backup_dir: context.wrapper_backup_dir.clone(),
+        legacy_replacement: context.legacy_replacement,
     };
     let paths = wrapper_paths(&context.home_dir);
     match provision_wrappers(
@@ -1481,11 +1478,12 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 (context.now)(),
             ))
         }
-        Err(error) => Ok(StepResult::warning(
+        Err(error) => Ok(StepResult::failed(
             StepName::Wrapper,
             Vec::new(),
             (context.now)(),
-            WrapperWarning {
+            StepError {
+                code: ErrorCode::WrapperProvisionFailed,
                 message: format!(
                     "could not provision the solstone/journal wrappers at {} ({}: {error})",
                     context.home_dir.join(".local/bin").display(),
@@ -1494,7 +1492,8 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                         .next()
                         .unwrap_or("WrapperError")
                 ),
-                fix_hint: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                exit_code: 1,
             },
         )),
     }
@@ -1582,6 +1581,10 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             context.args.step_timeout_seconds,
         ));
     }
+    // The Type=notify supervisor verifies the installed binding before it
+    // announces readiness. Release setup's exclusive identity lease after the
+    // guarded unit is published so the new process can perform that read.
+    drop(context.installation_admission.take());
     let up = context
         .service_ops
         .up(context.runner, &context.journal_path)
@@ -1640,19 +1643,8 @@ fn resume_service(
             SkipReason::PriorRunOk,
         )));
     }
-    context
-        .service_ops
-        .restart(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
-    if context
-        .service_ops
-        .health_check(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?
-    {
-        let mut result = StepResult::new(StepName::Service, StepStatus::Ok, paths, (context.now)());
-        result.reason = Some(SkipReason::ResumedAfterRestart.as_str().to_owned());
-        return Ok(Some(result));
-    }
+    // Re-publish the guarded unit before starting an unhealthy runtime. A
+    // direct restart here would make the child wait on setup's identity lease.
     Ok(None)
 }
 
@@ -2262,6 +2254,7 @@ mod tests {
                 )
             },
             identity_guard_repair_steps: Vec::new(),
+            legacy_replacement: false,
         }
     }
     #[test]
@@ -2408,8 +2401,8 @@ mod tests {
             false,
         );
         assert_eq!(outcome.exit_code, 0);
-        assert_eq!(requests, 0);
-        assert_eq!(restarts, 1);
+        assert_eq!(requests, 1);
+        assert_eq!(restarts, 0);
         let (outcome, requests, restarts) = run(
             "service-still-bad",
             &[],
@@ -2419,7 +2412,7 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(requests, 1);
-        assert_eq!(restarts, 1);
+        assert_eq!(restarts, 0);
         let (outcome, requests, _) =
             run("service-force", &["--force"], vec![true], vec![true], false);
         assert_eq!(outcome.exit_code, 0);
@@ -2462,6 +2455,39 @@ mod tests {
             written.steps[0]["error"]["code"],
             "setup_unhandled_exception"
         );
+    }
+    #[test]
+    fn service_start_releases_the_setup_identity_lease_after_unit_publication() {
+        let (args, resolved, root, home) = fixture("service-identity-release", &[]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let mut ops = SequenceServiceOps {
+            installed: VecDeque::new(),
+            healthy: VecDeque::new(),
+            restarts: 0,
+            up: 0,
+        };
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.service_ops = &mut ops;
+
+        let result = step_service(&mut setup).expect("service step");
+
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(setup.installation_admission.is_none());
+        assert_eq!(runner.requests.len(), 1);
     }
     #[test]
     fn brain_mutates_local_provider_before_skipping_and_warning_keeps_its_distinct_shape() {
@@ -2554,7 +2580,7 @@ mod tests {
         }
     }
     #[test]
-    fn wrapper_shell_path_refusal_is_a_warning_and_worktree_still_provisions_path() {
+    fn wrapper_shell_path_refusal_is_failed_and_worktree_still_provisions_path() {
         let (args, resolved, root, home) = fixture("wrapper-warning", &[]);
         fs::create_dir_all(root.join("repo")).unwrap();
         let mut runner = FakeRunner::new(Vec::new());
@@ -2570,16 +2596,18 @@ mod tests {
         );
         setup.journal_path = root.join("bad$journal");
         let warning = step_wrapper(&mut setup).unwrap();
-        assert_eq!(warning.status, StepStatus::Warning);
+        assert_eq!(warning.status, StepStatus::Failed);
         assert_eq!(
             serde_json::to_value(&warning).unwrap()["error"],
             json!({
+                "code": "wrapper_provision_failed",
                 "message": format!(
                     "could not provision the solstone/journal wrappers at {} (WrapperError: journal path contains shell-active character '$': {:?})",
                     home.join(".local/bin").display(),
                     root.join("bad$journal").to_string_lossy(),
                 ),
-                "fix_hint": "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime",
+                "details": "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime",
+                "exit_code": 1,
             })
         );
         fs::write(root.join("repo/.git"), "gitdir: x").unwrap();

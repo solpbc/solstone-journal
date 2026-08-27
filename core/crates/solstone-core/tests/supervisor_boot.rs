@@ -981,7 +981,11 @@ fn supervisor_installation_recovery_sanitizes_hostile_executable_paths() {
         .tempdir_in("/var/tmp")
         .expect("isolated oversized binary root");
     let mut binary_dir = temporary.path().to_path_buf();
-    for _ in 0..6 {
+    // Three 240-byte components leave room for Darwin's 1024-byte PATH_MAX
+    // once the temporary-root prefix and the copied executable name are added,
+    // while their escaped rendering is still well beyond the 2048-character
+    // diagnostic cap exercised below.
+    for _ in 0..3 {
         binary_dir.push(&escaped_component);
     }
     let binary = copied_binary(&binary_dir);

@@ -1,0 +1,44 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+id=solstone
+
+p=$0
+n=0
+while [ -L "$p" ]; do
+    n=$((n + 1))
+    if [ "$n" -gt 40 ]; then
+        printf '%s: native launcher symlink cycle detected. Reinstall solstone and solstone-core.\n' "$id" >&2
+        exit 78
+    fi
+    t=$(readlink -- "$p") || {
+        printf '%s: native launcher symlink is dangling: %s. Reinstall solstone and solstone-core.\n' "$id" "$p" >&2
+        exit 78
+    }
+    case $t in
+        /*) p=$t ;;
+        *) p=$(dirname -- "$p")/$t ;;
+    esac
+done
+
+if [ ! -f "$p" ]; then
+    printf '%s: native launcher symlink is dangling: %s. Reinstall solstone and solstone-core.\n' "$id" "$p" >&2
+    exit 78
+fi
+
+d=$(cd -P -- "$(dirname -- "$p")" && pwd) || {
+    printf '%s: native launcher symlink is dangling: %s. Reinstall solstone and solstone-core.\n' "$id" "$p" >&2
+    exit 78
+}
+core=$d/solstone-core
+
+if [ ! -e "$core" ]; then
+    printf '%s: native solstone-core sibling is missing: %s. Reinstall solstone and solstone-core.\n' "$id" "$core" >&2
+    exit 78
+fi
+if [ ! -f "$core" ] || [ ! -x "$core" ]; then
+    printf '%s: native solstone-core sibling is not executable: %s. Reinstall solstone and solstone-core.\n' "$id" "$core" >&2
+    exit 78
+fi
+
+exec "$core" "__solstone_identity=$id" "$@"

@@ -967,12 +967,16 @@ mod tests {
         // admit at all — there is no Linux binary for this to match, by
         // design, not by drift. The RF-DETR engine archives are likewise
         // target-specific payloads: each target receives its own archive.
+        // share/README.md is a Linux-only exception too: it is the
+        // agent-facing install/crossover README for the Linux v1-to-v2
+        // crossover arc, and macOS distribution is out of scope for that arc.
         const MACOS_ONLY: &[&str] = &[
             "bin/parakeet-helper",
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
         ];
         const LINUX_ONLY: &[&str] = &[
             "lib/solstone_journal_models/assets/rfdetr/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+            "share/README.md",
         ];
         let inventory = committed();
         let dests_for = |id: &str| {

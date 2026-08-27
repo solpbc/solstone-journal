@@ -263,6 +263,16 @@ dest = "share/LICENSE"
 mode = 0o644
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
+# Agent-facing install/troubleshooting README, for a coding agent helping an
+# owner get the journal running or crossing over from a v1 (Python) install.
+# Linux-only: macOS distribution is out of scope for the arc that added this.
+[[entry]]
+kind = "copy"
+source = "core/distribution/README.md"
+dest = "share/README.md"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64"]
+
 # parakeet-helper is a Swift/CoreML binary and macOS-only (`make parakeet-helper`
 # builds it; there is no Rust or Linux equivalent). The resolver
 # (parakeet_coreml.rs) looks next to the running binary first, so it lands in
