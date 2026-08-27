@@ -580,16 +580,32 @@ fn with_witness<'root, T>(
     root: &'root JournalRoot,
     operation: impl FnOnce(&mut NamespaceWitness) -> Result<T, WindowsInventoryError>,
 ) -> Result<T, WindowsInventoryError> {
+    test_hook_witness_progress("before-revalidate");
     root.revalidate().map_err(WindowsInventoryError::Root)?;
+    test_hook_witness_progress("before-arm");
     let mut witness = NamespaceWitness::arm(root)?;
+    test_hook_witness_progress("after-arm");
     let result = operation(&mut witness).and_then(|value| {
+        test_hook_witness_progress("after-operation");
         root.revalidate().map_err(WindowsInventoryError::Root)?;
+        test_hook_witness_progress("after-revalidate");
         witness.check()?;
+        test_hook_witness_progress("after-check");
         Ok(value)
     });
+    test_hook_witness_progress("before-drain");
     let cleanup = witness.cancel_and_drain();
+    test_hook_witness_progress("after-drain");
     result.and_then(|value| cleanup.map(|()| value))
 }
+
+#[cfg(feature = "test-hooks")]
+fn test_hook_witness_progress(stage: &str) {
+    println!("JOURNAL_WIN_CI_TEST_HOOK_WITNESS={stage}");
+}
+
+#[cfg(not(feature = "test-hooks"))]
+fn test_hook_witness_progress(_stage: &str) {}
 
 struct NamespaceWitness {
     handle: OwnedHandle,
