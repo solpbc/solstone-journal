@@ -10,6 +10,7 @@ SSH=${SSH:-ssh}
 ssh_output_file=
 cloud_sync_test=${JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST:-}
 refs_root=${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-}
+owner_account=${SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT:-}
 refs_requested=0
 refs_enumeration_evidence=unrun/skipped
 refs_enumeration_capability=not-asserted
@@ -36,6 +37,15 @@ if [ -n "$refs_root" ]; then
     echo "win-host-ci: SOLSTONE_JOURNAL_WIN_REFS_ROOT is not a safe absolute Windows path; ReFS matrix evidence will be skipped" >&2
     refs_root=
   fi
+fi
+
+if [ -z "$owner_account" ]; then
+  echo "ERROR: win-host-ci: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$owner_account" | grep -Eq '^[A-Za-z0-9_.\\-]+$'; then
+  echo "ERROR: win-host-ci: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT must be a safe local or domain account name" >&2
+  exit 1
 fi
 
 cleanup() {
@@ -149,7 +159,7 @@ else
   echo "ERROR: win-host-ci: SSH output file creation failed" >&2
   exit 1
 fi
-remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=$refs_root\"&&C:\\sol\\sj-ci.cmd\""
+remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=$refs_root\"&&set \"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=$owner_account\"&&C:\\sol\\sj-ci.cmd\""
 if "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \

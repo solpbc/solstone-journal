@@ -2,8 +2,10 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-workspace_packages = 131
-library_packages = 125
+# The census counts a package once as a library package when any target is `lib`; this mixed
+# lib+bin rail therefore changes both baselines by exactly one.
+workspace_packages = 132
+library_packages = 126
 
 [[exclusions]]
 package = "solstone-core-backfill-cli"

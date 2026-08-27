@@ -33,7 +33,7 @@ pub const VERIFY_TIMEOUT_SECONDS: u64 = 60 * 60;
 // Restic matches a no-slash pattern by basename at ANY depth, so bare `health`
 // was removed because it dropped the durable deletion audit (retention.log,
 // pruning-runs/) and per-day talent-provenance/ from every snapshot.
-pub const BACKUP_EXCLUDES: [&str; 19] = [
+pub const BACKUP_EXCLUDES: [&str; 20] = [
     "*.sqlite*",
     "indexer",
     "cache",
@@ -53,6 +53,7 @@ pub const BACKUP_EXCLUDES: [&str; 19] = [
     "supervisor.start_time",
     "parakeet-cpp.placement",
     "scheduler.json",
+    "health/sync",
 ];
 
 /// Clock boundary used for state records and the rotating verification bucket.
@@ -864,7 +865,8 @@ mod tests {
                 "supervisor.ready",
                 "supervisor.start_time",
                 "parakeet-cpp.placement",
-                "scheduler.json"
+                "scheduler.json",
+                "health/sync"
             ]
         );
         assert!(!BACKUP_EXCLUDES.contains(&"health"));
@@ -903,6 +905,16 @@ mod tests {
             commands[1]
                 .windows(2)
                 .any(|pair| pair == ["--exclude", ".removing_*"])
+        );
+        assert!(
+            commands[1]
+                .windows(2)
+                .any(|pair| pair == ["--exclude", "health/sync"])
+        );
+        assert!(
+            !commands[1]
+                .windows(2)
+                .any(|pair| pair == ["--exclude", "health"])
         );
     }
     #[test]

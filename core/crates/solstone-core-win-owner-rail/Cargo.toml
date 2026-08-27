@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-win-owner-rail"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# This is the narrowly-scoped Win32 FFI boundary. Its portable library remains safe Rust, while
+# the Windows binary documents and confines the required audited calls at each call site.
+[lints.rust]
+unsafe_code = "allow"
+
+[dependencies]
+getrandom.workspace = true
+quick-xml = "0.41.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }

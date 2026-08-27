@@ -371,6 +371,10 @@ bin = "solstone-windows-crosscheck"
 reason = "repository tooling; never ship"
 
 [[deny]]
+bin = "solstone-core-win-owner-rail"
+reason = "Windows CI rail tooling for the ordinary-owner scheduled-task delegation; never ship"
+
+[[deny]]
 bin = "solstone-distribution"
 reason = "this producer; never ship inside the product tree"
 

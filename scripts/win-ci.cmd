@@ -17,6 +17,7 @@ set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
+if not defined SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT ( echo ERROR: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required; rerun through win-host-ci & exit /b 1 )
 powershell -NoProfile -Command "if ($env:EXPECTED_JOURNAL_COMMIT -notmatch '^[0-9a-f]{40}$' -or $env:EXPECTED_JOURNAL_CARGO_LOCK_SHA256 -notmatch '^[0-9a-f]{64}$') { exit 1 }" || ( echo ERROR: source-binding values must be lowercase full commit and SHA-256 hex; rerun through win-host-ci & exit /b 1 )
 
 call :verify_source_binding || exit /b 1
@@ -33,7 +34,7 @@ if not defined VSINSTALL ( echo ERROR: VS Build Tools with VC.Tools.x86.x64 not 
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vcvarsall failed & exit /b 1 )
 
 echo === cargo build --locked (portable journal substrate) ===
-cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io || exit /b 1
+cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-win-owner-rail || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
@@ -54,14 +55,20 @@ if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
   echo === Cloud Files sync-root registration test not run; set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1 to include it ===
 )
 echo === cargo test --locked journal-io ordinary-owner inventory control ===
+set "JOURNAL_WIN_CI_OWNER_RAIL=core\target\debug\solstone-core-win-owner-rail.exe"
+set "JOURNAL_WIN_CI_OWNER_LEASE=C:\ProgramData\solstone\journal-win-owner-rail\ordinary-owner.lease.json"
+"%JOURNAL_WIN_CI_OWNER_RAIL%" recover-held --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_failed
+"%JOURNAL_WIN_CI_OWNER_RAIL%" prepare --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" --worktree "%CD%" --worker "%CD%\%JOURNAL_WIN_CI_OWNER_RAIL%" --expected-commit "%EXPECTED_JOURNAL_COMMIT%" --expected-lock "%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" --owner-account "%SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT%" --refs-root "%SOLSTONE_JOURNAL_WIN_REFS_ROOT%" || goto :ordinary_owner_failed
+"%JOURNAL_WIN_CI_OWNER_RAIL%" launch --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_cleanup_failed
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_LOG=core\target\journal-win-ci-ordinary-owner-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" 2>&1
+"%JOURNAL_WIN_CI_OWNER_RAIL%" await --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" > "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%"
 findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS=%ERRORLEVEL%"
 if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
 if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT set "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS=%ERRORLEVEL%"
+"%JOURNAL_WIN_CI_OWNER_RAIL%" cleanup --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" >nul 2>&1
 del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
 if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS%"=="0" goto :ordinary_owner_failed
 if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS%"=="0" goto :ordinary_owner_failed
@@ -104,9 +111,12 @@ exit /b 0
 
 :ordinary_owner_failed
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=failed"
-echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
 echo ERROR: ordinary-owner inventory control did not both exit successfully and emit JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed
 exit /b 1
+
+:ordinary_owner_cleanup_failed
+"%JOURNAL_WIN_CI_OWNER_RAIL%" cleanup --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" >nul 2>&1
+goto :ordinary_owner_failed
 
 :run_refs_matrix
 set "JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=executed/pass"

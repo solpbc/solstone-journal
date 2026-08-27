@@ -1620,6 +1620,17 @@ timeout = "standard"
 default_full = false
 runtime = "none"
 
+[[package_suites]]
+id = "package::solstone-core-win-owner-rail"
+package = "solstone-core-win-owner-rail"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
 [[suites]]
 id = "solstone-core::core_brain_contracts"
 package = "solstone-core"

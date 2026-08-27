@@ -1595,7 +1595,8 @@ fn run_windows_driver_with_refs(
         .env("SSH", ssh)
         .env("SOLSTONE_SCP_LOG", scp_log)
         .env("SOLSTONE_SSH_LOG", ssh_log)
-        .env("SOLSTONE_SSH_SCENARIO", scenario);
+        .env("SOLSTONE_SSH_SCENARIO", scenario)
+        .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild");
     if let Some(value) = opt_in {
         command.env("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST", value);
     } else {
@@ -1773,6 +1774,7 @@ fn windows_native_driver_forwards_only_normalized_cloud_opt_in() {
             1,
             "opt-in {opt_in:?} produced an ambiguous remote assignment"
         );
+        assert!(ssh_call.contains("set \"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=solbuild\"&&"));
         assert_eq!(
             ssh_call.matches(&forwarded).count(),
             1,
@@ -1862,12 +1864,12 @@ fn windows_native_driver_rejects_ambiguous_cloud_evidence() {
     }
 }
 
-fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
+fn validate_windows_runner_contract(runner: &str, limited_child: &str) -> Result<(), String> {
     let cloud_integration = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
     let cloud_passed = "set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
     let cloud_evidence =
         "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
-    let ordinary_integration = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture";
+    let ordinary_integration = "pub const ORDINARY_OWNER_CARGO_TEST: &str = \"cargo test --manifest-path core\\\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture\";";
     let ordinary_marker = "findstr /x /c:\"JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed\"";
     let ordinary_status = "set \"JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS=%ERRORLEVEL%\"";
     let ordinary_passed = "set \"JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed\"";
@@ -1902,11 +1904,16 @@ fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
         }
     };
 
-    if !runner.contains(ordinary_integration)
+    if !limited_child.contains(ordinary_integration)
         || !runner.contains(ordinary_marker)
         || !runner.contains(ordinary_status)
+        || !runner.contains("recover-held --lease")
+        || !runner.contains("prepare --lease")
+        || !runner.contains("launch --lease")
+        || !runner.contains("await --lease")
+        || !runner.contains("cleanup --lease")
     {
-        return Err("ordinary-owner integration must retain its command, exit status, and terminal marker check".to_owned());
+        return Err("ordinary-owner rail must retain its limited-child command, lifecycle, exit status, and terminal marker check".to_owned());
     }
 
     let cloud_integration_position = unique_position(cloud_integration)?;
@@ -1952,11 +1959,13 @@ fn validate_windows_runner_contract(runner: &str) -> Result<(), String> {
 #[test]
 fn windows_native_runner_evidence_validator_rejects_false_green_mutations() {
     let runner = include_str!("../../../../scripts/win-ci.cmd");
-    validate_windows_runner_contract(runner).expect("live Windows runner evidence contract");
+    let limited_child = include_str!("../../../crates/solstone-core-win-owner-rail/src/windows.rs");
+    validate_windows_runner_contract(runner, limited_child)
+        .expect("live Windows runner evidence contract");
 
     let cloud_integration = "  cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks || exit /b 1";
     let cloud_passed = "  set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\"";
-    let ordinary_integration = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture";
+    let ordinary_integration = "pub const ORDINARY_OWNER_CARGO_TEST: &str = \"cargo test --manifest-path core\\\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture\";";
     let ordinary_evidence =
         "echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%";
     let refs_archive_capability = "echo JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=%JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY%";
@@ -1982,22 +1991,27 @@ fn windows_native_runner_evidence_validator_rejects_false_green_mutations() {
             ),
         ),
         (
-            "skipped ordinary-owner integration command",
-            runner.replacen(ordinary_integration, "", 1),
+            "skipped ordinary-owner limited-child command",
+            limited_child.replacen(ordinary_integration, "", 1),
         ),
         (
             "post-OK evidence",
-            runner.replacen(
-                &format!("{refs_archive_capability}\n{ok}"),
-                &format!("{ok}\n{refs_archive_capability}"),
-                1,
-            ),
+            runner.replacen(ok, &format!("{ok}\n{refs_archive_capability}"), 1),
         ),
     ];
     for (name, mutation) in mutations {
-        assert_ne!(mutation, runner, "mutation fixture {name} changed nothing");
+        let (mutated_runner, mutated_child) =
+            if name == "skipped ordinary-owner limited-child command" {
+                (runner.to_owned(), mutation)
+            } else {
+                (mutation, limited_child.to_owned())
+            };
         assert!(
-            validate_windows_runner_contract(&mutation).is_err(),
+            mutated_runner.as_str() != runner || mutated_child.as_str() != limited_child,
+            "mutation fixture {name} changed nothing"
+        );
+        assert!(
+            validate_windows_runner_contract(&mutated_runner, &mutated_child).is_err(),
             "runner validator accepted {name}"
         );
     }
@@ -2012,6 +2026,9 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     let driver = fs::read_to_string(root.join("scripts/win-host-ci.sh"))
         .expect("read Windows driver script");
     let runner = fs::read_to_string(root.join("scripts/win-ci.cmd")).expect("read Windows runner");
+    let limited_child =
+        fs::read_to_string(root.join("core/crates/solstone-core-win-owner-rail/src/windows.rs"))
+            .expect("read Windows limited child");
 
     assert!(makefile.contains("win-host-ci: require-win-remote-host"));
     assert!(makefile.contains("sh scripts/win-host-ci.sh"));
@@ -2029,7 +2046,7 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     assert!(driver.contains("solstone-journal-win-host-ci.lock"));
     assert!(driver.contains("C:\\\\sol\\\\sj-ci.cmd"));
     assert!(runner.contains(
-        "cargo build --manifest-path core\\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io"
+        "cargo build --manifest-path core\\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-win-owner-rail"
     ));
     assert!(runner.contains(
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-config --lib"
@@ -2038,12 +2055,12 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --lib",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_cloud_sync_root_registration --features test-hooks",
-        "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-archive --lib source_freezes_portable_members_and_checked_bytes -- --nocapture",
         "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal --lib",
     ] {
         assert!(runner.contains(command), "Windows runner missing {command}");
     }
+    assert!(limited_child.contains("pub const ORDINARY_OWNER_CARGO_TEST: &str = \"cargo test --manifest-path core\\\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture\";"));
     assert!(runner.contains("if \"%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%\"==\"1\""));
     assert!(
         runner
@@ -2053,6 +2070,8 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     assert!(runner.contains("set \"JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=passed\""));
     for token in [
         "SOLSTONE_JOURNAL_WIN_REFS_ROOT",
+        "SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT",
+        "solstone-core-win-owner-rail.exe",
         "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE",
         "JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed",
         "JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE",
@@ -2073,7 +2092,9 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     assert!(!runner.contains(
         "echo === cargo test --locked (journal-io Cloud Files sync-root registration) ==="
     ));
-    validate_windows_runner_contract(&runner).expect("Windows runner evidence contract");
+    assert!(driver.contains("set \\\"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=$owner_account\\\"&&"));
+    validate_windows_runner_contract(&runner, &limited_child)
+        .expect("Windows runner evidence contract");
     for test in [
         "config_strip_matches_python_control_whitespace",
         "ensure_journal_dir_reports_non_directory_parent",
