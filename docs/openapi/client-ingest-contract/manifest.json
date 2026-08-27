@@ -51,7 +51,7 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "ada327296d84ef51f6b511baf9b69d533bc75aa10909606bdecce0b7c27cf4df"
+      "sha256": "f5612dbf6f1a095b5df4bbb6988a9084e54735e3f0c81e9cb522ec8afa297292"
     }
   ],
   "openapi_document_version": "1.0.0",
