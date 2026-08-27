@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 #
-# Shared stop-before-publish signal for the legacy-upgrade-v1022 fixture.
-# Sourced by python3-interpreter (the fake v1 supervisor process) so its
-# TERM/INT trap and stop-before-publish-check.test.sh (the isolated,
-# non-Docker proof that the signal actually discriminates) share one
-# implementation rather than drifting apart.
+# Reference implementation of the stop-before-publish signal used by the
+# legacy-upgrade-v1022 fixture's python3-interpreter (a real Python script,
+# not shell, so it can send its own Type=notify READY=1 in-process -- see
+# that file's own comment). This shell version exists so
+# stop-before-publish-check.test.sh can prove the signal discriminates in
+# both directions without Docker or systemd; keep it and
+# python3-interpreter's Python check in sync if the guard marker changes.
 #
 # The pre-seeded v1.0.22 unit's ExecStart is already "journal start <port>"
 # -- the same form V2 itself writes -- so ExecStart cannot tell v1 from v2

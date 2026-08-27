@@ -1,17 +1,54 @@
-#!/bin/sh
+#!/usr/bin/python3
 # Fixture-only stand-in for the v1.0.22 Python interpreter that `journal`
 # (the console-script shim) would otherwise exec into. Simulates the v1
 # supervisor process long enough to prove journal setup stops it before
-# publishing the V2 unit. Sits alongside this script at install time (see
-# run-test.sh's legacy-upgrade-v1022 case), so the sibling path below is
-# stable.
-. "$(dirname "$0")/stop-before-publish-check.sh"
+# publishing the V2 unit.
+#
+# This sends its own Type=notify READY=1 in-process (no forked helper
+# binary): systemd's default NotifyAccess=main only accepts a notification
+# whose SENDER PID is the unit's exact MainPID, and NotifyAccess is not in
+# service.rs::systemd_managed's allowed key set, so this fixture cannot add
+# NotifyAccess=all to the seeded unit without breaking the very
+# classification this fixture exists to exercise. A forked `systemd-notify`
+# CLI call sends from a different (child) PID and is silently rejected --
+# that is exactly what a real v1.0.22 Python process does not do, since its
+# own sd_notify equivalent runs in-process too.
+import os
+import signal
+import socket
+import sys
+import time
 
-printf "%s\n" "$$" > "$HOME/journal/health/v1.pid"
-systemd-notify --ready
-trap '
-if stopped_before_publish "$HOME/.config/systemd/user/solstone.service"; then
-    printf "%s\n" "stopped-before-publish" > /tmp/v1-stopped-before-publish
-fi
-exit 0' TERM INT
-while :; do sleep 1; done
+home = os.environ["HOME"]
+pid_file = os.path.join(home, "journal", "health", "v1.pid")
+with open(pid_file, "w", encoding="utf-8") as handle:
+    handle.write(f"{os.getpid()}\n")
+
+notify_socket = os.environ.get("NOTIFY_SOCKET")
+if notify_socket:
+    address = notify_socket
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sock.connect(address)
+    sock.sendall(b"READY=1")
+    sock.close()
+
+UNIT_FILE = os.path.join(home, ".config", "systemd", "user", "solstone.service")
+GUARD_MARKER = "SOLSTONE_INSTALLATION_NAMESPACE="
+
+
+def handle_stop(_signum, _frame):
+    with open(UNIT_FILE, encoding="utf-8") as handle:
+        content = handle.read()
+    if GUARD_MARKER not in content:
+        with open("/tmp/v1-stopped-before-publish", "w", encoding="utf-8") as flag:
+            flag.write("stopped-before-publish\n")
+    sys.exit(0)
+
+
+signal.signal(signal.SIGTERM, handle_stop)
+signal.signal(signal.SIGINT, handle_stop)
+
+while True:
+    time.sleep(1)
