@@ -243,7 +243,7 @@ impl FrameProgress {
     }
 }
 
-/// Long-lived, reconnecting Callosum Unix-socket client.
+/// Long-lived, reconnecting Callosum local-transport client.
 pub struct CallosumSocketConnection {
     socket_path: PathBuf,
     defaults: Map<String, Value>,

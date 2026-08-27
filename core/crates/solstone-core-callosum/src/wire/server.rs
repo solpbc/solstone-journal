@@ -459,10 +459,11 @@ fn bind_windows_listener(
     let pipe_name = crate::windows::pipe_name(socket_path)?;
     let descriptor = current_user_pipe_security_descriptor()?;
     let name = pipe_name.to_fs_name::<NamedPipe>()?;
-    // interprocess 2.4.3 source proof: local_socket/tokio/listener.rs:23-28 starts with
-    // PipeListenerOptions::new(); named_pipe/listener/options.rs:81-94 defaults accept_remote to
-    // false; named_pipe/listener/create_instance.rs:93-103 ORs PIPE_REJECT_REMOTE_CLIENTS when
-    // that field is false. The high-level API has no explicit remote-client setter.
+    // interprocess 2.4.3 source proof:
+    // src/os/windows/named_pipe/local_socket/tokio/listener.rs:23-28 starts with
+    // PipeListenerOptions::new(); src/os/windows/named_pipe/listener/options.rs:81-94 defaults
+    // accept_remote to false; src/os/windows/named_pipe/listener/create_instance.rs:93-103 ORs
+    // PIPE_REJECT_REMOTE_CLIENTS when that field is false. The high-level API has no setter.
     let listener = ListenerOptions::new()
         .name(name)
         .security_descriptor(descriptor)
@@ -472,6 +473,8 @@ fn bind_windows_listener(
 
 #[cfg(windows)]
 fn current_user_pipe_sddl() -> std::io::Result<String> {
+    // This current-user-SID DACL, with remote clients rejected at listener creation, protects
+    // cross-user/cross-identity and remote-network access—not same-SID malware, which is out of scope.
     let sid = crate::windows::sid::current_user_sid()?;
     Ok(format!("O:{sid}D:P(A;;GA;;;{sid})"))
 }

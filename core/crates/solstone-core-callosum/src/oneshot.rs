@@ -15,7 +15,7 @@ pub enum CallosumOneShotError {
 
 impl fmt::Display for CallosumOneShotError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Callosum socket unavailable")
+        formatter.write_str("Callosum transport unavailable")
     }
 }
 
