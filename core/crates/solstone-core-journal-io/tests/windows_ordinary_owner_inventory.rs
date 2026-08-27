@@ -381,7 +381,7 @@ fn exercise_full_flow(path: &Path, fixture: &str) {
             .expect("find nested inventory entry");
         let bytes = read_windows_inventory_file(&root, entry, BUDGET)?;
         println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{fixture}_CHECKED_READ=passed");
-        Ok(bytes)
+        Ok::<Vec<u8>, solstone_core_journal_io::WindowsInventoryError>(bytes)
     });
     assert_eq!(
         result.expect("ordinary-owner inventory and checked read"),
