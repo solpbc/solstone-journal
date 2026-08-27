@@ -5,7 +5,7 @@
 
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::{offset_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -43,6 +43,7 @@ const OWNER_ACCOUNT_ENV: &str = "SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT";
 const REFS_ROOT_ENV: &str = "SOLSTONE_JOURNAL_WIN_REFS_ROOT";
 const POLL_LIMIT: usize = 120;
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
+const FAILED_CHILD_OUTPUT_TAIL_BYTES: usize = 8 * 1024;
 
 pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), String> {
     let command = arguments
@@ -319,7 +320,13 @@ fn await_result(options: &Options) -> Result<(), String> {
                 write_lease(lease_path, &lease)?;
                 // A bound terminal test failure is safe to delete, but not a pass.  The driver
                 // invokes `cleanup`, whose state guard permits that exact sequence only here.
-                verify_result(&lease, &result).map_err(display_rail_error)?;
+                if let Err(error) = verify_result(&lease, &result) {
+                    return Err(format!(
+                        "ordinary-owner bound test failed: {}; limited-child output tail:\n{}",
+                        display_rail_error(error),
+                        failed_child_output_tail(&lease.output_path)
+                    ));
+                }
                 println!("JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed");
                 if !lease.refs_root.is_empty() {
                     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed");
@@ -335,6 +342,30 @@ fn await_result(options: &Options) -> Result<(), String> {
         "fresh-terminal-result-not-observed",
     )?;
     Err("ordinary-owner scheduled task timed out".to_owned())
+}
+
+fn failed_child_output_tail(path: &str) -> String {
+    match File::open(path) {
+        Ok(mut output) => {
+            let length = match output.metadata() {
+                Ok(metadata) => metadata.len(),
+                Err(error) => return format!("<unable to inspect limited-child output: {error}>"),
+            };
+            let start = length.saturating_sub(FAILED_CHILD_OUTPUT_TAIL_BYTES as u64);
+            if let Err(error) = output.seek(SeekFrom::Start(start)) {
+                return format!("<unable to seek limited-child output: {error}>");
+            }
+            let mut tail = Vec::with_capacity(FAILED_CHILD_OUTPUT_TAIL_BYTES);
+            if let Err(error) = output
+                .take(FAILED_CHILD_OUTPUT_TAIL_BYTES as u64)
+                .read_to_end(&mut tail)
+            {
+                return format!("<unable to read limited-child output: {error}>");
+            }
+            String::from_utf8_lossy(&tail).into_owned()
+        }
+        Err(error) => format!("<unable to read limited-child output: {error}>"),
+    }
 }
 
 fn cleanup(options: &Options) -> Result<(), String> {
