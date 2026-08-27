@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtCreateFile,
-    NtQueryDirectoryFile,
+    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
@@ -25,16 +24,14 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
-    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
-    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo,
-    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
-    SYNCHRONIZE,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_DIR_NAME,
+    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FILE_TYPE_DISK, FileAttributeTagInfo,
+    FileIdExtdDirectoryInfo, FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+    GetFileType, ReOpenFile, ReadDirectoryChangesW, SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{
-    CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
-};
+use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -465,10 +462,7 @@ pub fn enumerate_windows_inventory(
     with_witness(root, |witness| {
         let mut usage = InventoryUsage::new();
         let mut entries = Vec::new();
-        let listed_root = borrow_admitted_root(
-            root,
-            WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
-        )?;
+        let listed_root = reopen_admitted_root_for_listing(root)?;
         walk_directory(
             root,
             listed_root.as_raw_handle(),
@@ -484,6 +478,55 @@ pub fn enumerate_windows_inventory(
         entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(WindowsInventory { entries })
     })
+}
+
+/// Reopen the admitted root solely to give this inventory an independent directory cursor.
+///
+/// The retained root also carries its namespace-watch request.  Win32 directory listing advances
+/// a cursor stored on a handle, so using that same handle would make a later complete inventory
+/// silently empty.  `ReOpenFile` opens the already-admitted object rather than reacquiring a
+/// pathname; the returned capability is rechecked against the identity frozen at admission.
+fn reopen_admitted_root_for_listing(
+    root: &JournalRoot,
+) -> Result<OwnedHandle, WindowsInventoryError> {
+    let retained_root = borrow_admitted_root(
+        root,
+        WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
+    )?;
+    let handle = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
+        // SAFETY: `retained_root` was obtained from the live, CreateFileW-acquired journal-root
+        // capability.  The requested access and sharing are a subset-compatible directory-list
+        // profile, and the returned handle is checked before it becomes an owned Rust handle.
+        #[allow(unsafe_code)]
+        let handle = unsafe {
+            ReOpenFile(
+                retained_root.as_raw_handle(),
+                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            )
+        };
+        (handle != INVALID_HANDLE_VALUE)
+            .then_some(handle)
+            .ok_or_else(io::Error::last_os_error)
+    })
+    .map_err(|source| WindowsInventoryError::Io {
+        operation: "reopen admitted journal root for listing",
+        path: root.canonical_path().to_path_buf(),
+        source,
+    })?;
+    // SAFETY: `ReOpenFile` returned one new, non-invalid handle; this conversion transfers it
+    // into exactly one `OwnedHandle`.
+    #[allow(unsafe_code)]
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    let attributes = attribute_tag(&handle, root.canonical_path())?;
+    if !is_directory(attributes)
+        || is_reparse_point(attributes)
+        || file_id(&handle, root.canonical_path())? != root.identity()
+    {
+        return Err(WindowsInventoryError::Root(JournalRootError::Changed));
+    }
+    Ok(handle)
 }
 
 fn borrow_admitted_root<'root>(
@@ -928,44 +971,26 @@ fn list_directory(
 ) -> Result<Vec<ListedEntry>, WindowsInventoryError> {
     let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
-    let mut restart_scan = true;
     loop {
         let result = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-            let mut status = IO_STATUS_BLOCK::default();
-            // SAFETY: `directory` is a retained directory-list handle, the I/O status block and
-            // buffer are writable for this synchronous request, and `restart_scan` rewinds only
-            // this directory handle's enumeration cursor for the first query of this listing.
+            // SAFETY: `directory` is a retained directory-list handle and `buffer` is writable
+            // for its exact supplied size.  Each root inventory uses a fresh independent handle;
+            // descendants are newly opened for their one listing.
             #[allow(unsafe_code)]
             let result = unsafe {
-                NtQueryDirectoryFile(
+                GetFileInformationByHandleEx(
                     directory,
-                    std::ptr::null_mut(),
-                    None,
-                    std::ptr::null(),
-                    &mut status,
+                    FileIdExtdDirectoryInfo,
                     buffer.as_mut_ptr().cast(),
                     buffer.len() as u32,
-                    FileIdExtdDirectoryInformation,
-                    false,
-                    std::ptr::null(),
-                    restart_scan,
                 )
             };
-            (result == STATUS_SUCCESS)
+            (result != 0)
                 .then_some(())
-                .ok_or_else(|| {
-                    // SAFETY: `RtlNtStatusToDosError` converts the just-returned NTSTATUS
-                    // without borrowing caller memory or relying on thread-local last-error.
-                    #[allow(unsafe_code)]
-                    let error = unsafe { RtlNtStatusToDosError(result) };
-                    io::Error::from_raw_os_error(error as i32)
-                })
+                .ok_or_else(io::Error::last_os_error)
         });
         match result {
-            Ok(()) => {
-                restart_scan = false;
-                parse_directory_buffer(&buffer, relative, &mut entries)?;
-            }
+            Ok(()) => parse_directory_buffer(&buffer, relative, &mut entries)?,
             Err(source) if source.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) => break,
             Err(source) => {
                 return Err(WindowsInventoryError::Io {
