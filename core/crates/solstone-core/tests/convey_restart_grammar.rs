@@ -111,7 +111,6 @@ fn corpus_accepted_convey_forms_preserve_the_effective_port() {
             continue;
         }
         if matches!(case.label.as_str(), "port-negative" | "port-zero") {
-            // AF-008 is the closed, owner-facing range-validation divergence.
             let output = binary("convey", &case.argv);
             assert_eq!(
                 output.status.code(),

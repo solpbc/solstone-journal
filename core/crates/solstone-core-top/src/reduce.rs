@@ -382,7 +382,6 @@ struct ValidatedCrash {
 
 struct ValidatedLifecycle {
     service: String,
-    restart_id: Option<String>,
 }
 
 struct ValidatedQueue {
@@ -584,16 +583,8 @@ fn validate_supervisor_lifecycle(
     extra: &Map<String, Value>,
 ) -> Result<ValidatedLifecycle, TopMalformed> {
     let route = TopRoute::SupervisorLifecycle;
-    let restart_id = optional_text(extra, "restart_id", route)?;
-    if restart_id.as_ref().is_some_and(String::is_empty) {
-        return Err(malformed(
-            route,
-            TopMalformedKind::InvalidValue("restart_id"),
-        ));
-    }
     Ok(ValidatedLifecycle {
         service: required_text(extra, "service", route)?,
-        restart_id,
     })
 }
 
@@ -758,7 +749,6 @@ fn commit_supervisor_lifecycle(
     event: &str,
     sample: &ReductionSample,
 ) -> ReductionEffects {
-    let _ = lifecycle.restart_id;
     state
         .service_status
         .insert(lifecycle.service, (event.to_owned(), sample.wall_seconds));

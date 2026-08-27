@@ -180,14 +180,6 @@ fn recognized_routes_reject_atomically_with_typed_evidence() {
             Map::from_iter([("service".into(), json!(""))]),
         ),
         event(
-            "supervisor",
-            "started",
-            Map::from_iter([
-                ("service".into(), json!("svc")),
-                ("restart_id".into(), json!("")),
-            ]),
-        ),
-        event(
             "logs",
             "exit",
             Map::from_iter([

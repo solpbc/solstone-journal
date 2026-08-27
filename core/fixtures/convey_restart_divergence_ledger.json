@@ -16,54 +16,6 @@
       "justification": "Python accepts these flags then discards them across os.execv. Existing Convey door diagnostics remain unconditional; this wave does not add a logging subsystem.",
       "native_behavior": "Accept -v/--verbose and -d/--debug with no native runtime effect.",
       "reference_behavior": "setup_cli configures Python logging, but cli.main forwards only convey --port PORT."
-    },
-    {
-      "id": "AF-003-restart-preflight-replaced",
-      "justification": "The native command can directly verify its required Callosum transport. Retaining Python-only environment gates would hide an unavailable supervisor instead of reporting it.",
-      "native_behavior": "Do not implement require_solstone(), SOL_SKIP_SUPERVISOR_CHECK, or SOL_SUPERVISOR_SPAWNED behavior; connect to Callosum directly.",
-      "reference_behavior": "restart.main calls require_solstone() after parsing, producing stack-down exit 1 or spawned exit 75 before restart transport."
-    },
-    {
-      "id": "AF-004-fixed-sleeps-removed",
-      "justification": "Correlation and fresh port-file readiness are a causal completion condition; fixed delays are not.",
-      "native_behavior": "No fixed 0.2-second pre-emit or 1.0-second post-start sleep.",
-      "reference_behavior": "wait_for_convey_restart sleeps 0.2 seconds before emit and 1.0 second after its first started event."
-    },
-    {
-      "id": "AF-005-correlated-fresh-port-readiness",
-      "justification": "A matching restart id and atomically replaced valid nonzero port file prove the requested process wrote its readiness artifact. No TCP probe is added because run_convey binds before writing that file.",
-      "native_behavior": "Ignore predating, absent, or different restart ids; succeed only after the first matching started event and a valid nonzero convey.port whose inode differs from the pre-request inode, or which did not exist before the request.",
-      "reference_behavior": "Counts any convey started event, including a predating one, then succeeds after a fixed delay without checking readiness."
-    },
-    {
-      "id": "AF-006-fast-callasum-connect-failure",
-      "justification": "The Python missing-socket path is an accidental reconnect-thread timeout, not the caught connection-error branch described by its own code.",
-      "native_behavior": "Fail immediately with a diagnostic naming the unavailable Callosum socket path and I/O reason.",
-      "reference_behavior": "CallosumConnection.start starts a reconnecting thread; a missing socket drops the queued restart and eventually times out."
-    },
-    {
-      "id": "AF-007-correlated-log-filtering",
-      "justification": "Correlation prevents unrelated Convey-like process output from being presented as this restart's logs.",
-      "native_behavior": "Retain and stream only logs carrying the matching restart_id.",
-      "reference_behavior": "Retains every logs/line whose name contains convey, regardless of restart causality."
-    },
-    {
-      "id": "AF-008-port-range-validation",
-      "justification": "Owner-facing CLI validation avoids malformed negative handoff and accidental zero-port invocation, while retaining defense in depth in the server owner.",
-      "native_behavior": "CLI rejects ports outside 1..=65535 with owner-facing usage exit 2. The existing run_convey port-0 rejection remains unchanged as the runtime defense-in-depth layer.",
-      "reference_behavior": "Python argparse accepts negative and zero integers, then execs its helper."
-    },
-    {
-      "id": "AF-009-dynamic-connect-diagnostic",
-      "justification": "A direct native connect has an observable socket path and I/O error; preserving the Python caught-branch wording would obscure that useful fact.",
-      "native_behavior": "Connection failure names the Callosum path and operating-system error.",
-      "reference_behavior": "The explicit caught branch prints ERROR: Failed to connect to CALLOSUM: <error>."
-    },
-    {
-      "id": "AF-010-optional-restart-id-preserves-python-dispatch",
-      "justification": "PROCESS_SPECS still routes journal restart-convey to Python, whose request contains no correlation field. Requiring one would regress the shipped Python path.",
-      "native_behavior": "restart_id is optional on supervisor/restart. An absent id performs today's restart and clears stored correlation so later uncorrelated events cannot inherit a stale id.",
-      "reference_behavior": "Python emits supervisor/restart with service=convey and no correlation field."
     }
   ],
   "schema": "convey-restart-divergence-ledger/1"

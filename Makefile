@@ -76,12 +76,11 @@ RUST_ROUTINE_EXCLUDES := $(RUST_HOST_EXCLUDES) --exclude solstone-core-sol-link 
 ONNX_HOST_TEST_PACKAGES := -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze
 
 # Only supervisor tests whose positive waits classify load-dilated exhaustion as
-# explicit inconclusive outcomes belong here. The three
-# supervisor-domain raw-poll tests (supervisor_boot, supervisor_providers, and
-# restart_convey_supervisor_seam), the two session races (cogitate_session and
-# generate_session), and the two non-race tests (convey_restart_no_python_spawn
-# and convey_process) remain out of scope because load could make their hard
-# assertions report a false FAILED.
+# explicit inconclusive outcomes belong here. The two supervisor-domain raw-poll
+# tests (supervisor_boot and supervisor_providers), the two session races
+# (cogitate_session and generate_session), and the two non-race tests
+# (convey_restart_no_python_spawn and convey_process) remain out of scope because
+# load could make their hard assertions report a false FAILED.
 RUST_RACE_TEST_TARGETS := --test supervisor_app_stack --test supervisor_shutdown --test supervisor_tick
 RUST_RACE_RUNS ?= 5
 RUST_RACE_LOAD_JOBS ?= 12
