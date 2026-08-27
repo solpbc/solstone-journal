@@ -354,10 +354,12 @@ fn require_trace_primitives(primitives: &[WindowsInventoryPrimitive], context: &
     }
 }
 
-fn exercise_full_flow(path: &Path) {
+fn exercise_full_flow(path: &Path, fixture: &str) {
+    println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{fixture}_FLOW=started");
     let (admission, acquisition_trace) =
         run_with_windows_acquisition_trace(|| JournalRoot::open(path));
     let root = admission.expect("admit ordinary-owner fixture root");
+    println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{fixture}_ADMISSION=passed");
     assert!(
         acquisition_trace
             .successful
@@ -371,12 +373,15 @@ fn exercise_full_flow(path: &Path) {
 
     let (result, inventory_trace) = run_with_windows_inventory_trace(|| {
         let inventory = enumerate_windows_inventory(&root, BUDGET)?;
+        println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{fixture}_ENUMERATION=passed");
         let entry = inventory
             .entries()
             .iter()
             .find(|entry| entry.relative_path() == Path::new(NESTED_MEMBER))
             .expect("find nested inventory entry");
-        read_windows_inventory_file(&root, entry, BUDGET)
+        let bytes = read_windows_inventory_file(&root, entry, BUDGET)?;
+        println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{fixture}_CHECKED_READ=passed");
+        Ok(bytes)
     });
     assert_eq!(
         result.expect("ordinary-owner inventory and checked read"),
@@ -414,7 +419,7 @@ fn exercise_refs_control() {
         "ReFS",
         "ordinary-owner ReFS fixture must remain on ReFS"
     );
-    exercise_full_flow(&fixture.root);
+    exercise_full_flow(&fixture.root, "REFS");
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed");
     println!(
         "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_ROOT={}",
@@ -435,7 +440,7 @@ fn ordinary_owner_inventory_control() {
         "NTFS",
         "ordinary-owner fixture must be NTFS"
     );
-    exercise_full_flow(&fixture.root);
+    exercise_full_flow(&fixture.root, "NTFS");
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_NTFS=passed");
 
     exercise_refs_control();
