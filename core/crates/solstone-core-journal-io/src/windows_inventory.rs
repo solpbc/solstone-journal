@@ -1363,12 +1363,21 @@ fn reopen_verified_route(
             });
         }
         match component.kind {
-            JournalEntryKind::Directory if !is_directory(attributes) => {
-                return Err(WindowsInventoryError::NotDirectory {
-                    path: entry.relative_path.clone(),
-                });
+            JournalEntryKind::Directory => {
+                if !is_directory(attributes) {
+                    return Err(WindowsInventoryError::NotDirectory {
+                        path: entry.relative_path.clone(),
+                    });
+                }
             }
-            JournalEntryKind::RegularFile => require_regular(&handle, &entry.relative_path)?,
+            JournalEntryKind::RegularFile => {
+                if is_directory(attributes) {
+                    return Err(WindowsInventoryError::NotRegular {
+                        path: entry.relative_path.clone(),
+                    });
+                }
+                require_regular(&handle, &entry.relative_path)?;
+            }
             _ => {
                 return Err(WindowsInventoryError::IdentityChanged {
                     path: entry.relative_path.clone(),
