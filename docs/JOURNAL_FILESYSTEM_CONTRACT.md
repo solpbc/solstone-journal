@@ -263,12 +263,45 @@ not provide hard-link ownership proof, advisory locking, persistent claim
 registry or cleanup, claim-name hiding, recursive removal, Windows support,
 heartbeat behavior, or archive refactoring.
 
-Windows `claim_and_remove_observed` is explicitly unsupported. Windows has no
-primitive with a documented proof of both atomic no-replace transfer of the
-observed original into a claim name and directory durability equivalent to
-`fsync` on a directory descriptor. It therefore does not substitute a
-path-based claim, overwrite-capable rename, or uncertain delete for the Unix
-state machine.
+Windows `claim_and_remove_observed` is explicitly unsupported. The published
+Win32 and NTFS documentation establishes collision behavior, POSIX-style
+deletion, and metadata caching, but not the one property the Unix state
+machine depends on: an atomic transfer of the observed original into an
+absent claim name that holds under concurrent namespace creators, with
+directory-level durability.
+
+[`FILE_RENAME_INFO`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+documents a handle-relative rename destination via `RootDirectory` and that a
+false `ReplaceIfExists` errors when the target exists — collision behavior,
+not a documented atomic transfer into an absent claim name under a concurrent
+creator.
+[`SetFileInformationByHandle`](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)
+documents the handle-information operation itself and warns that behavior can
+differ by information class across OS releases; it supplies no missing
+concurrency guarantee for the claim step, and it is also the source of the
+`ReFS` support statement addressed below. Once a claim exists,
+[`FILE_DISPOSITION_INFORMATION_EX`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)
+documents POSIX deletion semantics — closing the delete handle removes the
+visible link while existing handles remain usable — but this is a post-claim
+deletion mechanism that cannot repair the undocumented atomic claim step that
+has to happen first.
+[`File caching`](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching)
+states that filesystem metadata is cached, which is exactly why an
+undocumented durability barrier is disqualifying rather than incidental.
+
+[`CreateFile`'s write-through documentation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea)
+names rename metadata among the `NTFS` metadata changes
+`FILE_FLAG_WRITE_THROUGH` flushes. That is an `NTFS`-specific metadata-flush
+fact, not a documented atomic no-replace transfer under concurrent namespace
+creation, and it has no `ReFS` counterpart: `SetFileInformationByHandle`'s
+statement that the operation is supported on `ReFS` is support, not a
+durability proof, and none of these five documents supplies an equivalent
+`ReFS` durability guarantee. The missing atomic claim transfer is
+independently sufficient to keep this fail-closed on both `NTFS` and `ReFS`;
+the `NTFS` metadata-flush fact neither supplies that missing concurrency
+property nor extends to an equivalent `ReFS` durability guarantee. Windows
+therefore does not substitute a path-based claim, overwrite-capable rename,
+or uncertain delete for the Unix state machine.
 
 ## Append JSONL
 
