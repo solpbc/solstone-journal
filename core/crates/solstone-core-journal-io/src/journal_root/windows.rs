@@ -36,6 +36,9 @@ pub enum WindowsAcquisitionPrimitive {
     RequestedRootOpen,
     RequestedRootAttributeTag,
     RequestedRootFileId,
+    RequestedRootWatchOpen,
+    RequestedRootWatchAttributeTag,
+    RequestedRootWatchFileId,
     VerificationAncestorOpen,
     VerificationAncestorAttributeTag,
     FinalTargetOpen,
@@ -56,6 +59,7 @@ pub enum WindowsAcquisitionPrimitive {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DirectoryOpenPurpose {
     RetainedRoot,
+    NamespaceWatch,
     Verification,
 }
 
@@ -63,6 +67,10 @@ impl DirectoryOpenPurpose {
     const fn access_and_flags(self) -> (u32, u32) {
         match self {
             Self::RetainedRoot => (
+                FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            ),
+            Self::NamespaceWatch => (
                 FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
                 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OVERLAPPED,
             ),
@@ -401,6 +409,7 @@ fn substitute_attribute_tag(info: &mut FILE_ATTRIBUTE_TAG_INFO) {
 
 pub(crate) struct WindowsRoot {
     root: OwnedHandle,
+    namespace_watch: OwnedHandle,
     canonical: PathBuf,
     identity: ObjectIdentity,
     filesystem: WindowsFilesystemKind,
@@ -409,6 +418,12 @@ pub(crate) struct WindowsRoot {
 impl AsHandle for WindowsRoot {
     fn as_handle(&self) -> BorrowedHandle<'_> {
         self.root.as_handle()
+    }
+}
+
+impl WindowsRoot {
+    pub(crate) fn as_watch_handle(&self) -> BorrowedHandle<'_> {
+        self.namespace_watch.as_handle()
     }
 }
 
@@ -485,6 +500,32 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
         WindowsAcquisitionPrimitive::RequestedRootFileId,
     )
     .map_err(|source| source_io("query journal root identity", root, source))?;
+    let namespace_watch = open_directory(
+        &validated.wide,
+        WindowsAcquisitionPrimitive::RequestedRootWatchOpen,
+        DirectoryOpenPurpose::NamespaceWatch,
+    )
+    .map_err(|source| source_io("open journal root namespace watch", root, source))?;
+    let watch_attributes = attribute_tag(
+        &namespace_watch,
+        WindowsAcquisitionPrimitive::RequestedRootWatchAttributeTag,
+    )
+    .map_err(|source| {
+        source_io(
+            "query journal root namespace-watch attributes",
+            root,
+            source,
+        )
+    })?;
+    require_authoritative_directory(root, watch_attributes)?;
+    let watch_identity = file_id(
+        &namespace_watch,
+        WindowsAcquisitionPrimitive::RequestedRootWatchFileId,
+    )
+    .map_err(|source| source_io("query journal root namespace-watch identity", root, source))?;
+    (watch_identity == expected)
+        .then_some(())
+        .ok_or(JournalRootError::Changed)?;
 
     if validated.components.is_empty() {
         verify_root_self(root, &validated.wide, expected)?;
@@ -498,6 +539,7 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
 
     Ok(WindowsRoot {
         root: authoritative,
+        namespace_watch,
         canonical: validated.canonical,
         identity: expected,
         filesystem,
@@ -1387,6 +1429,19 @@ mod tests {
     #[test]
     fn retained_root_open_profile_requests_exact_access_and_flags() {
         let (access, flags) = DirectoryOpenPurpose::RetainedRoot.access_and_flags();
+        assert_eq!(
+            access,
+            FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE
+        );
+        assert_eq!(
+            flags,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+        );
+    }
+
+    #[test]
+    fn namespace_watch_open_profile_requests_exact_access_and_flags() {
+        let (access, flags) = DirectoryOpenPurpose::NamespaceWatch.access_and_flags();
         assert_eq!(
             access,
             FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE

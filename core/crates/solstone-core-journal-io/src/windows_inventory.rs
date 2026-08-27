@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtCreateFile,
+    NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
@@ -27,11 +28,12 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
     FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
     FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdExtdDirectoryInfo, FileIdInfo,
-    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
-    SYNCHRONIZE,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW, SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::IO::{
+    CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
+};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -462,7 +464,10 @@ pub fn enumerate_windows_inventory(
     with_witness(root, |witness| {
         let mut usage = InventoryUsage::new();
         let mut entries = Vec::new();
-        let listed_root = reopen_admitted_root_for_listing(root)?;
+        let listed_root = borrow_admitted_root(
+            root,
+            WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
+        )?;
         walk_directory(
             root,
             listed_root.as_raw_handle(),
@@ -480,93 +485,6 @@ pub fn enumerate_windows_inventory(
     })
 }
 
-/// Open the admitted root again, relative to itself, solely to give this inventory an independent
-/// directory cursor.
-///
-/// The retained root also carries its namespace-watch request.  Win32 directory listing advances
-/// a cursor stored on a handle, so using that same handle would make a later complete inventory
-/// silently empty.  The native relative `.` open stays bound to the retained object rather than
-/// reacquiring a pathname; the returned capability is rechecked against the identity frozen at
-/// admission.
-fn reopen_admitted_root_for_listing(
-    root: &JournalRoot,
-) -> Result<OwnedHandle, WindowsInventoryError> {
-    let retained_root = borrow_admitted_root(
-        root,
-        WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
-    )?;
-    let name = OsStr::new(".").encode_wide().collect::<Vec<_>>();
-    let byte_length = u16::try_from(
-        name.len()
-            .checked_mul(size_of::<u16>())
-            .ok_or_else(|| WindowsInventoryError::Root(JournalRootError::Changed))?,
-    )
-    .map_err(|_| WindowsInventoryError::Root(JournalRootError::Changed))?;
-    let mut object_name = UNICODE_STRING {
-        Length: byte_length,
-        MaximumLength: byte_length,
-        Buffer: name.as_ptr().cast_mut(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-        RootDirectory: retained_root.as_raw_handle(),
-        ObjectName: &mut object_name,
-        Attributes: OBJ_CASE_INSENSITIVE,
-        SecurityDescriptor: std::ptr::null(),
-        SecurityQualityOfService: std::ptr::null(),
-    };
-    let mut raw = INVALID_HANDLE_VALUE;
-    let mut status = windows_sys::Win32::System::IO::IO_STATUS_BLOCK::default();
-    let raw = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-        // SAFETY: `attributes` refers only to the live `.` UTF-16 component and retained root
-        // handle.  The output handle and synchronous I/O status block are local initialized
-        // storage.  Opening `.` relative to that handle creates a new directory capability
-        // without resolving a pathname from process state.
-        #[allow(unsafe_code)]
-        let result = unsafe {
-            NtCreateFile(
-                &mut raw,
-                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE,
-                &attributes,
-                &mut status,
-                std::ptr::null(),
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_OPEN,
-                FILE_DIRECTORY_FILE
-                    | FILE_OPEN_FOR_BACKUP_INTENT
-                    | FILE_OPEN_REPARSE_POINT
-                    | FILE_SYNCHRONOUS_IO_NONALERT,
-                std::ptr::null(),
-                0,
-            )
-        };
-        (result == STATUS_SUCCESS).then_some(raw).ok_or_else(|| {
-            // SAFETY: converts only the status returned above to its Win32 error counterpart.
-            #[allow(unsafe_code)]
-            let error = unsafe { RtlNtStatusToDosError(result) };
-            io::Error::from_raw_os_error(error as i32)
-        })
-    })
-    .map_err(|source| WindowsInventoryError::Io {
-        operation: "open admitted journal root relative to itself for listing",
-        path: root.canonical_path().to_path_buf(),
-        source,
-    })?;
-    // SAFETY: `NtCreateFile` returned one new, non-invalid handle; this conversion transfers it
-    // into exactly one `OwnedHandle`.
-    #[allow(unsafe_code)]
-    let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
-    let attributes = attribute_tag(&handle, root.canonical_path())?;
-    if !is_directory(attributes)
-        || is_reparse_point(attributes)
-        || file_id(&handle, root.canonical_path())? != root.identity()
-    {
-        return Err(WindowsInventoryError::Root(JournalRootError::Changed));
-    }
-    Ok(handle)
-}
-
 fn borrow_admitted_root<'root>(
     root: &'root JournalRoot,
     primitive: WindowsInventoryPrimitive,
@@ -577,6 +495,20 @@ fn borrow_admitted_root<'root>(
             path: root.canonical_path().to_path_buf(),
             source,
         }
+    })
+}
+
+fn borrow_admitted_namespace_watch<'root>(
+    root: &'root JournalRoot,
+) -> Result<BorrowedHandle<'root>, WindowsInventoryError> {
+    traced_inventory(
+        WindowsInventoryPrimitive::BorrowAdmittedRootForWatch,
+        || Ok(root.as_namespace_watch_handle()),
+    )
+    .map_err(|source| WindowsInventoryError::Io {
+        operation: "borrow admitted journal-root namespace watch",
+        path: root.canonical_path().to_path_buf(),
+        source,
     })
 }
 
@@ -706,11 +638,11 @@ struct NamespaceWitness<'root> {
 
 impl<'root> NamespaceWitness<'root> {
     fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
-        let handle =
-            borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
-        // The witness borrows the admitted root but gives its one asynchronous request a private
-        // completion event. That event remains live through cancellation and drain, so result
-        // checks never infer this request's state from unrelated handle activity.
+        let handle = borrow_admitted_namespace_watch(root)?;
+        // The witness borrows its separately admitted namespace-watch handle and gives its one
+        // asynchronous request a private completion event. That event remains live through
+        // cancellation and drain, so result checks never infer this request's state from
+        // unrelated handle activity.
         let raw_event = {
             // SAFETY: the unnamed manual-reset event starts unsignaled and is immediately owned
             // below after the null-handle check.
@@ -1009,26 +941,41 @@ fn list_directory(
 ) -> Result<Vec<ListedEntry>, WindowsInventoryError> {
     let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
+    let mut restart_scan = true;
     loop {
         let result = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-            // SAFETY: `directory` is a retained directory-list handle and `buffer` is writable
-            // for its exact supplied size.  Each root inventory uses a fresh independent handle;
-            // descendants are newly opened for their one listing.
+            let mut status = IO_STATUS_BLOCK::default();
+            // SAFETY: `directory` is a synchronous, independently retained directory-list
+            // handle and `buffer` is writable for the exact supplied size.  The first query
+            // restarts this handle's cursor; namespace witnessing runs on its own handle.
             #[allow(unsafe_code)]
             let result = unsafe {
-                GetFileInformationByHandleEx(
+                NtQueryDirectoryFile(
                     directory,
-                    FileIdExtdDirectoryInfo,
+                    std::ptr::null_mut(),
+                    None,
+                    std::ptr::null(),
+                    &mut status,
                     buffer.as_mut_ptr().cast(),
                     buffer.len() as u32,
+                    FileIdExtdDirectoryInformation,
+                    false,
+                    std::ptr::null(),
+                    restart_scan,
                 )
             };
-            (result != 0)
-                .then_some(())
-                .ok_or_else(io::Error::last_os_error)
+            (result == STATUS_SUCCESS).then_some(()).ok_or_else(|| {
+                // SAFETY: converts only the NTSTATUS returned by the just-completed call.
+                #[allow(unsafe_code)]
+                let error = unsafe { RtlNtStatusToDosError(result) };
+                io::Error::from_raw_os_error(error as i32)
+            })
         });
         match result {
-            Ok(()) => parse_directory_buffer(&buffer, relative, &mut entries)?,
+            Ok(()) => {
+                restart_scan = false;
+                parse_directory_buffer(&buffer, relative, &mut entries)?;
+            }
             Err(source) if source.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) => break,
             Err(source) => {
                 return Err(WindowsInventoryError::Io {
