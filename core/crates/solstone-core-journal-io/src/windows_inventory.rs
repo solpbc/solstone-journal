@@ -24,12 +24,12 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_DIR_NAME,
-    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FILE_TYPE_DISK, FileAttributeTagInfo,
-    FileIdExtdDirectoryInfo, FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    GetFileType, ReOpenFile, ReadDirectoryChangesW, SYNCHRONIZE,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
+    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
+    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdExtdDirectoryInfo, FileIdInfo,
+    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::CreateEventW;
@@ -480,12 +480,14 @@ pub fn enumerate_windows_inventory(
     })
 }
 
-/// Reopen the admitted root solely to give this inventory an independent directory cursor.
+/// Open the admitted root again, relative to itself, solely to give this inventory an independent
+/// directory cursor.
 ///
 /// The retained root also carries its namespace-watch request.  Win32 directory listing advances
 /// a cursor stored on a handle, so using that same handle would make a later complete inventory
-/// silently empty.  `ReOpenFile` opens the already-admitted object rather than reacquiring a
-/// pathname; the returned capability is rechecked against the identity frozen at admission.
+/// silently empty.  The native relative `.` open stays bound to the retained object rather than
+/// reacquiring a pathname; the returned capability is rechecked against the identity frozen at
+/// admission.
 fn reopen_admitted_root_for_listing(
     root: &JournalRoot,
 ) -> Result<OwnedHandle, WindowsInventoryError> {
@@ -493,32 +495,68 @@ fn reopen_admitted_root_for_listing(
         root,
         WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
     )?;
-    let handle = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-        // SAFETY: `retained_root` was obtained from the live, CreateFileW-acquired journal-root
-        // capability.  The requested access and sharing are a subset-compatible directory-list
-        // profile, and the returned handle is checked before it becomes an owned Rust handle.
+    let name = OsStr::new(".").encode_wide().collect::<Vec<_>>();
+    let byte_length = u16::try_from(
+        name.len()
+            .checked_mul(size_of::<u16>())
+            .ok_or_else(|| WindowsInventoryError::Root(JournalRootError::Changed))?,
+    )
+    .map_err(|_| WindowsInventoryError::Root(JournalRootError::Changed))?;
+    let mut object_name = UNICODE_STRING {
+        Length: byte_length,
+        MaximumLength: byte_length,
+        Buffer: name.as_ptr().cast_mut(),
+    };
+    let attributes = OBJECT_ATTRIBUTES {
+        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        RootDirectory: retained_root.as_raw_handle(),
+        ObjectName: &mut object_name,
+        Attributes: OBJ_CASE_INSENSITIVE,
+        SecurityDescriptor: std::ptr::null(),
+        SecurityQualityOfService: std::ptr::null(),
+    };
+    let mut raw = INVALID_HANDLE_VALUE;
+    let mut status = windows_sys::Win32::System::IO::IO_STATUS_BLOCK::default();
+    let raw = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
+        // SAFETY: `attributes` refers only to the live `.` UTF-16 component and retained root
+        // handle.  The output handle and synchronous I/O status block are local initialized
+        // storage.  Opening `.` relative to that handle creates a new directory capability
+        // without resolving a pathname from process state.
         #[allow(unsafe_code)]
-        let handle = unsafe {
-            ReOpenFile(
-                retained_root.as_raw_handle(),
-                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+        let result = unsafe {
+            NtCreateFile(
+                &mut raw,
+                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE,
+                &attributes,
+                &mut status,
+                std::ptr::null(),
+                0,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                FILE_OPEN,
+                FILE_DIRECTORY_FILE
+                    | FILE_OPEN_FOR_BACKUP_INTENT
+                    | FILE_OPEN_REPARSE_POINT
+                    | FILE_SYNCHRONOUS_IO_NONALERT,
+                std::ptr::null(),
+                0,
             )
         };
-        (handle != INVALID_HANDLE_VALUE)
-            .then_some(handle)
-            .ok_or_else(io::Error::last_os_error)
+        (result == STATUS_SUCCESS).then_some(raw).ok_or_else(|| {
+            // SAFETY: converts only the status returned above to its Win32 error counterpart.
+            #[allow(unsafe_code)]
+            let error = unsafe { RtlNtStatusToDosError(result) };
+            io::Error::from_raw_os_error(error as i32)
+        })
     })
     .map_err(|source| WindowsInventoryError::Io {
-        operation: "reopen admitted journal root for listing",
+        operation: "open admitted journal root relative to itself for listing",
         path: root.canonical_path().to_path_buf(),
         source,
     })?;
-    // SAFETY: `ReOpenFile` returned one new, non-invalid handle; this conversion transfers it
+    // SAFETY: `NtCreateFile` returned one new, non-invalid handle; this conversion transfers it
     // into exactly one `OwnedHandle`.
     #[allow(unsafe_code)]
-    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
     let attributes = attribute_tag(&handle, root.canonical_path())?;
     if !is_directory(attributes)
         || is_reparse_point(attributes)
