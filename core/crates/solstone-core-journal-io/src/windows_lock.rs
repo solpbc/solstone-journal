@@ -77,6 +77,7 @@ pub(crate) fn is_contention(error: &io::Error) -> bool {
 fn try_lock(file: File, flags: u32) -> Result<WindowsLockGuard, (File, io::Error)> {
     let mut overlapped = OVERLAPPED::default();
     let handle = lock_handle(file.as_raw_handle());
+    let genuine = handle.is_some();
     let result = match handle {
         Some(handle) => {
             record_lock_handle(handle);
@@ -97,6 +98,7 @@ fn try_lock(file: File, flags: u32) -> Result<WindowsLockGuard, (File, io::Error
         None => 1,
     };
     if result != 0 {
+        record_last_lock_file_ex_genuine(genuine);
         Ok(WindowsLockGuard { file, overlapped })
     } else {
         Err((file, io::Error::last_os_error()))
@@ -159,6 +161,9 @@ thread_local! {
     static LOCK_FILE_EX_TRACE: std::cell::RefCell<Option<Vec<RawHandle>>> = const {
         std::cell::RefCell::new(None)
     };
+    static LAST_LOCK_FILE_EX_WAS_GENUINE: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -196,6 +201,19 @@ fn record_lock_handle(handle: RawHandle) {
 
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn record_lock_handle(_handle: RawHandle) {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_last_lock_file_ex_genuine(genuine: bool) {
+    LAST_LOCK_FILE_EX_WAS_GENUINE.with(|last| last.set(genuine));
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn record_last_lock_file_ex_genuine(_genuine: bool) {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn last_lock_file_ex_was_genuine() -> bool {
+    LAST_LOCK_FILE_EX_WAS_GENUINE.with(std::cell::Cell::get)
+}
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn with_lock_file_ex_substitution<T>(
@@ -275,7 +293,7 @@ pub(crate) fn force_post_lock_identity_mismatch() -> bool {
             return false;
         };
         *seen += 1;
-        if *seen == *ordinal {
+        if *seen == *ordinal && last_lock_file_ex_was_genuine() {
             *consumed = true;
             true
         } else {

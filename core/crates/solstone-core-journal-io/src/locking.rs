@@ -42,7 +42,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
     FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo,
-    GetFileInformationByHandleEx, OPEN_ALWAYS, OPEN_EXISTING,
+    GetFileInformationByHandleEx, OPEN_ALWAYS, OPEN_EXISTING, SYNCHRONIZE,
 };
 
 use crate::errors::{ExistingParentLockError, LockError, LockTimeout};
@@ -201,6 +201,161 @@ mod windows_tests {
         );
         assert!(fresh.is_ok());
     }
+
+    #[test]
+    fn skipped_lock_file_ex_cannot_consume_forced_post_lock_identity_mismatch() {
+        let (_temporary, locks) = layout();
+        let (((result, forced_consumed), trace), skip_consumed) =
+            with_lock_file_ex_substitution(1, WindowsLockFileExSubstitution::Skip, || {
+                with_lock_file_ex_trace(|| {
+                    with_forced_post_lock_identity_mismatch(1, || {
+                        acquire_existing_parent_lock(
+                            &locks,
+                            OsStr::new("entry"),
+                            Duration::from_secs(1),
+                            Duration::from_millis(10),
+                        )
+                    })
+                })
+            });
+        assert!(skip_consumed);
+        assert!(trace.is_empty());
+        assert!(!forced_consumed);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn real_post_lock_entry_replacement_returns_namespace_changed_and_releases_lock() {
+        let (_temporary, locks) = layout();
+        let entry = locks.join("entry");
+        let replacement = locks.join("replacement");
+        fs::write(&entry, b"old").unwrap();
+        fs::write(&replacement, b"new").unwrap();
+
+        let (result, consumed) =
+            with_windows_entry_replacement_hook(1, entry.clone(), replacement, || {
+                acquire_existing_parent_lock(
+                    &locks,
+                    OsStr::new("entry"),
+                    Duration::from_secs(1),
+                    Duration::from_millis(10),
+                )
+            });
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(ExistingParentLockError::NamespaceChanged { .. })
+        ));
+        assert_eq!(fs::read(&entry).unwrap(), b"new");
+        let fresh = acquire_existing_parent_lock(
+            &locks,
+            OsStr::new("entry"),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert!(fresh.is_ok());
+    }
+}
+
+#[cfg(all(test, windows))]
+struct WindowsEntryReplacementHookState {
+    ordinal: usize,
+    seen: usize,
+    consumed: bool,
+}
+
+#[cfg(all(test, windows))]
+thread_local! {
+    static WINDOWS_ENTRY_REPLACEMENT_HOOK: std::cell::RefCell<Option<WindowsEntryReplacementHookState>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static WINDOWS_ENTRY_REPLACEMENT_PATHS: std::cell::RefCell<Option<(PathBuf, PathBuf)>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(all(test, windows))]
+fn run_windows_entry_replacement_hook() {
+    let should_replace = WINDOWS_ENTRY_REPLACEMENT_HOOK.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(state) = state.as_mut() else {
+            return false;
+        };
+        state.seen += 1;
+        if state.seen != state.ordinal {
+            return false;
+        }
+        state.consumed = true;
+        true
+    });
+    if should_replace {
+        let (entry, replacement) = WINDOWS_ENTRY_REPLACEMENT_PATHS.with(|paths| {
+            paths
+                .borrow()
+                .as_ref()
+                .expect("Windows entry replacement paths remain active")
+                .clone()
+        });
+        fs::remove_file(&entry).unwrap();
+        fs::rename(&replacement, &entry).unwrap();
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+fn run_windows_entry_replacement_hook() {}
+
+#[cfg(all(test, windows))]
+fn with_windows_entry_replacement_hook<T>(
+    ordinal: usize,
+    entry: PathBuf,
+    replacement: PathBuf,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    WINDOWS_ENTRY_REPLACEMENT_HOOK.with(|state| {
+        assert!(
+            state.borrow().is_none(),
+            "Windows entry replacement hook is already active"
+        );
+        *state.borrow_mut() = Some(WindowsEntryReplacementHookState {
+            ordinal,
+            seen: 0,
+            consumed: false,
+        });
+    });
+    WINDOWS_ENTRY_REPLACEMENT_PATHS.with(|paths| {
+        assert!(
+            paths.borrow().is_none(),
+            "Windows entry replacement paths are already active"
+        );
+        *paths.borrow_mut() = Some((entry, replacement));
+    });
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WINDOWS_ENTRY_REPLACEMENT_HOOK.with(|state| {
+                state.borrow_mut().take();
+            });
+            WINDOWS_ENTRY_REPLACEMENT_PATHS.with(|paths| {
+                paths.borrow_mut().take();
+            });
+        }
+    }
+    let restore = Restore;
+    let result = operation();
+    let state = WINDOWS_ENTRY_REPLACEMENT_HOOK.with(|state| {
+        state
+            .borrow_mut()
+            .take()
+            .expect("Windows entry replacement hook remains active")
+    });
+    let _paths = WINDOWS_ENTRY_REPLACEMENT_PATHS.with(|paths| {
+        paths
+            .borrow_mut()
+            .take()
+            .expect("Windows entry replacement paths remain active")
+    });
+    drop(restore);
+    (result, state.consumed)
 }
 
 impl Default for LockOptions {
@@ -761,7 +916,7 @@ fn acquire_lock_in_parent_windows(
         let file = nt_create_relative(
             parent.as_handle().as_raw_handle(),
             name.as_os_str(),
-            GENERIC_READ | GENERIC_WRITE,
+            GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
             FILE_OPEN_IF,
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         )
@@ -779,6 +934,7 @@ fn acquire_lock_in_parent_windows(
 
         match try_lock_exclusive(file) {
             Ok(guard) => {
+                run_windows_entry_replacement_hook();
                 verify_final_lock_entry_windows(parent, name, guard.file(), path)?;
                 if timeout.is_zero() {
                     return Ok(guard);
@@ -862,7 +1018,7 @@ fn verify_final_lock_entry_windows(
     let named = nt_create_relative(
         parent.as_handle().as_raw_handle(),
         name.as_os_str(),
-        GENERIC_READ | FILE_READ_ATTRIBUTES,
+        GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_OPEN,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )
