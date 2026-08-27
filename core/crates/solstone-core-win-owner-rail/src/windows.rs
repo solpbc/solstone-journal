@@ -19,7 +19,7 @@ use solstone_core_win_owner_rail::{
     parse_task_runtime_csv, parse_task_xml, recovery_decision, require_clean_worktree,
     schtasks_create_argv, schtasks_delete_argv, schtasks_query_runtime_argv,
     schtasks_query_xml_argv, schtasks_run_argv, sha256_hex, verify_attestation, verify_result,
-    verify_task_definition,
+    verify_result_binding, verify_task_definition,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_INSUFFICIENT_BUFFER, GENERIC_ALL, GetLastError, INVALID_HANDLE_VALUE, LocalFree,
@@ -132,9 +132,37 @@ fn prepare(options: &Options) -> Result<(), String> {
     };
     let lease = LeaseRecord::new(input);
     create_lease_new(lease_path, &lease)?;
-    if let Err(error) = create_task(&lease) {
-        let _ = fs::remove_file(lease_path);
-        return Err(error);
+    if let Err(error) = run_schtasks(schtasks_create_argv(&lease)) {
+        // A process or transport error does not establish that `/Create` did not take effect.
+        // Retain the sole nonce-derived recovery handle rather than guessing the task absent.
+        let mut held = lease;
+        hold_lease(&mut held, lease_path, "create-ambiguous", &error)?;
+        return Err(format!(
+            "ordinary-owner prepare retained recovery lease nonce={}: {error}",
+            held.nonce
+        ));
+    }
+    if let Err(error) = verify_created_task(&lease) {
+        // Creation is known to have succeeded, so contain only this nonce-derived task before
+        // releasing the lease.  If any containment step is uncertain, retain the lease.
+        if let Err(containment) = cleanup_lease(&lease, lease_path) {
+            let mut held = lease;
+            hold_lease(
+                &mut held,
+                lease_path,
+                "post-create-containment",
+                &containment,
+            )?;
+            return Err(format!(
+                "ordinary-owner prepare retained recovery lease nonce={}: {}",
+                held.nonce,
+                conformance_diagnostic(&held, "post-create-definition", &error)
+            ));
+        }
+        return Err(format!(
+            "ordinary-owner prepare rejected {}",
+            conformance_diagnostic(&lease, "post-create-definition", &error)
+        ));
     }
     Ok(())
 }
@@ -146,8 +174,20 @@ fn recover_held(options: &Options) -> Result<(), String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(format!("read held lease: {error}")),
     };
-    let runtime = query_runtime(&lease).ok();
-    let task_exists = runtime.is_some();
+    let runtime = match query_runtime(&lease) {
+        Ok(runtime) => Some(runtime),
+        Err(runtime_error) => {
+            if confirm_task_absent(&lease).is_ok() {
+                return release_absent_lease(&lease, lease_path);
+            }
+            return Err(format!(
+                "held ordinary-owner lease task state is unprovable nonce={}; supported recovery: repair local scheduler access then rerun recover-held ({})",
+                lease.nonce,
+                conformance_diagnostic(&lease, "held-runtime-query", &runtime_error)
+            ));
+        }
+    };
+    let task_exists = true;
     let terminal_state = runtime
         .as_ref()
         .map(|runtime| classify_terminal(runtime, lease.launch_observed_last_run_time.as_deref()));
@@ -155,17 +195,27 @@ fn recover_held(options: &Options) -> Result<(), String> {
         terminal_state,
         Some(TerminalState::Verified) | Some(TerminalState::Rejected)
     );
-    match recovery_decision(Some(&lease), task_exists, terminal) {
+    let safely_unlaunched = lease.launch_boundary_unix_seconds.is_none()
+        && runtime.as_ref().is_some_and(|runtime| {
+            runtime.status.eq_ignore_ascii_case("ready")
+                && (runtime.last_run_time.is_empty()
+                    || runtime.last_run_time.eq_ignore_ascii_case("n/a"))
+        });
+    let task_reclaimable = terminal || safely_unlaunched;
+    match recovery_decision(Some(&lease), task_exists, task_reclaimable) {
         solstone_core_win_owner_rail::RecoveryDecision::CleanThenReclaim => {
-            // A scheduler-reported success is only safe to reclaim after independently proving the
-            // task definition was never altered and the nonce-bound result actually matches this
-            // lease — a Rejected run has no such claim to validate and is always safe to discard.
-            if terminal_state == Some(TerminalState::Verified) {
+            // Before deleting any still-present task, prove it is this lease's exact nonce-bound
+            // task.  A task collision or scheduler substitution must stay fenced even if it is
+            // inactive.  A conclusively unlaunched task has no result to bless; every terminal
+            // task (including a nonzero terminal outcome) must have a bound result before cleanup.
+            if task_exists {
                 let definition = query_definition(&lease)?;
                 verify_task_definition(&lease, &definition).map_err(display_rail_error)?;
+            }
+            if terminal {
                 let result = read_result(&lease)
                     .map_err(|error| format!("read held-lease result: {error}"))?;
-                verify_result(&lease, &result).map_err(display_rail_error)?;
+                verify_result_binding(&lease, &result).map_err(display_rail_error)?;
             }
             cleanup_lease(&lease, lease_path)
         }
@@ -202,22 +252,73 @@ fn await_result(options: &Options) -> Result<(), String> {
         return Err("lease was not launched".to_owned());
     }
     for _ in 0..POLL_LIMIT {
-        let runtime = query_runtime(&lease)?;
+        let runtime = match query_runtime(&lease) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                hold_lease(&mut lease, lease_path, "await-runtime-query", &error)?;
+                return Err(format!(
+                    "ordinary-owner scheduled task state retained nonce={}: {error}",
+                    lease.nonce
+                ));
+            }
+        };
         match classify_terminal(&runtime, lease.launch_observed_last_run_time.as_deref()) {
             TerminalState::Pending => std::thread::sleep(POLL_INTERVAL),
             TerminalState::Rejected => {
-                lease.state = LeaseState::Held;
-                lease.last_error = Some("scheduler reported a rejected terminal result".to_owned());
-                write_lease(lease_path, &lease)?;
+                hold_lease(
+                    &mut lease,
+                    lease_path,
+                    "await-scheduler-rejected",
+                    "scheduler-reported-terminal-rejection",
+                )?;
                 return Err("ordinary-owner scheduled task failed".to_owned());
             }
             TerminalState::Verified => {
-                let result = read_result(&lease)?;
-                verify_result(&lease, &result).map_err(display_rail_error)?;
+                let definition = match query_definition(&lease) {
+                    Ok(definition) => definition,
+                    Err(error) => {
+                        hold_lease(&mut lease, lease_path, "await-definition-query", &error)?;
+                        return Err(format!(
+                            "ordinary-owner scheduled task state retained nonce={}: {error}",
+                            lease.nonce
+                        ));
+                    }
+                };
+                if let Err(error) =
+                    verify_task_definition(&lease, &definition).map_err(display_rail_error)
+                {
+                    hold_lease(&mut lease, lease_path, "await-definition-binding", &error)?;
+                    return Err(format!(
+                        "ordinary-owner scheduled task state retained nonce={}: {error}",
+                        lease.nonce
+                    ));
+                }
+                let result = match read_result(&lease) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        hold_lease(&mut lease, lease_path, "await-result-read", &error)?;
+                        return Err(format!(
+                            "ordinary-owner scheduled task state retained nonce={}: {error}",
+                            lease.nonce
+                        ));
+                    }
+                };
+                if let Err(error) =
+                    verify_result_binding(&lease, &result).map_err(display_rail_error)
+                {
+                    hold_lease(&mut lease, lease_path, "await-result-binding", &error)?;
+                    return Err(format!(
+                        "ordinary-owner scheduled task state retained nonce={}: {error}",
+                        lease.nonce
+                    ));
+                }
                 lease
                     .transition(LeaseState::TerminalVerified)
                     .map_err(display_rail_error)?;
                 write_lease(lease_path, &lease)?;
+                // A bound terminal test failure is safe to delete, but not a pass.  The driver
+                // invokes `cleanup`, whose state guard permits that exact sequence only here.
+                verify_result(&lease, &result).map_err(display_rail_error)?;
                 println!("JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed");
                 if !lease.refs_root.is_empty() {
                     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed");
@@ -226,16 +327,24 @@ fn await_result(options: &Options) -> Result<(), String> {
             }
         }
     }
-    lease.state = LeaseState::Held;
-    lease.last_error =
-        Some("ordinary-owner scheduled task did not reach a fresh terminal result".to_owned());
-    write_lease(lease_path, &lease)?;
+    hold_lease(
+        &mut lease,
+        lease_path,
+        "await-timeout",
+        "fresh-terminal-result-not-observed",
+    )?;
     Err("ordinary-owner scheduled task timed out".to_owned())
 }
 
 fn cleanup(options: &Options) -> Result<(), String> {
     let lease_path = options.required("--lease")?;
     let lease = read_lease(lease_path).map_err(|error| format!("read lease: {error}"))?;
+    if lease.state != LeaseState::TerminalVerified {
+        return Err(format!(
+            "refusing ordinary-owner cleanup before verified terminal receipt; retained nonce={} state={:?}",
+            lease.nonce, lease.state
+        ));
+    }
     cleanup_lease(&lease, lease_path)
 }
 
@@ -320,8 +429,7 @@ fn verify_worker_and_source(lease: &LeaseRecord) -> Result<(), String> {
     require_clean_worktree(&status).map_err(display_rail_error)
 }
 
-fn create_task(lease: &LeaseRecord) -> Result<(), String> {
-    run_schtasks(schtasks_create_argv(lease))?;
+fn verify_created_task(lease: &LeaseRecord) -> Result<(), String> {
     let definition = query_definition(lease)?;
     verify_task_definition(lease, &definition).map_err(display_rail_error)
 }
@@ -375,11 +483,93 @@ fn run_schtasks(arguments: Vec<String>) -> Result<(), String> {
 }
 
 fn cleanup_lease(lease: &LeaseRecord, lease_path: &str) -> Result<(), String> {
-    let _ = run_schtasks(schtasks_delete_argv(&lease.task_name));
-    let _ = fs::remove_file(&lease.result_path);
-    let _ = fs::remove_file(&lease.output_path);
-    let _ = fs::remove_dir_all(&lease.target_dir);
+    let delete = run_schtasks(schtasks_delete_argv(&lease.task_name));
+    if let Err(absence) = confirm_task_absent(lease) {
+        return match delete {
+            Ok(()) => Err(format!(
+                "ordinary-owner delete did not establish exact task absence nonce={}: {absence}",
+                lease.nonce
+            )),
+            Err(delete) => Err(format!(
+                "ordinary-owner delete failed and exact task absence is unproved nonce={}: {delete}; {absence}",
+                lease.nonce
+            )),
+        };
+    }
+    release_absent_lease(lease, lease_path)
+}
+
+fn confirm_task_absent(lease: &LeaseRecord) -> Result<(), String> {
+    let output = Command::new("schtasks.exe")
+        .args(schtasks_query_xml_argv(&lease.task_name))
+        .output()
+        .map_err(|error| format!("query exact task absence: {error}"))?;
+    if output.status.success() {
+        return Err(format!(
+            "exact nonce task still exists nonce={}",
+            lease.nonce
+        ));
+    }
+    // The local scheduler returns this explicit task-not-found diagnostic for an absent exact
+    // name.  Any other nonzero query (access, transport, parser, or scheduler failure) remains
+    // ambiguous and retains the lease rather than treating a failing command as proof of absence.
+    let text = render_output(&output).to_ascii_lowercase();
+    if text.contains("cannot find the file specified") || text.contains("task not found") {
+        return Ok(());
+    }
+    Err(format!(
+        "exact task absence query was not a task-not-found result nonce={}",
+        lease.nonce
+    ))
+}
+
+fn release_absent_lease(lease: &LeaseRecord, lease_path: &str) -> Result<(), String> {
+    remove_nonce_artifact(&lease.result_path)?;
+    remove_nonce_artifact(&lease.output_path)?;
+    remove_nonce_directory(&lease.target_dir)?;
     fs::remove_file(lease_path).map_err(|error| format!("remove lease: {error}"))
+}
+
+fn hold_lease(
+    lease: &mut LeaseRecord,
+    lease_path: &str,
+    phase: &str,
+    error: &str,
+) -> Result<(), String> {
+    if lease.state != LeaseState::Held {
+        lease
+            .transition(LeaseState::Held)
+            .map_err(display_rail_error)?;
+    }
+    lease.last_error = Some(conformance_diagnostic(lease, phase, error));
+    write_lease(lease_path, lease)
+}
+
+fn conformance_diagnostic(lease: &LeaseRecord, phase: &str, error: &str) -> String {
+    let classification = error
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '-')
+        .find(|word| word.starts_with("task-") || word.starts_with("ordinary-owner-"))
+        .unwrap_or("scheduler-or-transport-uncertainty");
+    format!(
+        "ordinary-owner-conformance-v1 phase={phase} nonce={} classification={classification}",
+        lease.nonce
+    )
+}
+
+fn remove_nonce_artifact(path: &str) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("remove nonce artifact {path}: {error}")),
+    }
+}
+
+fn remove_nonce_directory(path: &str) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("remove nonce target directory {path}: {error}")),
+    }
 }
 
 fn read_lease(path: &str) -> io::Result<LeaseRecord> {

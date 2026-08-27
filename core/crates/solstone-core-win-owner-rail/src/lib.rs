@@ -166,10 +166,16 @@ pub struct ResultRecord {
 pub struct TaskDefinition {
     pub principal_sid: String,
     pub logon_type: String,
-    pub run_level: String,
+    pub run_level: TaskRunLevel,
     pub command: String,
     pub arguments: String,
-    pub working_directory: String,
+    pub working_directory: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskRunLevel {
+    ExplicitLeastPrivilege,
+    ImplicitLeastPrivilege,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -290,23 +296,48 @@ pub fn parse_task_xml(xml: &str) -> Result<TaskDefinition, RailError> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
     let mut stack = Vec::new();
-    let mut values = std::collections::BTreeMap::<String, String>::new();
+    let mut values = std::collections::BTreeMap::<String, Vec<String>>::new();
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => {
-                stack.push(String::from_utf8_lossy(tag.name().as_ref()).into_owned())
+                stack.push(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+                values
+                    .entry(stack.join("/"))
+                    .or_default()
+                    .push(String::new());
+            }
+            Ok(Event::Empty(tag)) => {
+                let mut key = stack.clone();
+                key.push(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+                values.entry(key.join("/")).or_default().push(String::new());
             }
             Ok(Event::End(_)) => {
                 stack.pop();
             }
             Ok(Event::Text(text)) => {
+                if stack.is_empty() {
+                    let value = text
+                        .decode()
+                        .map_err(|_| RailError::new("task-xml-invalid-text"))?;
+                    if value.trim().is_empty() {
+                        continue;
+                    }
+                    return Err(RailError::new("task-xml-text-without-element"));
+                }
                 let key = stack.join("/");
                 let value = text
                     .decode()
                     .map_err(|_| RailError::new("task-xml-invalid-text"))?;
-                values.entry(key).or_default().push_str(&value);
+                values
+                    .get_mut(&key)
+                    .and_then(|entries| entries.last_mut())
+                    .ok_or(RailError::new("task-xml-text-without-element"))?
+                    .push_str(&value);
             }
             Ok(Event::GeneralRef(reference)) => {
+                if stack.is_empty() {
+                    return Err(RailError::new("task-xml-reference-without-element"));
+                }
                 let key = stack.join("/");
                 let name = reference
                     .decode()
@@ -319,33 +350,84 @@ pub fn parse_task_xml(xml: &str) -> Result<TaskDefinition, RailError> {
                     "amp" => "&",
                     _ => return Err(RailError::new("task-xml-unknown-reference")),
                 };
-                values.entry(key).or_default().push_str(value);
+                values
+                    .get_mut(&key)
+                    .and_then(|entries| entries.last_mut())
+                    .ok_or(RailError::new("task-xml-reference-without-element"))?
+                    .push_str(value);
             }
             Ok(Event::Eof) => break,
             Err(_) => return Err(RailError::new("task-xml-malformed")),
             _ => {}
         }
     }
-    let required = |suffix: &str| {
-        values
+    let one = |suffix: &str, required: bool| -> Result<Option<String>, RailError> {
+        let canonical = format!("Task/{suffix}");
+        let field = suffix
+            .rsplit('/')
+            .next()
+            .ok_or(RailError::new("task-xml-missing-required-field"))?;
+        if values
             .iter()
-            .find_map(|(key, value)| key.ends_with(suffix).then(|| value.trim().to_owned()))
-            .ok_or(RailError::new("task-xml-missing-required-field"))
+            .filter(|(key, _)| key.rsplit('/').next() == Some(field))
+            .any(|(key, _)| key.as_str() != canonical)
+        {
+            return Err(RailError::new("task-xml-security-field-location-mismatch"));
+        }
+        let entries = values
+            .get(&canonical)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if entries.len() > 1 {
+            return Err(RailError::new("task-xml-duplicate-field"));
+        }
+        match entries.first() {
+            Some(value) => Ok(Some((*value).clone())),
+            None if required => Err(RailError::new("task-xml-missing-required-field")),
+            None => Ok(None),
+        }
+    };
+    let required =
+        |suffix: &str| one(suffix, true)?.ok_or(RailError::new("task-xml-missing-required-field"));
+    let action_children = values
+        .keys()
+        .filter(|key| key.starts_with("Task/Actions/") && key.split('/').count() == 3)
+        .collect::<Vec<_>>();
+    if action_children.len() != 1 || action_children[0].as_str() != "Task/Actions/Exec" {
+        return Err(RailError::new("task-xml-action-set-mismatch"));
+    }
+    let run_level = match one("Principals/Principal/RunLevel", false)? {
+        None => TaskRunLevel::ImplicitLeastPrivilege,
+        Some(value) if value.trim() == "LeastPrivilege" => TaskRunLevel::ExplicitLeastPrivilege,
+        Some(_) => return Err(RailError::new("task-run-level-mismatch")),
     };
     Ok(TaskDefinition {
-        principal_sid: required("Principals/Principal/UserId")?,
-        logon_type: required("Principals/Principal/LogonType")?,
-        run_level: required("Principals/Principal/RunLevel")?,
-        command: required("Actions/Exec/Command")?,
-        arguments: required("Actions/Exec/Arguments")?,
-        working_directory: values
-            .iter()
-            .find_map(|(key, value)| {
-                key.ends_with("Actions/Exec/WorkingDirectory")
-                    .then(|| value.trim().to_owned())
-            })
-            .unwrap_or_default(),
+        principal_sid: required("Principals/Principal/UserId")?.trim().to_owned(),
+        logon_type: required("Principals/Principal/LogonType")?
+            .trim()
+            .to_owned(),
+        run_level,
+        command: required("Actions/Exec/Command")?.trim().to_owned(),
+        arguments: required("Actions/Exec/Arguments")?.trim().to_owned(),
+        working_directory: one("Actions/Exec/WorkingDirectory", false)?,
     })
+}
+
+fn normalized_command(command: &str) -> Result<&str, RailError> {
+    if command.starts_with('"') || command.ends_with('"') {
+        if command.len() < 2 || !command.starts_with('"') || !command.ends_with('"') {
+            return Err(RailError::new("task-command-quote-mismatch"));
+        }
+        let inner = &command[1..command.len() - 1];
+        if inner.is_empty() || inner.contains('"') {
+            return Err(RailError::new("task-command-quote-mismatch"));
+        }
+        return Ok(inner);
+    }
+    if command.contains('"') {
+        return Err(RailError::new("task-command-quote-mismatch"));
+    }
+    Ok(command)
 }
 
 pub fn verify_task_definition(
@@ -358,19 +440,22 @@ pub fn verify_task_definition(
     if definition.logon_type != "InteractiveToken" {
         return Err(RailError::new("task-logon-type-mismatch"));
     }
-    if definition.run_level != "LeastPrivilege" {
-        return Err(RailError::new("task-run-level-mismatch"));
-    }
     let expected_arguments = format!(
         "limited-child --lease \"{}\" --nonce {}",
         LEASE_PATH, lease.nonce
     );
-    if definition.command != lease.worker_path || definition.arguments != expected_arguments {
+    if normalized_command(&definition.command)? != lease.worker_path
+        || definition.arguments != expected_arguments
+    {
         return Err(RailError::new("task-command-or-nonce-mismatch"));
     }
     // `schtasks /Create` has no working-directory switch. The child binds and attests the lease
-    // worktree itself; if a scheduler XML implementation supplies one, it must agree with it.
-    if !definition.working_directory.is_empty() && definition.working_directory != lease.worktree {
+    // worktree itself; a present XML element must still bind exactly to that worktree.
+    if definition
+        .working_directory
+        .as_deref()
+        .is_some_and(|value| value != lease.worktree)
+    {
         return Err(RailError::new("task-working-directory-mismatch"));
     }
     Ok(())
@@ -444,7 +529,11 @@ pub fn verify_attestation(
     Ok(())
 }
 
-pub fn verify_result(lease: &LeaseRecord, result: &ResultRecord) -> Result<(), RailError> {
+/// Verify the nonce-bound identity and token evidence independently of the
+/// controlled test's pass/fail result.  A terminal nonzero test outcome may be
+/// cleaned only after this binding has held; an unbound or malformed result
+/// remains a held recovery case.
+pub fn verify_result_binding(lease: &LeaseRecord, result: &ResultRecord) -> Result<(), RailError> {
     if result.nonce != lease.nonce {
         return Err(RailError::new("result-nonce-mismatch"));
     }
@@ -459,6 +548,11 @@ pub fn verify_result(lease: &LeaseRecord, result: &ResultRecord) -> Result<(), R
     }
     verify_attestation(lease, &result.before)?;
     verify_attestation(lease, &result.after)?;
+    Ok(())
+}
+
+pub fn verify_result(lease: &LeaseRecord, result: &ResultRecord) -> Result<(), RailError> {
+    verify_result_binding(lease, result)?;
     if !result.passed || result.cargo_exit_code != 0 || !result.ordinary_owner_marker {
         return Err(RailError::new("ordinary-owner-control-failed"));
     }
@@ -604,13 +698,13 @@ mod tests {
         TaskDefinition {
             principal_sid: lease.expected_owner_sid.clone(),
             logon_type: "InteractiveToken".to_owned(),
-            run_level: "LeastPrivilege".to_owned(),
+            run_level: TaskRunLevel::ExplicitLeastPrivilege,
             command: lease.worker_path.clone(),
             arguments: format!(
                 "limited-child --lease \"{LEASE_PATH}\" --nonce {}",
                 lease.nonce
             ),
-            working_directory: lease.worktree.clone(),
+            working_directory: Some(lease.worktree.clone()),
         }
     }
 
@@ -670,12 +764,6 @@ mod tests {
             Err(RailError::new("task-logon-type-mismatch"))
         );
         task = definition(&lease);
-        task.run_level = "HighestAvailable".to_owned();
-        assert_eq!(
-            verify_task_definition(&lease, &task),
-            Err(RailError::new("task-run-level-mismatch"))
-        );
-        task = definition(&lease);
         task.command.push('x');
         assert_eq!(
             verify_task_definition(&lease, &task),
@@ -688,7 +776,7 @@ mod tests {
             Err(RailError::new("task-command-or-nonce-mismatch"))
         );
         task = definition(&lease);
-        task.working_directory.push('x');
+        task.working_directory = Some(format!("{}x", lease.worktree));
         assert_eq!(
             verify_task_definition(&lease, &task),
             Err(RailError::new("task-working-directory-mismatch"))
@@ -704,6 +792,65 @@ mod tests {
             parsed.arguments,
             "limited-child --lease \"C:\\lease.json\" --nonce ABC"
         );
+        assert_eq!(parsed.run_level, TaskRunLevel::ExplicitLeastPrivilege);
+        assert_eq!(parsed.working_directory.as_deref(), Some(r"C:\sol"));
+    }
+
+    #[test]
+    fn native_scheduler_implicit_limited_form_is_exact_and_fails_closed_on_variants() {
+        let lease = lease();
+        let arguments = format!(
+            "limited-child --lease &quot;{LEASE_PATH}&quot; --nonce {}",
+            lease.nonce
+        );
+        let xml = format!(
+            "<Task><Principals><Principal><UserId>{}</UserId><LogonType>InteractiveToken</LogonType></Principal></Principals><Actions><Exec><Command>\"{}\"</Command><Arguments>{arguments}</Arguments></Exec></Actions></Task>",
+            lease.expected_owner_sid, lease.worker_path,
+        );
+        let parsed = parse_task_xml(&xml).expect("captures native omitted RunLevel form");
+        assert_eq!(parsed.run_level, TaskRunLevel::ImplicitLeastPrivilege);
+        assert_eq!(parsed.working_directory, None);
+        assert_eq!(verify_task_definition(&lease, &parsed), Ok(()));
+
+        for rejected in [
+            xml.replacen("InteractiveToken", "InteractiveTokenOrPassword", 1),
+            xml.replacen(
+                "</Principal>",
+                "<RunLevel>HighestAvailable</RunLevel></Principal>",
+                1,
+            ),
+            xml.replacen(
+                "</Exec>",
+                "</Exec><ComHandler><ClassId>x</ClassId></ComHandler>",
+                1,
+            ),
+            xml.replacen(
+                "</Exec>",
+                "<Exec><Command>x</Command><Arguments>x</Arguments></Exec></Actions>",
+                1,
+            ),
+            xml.replacen(
+                "</Exec>",
+                "<WorkingDirectory> </WorkingDirectory></Exec>",
+                1,
+            ),
+            xml.replacen(
+                "</Task>",
+                "<Unexpected><UserId>wrong</UserId></Unexpected></Task>",
+                1,
+            ),
+            xml.replacen(
+                &format!("\"{}\"", lease.worker_path),
+                &format!("\"{}\"\"", lease.worker_path),
+                1,
+            ),
+        ] {
+            let parsed = parse_task_xml(&rejected);
+            assert!(
+                parsed.is_err()
+                    || verify_task_definition(&lease, &parsed.expect("parsed")).is_err()
+            );
+        }
     }
 
     #[test]

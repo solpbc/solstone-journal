@@ -928,10 +928,17 @@ fn parse_directory_buffer(
             .ok_or_else(|| invalid_directory_buffer(relative))?
             .try_into()
             .map_err(|_| invalid_directory_buffer(relative))?;
-        entries.push(ListedEntry {
-            name: OsString::from(name),
-            file_id,
-        });
+        // FileIdExtdDirectoryInfo includes the directory's synthetic self and
+        // parent records.  They are protocol entries rather than members of
+        // the journal namespace, so omit exactly those two spellings before
+        // portable-component admission.  Every other name remains subject to
+        // the normal checked-name path below.
+        if name != "." && name != ".." {
+            entries.push(ListedEntry {
+                name: OsString::from(name),
+                file_id,
+            });
+        }
         let next_entry_offset = directory_u32(
             header,
             offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset),
@@ -1584,6 +1591,72 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, OsString::from("x"));
         assert_eq!(entries[0].file_id, [0x5A; 16]);
+    }
+
+    #[test]
+    fn directory_protocol_dot_entries_are_omitted_without_widening_name_admission() {
+        fn record(name: &[u16], file_id: u8, next_entry_offset: u32) -> Vec<u8> {
+            let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
+            let mut record = vec![0; header_bytes + std::mem::size_of_val(name)];
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset) + size_of::<u32>()]
+                .copy_from_slice(&next_entry_offset.to_le_bytes());
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength) + size_of::<u32>()]
+                .copy_from_slice(&(std::mem::size_of_val(name) as u32).to_le_bytes());
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileId)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileId) + 16]
+                .copy_from_slice(&[file_id; 16]);
+            for (offset, code_unit) in name.iter().enumerate() {
+                let start = header_bytes + offset * size_of::<u16>();
+                record[start..start + size_of::<u16>()].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            record
+        }
+
+        let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
+        let dot = record(&['.' as u16], 0x11, (header_bytes + 2) as u32);
+        let dotdot = record(&['.' as u16, '.' as u16], 0x22, (header_bytes + 4) as u32);
+        let ordinary = record(&['o' as u16, 'k' as u16], 0x5A, 0);
+        let buffer = [dot, dotdot, ordinary].concat();
+
+        let mut entries = Vec::new();
+        parse_directory_buffer(&buffer, Path::new(""), &mut entries).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, OsString::from("ok"));
+        assert_eq!(entries[0].file_id, [0x5A; 16]);
+
+        let mut leading_dot = Vec::new();
+        parse_directory_buffer(
+            &record(&['.' as u16, 'x' as u16], 0x33, 0),
+            Path::new(""),
+            &mut leading_dot,
+        )
+        .unwrap();
+        assert_eq!(leading_dot[0].name, OsString::from(".x"));
+        checked_name(&leading_dot[0].name, Path::new(""), "", budget()).unwrap();
+
+        let mut trailing_dot = Vec::new();
+        parse_directory_buffer(
+            &record(&['x' as u16, '.' as u16], 0x44, 0),
+            Path::new(""),
+            &mut trailing_dot,
+        )
+        .unwrap();
+        assert!(matches!(
+            checked_name(&trailing_dot[0].name, Path::new(""), "", budget()),
+            Err(WindowsInventoryError::InvalidName { .. })
+        ));
+
+        let mut malformed_utf16 = Vec::new();
+        assert!(matches!(
+            parse_directory_buffer(
+                &record(&[0xD800], 0x55, 0),
+                Path::new(""),
+                &mut malformed_utf16,
+            ),
+            Err(WindowsInventoryError::InvalidName { .. })
+        ));
     }
 
     #[test]
