@@ -11,6 +11,11 @@
 //! reliably documented directory-handle flush guarantee, so its backend flushes
 //! files before publication and uses write-through replacement, while directory
 //! synchronization is an explicitly documented no-op.
+//! Unlike Unix's fd-relative openat traversal, each Windows traversal step
+//! re-resolves the full path from the root, so this layer does not detect an
+//! ancestor swap between steps. This mirrors the existing journal_root/windows.rs
+//! Win32 precedent and is an explicit accepted divergence from Unix's no-follow
+//! guarantee imposed by the public Win32 API surface.
 
 use std::collections::{BTreeMap, HashMap};
 #[cfg(unix)]
@@ -2497,15 +2502,33 @@ fn validate_windows_absolute_token(bytes: &[u8], label: &'static str) -> Result<
 
 #[cfg(windows)]
 fn normalize_windows_canonical_path(path: &Path) -> Result<Vec<u8>, IdentityError> {
-    let input = path.to_string_lossy();
-    let ordinary = if let Some(rest) = input.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = input.strip_prefix(r"\\?\") {
-        rest.to_owned()
+    const VERBATIM_UNC_PREFIX: [u16; 8] = [
+        b'\\' as u16,
+        b'\\' as u16,
+        b'?' as u16,
+        b'\\' as u16,
+        b'U' as u16,
+        b'N' as u16,
+        b'C' as u16,
+        b'\\' as u16,
+    ];
+    const VERBATIM_PREFIX: [u16; 4] = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+
+    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let ordinary = if let Some(rest) = units.strip_prefix(&VERBATIM_UNC_PREFIX) {
+        let mut output = vec![b'\\' as u16, b'\\' as u16];
+        output.extend_from_slice(rest);
+        output
+    } else if let Some(rest) = units.strip_prefix(&VERBATIM_PREFIX) {
+        rest.to_vec()
     } else {
-        input.into_owned()
+        units
     };
-    normalize_windows_absolute_bytes(&wide_bytes(OsStr::new(&ordinary)))
+    let bytes = ordinary
+        .into_iter()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    normalize_windows_absolute_bytes(&bytes)
 }
 
 #[cfg(windows)]
@@ -2656,6 +2679,8 @@ fn verify_regular(file: &File, _exact_mode: bool) -> Result<(), IdentityError> {
 }
 
 #[cfg(windows)]
+/// Starts the Windows full-path traversal. See [`open_child_dir`] for the
+/// intentional divergence from Unix fd-relative traversal.
 fn open_absolute_dir(path: &Path) -> Result<SecureDir, IdentityError> {
     let file = open_windows_file(
         path,
@@ -2672,6 +2697,14 @@ fn open_absolute_dir(path: &Path) -> Result<SecureDir, IdentityError> {
 }
 
 #[cfg(windows)]
+/// Opens a storage child by re-resolving its full path.
+///
+/// Unlike Unix's fd-relative openat traversal, each Windows open re-resolves
+/// the full path from the root, so an ancestor swap between traversal steps is
+/// not detected by this layer. This mirrors solstone-core-journal-io's
+/// journal_root/windows.rs precedent and is a known, accepted divergence from
+/// Unix's no-follow guarantee because the public Win32 API has no
+/// handle-relative open primitive.
 fn open_child_dir(
     parent: &SecureDir,
     name: &str,
@@ -2718,6 +2751,8 @@ fn open_or_create_child_dir(
 }
 
 #[cfg(windows)]
+/// Builds the provider through the Windows full-path traversal; see
+/// [`open_child_dir`] for its intentional Unix divergence.
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
@@ -2741,6 +2776,8 @@ fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityE
 }
 
 #[cfg(windows)]
+/// Opens a namespace through the Windows full-path traversal; see
+/// [`open_child_dir`] for its intentional Unix divergence.
 fn open_namespace(
     provider: &SecureDir,
     namespace: &NamespaceName,
@@ -4723,6 +4760,7 @@ mod tests {
 mod windows_tests {
     use super::*;
     use std::fs;
+    use std::os::windows::ffi::OsStringExt;
     use std::os::windows::fs::MetadataExt;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc;
@@ -5045,7 +5083,21 @@ mod windows_tests {
             fail_at_for_test(point);
             assert!(admit_setup(request.clone()).is_err(), "{point:?}");
             clear_fault_control_for_test();
-            assert!(admit_setup(request).is_ok(), "retry after {point:?}");
+            let recovered = admit_setup(request.clone()).expect("retry after {point:?}");
+            let recovered_binding = recovered.binding().clone();
+            drop(recovered);
+            let observed = admit_setup(request).expect("repeat admission after {point:?}");
+            assert_eq!(observed.binding().id, recovered_binding.id, "{point:?}");
+            assert_eq!(
+                observed.binding().namespace,
+                recovered_binding.namespace,
+                "{point:?}"
+            );
+            assert_eq!(
+                observed.binding().generation,
+                recovered_binding.generation,
+                "{point:?}"
+            );
         }
 
         let fixture = TestRoot::new();
@@ -5148,6 +5200,7 @@ mod windows_tests {
     fn windows_codec_rejects_malformed_utf16_and_noncanonical_path_classes() {
         let malformed = [0x00_u8, 0xd8];
         assert!(RootToken::from_raw_absolute(malformed.to_vec()).is_err());
+        assert!(RootToken::from_raw_absolute(vec![b'C']).is_err());
         for path in [
             r"\current-drive",
             r"C:relative",
@@ -5164,6 +5217,14 @@ mod windows_tests {
         assert!(RootToken::from_raw_absolute(vec![b'C', 0]).is_err());
         assert!(RootToken::from_raw_absolute(vec![0; MAX_TOKEN_BYTES + 2]).is_err());
         assert!(normalize_windows_absolute_bytes(&token_bytes(r"C:\..\escape")).is_err());
+    }
+
+    #[test]
+    fn windows_canonical_path_rejects_unpaired_surrogates_without_lossy_conversion() {
+        let mut units: Vec<u16> = r"\\?\C:\solstone\".encode_utf16().collect();
+        units.push(0xd800);
+        let path = PathBuf::from(OsString::from_wide(&units));
+        assert!(normalize_windows_canonical_path(&path).is_err());
     }
 
     #[test]
