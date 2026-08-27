@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to solstone (the Python package) will be documented in this file.
+All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- the journal-access command is now `solstone` only. `sol` as a command name is gone, with no alias: a script, cron job, or muscle memory that still types `sol` needs to type `solstone` instead. `journal` is unchanged: it is still the journal's own command, separate from day-to-day journal access. `solstone call <app> <verb>` is the form that used to be `sol call`. the app on your devices is still sol.
+- the journal-access command is now `solstone` only. `sol` as a command name is gone, with no alias: a script, cron job, or muscle memory that still types `sol` needs to type `solstone` instead. `journal` is unchanged: it is still the journal's own command, separate from day-to-day journal access. `solstone call <app> <verb>` is the form that used to be `sol call`. the solstone app on your devices is unchanged by this rename.
 - chat is gone. you have a working chat today. this upgrade takes it away. the chat bar in your journal, the chat page, and `solstone chat` are gone. on iphone, the ask bar on the day home is gone too, and nothing takes its place. that screen is your day.
 - chats you already have in your journal stay on your disk, untouched. they are no longer shown, and they no longer come up in search.
 - solstone is a personal memory platform. to ask questions of your journal, use your own agent, or the command line.
