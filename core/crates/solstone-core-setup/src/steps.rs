@@ -1581,6 +1581,10 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             context.args.step_timeout_seconds,
         ));
     }
+    // The Type=notify supervisor verifies the installed binding before it
+    // announces readiness. Release setup's exclusive identity lease after the
+    // guarded unit is published so the new process can perform that read.
+    drop(context.installation_admission.take());
     let up = context
         .service_ops
         .up(context.runner, &context.journal_path)
@@ -1639,19 +1643,8 @@ fn resume_service(
             SkipReason::PriorRunOk,
         )));
     }
-    context
-        .service_ops
-        .restart(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?;
-    if context
-        .service_ops
-        .health_check(context.runner, &context.journal_path)
-        .map_err(|message| StepExecutionError::Unhandled { message })?
-    {
-        let mut result = StepResult::new(StepName::Service, StepStatus::Ok, paths, (context.now)());
-        result.reason = Some(SkipReason::ResumedAfterRestart.as_str().to_owned());
-        return Ok(Some(result));
-    }
+    // Re-publish the guarded unit before starting an unhealthy runtime. A
+    // direct restart here would make the child wait on setup's identity lease.
     Ok(None)
 }
 
@@ -2408,8 +2401,8 @@ mod tests {
             false,
         );
         assert_eq!(outcome.exit_code, 0);
-        assert_eq!(requests, 0);
-        assert_eq!(restarts, 1);
+        assert_eq!(requests, 1);
+        assert_eq!(restarts, 0);
         let (outcome, requests, restarts) = run(
             "service-still-bad",
             &[],
@@ -2419,7 +2412,7 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(requests, 1);
-        assert_eq!(restarts, 1);
+        assert_eq!(restarts, 0);
         let (outcome, requests, _) =
             run("service-force", &["--force"], vec![true], vec![true], false);
         assert_eq!(outcome.exit_code, 0);
@@ -2462,6 +2455,39 @@ mod tests {
             written.steps[0]["error"]["code"],
             "setup_unhandled_exception"
         );
+    }
+    #[test]
+    fn service_start_releases_the_setup_identity_lease_after_unit_publication() {
+        let (args, resolved, root, home) = fixture("service-identity-release", &[]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let mut ops = SequenceServiceOps {
+            installed: VecDeque::new(),
+            healthy: VecDeque::new(),
+            restarts: 0,
+            up: 0,
+        };
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.service_ops = &mut ops;
+
+        let result = step_service(&mut setup).expect("service step");
+
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(setup.installation_admission.is_none());
+        assert_eq!(runner.requests.len(), 1);
     }
     #[test]
     fn brain_mutates_local_provider_before_skipping_and_warning_keeps_its_distinct_shape() {

@@ -27,9 +27,11 @@ fast pre-flight before chasing solstone-specific failures.
 `install` runs the actual journal install path (the relocatable tree from
 [INSTALL.md](../../INSTALL.md), then `journal setup -y --skip-models --skip-skills`) and
 verifies the resulting `solstone.service` reaches `active` plus `journal
-service status` returns 0. `--skip-models / --skip-skills` are passed by default because
-Parakeet / Claude-skill installation is orthogonal to
-the systemd question; use `make full` to drop those flags.
+service status` reports a running service and live callosum clients. The command
+may still return nonzero for the model degradation this cell creates on
+purpose. `--skip-models / --skip-skills` are passed by default because Parakeet
+/ Claude-skill installation is orthogonal to the systemd question; use `make
+full` to drop those flags.
 
 `observer-ingest` is a retired v2 migration fixture. It invokes
 `/app/observer/register` and `/app/observer/ingest`, neither of which is a
