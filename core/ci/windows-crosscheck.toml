@@ -20,16 +20,16 @@ reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonW
 expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
-package = "solstone-core-callosum"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only append backend used here for append_jsonl."
-expected_stderr = ["unresolved import `solstone_core_journal_io::append_jsonl`"]
-
-[[exclusions]]
 package = "solstone-core-convey-config"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions, LockOptions, hold_lock, and write_json."
 expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::LockOptions`, `solstone_core_journal_io::hold_lock`, `solstone_core_journal_io::write_json`"]
+
+[[exclusions]]
+package = "solstone-core-cortex-client"
+class = "sibling-owned-platform-backend"
+reason = "Callosum's wire feature still selects its Unix-socket transport; the separate Windows named-pipe backend lane owns that work."
+expected_stderr = ["unresolved import `tokio::net::UnixStream`"]
 
 [[exclusions]]
 package = "solstone-core-identity"

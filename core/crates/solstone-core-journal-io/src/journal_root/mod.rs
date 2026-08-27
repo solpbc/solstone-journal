@@ -260,6 +260,14 @@ impl AsHandle for JournalRoot {
     }
 }
 
+#[cfg(windows)]
+impl JournalRoot {
+    /// Borrow the separately admitted overlapped handle reserved for namespace witnessing.
+    pub(crate) fn as_namespace_watch_handle(&self) -> BorrowedHandle<'_> {
+        self.inner.as_watch_handle()
+    }
+}
+
 #[cfg(test)]
 mod architecture {
     const UNIX: &str = include_str!("unix.rs");

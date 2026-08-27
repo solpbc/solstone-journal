@@ -43,15 +43,19 @@ canonical path to reacquire.
 Windows gate 1 admits only a journal root and its portable final name. Its
 authoritative requested-root open uses `CreateFileW` with
 `FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE` and
-`FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT |
-FILE_FLAG_OVERLAPPED`. A reparse point at the root or any inspected ancestor is
-refused; unlike Unix, this gate does not admit a leaf symlink or junction.
+`FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`. Admission also
+opens a separate namespace-watch handle with the same access plus
+`FILE_FLAG_OVERLAPPED`; it must independently pass directory/reparse checks and
+match the authoritative handle's frozen identity. A reparse point at the root
+or any inspected ancestor is refused; unlike Unix, this gate does not admit a
+leaf symlink or junction.
 
-Admission has two passes: an authoritative open captures attributes and
-`FileIdInfo`, then an independent absolute-path walk opens every ancestor and
-the target again, rejecting reparses and comparing the final target identity.
-The retained handle is the only identity authority. `revalidate()` reads that
-handle only and never reopens a path.
+Admission first captures attributes and `FileIdInfo` on the authoritative
+listing handle, then admits the separate watch handle against that same frozen
+identity. An independent absolute-path walk then opens every ancestor and the
+target again, rejecting reparses and comparing the final target identity. The
+retained handles are the only identity authorities. `revalidate()` reads the
+listing handle only and never reopens a path.
 
 Filesystem admission is a strict `NTFS`/`ReFS` allow-list, and volume admission
 is a strict fixed-drive allow-list; each wildcard refuses rather than admits.
@@ -74,17 +78,17 @@ exclusively from `FileIdInfo` on the retained handle.
 
 ### Windows retained-handle source operations
 
-Windows source inventory and checked reads retain one admitted root handle.
-Admission opens that handle once with `FILE_READ_ATTRIBUTES |
-FILE_LIST_DIRECTORY | FILE_TRAVERSE` and `FILE_FLAG_BACKUP_SEMANTICS |
-FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OVERLAPPED`, sufficient for every
-post-admission operation. Each witnessed operation first revalidates that root
-(including NTFS Cloud Files classification by retained handle). Root listing,
-the checked-read relative-open parent seed, and the namespace watcher borrow
-that retained handle; no second root handle is opened. The watcher arms
-`ReadDirectoryChangesW` with `bWatchSubtree=TRUE` and file- and
-directory-name notifications. The root is revalidated again before the result
-stands.
+Windows source inventory and checked reads retain two independently admitted
+root handles with one frozen identity: a synchronous listing/relative-open
+handle and an overlapped namespace-watch handle. Admission checks each handle
+as a non-reparse directory and refuses unless their `FileIdInfo` identities
+match. Each witnessed operation first revalidates the listing handle (including
+NTFS Cloud Files classification by retained handle). Root listing and the
+checked-read relative-open parent seed borrow that handle; the watcher borrows
+only the separately admitted watch handle and arms `ReadDirectoryChangesW` with
+`bWatchSubtree=TRUE` and file- and directory-name notifications. This split
+keeps a restartable enumeration cursor isolated from the asynchronous watch.
+The listing handle is revalidated again before the result stands.
 
 The watch is runtime-probed for each admitted NTFS or ReFS root. A completed
 watch, `ERROR_NOTIFY_ENUM_DIR`, a zero-byte synchronous completion, or
@@ -173,11 +177,12 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 ## Future-backend obligations
 
 Windows covers root admission, complete witnessed source enumeration, route
-revalidation, checked archive-source reads, and portable name admission.
+revalidation, checked archive-source reads, portable name admission, and
+durable `append_jsonl`.
 Locking, leases, atomic publication, retention, packaging, archive encoding and
-publication, `flat_directory`, `snapshot`, `staged`, `health_marker`, `append`,
-and `claim_remove` remain explicitly Unix-only and unsupported on Windows in
-this slice.
+publication, `flat_directory`, `snapshot`, `staged`, `health_marker`,
+`append_text`, and `claim_remove` remain explicitly Unix-only and unsupported
+on Windows in this slice.
 
 A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid
@@ -247,6 +252,21 @@ observed original into a claim name and directory durability equivalent to
 `fsync` on a directory descriptor. It therefore does not substitute a
 path-based claim, overwrite-capable rename, or uncertain delete for the Unix
 state machine.
+
+## Append JSONL
+
+`append_jsonl` is available on Unix and Windows. It serializes one record,
+adds one newline, performs one append write, and requires `File::sync_all` to
+succeed before it returns success. A write error can still leave a partial
+record if the operating system reports a short write; callers must treat every
+error as indeterminate on-disk state.
+
+On Unix, a newly created record file also receives the existing best-effort
+parent-directory sync. Windows has no equivalent directory-handle sync in this
+surface, so a Windows success means the record file flush completed; it does
+not claim durable parent-directory entry creation. `append_text` remains
+Unix-only because this lane exposes only the JSONL primitive used by
+Callosum's Windows-compilable default surface.
 
 ## No-replace platform support
 

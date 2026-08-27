@@ -159,7 +159,13 @@ else
   echo "ERROR: win-host-ci: SSH output file creation failed" >&2
   exit 1
 fi
-remote_command="cmd /d /c \"set EXPECTED_JOURNAL_COMMIT=$snapshot_sha&&set EXPECTED_JOURNAL_CARGO_LOCK_SHA256=$cargo_lock_sha256&&set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=$cloud_sync_test&&set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=$refs_root\"&&set \"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=$owner_account\"&&C:\\sol\\sj-ci.cmd\""
+remote_command="\$env:EXPECTED_JOURNAL_COMMIT = '$snapshot_sha'
+\$env:EXPECTED_JOURNAL_CARGO_LOCK_SHA256 = '$cargo_lock_sha256'
+\$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '$cloud_sync_test'
+\$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = '$refs_root'
+\$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = '$owner_account'
+& 'C:\\sol\\sj-ci.cmd'
+exit \$LASTEXITCODE"
 if "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \

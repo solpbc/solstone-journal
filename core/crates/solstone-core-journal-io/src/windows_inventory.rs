@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtCreateFile,
+    NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
@@ -27,11 +28,13 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
     FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
     FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdExtdDirectoryInfo, FileIdInfo,
-    GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
-    SYNCHRONIZE,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW, SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::IO::{
+    CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
+};
+use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
 use crate::{
@@ -495,6 +498,20 @@ fn borrow_admitted_root<'root>(
     })
 }
 
+fn borrow_admitted_namespace_watch<'root>(
+    root: &'root JournalRoot,
+) -> Result<BorrowedHandle<'root>, WindowsInventoryError> {
+    traced_inventory(
+        WindowsInventoryPrimitive::BorrowAdmittedRootForWatch,
+        || Ok(root.as_namespace_watch_handle()),
+    )
+    .map_err(|source| WindowsInventoryError::Io {
+        operation: "borrow admitted journal-root namespace watch",
+        path: root.canonical_path().to_path_buf(),
+        source,
+    })
+}
+
 /// Per-session accounting for checked Windows file reads.
 pub struct WindowsCheckedReadSession {
     budget: InventoryBudget,
@@ -523,8 +540,11 @@ impl WindowsCheckedReadSession {
             });
         }
         with_witness(root, |witness| {
+            test_hook_witness_progress("before-route-reopen");
             let handle = reopen_verified_route(root, entry, FILE_READ_DATA | FILE_READ_ATTRIBUTES)?;
+            test_hook_witness_progress("after-route-reopen");
             let before = file_metadata(&handle, &entry.relative_path)?;
+            test_hook_witness_progress("after-before-metadata");
             if before.identity != entry.identity
                 || before.size != entry.size
                 || before.last_write_time != entry.last_write_time
@@ -552,7 +572,9 @@ impl WindowsCheckedReadSession {
                 source,
             })?;
             let handle = file.into();
+            test_hook_witness_progress("after-read");
             let after = file_metadata(&handle, &entry.relative_path)?;
+            test_hook_witness_progress("after-read-metadata");
             if after != before {
                 return Err(WindowsInventoryError::IdentityChanged {
                     path: entry.relative_path.clone(),
@@ -578,38 +600,84 @@ fn with_witness<'root, T>(
     root: &'root JournalRoot,
     operation: impl FnOnce(&mut NamespaceWitness<'root>) -> Result<T, WindowsInventoryError>,
 ) -> Result<T, WindowsInventoryError> {
+    test_hook_witness_progress("before-revalidate");
     root.revalidate().map_err(WindowsInventoryError::Root)?;
+    test_hook_witness_progress("before-arm");
     let mut witness = NamespaceWitness::arm(root)?;
+    test_hook_witness_progress("after-arm");
     let result = operation(&mut witness).and_then(|value| {
+        test_hook_witness_progress("after-operation");
         root.revalidate().map_err(WindowsInventoryError::Root)?;
+        test_hook_witness_progress("after-revalidate");
         witness.check()?;
+        test_hook_witness_progress("after-check");
         Ok(value)
     });
+    test_hook_witness_progress("before-drain");
     let cleanup = witness.cancel_and_drain();
+    test_hook_witness_progress("after-drain");
     result.and_then(|value| cleanup.map(|()| value))
 }
 
+#[cfg(feature = "test-hooks")]
+fn test_hook_witness_progress(stage: &str) {
+    println!("JOURNAL_WIN_CI_TEST_HOOK_WITNESS={stage}");
+}
+
+#[cfg(not(feature = "test-hooks"))]
+fn test_hook_witness_progress(_stage: &str) {}
+
 struct NamespaceWitness<'root> {
     handle: BorrowedHandle<'root>,
+    _event: OwnedHandle,
     buffer: Vec<u32>,
-    overlapped: OVERLAPPED,
+    overlapped: Box<OVERLAPPED>,
     armed: bool,
     root: PathBuf,
 }
 
 impl<'root> NamespaceWitness<'root> {
     fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
-        let handle =
-            borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
+        let handle = borrow_admitted_namespace_watch(root)?;
+        // The witness borrows its separately admitted namespace-watch handle and gives its one
+        // asynchronous request a private completion event. That event remains live through
+        // cancellation and drain, so result checks never infer this request's state from
+        // unrelated handle activity.
+        let raw_event = {
+            // SAFETY: the unnamed manual-reset event starts unsignaled and is immediately owned
+            // below after the null-handle check.
+            #[allow(unsafe_code)]
+            unsafe {
+                CreateEventW(std::ptr::null(), 1, 0, std::ptr::null())
+            }
+        };
+        if raw_event.is_null() {
+            return Err(WindowsInventoryError::Io {
+                operation: "create recursive namespace witness event",
+                path: root.canonical_path().to_path_buf(),
+                source: io::Error::last_os_error(),
+            });
+        }
+        // SAFETY: `CreateEventW` returned a non-null event handle owned by this witness.
+        #[allow(unsafe_code)]
+        let event = unsafe { OwnedHandle::from_raw_handle(raw_event) };
+        // Windows retains the exact `OVERLAPPED` address until the asynchronous request is
+        // drained. Heap allocation prevents `NamespaceWitness` returning from `arm` from moving
+        // that address.
+        let mut overlapped = Box::new(OVERLAPPED::default());
+        overlapped.hEvent = event.as_raw_handle();
         let mut witness = Self {
             handle,
+            _event: event,
             buffer: vec![0; WATCH_BUFFER_DWORDS],
-            overlapped: OVERLAPPED::default(),
+            overlapped,
             armed: false,
             root: root.canonical_path().to_path_buf(),
         };
         traced_inventory(WindowsInventoryPrimitive::WatchArm, || {
-            // SAFETY: the witness borrows the retained asynchronous directory handle, `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and `OVERLAPPED` remain live until the request drains.
+            // SAFETY: the witness borrows the retained asynchronous directory handle,
+            // `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and
+            // `OVERLAPPED` remain live until the request drains.
             #[allow(unsafe_code)]
             let result = unsafe {
                 ReadDirectoryChangesW(
@@ -619,7 +687,7 @@ impl<'root> NamespaceWitness<'root> {
                     1,
                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
                     std::ptr::null_mut(),
-                    &mut witness.overlapped,
+                    witness.overlapped.as_mut(),
                     None,
                 )
             };
@@ -655,7 +723,12 @@ impl<'root> NamespaceWitness<'root> {
             // SAFETY: `overlapped` belongs to the one outstanding watch request on `handle`, and `bytes` is writable for the documented output length.
             #[allow(unsafe_code)]
             let completed = unsafe {
-                GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 0)
+                GetOverlappedResult(
+                    self.handle.as_raw_handle(),
+                    self.overlapped.as_ref(),
+                    &mut bytes,
+                    0,
+                )
             };
             if completed != 0 {
                 return Ok(Some(bytes));
@@ -688,7 +761,12 @@ impl<'root> NamespaceWitness<'root> {
         // SAFETY: the outstanding request owns this exact `OVERLAPPED`, and `bytes` is writable for the documented completion length while the test waits for the mutation it just initiated.
         #[allow(unsafe_code)]
         let completed = unsafe {
-            GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
+            GetOverlappedResult(
+                self.handle.as_raw_handle(),
+                self.overlapped.as_ref(),
+                &mut bytes,
+                1,
+            )
         };
         if completed != 0 {
             return Ok(bytes);
@@ -709,10 +787,14 @@ impl<'root> NamespaceWitness<'root> {
         if !self.armed {
             return Ok(());
         }
+        test_hook_witness_progress("before-cancel");
         traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
-            // SAFETY: the outstanding request uses this exact `OVERLAPPED`, which remains allocated until the drain below completes.
+            // SAFETY: this witness's exact, heap-stable `OVERLAPPED` remains allocated until the
+            // drain below completes. The retained root may serve other callers, so cancellation
+            // must not affect any request other than this witness.
             #[allow(unsafe_code)]
-            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
+            let cancelled =
+                unsafe { CancelIoEx(self.handle.as_raw_handle(), self.overlapped.as_ref()) };
             if cancelled != 0 {
                 return Ok(());
             }
@@ -725,12 +807,19 @@ impl<'root> NamespaceWitness<'root> {
             operation: "cancel recursive namespace witness",
             source,
         })?;
+        test_hook_witness_progress("after-cancel");
         let mut bytes = 0;
+        test_hook_witness_progress("before-drain-result");
         let drained = traced_inventory(WindowsInventoryPrimitive::WitnessDrainCompleted, || {
             // SAFETY: the request was either completed or cancellation was requested above, and both the request's `OVERLAPPED` and output length remain live for this drain.
             #[allow(unsafe_code)]
             let drained = unsafe {
-                GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
+                GetOverlappedResult(
+                    self.handle.as_raw_handle(),
+                    self.overlapped.as_ref(),
+                    &mut bytes,
+                    1,
+                )
             };
             if drained != 0 {
                 return Ok(Some(bytes));
@@ -744,6 +833,7 @@ impl<'root> NamespaceWitness<'root> {
             operation: "drain recursive namespace witness",
             source,
         })?;
+        test_hook_witness_progress("after-drain-result");
         self.armed = false;
         drained
             .is_none()
@@ -851,24 +941,41 @@ fn list_directory(
 ) -> Result<Vec<ListedEntry>, WindowsInventoryError> {
     let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
+    let mut restart_scan = true;
     loop {
         let result = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-            // SAFETY: `directory` is a retained directory-list handle and `buffer` is writable for its exact supplied size.
+            let mut status = IO_STATUS_BLOCK::default();
+            // SAFETY: `directory` is a synchronous, independently retained directory-list
+            // handle and `buffer` is writable for the exact supplied size.  The first query
+            // restarts this handle's cursor; namespace witnessing runs on its own handle.
             #[allow(unsafe_code)]
             let result = unsafe {
-                GetFileInformationByHandleEx(
+                NtQueryDirectoryFile(
                     directory,
-                    FileIdExtdDirectoryInfo,
+                    std::ptr::null_mut(),
+                    None,
+                    std::ptr::null(),
+                    &mut status,
                     buffer.as_mut_ptr().cast(),
                     buffer.len() as u32,
+                    FileIdExtdDirectoryInformation,
+                    false,
+                    std::ptr::null(),
+                    restart_scan,
                 )
             };
-            (result != 0)
-                .then_some(())
-                .ok_or_else(io::Error::last_os_error)
+            (result == STATUS_SUCCESS).then_some(()).ok_or_else(|| {
+                // SAFETY: converts only the NTSTATUS returned by the just-completed call.
+                #[allow(unsafe_code)]
+                let error = unsafe { RtlNtStatusToDosError(result) };
+                io::Error::from_raw_os_error(error as i32)
+            })
         });
         match result {
-            Ok(()) => parse_directory_buffer(&buffer, relative, &mut entries)?,
+            Ok(()) => {
+                restart_scan = false;
+                parse_directory_buffer(&buffer, relative, &mut entries)?;
+            }
             Err(source) if source.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) => break,
             Err(source) => {
                 return Err(WindowsInventoryError::Io {
@@ -928,10 +1035,17 @@ fn parse_directory_buffer(
             .ok_or_else(|| invalid_directory_buffer(relative))?
             .try_into()
             .map_err(|_| invalid_directory_buffer(relative))?;
-        entries.push(ListedEntry {
-            name: OsString::from(name),
-            file_id,
-        });
+        // FileIdExtdDirectoryInfo includes the directory's synthetic self and
+        // parent records.  They are protocol entries rather than members of
+        // the journal namespace, so omit exactly those two spellings before
+        // portable-component admission.  Every other name remains subject to
+        // the normal checked-name path below.
+        if name != "." && name != ".." {
+            entries.push(ListedEntry {
+                name: OsString::from(name),
+                file_id,
+            });
+        }
         let next_entry_offset = directory_u32(
             header,
             offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset),
@@ -1263,6 +1377,7 @@ fn reopen_verified_route(
     let mut parent = retained_root.as_raw_handle();
     let mut owned_parent = None;
     for (index, component) in entry.route.iter().enumerate() {
+        test_hook_witness_progress("before-route-component");
         let leaf = index + 1 == entry.route.len();
         let access = if leaf {
             leaf_access
@@ -1273,18 +1388,29 @@ fn reopen_verified_route(
         let attributes = attribute_tag(&handle, &entry.relative_path)?;
         require_no_reparse(attributes, &entry.relative_path)?;
         let identity = file_id(&handle, &entry.relative_path)?;
+        test_hook_witness_progress("after-route-component-identity");
         if identity != component.identity {
+            test_hook_witness_progress("route-component-identity-mismatch");
             return Err(WindowsInventoryError::IdentityChanged {
                 path: entry.relative_path.clone(),
             });
         }
         match component.kind {
-            JournalEntryKind::Directory if !is_directory(attributes) => {
-                return Err(WindowsInventoryError::NotDirectory {
-                    path: entry.relative_path.clone(),
-                });
+            JournalEntryKind::Directory => {
+                if !is_directory(attributes) {
+                    return Err(WindowsInventoryError::NotDirectory {
+                        path: entry.relative_path.clone(),
+                    });
+                }
             }
-            JournalEntryKind::RegularFile => require_regular(&handle, &entry.relative_path)?,
+            JournalEntryKind::RegularFile => {
+                if is_directory(attributes) {
+                    return Err(WindowsInventoryError::NotRegular {
+                        path: entry.relative_path.clone(),
+                    });
+                }
+                require_regular(&handle, &entry.relative_path)?;
+            }
             _ => {
                 return Err(WindowsInventoryError::IdentityChanged {
                     path: entry.relative_path.clone(),
@@ -1388,6 +1514,14 @@ mod tests {
             read_windows_inventory_file(&root, directory, budget()),
             Err(WindowsInventoryError::NotRegular { .. })
         ));
+    }
+
+    #[test]
+    fn repeated_inventory_restarts_the_retained_root_directory_cursor() {
+        let (_temporary, root) = fixture();
+        let initial = enumerate_windows_inventory(&root, budget()).unwrap();
+        let repeated = enumerate_windows_inventory(&root, budget()).unwrap();
+        assert_eq!(repeated.entries(), initial.entries());
     }
 
     #[test]
@@ -1584,6 +1718,72 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, OsString::from("x"));
         assert_eq!(entries[0].file_id, [0x5A; 16]);
+    }
+
+    #[test]
+    fn directory_protocol_dot_entries_are_omitted_without_widening_name_admission() {
+        fn record(name: &[u16], file_id: u8, next_entry_offset: u32) -> Vec<u8> {
+            let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
+            let mut record = vec![0; header_bytes + std::mem::size_of_val(name)];
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, NextEntryOffset) + size_of::<u32>()]
+                .copy_from_slice(&next_entry_offset.to_le_bytes());
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileNameLength) + size_of::<u32>()]
+                .copy_from_slice(&(std::mem::size_of_val(name) as u32).to_le_bytes());
+            record[offset_of!(FILE_ID_EXTD_DIR_INFO, FileId)
+                ..offset_of!(FILE_ID_EXTD_DIR_INFO, FileId) + 16]
+                .copy_from_slice(&[file_id; 16]);
+            for (offset, code_unit) in name.iter().enumerate() {
+                let start = header_bytes + offset * size_of::<u16>();
+                record[start..start + size_of::<u16>()].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            record
+        }
+
+        let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
+        let dot = record(&['.' as u16], 0x11, (header_bytes + 2) as u32);
+        let dotdot = record(&['.' as u16, '.' as u16], 0x22, (header_bytes + 4) as u32);
+        let ordinary = record(&['o' as u16, 'k' as u16], 0x5A, 0);
+        let buffer = [dot, dotdot, ordinary].concat();
+
+        let mut entries = Vec::new();
+        parse_directory_buffer(&buffer, Path::new(""), &mut entries).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, OsString::from("ok"));
+        assert_eq!(entries[0].file_id, [0x5A; 16]);
+
+        let mut leading_dot = Vec::new();
+        parse_directory_buffer(
+            &record(&['.' as u16, 'x' as u16], 0x33, 0),
+            Path::new(""),
+            &mut leading_dot,
+        )
+        .unwrap();
+        assert_eq!(leading_dot[0].name, OsString::from(".x"));
+        checked_name(&leading_dot[0].name, Path::new(""), "", budget()).unwrap();
+
+        let mut trailing_dot = Vec::new();
+        parse_directory_buffer(
+            &record(&['x' as u16, '.' as u16], 0x44, 0),
+            Path::new(""),
+            &mut trailing_dot,
+        )
+        .unwrap();
+        assert!(matches!(
+            checked_name(&trailing_dot[0].name, Path::new(""), "", budget()),
+            Err(WindowsInventoryError::InvalidName { .. })
+        ));
+
+        let mut malformed_utf16 = Vec::new();
+        assert!(matches!(
+            parse_directory_buffer(
+                &record(&[0xD800], 0x55, 0),
+                Path::new(""),
+                &mut malformed_utf16,
+            ),
+            Err(WindowsInventoryError::InvalidName { .. })
+        ));
     }
 
     #[test]
@@ -1835,10 +2035,16 @@ mod tests {
                     .unwrap_or_else(|error| panic!("mutate {variable} overflow fixture: {error}"));
             }
             match witness.wait_for_notification() {
-                Ok(0) | Err(WindowsInventoryError::NamespaceChanged { .. }) => {}
-                Ok(bytes) => panic!("{variable} witness did not overflow: {bytes} bytes"),
+                // Filesystems may coalesce a burst to a non-empty completion rather than
+                // overflowing the fixed buffer.  Both shapes are rejected by `check`; the
+                // injected `ERROR_NOTIFY_ENUM_DIR` case above proves the explicit overflow path.
+                Ok(_) | Err(WindowsInventoryError::NamespaceChanged { .. }) => {}
                 Err(error) => panic!("wait for {variable} overflow witness: {error}"),
             }
+            assert!(matches!(
+                witness.check(),
+                Err(WindowsInventoryError::NamespaceChanged { .. })
+            ));
         }
     }
 }

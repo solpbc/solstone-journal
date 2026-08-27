@@ -207,16 +207,15 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 **Your journal itself is untouched by any of this.** It is a folder of dated directories and no installer owns it.
 
-Earlier releases installed the journal as a set of Python packages. The tree replaces them, and the two must not both be on PATH.
+Earlier releases installed the journal as a set of Python packages (`pip`, `uv tool`, or `pipx`). Install the tree as above, then run:
 
-1. Stop the service: `journal service stop`
-2. Remove the old packages with whichever installer put them there:
-   ```bash
-   pip uninstall -y solstone-journal solstone-journal-cuda solstone-journal-host solstone
-   uv tool uninstall solstone-journal; uv tool uninstall solstone
-   pipx uninstall solstone-journal; pipx uninstall solstone
-   ```
-3. Install the tree as above, then run `journal setup`.
+```bash
+journal setup
+```
+
+That single command finds a real prior install — its `solstone`, `journal`, and `sol` binaries wherever `pip`/`uv`/`pipx` put them under `~/.local/bin` — stops its service, and replaces it, automatically, in one invocation. There is no separate cleanup command to run first. Running `pip uninstall` / `uv tool uninstall` / `pipx uninstall`, or `journal service stop` against the old install, yourself before running `journal setup` only removes the evidence setup needs to find and safely replace it; let `journal setup` do it.
+
+Setup keeps a durable backup of anything it replaces under `~/.local/share/solstone/setup-backups/` before touching it, so nothing is destroyed outright.
 
 ⚠ **There is no CUDA build of the tree.** If you were on `solstone-journal-cuda`, transcription moves to the CPU runtime. It uses the same model on the CPU, so long recordings take longer to process; nothing else about them changes. The local *model* provider still uses your GPU where it can. That path is separate and is described under [set up](#set-up).
 

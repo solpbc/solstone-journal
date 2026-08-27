@@ -341,6 +341,31 @@ mod tests {
     }
 
     #[test]
+    fn pipx_layout_classifies_identically_to_the_uv_tool_layout() {
+        // classify() identifies a v1 artifact purely by (a) the resolved
+        // real path staying under the owner's home, and (b) an exact byte
+        // match against a known-shipped launcher shape. It never reads
+        // uv-receipt.toml, pipx_metadata.json, or a *.dist-info/RECORD file,
+        // so it is installer-agnostic by construction. This pins that: the
+        // identical launcher bytes under a pipx-shaped directory classify
+        // exactly the same as the uv-tool-shaped directory above.
+        let root = root("pipx");
+        let home = root.join("home");
+        let target = home.join(".local/pipx/venvs/solstone/bin/solstone");
+        write_executable(&target, &native_root_launcher_bytes("solstone"));
+        let public = home.join(".local/bin/solstone");
+        fs::create_dir_all(public.parent().unwrap()).unwrap();
+        symlink(&target, &public).unwrap();
+        let found = classify(&home, &public, "solstone").unwrap().unwrap();
+        assert_eq!(found.family, LegacyLauncherFamily::NativeRoot);
+        assert_eq!(
+            found.installation_bin,
+            home.join(".local/pipx/venvs/solstone/bin")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn outside_home_and_app_owned_launchers_are_not_legacy() {
         let root = root("outside");
         let home = root.join("home");
