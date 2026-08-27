@@ -9,6 +9,8 @@ mod model;
 mod oneshot;
 mod reader;
 mod registry;
+#[cfg(any(test, windows))]
+mod windows;
 #[cfg(feature = "wire")]
 mod wire;
 mod writer;

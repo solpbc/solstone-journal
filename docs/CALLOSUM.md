@@ -4,7 +4,10 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 ## Protocol
 
-**Transport:** Unix domain socket at `journal/health/callosum.sock`
+**Transport:** Unix domain socket at `journal/health/callosum.sock` on Unix; an authenticated,
+deterministically named Windows named pipe derived from that journal endpoint on Windows. The Windows
+pipe accepts only the current user and rejects remote clients: this is a cross-user/cross-identity
+and remote-network boundary, not a defense against malware already running as that same user/SID.
 
 **Format:** Newline-delimited JSON. Broadcast to all connected clients.
 
@@ -176,9 +179,10 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 ## Implementation
 
-The bus is `solstone-core-callosum`. The socket is
-`journal/health/callosum.sock`. Messages are one JSON object per line with
-`tract`, `event`, `ts`, plus event fields.
+The bus is `solstone-core-callosum`. On Unix, its socket is
+`journal/health/callosum.sock`; on Windows, the same facade derives an authenticated named pipe
+from that endpoint. Messages are one JSON object per line with `tract`, `event`, `ts`, plus event
+fields.
 
 Convey emits through the shell bridge. Native crates use the callosum client
 in `solstone-core-callosum`. There is no Python `CallosumConnection` and no

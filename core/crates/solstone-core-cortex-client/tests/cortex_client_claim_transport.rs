@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 use std::fs;
 use std::io::{self, Read};
 use std::os::unix::net::UnixListener;

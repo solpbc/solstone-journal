@@ -14,7 +14,7 @@ default = []
 # Deterministic in-crate wire tests (continuity markers, AC6 framing,
 # AC8/9/11/17/18 in-memory counterparts):
 # cargo test --manifest-path core/Cargo.toml -p solstone-core-callosum --features wire --locked --lib wire::tests::
-wire = ["dep:tokio"]
+wire = ["dep:log", "dep:tokio"]
 # Hidden door for live-socket wire tests. Production crates must not enable this.
 test-hooks = []
 
@@ -22,9 +22,18 @@ test-hooks = []
 serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal-io = { workspace = true }
+hmac.workspace = true
+sha2.workspace = true
+log = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
-[dev-dependencies]
+[target.'cfg(windows)'.dependencies]
+getrandom.workspace = true
+interprocess = { workspace = true, features = ["tokio"] }
+widestring.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[target.'cfg(unix)'.dev-dependencies]
 regex.workspace = true
 solstone-core-cogitate-wire.workspace = true
 solstone-core-system = { workspace = true }
@@ -34,5 +43,7 @@ name = "callosum_wire_component"
 path = "tests/callosum_wire_component.rs"
 required-features = ["test-hooks", "wire"]
 
-[lints]
-workspace = true
+# The workspace's `forbid` cannot be overridden per module, so retain equivalent `deny` here
+# while allowing the one audited Windows SID-resolution FFI module to opt out narrowly.
+[lints.rust]
+unsafe_code = "deny"

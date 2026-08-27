@@ -28,5 +28,5 @@ pub(crate) const SERVER_SEND_TIMEOUT: std::time::Duration = std::time::Duration:
 pub(crate) const SERVER_STOP_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const READ_BUFFER_CAPACITY: usize = 4_096;
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests;

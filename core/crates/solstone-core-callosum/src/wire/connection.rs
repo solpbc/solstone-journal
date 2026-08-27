@@ -10,7 +10,10 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
+#[cfg(windows)]
+use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
+#[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -18,12 +21,23 @@ use tokio::time::{sleep, timeout};
 
 use crate::CallosumEnvelope;
 
+#[cfg(windows)]
+use super::SERVER_SEND_TIMEOUT;
 use super::frame::encode_envelope;
 use super::framing::{ReadFrame, read_frame, reader};
 use super::{
     CLIENT_INBOUND_CAPACITY, CLIENT_OUTBOUND_CAPACITY, CLIENT_RECONNECT_INTERVAL,
     CLIENT_SEND_TIMEOUT, CLIENT_STOP_JOIN_TIMEOUT,
 };
+
+#[cfg(unix)]
+type ConnectionReadHalf = tokio::net::unix::OwnedReadHalf;
+#[cfg(unix)]
+type ConnectionWriteHalf = tokio::net::unix::OwnedWriteHalf;
+#[cfg(windows)]
+type ConnectionReadHalf = interprocess::local_socket::tokio::RecvHalf;
+#[cfg(windows)]
+type ConnectionWriteHalf = interprocess::local_socket::tokio::SendHalf;
 
 /// The current continuity state of a reconnecting socket reader.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -540,8 +554,8 @@ impl Drop for CallosumSocketConnection {
 }
 
 struct ConnectedStream {
-    reader: tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
-    writer: tokio::net::unix::OwnedWriteHalf,
+    reader: tokio::io::BufReader<ConnectionReadHalf>,
+    writer: ConnectionWriteHalf,
 }
 
 #[derive(Clone)]
@@ -661,8 +675,8 @@ async fn run_connection(run: ConnectionRun) {
             }
             first_attempt = false;
             while outbound.try_recv().is_ok() {}
-            match UnixStream::connect(&socket_path).await {
-                Ok(socket) => {
+            match connect_stream(&socket_path).await {
+                Ok((read_half, writer)) => {
                     if !ConnectionCounters::checked_increment(&mut counters.generation)
                         || !ConnectionCounters::checked_increment(&mut counters.epoch)
                     {
@@ -683,7 +697,6 @@ async fn run_connection(run: ConnectionRun) {
                         counters.epoch,
                         CallosumConnectionPhase::Connected,
                     );
-                    let (read_half, writer) = socket.into_split();
                     stream = Some(ConnectedStream {
                         reader: reader(read_half),
                         writer,
@@ -776,6 +789,46 @@ async fn run_connection(run: ConnectionRun) {
         }
     }
     running.store(false, Ordering::Release);
+}
+
+#[cfg(unix)]
+async fn connect_stream(
+    socket_path: &Path,
+) -> std::io::Result<(ConnectionReadHalf, ConnectionWriteHalf)> {
+    Ok(UnixStream::connect(socket_path).await?.into_split())
+}
+
+#[cfg(windows)]
+async fn connect_stream(
+    socket_path: &Path,
+) -> std::io::Result<(ConnectionReadHalf, ConnectionWriteHalf)> {
+    use interprocess::local_socket::traits::tokio::Stream as _;
+    use interprocess::local_socket::{ConnectOptions, ToFsName};
+    use interprocess::os::windows::local_socket::NamedPipe;
+
+    let name = crate::windows::pipe_name(socket_path)?.to_fs_name::<NamedPipe>()?;
+    let mut stream = ConnectOptions::new().name(name).connect_tokio().await?;
+    authenticate_windows_server(&mut stream, socket_path).await?;
+    Ok(stream.split())
+}
+
+#[cfg(windows)]
+async fn authenticate_windows_server(
+    stream: &mut interprocess::local_socket::tokio::Stream,
+    socket_path: &Path,
+) -> std::io::Result<()> {
+    let secret = crate::windows::read_secret(socket_path)?;
+    let mut greeting = [0_u8; crate::windows::PIPE_HANDSHAKE_LEN];
+    tokio::time::timeout(SERVER_SEND_TIMEOUT, async {
+        stream.read_exact(&mut greeting).await?;
+        let proof = crate::windows::client_proof(&secret, &greeting)?;
+        stream.write_all(&proof).await
+    })
+    .await
+    .map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::TimedOut, "Callosum handshake timed out")
+    })??;
+    Ok(())
 }
 
 fn enter_gap(
