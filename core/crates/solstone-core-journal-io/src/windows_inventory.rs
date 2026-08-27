@@ -18,9 +18,10 @@ use windows_sys::Wdk::Storage::FileSystem::{
     FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
-    ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED, ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE,
-    OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, STATUS_SUCCESS, UNICODE_STRING,
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE,
+    ERROR_NO_MORE_FILES, ERROR_NOT_FOUND, ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED,
+    ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError,
+    STATUS_SUCCESS, UNICODE_STRING,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -32,7 +33,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
-use windows_sys::Win32::System::Threading::CreateEventW;
+use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess};
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
 use crate::{
@@ -577,7 +578,7 @@ pub fn read_windows_inventory_file(
 
 fn with_witness<'root, T>(
     root: &'root JournalRoot,
-    operation: impl FnOnce(&mut NamespaceWitness<'root>) -> Result<T, WindowsInventoryError>,
+    operation: impl FnOnce(&mut NamespaceWitness) -> Result<T, WindowsInventoryError>,
 ) -> Result<T, WindowsInventoryError> {
     root.revalidate().map_err(WindowsInventoryError::Root)?;
     let mut witness = NamespaceWitness::arm(root)?;
@@ -590,8 +591,8 @@ fn with_witness<'root, T>(
     result.and_then(|value| cleanup.map(|()| value))
 }
 
-struct NamespaceWitness<'root> {
-    handle: BorrowedHandle<'root>,
+struct NamespaceWitness {
+    handle: OwnedHandle,
     _event: OwnedHandle,
     buffer: Vec<u32>,
     overlapped: OVERLAPPED,
@@ -599,13 +600,45 @@ struct NamespaceWitness<'root> {
     root: PathBuf,
 }
 
-impl<'root> NamespaceWitness<'root> {
-    fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
-        let handle =
+impl NamespaceWitness {
+    fn arm(root: &JournalRoot) -> Result<Self, WindowsInventoryError> {
+        let retained_handle =
             borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
-        // A directory watch needs a private completion event: the retained root also services
-        // synchronous listing and revalidation I/O, so its handle state is not this request's
-        // completion state. The event remains live through cancellation and drain.
+        let mut raw_handle = std::ptr::null_mut();
+        let process = {
+            // SAFETY: `GetCurrentProcess` returns the valid pseudo-handle for this process.
+            #[allow(unsafe_code)]
+            unsafe {
+                GetCurrentProcess()
+            }
+        };
+        // SAFETY: the borrowed retained root is valid, the target is this process, and
+        // `raw_handle` is writable for the duplicated handle.
+        #[allow(unsafe_code)]
+        let duplicated = unsafe {
+            DuplicateHandle(
+                process,
+                retained_handle.as_raw_handle(),
+                process,
+                &mut raw_handle,
+                0,
+                0,
+                DUPLICATE_SAME_ACCESS,
+            )
+        };
+        if duplicated == 0 || raw_handle.is_null() {
+            return Err(WindowsInventoryError::Io {
+                operation: "duplicate retained root for recursive namespace witness",
+                path: root.canonical_path().to_path_buf(),
+                source: io::Error::last_os_error(),
+            });
+        }
+        // SAFETY: `DuplicateHandle` returned a non-null handle uniquely owned by this witness.
+        #[allow(unsafe_code)]
+        let handle = unsafe { OwnedHandle::from_raw_handle(raw_handle) };
+        // The witness's duplicate is authority-equivalent to the admitted root, but only it
+        // services the asynchronous watch; listing and revalidation cannot disturb its
+        // completion state. Its private event remains live through cancellation and drain.
         let raw_event = {
             // SAFETY: the unnamed manual-reset event starts unsignaled and is immediately owned
             // below after the null-handle check.
@@ -635,7 +668,9 @@ impl<'root> NamespaceWitness<'root> {
             root: root.canonical_path().to_path_buf(),
         };
         traced_inventory(WindowsInventoryPrimitive::WatchArm, || {
-            // SAFETY: the witness borrows the retained asynchronous directory handle, `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and `OVERLAPPED` remain live until the request drains.
+            // SAFETY: the witness owns an asynchronous duplicate of the retained directory
+            // handle; `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that
+            // buffer and `OVERLAPPED` remain live until the request drains.
             #[allow(unsafe_code)]
             let result = unsafe {
                 ReadDirectoryChangesW(
@@ -780,7 +815,7 @@ impl<'root> NamespaceWitness<'root> {
     }
 }
 
-impl Drop for NamespaceWitness<'_> {
+impl Drop for NamespaceWitness {
     fn drop(&mut self) {
         let _ = self.cancel_and_drain();
     }
