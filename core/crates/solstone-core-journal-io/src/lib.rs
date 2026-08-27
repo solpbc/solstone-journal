@@ -27,9 +27,9 @@ pub mod flat_directory;
 pub mod health_marker;
 pub mod inventory_budget;
 pub mod journal_root;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod lease;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod locking;
 pub mod name_admission;
 pub mod paths;
@@ -42,6 +42,10 @@ pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
 pub mod windows_inventory;
+#[cfg(windows)]
+mod windows_lock;
+#[cfg(windows)]
+mod windows_ntcreate;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -105,16 +109,16 @@ pub use journal_root::{
     WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
     run_with_windows_acquisition_trace,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
     acquire_file_lease,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use locking::lock_is_held;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use locking::{BoundParentLock, acquire_existing_parent_lock_bound};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,
     acquire_existing_parent_lock, hold_lock,
@@ -158,4 +162,9 @@ pub use windows_inventory::{
 pub use windows_inventory::{
     WindowsInventoryPrimitive, WindowsInventoryTrace, run_with_windows_inventory_fault,
     run_with_windows_inventory_trace,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_lock::{
+    WindowsLockFileExSubstitution, run_with_forced_post_lock_identity_mismatch,
+    run_with_windows_lock_file_ex_substitution, run_with_windows_lock_file_ex_trace,
 };

@@ -814,6 +814,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-push"
+package = "solstone-core-push"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-ingest-contract"
 package = "solstone-core-ingest-contract"
 set = "component"
@@ -2986,7 +2997,7 @@ package = "solstone-core-journal-io"
 target = "journal_io_lock_component"
 set = "component"
 areas = ["journal"]
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true

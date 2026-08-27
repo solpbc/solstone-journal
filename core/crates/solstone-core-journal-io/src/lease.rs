@@ -3,7 +3,9 @@
 
 //! Advisory file leases held for the lifetime of their guard.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -11,11 +13,24 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{FcntlArg, Flock, FlockArg, fcntl};
+#[cfg(unix)]
 use nix::sys::stat::{Mode, fchmod};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT, OPEN_ALWAYS,
+};
 
 use crate::errors::LeaseError;
+#[cfg(windows)]
+use crate::windows_lock::{
+    WindowsLockGuard, is_contention as windows_contention, try_lock_exclusive,
+};
 
 /// Python-compatible number of nonblocking acquisition attempts.
 pub const DEFAULT_LEASE_ATTEMPTS: usize = 5;
@@ -31,7 +46,7 @@ pub struct LeaseOptions {
     pub attempts: usize,
     /// Total retry window; the deadline is set once before the first attempt.
     pub retry_max: Duration,
-    /// Lease-file permission bits.
+    /// Lease-file permission bits. Windows does not apply this field; it has no ACL equivalent.
     pub mode: u32,
 }
 
@@ -48,7 +63,10 @@ impl Default for LeaseOptions {
 /// An exclusive lease on the lease file itself. Dropping it closes and unlocks it.
 #[derive(Debug)]
 pub struct FileLease {
+    #[cfg(unix)]
     _guard: Flock<File>,
+    #[cfg(windows)]
+    _guard: WindowsLockGuard,
     path: PathBuf,
 }
 
@@ -74,6 +92,7 @@ impl FileLease {
 ///
 /// Unlike [`crate::hold_lock`], this locks `path` itself and returns a guard
 /// meant to stay alive across work outside a short critical section.
+#[cfg(unix)]
 pub fn acquire_file_lease(
     path: impl AsRef<Path>,
     options: LeaseOptions,
@@ -126,6 +145,7 @@ pub fn acquire_file_lease(
     Ok(None)
 }
 
+#[cfg(unix)]
 fn is_contention(error: Errno) -> bool {
     error == Errno::EACCES || error == Errno::EAGAIN || error == Errno::EWOULDBLOCK
 }
@@ -161,7 +181,50 @@ fn io_error(path: &Path, source: io::Error) -> LeaseError {
     }
 }
 
-#[cfg(test)]
+#[cfg(windows)]
+pub fn acquire_file_lease(
+    path: impl AsRef<Path>,
+    options: LeaseOptions,
+) -> Result<Option<FileLease>, LeaseError> {
+    let path = path.as_ref();
+    fs::create_dir_all(parent_dir(path)).map_err(|source| io_error(path, source))?;
+    let attempts = options.attempts.max(1);
+    let deadline = Instant::now()
+        .checked_add(options.retry_max)
+        .unwrap_or_else(Instant::now);
+
+    for attempt in 0..attempts {
+        let file = crate::locking::open_windows_path(
+            path,
+            GENERIC_READ | GENERIC_WRITE,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .map_err(|source| io_error(path, source))?;
+        match try_lock_exclusive(file) {
+            Ok(guard) => {
+                return Ok(Some(FileLease {
+                    _guard: guard,
+                    path: path.to_path_buf(),
+                }));
+            }
+            Err((file, error)) if windows_contention(&error) => {
+                drop(file);
+                if attempt == attempts - 1 || Instant::now() >= deadline {
+                    return Ok(None);
+                }
+                thread::sleep(retry_delay(deadline));
+            }
+            Err((file, error)) => {
+                drop(file);
+                return Err(io_error(path, error));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;

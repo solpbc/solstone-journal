@@ -111,6 +111,21 @@ leaf metadata, root, and witness before returning any bytes. Windows retains
 the Gate-1 ancestor-swap and Cloud-Files-after-ancestor-rename limitation
 above; this source layer does not claim to strengthen it.
 
+### Windows retained-handle writer locks and leases
+
+Windows writer coordination uses nonblocking whole-file advisory byte-range
+locks through `LockFileEx` and `UnlockFileEx`. Lock and lease opens use broad
+read, write, and delete sharing so a second process can open the same sidecar
+and let the kernel report advisory contention rather than failing at open time.
+The lock range begins at zero and spans `0xFFFF_FFFF` low and high length words.
+
+Windows sidecar and persistent-lock opens request the reparse point itself and
+refuse it after a retained-handle attribute query; this is the Windows analogue
+of Unix `O_NOFOLLOW`. Persistent lock entries are revalidated after acquisition
+with `LockEntryIdentity` (volume serial plus a 128-bit file ID), matching the
+identity rule used by `ObjectIdentity`. Unix's mode-`0600` enforcement has no
+Windows ACL equivalent in this backend and is therefore not claimed.
+
 `InventoryBudget` bounds complete source operations: total observed entries
 before portable policy filtering, recursive depth (admitted root is zero), one
 portable slash-joined archive member's UTF-8 length, native relative UTF-16
@@ -179,8 +194,8 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 Windows covers root admission, complete witnessed source enumeration, route
 revalidation, checked archive-source reads, portable name admission, and
 durable `append_jsonl`.
-Locking, leases, atomic publication, retention, packaging, archive encoding and
-publication, `flat_directory`, `snapshot`, `staged`, `health_marker`,
+Atomic publication, retention, packaging, archive encoding and publication,
+`flat_directory`, `snapshot`, `staged`, `health_marker`,
 `append_text`, and `claim_remove` remain explicitly Unix-only and unsupported
 on Windows in this slice.
 
@@ -193,9 +208,11 @@ filesystem trait, no `Box<dyn>`, no path-only fake backend.
 
 `atomic_replace_bound`, `write_bytes_exclusive_bound`, `acquire_existing_parent_lock_bound`,
 `create_directory_bound`, `read_bytes_bound`, and `sync_dir_bound` operate on a caller-supplied
-directory descriptor (`AsFd`) and a single normal name. They never open a parent via `AT_FDCWD`
+directory descriptor and a single normal name. They never open a parent via `AT_FDCWD`
 and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `Published` or
 `PublishedDurabilityUncertain` only; pathname-identity outcomes stay on `atomic_replace_detailed`.
+`acquire_existing_parent_lock_bound` uses `AsFd` on Unix and has a real `AsHandle` implementation
+on Windows; the other bound APIs remain Unix-only and `AsFd`-only.
 `acquire_existing_parent_lock_bound` returns `BoundParentLock`, which has no `path()`.
 Descendant walks remain the caller's (archive inventory).
 `is_day_key` is the single 8-digit day-key predicate.

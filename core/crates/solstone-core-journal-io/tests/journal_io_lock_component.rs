@@ -2,36 +2,56 @@
 // Copyright (c) 2026 sol pbc
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::ffi::OsStr;
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(any(all(unix, not(target_os = "macos")), windows))]
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io;
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::os::unix::ffi::OsStringExt;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(windows)]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
+#[cfg(unix)]
 use nix::sys::signal::{Signal, kill};
+#[cfg(unix)]
 use nix::sys::stat::{Mode, umask};
+#[cfg(unix)]
 use nix::unistd::Pid;
+#[cfg(unix)]
 use solstone_core_journal_io::{
     AtomicWriteOptions, ClaimDurability, ClaimName, ClaimRemovalOutcome, ClaimRemovalPrimitive,
-    ExistingParentLock, ExistingParentLockError, FlatDirectory, IdentityChangeDisposition,
-    JournalRoot, LeaseOptions, LockError, LockOptions, StagedDirOptions,
-    acquire_existing_parent_lock, acquire_file_lease, atomic_replace, atomic_replace_bound,
-    claim_and_remove_observed, hold_lock, publish_staged_dir, read_observed_file,
+    FlatDirectory, IdentityChangeDisposition, JournalRoot, StagedDirOptions, atomic_replace,
+    atomic_replace_bound, claim_and_remove_observed, publish_staged_dir, read_observed_file,
     run_with_claim_removal_barrier, run_with_two_claim_removal_barriers,
 };
+use solstone_core_journal_io::{
+    ExistingParentLock, ExistingParentLockError, LeaseOptions, LockError, LockOptions,
+    acquire_existing_parent_lock, acquire_existing_parent_lock_bound, acquire_file_lease,
+    hold_lock,
+};
+#[cfg(windows)]
+use solstone_core_journal_io::{
+    WindowsLockFileExSubstitution, run_with_forced_post_lock_identity_mismatch,
+    run_with_windows_lock_file_ex_substitution, run_with_windows_lock_file_ex_trace,
+};
 
+#[cfg(unix)]
 #[test]
 fn atomic_pause_helper() {
     let Ok(target) = std::env::var("JOURNAL_IO_HELPER_TARGET") else {
@@ -40,6 +60,7 @@ fn atomic_pause_helper() {
     atomic_replace(target, b"new-content", AtomicWriteOptions::default()).unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn atomic_replace_survives_kill_at_every_boundary() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -77,6 +98,7 @@ fn atomic_replace_survives_kill_at_every_boundary() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn bound_atomic_pause_helper() {
     let Some(parent) = std::env::var_os("JOURNAL_IO_BOUND_PAUSE_PARENT") else {
@@ -87,6 +109,7 @@ fn bound_atomic_pause_helper() {
     atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o600).unwrap();
 }
 
+#[cfg(unix)]
 fn wait_for_pause_marker(marker: &Path, step: &str) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
@@ -98,6 +121,7 @@ fn wait_for_pause_marker(marker: &Path, step: &str) {
     panic!("bound publication did not pause at {step}");
 }
 
+#[cfg(unix)]
 #[test]
 fn bound_atomic_replace_subprocess_kill_leaves_only_safe_states() {
     for (step, expected) in [("temp-create", b"old".as_slice()), ("rename", b"new")] {
@@ -126,6 +150,7 @@ fn bound_atomic_replace_subprocess_kill_leaves_only_safe_states() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn staged_pause_helper() {
     let Ok(destination) = std::env::var("JOURNAL_IO_HELPER_STAGED_DESTINATION") else {
@@ -155,6 +180,7 @@ fn staged_pause_helper() {
     .unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn killed_publish_never_exposes_a_torn_set() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -254,8 +280,7 @@ fn lease_is_released_when_the_holder_dies() {
         ),
         Ok(None)
     ));
-    kill(Pid::from_raw(holder.child.id() as i32), Signal::SIGKILL).unwrap();
-    holder.child.wait().unwrap();
+    kill_child(&mut holder.child);
     fs::remove_file(&holder.marker).unwrap();
     fs::remove_file(holder.marker.with_extension("pid")).unwrap();
 
@@ -294,6 +319,14 @@ struct LeaseHolder {
     marker: PathBuf,
 }
 
+fn kill_child(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
+    #[cfg(windows)]
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
 fn spawn_lease_holder(path: &Path, temporary: &Path) -> LeaseHolder {
     let marker = temporary.join(format!("lease-holder-{}.ready", std::process::id()));
     let child = Command::new(std::env::current_exe().unwrap())
@@ -315,8 +348,7 @@ fn wait_for_marker(marker: &Path) {
 }
 
 fn kill_holder(mut holder: LeaseHolder) {
-    kill(Pid::from_raw(holder.child.id() as i32), Signal::SIGKILL).unwrap();
-    holder.child.wait().unwrap();
+    kill_child(&mut holder.child);
     fs::remove_file(&holder.marker).unwrap();
     fs::remove_file(holder.marker.with_extension("pid")).unwrap();
 }
@@ -362,8 +394,7 @@ fn lock_is_released_when_the_holder_dies() {
         matches!(contention, Err(LockError::Timeout(_))),
         "child did not create real lock contention"
     );
-    kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
-    child.wait().unwrap();
+    kill_child(&mut child);
 
     let started = Instant::now();
     let _lock = hold_lock(
@@ -377,20 +408,24 @@ fn lock_is_released_when_the_holder_dies() {
     assert!(started.elapsed() < Duration::from_millis(200));
 }
 
+#[cfg(unix)]
 struct UmaskRestore(Mode);
 
+#[cfg(unix)]
 impl UmaskRestore {
     fn set(mask: u32) -> Self {
         Self(umask(Mode::from_bits_truncate(mask as nix::libc::mode_t)))
     }
 }
 
+#[cfg(unix)]
 impl Drop for UmaskRestore {
     fn drop(&mut self) {
         umask(self.0);
     }
 }
 
+#[cfg(unix)]
 fn entry_mode(path: &Path) -> u32 {
     fs::symlink_metadata(path).unwrap().permissions().mode() & 0o7777
 }
@@ -403,6 +438,7 @@ fn acquire(
     acquire_existing_parent_lock(parent, name, timeout, Duration::from_millis(10))
 }
 
+#[cfg(unix)]
 #[test]
 fn existing_parent_lock_umask_helper() {
     let Some(parent) = std::env::var_os("JOURNAL_IO_UMASK_PARENT") else {
@@ -421,6 +457,7 @@ fn existing_parent_lock_umask_helper() {
     assert_eq!(entry_mode(&parent.join("lock")), 0o400);
 }
 
+#[cfg(unix)]
 #[test]
 fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -468,7 +505,203 @@ fn existing_parent_lock_first_time_contenders_produce_one_winner() {
         1
     );
     finish.wait();
+    #[cfg(unix)]
     assert_eq!(entry_mode(&parent.join("fresh")), 0o600);
+}
+
+#[cfg(windows)]
+struct RawWindowsLock {
+    file: File,
+    overlapped: windows_sys::Win32::System::IO::OVERLAPPED,
+}
+
+#[cfg(windows)]
+impl Drop for RawWindowsLock {
+    fn drop(&mut self) {
+        // SAFETY: this test helper owns the file and unlocks the same whole-file range it locked.
+        #[allow(unsafe_code)]
+        unsafe {
+            windows_sys::Win32::Storage::FileSystem::UnlockFileEx(
+                self.file.as_raw_handle(),
+                0,
+                u32::MAX,
+                u32::MAX,
+                &mut self.overlapped,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn raw_windows_lock(file: File) -> Result<RawWindowsLock, io::Error> {
+    let mut overlapped = windows_sys::Win32::System::IO::OVERLAPPED::default();
+    // SAFETY: the file handle is live and the zeroed OVERLAPPED describes the whole-file range.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        windows_sys::Win32::Storage::FileSystem::LockFileEx(
+            file.as_raw_handle(),
+            windows_sys::Win32::Storage::FileSystem::LOCKFILE_EXCLUSIVE_LOCK
+                | windows_sys::Win32::Storage::FileSystem::LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    (result != 0)
+        .then_some(RawWindowsLock { file, overlapped })
+        .ok_or_else(io::Error::last_os_error)
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_lock_hook_pause_helper() {
+    let Some(kind) = std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_HOOK") else {
+        return;
+    };
+    let target = PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_TARGET").unwrap());
+    let marker = PathBuf::from(std::env::var_os("JOURNAL_IO_TEST_MARKER").unwrap());
+    match kind.to_string_lossy().as_ref() {
+        "unlocked" => {
+            let ((guard, trace), consumed) = run_with_windows_lock_file_ex_substitution(
+                1,
+                WindowsLockFileExSubstitution::Skip,
+                || {
+                    run_with_windows_lock_file_ex_trace(|| {
+                        hold_lock(&target, LockOptions::default()).unwrap()
+                    })
+                },
+            );
+            assert!(consumed);
+            assert!(trace.is_empty());
+            fs::write(marker, "unlocked").unwrap();
+            let _keep_guard_alive = guard;
+            loop {
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
+        "wrong-handle" => {
+            let redirected =
+                PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_REDIRECT").unwrap());
+            let redirected_file = File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&redirected)
+                .unwrap();
+            let ((guard, trace), consumed) = run_with_windows_lock_file_ex_substitution(
+                1,
+                WindowsLockFileExSubstitution::ReplaceHandle(redirected_file.as_raw_handle()),
+                || {
+                    run_with_windows_lock_file_ex_trace(|| {
+                        hold_lock(&target, LockOptions::default()).unwrap()
+                    })
+                },
+            );
+            assert!(consumed);
+            assert_eq!(trace, vec![redirected_file.as_raw_handle()]);
+            fs::write(marker, "wrong-handle").unwrap();
+            let _keep_guard_alive = (guard, redirected_file);
+            loop {
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
+        "identity-mismatch" => {
+            let parent = PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_PARENT").unwrap());
+            let (result, consumed) = run_with_forced_post_lock_identity_mismatch(1, || {
+                acquire_existing_parent_lock(
+                    &parent,
+                    OsStr::new("entry"),
+                    Duration::from_secs(1),
+                    Duration::from_millis(10),
+                )
+            });
+            assert!(consumed);
+            assert!(matches!(
+                result,
+                Err(ExistingParentLockError::NamespaceChanged { .. })
+            ));
+            fs::write(marker, "identity-mismatch").unwrap();
+        }
+        other => panic!("unknown Windows lock hook {other}"),
+    }
+}
+
+#[cfg(windows)]
+fn spawn_windows_lock_hook_helper(
+    kind: &str,
+    target: &Path,
+    temporary: &Path,
+    redirect: Option<&Path>,
+    parent: Option<&Path>,
+) -> (std::process::Child, PathBuf) {
+    let marker = temporary.join(format!("windows-lock-{kind}.ready"));
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "windows_lock_hook_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_WINDOWS_LOCK_HOOK", kind)
+        .env("JOURNAL_IO_WINDOWS_LOCK_TARGET", target)
+        .env("JOURNAL_IO_TEST_MARKER", &marker);
+    if let Some(redirect) = redirect {
+        command.env("JOURNAL_IO_WINDOWS_LOCK_REDIRECT", redirect);
+    }
+    if let Some(parent) = parent {
+        command.env("JOURNAL_IO_WINDOWS_LOCK_PARENT", parent);
+    }
+    (command.spawn().unwrap(), marker)
+}
+
+#[cfg(windows)]
+#[test]
+fn unlocked_lock_file_ex_hook_is_falsifiable_across_processes() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let target = temporary.path().join("target");
+    let (mut child, marker) =
+        spawn_windows_lock_hook_helper("unlocked", &target, temporary.path(), None, None);
+    wait_for_marker(&marker);
+    assert!(hold_lock(&target, LockOptions::default()).is_ok());
+    kill_child(&mut child);
+}
+
+#[cfg(windows)]
+#[test]
+fn wrong_handle_lock_file_ex_hook_is_falsifiable_across_processes() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let target = temporary.path().join("target");
+    let redirected = temporary.path().join("redirected");
+    let (mut child, marker) = spawn_windows_lock_hook_helper(
+        "wrong-handle",
+        &target,
+        temporary.path(),
+        Some(&redirected),
+        None,
+    );
+    wait_for_marker(&marker);
+    assert!(hold_lock(&target, LockOptions::default()).is_ok());
+    assert!(matches!(
+        raw_windows_lock(File::options().read(true).write(true).open(&redirected).unwrap()),
+        Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
+    ));
+    kill_child(&mut child);
+}
+
+#[cfg(windows)]
+#[test]
+fn forced_identity_mismatch_hook_releases_the_real_lock_across_processes() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let parent = temporary.path().join("locks");
+    fs::create_dir(&parent).unwrap();
+    let target = parent.join("entry");
+    let (mut child, marker) = spawn_windows_lock_hook_helper(
+        "identity-mismatch",
+        &target,
+        temporary.path(),
+        None,
+        Some(&parent),
+    );
+    wait_for_marker(&marker);
+    assert!(child.wait().unwrap().success());
+    assert!(acquire(&parent, OsStr::new("entry"), Duration::from_secs(1)).is_ok());
 }
 
 #[test]
@@ -479,14 +712,25 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
     let entry = parent.join("fresh");
     drop(acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap());
     let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
-    let raw = File::open(&entry).unwrap();
-    assert!(matches!(
-        Flock::lock(raw, FlockArg::LockExclusiveNonblock),
-        Err((_, Errno::EACCES | Errno::EAGAIN))
-    ));
+    #[cfg(unix)]
+    {
+        let raw = File::open(&entry).unwrap();
+        assert!(matches!(
+            Flock::lock(raw, FlockArg::LockExclusiveNonblock),
+            Err((_, Errno::EACCES | Errno::EAGAIN))
+        ));
+    }
+    #[cfg(windows)]
+    assert!(
+        matches!(raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap()), Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32))
+    );
     drop(api_guard);
+    #[cfg(unix)]
     let raw_guard =
         Flock::lock(File::open(&entry).unwrap(), FlockArg::LockExclusiveNonblock).unwrap();
+    #[cfg(windows)]
+    let raw_guard =
+        raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap()).unwrap();
     let (sender, receiver) = mpsc::channel();
     let parent_for_thread = parent.clone();
     thread::spawn(move || {
@@ -502,6 +746,68 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
         matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
     );
     drop(raw_guard);
+}
+
+#[cfg(windows)]
+fn open_windows_parent_for_bound_test(path: &Path) -> File {
+    let mut wide = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    wide.push(0);
+    // SAFETY: `wide` is NUL-terminated and stays live through the synchronous directory open.
+    #[allow(unsafe_code)]
+    let handle = unsafe {
+        windows_sys::Win32::Storage::FileSystem::CreateFileW(
+            wide.as_ptr(),
+            windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES
+                | windows_sys::Win32::Storage::FileSystem::FILE_LIST_DIRECTORY
+                | windows_sys::Win32::Storage::FileSystem::FILE_TRAVERSE,
+            windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
+                | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE
+                | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
+            std::ptr::null(),
+            windows_sys::Win32::Storage::FileSystem::OPEN_EXISTING,
+            windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS
+                | windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(handle, windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE);
+    // SAFETY: CreateFileW returned a fresh owned directory handle exactly once.
+    #[allow(unsafe_code)]
+    unsafe {
+        File::from_raw_handle(handle)
+    }
+}
+
+#[test]
+fn bound_parent_lock_survives_parent_path_replacement() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let parent = temporary.path().join("parent");
+    let moved = temporary.path().join("moved");
+    fs::create_dir(&parent).unwrap();
+    #[cfg(unix)]
+    let parent_handle = nix::fcntl::openat(
+        nix::fcntl::AT_FDCWD,
+        &parent,
+        nix::fcntl::OFlag::O_RDONLY
+            .union(nix::fcntl::OFlag::O_DIRECTORY)
+            .union(nix::fcntl::OFlag::O_CLOEXEC)
+            .union(nix::fcntl::OFlag::O_NOFOLLOW),
+        nix::sys::stat::Mode::empty(),
+    )
+    .unwrap();
+    #[cfg(windows)]
+    let parent_handle = open_windows_parent_for_bound_test(&parent);
+    fs::rename(&parent, &moved).unwrap();
+    fs::create_dir(&parent).unwrap();
+    let _guard = acquire_existing_parent_lock_bound(
+        &parent_handle,
+        OsStr::new("state.lock"),
+        Duration::from_secs(1),
+        Duration::from_millis(10),
+    )
+    .unwrap();
+    assert!(moved.join("state.lock").exists());
+    assert!(!parent.join("state.lock").exists());
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -606,16 +912,100 @@ fn invalid_name_lock_is_released_when_the_holder_dies() {
     assert!(started.elapsed() < Duration::from_millis(200));
 }
 
+#[cfg(windows)]
+const SURROGATE_A: &[u16] = &[b's' as u16, b'e' as u16, b'g' as u16, b'-' as u16, 0xD800];
+#[cfg(windows)]
+const SURROGATE_B: &[u16] = &[b's' as u16, b'e' as u16, b'g' as u16, b'-' as u16, 0xD801];
+
+#[cfg(windows)]
+fn surrogate_path(dir: &Path, units: &[u16]) -> PathBuf {
+    dir.join(OsString::from_wide(units))
+}
+
+#[cfg(windows)]
+fn spawn_surrogate_lock_holder(path: &Path, marker: &Path) -> std::process::Child {
+    Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "lock_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_HELPER_LOCK_PATH", path)
+        .env("JOURNAL_IO_TEST_MARKER", marker)
+        .spawn()
+        .unwrap()
+}
+
+#[cfg(windows)]
+#[test]
+fn surrogate_names_lock_independently_across_processes() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let locks = temporary.path().join("locks");
+    fs::create_dir(&locks).unwrap();
+    let first = surrogate_path(&locks, SURROGATE_A);
+    let second = surrogate_path(&locks, SURROGATE_B);
+    let marker = temporary.path().join("locked.ready");
+    let mut child = spawn_surrogate_lock_holder(&first, &marker);
+    wait_for_marker(&marker);
+    let started = Instant::now();
+    let _second = hold_lock(&second, LockOptions::default()).unwrap();
+    assert!(started.elapsed() < Duration::from_millis(200));
+    kill_child(&mut child);
+}
+
+#[cfg(windows)]
+#[test]
+fn same_surrogate_name_contends_across_processes() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let locks = temporary.path().join("locks");
+    fs::create_dir(&locks).unwrap();
+    let path = surrogate_path(&locks, SURROGATE_A);
+    let marker = temporary.path().join("locked.ready");
+    let mut child = spawn_surrogate_lock_holder(&path, &marker);
+    wait_for_marker(&marker);
+    assert!(matches!(
+        hold_lock(
+            &path,
+            LockOptions {
+                timeout: Duration::from_millis(100),
+                ..LockOptions::default()
+            }
+        ),
+        Err(LockError::Timeout(_))
+    ));
+    kill_child(&mut child);
+}
+
+#[cfg(windows)]
+#[test]
+fn surrogate_name_lock_is_released_when_the_holder_dies() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let locks = temporary.path().join("locks");
+    fs::create_dir(&locks).unwrap();
+    let path = surrogate_path(&locks, SURROGATE_A);
+    let marker = temporary.path().join("locked.ready");
+    let mut child = spawn_surrogate_lock_holder(&path, &marker);
+    wait_for_marker(&marker);
+    kill_child(&mut child);
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            timeout: Duration::from_secs(1),
+            ..LockOptions::default()
+        },
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
 fn claim_name(operation: u64) -> ClaimName {
     ClaimName::parse(&format!("!solstone-claim-00000001-{operation:016x}")).unwrap()
 }
 
+#[cfg(unix)]
 fn claim_directory(temporary: &tempfile::TempDir) -> FlatDirectory {
     fs::create_dir(temporary.path().join("flat")).unwrap();
     let root = JournalRoot::open(temporary.path()).unwrap();
     FlatDirectory::open(&root, Path::new("flat")).unwrap()
 }
 
+#[cfg(unix)]
 #[test]
 fn claim_barriers_preserve_the_observed_object_or_a_new_original() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -659,6 +1049,7 @@ fn claim_barriers_preserve_the_observed_object_or_a_new_original() {
     assert_eq!(fs::read(&entry).unwrap(), b"replacement-after-claim");
 }
 
+#[cfg(unix)]
 #[test]
 fn claim_inspection_unlink_and_restore_barriers_never_overwrite_an_original() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -742,6 +1133,7 @@ fn claim_inspection_unlink_and_restore_barriers_never_overwrite_an_original() {
     assert_eq!(fs::read(&entry).unwrap(), b"replacement-during-restore");
 }
 
+#[cfg(unix)]
 #[test]
 fn concurrent_claimers_report_unknown_for_the_loser() {
     let temporary = tempfile::TempDir::new().unwrap();
@@ -786,6 +1178,7 @@ fn concurrent_claimers_report_unknown_for_the_loser() {
     loser.join().unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn bound_flat_directory_survives_parent_path_replacement() {
     let temporary = tempfile::TempDir::new().unwrap();
