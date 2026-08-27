@@ -77,6 +77,8 @@ impl ArchiveSource {
                 map_windows_error(&self.root, error, true)
             })?
             .into_entries();
+        #[cfg(test)]
+        eprintln!("archive source revalidation raw inventory: {observed:?}");
         let (_, observed) = build_inventory(&observed)?;
         if observed != self.observed {
             #[cfg(test)]
