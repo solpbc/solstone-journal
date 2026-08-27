@@ -147,6 +147,7 @@ fn seal_declared_archives_inner(
                 "TOCTOU archive mutation before signing: {dest}"
             )));
         }
+        validate_declared_executable_digests(checkout, slot, &source_archive.members)?;
 
         let scratch = scratch_root.join(index.to_string());
         if scratch.exists() {
@@ -188,6 +189,46 @@ fn read_verified_source(
         )));
     }
     Ok(bytes)
+}
+
+fn validate_declared_executable_digests(
+    checkout: &Path,
+    slot: &ArchiveSlot,
+    source_members: &[ValidatedGzipMember],
+) -> Result<(), ArchiveSealError> {
+    for executable in &slot.executables {
+        let member = source_members
+            .iter()
+            .find(|member| member.path == executable.path)
+            .ok_or_else(|| {
+                ArchiveSealError::new(format!(
+                    "archive slot {} missing declared executable {}",
+                    slot.id, executable.path
+                ))
+            })?;
+        let digest_source_path = checkout.join(&executable.digest_source);
+        let digest_source = fs::read_to_string(&digest_source_path).map_err(|error| {
+            ArchiveSealError::new(format!(
+                "read archive executable digest source {}: {error}",
+                digest_source_path.display()
+            ))
+        })?;
+        let expected =
+            digest_const_hex(&digest_source, &executable.digest_const).ok_or_else(|| {
+                ArchiveSealError::new(format!(
+                    "missing required:\n  digest {}",
+                    executable.digest_const
+                ))
+            })?;
+        let actual = sha256_hex(&member.bytes);
+        if actual != expected {
+            return Err(ArchiveSealError::new(format!(
+                "archive slot {} executable {} digest mismatch: expected {expected}, observed {actual}",
+                slot.id, executable.path
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn sign_and_repack(
@@ -356,7 +397,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::apple::FakeArchiveMemberSigner;
+    use crate::apple::{AppleError, FakeArchiveMemberSigner, SignedMember};
     use crate::archive_census::{validate_gzip_archive, validate_staged_archives};
     use crate::archive_contract::{DeliveryContract, PrebuildInputIdentity};
     use crate::macho::{FixtureSpec, fixture};
@@ -364,6 +405,18 @@ mod tests {
 
     const SYNTHETIC_DEST: &str = "lib/fixture/synthetic.tar.gz";
     const SYNTHETIC_EXECUTABLE: &str = "synthetic/bin/second-cli";
+
+    struct PanicArchiveMemberSigner;
+
+    impl ArchiveMemberSigner for PanicArchiveMemberSigner {
+        fn sign_executable(
+            &self,
+            _path: &Path,
+            _relative_member_path: &str,
+        ) -> Result<SignedMember, AppleError> {
+            panic!("declared executable digests must be validated before signing")
+        }
+    }
 
     fn gzip_tar(entries: &[(&str, EntryType, u32, &[u8])]) -> Vec<u8> {
         let encoder = deterministic_gzip(Vec::new());
@@ -578,6 +631,55 @@ targets = ["macos-arm64"]
         let error = seal_declared_archives(&checkout, &inventory, "macos-arm64", &broken)
             .expect_err("mode mutation refuses");
         assert!(error.to_string().contains("mode mutation"));
+    }
+
+    #[test]
+    fn declared_executable_digest_refuses_before_signing_then_corrected_fixture_seals() {
+        let (_temporary, checkout, inventory, archive) = synthetic_checkout();
+        let executable = validate_gzip_archive(SYNTHETIC_DEST, &archive, archive_slot(&inventory))
+            .expect("synthetic source archive")
+            .members
+            .into_iter()
+            .find(|member| member.path == SYNTHETIC_EXECUTABLE)
+            .expect("synthetic executable");
+
+        fs::write(
+            checkout.join("fixtures.rs"),
+            format!(
+                "pub const SYNTHETIC_ARCHIVE_SHA256: &str = \"{}\";\npub const SYNTHETIC_BINARY_SHA256: &str = \"{}\";\n",
+                sha256_hex(&archive),
+                "0".repeat(64),
+            ),
+        )
+        .expect("write mismatched executable digest");
+        let error = seal_declared_archives(
+            &checkout,
+            &inventory,
+            "macos-arm64",
+            &PanicArchiveMemberSigner,
+        )
+        .expect_err("mismatched declared executable digest refuses before signing");
+        assert!(error.to_string().contains("synthetic-second-archive"));
+        assert!(error.to_string().contains(SYNTHETIC_EXECUTABLE));
+        assert!(error.to_string().contains("expected"));
+        assert!(error.to_string().contains("observed"));
+
+        fs::write(
+            checkout.join("fixtures.rs"),
+            format!(
+                "pub const SYNTHETIC_ARCHIVE_SHA256: &str = \"{}\";\npub const SYNTHETIC_BINARY_SHA256: &str = \"{}\";\n",
+                sha256_hex(&archive),
+                sha256_hex(&executable.bytes),
+            ),
+        )
+        .expect("write matching executable digest");
+        seal_declared_archives(
+            &checkout,
+            &inventory,
+            "macos-arm64",
+            &FakeArchiveMemberSigner::new("corrected-digest"),
+        )
+        .expect("corrected declared executable digest seals");
     }
 
     /// This reuses one checkout to model separate producer invocations. A

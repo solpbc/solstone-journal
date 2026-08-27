@@ -179,6 +179,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         Some(
             archive_contract::validate_staged_chain(
                 &stage,
+                &request.arch,
                 &request.expected.commit,
                 &request.expected.lock_sha256,
             )

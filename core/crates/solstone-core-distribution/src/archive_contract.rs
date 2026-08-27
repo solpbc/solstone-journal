@@ -220,6 +220,7 @@ pub(crate) fn stage_chain(
 
 pub(crate) fn validate_staged_chain(
     stage: &Path,
+    target_id: &str,
     commit: &str,
     lock_sha256: &str,
 ) -> Result<ValidatedChain, ArchiveContractError> {
@@ -227,6 +228,17 @@ pub(crate) fn validate_staged_chain(
     let delivery: DeliveryContract = read_json(stage, DELIVERY_CONTRACT_DEST)?;
     let final_record: FinalInvocationRecord = read_json(stage, FINAL_INVOCATION_DEST)?;
 
+    for (node, observed) in [
+        ("prebuild input", prebuild.target_id.as_str()),
+        ("delivery contract", delivery.target_id.as_str()),
+        ("final invocation", final_record.target_id.as_str()),
+    ] {
+        if observed != target_id {
+            return Err(ArchiveContractError::new(format!(
+                "{node} target does not match expected target {target_id}: {observed}"
+            )));
+        }
+    }
     let prebuild_input_sha256 = prebuild.digest();
     if delivery.prebuild_input_sha256 != prebuild_input_sha256 {
         return Err(ArchiveContractError::new(
@@ -446,9 +458,13 @@ mod tests {
     #[test]
     fn staged_chain_round_trips_and_returns_its_digests() {
         let (temporary, prebuild, delivery) = staged_chain_fixture();
-        let chain =
-            validate_staged_chain(&temporary.path().join("stage"), "commit", &"e".repeat(64))
-                .expect("validate staged chain");
+        let chain = validate_staged_chain(
+            &temporary.path().join("stage"),
+            "macos-arm64",
+            "commit",
+            &"e".repeat(64),
+        )
+        .expect("validate staged chain");
         assert_eq!(chain.prebuild_input_sha256, prebuild.digest());
         assert_eq!(chain.delivery_contract_sha256, delivery.digest());
         assert_eq!(chain.final_invocation_sha256.len(), 64);
@@ -460,7 +476,7 @@ mod tests {
         let stage = temporary.path().join("stage");
         fs::remove_file(stage.join(PREBUILD_INPUT_DEST)).expect("remove prebuild record");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("missing chain file refuses")
                 .to_string()
                 .contains("could not read archive chain")
@@ -468,7 +484,8 @@ mod tests {
 
         stage_chain(&stage, &prebuild, &delivery, "commit", &"e".repeat(64))
             .expect("restage chain");
-        validate_staged_chain(&stage, "commit", &"e".repeat(64)).expect("restaged chain passes");
+        validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
+            .expect("restaged chain passes");
     }
 
     #[test]
@@ -478,7 +495,7 @@ mod tests {
         write_staged_file(&stage, DELIVERY_CONTRACT_DEST, b"not json")
             .expect("tamper delivery record");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("unparseable chain file refuses")
                 .to_string()
                 .contains("could not parse archive chain")
@@ -492,7 +509,7 @@ mod tests {
         delivery.prebuild_input_sha256 = "tampered".to_owned();
         write_json(&stage, DELIVERY_CONTRACT_DEST, &delivery).expect("tamper delivery record");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("mismatched delivery refuses")
                 .to_string()
                 .contains("delivery contract does not match its prebuild input")
@@ -508,7 +525,7 @@ mod tests {
         final_record.delivery_contract_sha256 = "tampered".to_owned();
         write_json(&stage, FINAL_INVOCATION_DEST, &final_record).expect("tamper final record");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("mismatched final invocation refuses")
                 .to_string()
                 .contains("final invocation does not match its delivery contract")
@@ -520,13 +537,13 @@ mod tests {
         let (temporary, _, _) = staged_chain_fixture();
         let stage = temporary.path().join("stage");
         assert!(
-            validate_staged_chain(&stage, "other-commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "other-commit", &"e".repeat(64))
                 .expect_err("commit mismatch refuses")
                 .to_string()
                 .contains("final invocation does not match the expected commit and lock")
         );
         assert!(
-            validate_staged_chain(&stage, "commit", &"f".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"f".repeat(64))
                 .expect_err("lock mismatch refuses")
                 .to_string()
                 .contains("final invocation does not match the expected commit and lock")
@@ -539,7 +556,7 @@ mod tests {
         let stage = temporary.path().join("stage");
         write_staged_file(&stage, "extra", b"unexpected").expect("add staged file");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("staged addition refuses")
                 .to_string()
                 .contains("final invocation does not match the staged tree predecessor")
@@ -558,10 +575,31 @@ mod tests {
             root_predecessor_digest(&stage).expect("recount stage");
         write_json(&stage, FINAL_INVOCATION_DEST, &final_record).expect("rewrite final record");
         assert!(
-            validate_staged_chain(&stage, "commit", &"e".repeat(64))
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
                 .expect_err("staged derivative mismatch refuses")
                 .to_string()
                 .contains("staged delivery archive does not match contract")
+        );
+    }
+
+    #[test]
+    fn each_chain_node_must_match_the_expected_target() {
+        let (temporary, _, mut delivery) = staged_chain_fixture();
+        let stage = temporary.path().join("stage");
+        delivery.target_id = "macos-x86_64".to_owned();
+        write_json(&stage, DELIVERY_CONTRACT_DEST, &delivery).expect("rewrite delivery record");
+        let mut final_record: FinalInvocationRecord =
+            read_json(&stage, FINAL_INVOCATION_DEST).expect("read final record");
+        final_record.delivery_contract_sha256 = delivery.digest();
+        final_record.root_predecessor_sha256 =
+            root_predecessor_digest(&stage).expect("recount stage");
+        write_json(&stage, FINAL_INVOCATION_DEST, &final_record).expect("rewrite final record");
+
+        assert!(
+            validate_staged_chain(&stage, "macos-arm64", "commit", &"e".repeat(64))
+                .expect_err("delivery target mismatch refuses")
+                .to_string()
+                .contains("delivery contract target does not match expected target")
         );
     }
 }
