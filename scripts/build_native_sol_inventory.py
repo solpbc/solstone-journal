@@ -92,6 +92,11 @@ ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
         "help": "List original media ready for removal.",
         "drop_params": set(),
     },
+    ("journal", "search"): {
+        "path": ("journal", "search"),
+        "help": "Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `solstone call journal read --path\n<path>` after stripping the :idx suffix.",
+        "drop_params": set(),
+    },
 }
 
 # These compatibility leaves are deliberately retired, rather than

@@ -39,6 +39,11 @@ path = "tests/restart_protocol.rs"
 name = "thinking_sol_reads"
 path = "tests/thinking_sol_reads.rs"
 
+# Cargo auto-discovery is disabled; this exercises the composed Health journal-data routes.
+[[test]]
+name = "health_journal_data"
+path = "tests/health_journal_data.rs"
+
 # Cargo auto-discovery is disabled, and this target isolates process-global
 # PATH mutation needed to verify Thinking reads never reach nvidia-smi.
 [[test]]

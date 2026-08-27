@@ -15,7 +15,9 @@ mod assets;
 mod backlog;
 mod backlog_reasons;
 mod brain;
+mod brain_action;
 mod host;
+mod journal_data;
 mod logs;
 mod talent_failures;
 
@@ -52,6 +54,12 @@ pub fn routes(journal_root: PathBuf) -> Router {
             "/app/health/api/reprocess",
             post(move |body| actions::reprocess(retry_root.clone(), body)),
         )
+        .merge(api_router(journal_root))
+}
+
+/// Read-only journal-data health routes used by `solstone call health`.
+pub fn api_router(journal_root: PathBuf) -> Router {
+    journal_data::api_router(journal_root)
 }
 
 async fn state(root: PathBuf) -> Json<serde_json::Value> {

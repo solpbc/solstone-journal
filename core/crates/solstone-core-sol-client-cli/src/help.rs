@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn root_call_groups_come_from_fixture() {
-        assert_eq!(root_call_groups().len(), 19);
+        assert_eq!(root_call_groups().len(), 18);
         assert!(root_call_groups().contains(&"journal".to_string()));
     }
 
