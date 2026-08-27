@@ -38,7 +38,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "e5ffb1da851bd619482d59f5be591c8b63e9e2ef67e0a98fec11859323fddb53"
+      "sha256": "baef68253419f33076e140f8c673cffec33f97b84848948057e7460e7d933ce0"
     },
     {
       "path": "vectors.json",
@@ -48,10 +48,10 @@
   "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
   "generator_inputs": [
     {
-      "id": "openapi.convey_clients",
-      "path": "docs/openapi/convey-clients.json",
+      "id": "openapi.client_ingest_authority",
+      "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "e52ccf91fa050b9131d00ed8d7faa31ce4b0af0f58b77e37294ba1ae673cf04c"
+      "sha256": "ada327296d84ef51f6b511baf9b69d533bc75aa10909606bdecce0b7c27cf4df"
     }
   ],
   "openapi_document_version": "1.0.0",

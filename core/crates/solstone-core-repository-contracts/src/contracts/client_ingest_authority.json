@@ -1,247 +1,4 @@
 {
-  "components": {
-    "schemas": {
-      "Error": {
-        "additionalProperties": true,
-        "properties": {
-          "detail": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "reason_code": {
-            "enum": [
-              "activities_busy",
-              "activity_already_exists",
-              "activity_invalid",
-              "activity_not_found",
-              "activity_protected",
-              "agent_unavailable",
-              "auth_key_invalid",
-              "auth_required",
-              "awareness_busy",
-              "awareness_section_not_found",
-              "backup_busy",
-              "backup_not_confirmed",
-              "backup_operation_failed",
-              "backup_unavailable",
-              "config_busy",
-              "content_conflict",
-              "convey_busy",
-              "convey_operation_failed",
-              "corrupt_config",
-              "cross_origin_blocked",
-              "day_invalid",
-              "edge_index_unavailable",
-              "entity_alias_conflict",
-              "entity_already_exists",
-              "entity_blocked",
-              "entity_busy",
-              "entity_not_found",
-              "entity_operation_failed",
-              "envelope_invalid",
-              "facet_already_exists",
-              "facet_not_found",
-              "feature_unavailable",
-              "field_missing",
-              "file_not_found",
-              "file_read_failed",
-              "health_report_failed",
-              "host_not_allowed",
-              "http_error",
-              "idempotency_conflict",
-              "identity_busy",
-              "identity_not_locked",
-              "import_client_id_conflict",
-              "import_conflict",
-              "import_metadata_failed",
-              "import_not_found",
-              "import_queue_unreachable",
-              "ingest_contract_invalid",
-              "ingest_no_files",
-              "ingest_sidecar_conflict",
-              "ingest_storage_failed",
-              "internal_error",
-              "invalid_config_value",
-              "invalid_day",
-              "invalid_entity_type",
-              "invalid_json_request",
-              "invalid_month",
-              "invalid_operation_for_state",
-              "invalid_path",
-              "invalid_request_value",
-              "invalid_segment_or_stream",
-              "invalid_state",
-              "journal_source_problem",
-              "ledger_item_not_found",
-              "linked_device_required",
-              "local_request_only",
-              "missing_request_body",
-              "missing_required_field",
-              "multipart_malformed",
-              "multipart_part_too_large",
-              "capture_restart_failed",
-              "operation_erased",
-              "operation_in_progress",
-              "operation_no_longer_available",
-              "operation_retired",
-              "paired_device_not_found",
-              "pairing_key_invalid",
-              "relay_pairing_registration_refused",
-              "relay_pairing_registration_timed_out",
-              "relay_pairing_unavailable",
-              "pairing_request_invalid",
-              "pl_revoked",
-              "plaud_validation_unavailable",
-              "principal_entity_protected",
-              "protocol_version_future",
-              "protocol_version_legacy",
-              "protocol_version_malformed",
-              "protocol_version_required",
-              "provider_key_missing",
-              "push_request_invalid",
-              "raw_media_not_available",
-              "recovery_key_mismatch",
-              "reprocess_already_complete",
-              "reprocess_held_by_backoff",
-              "reprocess_past_only",
-              "reprocess_unreachable",
-              "search_failed",
-              "segment_invalid",
-              "service_busy",
-              "service_operation_failed",
-              "settings_operation_failed",
-              "speaker_attribution_state_invalid",
-              "speaker_command_failed",
-              "speaker_discovery_failed",
-              "speaker_identify_conflict",
-              "speaker_identify_operation_not_found",
-              "speaker_identify_recoverable",
-              "speaker_identify_repair_required",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_owner_centroid_required",
-              "speaker_owner_identity_required",
-              "speaker_owner_voice_too_close",
-              "speaker_review_unavailable",
-              "speaker_sentence_missing",
-              "speaker_voiceprint_busy",
-              "support_portal_failed",
-              "talent_not_found",
-              "talent_operation_failed",
-              "talent_run_malformed",
-              "talent_run_pending",
-              "timeline_month_not_found",
-              "tos_changed",
-              "unknown_service",
-              "voice_unavailable"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "reason_code",
-          "detail"
-        ],
-        "type": "object"
-      },
-      "SegmentFile": {
-        "additionalProperties": true,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "sha256": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer"
-          },
-          "status": {
-            "enum": [
-              "present",
-              "missing",
-              "processed"
-            ],
-            "type": "string",
-            "x-vocabulary": {
-              "classification": "closed",
-              "id": "SegmentFile.status",
-              "unknown_value_behavior": "reject"
-            }
-          },
-          "submitted_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "size",
-          "sha256",
-          "status"
-        ],
-        "type": "object"
-      },
-      "SegmentItem": {
-        "additionalProperties": true,
-        "properties": {
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/SegmentFile"
-            },
-            "type": "array"
-          },
-          "key": {
-            "type": "string"
-          },
-          "observed": {
-            "type": "boolean"
-          },
-          "original_key": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "observed",
-          "files"
-        ],
-        "type": "object"
-      },
-      "SegmentsEnvelope": {
-        "additionalProperties": true,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SegmentItem"
-            },
-            "type": "array"
-          },
-          "protocol_version": {
-            "type": "integer"
-          },
-          "total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "protocol_version"
-        ],
-        "type": "object"
-      }
-    }
-  },
-  "info": {
-    "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
-    "title": "Linked-device v3 ingest client contract",
-    "version": "10.0.0",
-    "x-generated": true,
-    "x-generated-by": "solstone-core-repository-contracts"
-  },
   "openapi": "3.1.0",
   "paths": {
     "/app/devices/ingest": {
@@ -814,33 +571,241 @@
       }
     }
   },
-  "x-vocabularies": {
-    "SegmentFile.status": {
-      "classification": "closed",
-      "id": "SegmentFile.status",
-      "source_pointer": "/components/schemas/SegmentFile/properties/status",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "present",
-        "missing",
-        "processed"
-      ]
-    },
-    "client.ingestUpload.status": {
-      "classification": "closed",
-      "id": "client.ingestUpload.status",
-      "source_pointers": [
-        "/paths/~1app~1devices~1ingest/post/responses/200/content/application~1json/schema/properties/status",
-        "/paths/~1app~1devices~1ingest/post/responses/409"
-      ],
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ok",
-        "duplicate",
-        "collision",
-        "conflict",
-        "failed"
-      ]
+  "components": {
+    "schemas": {
+      "Error": {
+        "additionalProperties": true,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "activities_busy",
+              "activity_already_exists",
+              "activity_invalid",
+              "activity_not_found",
+              "activity_protected",
+              "agent_unavailable",
+              "auth_key_invalid",
+              "auth_required",
+              "awareness_busy",
+              "awareness_section_not_found",
+              "backup_busy",
+              "backup_not_confirmed",
+              "backup_operation_failed",
+              "backup_unavailable",
+              "config_busy",
+              "content_conflict",
+              "convey_busy",
+              "convey_operation_failed",
+              "corrupt_config",
+              "cross_origin_blocked",
+              "day_invalid",
+              "edge_index_unavailable",
+              "entity_alias_conflict",
+              "entity_already_exists",
+              "entity_blocked",
+              "entity_busy",
+              "entity_not_found",
+              "entity_operation_failed",
+              "envelope_invalid",
+              "facet_already_exists",
+              "facet_not_found",
+              "feature_unavailable",
+              "field_missing",
+              "file_not_found",
+              "file_read_failed",
+              "health_report_failed",
+              "host_not_allowed",
+              "http_error",
+              "idempotency_conflict",
+              "identity_busy",
+              "identity_not_locked",
+              "import_client_id_conflict",
+              "import_conflict",
+              "import_metadata_failed",
+              "import_not_found",
+              "import_queue_unreachable",
+              "ingest_contract_invalid",
+              "ingest_no_files",
+              "ingest_sidecar_conflict",
+              "ingest_storage_failed",
+              "internal_error",
+              "invalid_config_value",
+              "invalid_day",
+              "invalid_entity_type",
+              "invalid_json_request",
+              "invalid_month",
+              "invalid_operation_for_state",
+              "invalid_path",
+              "invalid_request_value",
+              "invalid_segment_or_stream",
+              "invalid_state",
+              "journal_source_problem",
+              "ledger_item_not_found",
+              "linked_device_required",
+              "local_request_only",
+              "missing_request_body",
+              "missing_required_field",
+              "multipart_malformed",
+              "multipart_part_too_large",
+              "capture_restart_failed",
+              "operation_erased",
+              "operation_in_progress",
+              "operation_no_longer_available",
+              "operation_retired",
+              "paired_device_not_found",
+              "pairing_key_invalid",
+              "relay_pairing_registration_refused",
+              "relay_pairing_registration_timed_out",
+              "relay_pairing_unavailable",
+              "pairing_request_invalid",
+              "pl_revoked",
+              "plaud_validation_unavailable",
+              "principal_entity_protected",
+              "protocol_version_future",
+              "protocol_version_legacy",
+              "protocol_version_malformed",
+              "protocol_version_required",
+              "provider_key_missing",
+              "push_request_invalid",
+              "raw_media_not_available",
+              "recovery_key_mismatch",
+              "reprocess_already_complete",
+              "reprocess_held_by_backoff",
+              "reprocess_past_only",
+              "reprocess_unreachable",
+              "search_failed",
+              "segment_invalid",
+              "service_busy",
+              "service_operation_failed",
+              "settings_operation_failed",
+              "speaker_attribution_state_invalid",
+              "speaker_command_failed",
+              "speaker_discovery_failed",
+              "speaker_identify_conflict",
+              "speaker_identify_operation_not_found",
+              "speaker_identify_recoverable",
+              "speaker_identify_repair_required",
+              "speaker_labels_busy",
+              "speaker_not_found",
+              "speaker_owner_centroid_required",
+              "speaker_owner_identity_required",
+              "speaker_owner_voice_too_close",
+              "speaker_review_unavailable",
+              "speaker_sentence_missing",
+              "speaker_voiceprint_busy",
+              "support_portal_failed",
+              "talent_not_found",
+              "talent_operation_failed",
+              "talent_run_malformed",
+              "talent_run_pending",
+              "timeline_month_not_found",
+              "tos_changed",
+              "unknown_service",
+              "voice_unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "reason_code",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "SegmentFile": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "present",
+              "missing",
+              "processed"
+            ],
+            "type": "string",
+            "x-vocabulary": {
+              "classification": "closed",
+              "id": "SegmentFile.status",
+              "unknown_value_behavior": "reject"
+            }
+          },
+          "submitted_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "sha256",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SegmentItem": {
+        "additionalProperties": true,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentFile"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "boolean"
+          },
+          "original_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "observed",
+          "files"
+        ],
+        "type": "object"
+      },
+      "SegmentsEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentItem"
+            },
+            "type": "array"
+          },
+          "protocol_version": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "protocol_version"
+        ],
+        "type": "object"
+      }
     }
   }
 }
+

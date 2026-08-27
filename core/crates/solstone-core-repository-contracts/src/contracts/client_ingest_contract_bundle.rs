@@ -16,7 +16,13 @@ use sha2::{Digest, Sha256};
 
 const BUNDLE_SEMVER: &str = "10.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
-const AUTHORITY_PATH: &str = "docs/openapi/convey-clients.json";
+const AUTHORITY_PATH: &str =
+    "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
+/// The client-ingest OpenAPI authority is `client_ingest_authority.json`, colocated with this
+/// generator. Edit that file directly as verbatim JSON; it is the sole hand-edited authority for
+/// this bundle. Regenerate committed contract artifacts with
+/// `cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib client_ingest_contract_bundle::regenerate_client_ingest_contract_bundle -- --ignored`.
+const CLIENT_INGEST_AUTHORITY: &str = include_str!("client_ingest_authority.json");
 const ARTIFACTS: [&str; 5] = [
     "manifest.json",
     "projection.openapi.json",
@@ -146,7 +152,7 @@ fn selected_projection(authority: &Value) -> Value {
         "info": {
             "title": "Linked-device v3 ingest client contract",
             "version": BUNDLE_SEMVER,
-            "description": "Generated from convey-clients.json. Covers only the four Rust-served linked-device devices/ingest operations.",
+            "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
             "x-generated": true,
             "x-generated-by": "solstone-core-repository-contracts"
         },
@@ -338,7 +344,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "files": files,
         "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
         "generator_inputs": [{
-            "id": "openapi.convey_clients",
+            "id": "openapi.client_ingest_authority",
             "path": AUTHORITY_PATH,
             "role": "openapi_source",
             "sha256": sha256(authority_bytes)
@@ -380,11 +386,11 @@ fn generate_bundle(authority: &Value, authority_bytes: &[u8]) -> ArtifactMap {
     artifacts
 }
 
-fn expected_bundle(root: &Path) -> ArtifactMap {
-    let authority_bytes = fs::read(root.join(AUTHORITY_PATH)).expect("read authority OpenAPI");
+fn expected_bundle() -> ArtifactMap {
+    let authority_bytes = CLIENT_INGEST_AUTHORITY.as_bytes();
     let authority: Value =
-        serde_json::from_slice(&authority_bytes).expect("parse authority OpenAPI");
-    generate_bundle(&authority, &authority_bytes)
+        serde_json::from_str(CLIENT_INGEST_AUTHORITY).expect("parse authority OpenAPI");
+    generate_bundle(&authority, authority_bytes)
 }
 
 fn artifact_mismatch(path: &str, expected: &[u8], actual: &[u8]) -> Result<(), String> {
@@ -398,7 +404,7 @@ fn artifact_mismatch(path: &str, expected: &[u8], actual: &[u8]) -> Result<(), S
 #[test]
 fn generated_bundle_matches_committed_files() {
     let root = repository_root();
-    let expected = expected_bundle(&root);
+    let expected = expected_bundle();
     for path in ARTIFACTS {
         let actual = fs::read(root.join(BUNDLE_DIRECTORY).join(path))
             .unwrap_or_else(|error| panic!("read committed {path}: {error}"));
@@ -408,8 +414,7 @@ fn generated_bundle_matches_committed_files() {
 
 #[test]
 fn under_bumped_manifest_semver_is_rejected() {
-    let root = repository_root();
-    let expected = expected_bundle(&root);
+    let expected = expected_bundle();
     let expected_manifest = &expected["manifest.json"];
     for wrong_semver in ["9.0.0", "10.0.1"] {
         let mut manifest: Value =
@@ -426,7 +431,7 @@ fn under_bumped_manifest_semver_is_rejected() {
 #[ignore = "writes committed contract artifacts; run explicitly when regenerating"]
 fn regenerate_client_ingest_contract_bundle() {
     let root = repository_root();
-    let expected = expected_bundle(&root);
+    let expected = expected_bundle();
     for path in ARTIFACTS {
         fs::write(root.join(BUNDLE_DIRECTORY).join(path), &expected[path])
             .unwrap_or_else(|error| panic!("write {path}: {error}"));
