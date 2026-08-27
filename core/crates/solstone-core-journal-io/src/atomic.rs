@@ -4,28 +4,46 @@
 //! Crash-safe whole-file writers.
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+#[cfg(any(unix, all(windows, any(test, feature = "test-hooks"))))]
+use std::fs;
+use std::fs::File;
+#[cfg(unix)]
+use std::fs::OpenOptions;
+use std::io::{self};
+#[cfg(unix)]
+use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(unix)]
+use std::sync::atomic::Ordering;
+#[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
 use serde::Serialize;
 
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, openat, renameat};
+#[cfg(unix)]
 use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+#[cfg(unix)]
 use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 
+#[cfg(unix)]
 use crate::errors::AtomicWriteError;
+#[cfg(unix)]
 use crate::flat_directory::{FileObservation, entry_from_stat, same_entry_metadata};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Ordered checkpoints used by bound-publication fault and pause tests.
+#[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundPublicationPrimitive {
     /// The exclusive stage-file creation.
@@ -40,7 +58,7 @@ pub enum BoundPublicationPrimitive {
     ParentSync,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 struct BoundPublicationTraceState {
     attempted: Vec<BoundPublicationPrimitive>,
     fault: Option<BoundPublicationFault>,
@@ -49,21 +67,21 @@ struct BoundPublicationTraceState {
     barriers_fired: usize,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 struct BoundPublicationFault {
     primitive: BoundPublicationPrimitive,
     ordinal: usize,
     error: Errno,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 struct BoundPublicationBarrier {
     primitive: BoundPublicationPrimitive,
     ordinal: usize,
     callback: Box<dyn FnOnce()>,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 thread_local! {
     static BOUND_PUBLICATION_TRACE: std::cell::RefCell<Option<BoundPublicationTraceState>> = const {
         std::cell::RefCell::new(None)
@@ -71,7 +89,7 @@ thread_local! {
 }
 
 /// Run `op` with one injected errno at an ordinal bound-publication checkpoint.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_bound_publication_fault<T>(
     primitive: BoundPublicationPrimitive,
     ordinal: usize,
@@ -106,7 +124,7 @@ pub fn run_with_bound_publication_fault<T>(
 }
 
 /// Run `op` with one deterministic bound-publication barrier callback.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_bound_publication_barrier<T>(
     primitive: BoundPublicationPrimitive,
     ordinal: usize,
@@ -141,7 +159,7 @@ pub fn run_with_bound_publication_barrier<T>(
 }
 
 /// Run `op` with two deterministic bound-publication barrier callbacks.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_two_bound_publication_barriers<T>(
     first_primitive: BoundPublicationPrimitive,
     first_ordinal: usize,
@@ -205,6 +223,7 @@ pub enum DetailedAtomicOutcome {
 ///
 /// Pathname-identity outcomes stay on [`DetailedAtomicOutcome`]. A bound
 /// caller cannot observe a parent pathname.
+#[cfg(unix)]
 #[derive(Debug)]
 pub enum BoundAtomicOutcome {
     /// Rename landed in the bound directory and the directory was synced.
@@ -223,6 +242,7 @@ pub enum BoundAtomicOutcome {
     },
 }
 
+#[cfg(unix)]
 struct BoundPublicationResult {
     observation: FileObservation,
     durability_source: Option<io::Error>,
@@ -263,6 +283,7 @@ impl std::error::Error for DetailedAtomicError {
 }
 
 /// Options shared by the byte-oriented whole-file writers.
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AtomicWriteOptions {
     /// Final file mode, applied before the rename or hard-link publication.
@@ -270,6 +291,7 @@ pub struct AtomicWriteOptions {
 }
 
 /// JSON formatting and publication options.
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy)]
 pub struct JsonWriteOptions {
     /// Final file mode, applied before publication.
@@ -280,6 +302,7 @@ pub struct JsonWriteOptions {
     pub sort_keys: bool,
 }
 
+#[cfg(unix)]
 impl Default for JsonWriteOptions {
     fn default() -> Self {
         Self {
@@ -397,21 +420,23 @@ pub fn atomic_replace_detailed(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 pub fn atomic_replace_detailed(
     path: &Path,
-    _contents: &[u8],
-    _mode: u32,
+    contents: &[u8],
+    mode: u32,
 ) -> Result<DetailedAtomicOutcome, DetailedAtomicError> {
-    Err(detailed_error(
-        path,
-        "publish",
-        io::Error::new(
-            io::ErrorKind::Unsupported,
-            "detailed publication requires Unix",
-        ),
-    ))
+    windows_atomic::atomic_replace_detailed(path, contents, mode)
 }
+
+#[cfg(windows)]
+#[path = "windows_atomic.rs"]
+mod windows_atomic;
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_atomic::{
+    run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
+};
 
 /// Atomically replace a regular destination beneath an already-bound parent.
 ///
@@ -640,6 +665,7 @@ fn verify_bound_publication(
 /// temporary file is removed. The containing directory is synced afterwards on
 /// a best-effort basis; a directory-sync failure is logged and does not turn an
 /// otherwise published replacement into an error.
+#[cfg(unix)]
 pub fn atomic_replace(
     path: impl AsRef<Path>,
     contents: &[u8],
@@ -682,6 +708,7 @@ pub fn atomic_replace(
 /// Contents are written and synced to an unlinked temporary inode first, then
 /// published with `link(2)`. Consequently the destination name is never visible
 /// with partial content.
+#[cfg(unix)]
 pub fn write_bytes_exclusive(
     path: impl AsRef<Path>,
     contents: &[u8],
@@ -718,6 +745,7 @@ pub fn write_bytes_exclusive(
 /// The destination is create-only, receives the requested final mode before
 /// publication is reported, and is synced before this function returns. A
 /// failed copy removes the incomplete destination.
+#[cfg(unix)]
 pub fn write_reader_exclusive(
     path: &Path,
     reader: &mut impl Read,
@@ -746,6 +774,7 @@ pub fn write_reader_exclusive(
 }
 
 /// Publish an already-created temporary file by syncing and atomically renaming it.
+#[cfg(unix)]
 pub fn install_file(
     temporary_path: impl AsRef<Path>,
     path: impl AsRef<Path>,
@@ -773,6 +802,7 @@ pub fn install_file(
 }
 
 /// Serialize and atomically replace a JSON file.
+#[cfg(unix)]
 pub fn write_json<T: Serialize>(
     path: impl AsRef<Path>,
     value: &T,
@@ -790,6 +820,7 @@ pub fn write_json<T: Serialize>(
 }
 
 /// Atomically replace a UTF-8 text file.
+#[cfg(unix)]
 pub fn write_text(
     path: impl AsRef<Path>,
     text: &str,
@@ -799,6 +830,7 @@ pub fn write_text(
 }
 
 /// Atomically replace a JSONL file with one record per line.
+#[cfg(unix)]
 pub fn write_jsonl<T: Serialize>(
     path: impl AsRef<Path>,
     records: impl IntoIterator<Item = T>,
@@ -820,6 +852,7 @@ pub fn write_jsonl<T: Serialize>(
 /// `sync_all()` and `F_FULLFSYNC`; an `F_FULLFSYNC` failure propagates to the
 /// caller before rename or hard-link publication. This is distinct from the
 /// best-effort parent-directory sync performed after publication.
+#[cfg(unix)]
 pub(crate) fn sync_file(file: &File) -> io::Result<()> {
     file.sync_all()?;
     #[cfg(any(
@@ -836,6 +869,7 @@ pub(crate) fn sync_file(file: &File) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 pub(crate) fn fsync_dir(path: &Path) {
     if let Err(error) = File::open(path).and_then(|directory| directory.sync_all()) {
         log::warn!(
@@ -845,6 +879,7 @@ pub(crate) fn fsync_dir(path: &Path) {
     }
 }
 
+#[cfg(unix)]
 fn parent_dir(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -899,6 +934,7 @@ fn inspect_destination(
 }
 
 pub(crate) const ATOMIC_CANDIDATE_MARKER: &str = "tmp";
+#[cfg(unix)]
 pub(crate) const STAGED_CANDIDATE_MARKER: &str = "stage";
 pub(crate) const CANDIDATE_SUFFIX: &str = ".tmp";
 
@@ -993,6 +1029,7 @@ fn errno_io(source: Errno) -> io::Error {
     io::Error::from_raw_os_error(source as i32)
 }
 
+#[cfg(unix)]
 fn create_temporary(
     parent: &Path,
     destination: &Path,
@@ -1038,6 +1075,7 @@ fn apply_mode(_file: &File, _mode: u32) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn io_error(path: &Path, source: io::Error) -> AtomicWriteError {
     AtomicWriteError::Io {
         path: path.to_path_buf(),
@@ -1045,10 +1083,12 @@ fn io_error(path: &Path, source: io::Error) -> AtomicWriteError {
     }
 }
 
+#[cfg(unix)]
 fn serialization_error(path: &Path, source: serde_json::Error) -> AtomicWriteError {
     io_error(path, io::Error::new(io::ErrorKind::InvalidData, source))
 }
 
+#[cfg(unix)]
 fn serialize_json(value: &serde_json::Value, indent: Option<usize>) -> serde_json::Result<Vec<u8>> {
     match indent {
         Some(width) => {
@@ -1063,6 +1103,7 @@ fn serialize_json(value: &serde_json::Value, indent: Option<usize>) -> serde_jso
     }
 }
 
+#[cfg(unix)]
 fn sort_json_keys(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(object) => {
@@ -1102,7 +1143,7 @@ fn pause_at(step: &str) {
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn pause_at(_step: &str) {}
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 fn checkpoint(primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
     let (fault, barrier) = BOUND_PUBLICATION_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -1146,12 +1187,12 @@ fn checkpoint(primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
     Ok(())
 }
 
-#[cfg(not(any(test, feature = "test-hooks")))]
+#[cfg(all(unix, not(any(test, feature = "test-hooks"))))]
 fn checkpoint(_primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::sync::{Arc, Mutex};

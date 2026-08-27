@@ -14,7 +14,7 @@ compile_error!(
 
 #[cfg(any(unix, windows))]
 pub mod append;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod atomic;
 #[cfg(unix)]
 pub mod claim_remove;
@@ -56,9 +56,8 @@ pub use append::append_jsonl;
 pub use append::append_text;
 #[cfg(unix)]
 pub use atomic::{
-    AtomicWriteOptions, DetailedAtomicError, DetailedAtomicOutcome, JsonWriteOptions,
-    atomic_replace, atomic_replace_detailed, install_file, write_bytes_exclusive, write_json,
-    write_jsonl, write_reader_exclusive, write_text,
+    AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
+    write_json, write_jsonl, write_reader_exclusive, write_text,
 };
 #[cfg(unix)]
 pub use atomic::{BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound};
@@ -67,6 +66,8 @@ pub use atomic::{
     BoundPublicationPrimitive, run_with_bound_publication_barrier,
     run_with_bound_publication_fault, run_with_two_bound_publication_barriers,
 };
+#[cfg(any(unix, windows))]
+pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_detailed};
 #[cfg(unix)]
 pub use claim_remove::claim_and_remove_observed;
 #[cfg(all(unix, feature = "test-hooks"))]
