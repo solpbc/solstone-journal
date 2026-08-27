@@ -771,9 +771,12 @@ impl NamespaceWitness {
             return Ok(());
         }
         traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
-            // SAFETY: the outstanding request uses this exact `OVERLAPPED`, which remains allocated until the drain below completes.
+            // SAFETY: this witness owns the handle and issues exactly one asynchronous request on
+            // it, so canceling every request on this private handle cannot affect listing or
+            // revalidation I/O. The request's `OVERLAPPED` remains allocated until the drain
+            // below completes.
             #[allow(unsafe_code)]
-            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
+            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), std::ptr::null()) };
             if cancelled != 0 {
                 return Ok(());
             }
