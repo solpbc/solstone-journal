@@ -753,6 +753,7 @@ impl<'root> NamespaceWitness<'root> {
         if !self.armed {
             return Ok(());
         }
+        test_hook_witness_progress("before-cancel");
         traced_inventory(WindowsInventoryPrimitive::WitnessCancelIo, || {
             // SAFETY: this witness issued the only outstanding request from the calling thread
             // on the retained root. `CancelIo` cannot cancel another thread's work, and this
@@ -771,7 +772,9 @@ impl<'root> NamespaceWitness<'root> {
             operation: "cancel recursive namespace witness",
             source,
         })?;
+        test_hook_witness_progress("after-cancel");
         let mut bytes = 0;
+        test_hook_witness_progress("before-drain-result");
         let drained = traced_inventory(WindowsInventoryPrimitive::WitnessDrainCompleted, || {
             // SAFETY: the request was either completed or cancellation was requested above, and both the request's `OVERLAPPED` and output length remain live for this drain.
             #[allow(unsafe_code)]
@@ -790,6 +793,7 @@ impl<'root> NamespaceWitness<'root> {
             operation: "drain recursive namespace witness",
             source,
         })?;
+        test_hook_witness_progress("after-drain-result");
         self.armed = false;
         drained
             .is_none()
