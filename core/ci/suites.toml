@@ -1068,6 +1068,18 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-profile-web"
+package = "solstone-core-profile-web"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-records-web"
 package = "solstone-core-records-web"
 set = "component"
