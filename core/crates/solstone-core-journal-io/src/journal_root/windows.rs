@@ -505,15 +505,15 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
         WindowsAcquisitionPrimitive::RequestedRootWatchOpen,
         DirectoryOpenPurpose::NamespaceWatch,
     )
-    .map_err(|source| source_io("open journal root namespace watch", root, source))?;
+    .map_err(|source| after_authority(root, "open journal root namespace watch", source))?;
     let watch_attributes = attribute_tag(
         &namespace_watch,
         WindowsAcquisitionPrimitive::RequestedRootWatchAttributeTag,
     )
     .map_err(|source| {
-        source_io(
-            "query journal root namespace-watch attributes",
+        after_authority(
             root,
+            "query journal root namespace-watch attributes",
             source,
         )
     })?;
@@ -522,7 +522,9 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
         &namespace_watch,
         WindowsAcquisitionPrimitive::RequestedRootWatchFileId,
     )
-    .map_err(|source| source_io("query journal root namespace-watch identity", root, source))?;
+    .map_err(|source| {
+        after_authority(root, "query journal root namespace-watch identity", source)
+    })?;
     (watch_identity == expected)
         .then_some(())
         .ok_or(JournalRootError::Changed)?;

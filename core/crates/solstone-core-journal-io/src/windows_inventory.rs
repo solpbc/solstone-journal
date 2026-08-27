@@ -2035,10 +2035,16 @@ mod tests {
                     .unwrap_or_else(|error| panic!("mutate {variable} overflow fixture: {error}"));
             }
             match witness.wait_for_notification() {
-                Ok(0) | Err(WindowsInventoryError::NamespaceChanged { .. }) => {}
-                Ok(bytes) => panic!("{variable} witness did not overflow: {bytes} bytes"),
+                // Filesystems may coalesce a burst to a non-empty completion rather than
+                // overflowing the fixed buffer.  Both shapes are rejected by `check`; the
+                // injected `ERROR_NOTIFY_ENUM_DIR` case above proves the explicit overflow path.
+                Ok(_) | Err(WindowsInventoryError::NamespaceChanged { .. }) => {}
                 Err(error) => panic!("wait for {variable} overflow witness: {error}"),
             }
+            assert!(matches!(
+                witness.check(),
+                Err(WindowsInventoryError::NamespaceChanged { .. })
+            ));
         }
     }
 }
