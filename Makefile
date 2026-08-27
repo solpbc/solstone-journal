@@ -681,6 +681,12 @@ check-systemd-test:
 	@test -n "$$SOLSTONE_DIST_DIR" || { echo "check-systemd-test requires SOLSTONE_DIST_DIR (produced linux-x86_64 artifacts)" >&2; exit 2; }
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test install
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test legacy-upgrade
+# `tests/systemd-test legacy-upgrade-v1022` (pinned to the actual shipped
+# v1.0.22 crossover shape) is deliberately NOT run here yet: it correctly
+# and currently fails, because a real v1.0.22 owner's own ~/.local/bin/
+# journal shadows the .deb's /usr/bin/journal on PATH, so `journal setup`
+# never reaches V2's crossover code. Run it explicitly to see the exact
+# failure; it belongs in this gate once that gap has a disposition.
 
 # AR_<triple>/RANLIB_<triple> must point at zig wrappers before this recipe
 # invokes the producer: PATH poison covers `ar`, so cc/ffmpeg-sys-next/ort

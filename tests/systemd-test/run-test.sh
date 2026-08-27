@@ -14,7 +14,12 @@
 #                                          #   shipped v1.0.22 shape (native sol/solstone
 #                                          #   root-launchers, a separate journal
 #                                          #   console-script, Type=notify unit) rather
-#                                          #   than the older shape legacy-upgrade covers
+#                                          #   than the older shape legacy-upgrade covers.
+#                                          #   Currently and correctly FAILS: a real
+#                                          #   v1.0.22 ~/.local/bin/journal shadows the
+#                                          #   .deb's /usr/bin/journal on PATH, so
+#                                          #   `journal setup` never reaches V2's
+#                                          #   crossover code. Not a fixture bug.
 #   ./run-test.sh shell                    # leave container up + drop into a user shell
 #
 # Environment overrides:
