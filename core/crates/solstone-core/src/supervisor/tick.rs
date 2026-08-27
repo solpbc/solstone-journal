@@ -48,8 +48,7 @@ use solstone_core_system::{
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
 use super::runtime::{
-    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, RestartRequestOutcome,
-    SupervisorState, apply_app_exit,
+    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, SupervisorState, apply_app_exit,
 };
 
 const MAX_INBOUND_PER_TICK: usize = 256;
@@ -888,7 +887,6 @@ async fn drain_inbound(state: &mut SupervisorState) {
 
 fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_supervisor_request(state, &message);
-    handle_supervisor_restart(state, &message);
     handle_supervisor_drain(state, &message);
     handle_segment_observed(state, &message);
     handle_activity_recorded(state, &message);
@@ -963,63 +961,6 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
     };
     if state.queue.submit(ExecutionRequest::Bus(request)) == SubmitOutcome::Rejected {
         eprintln!("supervisor: request rejected");
-    }
-}
-
-fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "supervisor" || message.event != "restart" {
-        return;
-    }
-    let Some(service) = message_string(message, "service") else {
-        eprintln!("supervisor: restart request missing service");
-        return;
-    };
-    if service == "supervisor" {
-        eprintln!("supervisor: refusing self restart request");
-        return;
-    }
-    let Some(app) = state
-        .app_processes
-        .iter_mut()
-        .find(|app| app.service.as_str() == service)
-    else {
-        eprintln!("supervisor: restart requested for unknown service {service}");
-        return;
-    };
-    let restart_id = message
-        .extra
-        .get("restart_id")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    match app.request_restart(&state.journal) {
-        Ok(RestartRequestOutcome::Signaled { pid }) => {
-            *app.restart_id
-                .lock()
-                .expect("restart correlation lock is not poisoned") = restart_id.clone();
-            let mut extra = Map::from_iter([
-                ("service".into(), json!(service)),
-                ("pid".into(), json!(pid)),
-            ]);
-            if let Some(restart_id) = restart_id {
-                extra.insert("restart_id".into(), json!(restart_id));
-            }
-            emit(&state.server, "supervisor", "restarting", extra);
-        }
-        Ok(RestartRequestOutcome::Revived) => {
-            *app.restart_id
-                .lock()
-                .expect("restart correlation lock is not poisoned") = restart_id.clone();
-            eprintln!("supervisor: restarting given-up service {service}");
-            let mut extra = Map::from_iter([("service".into(), json!(service))]);
-            if let Some(restart_id) = restart_id {
-                extra.insert("restart_id".into(), json!(restart_id));
-            }
-            emit(&state.server, "supervisor", "restarting", extra);
-        }
-        Ok(RestartRequestOutcome::Ignored) => {
-            eprintln!("supervisor: restart request ignored for inactive service {service}")
-        }
-        Err(error) => eprintln!("supervisor: failed to restart {service}: {error}"),
     }
 }
 

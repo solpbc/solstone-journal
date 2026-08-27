@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-pub const JOURNAL_HOST_COMMAND_COUNT: usize = 40;
+pub const JOURNAL_HOST_COMMAND_COUNT: usize = 39;
 pub const JOURNAL_HOST_COMMANDS: &[&str] = &[
     "backfill-processing-records",
     "backup",
@@ -25,7 +25,6 @@ pub const JOURNAL_HOST_COMMANDS: &[&str] = &[
     "maintenance",
     "navigate",
     "reprocess",
-    "restart-convey",
     "schedule",
     "segment",
     "sense",

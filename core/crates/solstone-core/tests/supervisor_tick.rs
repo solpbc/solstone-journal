@@ -444,23 +444,6 @@ async fn receive_timeout_history(
     }
 }
 
-async fn receive_restarting(
-    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
-) -> Value {
-    loop {
-        let mut line = String::new();
-        let bytes = reader.read_line(&mut line).await.expect("restart frame");
-        assert!(
-            bytes > 0,
-            "the connection closed before supervisor restarting event"
-        );
-        let value: Value = serde_json::from_str(&line).expect("restart JSON");
-        if value["tract"] == "supervisor" && value["event"] == "restarting" {
-            return value;
-        }
-    }
-}
-
 // A dilation-aware alternative to tokio::time::timeout for waits this file
 // cannot express as a synchronous poll closure (an async socket read). It
 // preserves each call site's exact interval*iterations budget and reuses
@@ -608,33 +591,6 @@ async fn timeout_history_reader_reports_closed_callosum_connection() {
         .into_panic();
     assert!(
         panic_message(panic).contains("the connection closed before timeout-history status event")
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn restarting_reader_reports_closed_callosum_connection() {
-    let journal = TempJournal::new();
-    let mut child = start(&journal, None, &[]);
-    let socket = journal.0.join("health/callosum.sock");
-    wait_for_socket(&mut child, &socket);
-    let (reader, write) = connect(&socket).await;
-    drop(write);
-    let task = tokio::spawn(async move {
-        let mut reader = reader;
-        let _ = await_bounded_read(
-            "restarting notification",
-            Duration::from_millis(10),
-            800,
-            receive_restarting(&mut reader),
-        )
-        .await;
-    });
-    let panic = task
-        .await
-        .expect_err("reader must panic on EOF")
-        .into_panic();
-    assert!(
-        panic_message(panic).contains("the connection closed before supervisor restarting event")
     );
 }
 

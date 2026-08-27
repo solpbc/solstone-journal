@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -164,12 +164,6 @@ pub(crate) enum AppExit {
     SpawnFailure,
 }
 
-pub(crate) enum RestartRequestOutcome {
-    Signaled { pid: u32 },
-    Revived,
-    Ignored,
-}
-
 #[derive(Serialize)]
 struct BackoffRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,9 +181,6 @@ pub(crate) struct ManagedAppProcess {
     pub restart_policy: RestartPolicy,
     pub restart_at: Option<Instant>,
     fast_fixture_timing: bool,
-    pub restart_requested: bool,
-    /// Correlates an accepted app restart with all ensuing app-process events.
-    pub restart_id: Arc<Mutex<Option<String>>>,
     pub backoff: Option<BackoffState>,
     /// Generation claimed from `health/direct-door.json` when this Convey child spawned.
     pub direct_door_generation: Option<u64>,
@@ -222,30 +213,9 @@ impl ManagedAppProcess {
             restart_policy: RestartPolicy::default(),
             restart_at: None,
             fast_fixture_timing,
-            restart_requested: false,
-            restart_id: Arc::new(Mutex::new(None)),
             backoff: None,
             direct_door_generation: None,
         }
-    }
-
-    /// Signal a live service for restart without waiting for it to exit.
-    pub(crate) fn request_restart(
-        &mut self,
-        _journal: &Path,
-    ) -> Result<RestartRequestOutcome, String> {
-        if self.restart_requested {
-            return Ok(RestartRequestOutcome::Ignored);
-        }
-        if let Some(process) = self.process.as_mut() {
-            let pid = process.pid();
-            process
-                .signal_exact(nix::sys::signal::Signal::SIGTERM)
-                .map_err(|error| error.to_string())?;
-            self.restart_requested = true;
-            return Ok(RestartRequestOutcome::Signaled { pid });
-        }
-        Ok(RestartRequestOutcome::Ignored)
     }
 
     pub(crate) fn record_exit(&mut self, exit: AppExit) -> Duration {
@@ -255,7 +225,6 @@ impl ManagedAppProcess {
             .map(|started| started.elapsed())
             .unwrap_or(Duration::ZERO);
         self.process = None;
-        self.restart_requested = false;
         let (policy_code, reason, exit_code) = match exit {
             AppExit::Process { code } => (code, describe_exit(code), Some(code)),
             AppExit::SpawnFailure => (-1, "failed to spawn process".to_owned(), None),
@@ -711,10 +680,7 @@ pub(crate) fn spawn_app_process(
             journal_root: journal.to_path_buf(),
             reference: format!("supervisor-app-{}", app.service.as_str()),
             day: None,
-            sink: Some(Arc::new(SupervisorProcessSink {
-                server: sink,
-                restart_id: Arc::clone(&app.restart_id),
-            })),
+            sink: Some(Arc::new(SupervisorProcessSink { server: sink })),
             environment: BTreeMap::from([(
                 OsString::from("SOL_SUPERVISOR_SPAWNED"),
                 OsString::from("1"),
@@ -725,7 +691,6 @@ pub(crate) fn spawn_app_process(
     app.process = Some(process);
     app.started_at = Some(Instant::now());
     app.restart_at = None;
-    app.restart_requested = false;
     if app.backoff.is_none() {
         clear_backoff_record(journal, app.service);
     }
@@ -871,7 +836,6 @@ pub(crate) async fn boot_and_tick(
         queue_sink: Some(Arc::new(SupervisorTaskQueueSink(Arc::clone(&server)))),
         process_sink: Some(Arc::new(SupervisorProcessSink {
             server: Arc::clone(&server),
-            restart_id: Arc::new(Mutex::new(None)),
         })),
         ready: false,
         before_deadline_commit: None,

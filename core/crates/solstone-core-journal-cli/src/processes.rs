@@ -495,12 +495,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
         kind: ProcessKind::Service,
     },
     ProcessSpec {
-        token: "restart-convey",
-        module: "solstone.convey.restart",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
         token: "service",
         module: "solstone.think.service",
         preset_argv: EMPTY,

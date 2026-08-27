@@ -1052,7 +1052,7 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
         assert_eq!(value["schema"], "solstone-cli-boundary-v1");
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 40);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 39);
         assert_eq!(cli_boundary_errors(&value), Vec::<String>::new());
     }
 

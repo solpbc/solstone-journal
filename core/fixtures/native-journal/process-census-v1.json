@@ -44,7 +44,6 @@
     { "token": "engage", "module": "solstone.think.engage", "preset_argv": [], "surface": "service" },
     { "token": "heartbeat", "module": "solstone.think.heartbeat", "preset_argv": [], "surface": "service" },
     { "token": "convey", "module": "solstone.convey.cli", "preset_argv": [], "surface": "service" },
-    { "token": "restart-convey", "module": "solstone.convey.restart", "preset_argv": [], "surface": "service" },
     { "token": "service", "module": "solstone.think.service", "preset_argv": [], "surface": "service" },
     { "token": "setup", "module": "solstone.think.setup", "preset_argv": [], "surface": "service" }
   ],
