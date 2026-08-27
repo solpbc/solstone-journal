@@ -93,16 +93,13 @@ fn convey_never_reaches_an_interpreter_shim() {
         fs::remove_file(temp.join(name)).expect("marker clears");
     }
 
-    for (verb, argv) in [("convey", vec!["--nonsense"])] {
-        let output = Command::new(&core)
-            .arg(verb)
-            .args(argv)
-            .env("PATH", &bin)
-            .env("POISON_DIR", &temp)
-            .output()
-            .expect("native grammar probe runs");
-        assert_eq!(output.status.code(), Some(2), "{verb} native grammar exit");
-    }
+    let output = Command::new(&core)
+        .args(["convey", "--nonsense"])
+        .env("PATH", &bin)
+        .env("POISON_DIR", &temp)
+        .output()
+        .expect("native grammar probe runs");
+    assert_eq!(output.status.code(), Some(2), "convey native grammar exit");
     let journal = temp.join("journal");
     established_journal(&journal);
     let port = free_port();
