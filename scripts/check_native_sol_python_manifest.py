@@ -60,7 +60,6 @@ EXPECTED_BLOBS = {
     "solstone/apps/thinking/call.py": "aa2cb8c5985aeab1864479c22326e33a8a45ae2a",
     "solstone/apps/transcripts/call.py": "c5d9e81b965d8231903632c7f945c4613cf3d2e4",
     "solstone/think/tools/health.py": "09be4da53688e1d91a10b8bb38c3e9a2a34712b4",
-    "solstone/think/tools/ledger.py": "b6df98b73b13d5d3798305761330db0dd7977985",
     "solstone/think/tools/profile.py": "96fe4319bdce13029060806aea8523ca680ac2fb",
     "solstone/think/import_client.py": "31a6c12e341e9144b0f9c1567613abf0aabddc3a",
     "solstone/think/chat_cli.py": "f41e0523c6e5574f1d920c5304cdaf96643bdeee",

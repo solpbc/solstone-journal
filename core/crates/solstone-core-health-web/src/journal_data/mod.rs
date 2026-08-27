@@ -16,7 +16,6 @@ use chrono::Utc;
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 
-mod ledger;
 mod pipeline;
 mod report;
 

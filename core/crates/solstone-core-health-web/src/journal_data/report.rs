@@ -18,15 +18,12 @@ use solstone_core_system_health::{
     read_segment_progress, scan_day,
 };
 
-use super::ledger;
-
 const DAY_MS: i64 = 86_400_000;
 const HOUR_MS: i64 = 3_600_000;
 const FACET_SILENT_INFO_HOURS: i64 = 24;
 const FACET_SILENT_WARN_HOURS: i64 = 72;
 const FACET_SILENT_CRITICAL_HOURS: i64 = 168;
 const INDEXER_STALE_WARN_DAYS: i64 = 7;
-const LEDGER_STALE_DAYS: i64 = 14;
 const SPEC_POINTER: &str = "solstone/think/surfaces/health.py";
 const NO_ENGINE_ANALYSIS_TEXT: &str =
     "No thinking engine is chosen yet. Choose one in Thinking so observations can be analyzed.";
@@ -83,8 +80,6 @@ pub(crate) struct SynthesisHealth {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct ConsumerSignalHealth {
-    pub(crate) ledger_open_items_total: u64,
-    pub(crate) ledger_stale_items_count: u64,
     pub(crate) profile_entities_total: u64,
 }
 
@@ -180,7 +175,7 @@ pub(crate) fn build_health_report(
             .then(left.category.cmp(&right.category))
             .then(left.message.cmp(&right.message))
     });
-    let consumer_signal = build_consumer_signal_health(journal_root, now)?;
+    let consumer_signal = build_consumer_signal_health(journal_root)?;
     // Native has no display-power poller; this is the reference monitor's pre-poll state.
     let segment_backlog = build_segment_backlog_health(
         journal_root,
@@ -425,7 +420,7 @@ fn build_synthesis_health(
     let mut notes = vec![note(
         "info",
         "synthesis",
-        "corrections roll-up not available — corrections ledger exists only from Sprint 5+",
+        "corrections roll-up not available — corrections support arrives Sprint 5+",
         generated_at,
         Some(SPEC_POINTER),
     )];
@@ -469,7 +464,7 @@ fn build_synthesis_health(
         ));
     }
     let (failures, degraded) = if missing.is_empty() && scan.problems.is_empty() {
-        for (_, row) in scan.degraded_rows.iter().rev().take(10) {
+        for (_, row) in scan.degraded_rows.iter().take(10) {
             let degraded = row.get("degraded").and_then(Value::as_object);
             if let Some(degraded) = degraded {
                 notes.push(note(
@@ -621,10 +616,12 @@ fn scan_talent_indexes(talents: &Path, generated_at: i64) -> Result<TalentHealth
             if timestamp < cutoff || timestamp > generated_at {
                 continue;
             }
-            if !matches!(
-                row.get("status").and_then(Value::as_str),
-                None | Some("ok" | "completed")
-            ) {
+            let succeeded = !row.contains_key("status")
+                || matches!(
+                    row.get("status").and_then(Value::as_str),
+                    Some("ok" | "completed")
+                );
+            if !succeeded {
                 scan.failures += 1;
             }
             if row.get("degraded").is_some_and(truthy) {
@@ -638,17 +635,10 @@ fn scan_talent_indexes(talents: &Path, generated_at: i64) -> Result<TalentHealth
     Ok(scan)
 }
 
-fn build_consumer_signal_health(
-    journal_root: &Path,
-    now: DateTime<Utc>,
-) -> Result<ConsumerSignalHealth, HealthError> {
-    let open = ledger::list_open(journal_root, now, None)?;
-    let stale = ledger::list_open(journal_root, now, Some(LEDGER_STALE_DAYS))?;
+fn build_consumer_signal_health(journal_root: &Path) -> Result<ConsumerSignalHealth, HealthError> {
     let entities = load_all_journal_entities(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
     Ok(ConsumerSignalHealth {
-        ledger_open_items_total: open.len() as u64,
-        ledger_stale_items_count: stale.len() as u64,
         profile_entities_total: entities.len() as u64,
     })
 }
@@ -804,7 +794,8 @@ fn build_segment_backlog_health(
             Err(error) => errors.push(format!("{day}: {error}")),
         }
     }
-    let config = solstone_core_thinking::read_config(journal_root).unwrap_or_default();
+    let config = solstone_core_thinking::read_config(journal_root)
+        .map_err(|error| HealthError::internal(error.to_string()))?;
     let settings = processing_settings(&config);
     let gate = evaluate_drain_gate(settings, local_now, display_reading);
     let no_engine = no_thinking_engine_chosen(&config);
@@ -1302,6 +1293,28 @@ mod tests {
     }
 
     #[test]
+    fn multiple_qualifying_edits_still_count_as_one_edited_activity() {
+        let temporary = temporary();
+        facet(temporary.path(), "work");
+        activities(
+            temporary.path(),
+            "work",
+            "20260410",
+            &[
+                json!({"id":"multiple","edits":[{"actor":"cli:health"},{"actor":"owner"},{"actor":"scheduler"}]}),
+            ],
+        );
+        let aggregate = scan_records(
+            temporary.path(),
+            &["work".to_owned()],
+            (now().date_naive(), now().date_naive()),
+            now(),
+        )
+        .unwrap();
+        assert_eq!(aggregate.activities_user_edited, 1);
+    }
+
+    #[test]
     fn anticipated_unfilled_excludes_future_and_cancelled_rows() {
         let temporary = temporary();
         facet(temporary.path(), "work");
@@ -1431,6 +1444,66 @@ mod tests {
             !notes
                 .iter()
                 .any(|note| note.message.contains("counts unavailable"))
+        );
+    }
+
+    #[test]
+    fn non_string_talent_status_is_a_failure() {
+        let temporary = temporary();
+        healthy_talent_guards(temporary.path(), now());
+        talent_rows(
+            temporary.path(),
+            "20260410",
+            &[json!({"ts":now().timestamp_millis(),"status":false})],
+        );
+        let scan = scan_talent_indexes(&temporary.path().join("talents"), now().timestamp_millis())
+            .unwrap();
+        assert_eq!(scan.failures, 1);
+    }
+
+    #[test]
+    fn degraded_talent_notes_keep_the_ten_newest_rows() {
+        let temporary = temporary();
+        healthy_talent_guards(temporary.path(), now());
+        let rows = (0..12)
+            .map(|offset| {
+                json!({
+                    "ts":now().timestamp_millis() - offset * 1_000,
+                    "status":"completed",
+                    "degraded":{"output_tokens":0,"provider":"p","model":"m"},
+                    "name":format!("degraded-{offset:02}"),
+                    "day":"20260410"
+                })
+            })
+            .collect::<Vec<_>>();
+        talent_rows(temporary.path(), "20260410", &rows);
+        let (_, notes) =
+            build_synthesis_health(temporary.path(), &ScanAggregate::default(), now()).unwrap();
+        let messages = notes
+            .iter()
+            .filter(|note| note.message.contains("finished near-empty"))
+            .map(|note| note.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(messages.len(), 10);
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("degraded-00"))
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("degraded-09"))
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("degraded-10"))
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("degraded-11"))
         );
     }
 
@@ -1678,18 +1751,9 @@ mod tests {
     }
 
     #[test]
-    fn consumer_signal_counts_open_ledger_items_and_entity_files() {
+    fn consumer_signal_counts_real_entity_files() {
         let temporary = temporary();
         let root = temporary.path();
-        facet(root, "work");
-        activities(
-            root,
-            "work",
-            "20260321",
-            &[
-                json!({"id":"commitment","created_at":(now() - Duration::days(20)).timestamp_millis(),"commitments":[{"owner":"Owner","action":"send report"}]}),
-            ],
-        );
         write_json(
             &root.join("entities/a/entity.json"),
             json!({"id":"a","name":"A"}),
@@ -1698,10 +1762,23 @@ mod tests {
             &root.join("entities/b/entity.json"),
             json!({"id":"b","name":"B"}),
         );
-        let health = build_consumer_signal_health(root, now()).unwrap();
-        assert_eq!(health.ledger_open_items_total, 1);
-        assert_eq!(health.ledger_stale_items_count, 1);
+        let health = build_consumer_signal_health(root).unwrap();
         assert_eq!(health.profile_entities_total, 2);
+    }
+
+    #[test]
+    fn malformed_journal_config_is_an_internal_report_error() {
+        let temporary = temporary();
+        fs::create_dir_all(temporary.path().join("config")).unwrap();
+        fs::write(temporary.path().join("config/journal.json"), "{").unwrap();
+        assert!(matches!(
+            build_health_report(
+                temporary.path(),
+                (now().date_naive(), now().date_naive()),
+                now(),
+            ),
+            Err(HealthError::Internal { .. })
+        ));
     }
 
     #[test]

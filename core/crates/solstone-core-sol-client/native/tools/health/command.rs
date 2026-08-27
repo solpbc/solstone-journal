@@ -245,14 +245,6 @@ fn render_summary(report: &Value) -> Vec<String> {
     render_backlog(&mut lines, &report["segment_backlog"]);
     lines.push("Consumer Signals".to_string());
     lines.push(format!(
-        "  ledger_open_items_total: {}",
-        display_value(&consumer_signal["ledger_open_items_total"])
-    ));
-    lines.push(format!(
-        "  ledger_stale_items_count: {}",
-        display_value(&consumer_signal["ledger_stale_items_count"])
-    ));
-    lines.push(format!(
         "  profile_entities_total: {}",
         display_value(&consumer_signal["profile_entities_total"])
     ));

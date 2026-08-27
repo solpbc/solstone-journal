@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 170
-FINAL_HTTP_TOTAL = 165
+FINAL_ORACLE_TOTAL = 166
+FINAL_HTTP_TOTAL = 161
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
@@ -67,7 +67,6 @@ FINAL_HTTP_GROUP_COUNTS = {
     "health": 4,
     "import": 5,
     "journal": 17,
-    "ledger": 4,
     "link": 8,
     "profile": 4,
     "settings": 14,
@@ -91,6 +90,11 @@ ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
     ("journal", "retention", "purge"): {
         "path": ("journal", "retention", "list"),
         "help": "List original media ready for removal.",
+        "drop_params": set(),
+    },
+    ("journal", "search"): {
+        "path": ("journal", "search"),
+        "help": "Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `solstone call journal read --path\n<path>` after stripping the :idx suffix.",
         "drop_params": set(),
     },
 }

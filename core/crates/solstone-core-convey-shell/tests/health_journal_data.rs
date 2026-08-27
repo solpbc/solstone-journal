@@ -175,7 +175,7 @@ async fn summary_returns_complete_wire_shape() {
     }
     assert!(
         body["consumer_signal"]
-            .get("ledger_stale_items_count")
+            .get("profile_entities_total")
             .is_some()
     );
 }
@@ -336,7 +336,6 @@ fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Utc>, String) {
             "edits":[{"actor":"owner"}],
             "source":"anticipated",
             "start":"2020-01-01T00:00:00Z",
-            "commitments":[{"owner":"Owner","action":"send report"}]
         })],
     );
     fixture.activities(
@@ -384,9 +383,7 @@ async fn rich_fixture_matches_the_complete_report_contract() {
                 "talent_run_failures_24h":0,"talent_degraded_outputs_24h":0,
                 "indexer_last_rebuild_at":null
             },
-            "consumer_signal":{
-                "ledger_open_items_total":1,"ledger_stale_items_count":1,"profile_entities_total":2
-            },
+            "consumer_signal":{"profile_entities_total":2},
             "segment_backlog":{
                 "not_thought":0,"days_with_backlog":0,"errors":[],"not_sensed":0,
                 "awaiting_analysis_text":null,"last_drained_at":null,"drain_state":"realtime",
@@ -395,7 +392,7 @@ async fn rich_fixture_matches_the_complete_report_contract() {
             "notes":[
                 {"severity":"warn","category":"synthesis","message":"indexer database missing at journal/indexer/journal.sqlite; search-backed consumers may be stale.","detail_pointer":null},
                 {"severity":"info","category":"capture","message":"coverage_ratio unavailable in v1 — expected-hours denominator arrives Sprint 5+","detail_pointer":"solstone/think/surfaces/health.py"},
-                {"severity":"info","category":"synthesis","message":"corrections roll-up not available — corrections ledger exists only from Sprint 5+","detail_pointer":"solstone/think/surfaces/health.py"}
+                {"severity":"info","category":"synthesis","message":"corrections roll-up not available — corrections support arrives Sprint 5+","detail_pointer":"solstone/think/surfaces/health.py"}
             ],
             "brain_health":{
                 "snapshot":{
@@ -423,7 +420,7 @@ async fn activity_fixture_variation_changes_only_synthesis_fields() {
         "work",
         &day,
         &[
-            json!({"id":"work-rich","created_at":1,"segments":["000000_3600"],"participation":true,"story":{"summary":"done"},"edits":[{"actor":"owner"}],"source":"anticipated","start":"2020-01-01T00:00:00Z","commitments":[{"owner":"Owner","action":"send report"}]}),
+            json!({"id":"work-rich","created_at":1,"segments":["000000_3600"],"participation":true,"story":{"summary":"done"},"edits":[{"actor":"owner"}],"source":"anticipated","start":"2020-01-01T00:00:00Z"}),
             json!({"id":"activity-only"}),
         ],
     );
@@ -440,23 +437,24 @@ async fn activity_fixture_variation_changes_only_synthesis_fields() {
 }
 
 #[tokio::test]
-async fn ledger_fixture_variation_changes_only_consumer_signal_fields() {
+async fn entity_fixture_variation_changes_only_consumer_signal_fields() {
     let fixture = Fixture::new();
     fixture.established();
     let now = Utc::now();
     let day = now.format("%Y%m%d").to_string();
     fixture.talent_guards(now);
-    fixture.facet("work");
-    fixture.activities("work", &day, &[json!({"id":"same","created_at":1})]);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
-    fixture.activities("work", &day, &[json!({"id":"same","created_at":1,"commitments":[{"owner":"Owner","action":"send report"}]})]);
+    write_json(
+        &fixture.root.path().join("entities/entity/entity.json"),
+        json!({"id":"entity","name":"Entity"}),
+    );
     let (_, _, changed) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
     let mut baseline = body_json(&baseline);
     let mut changed = body_json(&changed);
     normalize_report(&mut baseline);
     normalize_report(&mut changed);
-    assert_eq!(baseline["consumer_signal"]["ledger_open_items_total"], 0);
-    assert_eq!(changed["consumer_signal"]["ledger_open_items_total"], 1);
+    assert_eq!(baseline["consumer_signal"]["profile_entities_total"], 0);
+    assert_eq!(changed["consumer_signal"]["profile_entities_total"], 1);
     baseline.as_object_mut().unwrap().remove("consumer_signal");
     changed.as_object_mut().unwrap().remove("consumer_signal");
     assert_eq!(baseline, changed);

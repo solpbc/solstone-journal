@@ -31,12 +31,11 @@
     "transcripts",
     "health",
     "journal",
-    "ledger",
     "navigate",
     "profile",
     "identity"
   ],
-  "expected_bare_sol_stdout": "solstone - journal access CLI\n\nUsage: solstone <command> [args...]\n\nYour journal\n  call\n  import\n\nTools\n  skills\n  link\n\nApps (solstone call <app>):\n  call activities\n  call awareness\n  call body\n  call entities\n  call facets\n  call import\n  call link\n  call settings\n  call sol\n  call speakers\n  call support\n  call thinking\n  call transcripts\n  call health\n  call journal\n  call ledger\n  call navigate\n  call profile\n  call identity\n\n",
+  "expected_bare_sol_stdout": "solstone - journal access CLI\n\nUsage: solstone <command> [args...]\n\nYour journal\n  call\n  import\n\nTools\n  skills\n  link\n\nApps (solstone call <app>):\n  call activities\n  call awareness\n  call body\n  call entities\n  call facets\n  call import\n  call link\n  call settings\n  call sol\n  call speakers\n  call support\n  call thinking\n  call transcripts\n  call health\n  call journal\n  call navigate\n  call profile\n  call identity\n\n",
   "header": "solstone - journal access CLI",
   "oracle": {
     "generator": "scripts/build_native_sol_root_contract.py",

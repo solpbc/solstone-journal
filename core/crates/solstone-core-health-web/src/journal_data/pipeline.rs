@@ -18,6 +18,14 @@ use super::report::HealthError;
 
 const MODES: [&str; 6] = ["segment", "daily", "activity", "weekly", "flush", "cadence"];
 const FAILED_LIST_CAP: usize = 20;
+const ACTIVITY_WORK_EVENTS: [&str; 6] = [
+    "run.start",
+    "run.complete",
+    "talent.dispatch",
+    "talent.complete",
+    "talent.fail",
+    "talent.skip",
+];
 
 #[derive(Debug, Serialize)]
 pub(crate) struct PipelineReport {
@@ -118,7 +126,17 @@ pub(crate) fn summarize_pipeline_day(
     let mut summary = PipelineReport::new(day.clone(), now);
     let health_dir = journal_root.join("chronicle").join(&day).join("health");
     if !health_dir.is_dir() {
-        let segments = completion_for_day(journal_root, &day, now)?;
+        let segments = match completion_for_day(journal_root, &day, now) {
+            Ok(segments) => segments,
+            Err(error) => {
+                log::warn!("native pipeline completion fold failed day={day}: {error:?}");
+                summary.status = "unknown".to_owned();
+                summary
+                    .anomalies
+                    .push(json!({"kind":"segments_not_thought","error":"no_health_dir"}));
+                return Ok(summary);
+            }
+        };
         set_exhausted(&mut summary, &segments);
         if day < now.date_naive().format("%Y%m%d").to_string() && segments.total > 0 {
             summary.status = "unknown".to_owned();
@@ -228,9 +246,6 @@ fn scan_health_logs(
         .collect::<Result<Vec<_>, _>>()?;
     paths.sort();
     for path in paths {
-        if !path.is_file() {
-            continue;
-        }
         let Some(filename) = path.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
@@ -262,10 +277,7 @@ fn scan_health_logs(
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             if record.get("mode").and_then(Value::as_str) == Some("activity")
-                && matches!(
-                    event,
-                    "talent.dispatch" | "talent.complete" | "talent.fail" | "talent.skip"
-                )
+                && ACTIVITY_WORK_EVENTS.contains(&event)
             {
                 summary.activities.talents_fired = true;
             }
@@ -330,6 +342,7 @@ fn duration_ms(value: Option<&Value>) -> i64 {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
     use chrono::{Duration, TimeZone, Utc};
@@ -511,6 +524,27 @@ mod tests {
     }
 
     #[test]
+    fn no_health_directory_completion_failure_degrades_to_unknown() {
+        let temporary = temporary();
+        let date = now().date_naive() - Duration::days(1);
+        let day = date.format("%Y%m%d").to_string();
+        let blocked = temporary
+            .path()
+            .join("chronicle")
+            .join(&day)
+            .join("blocked");
+        fs::create_dir_all(&blocked).unwrap();
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["anomalies"],
+            json!([{"kind":"segments_not_thought","error":"no_health_dir"}])
+        );
+    }
+
+    #[test]
     fn unreadable_health_log_degrades_to_unknown_scan_failed() {
         let temporary = temporary();
         let path = temporary
@@ -518,6 +552,24 @@ mod tests {
             .join("chronicle/20260410/health/001_daily.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, [0xff]).unwrap();
+        let report =
+            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(
+            report["anomalies"],
+            json!([{"kind":"segments_not_thought","error":"scan_failed"}])
+        );
+    }
+
+    #[test]
+    fn matching_health_log_directory_degrades_to_unknown_scan_failed() {
+        let temporary = temporary();
+        fs::create_dir_all(
+            temporary
+                .path()
+                .join("chronicle/20260410/health/001_daily.jsonl"),
+        )
+        .unwrap();
         let report =
             value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
         assert_eq!(report["status"], "unknown");
@@ -548,6 +600,38 @@ mod tests {
         assert_eq!(report["status"], "stale");
         assert!(
             report["anomalies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["kind"] == "activity_agents_missing")
+        );
+    }
+
+    #[test]
+    fn activity_run_complete_counts_as_activity_work() {
+        let temporary = temporary();
+        let day = "20260410";
+        write_log(
+            temporary.path(),
+            day,
+            "001_daily.jsonl",
+            &[json!({"event":"run.complete","day":day,"mode":"daily"})],
+        );
+        write_log(
+            temporary.path(),
+            day,
+            "001_activity.jsonl",
+            &[
+                json!({"event":"activity.detected","day":day,"mode":"activity"}),
+                json!({"event":"run.complete","day":day,"mode":"activity"}),
+            ],
+        );
+        let report =
+            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+        assert_eq!(report["status"], "healthy");
+        assert_eq!(report["activities"]["talents_fired"], true);
+        assert!(
+            !report["anomalies"]
                 .as_array()
                 .unwrap()
                 .iter()
