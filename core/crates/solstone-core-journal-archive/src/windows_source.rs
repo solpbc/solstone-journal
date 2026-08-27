@@ -71,10 +71,19 @@ impl ArchiveSource {
     /// Confirm the complete frozen observed inventory remains unchanged.
     pub fn revalidate(&self) -> Result<(), ArchiveError> {
         let observed = enumerate_windows_inventory(&self.root, self.budget)
-            .map_err(|error| map_windows_error(&self.root, error, true))?
+            .map_err(|error| {
+                #[cfg(test)]
+                eprintln!("archive source revalidation inventory error: {error:?}");
+                map_windows_error(&self.root, error, true)
+            })?
             .into_entries();
         let (_, observed) = build_inventory(&observed)?;
         if observed != self.observed {
+            #[cfg(test)]
+            eprintln!(
+                "archive source revalidation inventory differs: expected={:?}; actual={observed:?}",
+                self.observed
+            );
             return Err(ArchiveError::SourceChanged { member: None });
         }
         Ok(())
