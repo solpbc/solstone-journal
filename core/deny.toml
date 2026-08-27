@@ -32,6 +32,9 @@ allow = [
     # via webpki-roots (the Mozilla CA bundle; permissive data license). Mirrors
     # spl-rust's dependency-policy rationale for the same crate.
     "CDLA-Permissive-2.0",
+    # via doctest-file and recvmsg (transitive dependencies of interprocess, the
+    # Windows Callosum named-pipe transport). OSI-approved public-domain-equivalent.
+    "0BSD",
 ]
 
 [bans]
