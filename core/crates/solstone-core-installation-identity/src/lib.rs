@@ -1,33 +1,73 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Owner-scoped, Unix-only installation identity records.
+//! Owner-scoped installation identity records.
 //!
 //! This crate deliberately owns the small persistence protocol rather than
 //! depending on a journal crate: the protocol's no-follow traversal, ownership,
 //! exact-mode, and durability requirements apply to its owner-wide storage
 //! directory, not to a journal tree.
-
-#![cfg(unix)]
+//! Unix directory synchronization is durable through `fsync`. Windows has no
+//! reliably documented directory-handle flush guarantee, so its backend flushes
+//! files before publication and uses write-through replacement, while directory
+//! synchronization is an explicitly documented no-op.
 
 use std::collections::{BTreeMap, HashMap};
+#[cfg(unix)]
 use std::env;
-use std::ffi::{OsStr, OsString};
+#[cfg(unix)]
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Write};
+#[cfg(unix)]
 use std::os::fd::OwnedFd;
+#[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 
 use getrandom::fill;
+#[cfg(unix)]
 use nix::dir::Dir;
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{AtFlags, Flock, FlockArg, OFlag, open, openat, renameat};
+#[cfg(unix)]
 use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmod, fchmodat, fstat, mkdirat};
+#[cfg(unix)]
 use nix::unistd::{Uid, UnlinkatFlags, linkat, unlinkat};
 use sha2::{Digest, Sha256};
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{
+    ERROR_FILE_EXISTS, ERROR_LOCK_VIOLATION, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    CREATE_NEW, CreateDirectoryW, CreateFileW, CreateHardLinkW, DeleteFileW,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_ID_INFO, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo,
+    GetFileInformationByHandleEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
+    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, OPEN_ALWAYS, OPEN_EXISTING,
+    UnlockFileEx,
+};
+#[cfg(windows)]
+use windows_sys::Win32::System::Com::CoTaskMemFree;
+#[cfg(windows)]
+use windows_sys::Win32::System::IO::OVERLAPPED;
+#[cfg(windows)]
+use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath};
 
 const MAX_RECORD_BYTES: usize = 24 * 1024;
 const MAX_TOKEN_BYTES: usize = 4096;
@@ -42,6 +82,7 @@ const RECORD_DOMAIN: &[u8] = b"solstone-installation-identity-record-v1\0";
 pub enum PlatformTag {
     Linux,
     Macos,
+    Windows,
 }
 
 impl PlatformTag {
@@ -50,10 +91,11 @@ impl PlatformTag {
         match self {
             Self::Linux => "linux",
             Self::Macos => "macos",
+            Self::Windows => "windows",
         }
     }
 
-    /// The platform supported by this Unix build.
+    /// The platform supported by this build.
     pub const fn current() -> Self {
         #[cfg(target_os = "linux")]
         {
@@ -63,12 +105,17 @@ impl PlatformTag {
         {
             Self::Macos
         }
+        #[cfg(windows)]
+        {
+            Self::Windows
+        }
     }
 
     fn parse(value: &str) -> Result<Self, RecordError> {
         match value {
             "linux" => Ok(Self::Linux),
             "macos" => Ok(Self::Macos),
+            "windows" => Ok(Self::Windows),
             _ => Err(RecordError::InvalidField("platform")),
         }
     }
@@ -80,12 +127,12 @@ impl fmt::Display for PlatformTag {
     }
 }
 
-/// Canonical raw absolute Unix path bytes for an installation root.
+/// Canonical raw absolute path bytes for an installation root.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RootToken(Vec<u8>);
 
 impl RootToken {
-    /// Validates canonical raw absolute Unix pathname bytes.
+    /// Validates canonical raw absolute pathname bytes for this build target.
     pub fn from_raw_absolute(bytes: Vec<u8>) -> Result<Self, IdentityError> {
         validate_absolute_token(&bytes, "root token")?;
         Ok(Self(bytes))
@@ -97,12 +144,12 @@ impl RootToken {
     }
 }
 
-/// Canonical raw absolute Unix path bytes for a journal.
+/// Canonical raw absolute path bytes for a journal.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct JournalToken(Vec<u8>);
 
 impl JournalToken {
-    /// Validates canonical raw absolute Unix pathname bytes.
+    /// Validates canonical raw absolute pathname bytes for this build target.
     pub fn from_raw_absolute(bytes: Vec<u8>) -> Result<Self, IdentityError> {
         validate_absolute_token(&bytes, "journal token")?;
         Ok(Self(bytes))
@@ -113,9 +160,17 @@ impl JournalToken {
         &self.0
     }
 
-    /// Reconstructs the raw absolute Unix path represented by this token.
+    /// Reconstructs the raw absolute path represented by this token.
     pub fn to_path_buf(&self) -> PathBuf {
-        PathBuf::from(OsString::from_vec(self.0.clone()))
+        #[cfg(unix)]
+        {
+            PathBuf::from(OsString::from_vec(self.0.clone()))
+        }
+        #[cfg(windows)]
+        {
+            let units = windows_units_from_bytes(&self.0).expect("validated Windows journal token");
+            PathBuf::from(OsString::from_wide(&units))
+        }
     }
 }
 
@@ -266,14 +321,31 @@ pub struct OwnerBase {
 }
 
 impl OwnerBase {
-    /// Constructs an owner base from a caller-supplied absolute home directory.
+    /// Constructs an owner base from a caller-supplied absolute home directory on Unix.
     ///
     /// This is useful for adapters and isolated callers; production callers normally
-    /// use [`owner_base`]. The home itself is never created by the provider.
+    /// use [`owner_base`]. On Windows, the argument is deliberately ignored and
+    /// the current user's LocalAppData known folder is used instead. The base
+    /// itself is never created by the provider.
     pub fn at_home(home: PathBuf, platform: PlatformTag) -> Result<Self, IdentityError> {
+        #[cfg(windows)]
+        {
+            let _ = home;
+            if platform != PlatformTag::Windows {
+                return Err(IdentityError::InvalidInput(
+                    "owner platform does not match this Windows build",
+                ));
+            }
+            return Ok(Self {
+                home: known_folder_local_app_data()?,
+                platform,
+            });
+        }
+        #[cfg(unix)]
         if !home.is_absolute() {
             return Err(IdentityError::InvalidInput("home must be absolute"));
         }
+        #[cfg(unix)]
         Ok(Self { home, platform })
     }
 
@@ -440,10 +512,16 @@ impl GuardFields {
     }
 }
 
+#[cfg(unix)]
+type IdentityLock = Flock<File>;
+
+#[cfg(windows)]
+type IdentityLock = WindowsLockGuard;
+
 #[derive(Debug)]
 struct NamespaceLease {
-    _owner_lock: Flock<File>,
-    _marker_lock: Flock<File>,
+    _owner_lock: IdentityLock,
+    _marker_lock: IdentityLock,
     _namespace: SecureDir,
     // Struct fields drop in declaration order. Keep the process-local outer
     // guard last so it remains held until every file and namespace lock drops.
@@ -676,20 +754,43 @@ pub fn decode_record(bytes: &[u8]) -> Result<IdentityRecord, RecordError> {
 
 /// Returns the current user's platform-specific owner base without creating it.
 pub fn owner_base() -> Result<OwnerBase, IdentityError> {
-    let home = env::var_os("HOME").ok_or(IdentityError::InvalidInput("HOME is not set"))?;
-    OwnerBase::at_home(PathBuf::from(home), PlatformTag::current())
+    #[cfg(unix)]
+    {
+        let home = env::var_os("HOME").ok_or(IdentityError::InvalidInput("HOME is not set"))?;
+        OwnerBase::at_home(PathBuf::from(home), PlatformTag::current())
+    }
+    #[cfg(windows)]
+    {
+        OwnerBase::at_home(PathBuf::new(), PlatformTag::current())
+    }
 }
 
 /// Canonicalizes an existing root and converts it to protocol bytes.
 pub fn root_token_from_path(path: &Path) -> Result<RootToken, IdentityError> {
-    let canonical =
-        std::fs::canonicalize(path).map_err(|source| io_error("canonicalize root", source))?;
-    RootToken::from_raw_absolute(normalize_absolute_bytes(canonical.as_os_str().as_bytes())?)
+    #[cfg(unix)]
+    {
+        let canonical =
+            std::fs::canonicalize(path).map_err(|source| io_error("canonicalize root", source))?;
+        RootToken::from_raw_absolute(normalize_absolute_bytes(canonical.as_os_str().as_bytes())?)
+    }
+    #[cfg(windows)]
+    {
+        let canonical =
+            std::fs::canonicalize(path).map_err(|source| io_error("canonicalize root", source))?;
+        RootToken::from_raw_absolute(normalize_windows_canonical_path(&canonical)?)
+    }
 }
 
 /// Lexically normalizes an absolute journal path and converts it to protocol bytes.
 pub fn journal_token_from_path(path: &Path) -> Result<JournalToken, IdentityError> {
-    JournalToken::from_raw_absolute(normalize_absolute_bytes(path.as_os_str().as_bytes())?)
+    #[cfg(unix)]
+    {
+        JournalToken::from_raw_absolute(normalize_absolute_bytes(path.as_os_str().as_bytes())?)
+    }
+    #[cfg(windows)]
+    {
+        JournalToken::from_raw_absolute(normalize_absolute_bytes(&wide_bytes(path.as_os_str()))?)
+    }
 }
 
 /// Serializes the four guard comment lines appended to each managed wrapper.
@@ -1039,16 +1140,34 @@ impl SecureDir {
     }
 
     fn sync(&self) -> Result<(), IdentityError> {
-        self.file
-            .sync_all()
-            .map_err(|source| io_error("sync directory", source))
+        #[cfg(unix)]
+        {
+            self.file
+                .sync_all()
+                .map_err(|source| io_error("sync directory", source))
+        }
+        #[cfg(windows)]
+        {
+            // Windows does not provide a reliably documented directory-handle
+            // flush guarantee. File contents are flushed before publication and
+            // replacement uses MOVEFILE_WRITE_THROUGH; this is intentionally not
+            // presented as an equivalent to Unix directory fsync.
+            Ok(())
+        }
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct OwnerCoordinatorKey {
-    device: u64,
-    inode: u64,
+enum OwnerCoordinatorKey {
+    Unix {
+        device: u64,
+        inode: u64,
+    },
+    Windows {
+        volume_serial: u32,
+        file_id: [u8; 16],
+    },
 }
 
 #[derive(Debug)]
@@ -1076,11 +1195,23 @@ fn owner_coordinator_poisoned() -> IdentityError {
 }
 
 fn owner_coordinator_key(dir: &File) -> Result<OwnerCoordinatorKey, IdentityError> {
-    let stat = fstat(dir).map_err(|error| nix_error("stat owner coordinator directory", error))?;
-    Ok(OwnerCoordinatorKey {
-        device: stat.st_dev as u64,
-        inode: stat.st_ino as u64,
-    })
+    #[cfg(unix)]
+    {
+        let stat =
+            fstat(dir).map_err(|error| nix_error("stat owner coordinator directory", error))?;
+        Ok(OwnerCoordinatorKey::Unix {
+            device: stat.st_dev as u64,
+            inode: stat.st_ino as u64,
+        })
+    }
+    #[cfg(windows)]
+    {
+        let identity = file_id_windows(dir)?;
+        Ok(OwnerCoordinatorKey::Windows {
+            volume_serial: identity.volume_serial,
+            file_id: identity.file_id,
+        })
+    }
 }
 
 fn owner_coordinator_for(key: OwnerCoordinatorKey) -> Result<Arc<OwnerCoordinator>, IdentityError> {
@@ -1169,7 +1300,7 @@ fn owner_coordinator_waiters_for_test(key: OwnerCoordinatorKey) -> usize {
         .waiters
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn owner_coordinator_entry_exists_for_test(key: OwnerCoordinatorKey) -> bool {
     OWNER_COORDINATORS
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -1198,7 +1329,7 @@ impl StageKind {
 #[derive(Debug)]
 struct Stage {
     name: OsString,
-    _lock: Flock<File>,
+    _lock: IdentityLock,
 }
 
 #[derive(Debug)]
@@ -1217,13 +1348,22 @@ fn base_segments(platform: PlatformTag) -> &'static [&'static str] {
             "installation-identity",
             "v1",
         ],
+        PlatformTag::Windows => &["solstone", "installation-identity", "v1"],
     }
 }
 
+fn first_exact_index(platform: PlatformTag) -> usize {
+    match platform {
+        PlatformTag::Linux | PlatformTag::Macos => 3,
+        PlatformTag::Windows => 0,
+    }
+}
+
+#[cfg(unix)]
 fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
     let mut current = open_absolute_dir(&owner.home)?;
     for (index, segment) in base_segments(owner.platform).iter().enumerate() {
-        let exact_mode = index >= 3;
+        let exact_mode = index >= first_exact_index(owner.platform);
         current = if create {
             open_or_create_child_dir(&current, segment, exact_mode)?
         } else {
@@ -1242,6 +1382,7 @@ fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityE
     Ok(current)
 }
 
+#[cfg(unix)]
 fn open_absolute_dir(path: &Path) -> Result<SecureDir, IdentityError> {
     let fd = open(
         path,
@@ -1257,6 +1398,7 @@ fn open_absolute_dir(path: &Path) -> Result<SecureDir, IdentityError> {
     })
 }
 
+#[cfg(unix)]
 fn open_child_dir(
     parent: &SecureDir,
     name: &str,
@@ -1277,6 +1419,7 @@ fn open_child_dir(
     })
 }
 
+#[cfg(unix)]
 fn open_or_create_child_dir(
     parent: &SecureDir,
     name: &str,
@@ -1314,6 +1457,7 @@ fn open_or_create_child_dir(
     }
 }
 
+#[cfg(unix)]
 fn open_namespace(
     provider: &SecureDir,
     namespace: &NamespaceName,
@@ -1327,12 +1471,14 @@ fn open_namespace(
     }
 }
 
+#[cfg(unix)]
 fn ensure_owner_lock_file(provider: &SecureDir) -> Result<(), IdentityError> {
     let file = open_or_create_file(provider, "owner.lock")?;
     verify_regular(&file, true)?;
     Ok(())
 }
 
+#[cfg(unix)]
 fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityError> {
     let fd = openat(
         &parent.file,
@@ -1347,7 +1493,8 @@ fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityE
     Ok(file)
 }
 
-fn lock_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
+#[cfg(unix)]
+fn lock_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
     #[cfg(test)]
     note_owner_file_lock_attempt();
     let file = open_or_create_file(provider, "owner.lock")?;
@@ -1355,7 +1502,8 @@ fn lock_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
 
-fn lock_existing_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityError> {
+#[cfg(unix)]
+fn lock_existing_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
     #[cfg(test)]
     note_owner_file_lock_attempt();
     let file = open_existing_file(provider, "owner.lock", true)?;
@@ -1363,7 +1511,8 @@ fn lock_existing_owner(provider: &SecureDir) -> Result<Flock<File>, IdentityErro
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
 
-fn lock_existing_marker(namespace: &SecureDir) -> Result<Flock<File>, IdentityError> {
+#[cfg(unix)]
+fn lock_existing_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
     let file = open_existing_file(namespace, "adoption.marker", true)?;
     let mut bytes = Vec::new();
     file.try_clone()
@@ -1379,7 +1528,8 @@ fn lock_existing_marker(namespace: &SecureDir) -> Result<Flock<File>, IdentityEr
         .map_err(|(_, error)| nix_error("lock adoption marker", error))
 }
 
-fn create_or_lock_marker(namespace: &SecureDir) -> Result<Flock<File>, IdentityError> {
+#[cfg(unix)]
+fn create_or_lock_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
     match open_existing_file(namespace, "adoption.marker", true) {
         Ok(file) => {
             let mut bytes = Vec::new();
@@ -1421,6 +1571,7 @@ fn create_or_lock_marker(namespace: &SecureDir) -> Result<Flock<File>, IdentityE
         .map_err(|(_, error)| nix_error("lock adoption marker", error))
 }
 
+#[cfg(unix)]
 fn open_existing_file(
     parent: &SecureDir,
     name: &str,
@@ -1438,6 +1589,7 @@ fn open_existing_file(
     Ok(file)
 }
 
+#[cfg(unix)]
 fn read_namespace(
     namespace: &SecureDir,
     name: NamespaceName,
@@ -1508,6 +1660,7 @@ fn read_namespace(
     })
 }
 
+#[cfg(unix)]
 fn enumerate_registry(
     provider: &SecureDir,
 ) -> Result<BTreeMap<NamespaceName, NamespaceSnapshot>, IdentityError> {
@@ -1560,7 +1713,7 @@ fn admit_existing_setup(
     namespace: SecureDir,
     snapshot: NamespaceSnapshot,
     owner_coordinator: OwnerCoordinatorGuard,
-    owner_lock: Flock<File>,
+    owner_lock: IdentityLock,
     _registry: &BTreeMap<NamespaceName, NamespaceSnapshot>,
 ) -> Result<SetupAdmission, IdentityError> {
     let mut record = snapshot
@@ -1702,6 +1855,7 @@ fn validate_existing_evidence(
     }
 }
 
+#[cfg(unix)]
 fn write_stage(
     namespace: &SecureDir,
     kind: StageKind,
@@ -1767,6 +1921,7 @@ fn write_stage(
     }
 }
 
+#[cfg(unix)]
 fn publish_prepared(namespace: &SecureDir, stage: Stage) -> Result<(), PublishPreparedError> {
     hit(FaultPoint::PreparedNoReplace).map_err(PublishPreparedError::Identity)?;
     let name = stage.name.clone();
@@ -1818,6 +1973,7 @@ fn publish_prepared(namespace: &SecureDir, stage: Stage) -> Result<(), PublishPr
     }
 }
 
+#[cfg(unix)]
 fn replace_record(
     namespace: &SecureDir,
     record: &IdentityRecord,
@@ -1833,6 +1989,7 @@ fn replace_record(
     namespace.sync()
 }
 
+#[cfg(unix)]
 fn remove_stale_stages(namespace: &SecureDir) -> Result<(), IdentityError> {
     let fd: OwnedFd = namespace
         .file
@@ -1893,6 +2050,7 @@ fn remove_stale_stages(namespace: &SecureDir) -> Result<(), IdentityError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn validate_namespace_children(namespace: &SecureDir) -> Result<(), IdentityError> {
     let fd: OwnedFd = namespace
         .file
@@ -1934,6 +2092,7 @@ fn stage_kind(name: &[u8]) -> Option<StageKind> {
     None
 }
 
+#[cfg(unix)]
 fn open_existing_file_os(
     parent: &SecureDir,
     name: &OsStr,
@@ -1962,6 +2121,7 @@ fn generate_id() -> Result<InstallationId, IdentityError> {
     Ok(InstallationId(bytes))
 }
 
+#[cfg(unix)]
 fn verify_directory(file: &File, exact_mode: bool) -> Result<(), IdentityError> {
     let stat = fstat(file).map_err(|error| nix_error("stat storage directory", error))?;
     if SFlag::from_bits_truncate(stat.st_mode) != SFlag::S_IFDIR {
@@ -1982,6 +2142,7 @@ fn verify_directory(file: &File, exact_mode: bool) -> Result<(), IdentityError> 
     Ok(())
 }
 
+#[cfg(unix)]
 fn verify_regular(file: &File, exact_mode: bool) -> Result<(), IdentityError> {
     let stat = fstat(file).map_err(|error| nix_error("stat storage file", error))?;
     if SFlag::from_bits_truncate(stat.st_mode) != SFlag::S_IFREG {
@@ -2002,21 +2163,46 @@ fn verify_regular(file: &File, exact_mode: bool) -> Result<(), IdentityError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn set_mode(file: &File, mode: Mode) -> Result<(), IdentityError> {
     fchmod(file, mode).map_err(|error| nix_error("set storage mode", error))
 }
 
 fn validate_absolute_token(bytes: &[u8], label: &'static str) -> Result<(), IdentityError> {
+    #[cfg(unix)]
+    {
+        validate_unix_absolute_token(bytes, label)
+    }
+    #[cfg(windows)]
+    {
+        validate_windows_absolute_token(bytes, label)
+    }
+}
+
+#[cfg(unix)]
+fn validate_unix_absolute_token(bytes: &[u8], label: &'static str) -> Result<(), IdentityError> {
     if bytes.is_empty() || bytes.len() > MAX_TOKEN_BYTES || bytes[0] != b'/' || bytes.contains(&0) {
         return Err(IdentityError::InvalidInput(label));
     }
-    if normalize_absolute_bytes(bytes)? != bytes {
+    if normalize_unix_absolute_bytes(bytes)? != bytes {
         return Err(IdentityError::InvalidInput(label));
     }
     Ok(())
 }
 
 fn normalize_absolute_bytes(bytes: &[u8]) -> Result<Vec<u8>, IdentityError> {
+    #[cfg(unix)]
+    {
+        normalize_unix_absolute_bytes(bytes)
+    }
+    #[cfg(windows)]
+    {
+        normalize_windows_absolute_bytes(bytes)
+    }
+}
+
+#[cfg(unix)]
+fn normalize_unix_absolute_bytes(bytes: &[u8]) -> Result<Vec<u8>, IdentityError> {
     if bytes.is_empty() || bytes[0] != b'/' || bytes.contains(&0) {
         return Err(IdentityError::InvalidInput(
             "path must be absolute and NUL-free",
@@ -2123,8 +2309,932 @@ fn io_error(operation: &'static str, source: io::Error) -> IdentityError {
     IdentityError::Io { operation, source }
 }
 
+#[cfg(unix)]
 fn nix_error(operation: &'static str, error: Errno) -> IdentityError {
     io_error(operation, io::Error::from_raw_os_error(error as i32))
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WindowsFileIdentity {
+    volume_serial: u32,
+    file_id: [u8; 16],
+}
+
+#[cfg(windows)]
+struct WindowsLockGuard {
+    file: File,
+    locked_handle: Option<RawHandle>,
+    overlapped: OVERLAPPED,
+}
+
+#[cfg(windows)]
+impl fmt::Debug for WindowsLockGuard {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WindowsLockGuard")
+            .field("file", &self.file)
+            .field("locked_handle", &self.locked_handle)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+unsafe impl Send for WindowsLockGuard {}
+
+#[cfg(windows)]
+impl Drop for WindowsLockGuard {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        let Some(handle) = self.locked_handle else {
+            return;
+        };
+        // SAFETY: this guard owns the file and retains the exact whole-file
+        // range and OVERLAPPED value used for LockFileEx.
+        let _ = unsafe { UnlockFileEx(handle, 0, u32::MAX, u32::MAX, &mut self.overlapped) };
+    }
+}
+
+#[cfg(windows)]
+fn windows_units_from_bytes(bytes: &[u8]) -> Result<Vec<u16>, IdentityError> {
+    if bytes.len() % 2 != 0 {
+        return Err(IdentityError::InvalidInput(
+            "Windows path has an odd byte count",
+        ));
+    }
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    if units.contains(&0) {
+        return Err(IdentityError::InvalidInput(
+            "Windows path contains an interior NUL",
+        ));
+    }
+    String::from_utf16(&units)
+        .map_err(|_| IdentityError::InvalidInput("Windows path is not valid UTF-16"))?;
+    Ok(units)
+}
+
+#[cfg(windows)]
+fn wide_bytes(value: &OsStr) -> Vec<u8> {
+    value
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>()
+}
+
+#[cfg(windows)]
+fn windows_wide_nul(path: &Path) -> Result<Vec<u16>, IdentityError> {
+    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
+    if units.contains(&0) {
+        return Err(IdentityError::InvalidInput(
+            "Windows path contains an interior NUL",
+        ));
+    }
+    let mut output = units;
+    output.push(0);
+    Ok(output)
+}
+
+#[cfg(windows)]
+fn normalize_windows_segments<'a>(
+    segments: impl IntoIterator<Item = &'a str>,
+) -> Result<Vec<&'a str>, IdentityError> {
+    let mut output = Vec::new();
+    for segment in segments {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                if output.pop().is_none() {
+                    return Err(IdentityError::InvalidInput(
+                        "Windows path escapes its absolute root",
+                    ));
+                }
+            }
+            value => output.push(value),
+        }
+    }
+    Ok(output)
+}
+
+#[cfg(windows)]
+fn normalize_windows_absolute_bytes(bytes: &[u8]) -> Result<Vec<u8>, IdentityError> {
+    if bytes.len() > MAX_TOKEN_BYTES {
+        return Err(IdentityError::InvalidInput("path exceeds 4096 bytes"));
+    }
+    let units = windows_units_from_bytes(bytes)?;
+    let input = String::from_utf16(&units)
+        .map_err(|_| IdentityError::InvalidInput("Windows path is not valid UTF-16"))?;
+    let input = input.replace('/', "\\");
+    if input.starts_with(r"\\?\") || input.starts_with(r"\\.\") {
+        return Err(IdentityError::InvalidInput(
+            "Windows verbatim and device paths are not accepted",
+        ));
+    }
+    let normalized = if let Some(rest) = input.strip_prefix(r"\\") {
+        let mut parts = rest.split('\\');
+        let server = parts
+            .next()
+            .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
+            .ok_or(IdentityError::InvalidInput(
+                "Windows UNC path has no server",
+            ))?;
+        let share = parts
+            .next()
+            .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
+            .ok_or(IdentityError::InvalidInput("Windows UNC path has no share"))?;
+        let tail = normalize_windows_segments(parts)?;
+        let mut output = format!(r"\\{server}\{share}");
+        for segment in tail {
+            output.push('\\');
+            output.push_str(segment);
+        }
+        output
+    } else {
+        let units: Vec<u16> = input.encode_utf16().collect();
+        if units.len() < 3
+            || !((b'A' as u16..=b'Z' as u16).contains(&units[0])
+                || (b'a' as u16..=b'z' as u16).contains(&units[0]))
+            || units[1] != b':' as u16
+            || units[2] != b'\\' as u16
+        {
+            return Err(IdentityError::InvalidInput(
+                "Windows path must be fully qualified",
+            ));
+        }
+        let tail = normalize_windows_segments(input[3..].split('\\'))?;
+        let drive = char::from_u32(units[0] as u32)
+            .expect("validated ASCII drive")
+            .to_ascii_uppercase();
+        let mut output = format!("{drive}:\\");
+        for (index, segment) in tail.iter().enumerate() {
+            if index != 0 {
+                output.push('\\');
+            }
+            output.push_str(segment);
+        }
+        output
+    };
+    let output = wide_bytes(OsStr::new(&normalized));
+    if output.len() > MAX_TOKEN_BYTES {
+        return Err(IdentityError::InvalidInput("path exceeds 4096 bytes"));
+    }
+    Ok(output)
+}
+
+#[cfg(windows)]
+fn validate_windows_absolute_token(bytes: &[u8], label: &'static str) -> Result<(), IdentityError> {
+    if bytes.is_empty() || bytes.len() > MAX_TOKEN_BYTES {
+        return Err(IdentityError::InvalidInput(label));
+    }
+    if normalize_windows_absolute_bytes(bytes)? != bytes {
+        return Err(IdentityError::InvalidInput(label));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn normalize_windows_canonical_path(path: &Path) -> Result<Vec<u8>, IdentityError> {
+    let input = path.to_string_lossy();
+    let ordinary = if let Some(rest) = input.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = input.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        input.into_owned()
+    };
+    normalize_windows_absolute_bytes(&wide_bytes(OsStr::new(&ordinary)))
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn known_folder_local_app_data() -> Result<PathBuf, IdentityError> {
+    #[cfg(test)]
+    if let Some(path) = known_folder_override_for_test() {
+        return Ok(path);
+    }
+    let mut raw = std::ptr::null_mut();
+    // SAFETY: the folder GUID is valid and SHGetKnownFolderPath initializes the
+    // returned CoTaskMem allocation on success.
+    let result =
+        unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, std::ptr::null_mut(), &mut raw) };
+    if result < 0 || raw.is_null() {
+        return Err(io_error(
+            "resolve LocalAppData known folder",
+            io::Error::from_raw_os_error(result),
+        ));
+    }
+    let mut length = 0;
+    // SAFETY: the successful result is a NUL-terminated PWSTR allocation.
+    unsafe {
+        while *raw.add(length) != 0 {
+            length += 1;
+        }
+    }
+    // SAFETY: the pointer remains valid until CoTaskMemFree below.
+    let units = unsafe { std::slice::from_raw_parts(raw, length) }.to_vec();
+    // SAFETY: SHGetKnownFolderPath documents CoTaskMemFree as the matching free.
+    unsafe { CoTaskMemFree(raw.cast()) };
+    String::from_utf16(&units).map_err(|_| {
+        IdentityError::InvalidInput("LocalAppData known folder is not valid UTF-16")
+    })?;
+    Ok(PathBuf::from(OsString::from_wide(&units)))
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn open_windows_file(
+    path: &Path,
+    access: u32,
+    disposition: u32,
+    flags: u32,
+    operation: &'static str,
+) -> Result<File, IdentityError> {
+    let wide = windows_wide_nul(path)?;
+    // SAFETY: wide is NUL terminated and all remaining arguments are documented constants.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            access,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            disposition,
+            flags,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io_error(operation, io::Error::last_os_error()));
+    }
+    // SAFETY: CreateFileW returned an owned valid handle exactly once.
+    Ok(unsafe { File::from_raw_handle(handle) })
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn attribute_tag_windows(file: &File) -> Result<FILE_ATTRIBUTE_TAG_INFO, IdentityError> {
+    let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
+    // SAFETY: info is writable for the exact supplied size and file is a live handle.
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if result == 0 {
+        return Err(io_error(
+            "query storage attributes",
+            io::Error::last_os_error(),
+        ));
+    }
+    Ok(info)
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn file_id_windows(file: &File) -> Result<WindowsFileIdentity, IdentityError> {
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: info is writable for the exact supplied size and file is a live handle.
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&mut info as *mut FILE_ID_INFO).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    if result == 0 {
+        return Err(io_error(
+            "query storage identity",
+            io::Error::last_os_error(),
+        ));
+    }
+    Ok(WindowsFileIdentity {
+        volume_serial: u32::try_from(info.VolumeSerialNumber)
+            .map_err(|_| IdentityError::UnsafeState("Windows volume serial exceeds u32"))?,
+        file_id: info.FileId.Identifier,
+    })
+}
+
+#[cfg(windows)]
+fn verify_directory(file: &File, _exact_mode: bool) -> Result<(), IdentityError> {
+    // Windows access is governed by ordinary inherited LocalAppData controls.
+    // This protocol intentionally does not inspect or create owner SIDs, DACLs,
+    // integrity labels, or any custom ACL representation.
+    let attributes = attribute_tag_windows(file)?;
+    if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(IdentityError::UnsafeState(
+            "storage path is a reparse point",
+        ));
+    }
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
+        return Err(IdentityError::UnsafeState(
+            "storage path is not a directory",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn verify_regular(file: &File, _exact_mode: bool) -> Result<(), IdentityError> {
+    let attributes = attribute_tag_windows(file)?;
+    if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(IdentityError::UnsafeState(
+            "storage path is a reparse point",
+        ));
+    }
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        return Err(IdentityError::UnsafeState(
+            "storage path is not a regular file",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn open_absolute_dir(path: &Path) -> Result<SecureDir, IdentityError> {
+    let file = open_windows_file(
+        path,
+        FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        "open owner directory",
+    )?;
+    verify_directory(&file, false)?;
+    Ok(SecureDir {
+        file,
+        path: path.to_path_buf(),
+    })
+}
+
+#[cfg(windows)]
+fn open_child_dir(
+    parent: &SecureDir,
+    name: &str,
+    exact_mode: bool,
+) -> Result<SecureDir, IdentityError> {
+    let path = parent.path.join(name);
+    let file = open_windows_file(
+        &path,
+        FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        "open storage directory",
+    )?;
+    verify_directory(&file, exact_mode)?;
+    Ok(SecureDir { file, path })
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn open_or_create_child_dir(
+    parent: &SecureDir,
+    name: &str,
+    exact_mode: bool,
+) -> Result<SecureDir, IdentityError> {
+    match open_child_dir(parent, name, exact_mode) {
+        Ok(directory) => Ok(directory),
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            let path = parent.path.join(name);
+            let wide = windows_wide_nul(&path)?;
+            // SAFETY: wide is NUL terminated and the security descriptor is intentionally inherited.
+            let created = unsafe { CreateDirectoryW(wide.as_ptr(), std::ptr::null()) };
+            if created == 0 && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists {
+                return Err(io_error(
+                    "create storage directory",
+                    io::Error::last_os_error(),
+                ));
+            }
+            let directory = open_child_dir(parent, name, exact_mode)?;
+            parent.sync()?;
+            Ok(directory)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn open_provider(owner: &OwnerBase, create: bool) -> Result<SecureDir, IdentityError> {
+    let mut current = open_absolute_dir(&owner.home)?;
+    for (index, segment) in base_segments(owner.platform).iter().enumerate() {
+        let exact_mode = index >= first_exact_index(owner.platform);
+        current = if create {
+            open_or_create_child_dir(&current, segment, exact_mode)?
+        } else {
+            open_child_dir(&current, segment, exact_mode)?
+        };
+    }
+    let namespaces = if create {
+        open_or_create_child_dir(&current, "namespaces", true)?
+    } else {
+        open_child_dir(&current, "namespaces", true)?
+    };
+    drop(namespaces);
+    if create {
+        ensure_owner_lock_file(&current)?;
+    }
+    Ok(current)
+}
+
+#[cfg(windows)]
+fn open_namespace(
+    provider: &SecureDir,
+    namespace: &NamespaceName,
+    create: bool,
+) -> Result<SecureDir, IdentityError> {
+    let namespaces = open_child_dir(provider, "namespaces", true)?;
+    if create {
+        open_or_create_child_dir(&namespaces, &namespace.as_hex(), true)
+    } else {
+        open_child_dir(&namespaces, &namespace.as_hex(), true)
+    }
+}
+
+#[cfg(windows)]
+fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityError> {
+    let file = open_windows_file(
+        &parent.path.join(name),
+        GENERIC_READ | GENERIC_WRITE,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        "open storage file",
+    )?;
+    verify_regular(&file, true)?;
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn open_existing_file(
+    parent: &SecureDir,
+    name: &str,
+    exact_mode: bool,
+) -> Result<File, IdentityError> {
+    let file = open_windows_file(
+        &parent.path.join(name),
+        GENERIC_READ | GENERIC_WRITE,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        "open storage file",
+    )?;
+    verify_regular(&file, exact_mode)?;
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn open_existing_file_os(
+    parent: &SecureDir,
+    name: &OsStr,
+    exact_mode: bool,
+) -> Result<File, IdentityError> {
+    let file = open_windows_file(
+        &parent.path.join(name),
+        GENERIC_READ | GENERIC_WRITE,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        "open storage file",
+    )?;
+    verify_regular(&file, exact_mode)?;
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn create_new_file(path: &Path, operation: &'static str) -> Result<File, IdentityError> {
+    open_windows_file(
+        path,
+        GENERIC_READ | GENERIC_WRITE,
+        CREATE_NEW,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+        operation,
+    )
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn lock_file_windows(file: File) -> Result<WindowsLockGuard, (File, io::Error)> {
+    let mut overlapped = OVERLAPPED::default();
+    let handle = file.as_raw_handle();
+    // SAFETY: the file owns the handle and the zeroed OVERLAPPED describes the retained whole-file range.
+    let result = unsafe {
+        LockFileEx(
+            handle,
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    if result == 0 {
+        return Err((file, io::Error::last_os_error()));
+    }
+    Ok(WindowsLockGuard {
+        file,
+        locked_handle: Some(handle),
+        overlapped,
+    })
+}
+
+#[cfg(windows)]
+fn lock_file_windows_blocking(mut file: File) -> Result<WindowsLockGuard, IdentityError> {
+    loop {
+        match lock_file_windows(file) {
+            Ok(lock) => return Ok(lock),
+            Err((returned, error)) if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) => {
+                file = returned;
+                std::thread::yield_now();
+            }
+            Err((_, error)) => return Err(io_error("lock identity storage", error)),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn ensure_owner_lock_file(provider: &SecureDir) -> Result<(), IdentityError> {
+    let file = open_or_create_file(provider, "owner.lock")?;
+    verify_regular(&file, true)
+}
+
+#[cfg(windows)]
+fn lock_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    #[cfg(test)]
+    note_owner_file_lock_attempt();
+    lock_file_windows_blocking(open_or_create_file(provider, "owner.lock")?)
+}
+
+#[cfg(windows)]
+fn lock_existing_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    #[cfg(test)]
+    note_owner_file_lock_attempt();
+    lock_file_windows_blocking(open_existing_file(provider, "owner.lock", true)?)
+}
+
+#[cfg(windows)]
+fn lock_existing_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    let file = open_existing_file(namespace, "adoption.marker", true)?;
+    let mut bytes = Vec::new();
+    file.try_clone()
+        .map_err(|source| io_error("clone adoption marker", source))?
+        .read_to_end(&mut bytes)
+        .map_err(|source| io_error("read adoption marker", source))?;
+    if bytes != MARKER_BYTES {
+        return Err(IdentityError::UnsafeState(
+            "adoption marker has invalid content",
+        ));
+    }
+    lock_file_windows_blocking(file)
+}
+
+#[cfg(windows)]
+fn create_or_lock_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    match open_existing_file(namespace, "adoption.marker", true) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.try_clone()
+                .map_err(|source| io_error("clone adoption marker", source))?
+                .read_to_end(&mut bytes)
+                .map_err(|source| io_error("read adoption marker", source))?;
+            if bytes != MARKER_BYTES {
+                return Err(IdentityError::UnsafeState(
+                    "adoption marker has invalid content",
+                ));
+            }
+            hit(FaultPoint::MarkerLock)?;
+            return lock_file_windows_blocking(file);
+        }
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    hit(FaultPoint::MarkerCreation)?;
+    let mut file = create_new_file(
+        &namespace.path.join("adoption.marker"),
+        "create adoption marker",
+    )?;
+    verify_regular(&file, true)?;
+    file.write_all(MARKER_BYTES)
+        .map_err(|source| io_error("write adoption marker", source))?;
+    file.sync_all()
+        .map_err(|source| io_error("sync adoption marker", source))?;
+    namespace.sync()?;
+    hit(FaultPoint::MarkerSync)?;
+    hit(FaultPoint::MarkerLock)?;
+    lock_file_windows_blocking(file)
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn delete_file_windows(path: &Path, operation: &'static str) -> Result<(), IdentityError> {
+    let wide = windows_wide_nul(path)?;
+    // SAFETY: wide is NUL terminated.
+    if unsafe { DeleteFileW(wide.as_ptr()) } == 0 {
+        return Err(io_error(operation, io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn read_namespace(
+    namespace: &SecureDir,
+    name: NamespaceName,
+) -> Result<NamespaceSnapshot, IdentityError> {
+    validate_namespace_children(namespace)?;
+    let record_file = match open_existing_file(namespace, "record", true) {
+        Ok(file) => Some(file),
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    let marker_file = match open_existing_file(namespace, "adoption.marker", true) {
+        Ok(file) => Some(file),
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    let mut bytes = 0_u64;
+    let record = if let Some(mut file) = record_file {
+        let size = file
+            .metadata()
+            .map_err(|source| io_error("stat identity record", source))?
+            .len();
+        if size > MAX_RECORD_BYTES as u64 {
+            return Err(IdentityError::UnsafeState("identity record exceeds bounds"));
+        }
+        bytes += size;
+        let mut encoded = Vec::with_capacity(size as usize);
+        file.read_to_end(&mut encoded)
+            .map_err(|source| io_error("read identity record", source))?;
+        Some(decode_record(&encoded)?)
+    } else {
+        None
+    };
+    let marker = if let Some(mut file) = marker_file {
+        let size = file
+            .metadata()
+            .map_err(|source| io_error("stat adoption marker", source))?
+            .len();
+        if size != MARKER_BYTES.len() as u64 {
+            return Err(IdentityError::UnsafeState(
+                "adoption marker has invalid size",
+            ));
+        }
+        bytes += size;
+        let mut content = Vec::new();
+        file.read_to_end(&mut content)
+            .map_err(|source| io_error("read adoption marker", source))?;
+        if content != MARKER_BYTES {
+            return Err(IdentityError::UnsafeState(
+                "adoption marker has invalid content",
+            ));
+        }
+        true
+    } else {
+        false
+    };
+    match (&record, marker) {
+        (None, true) => return Err(IdentityError::UnsafeState("orphan adoption marker")),
+        (Some(record), false) if record.state != LifecycleState::Prepared => {
+            return Err(IdentityError::UnsafeState(
+                "committed record has no adoption marker",
+            ));
+        }
+        _ => {}
+    }
+    Ok(NamespaceSnapshot {
+        namespace: name,
+        record,
+        marker,
+        bytes,
+    })
+}
+
+#[cfg(windows)]
+fn validate_namespace_children(namespace: &SecureDir) -> Result<(), IdentityError> {
+    let entries = std::fs::read_dir(&namespace.path)
+        .map_err(|source| io_error("read namespace directory", source))?;
+    for entry in entries {
+        let entry = entry.map_err(|source| io_error("read namespace directory", source))?;
+        let name = entry.file_name();
+        let text = name
+            .to_str()
+            .ok_or(IdentityError::UnsafeState("unknown namespace child"))?;
+        if matches!(text, "record" | "adoption.marker") || stage_kind(text.as_bytes()).is_some() {
+            continue;
+        }
+        return Err(IdentityError::UnsafeState("unknown namespace child"));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn enumerate_registry(
+    provider: &SecureDir,
+) -> Result<BTreeMap<NamespaceName, NamespaceSnapshot>, IdentityError> {
+    let namespaces = open_child_dir(provider, "namespaces", true)?;
+    let entries = std::fs::read_dir(&namespaces.path)
+        .map_err(|source| io_error("read namespace registry", source))?;
+    let mut registry = BTreeMap::new();
+    let mut total_bytes = 0_u64;
+    for entry in entries {
+        let entry = entry.map_err(|source| io_error("read namespace registry", source))?;
+        let name = entry.file_name();
+        let text = name.to_str().ok_or(IdentityError::UnsafeState(
+            "namespace entry is not lowercase hex",
+        ))?;
+        let namespace_name = NamespaceName::parse(text)
+            .map_err(|_| IdentityError::UnsafeState("namespace entry is not lowercase hex"))?;
+        if registry.len() == MAX_NAMESPACES {
+            return Err(IdentityError::UnsafeState(
+                "namespace registry exceeds 1024 entries",
+            ));
+        }
+        let namespace = open_child_dir(&namespaces, text, true)?;
+        let snapshot = read_namespace(&namespace, namespace_name.clone())?;
+        total_bytes = total_bytes
+            .checked_add(snapshot.bytes)
+            .ok_or(IdentityError::UnsafeState(
+                "namespace registry exceeds 16 MiB",
+            ))?;
+        if total_bytes > MAX_REGISTRY_BYTES {
+            return Err(IdentityError::UnsafeState(
+                "namespace registry exceeds 16 MiB",
+            ));
+        }
+        registry.insert(namespace_name, snapshot);
+    }
+    Ok(registry)
+}
+
+#[cfg(windows)]
+fn write_stage(
+    namespace: &SecureDir,
+    kind: StageKind,
+    record: &IdentityRecord,
+) -> Result<Stage, IdentityError> {
+    let bytes = encode_record(record)?;
+    let name = OsString::from(format!("{}{}", kind.prefix(), record.id.as_hex()));
+    let path = namespace.path.join(&name);
+    let mut file = match create_new_file(&path, "create record stage") {
+        Ok(file) => file,
+        Err(IdentityError::Io { source, .. }) if source.kind() == io::ErrorKind::AlreadyExists => {
+            remove_stale_stages(namespace)?;
+            create_new_file(&path, "create record stage")?
+        }
+        Err(error) => return Err(error),
+    };
+    verify_regular(&file, true)?;
+    let result = (|| {
+        file.write_all(&bytes)
+            .map_err(|source| io_error("write record stage", source))?;
+        if kind == StageKind::Prepared {
+            hit(FaultPoint::PreparedWrite)?;
+        }
+        file.sync_all()
+            .map_err(|source| io_error("sync record stage", source))?;
+        hit(match kind {
+            StageKind::Prepared => FaultPoint::PreparedFileSync,
+            StageKind::Adopted | StageKind::Update => FaultPoint::AdoptedFileSync,
+        })?;
+        lock_file_windows_blocking(file)
+    })();
+    match result {
+        Ok(lock) => Ok(Stage { name, _lock: lock }),
+        Err(error) => {
+            let _ = delete_file_windows(&path, "remove failed record stage");
+            let _ = namespace.sync();
+            Err(error)
+        }
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn create_hard_link_windows(new_path: &Path, existing_path: &Path) -> Result<(), io::Error> {
+    let new_wide =
+        windows_wide_nul(new_path).map_err(|error| io::Error::other(error.to_string()))?;
+    let existing_wide =
+        windows_wide_nul(existing_path).map_err(|error| io::Error::other(error.to_string()))?;
+    // SAFETY: both paths are NUL terminated and the security descriptor is intentionally inherited.
+    if unsafe { CreateHardLinkW(new_wide.as_ptr(), existing_wide.as_ptr(), std::ptr::null()) } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_prepared(namespace: &SecureDir, stage: Stage) -> Result<(), PublishPreparedError> {
+    hit(FaultPoint::PreparedNoReplace).map_err(PublishPreparedError::Identity)?;
+    let name = stage.name.clone();
+    let stage_path = namespace.path.join(&name);
+    let record_path = namespace.path.join("record");
+    let linked = create_hard_link_windows(&record_path, &stage_path);
+    drop(stage);
+    match linked {
+        Ok(()) => {
+            delete_file_windows(&stage_path, "remove published record stage")
+                .map_err(PublishPreparedError::Identity)?;
+            hit(FaultPoint::PreparedDirectorySync).map_err(PublishPreparedError::Identity)?;
+            namespace.sync().map_err(PublishPreparedError::Identity)
+        }
+        Err(error)
+            if error.kind() == io::ErrorKind::AlreadyExists
+                || error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) =>
+        {
+            delete_file_windows(&stage_path, "remove losing record stage")
+                .map_err(PublishPreparedError::Identity)?;
+            namespace.sync().map_err(PublishPreparedError::Identity)?;
+            Err(PublishPreparedError::AlreadyExists)
+        }
+        Err(error) => {
+            let _ = delete_file_windows(&stage_path, "remove failed record stage");
+            let _ = namespace.sync();
+            Err(PublishPreparedError::Identity(io_error(
+                "publish prepared record",
+                error,
+            )))
+        }
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn replace_record(
+    namespace: &SecureDir,
+    record: &IdentityRecord,
+    kind: StageKind,
+) -> Result<(), IdentityError> {
+    let stage = write_stage(namespace, kind, record)?;
+    let name = stage.name.clone();
+    hit(FaultPoint::AdoptedReplace)?;
+    let source = windows_wide_nul(&namespace.path.join(name))?;
+    let destination = windows_wide_nul(&namespace.path.join("record"))?;
+    // SAFETY: both paths are NUL terminated and refer to the same storage directory.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(io_error(
+            "replace identity record",
+            io::Error::last_os_error(),
+        ));
+    }
+    drop(stage);
+    hit(FaultPoint::AdoptedDirectorySync)?;
+    namespace.sync()
+}
+
+#[cfg(windows)]
+fn remove_stale_stages(namespace: &SecureDir) -> Result<(), IdentityError> {
+    let entries = std::fs::read_dir(&namespace.path)
+        .map_err(|source| io_error("read namespace directory", source))?;
+    let mut stale = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|source| io_error("read namespace directory", source))?;
+        let name = entry.file_name();
+        let text = name
+            .to_str()
+            .ok_or(IdentityError::UnsafeState("malformed record stage"))?;
+        if let Some(kind) = stage_kind(text.as_bytes()) {
+            let file = open_existing_file_os(namespace, &name, true)?;
+            match lock_file_windows(file) {
+                Ok(lock) => {
+                    let mut reader = lock
+                        .file
+                        .try_clone()
+                        .map_err(|source| io_error("clone stale record stage", source))?;
+                    let mut content = Vec::new();
+                    reader
+                        .read_to_end(&mut content)
+                        .map_err(|source| io_error("read stale record stage", source))?;
+                    let record = decode_record(&content)?;
+                    if record.id.as_hex().as_bytes() != &text.as_bytes()[kind.prefix().len()..] {
+                        return Err(IdentityError::UnsafeState(
+                            "stale record stage does not match its name",
+                        ));
+                    }
+                    drop(lock);
+                    stale.push(name);
+                }
+                Err((_, error)) if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) => {}
+                Err((_, error)) => return Err(io_error("lock stale record stage", error)),
+            }
+        } else if text.starts_with(".prepared-")
+            || text.starts_with(".adopted-")
+            || text.starts_with(".update-")
+        {
+            return Err(IdentityError::UnsafeState("malformed record stage"));
+        }
+    }
+    for name in stale {
+        delete_file_windows(&namespace.path.join(name), "remove stale record stage")?;
+        namespace.sync()?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2152,7 +3262,7 @@ fn note_owner_file_lock_attempt() {
     OWNER_FILE_LOCK_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn owner_file_lock_attempts_for_test() -> usize {
     OWNER_FILE_LOCK_ATTEMPTS.with(std::cell::Cell::get)
 }
@@ -2183,6 +3293,8 @@ impl ParkGate {
 struct TestControl {
     fail: Option<FaultPoint>,
     park: Option<(FaultPoint, std::sync::Arc<ParkGate>)>,
+    #[cfg(windows)]
+    known_folder: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -2195,6 +3307,8 @@ fn hit(point: FaultPoint) -> Result<(), IdentityError> {
         std::sync::Mutex::new(TestControl {
             fail: None,
             park: None,
+            #[cfg(windows)]
+            known_folder: None,
         })
     });
     let (fail, park) = {
@@ -2215,7 +3329,90 @@ fn hit(point: FaultPoint) -> Result<(), IdentityError> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
+fn set_known_folder_override_for_test(path: Option<PathBuf>) {
+    let mut control = TEST_CONTROL
+        .get_or_init(|| {
+            std::sync::Mutex::new(TestControl {
+                fail: None,
+                park: None,
+                known_folder: None,
+            })
+        })
+        .lock()
+        .expect("test fault control poisoned");
+    control.known_folder = path;
+}
+
+#[cfg(all(test, windows))]
+fn known_folder_override_for_test() -> Option<PathBuf> {
+    TEST_CONTROL
+        .get_or_init(|| {
+            std::sync::Mutex::new(TestControl {
+                fail: None,
+                park: None,
+                known_folder: None,
+            })
+        })
+        .lock()
+        .expect("test fault control poisoned")
+        .known_folder
+        .clone()
+}
+
+#[cfg(all(test, windows))]
+fn fail_at_for_test(point: FaultPoint) {
+    let mut control = TEST_CONTROL
+        .get_or_init(|| {
+            std::sync::Mutex::new(TestControl {
+                fail: None,
+                park: None,
+                #[cfg(windows)]
+                known_folder: None,
+            })
+        })
+        .lock()
+        .expect("test fault control poisoned");
+    control.fail = Some(point);
+}
+
+#[cfg(all(test, windows))]
+fn clear_fault_control_for_test() {
+    let mut control = TEST_CONTROL
+        .get_or_init(|| {
+            std::sync::Mutex::new(TestControl {
+                fail: None,
+                park: None,
+                #[cfg(windows)]
+                known_folder: None,
+            })
+        })
+        .lock()
+        .expect("test fault control poisoned");
+    control.fail = None;
+    control.park = None;
+}
+
+#[cfg(all(test, windows))]
+fn park_at_for_test(point: FaultPoint) -> Arc<ParkGate> {
+    let gate = ParkGate::new();
+    let mut control = TEST_CONTROL
+        .get_or_init(|| {
+            std::sync::Mutex::new(TestControl {
+                fail: None,
+                park: None,
+                #[cfg(windows)]
+                known_folder: None,
+            })
+        })
+        .lock()
+        .expect("test fault control poisoned");
+    control.fail = None;
+    control.park = Some((point, gate.clone()));
+    gate
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::fs;
@@ -3519,5 +4716,475 @@ mod tests {
                 .is_err()
         );
         assert!(parse_wrapper_guard("# solstone-installation-unexpected: value\n").is_err());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::fs;
+    use std::os::windows::fs::MetadataExt;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc;
+    use std::sync::{Mutex, OnceLock};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    static TEST_SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum TreeEntry {
+        Directory {
+            attributes: u32,
+        },
+        File {
+            attributes: u32,
+            bytes: Option<Vec<u8>>,
+        },
+        Reparse {
+            attributes: u32,
+        },
+        Other {
+            attributes: u32,
+        },
+    }
+
+    struct TestRoot {
+        root: PathBuf,
+        local_app_data: PathBuf,
+        owner: OwnerBase,
+    }
+
+    impl TestRoot {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "solstone-installation-identity-windows-{}-{}",
+                std::process::id(),
+                TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            ));
+            fs::create_dir(&root).expect("create Windows test root");
+            let local_app_data = root.join("local-app-data");
+            fs::create_dir(&local_app_data).expect("create LocalAppData fixture");
+            set_known_folder_override_for_test(Some(local_app_data.clone()));
+            let owner = OwnerBase::at_home(root.join("ignored-home"), PlatformTag::Windows)
+                .expect("Windows owner base");
+            Self {
+                root,
+                local_app_data,
+                owner,
+            }
+        }
+
+        fn request(&self, root: &str, journal: &str) -> SetupAdmissionRequest {
+            SetupAdmissionRequest {
+                owner: self.owner.clone(),
+                root_token: RootToken::from_raw_absolute(token_bytes(root)).expect("root token"),
+                journal_token: JournalToken::from_raw_absolute(token_bytes(journal))
+                    .expect("journal token"),
+                journal_is_explicit: true,
+                legacy_manifest: LegacyManifestEvidence::Absent,
+                artifacts: ArtifactBindingEvidence::Fresh,
+            }
+        }
+
+        fn root_token(&self, root: &str) -> RootToken {
+            RootToken::from_raw_absolute(token_bytes(root)).expect("root token")
+        }
+
+        fn namespace_path(&self, root: &str) -> PathBuf {
+            let root = self.root_token(root);
+            self.owner
+                .path()
+                .join("namespaces")
+                .join(namespace_name(PlatformTag::Windows, &root).as_hex())
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            set_known_folder_override_for_test(None);
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        TEST_SERIAL
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn token_bytes(value: &str) -> Vec<u8> {
+        value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {
+        fn visit(root: &Path, path: &Path, snapshot: &mut BTreeMap<PathBuf, TreeEntry>) {
+            let metadata = fs::symlink_metadata(path).expect("snapshot metadata");
+            let relative = path
+                .strip_prefix(root)
+                .expect("snapshot path is relative")
+                .to_path_buf();
+            let attributes = metadata.file_attributes();
+            let file_type = metadata.file_type();
+            if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                snapshot.insert(relative, TreeEntry::Reparse { attributes });
+            } else if file_type.is_dir() {
+                snapshot.insert(relative, TreeEntry::Directory { attributes });
+                let mut entries = fs::read_dir(path)
+                    .expect("snapshot directory")
+                    .map(|entry| entry.expect("snapshot directory entry"))
+                    .collect::<Vec<_>>();
+                entries.sort_by_key(|entry| entry.file_name());
+                for entry in entries {
+                    visit(root, &entry.path(), snapshot);
+                }
+            } else if file_type.is_file() {
+                snapshot.insert(
+                    relative,
+                    TreeEntry::File {
+                        attributes,
+                        bytes: fs::read(path).ok(),
+                    },
+                );
+            } else {
+                snapshot.insert(relative, TreeEntry::Other { attributes });
+            }
+        }
+
+        let mut snapshot = BTreeMap::new();
+        visit(root, root, &mut snapshot);
+        snapshot
+    }
+
+    fn assert_tree_unchanged(root: &Path, before: BTreeMap<PathBuf, TreeEntry>) {
+        assert_eq!(snapshot_tree(root), before);
+    }
+
+    fn provider_key(owner: &OwnerBase) -> OwnerCoordinatorKey {
+        let provider = open_provider(owner, true).expect("open provider");
+        owner_coordinator_key(&provider.file).expect("owner coordinator key")
+    }
+
+    fn wait_for_owner_coordinator_waiters(key: OwnerCoordinatorKey, expected: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while owner_coordinator_waiters_for_test(key) < expected {
+            assert!(
+                Instant::now() < deadline,
+                "owner coordinator never reached {expected} waiters"
+            );
+            thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn known_folder_injection_ignores_home_argument() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let expected = fixture
+            .local_app_data
+            .join("solstone")
+            .join("installation-identity")
+            .join("v1");
+        assert_eq!(fixture.owner.path(), expected);
+        let alternate = OwnerBase::at_home(
+            fixture.root.join("a-completely-different-home"),
+            PlatformTag::Windows,
+        )
+        .expect("alternate owner");
+        assert_eq!(alternate.path(), fixture.owner.path());
+    }
+
+    #[test]
+    fn windows_lifecycle_admission_and_read_only_load_are_canonical() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\install";
+        let admission =
+            admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+        assert_eq!(admission.binding().platform, PlatformTag::Windows);
+        let expected = admission.binding().clone();
+        drop(admission);
+        let before = snapshot_tree(&fixture.root);
+
+        let loaded = load_installation_binding(&fixture.owner, &fixture.root_token(root))
+            .expect("load adopted binding");
+
+        assert_eq!(loaded, expected);
+        assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn windows_load_rejects_non_regular_provider_namespace_record_marker_and_lock() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        enum StoragePoint {
+            Provider,
+            Namespace,
+            Record,
+            Marker,
+            OwnerLock,
+        }
+        for point in [
+            StoragePoint::Provider,
+            StoragePoint::Namespace,
+            StoragePoint::Record,
+            StoragePoint::Marker,
+            StoragePoint::OwnerLock,
+        ] {
+            let fixture = TestRoot::new();
+            let root = r"C:\solstone\non-regular";
+            let admission =
+                admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+            drop(admission);
+            let target = match point {
+                StoragePoint::Provider => fixture.owner.path(),
+                StoragePoint::Namespace => fixture.namespace_path(root),
+                StoragePoint::Record => fixture.namespace_path(root).join("record"),
+                StoragePoint::Marker => fixture.namespace_path(root).join("adoption.marker"),
+                StoragePoint::OwnerLock => fixture.owner.path().join("owner.lock"),
+            };
+            let was_directory = target.is_dir();
+            if was_directory {
+                fs::remove_dir_all(&target).expect("remove directory storage point");
+                fs::write(&target, b"not a directory").expect("replace directory with file");
+            } else {
+                fs::remove_file(&target).expect("remove file storage point");
+                fs::create_dir(&target).expect("replace file with directory");
+            }
+            let before = snapshot_tree(&fixture.root);
+
+            assert!(load_installation_binding(&fixture.owner, &fixture.root_token(root)).is_err());
+            assert_tree_unchanged(&fixture.root, before);
+        }
+    }
+
+    #[test]
+    fn windows_load_rejects_reparse_points_at_all_storage_points() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        enum StoragePoint {
+            Provider,
+            Namespace,
+            Record,
+            Marker,
+            OwnerLock,
+        }
+        for point in [
+            StoragePoint::Provider,
+            StoragePoint::Namespace,
+            StoragePoint::Record,
+            StoragePoint::Marker,
+            StoragePoint::OwnerLock,
+        ] {
+            let fixture = TestRoot::new();
+            let root = r"C:\solstone\reparse";
+            let admission =
+                admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+            drop(admission);
+            let (target, directory) = match point {
+                StoragePoint::Provider => (fixture.owner.path(), true),
+                StoragePoint::Namespace => (fixture.namespace_path(root), true),
+                StoragePoint::Record => (fixture.namespace_path(root).join("record"), false),
+                StoragePoint::Marker => {
+                    (fixture.namespace_path(root).join("adoption.marker"), false)
+                }
+                StoragePoint::OwnerLock => (fixture.owner.path().join("owner.lock"), false),
+            };
+            let outside = fixture.root.join(format!(
+                "reparse-target-{}",
+                TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            if directory {
+                fs::remove_dir_all(&target).expect("remove directory storage point");
+                fs::create_dir(&outside).expect("create reparse directory target");
+                if std::os::windows::fs::symlink_dir(&outside, &target).is_err() {
+                    eprintln!(
+                        "skipping reparse fixture: symlink creation unavailable (no Developer Mode / elevated privilege)"
+                    );
+                    return;
+                }
+            } else {
+                fs::remove_file(&target).expect("remove file storage point");
+                fs::write(&outside, b"outside").expect("create reparse file target");
+                if std::os::windows::fs::symlink_file(&outside, &target).is_err() {
+                    eprintln!(
+                        "skipping reparse fixture: symlink creation unavailable (no Developer Mode / elevated privilege)"
+                    );
+                    return;
+                }
+            }
+            let before = snapshot_tree(&fixture.root);
+
+            assert!(load_installation_binding(&fixture.owner, &fixture.root_token(root)).is_err());
+            assert_tree_unchanged(&fixture.root, before);
+        }
+    }
+
+    #[test]
+    fn windows_fault_retry_covers_every_publication_boundary() {
+        let _serial = serial();
+        for point in [
+            FaultPoint::PreparedWrite,
+            FaultPoint::PreparedFileSync,
+            FaultPoint::PreparedNoReplace,
+            FaultPoint::PreparedDirectorySync,
+            FaultPoint::MarkerCreation,
+            FaultPoint::MarkerSync,
+            FaultPoint::MarkerLock,
+            FaultPoint::AdoptedReplace,
+            FaultPoint::AdoptedFileSync,
+            FaultPoint::AdoptedDirectorySync,
+        ] {
+            clear_fault_control_for_test();
+            let fixture = TestRoot::new();
+            let request = fixture.request(r"C:\solstone\fault", r"C:\solstone\journal");
+            fail_at_for_test(point);
+            assert!(admit_setup(request.clone()).is_err(), "{point:?}");
+            clear_fault_control_for_test();
+            assert!(admit_setup(request).is_ok(), "retry after {point:?}");
+        }
+
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\load-fault";
+        let admission =
+            admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+        drop(admission);
+        fail_at_for_test(FaultPoint::LoadLocksHeld);
+        assert!(load_installation_binding(&fixture.owner, &fixture.root_token(root)).is_err());
+        clear_fault_control_for_test();
+        assert!(load_installation_binding(&fixture.owner, &fixture.root_token(root)).is_ok());
+    }
+
+    #[test]
+    fn windows_owner_coordinator_excludes_aliases_and_holds_load() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\coordinator";
+        let admission =
+            admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+        drop(admission);
+        let key = provider_key(&fixture.owner);
+        let alias = OwnerBase::at_home(fixture.root.join("lexical-alias"), PlatformTag::Windows)
+            .expect("owner ignores home argument");
+        assert_eq!(key, provider_key(&alias));
+
+        let gate = park_at_for_test(FaultPoint::LoadLocksHeld);
+        let owner = fixture.owner.clone();
+        let root_token = fixture.root_token(root);
+        let reader = thread::spawn(move || load_installation_binding(&owner, &root_token));
+        gate.arrived.wait();
+        assert!(owner_coordinator_held_for_test(key));
+
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let contender = thread::spawn(move || {
+            let _guard = acquire_owner_coordinator(key).expect("coordinator guard");
+            acquired_tx.send(()).expect("coordinator acquired");
+        });
+        wait_for_owner_coordinator_waiters(key, 1);
+        assert!(matches!(
+            acquired_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        gate.release.wait();
+        reader.join().expect("load thread").expect("loaded binding");
+        acquired_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("contender acquired after load");
+        contender.join().expect("contender thread");
+        clear_fault_control_for_test();
+    }
+
+    #[test]
+    fn windows_stable_file_identity_detects_lexical_provider_aliases() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let provider = open_provider(&fixture.owner, true).expect("open provider");
+        let lexical_alias = open_absolute_dir(&fixture.owner.path().join("."))
+            .expect("open lexical provider alias");
+        assert_eq!(
+            owner_coordinator_key(&provider.file).expect("provider identity"),
+            owner_coordinator_key(&lexical_alias.file).expect("alias identity"),
+        );
+    }
+
+    #[test]
+    fn windows_codec_round_trips_ascii_non_bmp_and_distinct_unit_sequences() {
+        let canonical = [
+            r"C:\solstone\ascii",
+            r"C:\solstone\emoji-😀",
+            r"\\server\share\non-bmp-𐐷",
+        ];
+        for path in canonical {
+            let bytes = token_bytes(path);
+            let token = JournalToken::from_raw_absolute(bytes.clone()).expect("canonical token");
+            assert_eq!(token.as_bytes(), bytes);
+            assert_eq!(
+                token
+                    .to_path_buf()
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+                path.encode_utf16().collect::<Vec<_>>()
+            );
+        }
+        assert_ne!(
+            token_bytes(r"C:\solstone\😀"),
+            token_bytes(r"C:\solstone\𐐷")
+        );
+        assert_eq!(
+            normalize_windows_absolute_bytes(&token_bytes(r"c:/solstone//.\journal"))
+                .expect("normalize Windows spelling"),
+            token_bytes(r"C:\solstone\journal")
+        );
+    }
+
+    #[test]
+    fn windows_codec_rejects_malformed_utf16_and_noncanonical_path_classes() {
+        let malformed = [0x00_u8, 0xd8];
+        assert!(RootToken::from_raw_absolute(malformed.to_vec()).is_err());
+        for path in [
+            r"\current-drive",
+            r"C:relative",
+            r"relative\path",
+            r"/unix-only",
+            r"\\?\C:\verbatim",
+            r"\\.\C:\device",
+        ] {
+            assert!(
+                normalize_windows_absolute_bytes(&token_bytes(path)).is_err(),
+                "{path}"
+            );
+        }
+        assert!(RootToken::from_raw_absolute(vec![b'C', 0]).is_err());
+        assert!(RootToken::from_raw_absolute(vec![0; MAX_TOKEN_BYTES + 2]).is_err());
+        assert!(normalize_windows_absolute_bytes(&token_bytes(r"C:\..\escape")).is_err());
+    }
+
+    #[test]
+    fn windows_clean_uninstall_tombstones_the_admitted_binding() {
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\uninstall";
+        let admission =
+            admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+        drop(admission);
+        let session = admit_clean_uninstall(CleanUninstallRequest {
+            owner: fixture.owner.clone(),
+            root_token: fixture.root_token(root),
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .expect("admit clean uninstall");
+        session.commit_tombstone().expect("commit tombstone");
+        assert!(matches!(
+            load_installation_binding(&fixture.owner, &fixture.root_token(root)),
+            Err(IdentityError::NotAdopted(_))
+        ));
     }
 }

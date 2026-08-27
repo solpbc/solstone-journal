@@ -118,11 +118,13 @@ fn journal_io_nix_edges_are_unix_target_gated() {
             "Win32_Security",
             "Win32_Storage_CloudFilters",
             "Win32_Storage_FileSystem",
+            "Win32_System_Com",
             "Win32_System_IO",
             "Win32_System_Ioctl",
             "Win32_System_SystemServices",
             "Win32_System_Threading",
             "Win32_System_WindowsProgramming",
+            "Win32_UI_Shell",
         ]
     );
 }

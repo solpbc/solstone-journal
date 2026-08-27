@@ -4158,6 +4158,7 @@ dependencies = [
  "getrandom 0.3.4",
  "nix",
  "sha2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

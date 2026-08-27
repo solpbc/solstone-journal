@@ -346,7 +346,7 @@ whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
 # gated by journal-io, has no build script or C/C++ step, and adds only system
 # DLL links on that target. Package MSRV 1.82 is below workspace Rust 1.95;
 # MIT license and the resolved graph are already covered by cargo-deny.
-windows-sys = { version = "=0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Globalization", "Win32_Security", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming"] }
+windows-sys = { version = "=0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Globalization", "Win32_Security", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Shell"] }
 # IANA timezone for journal-config default materialization. Release-rail lenses:
 # `iana-time-zone` 0.1.65 is MIT OR Apache-2.0 and is already in the lock via
 # health-web and reprocess-cli. `build = false`; package MSRV 1.62.0 is below

@@ -8,8 +8,10 @@ license.workspace = true
 # workspace crate to opt out of publication until it has a reviewed package plan.
 publish = false
 
-[lints]
-workspace = true
+# The Windows persistence backend has narrowly audited Win32 FFI boundaries.
+# Keep unsafe code denied by default and permit it only at those call sites.
+[lints.rust]
+unsafe_code = "deny"
 
 [dependencies]
 getrandom.workspace = true
@@ -17,3 +19,6 @@ sha2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["dir"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
