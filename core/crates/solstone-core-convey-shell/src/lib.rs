@@ -580,6 +580,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/devices/", get(clients::redirect_app))
         .route("/app/devices/workspace", get(clients::redirect_workspace))
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
+        .merge(solstone_core_push::api_router(journal_root.clone()))
         .merge(solstone_core_clients_web::router(journal_root.clone()))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))

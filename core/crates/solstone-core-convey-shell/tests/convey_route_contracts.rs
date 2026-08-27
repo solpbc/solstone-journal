@@ -23,6 +23,8 @@ mod network_corpus;
 mod network_write_routes;
 #[path = "populated_corpus.rs"]
 mod populated_corpus;
+#[path = "push_mount.rs"]
+mod push_mount;
 #[path = "quality_known_routes.rs"]
 mod quality_known_routes;
 #[path = "review_routes.rs"]

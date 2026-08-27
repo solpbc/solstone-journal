@@ -130,6 +130,7 @@ solstone-core-speaker-resolve.workspace = true
 solstone-core-settings-web.workspace = true
 solstone-core-import-web.workspace = true
 solstone-core-ingest.workspace = true
+solstone-core-push.workspace = true
 solstone-core-support-web.workspace = true
 solstone-core-transcripts-web.workspace = true
 solstone-core-health-web.workspace = true
