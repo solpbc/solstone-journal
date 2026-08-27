@@ -339,9 +339,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use crate::digest::sha256_hex;
-    use crate::inventory;
-    use crate::promote::{self, PromoteRequest};
-    use crate::provenance::Provenance;
+    use crate::promote;
     use crate::stage::write_staged_file_mode;
     use crate::tar::write_tar_gz;
 
@@ -402,44 +400,6 @@ fi
         tempfile::TempDir::new_in("/var/tmp").expect("tempdir under /var/tmp")
     }
 
-    fn inventory() -> inventory::Inventory {
-        let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../core/distribution/inventory.toml");
-        inventory::load_inventory(&path).expect("committed inventory")
-    }
-
-    fn stub_produced(root: &Path, version: &str) -> PathBuf {
-        let dest = root.join(format!("produced-{version}"));
-        let work = root.join(format!("promote-work-{version}"));
-        let _ = fs::remove_dir_all(&dest);
-        let _ = fs::remove_dir_all(&work);
-        let basename = inventory().artifact.render(version, "linux", "x86_64");
-        promote::promote(&PromoteRequest {
-            dest: dest.clone(),
-            work,
-            tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
-            version: version.to_owned(),
-            basename,
-            os: "linux".into(),
-            arch: "linux-x86_64".into(),
-            deb_arch: "amd64".into(),
-            rpm_arch: "x86_64".into(),
-            dirty: false,
-            observed: Provenance {
-                commit: HEX_COMMIT.into(),
-                lock_sha256: HEX_LOCK.into(),
-            },
-            expected: Provenance {
-                commit: HEX_COMMIT.into(),
-                lock_sha256: HEX_LOCK.into(),
-            },
-            fail_after: None,
-            apple: None,
-        })
-        .expect("promote stub src");
-        dest
-    }
-
     fn publish_request(src: &Path, dest: &Path, lane: &str) -> PublishRequest {
         PublishRequest {
             src: src.to_path_buf(),
@@ -455,11 +415,6 @@ fi
 
     fn snapshot(path: &Path) -> BTreeMap<String, Vec<u8>> {
         promote::snapshot_dir(path).expect("snapshot")
-    }
-
-    fn latest_body(dest: &Path, lane: &str) -> String {
-        fs::read_to_string(dest.join("solstone-journal").join(lane).join("latest"))
-            .expect("read latest")
     }
 
     fn repo_file(relative: &str) -> PathBuf {
@@ -592,16 +547,6 @@ fi
             .into_iter()
             .map(|ext| format!("{ORIGIN}/solstone-journal/{lane}/{version}/{base}.{ext}"))
             .collect()
-    }
-
-    fn write_release(path: &Path, version: &str) {
-        fs::write(
-            path,
-            format!(
-                "product=solstone-journal\nversion={version}\ntarget=linux-x86_64\ncommit={HEX_COMMIT}\nlock_sha256={HEX_LOCK}\n"
-            ),
-        )
-        .expect("write .release");
     }
 
     #[test]

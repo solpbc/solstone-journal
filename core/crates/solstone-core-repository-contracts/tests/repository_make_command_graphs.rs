@@ -1573,15 +1573,30 @@ fn run_windows_driver(
     opt_in: Option<&str>,
     scenario: &str,
 ) -> std::process::Output {
-    run_windows_driver_with_refs(temp, scp, scp_log, ssh, ssh_log, opt_in, None, scenario)
+    run_windows_driver_with_refs(
+        temp,
+        WindowsTransport {
+            scp,
+            scp_log,
+            ssh,
+            ssh_log,
+        },
+        opt_in,
+        None,
+        scenario,
+    )
+}
+
+struct WindowsTransport<'a> {
+    scp: &'a Path,
+    scp_log: &'a Path,
+    ssh: &'a Path,
+    ssh_log: &'a Path,
 }
 
 fn run_windows_driver_with_refs(
     temp: &TempDir,
-    scp: &Path,
-    scp_log: &Path,
-    ssh: &Path,
-    ssh_log: &Path,
+    transport: WindowsTransport<'_>,
     opt_in: Option<&str>,
     refs_root: Option<&str>,
     scenario: &str,
@@ -1591,10 +1606,10 @@ fn run_windows_driver_with_refs(
         .arg("scripts/win-host-ci.sh")
         .current_dir(&temp.path)
         .env("WIN_REMOTE_HOST", "fake@example.invalid")
-        .env("SCP", scp)
-        .env("SSH", ssh)
-        .env("SOLSTONE_SCP_LOG", scp_log)
-        .env("SOLSTONE_SSH_LOG", ssh_log)
+        .env("SCP", transport.scp)
+        .env("SSH", transport.ssh)
+        .env("SOLSTONE_SCP_LOG", transport.scp_log)
+        .env("SOLSTONE_SSH_LOG", transport.ssh_log)
         .env("SOLSTONE_SSH_SCENARIO", scenario)
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild");
     if let Some(value) = opt_in {
@@ -1800,10 +1815,12 @@ fn windows_native_driver_forwards_or_skips_the_refs_matrix_fixture() {
     let (ssh, ssh_log) = write_transport_ssh_shim(&temp);
     let output = run_windows_driver_with_refs(
         &temp,
-        &scp,
-        &scp_log,
-        &ssh,
-        &ssh_log,
+        WindowsTransport {
+            scp: &scp,
+            scp_log: &scp_log,
+            ssh: &ssh,
+            ssh_log: &ssh_log,
+        },
         None,
         Some("C:\\refs"),
         "valid",
@@ -1827,10 +1844,12 @@ fn windows_native_driver_forwards_or_skips_the_refs_matrix_fixture() {
 
     let invalid = run_windows_driver_with_refs(
         &temp,
-        &scp,
-        &scp_log,
-        &ssh,
-        &ssh_log,
+        WindowsTransport {
+            scp: &scp,
+            scp_log: &scp_log,
+            ssh: &ssh,
+            ssh_log: &ssh_log,
+        },
         None,
         Some("not-a-windows-path"),
         "valid",

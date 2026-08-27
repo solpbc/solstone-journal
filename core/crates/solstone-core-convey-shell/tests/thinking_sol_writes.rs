@@ -75,12 +75,12 @@ async fn write_routes_inherit_the_unestablished_session_gate() {
 }
 
 #[tokio::test]
-async fn deleted_set_name_and_reset_routes_return_method_not_allowed() {
+async fn deleted_set_name_and_reset_routes_return_not_found() {
     let fixture = established();
     for path in ["/app/thinking/api/set-name", "/app/thinking/api/reset"] {
         let (status, _value) = post(path, r#"{"name":"Nova"}"#, &fixture).await;
-        // GET `/app/{app}/{*tail}` occupies these paths, so POST is 405 rather than 404.
-        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{path}");
+        // The retired app has no route, so every method receives the unknown-app refusal.
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
     }
 }
 

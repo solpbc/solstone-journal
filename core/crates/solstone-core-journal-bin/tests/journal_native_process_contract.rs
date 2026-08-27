@@ -2423,6 +2423,7 @@ fn native_service_dispatch_reaches_stable_real_bodies_without_python() {
     let context = harness.context();
     prove_poison_interpreters_live(&context);
     fs::create_dir_all(context.home).expect("create isolated service home");
+    fs::create_dir_all(context.journal).expect("create isolated service journal");
 
     // `down` deliberately consults the fixed OS service manager, whose live
     // registration is outside this process fixture. Its exact parser path is

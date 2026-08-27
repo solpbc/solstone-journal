@@ -174,6 +174,27 @@ pub(crate) fn clear_forced_unreadable_segment() {
     FORCED_UNREADABLE_SEGMENT.with(|forced| *forced.borrow_mut() = None);
 }
 
+pub(crate) fn days_holding_tombstones(journal: &Path) -> Vec<String> {
+    let mut days = Vec::new();
+    let Ok(listed) = list_days(journal) else {
+        return days;
+    };
+    for (day, _) in listed {
+        let Ok(segments) = list_segments(journal, &day) else {
+            continue;
+        };
+        let holds = segments.iter().any(|segment| {
+            list_dir_entries(segment.path())
+                .ok()
+                .is_some_and(|entries| holds_tombstone(&entries))
+        });
+        if holds {
+            days.push(day);
+        }
+    }
+    days
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -211,25 +232,4 @@ mod tests {
                 .contains("could not be listed")
         );
     }
-}
-
-pub(crate) fn days_holding_tombstones(journal: &Path) -> Vec<String> {
-    let mut days = Vec::new();
-    let Ok(listed) = list_days(journal) else {
-        return days;
-    };
-    for (day, _) in listed {
-        let Ok(segments) = list_segments(journal, &day) else {
-            continue;
-        };
-        let holds = segments.iter().any(|segment| {
-            list_dir_entries(segment.path())
-                .ok()
-                .is_some_and(|entries| holds_tombstone(&entries))
-        });
-        if holds {
-            days.push(day);
-        }
-    }
-    days
 }

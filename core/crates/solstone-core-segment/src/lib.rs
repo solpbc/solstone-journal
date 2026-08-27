@@ -91,7 +91,7 @@ pub use write::{ContentDescriptor, ContentWriteOutcome, write_content};
 mod architecture_tests {
     // Textual structural checks intentionally mirror scripts/check_layer_hygiene.py.
     #[derive(Clone, Copy)]
-    enum Source {
+    enum SourceFile {
         ChronicleMigration,
         ContentName,
         Device,
@@ -109,28 +109,31 @@ mod architecture_tests {
         Write,
     }
 
-    const SOURCES: &[(Source, &str)] = &[
+    const SOURCES: &[(SourceFile, &str)] = &[
         (
-            Source::ChronicleMigration,
+            SourceFile::ChronicleMigration,
             include_str!("chronicle_migration.rs"),
         ),
-        (Source::ContentName, include_str!("content_name.rs")),
-        (Source::Device, include_str!("device.rs")),
+        (SourceFile::ContentName, include_str!("content_name.rs")),
+        (SourceFile::Device, include_str!("device.rs")),
         (
-            Source::DocumentMigration,
+            SourceFile::DocumentMigration,
             include_str!("document_migration.rs"),
         ),
-        (Source::Error, include_str!("error.rs")),
-        (Source::Identity, include_str!("identity.rs")),
-        (Source::Manifest, include_str!("manifest.rs")),
-        (Source::Projection, include_str!("projection.rs")),
-        (Source::Relocate, include_str!("relocate.rs")),
-        (Source::SegmentDir, include_str!("segment_dir.rs")),
-        (Source::SourceMutation, include_str!("source_mutation.rs")),
-        (Source::StreamRepair, include_str!("stream_repair.rs")),
-        (Source::StreamRecord, include_str!("stream_record.rs")),
-        (Source::Supervisor, include_str!("supervisor.rs")),
-        (Source::Write, include_str!("write.rs")),
+        (SourceFile::Error, include_str!("error.rs")),
+        (SourceFile::Identity, include_str!("identity.rs")),
+        (SourceFile::Manifest, include_str!("manifest.rs")),
+        (SourceFile::Projection, include_str!("projection.rs")),
+        (SourceFile::Relocate, include_str!("relocate.rs")),
+        (SourceFile::SegmentDir, include_str!("segment_dir.rs")),
+        (
+            SourceFile::SourceMutation,
+            include_str!("source_mutation.rs"),
+        ),
+        (SourceFile::StreamRepair, include_str!("stream_repair.rs")),
+        (SourceFile::StreamRecord, include_str!("stream_record.rs")),
+        (SourceFile::Supervisor, include_str!("supervisor.rs")),
+        (SourceFile::Write, include_str!("write.rs")),
     ];
 
     #[test]
@@ -155,10 +158,10 @@ mod architecture_tests {
     fn sidecar_write_surface_is_closed() {
         for (kind, source) in SOURCES {
             match kind {
-                Source::Write => {
+                SourceFile::Write => {
                     assert!(source.contains("write_bytes_exclusive"));
                 }
-                Source::Device => {
+                SourceFile::Device => {
                     assert!(source.contains("write_bytes_exclusive"));
                     for primitive in ["hold_lock", "write_json", "atomic_replace", "append_jsonl"] {
                         assert!(
@@ -167,12 +170,12 @@ mod architecture_tests {
                         );
                     }
                 }
-                Source::StreamRecord => {
+                SourceFile::StreamRecord => {
                     assert!(source.contains("hold_lock"));
                     assert!(source.contains("write_json"));
                     assert!(source.contains("remove_file"));
                 }
-                Source::StreamRepair => {
+                SourceFile::StreamRepair => {
                     for primitive in ["hold_lock", "write_stream_record", "bump_stream_marker"] {
                         assert!(
                             source.contains(primitive),
@@ -180,7 +183,7 @@ mod architecture_tests {
                         );
                     }
                 }
-                Source::SourceMutation => {
+                SourceFile::SourceMutation => {
                     assert!(source.contains("hold_lock"));
                     for primitive in [
                         "write_bytes_exclusive",
@@ -197,7 +200,7 @@ mod architecture_tests {
                 // A segment move re-authors bytes that already exist. It replaces
                 // and renames; it never opens a new exclusive content file nor
                 // appends to a log.
-                Source::Relocate => {
+                SourceFile::Relocate => {
                     for primitive in ["rename_within", "atomic_replace", "write_json"] {
                         assert!(
                             source.contains(primitive),
@@ -214,7 +217,7 @@ mod architecture_tests {
                 // A one-time layout migration relocates whole trees that already
                 // exist. It renames and removes; it never authors new content
                 // bytes or appends to a log.
-                Source::ChronicleMigration => {
+                SourceFile::ChronicleMigration => {
                     for primitive in ["rename_within", "remove_dir_all"] {
                         assert!(
                             source.contains(primitive),
@@ -230,7 +233,7 @@ mod architecture_tests {
                 }
                 // Converting a legacy extraction authors one markdown transcript
                 // and unlinks the superseded source. It never appends to a log.
-                Source::DocumentMigration => {
+                SourceFile::DocumentMigration => {
                     for primitive in ["write_text", "remove_file"] {
                         assert!(
                             source.contains(primitive),
@@ -244,13 +247,13 @@ mod architecture_tests {
                         );
                     }
                 }
-                Source::ContentName
-                | Source::Error
-                | Source::Identity
-                | Source::Manifest
-                | Source::Projection
-                | Source::SegmentDir
-                | Source::Supervisor => {
+                SourceFile::ContentName
+                | SourceFile::Error
+                | SourceFile::Identity
+                | SourceFile::Manifest
+                | SourceFile::Projection
+                | SourceFile::SegmentDir
+                | SourceFile::Supervisor => {
                     for primitive in [
                         "write_bytes_exclusive",
                         "hold_lock",

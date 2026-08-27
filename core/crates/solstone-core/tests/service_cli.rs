@@ -72,6 +72,7 @@ fn service_help_and_invalid_port_are_owned_by_the_native_binary() {
 #[test]
 fn absent_unit_status_and_top_level_up_have_exact_failures() {
     let home = tempfile::tempdir().expect("temporary home opens");
+    std::fs::create_dir_all(home.path().join("journal")).expect("create journal root");
     // `down` must inspect the fixed OS service manager even when this HOME has
     // no unit, so its result legitimately depends on the caller's live runtime.
     // Its parser contract and the stop decision table are covered separately.

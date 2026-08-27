@@ -153,7 +153,7 @@ fn admit_setup_identity(
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
 ) -> Result<SetupIdentityAdmission, IdentityError> {
-    if std::env::var_os("HOME").is_some_and(|home| std::path::PathBuf::from(home) == home_dir) {
+    if std::env::var_os("HOME").is_some_and(|home| std::path::Path::new(&home) == home_dir) {
         legacy_launcher::validate_effective_path(home_dir, project_root, executable_dir).map_err(
             |_| IdentityError::AdmissionRefused("PATH resolves outside the V2 installation"),
         )?;

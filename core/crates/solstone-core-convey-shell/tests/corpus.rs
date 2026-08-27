@@ -711,7 +711,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
 }
 
 #[tokio::test]
-async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change() {
+async fn sol_cut_uses_unknown_app_404_across_methods_without_session_gate_change() {
     let journal = journal_for_phase("established");
     let app = router(journal.0.clone());
     let mut first_404_body = None;
@@ -737,7 +737,7 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
             )
             .await
             .expect("router responds");
-        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         assert!(response.headers().get("location").is_none(), "{path}");
     }
 
@@ -756,7 +756,7 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
             )
             .await
             .expect("router responds");
-        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{phase}");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{phase}");
         assert!(response.headers().get("location").is_none(), "{phase}");
     }
 }
