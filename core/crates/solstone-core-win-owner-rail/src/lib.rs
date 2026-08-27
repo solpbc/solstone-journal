@@ -202,10 +202,6 @@ impl RailError {
     pub const fn new(code: &'static str) -> Self {
         Self { code }
     }
-
-    pub const fn code(&self) -> &'static str {
-        self.code
-    }
 }
 
 impl fmt::Display for RailError {
