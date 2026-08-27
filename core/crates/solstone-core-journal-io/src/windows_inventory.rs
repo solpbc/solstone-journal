@@ -524,8 +524,11 @@ impl WindowsCheckedReadSession {
             });
         }
         with_witness(root, |witness| {
+            test_hook_witness_progress("before-route-reopen");
             let handle = reopen_verified_route(root, entry, FILE_READ_DATA | FILE_READ_ATTRIBUTES)?;
+            test_hook_witness_progress("after-route-reopen");
             let before = file_metadata(&handle, &entry.relative_path)?;
+            test_hook_witness_progress("after-before-metadata");
             if before.identity != entry.identity
                 || before.size != entry.size
                 || before.last_write_time != entry.last_write_time
@@ -553,7 +556,9 @@ impl WindowsCheckedReadSession {
                 source,
             })?;
             let handle = file.into();
+            test_hook_witness_progress("after-read");
             let after = file_metadata(&handle, &entry.relative_path)?;
+            test_hook_witness_progress("after-read-metadata");
             if after != before {
                 return Err(WindowsInventoryError::IdentityChanged {
                     path: entry.relative_path.clone(),
@@ -1339,6 +1344,7 @@ fn reopen_verified_route(
     let mut parent = retained_root.as_raw_handle();
     let mut owned_parent = None;
     for (index, component) in entry.route.iter().enumerate() {
+        test_hook_witness_progress("before-route-component");
         let leaf = index + 1 == entry.route.len();
         let access = if leaf {
             leaf_access
@@ -1349,7 +1355,9 @@ fn reopen_verified_route(
         let attributes = attribute_tag(&handle, &entry.relative_path)?;
         require_no_reparse(attributes, &entry.relative_path)?;
         let identity = file_id(&handle, &entry.relative_path)?;
+        test_hook_witness_progress("after-route-component-identity");
         if identity != component.identity {
+            test_hook_witness_progress("route-component-identity-mismatch");
             return Err(WindowsInventoryError::IdentityChanged {
                 path: entry.relative_path.clone(),
             });
