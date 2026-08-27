@@ -406,12 +406,9 @@ fn exercise_refs_control() {
         filesystem, "ReFS",
         "configured ReFS fixture root must be a non-reparse ReFS directory"
     );
-    let resolved_root = configured_root
-        .canonicalize()
-        .expect("resolve configured ReFS fixture root after validation");
     let temporary = tempfile::Builder::new()
         .prefix("solstone-journal-ordinary-owner-")
-        .tempdir_in(&resolved_root)
+        .tempdir_in(&configured_root)
         .expect("create ordinary-owner ReFS fixture");
     let fixture = create_fixture(temporary);
     assert_eq!(
@@ -423,7 +420,7 @@ fn exercise_refs_control() {
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed");
     println!(
         "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_ROOT={}",
-        resolved_root.display()
+        configured_root.display()
     );
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_FILESYSTEM=ReFS");
 }
