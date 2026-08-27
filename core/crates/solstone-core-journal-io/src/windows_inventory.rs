@@ -31,7 +31,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
     SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{CancelIo, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -61,7 +61,7 @@ pub enum WindowsInventoryPrimitive {
     DescendantFileId,
     DescendantFileType,
     WitnessCheck,
-    WitnessCancelIo,
+    WitnessCancelIoEx,
     WitnessDrainCompleted,
 }
 
@@ -610,7 +610,7 @@ struct NamespaceWitness<'root> {
     handle: BorrowedHandle<'root>,
     _event: OwnedHandle,
     buffer: Vec<u32>,
-    overlapped: OVERLAPPED,
+    overlapped: Box<OVERLAPPED>,
     armed: bool,
     root: PathBuf,
 }
@@ -640,7 +640,10 @@ impl<'root> NamespaceWitness<'root> {
         // SAFETY: `CreateEventW` returned a non-null event handle owned by this witness.
         #[allow(unsafe_code)]
         let event = unsafe { OwnedHandle::from_raw_handle(raw_event) };
-        let mut overlapped = OVERLAPPED::default();
+        // Windows retains the exact `OVERLAPPED` address until the asynchronous request is
+        // drained. Heap allocation prevents `NamespaceWitness` returning from `arm` from moving
+        // that address.
+        let mut overlapped = Box::new(OVERLAPPED::default());
         overlapped.hEvent = event.as_raw_handle();
         let mut witness = Self {
             handle,
@@ -663,7 +666,7 @@ impl<'root> NamespaceWitness<'root> {
                     1,
                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
                     std::ptr::null_mut(),
-                    &mut witness.overlapped,
+                    witness.overlapped.as_mut(),
                     None,
                 )
             };
@@ -699,7 +702,12 @@ impl<'root> NamespaceWitness<'root> {
             // SAFETY: `overlapped` belongs to the one outstanding watch request on `handle`, and `bytes` is writable for the documented output length.
             #[allow(unsafe_code)]
             let completed = unsafe {
-                GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 0)
+                GetOverlappedResult(
+                    self.handle.as_raw_handle(),
+                    self.overlapped.as_ref(),
+                    &mut bytes,
+                    0,
+                )
             };
             if completed != 0 {
                 return Ok(Some(bytes));
@@ -732,7 +740,12 @@ impl<'root> NamespaceWitness<'root> {
         // SAFETY: the outstanding request owns this exact `OVERLAPPED`, and `bytes` is writable for the documented completion length while the test waits for the mutation it just initiated.
         #[allow(unsafe_code)]
         let completed = unsafe {
-            GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
+            GetOverlappedResult(
+                self.handle.as_raw_handle(),
+                self.overlapped.as_ref(),
+                &mut bytes,
+                1,
+            )
         };
         if completed != 0 {
             return Ok(bytes);
@@ -754,12 +767,13 @@ impl<'root> NamespaceWitness<'root> {
             return Ok(());
         }
         test_hook_witness_progress("before-cancel");
-        traced_inventory(WindowsInventoryPrimitive::WitnessCancelIo, || {
-            // SAFETY: this witness issued the only outstanding request from the calling thread
-            // on the retained root. `CancelIo` cannot cancel another thread's work, and this
-            // request's `OVERLAPPED` remains allocated until the drain below completes.
+        traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
+            // SAFETY: this witness's exact, heap-stable `OVERLAPPED` remains allocated until the
+            // drain below completes. The retained root may serve other callers, so cancellation
+            // must not affect any request other than this witness.
             #[allow(unsafe_code)]
-            let cancelled = unsafe { CancelIo(self.handle.as_raw_handle()) };
+            let cancelled =
+                unsafe { CancelIoEx(self.handle.as_raw_handle(), self.overlapped.as_ref()) };
             if cancelled != 0 {
                 return Ok(());
             }
@@ -779,7 +793,12 @@ impl<'root> NamespaceWitness<'root> {
             // SAFETY: the request was either completed or cancellation was requested above, and both the request's `OVERLAPPED` and output length remain live for this drain.
             #[allow(unsafe_code)]
             let drained = unsafe {
-                GetOverlappedResult(self.handle.as_raw_handle(), &self.overlapped, &mut bytes, 1)
+                GetOverlappedResult(
+                    self.handle.as_raw_handle(),
+                    self.overlapped.as_ref(),
+                    &mut bytes,
+                    1,
+                )
             };
             if drained != 0 {
                 return Ok(Some(bytes));
@@ -1589,7 +1608,7 @@ mod tests {
         let cancel = trace
             .successful
             .iter()
-            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessCancelIo)
+            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessCancelIoEx)
             .expect("operation error explicitly cancels the witness");
         let drain = trace
             .successful
