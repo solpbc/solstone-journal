@@ -725,6 +725,28 @@ MANIFEST
                 -cf /tmp/journal-preexisting.before.tar
         '
 
+        log "verify: the bare \"journal\" an owner would type resolves to the newly-installed V2 binary, not the seeded v1 one"
+        # Real v1.0.22 owners had a real ~/.local/bin/journal from uv tool /
+        # pipx / pip --user (that path is exactly _managed_wrapper("journal")
+        # in v1.0.22's solstone/think/service.py). The .deb/.rpm route is a
+        # dumb file-drop with no maintainer scripts (by founder ruling) and
+        # only ever writes /usr/bin/journal -- it cannot touch a per-owner
+        # ~/.local/bin. A typical login shell's default PATH puts
+        # ~/.local/bin ahead of /usr/bin, so the seeded v1 ~/.local/bin/
+        # journal SHADOWS /usr/bin/journal for the bare `journal` command a
+        # real owner would type, and V2's crossover code inside `journal
+        # setup` never runs at all -- the wrong binary answers. This is a
+        # real gap in the documented happy path, not a fixture artifact;
+        # confirm it explicitly here rather than let `journal setup` hang
+        # or silently run v1's own (real, still-present) setup subcommand.
+        resolved_journal=$(docker exec -u "$TEST_USER" "$CONTAINER" \
+            bash -lc 'readlink -f "$(command -v journal)"')
+        if [ "$resolved_journal" != "/usr/bin/journal" ]; then
+            log "bare \"journal\" resolves to $resolved_journal, not /usr/bin/journal"
+            log "this is the v1.0.22 PATH-shadowing gap: a legacy ~/.local/bin/journal shadows the newly-installed V2 binary, so \`journal setup\` never reaches V2's crossover code"
+            exit 1
+        fi
+
         log "legacy-upgrade-v1022: one journal setup invocation"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
             'journal setup -y --accept-existing-journal --skip-models --skip-skills'
