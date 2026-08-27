@@ -18,7 +18,7 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 #[cfg(windows)]
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(windows)]
@@ -51,8 +51,9 @@ use solstone_core_journal_io::{
 };
 #[cfg(windows)]
 use solstone_core_journal_io::{
-    WindowsLockFileExSubstitution, run_with_forced_post_lock_identity_mismatch,
-    run_with_windows_lock_file_ex_substitution, run_with_windows_lock_file_ex_trace,
+    WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,
+    run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
+    run_with_windows_lock_file_ex_trace, run_with_windows_unlock_file_ex_observation,
 };
 
 #[cfg(unix)]
@@ -625,9 +626,54 @@ fn raw_windows_lock(file: File) -> Result<RawWindowsLock, io::Error> {
             &mut overlapped,
         )
     };
-    (result != 0)
-        .then_some(RawWindowsLock { file, overlapped })
-        .ok_or_else(io::Error::last_os_error)
+    if result == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(RawWindowsLock { file, overlapped })
+}
+
+#[cfg(windows)]
+struct WindowsLockHook {
+    child: Child,
+    ready_marker: PathBuf,
+    drop_now_marker: PathBuf,
+    post_drop_marker: PathBuf,
+}
+
+#[cfg(windows)]
+fn wait_for_windows_lock_drop(marker: &Path) {
+    while !marker.exists() {
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[cfg(windows)]
+fn hold_windows_lock_until_dropped<T, U>(
+    guard: T,
+    _keep_alive: U,
+    marker: &Path,
+    marker_contents: &str,
+    drop_now_marker: &Path,
+    post_drop_marker: &Path,
+    expected_handle: RawHandle,
+) -> ! {
+    fs::write(marker, marker_contents).unwrap();
+    wait_for_windows_lock_drop(drop_now_marker);
+    let ((), observations) = run_with_windows_unlock_file_ex_observation(|| drop(guard));
+    assert_eq!(
+        observations,
+        vec![WindowsUnlockFileExObservation {
+            handle: expected_handle,
+            length_low: u32::MAX,
+            length_high: u32::MAX,
+            succeeded: true,
+            error: None,
+        }]
+    );
+    fs::write(post_drop_marker, "unlocked").unwrap();
+    loop {
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[cfg(windows)]
@@ -677,11 +723,20 @@ fn windows_lock_hook_pause_helper() {
             );
             assert!(consumed);
             assert_eq!(trace, vec![redirected_file.as_raw_handle()]);
-            fs::write(marker, "wrong-handle").unwrap();
-            let _keep_guard_alive = (guard, redirected_file);
-            loop {
-                thread::sleep(Duration::from_millis(25));
-            }
+            let drop_now_marker =
+                PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_DROP_NOW_MARKER").unwrap());
+            let post_drop_marker = PathBuf::from(
+                std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_POST_DROP_MARKER").unwrap(),
+            );
+            hold_windows_lock_until_dropped(
+                guard,
+                redirected_file,
+                &marker,
+                "wrong-handle",
+                &drop_now_marker,
+                &post_drop_marker,
+                trace[0],
+            );
         }
         "persistent-api-hold" => {
             let parent = target
@@ -690,12 +745,66 @@ fn windows_lock_hook_pause_helper() {
             let name = target
                 .file_name()
                 .expect("persistent lock target has a file name");
-            let guard = acquire(parent, name, Duration::from_secs(1)).unwrap();
-            fs::write(marker, "persistent-api-hold").unwrap();
-            let _keep_guard_alive = guard;
-            loop {
-                thread::sleep(Duration::from_millis(25));
-            }
+            let (guard, trace) = run_with_windows_lock_file_ex_trace(|| {
+                acquire(parent, name, Duration::from_secs(1)).unwrap()
+            });
+            assert_eq!(trace.len(), 1);
+            let drop_now_marker =
+                PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_DROP_NOW_MARKER").unwrap());
+            let post_drop_marker = PathBuf::from(
+                std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_POST_DROP_MARKER").unwrap(),
+            );
+            hold_windows_lock_until_dropped(
+                guard,
+                (),
+                &marker,
+                "persistent-api-hold",
+                &drop_now_marker,
+                &post_drop_marker,
+                trace[0],
+            );
+        }
+        "sidecar-api-hold" => {
+            let (guard, trace) = run_with_windows_lock_file_ex_trace(|| {
+                hold_lock(&target, LockOptions::default()).unwrap()
+            });
+            assert_eq!(trace.len(), 1);
+            let drop_now_marker =
+                PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_DROP_NOW_MARKER").unwrap());
+            let post_drop_marker = PathBuf::from(
+                std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_POST_DROP_MARKER").unwrap(),
+            );
+            hold_windows_lock_until_dropped(
+                guard,
+                (),
+                &marker,
+                "sidecar-api-hold",
+                &drop_now_marker,
+                &post_drop_marker,
+                trace[0],
+            );
+        }
+        "lease-api-hold" => {
+            let (lease, trace) = run_with_windows_lock_file_ex_trace(|| {
+                acquire_file_lease(&target, LeaseOptions::default())
+                    .unwrap()
+                    .expect("lease hook acquires lease")
+            });
+            assert_eq!(trace.len(), 1);
+            let drop_now_marker =
+                PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_DROP_NOW_MARKER").unwrap());
+            let post_drop_marker = PathBuf::from(
+                std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_POST_DROP_MARKER").unwrap(),
+            );
+            hold_windows_lock_until_dropped(
+                lease,
+                (),
+                &marker,
+                "lease-api-hold",
+                &drop_now_marker,
+                &post_drop_marker,
+                trace[0],
+            );
         }
         "persistent-raw-hold" => {
             let guard = raw_windows_lock(
@@ -740,14 +849,21 @@ fn spawn_windows_lock_hook_helper(
     temporary: &Path,
     redirect: Option<&Path>,
     parent: Option<&Path>,
-) -> (std::process::Child, PathBuf) {
-    let marker = temporary.join(format!("windows-lock-{kind}.ready"));
+) -> WindowsLockHook {
+    let ready_marker = temporary.join(format!("windows-lock-{kind}.ready"));
+    let drop_now_marker = temporary.join(format!("windows-lock-{kind}.drop-now"));
+    let post_drop_marker = temporary.join(format!("windows-lock-{kind}.post-drop"));
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args(["--exact", "windows_lock_hook_pause_helper", "--nocapture"])
         .env("JOURNAL_IO_WINDOWS_LOCK_HOOK", kind)
         .env("JOURNAL_IO_WINDOWS_LOCK_TARGET", target)
-        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .env("JOURNAL_IO_TEST_MARKER", &ready_marker)
+        .env("JOURNAL_IO_WINDOWS_LOCK_DROP_NOW_MARKER", &drop_now_marker)
+        .env(
+            "JOURNAL_IO_WINDOWS_LOCK_POST_DROP_MARKER",
+            &post_drop_marker,
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(redirect) = redirect {
@@ -756,7 +872,47 @@ fn spawn_windows_lock_hook_helper(
     if let Some(parent) = parent {
         command.env("JOURNAL_IO_WINDOWS_LOCK_PARENT", parent);
     }
-    (command.spawn().unwrap(), marker)
+    WindowsLockHook {
+        child: command.spawn().unwrap(),
+        ready_marker,
+        drop_now_marker,
+        post_drop_marker,
+    }
+}
+
+#[cfg(windows)]
+fn prove_windows_lock_lifecycle(holder: &mut WindowsLockHook, path: &Path, helper: &str) {
+    wait_for_marker_or_die(&mut holder.child, &holder.ready_marker, helper);
+    let initial_probe =
+        raw_windows_lock(File::options().read(true).write(true).open(path).unwrap());
+    let initially_excluded = matches!(
+        &initial_probe,
+        Err(error)
+            if error.raw_os_error()
+                == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
+    );
+    drop(initial_probe);
+    if !initially_excluded {
+        kill_child(&mut holder.child);
+    }
+    assert!(
+        initially_excluded,
+        "{helper} did not exclude the raw peer probe"
+    );
+
+    fs::write(&holder.drop_now_marker, "drop").unwrap();
+    wait_for_marker_or_die(&mut holder.child, &holder.post_drop_marker, helper);
+    let reacquired = raw_windows_lock(File::options().read(true).write(true).open(path).unwrap());
+    let reacquired_after_drop = reacquired.is_ok();
+    drop(reacquired);
+    if !reacquired_after_drop {
+        kill_child(&mut holder.child);
+    }
+    assert!(
+        reacquired_after_drop,
+        "{helper} did not release the raw peer lock after drop"
+    );
+    kill_child(&mut holder.child);
 }
 
 #[cfg(windows)]
@@ -764,11 +920,11 @@ fn spawn_windows_lock_hook_helper(
 fn unlocked_lock_file_ex_hook_is_falsifiable_across_processes() {
     let temporary = tempfile::TempDir::new().unwrap();
     let target = temporary.path().join("target");
-    let (mut child, marker) =
+    let mut holder =
         spawn_windows_lock_hook_helper("unlocked", &target, temporary.path(), None, None);
-    wait_for_marker(&marker);
+    wait_for_marker(&holder.ready_marker);
     assert!(hold_lock(&target, LockOptions::default()).is_ok());
-    kill_child(&mut child);
+    kill_child(&mut holder.child);
 }
 
 #[cfg(windows)]
@@ -777,29 +933,24 @@ fn wrong_handle_lock_file_ex_hook_is_falsifiable_across_processes() {
     let temporary = tempfile::TempDir::new().unwrap();
     let target = temporary.path().join("target");
     let redirected = temporary.path().join("redirected");
-    let (mut child, marker) = spawn_windows_lock_hook_helper(
+    let mut holder = spawn_windows_lock_hook_helper(
         "wrong-handle",
         &target,
         temporary.path(),
         Some(&redirected),
         None,
     );
-    wait_for_marker_or_die(&mut child, &marker, "wrong-handle lock helper");
-    let target_lock = hold_lock(&target, LockOptions::default());
-    wait_for_marker_or_die(&mut child, &marker, "wrong-handle lock helper");
-    let redirected_lock = raw_windows_lock(
-        File::options()
-            .read(true)
-            .write(true)
-            .open(&redirected)
-            .unwrap(),
+    wait_for_marker_or_die(
+        &mut holder.child,
+        &holder.ready_marker,
+        "wrong-handle lock helper",
     );
-    kill_child(&mut child);
+    let target_lock = hold_lock(&target, LockOptions::default());
+    if target_lock.is_err() {
+        kill_child(&mut holder.child);
+    }
     assert!(target_lock.is_ok());
-    assert!(matches!(
-        redirected_lock,
-        Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
-    ));
+    prove_windows_lock_lifecycle(&mut holder, &redirected, "wrong-handle lock helper");
 }
 
 #[cfg(windows)]
@@ -809,15 +960,15 @@ fn forced_identity_mismatch_hook_releases_the_real_lock_across_processes() {
     let parent = temporary.path().join("locks");
     fs::create_dir(&parent).unwrap();
     let target = parent.join("entry");
-    let (mut child, marker) = spawn_windows_lock_hook_helper(
+    let mut holder = spawn_windows_lock_hook_helper(
         "identity-mismatch",
         &target,
         temporary.path(),
         None,
         Some(&parent),
     );
-    wait_for_marker(&marker);
-    assert!(child.wait().unwrap().success());
+    wait_for_marker(&holder.ready_marker);
+    assert!(holder.child.wait().unwrap().success());
     assert!(acquire(&parent, OsStr::new("entry"), Duration::from_secs(1)).is_ok());
 }
 
@@ -857,35 +1008,54 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
     }
     #[cfg(windows)]
     {
-        let (mut api_child, api_marker) = spawn_windows_lock_hook_helper(
+        let mut api_holder = spawn_windows_lock_hook_helper(
             "persistent-api-hold",
             &entry,
             temporary.path(),
             None,
             None,
         );
-        wait_for_marker_or_die(&mut api_child, &api_marker, "persistent API lock helper");
-        let raw_probe =
-            raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap());
-        kill_child(&mut api_child);
-        assert!(
-            matches!(raw_probe, Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32))
-        );
+        prove_windows_lock_lifecycle(&mut api_holder, &entry, "persistent API lock helper");
 
-        let (mut raw_child, raw_marker) = spawn_windows_lock_hook_helper(
+        let mut raw_holder = spawn_windows_lock_hook_helper(
             "persistent-raw-hold",
             &entry,
             temporary.path(),
             None,
             None,
         );
-        wait_for_marker_or_die(&mut raw_child, &raw_marker, "persistent raw lock helper");
+        wait_for_marker_or_die(
+            &mut raw_holder.child,
+            &raw_holder.ready_marker,
+            "persistent raw lock helper",
+        );
         let api_probe = acquire(&parent, OsStr::new("fresh"), Duration::from_millis(50));
-        kill_child(&mut raw_child);
+        kill_child(&mut raw_holder.child);
         assert!(
             matches!(api_probe, Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
         );
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn sidecar_lock_crosses_the_real_lock_file_ex_boundary_and_releases_while_alive() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let target = temporary.path().join("target");
+    let sidecar = temporary.path().join("target.lock");
+    let mut holder =
+        spawn_windows_lock_hook_helper("sidecar-api-hold", &target, temporary.path(), None, None);
+    prove_windows_lock_lifecycle(&mut holder, &sidecar, "sidecar API lock helper");
+}
+
+#[cfg(windows)]
+#[test]
+fn lease_lock_crosses_the_real_lock_file_ex_boundary_and_releases_while_alive() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let path = temporary.path().join("refresh.lease");
+    let mut holder =
+        spawn_windows_lock_hook_helper("lease-api-hold", &path, temporary.path(), None, None);
+    prove_windows_lock_lifecycle(&mut holder, &path, "lease API lock helper");
 }
 
 #[cfg(windows)]
