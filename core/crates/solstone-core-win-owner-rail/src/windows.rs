@@ -40,6 +40,7 @@ use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken}
 
 pub const ORDINARY_OWNER_CARGO_TEST: &str = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture";
 const OWNER_ACCOUNT_ENV: &str = "SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT";
+const REFS_ROOT_ENV: &str = "SOLSTONE_JOURNAL_WIN_REFS_ROOT";
 const POLL_LIMIT: usize = 120;
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -115,7 +116,7 @@ fn prepare(options: &Options) -> Result<(), String> {
     let worker_sha256 = file_sha256(&worker_path)?;
     let expected_commit = options.required("--expected-commit")?.to_owned();
     let expected_cargo_lock_sha256 = options.required("--expected-lock")?.to_owned();
-    let refs_root = options.required("--refs-root")?.to_owned();
+    let refs_root = refs_root_from_environment(options)?;
     let input = LeaseInput {
         nonce,
         lease_path: lease_path.to_owned(),
@@ -391,9 +392,19 @@ fn cargo_test(lease: &LeaseRecord) -> Result<Output, String> {
     Command::new(executable)
         .current_dir(&lease.worktree)
         .env("CARGO_TARGET_DIR", &lease.target_dir)
+        .env(REFS_ROOT_ENV, &lease.refs_root)
         .args(command_words)
         .output()
         .map_err(|error| format!("run ordinary-owner cargo test: {error}"))
+}
+
+fn refs_root_from_environment(options: &Options) -> Result<String, String> {
+    let name = options.required("--refs-root-env")?;
+    if name != REFS_ROOT_ENV {
+        return Err("prepare only accepts the canonical ReFS-root environment name".to_owned());
+    }
+    std::env::var(REFS_ROOT_ENV)
+        .map_err(|_| "configured ReFS-root environment is unavailable to prepare".to_owned())
 }
 
 fn limited_attestation(lease: &LeaseRecord) -> Result<TokenAttestation, String> {

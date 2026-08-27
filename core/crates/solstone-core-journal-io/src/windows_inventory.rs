@@ -32,6 +32,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
 use crate::{
@@ -591,6 +592,7 @@ fn with_witness<'root, T>(
 
 struct NamespaceWitness<'root> {
     handle: BorrowedHandle<'root>,
+    _event: OwnedHandle,
     buffer: Vec<u32>,
     overlapped: OVERLAPPED,
     armed: bool,
@@ -601,10 +603,34 @@ impl<'root> NamespaceWitness<'root> {
     fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
         let handle =
             borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
+        // A directory watch needs a private completion event: the retained root also services
+        // synchronous listing and revalidation I/O, so its handle state is not this request's
+        // completion state. The event remains live through cancellation and drain.
+        let raw_event = {
+            // SAFETY: the unnamed manual-reset event starts unsignaled and is immediately owned
+            // below after the null-handle check.
+            #[allow(unsafe_code)]
+            unsafe {
+                CreateEventW(std::ptr::null(), 1, 0, std::ptr::null())
+            }
+        };
+        if raw_event.is_null() {
+            return Err(WindowsInventoryError::Io {
+                operation: "create recursive namespace witness event",
+                path: root.canonical_path().to_path_buf(),
+                source: io::Error::last_os_error(),
+            });
+        }
+        // SAFETY: `CreateEventW` returned a non-null event handle owned by this witness.
+        #[allow(unsafe_code)]
+        let event = unsafe { OwnedHandle::from_raw_handle(raw_event) };
+        let mut overlapped = OVERLAPPED::default();
+        overlapped.hEvent = event.as_raw_handle();
         let mut witness = Self {
             handle,
+            _event: event,
             buffer: vec![0; WATCH_BUFFER_DWORDS],
-            overlapped: OVERLAPPED::default(),
+            overlapped,
             armed: false,
             root: root.canonical_path().to_path_buf(),
         };
