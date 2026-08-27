@@ -40,8 +40,8 @@ expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptio
 [[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for the atomic module, health markers, and locking."
-expected_stderr = ["unresolved import `solstone_core_journal_io::atomic`"]
+reason = "Lane 2 owns the Unix-only durability-write backend used here for atomic_replace, health markers, and locking."
+expected_stderr = ["unresolved import `solstone_core_journal_io::atomic::atomic_replace`"]
 
 [[exclusions]]
 package = "solstone-core-segment"
