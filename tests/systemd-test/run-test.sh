@@ -10,6 +10,11 @@
 #   ./run-test.sh legacy-upgrade           # install, but seed a legacy non-symlink
 #                                          #   wrapper first; assert setup self-heals it
 #                                          #   through to a healthy service_identity
+#   ./run-test.sh legacy-upgrade-v1022     # same crossover proof, pinned to the actual
+#                                          #   shipped v1.0.22 shape (native sol/solstone
+#                                          #   root-launchers, a separate journal
+#                                          #   console-script, Type=notify unit) rather
+#                                          #   than the older shape legacy-upgrade covers
 #   ./run-test.sh shell                    # leave container up + drop into a user shell
 #
 # Environment overrides:
@@ -49,8 +54,8 @@ die() { echo "error: $*" >&2; exit 2; }
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 
 case "$mode" in
-    smoke|install|observer-ingest|legacy-upgrade|shell) ;;
-    *) die "unknown mode: $mode (expected: smoke | install | observer-ingest | legacy-upgrade | shell)" ;;
+    smoke|install|observer-ingest|legacy-upgrade|legacy-upgrade-v1022|shell) ;;
+    *) die "unknown mode: $mode (expected: smoke | install | observer-ingest | legacy-upgrade | legacy-upgrade-v1022 | shell)" ;;
 esac
 
 command -v docker >/dev/null || die "docker not found in PATH"
@@ -566,6 +571,233 @@ PY
         '
 
         log "legacy-upgrade: PASS"
+        ;;
+
+    legacy-upgrade-v1022)
+        # V2-over-v1 crossover cell, pinned to the shape v1.0.22 actually
+        # ships rather than the older shape `legacy-upgrade` above covers:
+        # solstone/sol are the native shell root-launcher (exec'ing a
+        # sibling solstone-core binary; git show v1.0.22:scripts/root-launchers/
+        # {solstone,sol}), journal is a separate Python console-script under
+        # its own uv-tool venv (solstone-journal, not solstone -- uv tool
+        # install treats them as two independent packages), and the systemd
+        # unit is Type=notify with ExecStart=.../journal start <port> --
+        # shape-identical to what V2 itself writes except for the launcher
+        # binary and verb (core/crates/solstone-core-service-unit/src/
+        # systemd.rs::render_systemd_unit). Owners and testers are frozen on
+        # 1.0.22 until the all-surfaces release, so this is the shape that
+        # matters; the fixture files under fixtures/legacy-v1022/ carry the
+        # exact bytes.
+        log "legacy-upgrade-v1022: apt install solstone-journal .deb"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
+
+        fixtures_dir="$(CDPATH= cd -- "$(dirname "$0")/fixtures/legacy-v1022" && pwd)"
+        home_dir=$(docker exec -u "$TEST_USER" "$CONTAINER" bash -lc 'printf %s "$HOME"')
+        [ -n "$home_dir" ] || die "could not resolve \$HOME for $TEST_USER inside $CONTAINER"
+
+        log "legacy-upgrade-v1022: stage v1.0.22-shaped fixture files on host"
+        stage=$(mktemp -d)
+        cp "$fixtures_dir/solstone-launcher" "$stage/solstone"
+        cp "$fixtures_dir/sol-launcher" "$stage/sol"
+        cp "$fixtures_dir/solstone-core-stub" "$stage/solstone-core"
+        cp "$fixtures_dir/python3-interpreter" "$stage/python3"
+        cp "$fixtures_dir/stop-before-publish-check.sh" "$stage/stop-before-publish-check.sh"
+
+        cat > "$stage/journal" <<PYSCRIPT
+#!${home_dir}/.local/share/uv/tools/solstone-journal/bin/python3
+# -*- coding: utf-8 -*-
+import sys
+from solstone.think.sol_cli import journal_main
+if __name__ == "__main__":
+    if sys.argv[0].endswith("-script.pyw"):
+        sys.argv[0] = sys.argv[0][:-11]
+    elif sys.argv[0].endswith(".exe"):
+        sys.argv[0] = sys.argv[0][:-4]
+    sys.exit(journal_main())
+PYSCRIPT
+
+        cat > "$stage/solstone.service" <<UNIT
+[Unit]
+Description=Solstone Supervisor
+After=default.target
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=notify
+TimeoutStartSec=120
+ExecStart=${home_dir}/.local/bin/journal start 5015
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+LimitNOFILE=4096
+StandardOutput=append:${home_dir}/journal/health/service.log
+StandardError=append:${home_dir}/journal/health/service.log
+Environment=HOME=${home_dir}
+Environment=PATH=${home_dir}/.local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
+UNIT
+
+        log "legacy-upgrade-v1022: create directories, copy fixture files into the container"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            mkdir -p "$HOME/.local/share/uv/tools/solstone/bin" \
+                     "$HOME/.local/share/uv/tools/solstone-journal/bin" \
+                     "$HOME/.local/bin" \
+                     "$HOME/.config/systemd/user" \
+                     "$HOME/journal/20260826" "$HOME/journal/media" \
+                     "$HOME/journal/identity/entities" "$HOME/journal/config" \
+                     "$HOME/journal/health"
+        '
+        docker cp "$stage/solstone" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone/bin/solstone"
+        docker cp "$stage/sol" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone/bin/sol"
+        docker cp "$stage/solstone-core" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone/bin/solstone-core"
+        docker cp "$stage/python3" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone-journal/bin/python3"
+        docker cp "$stage/stop-before-publish-check.sh" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone-journal/bin/stop-before-publish-check.sh"
+        docker cp "$stage/journal" "$CONTAINER:$home_dir/.local/share/uv/tools/solstone-journal/bin/journal"
+        docker cp "$stage/solstone.service" "$CONTAINER:$home_dir/.config/systemd/user/solstone.service"
+        rm -rf "$stage"
+
+        log "legacy-upgrade-v1022: chmod, symlink, seed owner content, start the v1 unit"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            chown "$(id -u):$(id -g)" \
+                "$HOME/.local/share/uv/tools/solstone/bin/solstone" \
+                "$HOME/.local/share/uv/tools/solstone/bin/sol" \
+                "$HOME/.local/share/uv/tools/solstone/bin/solstone-core" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/python3" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/stop-before-publish-check.sh" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/journal" \
+                "$HOME/.config/systemd/user/solstone.service"
+            chmod 755 \
+                "$HOME/.local/share/uv/tools/solstone/bin/solstone" \
+                "$HOME/.local/share/uv/tools/solstone/bin/sol" \
+                "$HOME/.local/share/uv/tools/solstone/bin/solstone-core" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/python3" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/stop-before-publish-check.sh" \
+                "$HOME/.local/share/uv/tools/solstone-journal/bin/journal"
+            ln -sfn "$HOME/.local/share/uv/tools/solstone/bin/solstone" "$HOME/.local/bin/solstone"
+            ln -sfn "$HOME/.local/share/uv/tools/solstone/bin/sol" "$HOME/.local/bin/sol"
+            ln -sfn "$HOME/.local/share/uv/tools/solstone-journal/bin/journal" "$HOME/.local/bin/journal"
+
+            printf "%s\n" "{\"owner\":\"ledger\"}" > "$HOME/journal/ledger.jsonl"
+            printf "%s\n" "{\"owner\":\"dated\"}" > "$HOME/journal/20260826/owner.jsonl"
+            printf "%s" "owner-media-bytes" > "$HOME/journal/media/owner.bin"
+            printf "%s\n" "# owner entity" > "$HOME/journal/identity/entities/owner.md"
+            printf "%s\n" "{\"owner_setting\":true}" > "$HOME/journal/config/owner.json"
+            cat > "$HOME/journal/health/setup-state.json" <<MANIFEST
+{
+  "schema_version": 1,
+  "started_at": "2026-08-26T00:00:00Z",
+  "completed_at": "2026-08-26T00:00:01Z",
+  "mode": "non_interactive",
+  "args_resolved": {},
+  "steps": [
+    {"name":"wrapper","status":"ok","paths":[]},
+    {"name":"service","status":"ok","paths":[]}
+  ]
+}
+MANIFEST
+
+            systemctl --user daemon-reload
+            systemctl --user enable --now solstone.service
+            for _ in $(seq 1 50); do
+                test -s "$HOME/journal/health/v1.pid" && break
+                sleep 0.1
+            done
+            test -s "$HOME/journal/health/v1.pid"
+            cp "$HOME/journal/health/v1.pid" /tmp/v1.pid
+
+            cd "$HOME/journal"
+            find . -mindepth 1 \
+                ! -path "./config/journal.json" \
+                ! -path "./config/journal.json.lock" \
+                ! -path "./health/setup-state.json" \
+                ! -path "./.claude/skills" ! -path "./.claude/skills/*" \
+                ! -path "./.agents/skills" ! -path "./.agents/skills/*" \
+                -print0 > /tmp/journal-preexisting.paths
+            tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
+                --mtime=@0 --owner=0 --group=0 --numeric-owner \
+                -cf /tmp/journal-preexisting.before.tar
+        '
+
+        log "legacy-upgrade-v1022: one journal setup invocation"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
+            'journal setup -y --accept-existing-journal --skip-models --skip-skills'
+
+        log "verify: systemctl --user is-active solstone"
+        for _ in $(seq 1 30); do
+            state=$(docker exec -u "$TEST_USER" "$CONTAINER" \
+                bash -lc 'systemctl --user is-active solstone' 2>/dev/null || true)
+            [ "$state" = "active" ] && break
+            sleep 1
+        done
+        if [ "$state" != "active" ]; then
+            log "solstone.service did not reach active (last: ${state:-unknown})"
+            docker exec -u "$TEST_USER" "$CONTAINER" \
+                bash -lc 'systemctl --user status solstone --no-pager -l || true' >&2
+            exit 1
+        fi
+
+        log "verify: V1 stopped before publication; authority replaced with durable recovery copies"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            old_pid=$(cat /tmp/v1.pid)
+            ! kill -0 "$old_pid" 2>/dev/null
+            test -f /tmp/v1-stopped-before-publish
+            new_pid=$(systemctl --user show solstone.service --property=MainPID --value)
+            test "$new_pid" -gt 1
+            test "$new_pid" != "$old_pid"
+
+            grep -q "^# managed-version:" ~/.local/bin/solstone
+            grep -q "^# managed-version:" ~/.local/bin/journal
+            test ! -e ~/.local/bin/sol
+            test ! -L ~/.local/bin/sol
+            test -x ~/.local/share/uv/tools/solstone/bin/solstone
+            test -x ~/.local/share/uv/tools/solstone/bin/sol
+            test -x ~/.local/share/uv/tools/solstone-journal/bin/journal
+            compgen -G "$HOME/.local/share/solstone/setup-backups/solstone.old-symlink-*" >/dev/null
+            compgen -G "$HOME/.local/share/solstone/setup-backups/sol.old-symlink-*" >/dev/null
+            compgen -G "$HOME/.local/share/solstone/setup-backups/journal.old-symlink-*" >/dev/null
+            solstone_backup=$(compgen -G "$HOME/.local/share/solstone/setup-backups/solstone.old-symlink-*" | head -1)
+            sol_backup=$(compgen -G "$HOME/.local/share/solstone/setup-backups/sol.old-symlink-*" | head -1)
+            journal_backup=$(compgen -G "$HOME/.local/share/solstone/setup-backups/journal.old-symlink-*" | head -1)
+            test -L "$solstone_backup"
+            test -L "$sol_backup"
+            test -L "$journal_backup"
+            test "$(readlink "$solstone_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/solstone"
+            test "$(readlink "$sol_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/sol"
+            test "$(readlink "$journal_backup")" = "$HOME/.local/share/uv/tools/solstone-journal/bin/journal"
+
+            grep -q "^ExecStart=.*/journal start 5015$" ~/.config/systemd/user/solstone.service
+            grep -q "SOLSTONE_INSTALLATION_NAMESPACE=" ~/.config/systemd/user/solstone.service
+            cd "$HOME/journal"
+            tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
+                --mtime=@0 --owner=0 --group=0 --numeric-owner \
+                -cf /tmp/journal-preexisting.after.tar
+            cmp /tmp/journal-preexisting.before.tar /tmp/journal-preexisting.after.tar
+        '
+
+        log "verify: full journal doctor reports service_identity ok"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            journal doctor --json > /tmp/legacy-upgrade-v1022-doctor.json || true
+            python3 - <<PY
+import json
+checks = json.load(open("/tmp/legacy-upgrade-v1022-doctor.json")).get("checks", [])
+rows = [c for c in checks if c.get("name") == "service_identity"]
+assert rows, "service_identity check missing from journal doctor output"
+status = rows[0].get("status")
+print("service_identity:", status)
+assert status == "ok", "expected ok, got " + str(rows[0])
+PY
+        '
+
+        log "legacy-upgrade-v1022: PASS"
         ;;
 
     shell)

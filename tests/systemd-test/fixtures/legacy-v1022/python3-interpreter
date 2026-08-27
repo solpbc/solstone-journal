@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fixture-only stand-in for the v1.0.22 Python interpreter that `journal`
+# (the console-script shim) would otherwise exec into. Simulates the v1
+# supervisor process long enough to prove journal setup stops it before
+# publishing the V2 unit. Sits alongside this script at install time (see
+# run-test.sh's legacy-upgrade-v1022 case), so the sibling path below is
+# stable.
+. "$(dirname "$0")/stop-before-publish-check.sh"
+
+printf "%s\n" "$$" > "$HOME/journal/health/v1.pid"
+systemd-notify --ready
+trap '
+if stopped_before_publish "$HOME/.config/systemd/user/solstone.service"; then
+    printf "%s\n" "stopped-before-publish" > /tmp/v1-stopped-before-publish
+fi
+exit 0' TERM INT
+while :; do sleep 1; done
