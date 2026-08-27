@@ -15,7 +15,8 @@ use std::path::{Path, PathBuf};
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+    FILE_SYNCHRONOUS_IO_NONALERT, FileIdExtdDirectoryInformation, NtCreateFile,
+    NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
@@ -27,11 +28,13 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_TAG_INFO, FILE_ID_EXTD_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
     FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_READ_ATTRIBUTES,
     FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdExtdDirectoryInfo, FileIdInfo,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileIdInfo,
     GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
     SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::IO::{
+    CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
+};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -925,24 +928,44 @@ fn list_directory(
 ) -> Result<Vec<ListedEntry>, WindowsInventoryError> {
     let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
+    let mut restart_scan = true;
     loop {
         let result = traced_inventory(WindowsInventoryPrimitive::DirectoryList, || {
-            // SAFETY: `directory` is a retained directory-list handle and `buffer` is writable for its exact supplied size.
+            let mut status = IO_STATUS_BLOCK::default();
+            // SAFETY: `directory` is a retained directory-list handle, the I/O status block and
+            // buffer are writable for this synchronous request, and `restart_scan` rewinds only
+            // this directory handle's enumeration cursor for the first query of this listing.
             #[allow(unsafe_code)]
             let result = unsafe {
-                GetFileInformationByHandleEx(
+                NtQueryDirectoryFile(
                     directory,
-                    FileIdExtdDirectoryInfo,
+                    std::ptr::null_mut(),
+                    None,
+                    std::ptr::null(),
+                    &mut status,
                     buffer.as_mut_ptr().cast(),
                     buffer.len() as u32,
+                    FileIdExtdDirectoryInformation,
+                    false,
+                    std::ptr::null(),
+                    restart_scan,
                 )
             };
-            (result != 0)
+            (result == STATUS_SUCCESS)
                 .then_some(())
-                .ok_or_else(io::Error::last_os_error)
+                .ok_or_else(|| {
+                    // SAFETY: `RtlNtStatusToDosError` converts the just-returned NTSTATUS
+                    // without borrowing caller memory or relying on thread-local last-error.
+                    #[allow(unsafe_code)]
+                    let error = unsafe { RtlNtStatusToDosError(result) };
+                    io::Error::from_raw_os_error(error as i32)
+                })
         });
         match result {
-            Ok(()) => parse_directory_buffer(&buffer, relative, &mut entries)?,
+            Ok(()) => {
+                restart_scan = false;
+                parse_directory_buffer(&buffer, relative, &mut entries)?;
+            }
             Err(source) if source.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) => break,
             Err(source) => {
                 return Err(WindowsInventoryError::Io {
@@ -1481,6 +1504,14 @@ mod tests {
             read_windows_inventory_file(&root, directory, budget()),
             Err(WindowsInventoryError::NotRegular { .. })
         ));
+    }
+
+    #[test]
+    fn repeated_inventory_restarts_the_retained_root_directory_cursor() {
+        let (_temporary, root) = fixture();
+        let initial = enumerate_windows_inventory(&root, budget()).unwrap();
+        let repeated = enumerate_windows_inventory(&root, budget()).unwrap();
+        assert_eq!(repeated.entries(), initial.entries());
     }
 
     #[test]
