@@ -53,3 +53,9 @@ required-features = ["test-hooks"]
 name = "windows_ordinary_owner_inventory"
 path = "tests/windows_ordinary_owner_inventory.rs"
 required-features = ["test-hooks"]
+
+# Detailed publication has Windows-only no-follow, replacement, and crash-boundary behavior.
+[[test]]
+name = "windows_atomic_detailed"
+path = "tests/windows_atomic_detailed.rs"
+required-features = ["test-hooks"]
