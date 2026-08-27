@@ -347,6 +347,13 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
 
     let (_, _, full) = get("/api/profile/ada", &fixture).await;
     let mut full = body_json(&full);
+    let generated_at = full["generated_at"]
+        .as_i64()
+        .expect("generated_at is an integer timestamp");
+    assert!(
+        (Utc::now().timestamp_millis() - generated_at).abs() < 60_000,
+        "generated_at should be close to now"
+    );
     full.as_object_mut()
         .expect("full object")
         .remove("generated_at");
@@ -646,8 +653,8 @@ async fn active_window_days_validation_uses_legacy_error_envelopes() {
     let (status, _, bytes) = get("/api/profiles/active?window_days=bad", &fixture).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        body_json(&bytes)["detail"],
-        "window_days must be an integer"
+        body_json(&bytes),
+        json!({"error":"I couldn't use one of those values.","reason_code":"invalid_request_value","detail":"window_days must be an integer"})
     );
     for value in ["0", "-1", "-2"] {
         let (status, _, bytes) = get(

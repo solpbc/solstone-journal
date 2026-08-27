@@ -155,7 +155,12 @@ fn activity_window(
     }
     let facets = list_declared_facet_names(journal_root).map_err(ProfileError::internal)?;
     let today = now.date_naive();
-    let mut window = Vec::with_capacity(window_days as usize * facets.len());
+    let mut window = Vec::with_capacity(
+        usize::try_from(window_days)
+            .ok()
+            .and_then(|days| days.checked_mul(facets.len()))
+            .unwrap_or(0),
+    );
     for offset in (0..window_days).rev() {
         let day = (today - Duration::days(offset))
             .format("%Y%m%d")
