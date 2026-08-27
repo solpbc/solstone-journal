@@ -15,19 +15,25 @@ axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 chrono-tz.workspace = true
 iana-time-zone.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-convey-http.workspace = true
+solstone-core-brain.workspace = true
+solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-reprocess-cli.workspace = true
+solstone-core-system.workspace = true
+solstone-core-system-health.workspace = true
 solstone-core-thinking.workspace = true
 
 [build-dependencies]
 
 [dev-dependencies]
-solstone-core-brain.workspace = true
 solstone-core-convey-shell.workspace = true
-solstone-core-system.workspace = true
 filetime = "0.2.29"
 tempfile = "3.24.0"
 temp-env = "0.3.6"
