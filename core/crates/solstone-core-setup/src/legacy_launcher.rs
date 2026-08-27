@@ -358,7 +358,10 @@ mod tests {
         symlink(&target, &public).unwrap();
         let found = classify(&home, &public, "solstone").unwrap().unwrap();
         assert_eq!(found.family, LegacyLauncherFamily::NativeRoot);
-        assert_eq!(found.installation_bin, home.join(".local/pipx/venvs/solstone/bin"));
+        assert_eq!(
+            found.installation_bin,
+            home.join(".local/pipx/venvs/solstone/bin")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
