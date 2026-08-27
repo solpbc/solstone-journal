@@ -31,6 +31,18 @@ const RFDETR_ASSET_DEST: &str = "lib/solstone_journal_models/assets/rfdetr";
 const RFDETR_PROBE_JOURNAL_ENV: &str = "SOLSTONE_RFDETR_PROBE_JOURNAL";
 const RFDETR_PROBE_SOCKET_ENV: &str = "SOLSTONE_RFDETR_PROBE_SOCKET";
 
+#[cfg(target_os = "linux")]
+fn lease_child_executable() -> PathBuf {
+    // Re-exec the inherited test binary through Linux's stable process handle,
+    // rather than resolving a separate Cargo target-artifact path at spawn time.
+    PathBuf::from("/proc/self/exe")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn lease_child_executable() -> PathBuf {
+    std::env::current_exe().expect("locate the running lease-test binary")
+}
+
 struct LeaseCase {
     socket: UnixDatagram,
     root: tempfile::TempDir,
@@ -51,7 +63,7 @@ impl LeaseCase {
     }
 
     fn run_child(&self) -> ReapedChild {
-        let child = Command::new(std::env::current_exe().unwrap())
+        let child = Command::new(lease_child_executable())
             .args(["--exact", "--ignored", "lease_child_probe"])
             .env("SOLSTONE_LOCAL_LEASE_HELPER_ROOT", self.root.path())
             .env(
