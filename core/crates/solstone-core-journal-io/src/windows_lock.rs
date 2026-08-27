@@ -23,6 +23,12 @@ pub(crate) struct WindowsLockGuard {
     overlapped: OVERLAPPED,
 }
 
+// SAFETY: LockFileEx is always called with LOCKFILE_FAIL_IMMEDIATELY, so this guard
+// never has an asynchronous completion or event registration in flight. The guard owns
+// its File and zeroed OVERLAPPED exclusively, and File itself is Send.
+#[allow(unsafe_code)]
+unsafe impl Send for WindowsLockGuard {}
+
 impl fmt::Debug for WindowsLockGuard {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

@@ -735,17 +735,16 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
     let parent_for_thread = parent.clone();
     thread::spawn(move || {
         sender
-            .send(matches!(
-                acquire(
-                    &parent_for_thread,
-                    OsStr::new("fresh"),
-                    Duration::from_millis(50),
-                ),
-                Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50)
+            .send(acquire(
+                &parent_for_thread,
+                OsStr::new("fresh"),
+                Duration::from_millis(50),
             ))
             .unwrap()
     });
-    assert!(receiver.recv_timeout(Duration::from_secs(1)).unwrap());
+    assert!(
+        matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
+    );
     drop(raw_guard);
 }
 

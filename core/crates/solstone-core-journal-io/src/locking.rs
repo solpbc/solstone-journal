@@ -33,7 +33,8 @@ use windows_sys::Wdk::Storage::FileSystem::{
 };
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    ERROR_DIRECTORY, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, GENERIC_READ, GENERIC_WRITE,
+    INVALID_HANDLE_VALUE,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
@@ -64,7 +65,7 @@ pub struct LockOptions {
     pub timeout: Duration,
     /// Upper bound for each randomized retry delay.
     pub poll_interval: Duration,
-    /// Sidecar file mode at creation.
+    /// Sidecar file mode at creation. Windows does not apply this field; it has no ACL equivalent.
     pub mode: Option<u32>,
 }
 
@@ -765,7 +766,15 @@ fn acquire_lock_in_parent_windows(
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         )
         .map(File::from)
-        .map_err(|source| existing_io("open persistent lock entry", path, source))?;
+        .map_err(|source| match source.raw_os_error() {
+            Some(code) if code == ERROR_DIRECTORY as i32 => {
+                ExistingParentLockError::UnsafeLockEntry {
+                    path: path.to_path_buf(),
+                    kind: "directory",
+                }
+            }
+            _ => existing_io("open persistent lock entry", path, source),
+        })?;
         validate_lock_entry_windows(&file, path)?;
 
         match try_lock_exclusive(file) {
@@ -858,7 +867,20 @@ fn verify_final_lock_entry_windows(
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )
     .map(File::from)
-    .map_err(|source| existing_io("open persistent lock entry", path, source))?;
+    .map_err(|source| match source.raw_os_error() {
+        Some(code) if code == ERROR_DIRECTORY as i32 => ExistingParentLockError::UnsafeLockEntry {
+            path: path.to_path_buf(),
+            kind: "directory",
+        },
+        Some(code)
+            if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32 =>
+        {
+            ExistingParentLockError::NamespaceChanged {
+                path: path.to_path_buf(),
+            }
+        }
+        _ => existing_io("open persistent lock entry", path, source),
+    })?;
     validate_lock_entry_windows(&named, path)?;
     let named_identity = lock_entry_identity_windows(&named)
         .map_err(|source| existing_io("stat persistent lock entry", path, source))?;

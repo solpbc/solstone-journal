@@ -1202,7 +1202,11 @@ fn open_relative_for_directory_listing(
 }
 
 fn relative_open_error(path: &Path, source: io::Error) -> WindowsInventoryError {
-    if matches!(
+    if source.kind() == io::ErrorKind::InvalidInput {
+        WindowsInventoryError::InvalidName {
+            path: path.to_path_buf(),
+        }
+    } else if matches!(
         source.raw_os_error(),
         Some(code) if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
     ) {

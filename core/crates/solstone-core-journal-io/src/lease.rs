@@ -46,7 +46,7 @@ pub struct LeaseOptions {
     pub attempts: usize,
     /// Total retry window; the deadline is set once before the first attempt.
     pub retry_max: Duration,
-    /// Lease-file permission bits.
+    /// Lease-file permission bits. Windows does not apply this field; it has no ACL equivalent.
     pub mode: u32,
 }
 
