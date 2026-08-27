@@ -64,9 +64,9 @@ set "JOURNAL_WIN_CI_ORDINARY_OWNER_LOG=core\target\journal-win-ci-ordinary-owner
 "%JOURNAL_WIN_CI_OWNER_RAIL%" await --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" > "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%"
-findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_ORDINARY_OWNER_LOG); if ([regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed\r?$').Count -eq 1) { exit 0 }; exit 1"
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS=%ERRORLEVEL%"
-if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT findstr /x /c:"JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed" "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul
+if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_ORDINARY_OWNER_LOG); if ([regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed\r?$').Count -eq 1) { exit 0 }; exit 1"
 if defined SOLSTONE_JOURNAL_WIN_REFS_ROOT set "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS=%ERRORLEVEL%"
 if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS%"=="0" (
   rem `cleanup` itself verifies TerminalVerified, so an unbound, timed-out, or

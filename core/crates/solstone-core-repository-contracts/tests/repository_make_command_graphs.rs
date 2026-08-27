@@ -1487,12 +1487,12 @@ printf '%s\n' "$*" >> "$SOLSTONE_SSH_LOG"
 snapshot_sha=$(sed -n 's/^  "commit": "\([0-9a-f]*\)",$/\1/p' target/win-host-ci-source-binding.json)
 cargo_lock_sha256=$(sed -n 's/^  "cargo_lock_sha256": "\([0-9a-f]*\)"$/\1/p' target/win-host-ci-source-binding.json)
 case "$*" in
-  *'set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1&&'*) expected=passed ;;
-  *'set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0&&'*) expected=skipped ;;
+  *"\$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '1'"*) expected=passed ;;
+  *"\$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '0'"*) expected=skipped ;;
   *) expected=missing-forward ;;
 esac
 case "$*" in
-  *'set "SOLSTONE_JOURNAL_WIN_REFS_ROOT=C:\refs"&&'*)
+  *"\$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\refs'"*)
     refs_requested=1
     refs_enumeration_evidence=executed/pass
     refs_enumeration_capability=available
@@ -1766,15 +1766,15 @@ fn windows_native_driver_forwards_only_normalized_cloud_opt_in() {
             String::from_utf8_lossy(&output.stderr)
         );
         let ssh_call = fs::read_to_string(&ssh_log).expect("read ssh command");
-        let forwarded = format!("set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST={expected}&&");
+        let forwarded = format!("$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '{expected}'");
         assert_eq!(
             ssh_call
-                .matches("set JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=")
+                .matches("$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '")
                 .count(),
             1,
             "opt-in {opt_in:?} produced an ambiguous remote assignment"
         );
-        assert!(ssh_call.contains("set \"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=solbuild\"&&"));
+        assert!(ssh_call.contains("$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = 'solbuild'"));
         assert_eq!(
             ssh_call.matches(&forwarded).count(),
             1,
@@ -1814,7 +1814,7 @@ fn windows_native_driver_forwards_or_skips_the_refs_matrix_fixture() {
         String::from_utf8_lossy(&output.stderr)
     );
     let ssh_call = fs::read_to_string(&ssh_log).expect("read ssh command");
-    assert!(ssh_call.contains("set \"SOLSTONE_JOURNAL_WIN_REFS_ROOT=C:\\refs\"&&"));
+    assert!(ssh_call.contains("$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\\refs'"));
     let receipt = String::from_utf8_lossy(&output.stdout);
     assert!(receipt.contains("refs_enumeration_evidence=executed/pass"));
     assert!(receipt.contains("refs_enumeration_capability=available"));
@@ -1870,7 +1870,8 @@ fn validate_windows_runner_contract(runner: &str, limited_child: &str) -> Result
     let cloud_evidence =
         "echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%";
     let ordinary_integration = "pub const ORDINARY_OWNER_CARGO_TEST: &str = \"cargo test --manifest-path core\\\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture\";";
-    let ordinary_marker = "findstr /x /c:\"JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed\"";
+    let ordinary_marker = "[regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_ORDINARY_OWNER_CONTROL=passed\\r?$').Count -eq 1";
+    let ordinary_refs_marker = "[regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed\\r?$').Count -eq 1";
     let ordinary_status = "set \"JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS=%ERRORLEVEL%\"";
     let ordinary_passed = "set \"JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed\"";
     let ordinary_evidence =
@@ -1906,6 +1907,7 @@ fn validate_windows_runner_contract(runner: &str, limited_child: &str) -> Result
 
     if !limited_child.contains(ordinary_integration)
         || !runner.contains(ordinary_marker)
+        || !runner.contains(ordinary_refs_marker)
         || !runner.contains(ordinary_status)
         || !runner.contains("recover-held --lease")
         || !runner.contains("prepare --lease")
@@ -2092,7 +2094,7 @@ fn windows_native_gate_is_isolated_and_names_its_evidence_boundary() {
     assert!(!runner.contains(
         "echo === cargo test --locked (journal-io Cloud Files sync-root registration) ==="
     ));
-    assert!(driver.contains("set \\\"SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=$owner_account\\\"&&"));
+    assert!(driver.contains("$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = '$owner_account'"));
     validate_windows_runner_contract(&runner, &limited_child)
         .expect("Windows runner evidence contract");
     for test in [
