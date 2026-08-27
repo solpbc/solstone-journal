@@ -272,7 +272,7 @@ directory-level durability.
 
 [`FILE_RENAME_INFO`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
 documents a handle-relative rename destination via `RootDirectory` and that a
-false `ReplaceIfExists` errors when the target exists — collision behavior,
+false `ReplaceIfExists` errors when the target exists, collision behavior,
 not a documented atomic transfer into an absent claim name under a concurrent
 creator.
 [`SetFileInformationByHandle`](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)
@@ -281,8 +281,8 @@ differ by information class across OS releases; it supplies no missing
 concurrency guarantee for the claim step, and it is also the source of the
 `ReFS` support statement addressed below. Once a claim exists,
 [`FILE_DISPOSITION_INFORMATION_EX`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)
-documents POSIX deletion semantics — closing the delete handle removes the
-visible link while existing handles remain usable — but this is a post-claim
+documents POSIX deletion semantics, closing the delete handle removes the
+visible link while existing handles remain usable, but this is a post-claim
 deletion mechanism that cannot repair the undocumented atomic claim step that
 has to happen first.
 [`File caching`](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching)
