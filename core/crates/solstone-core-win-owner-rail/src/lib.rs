@@ -292,6 +292,15 @@ pub fn schtasks_delete_argv(task_name: &str) -> Vec<String> {
     ]
 }
 
+/// An exact `/Query /TN <nonce-derived-name> /XML` is proof of task absence only for the
+/// scheduler's specific missing-task diagnostics.  Other nonzero outcomes remain ambiguous.
+pub fn schtasks_query_proves_task_absent(output: &str) -> bool {
+    let output = output.to_ascii_lowercase();
+    output.contains("cannot find the file specified")
+        || output.contains("cannot find the path specified")
+        || output.contains("task not found")
+}
+
 pub fn parse_task_xml(xml: &str) -> Result<TaskDefinition, RailError> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
@@ -745,6 +754,23 @@ mod tests {
         // A name collision must surface as a loud `/Create` failure, never a silent overwrite of
         // whatever task (possibly still live) already held the nonce-derived name.
         assert!(!argv.iter().any(|arg| arg == "/F"));
+    }
+
+    #[test]
+    fn exact_scheduler_query_accepts_only_missing_task_diagnostics_as_absence() {
+        assert!(schtasks_query_proves_task_absent(
+            "ERROR: The system cannot find the file specified."
+        ));
+        assert!(schtasks_query_proves_task_absent(
+            "ERROR: The system cannot find the path specified."
+        ));
+        assert!(schtasks_query_proves_task_absent("ERROR: Task not found."));
+        assert!(!schtasks_query_proves_task_absent(
+            "ERROR: Access is denied."
+        ));
+        assert!(!schtasks_query_proves_task_absent(
+            "ERROR: The requested operation is unavailable."
+        ));
     }
 
     #[test]

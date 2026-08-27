@@ -17,9 +17,9 @@ use solstone_core_win_owner_rail::{
     CONTROL_ID, LEASE_PATH, LeaseInput, LeaseRecord, LeaseState, RAIL_ROOT, RailError,
     ResultRecord, TaskRuntime, TerminalState, TokenAttestation, classify_terminal, mint_nonce,
     parse_task_runtime_csv, parse_task_xml, recovery_decision, require_clean_worktree,
-    schtasks_create_argv, schtasks_delete_argv, schtasks_query_runtime_argv,
-    schtasks_query_xml_argv, schtasks_run_argv, sha256_hex, verify_attestation, verify_result,
-    verify_result_binding, verify_task_definition,
+    schtasks_create_argv, schtasks_delete_argv, schtasks_query_proves_task_absent,
+    schtasks_query_runtime_argv, schtasks_query_xml_argv, schtasks_run_argv, sha256_hex,
+    verify_attestation, verify_result, verify_result_binding, verify_task_definition,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_INSUFFICIENT_BUFFER, GENERIC_ALL, GetLastError, INVALID_HANDLE_VALUE, LocalFree,
@@ -510,11 +510,10 @@ fn confirm_task_absent(lease: &LeaseRecord) -> Result<(), String> {
             lease.nonce
         ));
     }
-    // The local scheduler returns this explicit task-not-found diagnostic for an absent exact
-    // name.  Any other nonzero query (access, transport, parser, or scheduler failure) remains
-    // ambiguous and retains the lease rather than treating a failing command as proof of absence.
-    let text = render_output(&output).to_ascii_lowercase();
-    if text.contains("cannot find the file specified") || text.contains("task not found") {
+    // The scheduler reports an absent exact task as either a missing file or missing task path.
+    // Any other nonzero query (access, transport, parser, or scheduler failure) remains ambiguous
+    // and retains the lease rather than treating a failing command as proof of absence.
+    if schtasks_query_proves_task_absent(&render_output(&output)) {
         return Ok(());
     }
     Err(format!(
