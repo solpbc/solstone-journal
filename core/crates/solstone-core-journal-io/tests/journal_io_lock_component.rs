@@ -9,6 +9,8 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io;
+#[cfg(windows)]
+use std::io::Read;
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::os::unix::ffi::OsStringExt;
 #[cfg(unix)]
@@ -19,6 +21,8 @@ use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -347,6 +351,79 @@ fn wait_for_marker(marker: &Path) {
     assert!(marker.exists(), "helper did not acquire the lease");
 }
 
+#[cfg(windows)]
+fn read_windows_hook_output(child: &mut Child) -> (String, String) {
+    fn read_stream(stream: &mut impl Read) -> String {
+        let mut output = String::new();
+        match stream.read_to_string(&mut output) {
+            Ok(_) => output,
+            Err(error) => format!("<failed to read helper output: {error}>"),
+        }
+    }
+
+    let stdout = child
+        .stdout
+        .as_mut()
+        .map(read_stream)
+        .unwrap_or_else(|| "<stdout was not captured>".to_owned());
+    let stderr = child
+        .stderr
+        .as_mut()
+        .map(read_stream)
+        .unwrap_or_else(|| "<stderr was not captured>".to_owned());
+    (stdout, stderr)
+}
+
+#[cfg(windows)]
+fn panic_windows_hook_exit(
+    child: &mut Child,
+    helper: &str,
+    event: &str,
+    status: std::process::ExitStatus,
+) -> ! {
+    let (stdout, stderr) = read_windows_hook_output(child);
+    panic!("{helper} {event}: {status}; stdout:\n{stdout}\nstderr:\n{stderr}");
+}
+
+#[cfg(windows)]
+fn wait_for_marker_or_die(child: &mut Child, marker: &Path, helper: &str) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let marker_exists = marker.exists();
+        match child.try_wait() {
+            Ok(None) if marker_exists => return,
+            Ok(Some(status)) => {
+                let event = if marker_exists {
+                    "exited after writing its readiness marker"
+                } else {
+                    "exited before writing its readiness marker"
+                };
+                panic_windows_hook_exit(child, helper, event, status);
+            }
+            Ok(None) => {}
+            Err(error) => panic!("{helper} liveness check failed before readiness: {error}"),
+        }
+
+        if Instant::now() >= deadline {
+            let termination_error = child.kill().err();
+            let status = child.wait().unwrap_or_else(|error| {
+                panic!("{helper} did not reach readiness and could not be reaped: {error}")
+            });
+            let event = match termination_error {
+                Some(error) => {
+                    format!(
+                        "did not write its readiness marker before timeout; termination failed: {error}"
+                    )
+                }
+                None => "did not write its readiness marker before timeout".to_owned(),
+            };
+            panic_windows_hook_exit(child, helper, &event, status);
+        }
+
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn kill_holder(mut holder: LeaseHolder) {
     kill_child(&mut holder.child);
     fs::remove_file(&holder.marker).unwrap();
@@ -606,6 +683,35 @@ fn windows_lock_hook_pause_helper() {
                 thread::sleep(Duration::from_millis(25));
             }
         }
+        "persistent-api-hold" => {
+            let parent = target
+                .parent()
+                .expect("persistent lock target has a parent");
+            let name = target
+                .file_name()
+                .expect("persistent lock target has a file name");
+            let guard = acquire(parent, name, Duration::from_secs(1)).unwrap();
+            fs::write(marker, "persistent-api-hold").unwrap();
+            let _keep_guard_alive = guard;
+            loop {
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
+        "persistent-raw-hold" => {
+            let guard = raw_windows_lock(
+                File::options()
+                    .read(true)
+                    .write(true)
+                    .open(&target)
+                    .unwrap(),
+            )
+            .unwrap();
+            fs::write(marker, "persistent-raw-hold").unwrap();
+            let _keep_guard_alive = guard;
+            loop {
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
         "identity-mismatch" => {
             let parent = PathBuf::from(std::env::var_os("JOURNAL_IO_WINDOWS_LOCK_PARENT").unwrap());
             let (result, consumed) = run_with_forced_post_lock_identity_mismatch(1, || {
@@ -641,7 +747,9 @@ fn spawn_windows_lock_hook_helper(
         .args(["--exact", "windows_lock_hook_pause_helper", "--nocapture"])
         .env("JOURNAL_IO_WINDOWS_LOCK_HOOK", kind)
         .env("JOURNAL_IO_WINDOWS_LOCK_TARGET", target)
-        .env("JOURNAL_IO_TEST_MARKER", &marker);
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(redirect) = redirect {
         command.env("JOURNAL_IO_WINDOWS_LOCK_REDIRECT", redirect);
     }
@@ -676,13 +784,22 @@ fn wrong_handle_lock_file_ex_hook_is_falsifiable_across_processes() {
         Some(&redirected),
         None,
     );
-    wait_for_marker(&marker);
-    assert!(hold_lock(&target, LockOptions::default()).is_ok());
+    wait_for_marker_or_die(&mut child, &marker, "wrong-handle lock helper");
+    let target_lock = hold_lock(&target, LockOptions::default());
+    wait_for_marker_or_die(&mut child, &marker, "wrong-handle lock helper");
+    let redirected_lock = raw_windows_lock(
+        File::options()
+            .read(true)
+            .write(true)
+            .open(&redirected)
+            .unwrap(),
+    );
+    kill_child(&mut child);
+    assert!(target_lock.is_ok());
     assert!(matches!(
-        raw_windows_lock(File::options().read(true).write(true).open(&redirected).unwrap()),
+        redirected_lock,
         Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
     ));
-    kill_child(&mut child);
 }
 
 #[cfg(windows)]
@@ -711,41 +828,64 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
     fs::create_dir(&parent).unwrap();
     let entry = parent.join("fresh");
     drop(acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap());
-    let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
     #[cfg(unix)]
     {
+        let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
         let raw = File::open(&entry).unwrap();
         assert!(matches!(
             Flock::lock(raw, FlockArg::LockExclusiveNonblock),
             Err((_, Errno::EACCES | Errno::EAGAIN))
         ));
+        drop(api_guard);
+        let raw_guard =
+            Flock::lock(File::open(&entry).unwrap(), FlockArg::LockExclusiveNonblock).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let parent_for_thread = parent.clone();
+        thread::spawn(move || {
+            sender
+                .send(acquire(
+                    &parent_for_thread,
+                    OsStr::new("fresh"),
+                    Duration::from_millis(50),
+                ))
+                .unwrap()
+        });
+        assert!(
+            matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
+        );
+        drop(raw_guard);
     }
     #[cfg(windows)]
-    assert!(
-        matches!(raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap()), Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32))
-    );
-    drop(api_guard);
-    #[cfg(unix)]
-    let raw_guard =
-        Flock::lock(File::open(&entry).unwrap(), FlockArg::LockExclusiveNonblock).unwrap();
-    #[cfg(windows)]
-    let raw_guard =
-        raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap()).unwrap();
-    let (sender, receiver) = mpsc::channel();
-    let parent_for_thread = parent.clone();
-    thread::spawn(move || {
-        sender
-            .send(acquire(
-                &parent_for_thread,
-                OsStr::new("fresh"),
-                Duration::from_millis(50),
-            ))
-            .unwrap()
-    });
-    assert!(
-        matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
-    );
-    drop(raw_guard);
+    {
+        let (mut api_child, api_marker) = spawn_windows_lock_hook_helper(
+            "persistent-api-hold",
+            &entry,
+            temporary.path(),
+            None,
+            None,
+        );
+        wait_for_marker_or_die(&mut api_child, &api_marker, "persistent API lock helper");
+        let raw_probe =
+            raw_windows_lock(File::options().read(true).write(true).open(&entry).unwrap());
+        kill_child(&mut api_child);
+        assert!(
+            matches!(raw_probe, Err(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32))
+        );
+
+        let (mut raw_child, raw_marker) = spawn_windows_lock_hook_helper(
+            "persistent-raw-hold",
+            &entry,
+            temporary.path(),
+            None,
+            None,
+        );
+        wait_for_marker_or_die(&mut raw_child, &raw_marker, "persistent raw lock helper");
+        let api_probe = acquire(&parent, OsStr::new("fresh"), Duration::from_millis(50));
+        kill_child(&mut raw_child);
+        assert!(
+            matches!(api_probe, Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
+        );
+    }
 }
 
 #[cfg(windows)]
