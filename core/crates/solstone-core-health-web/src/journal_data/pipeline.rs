@@ -133,7 +133,7 @@ pub(crate) fn summarize_pipeline_day(
                 summary.status = "unknown".to_owned();
                 summary
                     .anomalies
-                    .push(json!({"kind":"segments_not_thought","error":"no_health_dir"}));
+                    .push(json!({"kind":"segments_not_thought","error":"scan_failed"}));
                 return Ok(summary);
             }
         };
@@ -524,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn no_health_directory_completion_failure_degrades_to_unknown() {
+    fn no_health_directory_completion_failure_degrades_to_unknown_scan_failed() {
         let temporary = temporary();
         let date = now().date_naive() - Duration::days(1);
         let day = date.format("%Y%m%d").to_string();
@@ -540,7 +540,7 @@ mod tests {
         assert_eq!(report["status"], "unknown");
         assert_eq!(
             report["anomalies"],
-            json!([{"kind":"segments_not_thought","error":"no_health_dir"}])
+            json!([{"kind":"segments_not_thought","error":"scan_failed"}])
         );
     }
 
