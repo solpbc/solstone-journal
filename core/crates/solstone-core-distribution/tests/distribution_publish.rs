@@ -61,14 +61,19 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
-fn assert_signature_refusal_leaves_dest_unchanged(fixture: &Fixture, expected: &str) {
+fn assert_signature_refusal_leaves_dest_unchanged(fixture: &Fixture, expected: &[&str]) {
     let dest = fixture.root.join("dest");
     fs::create_dir_all(&dest).expect("dest");
     fs::write(dest.join("marker"), b"prior").expect("marker");
     let before = snapshot(&dest);
     let error =
         publish::run(&request(&fixture.dest, &dest, "release")).expect_err("signature refusal");
-    assert!(error.to_string().contains(expected), "{error}");
+    assert!(
+        expected
+            .iter()
+            .any(|refusal| error.to_string().contains(refusal)),
+        "expected one of {expected:?}: {error}"
+    );
     assert_eq!(snapshot(&dest), before);
 }
 
@@ -260,7 +265,7 @@ fn listed_member_symlink_refuses_publishing() {
 fn missing_corrupted_or_foreign_signature_refuse_before_destination_write() {
     let missing = fixture("publish-missing-signature", "1.2.3");
     fs::remove_file(minisig_path(&missing)).expect("remove signature");
-    assert_signature_refusal_leaves_dest_unchanged(&missing, "missing-signature");
+    assert_signature_refusal_leaves_dest_unchanged(&missing, &["missing-signature"]);
 
     let corrupted = fixture("publish-corrupted-signature", "1.2.3");
     let minisig = minisig_path(&corrupted);
@@ -280,7 +285,12 @@ fn missing_corrupted_or_foreign_signature_refuse_before_destination_write() {
         .expect("base64 character");
     bytes[index] = if bytes[index] == b'A' { b'B' } else { b'A' };
     fs::write(&minisig, bytes).expect("corrupt signature");
-    assert_signature_refusal_leaves_dest_unchanged(&corrupted, "signature-pin-mismatch");
+    // A damaged minisign may still parse and fail the pinned-key check, or no
+    // longer parse at all. Both refuse safely before the destination changes.
+    assert_signature_refusal_leaves_dest_unchanged(
+        &corrupted,
+        &["signature-pin-mismatch", "unparseable-signature"],
+    );
 
     let foreign = fixture("publish-foreign-signature", "1.2.3");
     let foreign_dir = foreign.root.join("replacement-key");
@@ -292,7 +302,7 @@ fn missing_corrupted_or_foreign_signature_refuse_before_destination_write() {
         &foreign_pin,
         PASSPHRASE.as_bytes(),
     );
-    assert_signature_refusal_leaves_dest_unchanged(&foreign, "signature-pin-mismatch");
+    assert_signature_refusal_leaves_dest_unchanged(&foreign, &["signature-pin-mismatch"]);
 }
 
 #[test]
