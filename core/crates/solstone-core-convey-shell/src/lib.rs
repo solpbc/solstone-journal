@@ -783,6 +783,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))
+        .merge(solstone_core_profile_web::routes(journal_root.clone()))
         .merge(solstone_core_stats_web::routes(
             journal_root.clone(),
             solstone_core_stats_web::Clock::local(),

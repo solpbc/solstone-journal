@@ -3570,6 +3570,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-model-pricing",
  "solstone-core-npy",
+ "solstone-core-profile-web",
  "solstone-core-push",
  "solstone-core-records-web",
  "solstone-core-settings-web",
@@ -4398,6 +4399,23 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "solstone-core-profile-web"
+version = "2.0.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-convey-http",
+ "solstone-core-entity",
+ "solstone-core-entity-matching",
+ "solstone-core-facets",
+ "tempfile",
 ]
 
 [[package]]

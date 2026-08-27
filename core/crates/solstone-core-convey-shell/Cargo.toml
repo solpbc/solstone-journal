@@ -44,6 +44,11 @@ path = "tests/thinking_sol_reads.rs"
 name = "health_journal_data"
 path = "tests/health_journal_data.rs"
 
+# Cargo auto-discovery is disabled; this exercises the composed Profile routes.
+[[test]]
+name = "profile_routes"
+path = "tests/profile_routes.rs"
+
 # Cargo auto-discovery is disabled, and this target isolates process-global
 # PATH mutation needed to verify Thinking reads never reach nvidia-smi.
 [[test]]
@@ -139,6 +144,7 @@ solstone-core-push.workspace = true
 solstone-core-support-web.workspace = true
 solstone-core-transcripts-web.workspace = true
 solstone-core-health-web.workspace = true
+solstone-core-profile-web.workspace = true
 solstone-core-stats-web.workspace = true
 solstone-core-home-web.workspace = true
 spl-home = { workspace = true, optional = true }

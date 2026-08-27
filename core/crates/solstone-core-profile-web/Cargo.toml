@@ -1,0 +1,25 @@
+[package]
+name = "solstone-core-profile-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+chrono.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+solstone-core-convey-http.workspace = true
+solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
+solstone-core-facets.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"
