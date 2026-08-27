@@ -20,6 +20,7 @@ const WHOLE_FILE_HIGH: u32 = u32::MAX;
 /// A retained handle that owns one whole-file byte-range advisory lock.
 pub(crate) struct WindowsLockGuard {
     file: File,
+    locked_handle: Option<RawHandle>,
     overlapped: OVERLAPPED,
 }
 
@@ -34,6 +35,7 @@ impl fmt::Debug for WindowsLockGuard {
         formatter
             .debug_struct("WindowsLockGuard")
             .field("file", &self.file)
+            .field("locked_handle", &self.locked_handle)
             .finish_non_exhaustive()
     }
 }
@@ -46,19 +48,31 @@ impl WindowsLockGuard {
 
 impl Drop for WindowsLockGuard {
     fn drop(&mut self) {
+        let Some(locked_handle) = self.locked_handle else {
+            return;
+        };
         // SAFETY: this guard owns the file handle and retains the exact whole-file range
-        // supplied to LockFileEx. Drop cannot report a failure; closing the handle remains
-        // the kernel fallback for releasing the lock.
+        // supplied to LockFileEx. Test-only replacement handles remain live for the guard's
+        // lifetime. Drop cannot report a failure; closing the handle remains the kernel fallback.
         #[allow(unsafe_code)]
-        unsafe {
+        let result = unsafe {
             UnlockFileEx(
-                self.file.as_raw_handle(),
+                locked_handle,
                 0,
                 WHOLE_FILE_LOW,
                 WHOLE_FILE_HIGH,
                 &mut self.overlapped,
-            );
-        }
+            )
+        };
+        #[cfg(any(test, feature = "test-hooks"))]
+        let error = if result == 0 {
+            io::Error::last_os_error().raw_os_error()
+        } else {
+            None
+        };
+        #[cfg(not(any(test, feature = "test-hooks")))]
+        let error = None;
+        record_unlock_file_ex_observation(locked_handle, result != 0, error);
     }
 }
 
@@ -99,7 +113,11 @@ fn try_lock(file: File, flags: u32) -> Result<WindowsLockGuard, (File, io::Error
     };
     if result != 0 {
         record_last_lock_file_ex_genuine(genuine);
-        Ok(WindowsLockGuard { file, overlapped })
+        Ok(WindowsLockGuard {
+            file,
+            locked_handle: handle,
+            overlapped,
+        })
     } else {
         Err((file, io::Error::last_os_error()))
     }
@@ -142,6 +160,16 @@ pub enum WindowsLockFileExSubstitution {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowsUnlockFileExObservation {
+    pub handle: RawHandle,
+    pub length_low: u32,
+    pub length_high: u32,
+    pub succeeded: bool,
+    pub error: Option<i32>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy)]
 struct LockFileExSubstitutionState {
     ordinal: usize,
@@ -159,6 +187,9 @@ thread_local! {
         std::cell::RefCell::new(None)
     };
     static LOCK_FILE_EX_TRACE: std::cell::RefCell<Option<Vec<RawHandle>>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static UNLOCK_FILE_EX_OBSERVATIONS: std::cell::RefCell<Option<Vec<WindowsUnlockFileExObservation>>> = const {
         std::cell::RefCell::new(None)
     };
     static LAST_LOCK_FILE_EX_WAS_GENUINE: std::cell::Cell<bool> = const {
@@ -199,8 +230,26 @@ fn record_lock_handle(handle: RawHandle) {
     });
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_unlock_file_ex_observation(handle: RawHandle, succeeded: bool, error: Option<i32>) {
+    UNLOCK_FILE_EX_OBSERVATIONS.with(|observations| {
+        if let Some(observations) = observations.borrow_mut().as_mut() {
+            observations.push(WindowsUnlockFileExObservation {
+                handle,
+                length_low: WHOLE_FILE_LOW,
+                length_high: WHOLE_FILE_HIGH,
+                succeeded,
+                error,
+            });
+        }
+    });
+}
+
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn record_lock_handle(_handle: RawHandle) {}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn record_unlock_file_ex_observation(_handle: RawHandle, _succeeded: bool, _error: Option<i32>) {}
 
 #[cfg(any(test, feature = "test-hooks"))]
 fn record_last_lock_file_ex_genuine(genuine: bool) {
@@ -251,6 +300,37 @@ pub(crate) fn with_lock_file_ex_substitution<T>(
     });
     drop(restore);
     (result, state.consumed)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn with_unlock_file_ex_observation<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, Vec<WindowsUnlockFileExObservation>) {
+    UNLOCK_FILE_EX_OBSERVATIONS.with(|observations| {
+        assert!(
+            observations.borrow().is_none(),
+            "UnlockFileEx observation is already active"
+        );
+        *observations.borrow_mut() = Some(Vec::new());
+    });
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            UNLOCK_FILE_EX_OBSERVATIONS.with(|observations| {
+                observations.borrow_mut().take();
+            });
+        }
+    }
+    let restore = Restore;
+    let result = operation();
+    let observations = UNLOCK_FILE_EX_OBSERVATIONS.with(|observations| {
+        observations
+            .borrow_mut()
+            .take()
+            .expect("UnlockFileEx observation remains active")
+    });
+    drop(restore);
+    (result, observations)
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -321,6 +401,13 @@ pub fn run_with_windows_lock_file_ex_substitution<T>(
     operation: impl FnOnce() -> T,
 ) -> (T, bool) {
     with_lock_file_ex_substitution(ordinal, substitution, operation)
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn run_with_windows_unlock_file_ex_observation<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, Vec<WindowsUnlockFileExObservation>) {
+    with_unlock_file_ex_observation(operation)
 }
 
 #[cfg(feature = "test-hooks")]

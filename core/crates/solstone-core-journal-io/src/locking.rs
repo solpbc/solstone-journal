@@ -80,7 +80,7 @@ mod windows_tests {
     use crate::test_support::TempDir;
     use crate::windows_lock::{
         WindowsLockFileExSubstitution, try_lock_exclusive, with_forced_post_lock_identity_mismatch,
-        with_lock_file_ex_substitution, with_lock_file_ex_trace,
+        with_lock_file_ex_substitution, with_lock_file_ex_trace, with_unlock_file_ex_observation,
     };
 
     fn layout() -> (TempDir, PathBuf) {
@@ -173,7 +173,15 @@ mod windows_tests {
             try_lock_exclusive(File::open(&redirected).unwrap()),
             Err((_, error)) if windows_contention(&error)
         ));
-        drop(guard);
+        let ((), observations) = with_unlock_file_ex_observation(|| drop(guard));
+        assert_eq!(observations.len(), 1);
+        let observation = observations[0];
+        assert_eq!(observation.handle, redirect_file.as_raw_handle());
+        assert_eq!(observation.length_low, u32::MAX);
+        assert_eq!(observation.length_high, u32::MAX);
+        assert!(observation.succeeded);
+        assert_eq!(observation.error, None);
+        assert!(try_lock_exclusive(File::open(&redirected).unwrap()).is_ok());
         drop(redirect_file);
     }
 

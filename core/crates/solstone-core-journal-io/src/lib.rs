@@ -165,6 +165,7 @@ pub use windows_inventory::{
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_lock::{
-    WindowsLockFileExSubstitution, run_with_forced_post_lock_identity_mismatch,
-    run_with_windows_lock_file_ex_substitution, run_with_windows_lock_file_ex_trace,
+    WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,
+    run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
+    run_with_windows_lock_file_ex_trace, run_with_windows_unlock_file_ex_observation,
 };
