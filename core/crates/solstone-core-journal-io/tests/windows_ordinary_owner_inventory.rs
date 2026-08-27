@@ -344,7 +344,7 @@ fn require_trace_primitives(primitives: &[WindowsInventoryPrimitive], context: &
         WindowsInventoryPrimitive::WatchArm,
         WindowsInventoryPrimitive::DescendantListingOpen,
         WindowsInventoryPrimitive::DescendantListingIdentityRecheck,
-        WindowsInventoryPrimitive::WitnessCancelIoEx,
+        WindowsInventoryPrimitive::WitnessCancelIo,
         WindowsInventoryPrimitive::WitnessDrainCompleted,
     ] {
         assert!(

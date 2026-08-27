@@ -31,7 +31,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType, ReadDirectoryChangesW,
     SYNCHRONIZE,
 };
-use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+use windows_sys::Win32::System::IO::{CancelIo, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -61,7 +61,7 @@ pub enum WindowsInventoryPrimitive {
     DescendantFileId,
     DescendantFileType,
     WitnessCheck,
-    WitnessCancelIoEx,
+    WitnessCancelIo,
     WitnessDrainCompleted,
 }
 
@@ -753,12 +753,12 @@ impl<'root> NamespaceWitness<'root> {
         if !self.armed {
             return Ok(());
         }
-        traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
-            // SAFETY: this request's exact `OVERLAPPED` remains allocated until the drain below
-            // completes. The retained root may serve other callers, so cancellation must not
-            // affect any request other than this witness.
+        traced_inventory(WindowsInventoryPrimitive::WitnessCancelIo, || {
+            // SAFETY: this witness issued the only outstanding request from the calling thread
+            // on the retained root. `CancelIo` cannot cancel another thread's work, and this
+            // request's `OVERLAPPED` remains allocated until the drain below completes.
             #[allow(unsafe_code)]
-            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
+            let cancelled = unsafe { CancelIo(self.handle.as_raw_handle()) };
             if cancelled != 0 {
                 return Ok(());
             }
@@ -1585,7 +1585,7 @@ mod tests {
         let cancel = trace
             .successful
             .iter()
-            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessCancelIoEx)
+            .position(|primitive| *primitive == WindowsInventoryPrimitive::WitnessCancelIo)
             .expect("operation error explicitly cancels the witness");
         let drain = trace
             .successful
