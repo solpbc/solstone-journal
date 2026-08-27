@@ -1162,9 +1162,17 @@ fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
     if state.crashed.is_empty() {
         return;
     }
+    let has_retrying = state
+        .crashed
+        .iter()
+        .any(|crash| crash.get("phase").and_then(Value::as_str) == Some("backoff"));
     out.push_str(style.bold());
-    out.push_str(style.red());
-    out.push_str("Crashed:");
+    if has_retrying {
+        out.push_str("Services needing attention:");
+    } else {
+        out.push_str(style.red());
+        out.push_str("Crashed:");
+    }
     out.push_str(style.normal());
     out.push('\n');
     for crash in state.crashed.iter().take(256) {
@@ -1173,7 +1181,18 @@ fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
             .get("restart_attempts")
             .map(value_text)
             .unwrap_or_else(|| "0".to_owned());
-        out.push_str(&format!("  {name} (attempts: {attempts})"));
+        let retrying = crash.get("phase").and_then(Value::as_str) == Some("backoff");
+        if retrying {
+            out.push_str(style.yellow());
+            out.push_str(&format!("  {name} (Retrying; attempts: {attempts})"));
+            out.push_str(style.normal());
+        } else if has_retrying {
+            out.push_str(style.red());
+            out.push_str(&format!("  {name} (Crashed; attempts: {attempts})"));
+            out.push_str(style.normal());
+        } else {
+            out.push_str(&format!("  {name} (attempts: {attempts})"));
+        }
         out.push('\n');
     }
     out.push('\n');
@@ -1483,6 +1502,21 @@ mod tests {
             .crashed
             .push(serde_json::json!({"name": name, "restart_attempts": 1}));
         state
+    }
+
+    #[test]
+    fn crashed_section_distinguishes_retrying_from_crashed_services() {
+        let mut state = TopState::default();
+        state
+            .crashed
+            .push(serde_json::json!({"name":"convey","restart_attempts":5,"phase":"backoff"}));
+        state
+            .crashed
+            .push(serde_json::json!({"name":"local","restart_attempts":2,"phase":"failed"}));
+        let rendered = render_frame(&state, FrameSample::default(), 120, &PlainTopStyle);
+        assert!(rendered.contains("Services needing attention:"));
+        assert!(rendered.contains("<YELLOW>  convey (Retrying; attempts: 5)<NORMAL>"));
+        assert!(rendered.contains("<RED>  local (Crashed; attempts: 2)<NORMAL>"));
     }
 
     #[test]

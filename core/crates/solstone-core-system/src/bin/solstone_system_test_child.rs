@@ -163,16 +163,56 @@ fn main() {
             }
         }
         "always-exit" => std::process::exit(1),
-        "fail-five-then-once-then-park" => {
+        "always-tempfail" => std::process::exit(75),
+        "fail-count-then-park" => {
             let state_path = args.next().expect("state path");
+            let failure_count = args
+                .next()
+                .expect("failure count")
+                .parse::<u32>()
+                .expect("numeric failure count");
+            let exit_code = args
+                .next()
+                .expect("exit code")
+                .parse::<i32>()
+                .expect("numeric exit code");
             let attempts = std::fs::read_to_string(&state_path)
                 .ok()
                 .and_then(|value| value.trim().parse::<u32>().ok())
                 .unwrap_or(0)
                 + 1;
             std::fs::write(&state_path, attempts.to_string()).expect("record fixture attempt");
-            if attempts <= 6 {
-                std::process::exit(1);
+            if attempts <= failure_count {
+                std::process::exit(exit_code);
+            }
+            loop {
+                std::thread::park();
+            }
+        }
+        "fail-count-then-healthy-exit-then-park" => {
+            let state_path = args.next().expect("state path");
+            let failure_count = args
+                .next()
+                .expect("failure count")
+                .parse::<u32>()
+                .expect("numeric failure count");
+            let exit_code = args
+                .next()
+                .expect("exit code")
+                .parse::<i32>()
+                .expect("numeric exit code");
+            let attempts = std::fs::read_to_string(&state_path)
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .unwrap_or(0)
+                + 1;
+            std::fs::write(&state_path, attempts.to_string()).expect("record fixture attempt");
+            if attempts <= failure_count {
+                std::process::exit(exit_code);
+            }
+            if attempts == failure_count + 1 {
+                std::thread::sleep(Duration::from_secs(61));
+                std::process::exit(0);
             }
             loop {
                 std::thread::park();

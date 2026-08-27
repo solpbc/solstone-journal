@@ -305,51 +305,56 @@ fn ac16_managed_process_preserves_signal_exit_codes() {
 
 #[test]
 fn ac17_restart_policy_clamps_and_tempfail_does_not_consume_attempt() {
-    use solstone_core_system::process::{GIVE_UP_AFTER, RestartDecision};
+    use solstone_core_system::process::{STRUGGLING_THRESHOLD, TEMPFAIL_DELAY};
 
     let mut policy = RestartPolicy::default();
-    for expected in 1..GIVE_UP_AFTER {
+    for expected in 1..=10 {
         assert_eq!(
             policy.decide_after_exit(75, Duration::ZERO),
-            RestartDecision::Retry(Duration::from_secs(15)),
+            TEMPFAIL_DELAY,
             "tempfail {expected} must keep the 15s delay"
         );
         assert_eq!(policy.attempts(), 0, "tempfail must not consume attempts");
         assert_eq!(policy.unsuccessful_starts(), expected);
     }
-    assert_eq!(
-        policy.decide_after_exit(75, Duration::ZERO),
-        RestartDecision::GiveUp
-    );
     assert_eq!(policy.attempts(), 0);
-    assert_eq!(policy.unsuccessful_starts(), GIVE_UP_AFTER);
+    assert!(policy.unsuccessful_starts() > STRUGGLING_THRESHOLD);
 
     let mut schedule = RestartPolicy::default();
-    assert_eq!(schedule.next_delay(), Duration::ZERO);
-    assert_eq!(schedule.next_delay(), Duration::from_secs(1));
-    assert_eq!(schedule.next_delay(), Duration::from_secs(5));
-    assert_eq!(schedule.next_delay(), Duration::from_secs(5));
+    assert_eq!(
+        schedule.decide_after_exit(1, Duration::ZERO),
+        Duration::ZERO
+    );
+    assert_eq!(
+        schedule.decide_after_exit(1, Duration::ZERO),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        schedule.decide_after_exit(1, Duration::ZERO),
+        Duration::from_secs(5)
+    );
+    assert_eq!(
+        schedule.decide_after_exit(1, Duration::ZERO),
+        Duration::from_secs(5)
+    );
     assert_eq!(
         schedule.decide_after_exit(1, Duration::from_secs(60)),
-        RestartDecision::Retry(Duration::ZERO)
+        Duration::ZERO
     );
 
     let mut reset = RestartPolicy::default();
-    for _ in 0..(GIVE_UP_AFTER - 1) {
-        assert!(matches!(
-            reset.decide_after_exit(1, Duration::ZERO),
-            RestartDecision::Retry(_)
-        ));
+    for _ in 0..(STRUGGLING_THRESHOLD - 1) {
+        reset.decide_after_exit(1, Duration::ZERO);
     }
-    assert_eq!(reset.unsuccessful_starts(), GIVE_UP_AFTER - 1);
+    assert_eq!(reset.unsuccessful_starts(), STRUGGLING_THRESHOLD - 1);
     assert_eq!(
         reset.decide_after_exit(1, Duration::from_secs(60)),
-        RestartDecision::Retry(Duration::ZERO)
+        Duration::ZERO
     );
     assert_eq!(reset.unsuccessful_starts(), 0);
     assert_eq!(
         reset.decide_after_exit(1, Duration::ZERO),
-        RestartDecision::Retry(Duration::from_secs(1))
+        Duration::from_secs(1)
     );
     assert_eq!(reset.unsuccessful_starts(), 1);
 }

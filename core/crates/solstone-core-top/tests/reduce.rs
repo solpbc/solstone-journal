@@ -169,6 +169,26 @@ fn identity_and_order_twins_preserve_distinct_refs_and_service_order() {
 }
 
 #[test]
+fn supervisor_status_preserves_crash_phase_for_rendering() {
+    let mut state = TopState::default();
+    let mut observer = Observer;
+    let result = reduce_envelope(
+        &mut state,
+        &envelope(&serde_json::json!({
+            "tract":"supervisor",
+            "event":"status",
+            "services":[],
+            "crashed":[{"name":"convey","restart_attempts":5,"phase":"backoff"}],
+            "queues":{}
+        })),
+        &ReductionSample::fixture(0.0, "x"),
+        &mut observer,
+    );
+    assert!(matches!(result, ReductionDisposition::Applied(_)));
+    assert_eq!(state.crashed[0]["phase"], "backoff");
+}
+
+#[test]
 fn new_connection_generation_invalidates_stale_supervisor_state_until_status() {
     let mut state = TopState {
         services: vec![serde_json::json!({"name":"stale", "pid":1})],

@@ -9,21 +9,14 @@ pub const TEMPFAIL_DELAY: Duration = Duration::from_secs(15);
 pub const EXIT_EMPTY: i32 = 66;
 /// The Python session-not-ready exit code.
 pub const EXIT_TEMPFAIL: i32 = 75;
-/// Consecutive short-uptime exits before a long-lived service is given up.
-pub const GIVE_UP_AFTER: usize = 5;
+/// Consecutive short-uptime exits before a service is reported as struggling.
+pub const STRUGGLING_THRESHOLD: usize = 5;
 
 /// Restart backoff state for long-lived services only.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RestartPolicy {
     attempts: usize,
     unsuccessful_starts: usize,
-}
-
-/// Whether the supervisor should retry a service or leave it terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RestartDecision {
-    Retry(Duration),
-    GiveUp,
 }
 
 impl RestartPolicy {
@@ -55,29 +48,23 @@ impl RestartPolicy {
         self.unsuccessful_starts = 0;
     }
 
-    /// Apply the supervisor's tempfail bypass, sixty-second uptime gate, and give-up budget.
-    pub fn decide_after_exit(&mut self, exit_code: i32, uptime: Duration) -> RestartDecision {
+    /// Apply the supervisor's tempfail bypass and sixty-second uptime gate.
+    pub fn decide_after_exit(&mut self, exit_code: i32, uptime: Duration) -> Duration {
         if uptime >= Duration::from_secs(60) {
             self.unsuccessful_starts = 0;
         }
         if exit_code == EXIT_TEMPFAIL {
             if uptime < Duration::from_secs(60) {
                 self.unsuccessful_starts = self.unsuccessful_starts.saturating_add(1);
-                if self.unsuccessful_starts >= GIVE_UP_AFTER {
-                    return RestartDecision::GiveUp;
-                }
             }
-            return RestartDecision::Retry(TEMPFAIL_DELAY);
+            return TEMPFAIL_DELAY;
         }
         if uptime >= Duration::from_secs(60) {
             self.reset_attempts();
-            return RestartDecision::Retry(self.next_delay());
+            return self.next_delay();
         }
         self.unsuccessful_starts = self.unsuccessful_starts.saturating_add(1);
-        if self.unsuccessful_starts >= GIVE_UP_AFTER {
-            return RestartDecision::GiveUp;
-        }
-        RestartDecision::Retry(self.next_delay())
+        self.next_delay()
     }
 }
 

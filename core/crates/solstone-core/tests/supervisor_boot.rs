@@ -761,32 +761,132 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
     assert!(!journal.0.join("health/supervisor.pid").exists());
 }
 
-#[test]
-fn ac9_give_up_is_service_local_and_does_not_end_the_supervisor() {
-    let journal = TempJournal::new();
-    let mut child = start_with_convey_argv(&journal, Some("always-exit".to_owned()));
-    let failed = journal.0.join("health/convey.failed");
+fn wait_for_backoff_record(
+    child: &mut SupervisorGuard,
+    journal: &TempJournal,
+    minimum_attempts: u64,
+) -> serde_json::Value {
+    let backoff = journal.0.join("health/convey.backoff");
     for _ in 0..6_000 {
-        if failed.exists() {
-            break;
+        if let Ok(body) = fs::read(&backoff) {
+            let record: serde_json::Value = serde_json::from_slice(&body).expect("backoff JSON");
+            if record["restart_attempts"].as_u64() >= Some(minimum_attempts) {
+                return record;
+            }
         }
         if let Some(status) = child.try_wait().expect("supervisor status") {
             panic!("supervisor exited while convey retried: {status}");
         }
         thread::sleep(Duration::from_millis(5));
     }
-    assert!(
-        failed.exists(),
-        "give-up must publish the failed-service artifact"
+    panic!(
+        "convey.backoff did not reach {minimum_attempts} attempts: {}",
+        backoff.display()
+    );
+}
+
+#[test]
+fn ac9_struggling_service_retries_indefinitely_without_ending_the_supervisor() {
+    let prethreshold_journal = TempJournal::new();
+    let prethreshold_attempts = prethreshold_journal.0.join("prethreshold-attempts");
+    let prethreshold_argv = format!(
+        "fail-count-then-park {} 4 1",
+        prethreshold_attempts.display()
+    );
+    let mut prethreshold = start_with_convey_argv(&prethreshold_journal, Some(prethreshold_argv));
+    for _ in 0..6_000 {
+        if fs::read_to_string(&prethreshold_attempts)
+            .ok()
+            .is_some_and(|value| value.trim() == "5")
+        {
+            break;
+        }
+        if let Some(status) = prethreshold.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before the prethreshold fixture settled: {status}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        fs::read_to_string(&prethreshold_attempts)
+            .expect("prethreshold fixture attempts")
+            .trim(),
+        "5",
+        "the fixture must settle after exactly four short-lived exits"
     );
     assert!(
+        !prethreshold_journal
+            .0
+            .join("health/convey.backoff")
+            .exists(),
+        "four short-lived exits must not publish a struggling record"
+    );
+    let _ = prethreshold.shutdown_and_wait(Duration::from_secs(5));
+
+    let journal = TempJournal::new();
+    let mut child = start_with_convey_argv(&journal, Some("always-exit".to_owned()));
+    let first = wait_for_backoff_record(&mut child, &journal, 5);
+    let first_attempts = first["restart_attempts"].as_u64().expect("attempt count");
+    let refreshed = wait_for_backoff_record(&mut child, &journal, first_attempts.max(10) + 1);
+    assert!(
+        refreshed["restart_attempts"].as_u64() > Some(first_attempts),
+        "the struggling record must refresh after the threshold"
+    );
+    assert_eq!(refreshed["exit_code"], 1);
+    assert!(
         child.try_wait().expect("supervisor status").is_none(),
-        "RestartPolicy::GiveUp remains a service-level outcome, not a supervisor exit"
+        "an indefinitely retrying service must not end the supervisor"
     );
     assert!(
         journal.0.join("health/supervisor.ready").exists(),
-        "the live supervisor remains observable after a managed-service give-up"
+        "the live supervisor remains observable during a managed-service backoff"
     );
+}
+
+#[test]
+fn tempfail_service_retries_indefinitely_at_its_distinct_cadence() {
+    let journal = TempJournal::new();
+    let mut child = start_with_convey_argv(&journal, Some("always-tempfail".to_owned()));
+    let record = wait_for_backoff_record(&mut child, &journal, 10);
+    assert_eq!(record["exit_code"], 75);
+    assert!(
+        child.try_wait().expect("supervisor status").is_none(),
+        "tempfail retries must not end the supervisor"
+    );
+    assert!(journal.0.join("health/supervisor.ready").exists());
+}
+
+#[test]
+fn struggling_backoff_clears_after_a_healthy_run() {
+    let journal = TempJournal::new();
+    let attempts = journal.0.join("healthy-reset-attempts");
+    let argv = format!(
+        "fail-count-then-healthy-exit-then-park {} 10 1",
+        attempts.display()
+    );
+    let mut child = start_with_convey_argv(&journal, Some(argv));
+    let record = wait_for_backoff_record(&mut child, &journal, 10);
+    assert_eq!(record["restart_attempts"], 10);
+
+    let backoff = journal.0.join("health/convey.backoff");
+    for _ in 0..15_000 {
+        let settled = fs::read_to_string(&attempts)
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .is_some_and(|count| count >= 12);
+        if settled && !backoff.exists() {
+            break;
+        }
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before a healthy run cleared backoff: {status}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !backoff.exists(),
+        "a sixty-second healthy run must clear the struggling record"
+    );
+    assert!(child.try_wait().expect("supervisor status").is_none());
+    assert!(journal.0.join("health/supervisor.ready").exists());
 }
 
 #[test]

@@ -1121,9 +1121,11 @@
   function updateVitalsA11y() {
     const sections = document.querySelectorAll('.vitals-content > .vitals-section');
     const runningCount = state.services.size;
-    const crashedCount = state.crashed.size;
+    const crashedCount = Array.from(state.crashed.values()).filter(info => info.phase !== 'backoff').length;
+    const retryingCount = state.crashed.size - crashedCount;
     const serviceParts = [];
     if (runningCount > 0) serviceParts.push(runningCount + ' active');
+    if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
     sections[0]?.setAttribute('aria-label', 'Services: ' + (serviceParts.join(', ') || 'none'));
 
@@ -1134,8 +1136,10 @@
     let healthLabel = 'loading';
     if (staleCount > 0) {
       healthLabel = 'warning, ' + staleCount + ' service' + (staleCount === 1 ? '' : 's') + ' not responding';
-    } else if (state.crashed.size > 0) {
+    } else if (crashedCount > 0) {
       healthLabel = 'error, services need attention';
+    } else if (retryingCount > 0) {
+      healthLabel = 'warning, services retrying';
     } else if (state.health) {
       healthLabel = 'ok';
     }
@@ -1202,7 +1206,7 @@
         if (!newKeys.has(key)) container.removeChild(child);
       }
 
-      for (const { name, crashed } of allServices) {
+      for (const { name, info, crashed } of allServices) {
         let dot = existingByKey.get(name);
         if (!dot) {
           dot = document.createElement('div');
@@ -1213,11 +1217,13 @@
           dot.appendChild(label);
           container.appendChild(dot);
         }
-        const statusClass = crashed ? 'crashed' : 'active';
-        const restartInfo = crashed ? ' (restarting...)' : '';
-        dot.className = crashed ? 'service-dot crashed' : 'service-dot';
+        const retrying = crashed && info.phase === 'backoff';
+        const statusClass = retrying ? 'restarting' : (crashed ? 'crashed' : 'active');
+        const statusLabel = retrying ? 'retrying' : statusClass;
+        const restartInfo = retrying ? ' (retrying)' : '';
+        dot.className = retrying ? 'service-dot restarting' : (crashed ? 'service-dot crashed' : 'service-dot');
         dot.children[0].className = 'status-indicator ' + statusClass;
-        dot.children[0].setAttribute('aria-label', serviceName(name) + ': ' + statusClass + restartInfo);
+        dot.children[0].setAttribute('aria-label', serviceName(name) + ': ' + statusLabel + restartInfo);
         dot.children[1].setAttribute('title', name);
         dot.children[1].textContent = serviceName(name) + restartInfo;
       }
@@ -1234,7 +1240,8 @@
     if (state.health) {
       const staleHeartbeats = state.health.stale_heartbeats || [];
       const staleCount = staleHeartbeats.length;
-      const hasCrashed = state.crashed.size > 0;
+      const hasCrashed = Array.from(state.crashed.values()).some(info => info.phase !== 'backoff');
+      const hasRetrying = state.crashed.size > 0 && !hasCrashed;
 
       const hv = elements.healthValue;
       if (!hv.querySelector('.health-main')) {
@@ -1262,6 +1269,12 @@
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('error');
+      } else if (hasRetrying) {
+        mainSpan.textContent = 'services retrying';
+        mainSpan.style.color = '#f59e0b';
+        staleListSpan.textContent = '';
+        staleListSpan.style.display = 'none';
+        updateVitalsStatus('warning');
       } else {
         mainSpan.textContent = 'ok';
         mainSpan.style.color = '';

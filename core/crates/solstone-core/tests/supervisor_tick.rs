@@ -330,25 +330,6 @@ async fn receive_started_command(
     .await
 }
 
-async fn wait_for_path(path: &Path) {
-    let outcome = await_outcome_async(
-        WaitPolarity::Positive,
-        Duration::from_millis(10),
-        800,
-        Instant::now,
-        || {
-            if path.exists() {
-                PollState::Held
-            } else {
-                PollState::Pending
-            }
-        },
-        tokio::time::sleep,
-    )
-    .await;
-    panic_for_wait("expected path", outcome);
-}
-
 async fn wait_for_logged_message(path: &Path, message: &Value) {
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
@@ -1091,68 +1072,6 @@ async fn drain_message_forces_day_think_over_socket() {
     )
     .await;
     assert_eq!(started["service"], "daily");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn restart_message_restarts_convey_fixture() {
-    let journal = TempJournal::new();
-    let mut child = start(&journal, None, &[]);
-    let socket = journal.0.join("health/callosum.sock");
-    wait_for_socket(&mut child, &socket);
-    let marker = journal.0.join("health/fixture-convey.marker");
-    wait_for_path(&marker).await;
-    let previous_pid = fs::read_to_string(&marker)
-        .expect("convey marker")
-        .trim()
-        .rsplit(':')
-        .next()
-        .expect("convey pid")
-        .parse::<u32>()
-        .expect("numeric convey pid");
-    let (mut reader, mut write) = connect(&socket).await;
-
-    send_message(
-        &mut write,
-        json!({"tract": "supervisor", "event": "restart", "service": "convey"}),
-    )
-    .await;
-    let restarting = await_bounded_read(
-        "restarting notification",
-        Duration::from_millis(10),
-        800,
-        receive_restarting(&mut reader),
-    )
-    .await;
-    assert_eq!(restarting["service"], "convey");
-    assert_eq!(restarting["pid"], previous_pid);
-
-    let mut replacement = None;
-    let outcome = await_outcome_async(
-        WaitPolarity::Positive,
-        Duration::from_millis(10),
-        800,
-        Instant::now,
-        || {
-            let current = fs::read_to_string(&marker).expect("convey marker");
-            let pid = current
-                .trim()
-                .rsplit(':')
-                .next()
-                .expect("convey pid")
-                .parse::<u32>()
-                .expect("numeric convey pid");
-            if pid != previous_pid {
-                replacement = Some(pid);
-                PollState::Held
-            } else {
-                PollState::Pending
-            }
-        },
-        tokio::time::sleep,
-    )
-    .await;
-    panic_for_wait("replacement convey process", outcome);
-    replacement.expect("replacement PID recorded when wait passed");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

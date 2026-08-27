@@ -26,7 +26,7 @@ use solstone_core_system::lifecycle::{
     SyncSnapshot, SyncTickOutcome,
 };
 use solstone_core_system::process::{
-    ManagedProcess, RestartDecision, RestartPolicy, SpawnOptions, describe_exit,
+    ManagedProcess, RestartPolicy, STRUGGLING_THRESHOLD, SpawnOptions, describe_exit,
 };
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -153,7 +153,7 @@ impl AppService {
     }
 }
 
-pub(crate) struct TerminalState {
+pub(crate) struct BackoffState {
     pub reason: String,
     pub exit_code: Option<i32>,
     pub restart_attempts: u32,
@@ -171,7 +171,7 @@ pub(crate) enum RestartRequestOutcome {
 }
 
 #[derive(Serialize)]
-struct FailedRecord {
+struct BackoffRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
     restart_attempts: u32,
@@ -190,7 +190,7 @@ pub(crate) struct ManagedAppProcess {
     pub restart_requested: bool,
     /// Correlates an accepted app restart with all ensuing app-process events.
     pub restart_id: Arc<Mutex<Option<String>>>,
-    pub terminal: Option<TerminalState>,
+    pub backoff: Option<BackoffState>,
     /// Generation claimed from `health/direct-door.json` when this Convey child spawned.
     pub direct_door_generation: Option<u64>,
 }
@@ -224,7 +224,7 @@ impl ManagedAppProcess {
             fast_fixture_timing,
             restart_requested: false,
             restart_id: Arc::new(Mutex::new(None)),
-            terminal: None,
+            backoff: None,
             direct_door_generation: None,
         }
     }
@@ -232,7 +232,7 @@ impl ManagedAppProcess {
     /// Signal a live service for restart without waiting for it to exit.
     pub(crate) fn request_restart(
         &mut self,
-        journal: &Path,
+        _journal: &Path,
     ) -> Result<RestartRequestOutcome, String> {
         if self.restart_requested {
             return Ok(RestartRequestOutcome::Ignored);
@@ -245,17 +245,10 @@ impl ManagedAppProcess {
             self.restart_requested = true;
             return Ok(RestartRequestOutcome::Signaled { pid });
         }
-        if self.terminal.is_some() {
-            clear_failed_record(journal, self.service);
-            self.terminal = None;
-            self.restart_policy.reset_unsuccessful_starts();
-            self.restart_at = Some(Instant::now());
-            return Ok(RestartRequestOutcome::Revived);
-        }
         Ok(RestartRequestOutcome::Ignored)
     }
 
-    pub(crate) fn record_exit(&mut self, exit: AppExit) -> RestartDecision {
+    pub(crate) fn record_exit(&mut self, exit: AppExit) -> Duration {
         let uptime = self
             .started_at
             .take()
@@ -267,69 +260,66 @@ impl ManagedAppProcess {
             AppExit::Process { code } => (code, describe_exit(code), Some(code)),
             AppExit::SpawnFailure => (-1, "failed to spawn process".to_owned(), None),
         };
-        match self.restart_policy.decide_after_exit(policy_code, uptime) {
-            RestartDecision::Retry(delay) => {
-                let delay = if self.fast_fixture_timing {
+        let delay = self.restart_policy.decide_after_exit(policy_code, uptime);
+        self.restart_at = Some(
+            Instant::now()
+                + if self.fast_fixture_timing {
                     delay.min(Duration::from_millis(10))
                 } else {
                     delay
-                };
-                self.restart_at = Some(Instant::now() + delay);
-                self.terminal = None;
-                RestartDecision::Retry(delay)
-            }
-            RestartDecision::GiveUp => {
-                self.restart_at = None;
-                self.terminal = Some(TerminalState {
+                },
+        );
+        self.backoff =
+            (self.restart_policy.unsuccessful_starts() >= STRUGGLING_THRESHOLD).then(|| {
+                BackoffState {
                     reason,
                     exit_code,
                     restart_attempts: u32::try_from(self.restart_policy.unsuccessful_starts())
                         .unwrap_or(u32::MAX),
-                });
-                RestartDecision::GiveUp
-            }
-        }
+                }
+            });
+        delay
     }
 
     pub(crate) fn crashed_candidate(&self) -> Option<CrashedServiceCandidate> {
-        let terminal = self.terminal.as_ref()?;
+        let backoff = self.backoff.as_ref()?;
         Some(CrashedServiceCandidate {
             name: self.service.as_str().to_owned(),
-            restart_attempts: terminal.restart_attempts,
-            phase: RuntimePhase::Failed,
-            reason_code: Some(ReasonCode::from_wire(terminal.reason.clone())),
+            restart_attempts: backoff.restart_attempts,
+            phase: RuntimePhase::Backoff,
+            reason_code: Some(ReasonCode::from_wire(backoff.reason.clone())),
         })
     }
 }
 
-fn failed_path(journal: &Path, service: AppService) -> PathBuf {
+fn backoff_path(journal: &Path, service: AppService) -> PathBuf {
     journal
         .join("health")
-        .join(format!("{}.failed", service.as_str()))
+        .join(format!("{}.backoff", service.as_str()))
 }
 
-fn write_failed_record(journal: &Path, app: &ManagedAppProcess) {
-    let Some(terminal) = app.terminal.as_ref() else {
+fn write_backoff_record(journal: &Path, app: &ManagedAppProcess) {
+    let Some(backoff) = app.backoff.as_ref() else {
         return;
     };
     if let Err(error) = write_json(
-        failed_path(journal, app.service),
-        &FailedRecord {
-            exit_code: terminal.exit_code,
-            restart_attempts: terminal.restart_attempts,
-            reason: terminal.reason.clone(),
+        backoff_path(journal, app.service),
+        &BackoffRecord {
+            exit_code: backoff.exit_code,
+            restart_attempts: backoff.restart_attempts,
+            reason: backoff.reason.clone(),
         },
         JsonWriteOptions::default(),
     ) {
         eprintln!(
-            "supervisor: failed to write {}.failed: {error}",
+            "supervisor: failed to write {}.backoff: {error}",
             app.service.as_str()
         );
     }
 }
 
-fn clear_failed_record(journal: &Path, service: AppService) {
-    let _ = std::fs::remove_file(failed_path(journal, service));
+fn clear_backoff_record(journal: &Path, service: AppService) {
+    let _ = std::fs::remove_file(backoff_path(journal, service));
 }
 
 fn selected_direct_door_port(journal: &Path, requested: Option<u16>) -> Result<u16, String> {
@@ -342,8 +332,11 @@ pub(crate) fn apply_app_exit(app: &mut ManagedAppProcess, journal: &Path, exit: 
     if let Err(error) = withhold_app_direct_door(app, journal) {
         eprintln!("supervisor: failed to withhold direct-door record: {error}");
     }
-    if matches!(app.record_exit(exit), RestartDecision::GiveUp) {
-        write_failed_record(journal, app);
+    app.record_exit(exit);
+    if app.backoff.is_some() {
+        write_backoff_record(journal, app);
+    } else {
+        clear_backoff_record(journal, app.service);
     }
 }
 
@@ -733,11 +726,13 @@ pub(crate) fn spawn_app_process(
     app.started_at = Some(Instant::now());
     app.restart_at = None;
     app.restart_requested = false;
+    if app.backoff.is_none() {
+        clear_backoff_record(journal, app.service);
+    }
     Ok(())
 }
 
 fn start_app_process(app: &mut ManagedAppProcess, journal: &Path, sink: Arc<CallosumSocketServer>) {
-    clear_failed_record(journal, app.service);
     if let Err(error) = spawn_app_process(app, journal, sink) {
         eprintln!(
             "supervisor: failed to start {}: {error}",

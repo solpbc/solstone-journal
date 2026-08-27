@@ -33,7 +33,7 @@ pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 pub use pdeathsig::apply_parent_death_kill;
 pub use restart::{
-    EXIT_TEMPFAIL, GIVE_UP_AFTER, RestartDecision, RestartPolicy, TEMPFAIL_DELAY, describe_exit,
+    EXIT_TEMPFAIL, RestartPolicy, STRUGGLING_THRESHOLD, TEMPFAIL_DELAY, describe_exit,
     exit_status_for_code,
 };
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};

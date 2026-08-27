@@ -414,6 +414,7 @@ struct ValidatedService {
 struct ValidatedCrash {
     name: String,
     restart_attempts: u64,
+    phase: Option<String>,
 }
 
 struct ValidatedLifecycle {
@@ -590,6 +591,7 @@ fn validate_supervisor_status(
             Ok(ValidatedCrash {
                 name,
                 restart_attempts: required_u64(object, "restart_attempts", route)?,
+                phase: optional_text(object, "phase", route)?,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -760,7 +762,12 @@ fn commit_supervisor_status(
     state.crashed = status
         .crashed
         .iter()
-        .map(|crash| json!({"name":crash.name,"restart_attempts":crash.restart_attempts}))
+        .map(|crash| match &crash.phase {
+            Some(phase) => {
+                json!({"name":crash.name,"restart_attempts":crash.restart_attempts,"phase":phase})
+            }
+            None => json!({"name":crash.name,"restart_attempts":crash.restart_attempts}),
+        })
         .collect();
     state.command_queues = status
         .queues
