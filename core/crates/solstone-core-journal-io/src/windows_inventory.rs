@@ -18,10 +18,9 @@ use windows_sys::Wdk::Storage::FileSystem::{
     FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
 };
 use windows_sys::Win32::Foundation::{
-    DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE,
-    ERROR_NO_MORE_FILES, ERROR_NOT_FOUND, ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED,
-    ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError,
-    STATUS_SUCCESS, UNICODE_STRING,
+    ERROR_FILE_NOT_FOUND, ERROR_IO_INCOMPLETE, ERROR_NO_MORE_FILES, ERROR_NOT_FOUND,
+    ERROR_NOTIFY_ENUM_DIR, ERROR_OPERATION_ABORTED, ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE,
+    OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, STATUS_SUCCESS, UNICODE_STRING,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -33,7 +32,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
-use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess};
+use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
 use crate::{
@@ -578,7 +577,7 @@ pub fn read_windows_inventory_file(
 
 fn with_witness<'root, T>(
     root: &'root JournalRoot,
-    operation: impl FnOnce(&mut NamespaceWitness) -> Result<T, WindowsInventoryError>,
+    operation: impl FnOnce(&mut NamespaceWitness<'root>) -> Result<T, WindowsInventoryError>,
 ) -> Result<T, WindowsInventoryError> {
     test_hook_witness_progress("before-revalidate");
     root.revalidate().map_err(WindowsInventoryError::Root)?;
@@ -607,8 +606,8 @@ fn test_hook_witness_progress(stage: &str) {
 #[cfg(not(feature = "test-hooks"))]
 fn test_hook_witness_progress(_stage: &str) {}
 
-struct NamespaceWitness {
-    handle: OwnedHandle,
+struct NamespaceWitness<'root> {
+    handle: BorrowedHandle<'root>,
     _event: OwnedHandle,
     buffer: Vec<u32>,
     overlapped: OVERLAPPED,
@@ -616,45 +615,13 @@ struct NamespaceWitness {
     root: PathBuf,
 }
 
-impl NamespaceWitness {
-    fn arm(root: &JournalRoot) -> Result<Self, WindowsInventoryError> {
-        let retained_handle =
+impl<'root> NamespaceWitness<'root> {
+    fn arm(root: &'root JournalRoot) -> Result<Self, WindowsInventoryError> {
+        let handle =
             borrow_admitted_root(root, WindowsInventoryPrimitive::BorrowAdmittedRootForWatch)?;
-        let mut raw_handle = std::ptr::null_mut();
-        let process = {
-            // SAFETY: `GetCurrentProcess` returns the valid pseudo-handle for this process.
-            #[allow(unsafe_code)]
-            unsafe {
-                GetCurrentProcess()
-            }
-        };
-        // SAFETY: the borrowed retained root is valid, the target is this process, and
-        // `raw_handle` is writable for the duplicated handle.
-        #[allow(unsafe_code)]
-        let duplicated = unsafe {
-            DuplicateHandle(
-                process,
-                retained_handle.as_raw_handle(),
-                process,
-                &mut raw_handle,
-                0,
-                0,
-                DUPLICATE_SAME_ACCESS,
-            )
-        };
-        if duplicated == 0 || raw_handle.is_null() {
-            return Err(WindowsInventoryError::Io {
-                operation: "duplicate retained root for recursive namespace witness",
-                path: root.canonical_path().to_path_buf(),
-                source: io::Error::last_os_error(),
-            });
-        }
-        // SAFETY: `DuplicateHandle` returned a non-null handle uniquely owned by this witness.
-        #[allow(unsafe_code)]
-        let handle = unsafe { OwnedHandle::from_raw_handle(raw_handle) };
-        // The witness's duplicate is authority-equivalent to the admitted root, but only it
-        // services the asynchronous watch; listing and revalidation cannot disturb its
-        // completion state. Its private event remains live through cancellation and drain.
+        // The witness borrows the admitted root but gives its one asynchronous request a private
+        // completion event. That event remains live through cancellation and drain, so result
+        // checks never infer this request's state from unrelated handle activity.
         let raw_event = {
             // SAFETY: the unnamed manual-reset event starts unsignaled and is immediately owned
             // below after the null-handle check.
@@ -684,9 +651,9 @@ impl NamespaceWitness {
             root: root.canonical_path().to_path_buf(),
         };
         traced_inventory(WindowsInventoryPrimitive::WatchArm, || {
-            // SAFETY: the witness owns an asynchronous duplicate of the retained directory
-            // handle; `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that
-            // buffer and `OVERLAPPED` remain live until the request drains.
+            // SAFETY: the witness borrows the retained asynchronous directory handle,
+            // `Vec<u32>` supplies the documented DWORD-aligned buffer, and both that buffer and
+            // `OVERLAPPED` remain live until the request drains.
             #[allow(unsafe_code)]
             let result = unsafe {
                 ReadDirectoryChangesW(
@@ -787,12 +754,11 @@ impl NamespaceWitness {
             return Ok(());
         }
         traced_inventory(WindowsInventoryPrimitive::WitnessCancelIoEx, || {
-            // SAFETY: this witness owns the handle and issues exactly one asynchronous request on
-            // it, so canceling every request on this private handle cannot affect listing or
-            // revalidation I/O. The request's `OVERLAPPED` remains allocated until the drain
-            // below completes.
+            // SAFETY: this request's exact `OVERLAPPED` remains allocated until the drain below
+            // completes. The retained root may serve other callers, so cancellation must not
+            // affect any request other than this witness.
             #[allow(unsafe_code)]
-            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), std::ptr::null()) };
+            let cancelled = unsafe { CancelIoEx(self.handle.as_raw_handle(), &self.overlapped) };
             if cancelled != 0 {
                 return Ok(());
             }
@@ -834,7 +800,7 @@ impl NamespaceWitness {
     }
 }
 
-impl Drop for NamespaceWitness {
+impl Drop for NamespaceWitness<'_> {
     fn drop(&mut self) {
         let _ = self.cancel_and_drain();
     }
