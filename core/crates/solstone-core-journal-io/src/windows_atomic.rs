@@ -290,10 +290,7 @@ fn inspect_relative_destination(
     }
 }
 
-fn allocate_stage(
-    parent: &OwnedHandle,
-    destination: &OsStr,
-) -> io::Result<(OsString, File)> {
+fn allocate_stage(parent: &OwnedHandle, destination: &OsStr) -> io::Result<(OsString, File)> {
     for _ in 0..100 {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let stage_name = publication_candidate_name(
