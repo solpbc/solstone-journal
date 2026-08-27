@@ -91,8 +91,22 @@ pub(super) fn atomic_replace_detailed(
     let initial_destination = inspect_relative_destination(&parent, destination_name)
         .map_err(|source| detailed_error(path, "inspect destination", source))?;
     checkpoint("temp-create").map_err(|source| detailed_error(path, "create stage", source))?;
-    let (stage_name, mut stage_writer, stage_identity) = allocate_stage(&parent, destination_name)
+    let (stage_name, mut stage_writer) = allocate_stage(&parent, destination_name)
         .map_err(|source| detailed_error(path, "create stage", source))?;
+    let stage_identity = match validate_regular_handle(stage_writer.as_raw_handle())
+        .and_then(|()| file_identity(stage_writer.as_raw_handle()))
+    {
+        Ok(identity) => identity,
+        Err(source) => {
+            return Err(cleanup_stage_handle_error(
+                path,
+                stage_writer,
+                stage_name,
+                "validate stage",
+                source,
+            ));
+        }
+    };
     pause_at("temp-create");
 
     let prepared = (|| -> io::Result<()> {
@@ -279,7 +293,7 @@ fn inspect_relative_destination(
 fn allocate_stage(
     parent: &OwnedHandle,
     destination: &OsStr,
-) -> io::Result<(OsString, File, WindowsFileIdentity)> {
+) -> io::Result<(OsString, File)> {
     for _ in 0..100 {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let stage_name = publication_candidate_name(
@@ -294,11 +308,7 @@ fn allocate_stage(
             FILE_CREATE,
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         ) {
-            Ok(handle) => {
-                validate_regular_handle(handle.as_raw_handle())?;
-                let identity = file_identity(handle.as_raw_handle())?;
-                return Ok((stage_name, File::from(handle), identity));
-            }
+            Ok(handle) => return Ok((stage_name, File::from(handle))),
             Err(error) if error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) => continue,
             Err(error) => return Err(error),
         }
@@ -429,7 +439,7 @@ fn cleanup_stage_error(
 
 fn cleanup_stage_handle_error(
     path: &Path,
-    stage: OwnedHandle,
+    stage: impl AsRawHandle,
     stage_name: OsString,
     operation: &'static str,
     source: io::Error,
@@ -444,7 +454,7 @@ fn cleanup_stage_handle_error(
     }
 }
 
-fn cleanup_stage_handle(stage: OwnedHandle) -> io::Result<()> {
+fn cleanup_stage_handle(stage: impl AsRawHandle) -> io::Result<()> {
     checkpoint("cleanup")?;
     let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: `stage` is an owned file handle opened with DELETE access; `disposition`

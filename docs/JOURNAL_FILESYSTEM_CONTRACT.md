@@ -191,11 +191,22 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 
 ## Future-backend obligations
 
-Windows covers root admission, complete witnessed source enumeration, route revalidation, checked archive-source reads, portable name admission, and durable `append_jsonl`.
+Windows covers root admission, complete witnessed source enumeration, route
+revalidation, checked archive-source reads, portable name admission, and
+durable `append_jsonl`.
 
-Detailed atomic publication has a Windows implementation pending Gate 4 native proof. It remains unsupported on Windows until a VPE-direct, source-bound native receipt has passed on both NTFS and ReFS. The proof exercises a stage-in-the-bound-parent, flush, no-follow revalidation, bounded transient-retry, and outcome-preserving path. Callers still must hold the stable writer lock; this does not provide a concurrent read-modify-write guarantee. An NTFS metadata flush does not establish ReFS durability; the receipt is filesystem-specific execution evidence, not a power-loss or universal-durability guarantee.
+Detailed atomic publication has a Windows implementation pending Gate 4 native
+proof. It remains unsupported on Windows until a VPE-direct, source-bound native
+receipt has passed on both NTFS and ReFS. The proof exercises a
+stage-in-the-bound-parent, flush, no-follow revalidation, bounded transient-retry,
+and outcome-preserving path. Callers still must hold the stable writer lock; this
+does not provide a concurrent read-modify-write guarantee. An NTFS metadata flush
+does not establish ReFS durability; the receipt is filesystem-specific execution
+evidence, not a power-loss or universal-durability guarantee.
 
-Retention, packaging, archive encoding and publication, `flat_directory`, `snapshot`, `staged`, `health_marker`, `append_text`, and `claim_remove` remain explicitly Unix-only and unsupported on Windows in this slice.
+Retention, packaging, archive encoding and publication, `flat_directory`,
+`snapshot`, `staged`, `health_marker`, `append_text`, and `claim_remove`
+remain explicitly Unix-only and unsupported on Windows in this slice.
 
 A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid

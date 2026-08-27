@@ -31,6 +31,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 const OLD: &[u8] = b"old-content";
 const NEW: &[u8] = b"new-content";
+const OUTSIDE_SENTINEL: &[u8] = b"outside-before";
 
 fn wide(value: &OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
@@ -61,6 +62,16 @@ fn target_fixture(label: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
     let target = parent.join("unit.service");
     fs::write(&target, OLD).unwrap();
     (temporary, parent, target)
+}
+
+fn outside_sentinel(parent: &Path) -> PathBuf {
+    let sentinel = parent.parent().unwrap().join("outside-sentinel");
+    fs::write(&sentinel, OUTSIDE_SENTINEL).unwrap();
+    sentinel
+}
+
+fn assert_sentinel_unchanged(sentinel: &Path) {
+    assert_eq!(fs::read(sentinel).unwrap(), OUTSIDE_SENTINEL);
 }
 
 fn stage_names(parent: &Path) -> Vec<std::ffi::OsString> {
@@ -104,6 +115,7 @@ fn detailed_atomic_replace_survives_kill_at_every_checkpoint() {
         "cleanup",
     ] {
         let (_temporary, parent, target) = target_fixture(step);
+        let sentinel = outside_sentinel(&parent);
         let marker = parent.join("pause-marker");
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
@@ -126,12 +138,14 @@ fn detailed_atomic_replace_survives_kill_at_every_checkpoint() {
                 || name == OsStr::new("pause-marker")
                 || name.to_string_lossy().starts_with(".tmp_")
         }));
+        assert_sentinel_unchanged(&sentinel);
     }
 }
 
 #[test]
 fn partial_destination_mutation_is_observed_as_unverified() {
-    let (_temporary, _parent, target) = target_fixture("partial-mutation");
+    let (_temporary, parent, target) = target_fixture("partial-mutation");
+    let sentinel = outside_sentinel(&parent);
     let mutator_target = target.clone();
     let (result, fired) = run_with_windows_detailed_atomic_barrier(
         "post-publication-observation",
@@ -150,6 +164,7 @@ fn partial_destination_mutation_is_observed_as_unverified() {
         "old-or-new assertion is a no-op"
     );
     assert_eq!(fs::read(target).unwrap(), b"partial");
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
@@ -157,6 +172,7 @@ fn absent_destination_publishes_and_missing_parent_is_not_created() {
     let temporary = tempfile::TempDir::new().unwrap();
     let parent = temporary.path().join("parent");
     fs::create_dir(&parent).unwrap();
+    let sentinel = outside_sentinel(&parent);
     let absent = parent.join("absent.service");
     assert!(matches!(
         atomic_replace_detailed(&absent, NEW, 0o600).unwrap(),
@@ -164,16 +180,19 @@ fn absent_destination_publishes_and_missing_parent_is_not_created() {
             | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
     ));
     assert_eq!(fs::read(&absent).unwrap(), NEW);
+    assert_sentinel_unchanged(&sentinel);
 
     let missing_parent = temporary.path().join("missing");
     let missing = missing_parent.join("unit.service");
     assert!(atomic_replace_detailed(&missing, NEW, 0o600).is_err());
     assert!(!missing_parent.exists());
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
 fn temp_redirection_cannot_move_the_stage_outside_the_destination_parent() {
     let (_temporary, parent, target) = target_fixture("temp-redirection");
+    let sentinel = outside_sentinel(&parent);
     let foreign = tempfile::TempDir::new().unwrap();
     let marker = parent.join("pause-marker");
     let mut child = Command::new(std::env::current_exe().unwrap())
@@ -190,11 +209,13 @@ fn temp_redirection_cannot_move_the_stage_outside_the_destination_parent() {
     child.wait().unwrap();
     assert!(!stage_names(&parent).is_empty());
     assert!(stage_names(foreign.path()).is_empty());
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
 fn pre_publication_cleanup_failure_reports_the_orphan_stage() {
     let (_temporary, parent, target) = target_fixture("cleanup-failure");
+    let sentinel = outside_sentinel(&parent);
     let (result, attempted) = run_with_windows_detailed_atomic_faults(
         [
             ("write", 1, ERROR_ACCESS_DENIED as i32),
@@ -210,11 +231,13 @@ fn pre_publication_cleanup_failure_reports_the_orphan_stage() {
     for stage in stage_names(&parent) {
         fs::remove_file(parent.join(stage)).unwrap();
     }
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
 fn transient_and_permanent_destination_failures_have_bounded_attempts() {
-    let (_temporary, _parent, target) = target_fixture("transient-success");
+    let (_temporary, parent, target) = target_fixture("transient-success");
+    let sentinel = outside_sentinel(&parent);
     let (result, attempted) = run_with_windows_detailed_atomic_faults(
         [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
         || atomic_replace_detailed(&target, NEW, 0o600),
@@ -228,8 +251,10 @@ fn transient_and_permanent_destination_failures_have_bounded_attempts() {
         attempted.iter().filter(|step| **step == "rename").count(),
         2
     );
+    assert_sentinel_unchanged(&sentinel);
 
-    let (_temporary, _parent, target) = target_fixture("permanent-hold");
+    let (_temporary, parent, target) = target_fixture("permanent-hold");
+    let sentinel = outside_sentinel(&parent);
     let (result, attempted) = run_with_windows_detailed_atomic_faults(
         [
             ("rename", 1, ERROR_LOCK_VIOLATION as i32),
@@ -244,11 +269,13 @@ fn transient_and_permanent_destination_failures_have_bounded_attempts() {
         attempted.iter().filter(|step| **step == "rename").count(),
         3
     );
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
 fn permanent_publication_error_is_not_retried() {
-    let (_temporary, _parent, target) = target_fixture("permanent-error");
+    let (_temporary, parent, target) = target_fixture("permanent-error");
+    let sentinel = outside_sentinel(&parent);
     let (result, attempted) = run_with_windows_detailed_atomic_faults(
         [("rename", 1, ERROR_ACCESS_DENIED as i32)],
         || atomic_replace_detailed(&target, NEW, 0o600),
@@ -259,14 +286,14 @@ fn permanent_publication_error_is_not_retried() {
         attempted.iter().filter(|step| **step == "rename").count(),
         1
     );
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
 fn parent_namespace_race_refuses_before_publication_and_preserves_sentinel() {
     let (_temporary, parent, target) = target_fixture("namespace-race");
     let moved_parent = parent.with_extension("moved");
-    let outside = parent.parent().unwrap().join("outside-sentinel");
-    fs::write(&outside, b"outside-before").unwrap();
+    let outside = outside_sentinel(&parent);
     let raced_parent = parent.clone();
     let raced_target = target.clone();
     let (result, fired) = run_with_windows_detailed_atomic_barrier(
@@ -285,12 +312,13 @@ fn parent_namespace_race_refuses_before_publication_and_preserves_sentinel() {
         fs::read(parent.join("unit.service")).unwrap(),
         b"raced-location"
     );
-    assert_eq!(fs::read(&outside).unwrap(), b"outside-before");
+    assert_sentinel_unchanged(&outside);
 }
 
 #[test]
 fn hard_link_alias_retains_the_prepublication_file() {
     let (_temporary, parent, target) = target_fixture("hard-link");
+    let sentinel = outside_sentinel(&parent);
     let alias = parent.join("alias.service");
     fs::hard_link(&target, &alias).unwrap();
     let before = file_identity(&alias);
@@ -303,6 +331,7 @@ fn hard_link_alias_retains_the_prepublication_file() {
     assert_eq!(fs::read(&alias).unwrap(), OLD);
     assert_eq!(file_identity(&alias), before);
     assert_ne!(file_identity(&target), before);
+    assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
@@ -316,7 +345,10 @@ fn refs_publication_receipt() {
         .prefix("solstone-refs-publication-")
         .tempdir_in(&root)
         .unwrap();
-    let target = temporary.path().join("unit.service");
+    let parent = temporary.path().join("parent");
+    fs::create_dir(&parent).unwrap();
+    let sentinel = outside_sentinel(&parent);
+    let target = parent.join("unit.service");
     fs::write(&target, OLD).unwrap();
     let temp_volume = file_identity(&std::env::temp_dir());
     let destination_volume = file_identity(temporary.path());
@@ -324,7 +356,7 @@ fn refs_publication_receipt() {
         temp_volume.0, destination_volume.0,
         "ReFS receipt requires TEMP/TMP on a different volume from the destination"
     );
-    let marker = temporary.path().join("pause-marker");
+    let marker = parent.join("pause-marker");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
         .env("JOURNAL_IO_DETAILED_TARGET", &target)
@@ -336,7 +368,7 @@ fn refs_publication_receipt() {
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(
-        !stage_names(temporary.path()).is_empty(),
+        !stage_names(&parent).is_empty(),
         "stage did not remain beneath the ReFS destination parent"
     );
     assert!(matches!(
@@ -345,6 +377,7 @@ fn refs_publication_receipt() {
             | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
     ));
     assert_eq!(fs::read(target).unwrap(), NEW);
+    assert_sentinel_unchanged(&sentinel);
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS");
 }
 
