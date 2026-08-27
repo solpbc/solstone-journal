@@ -1,0 +1,205 @@
+[
+  {
+    "id": "meeting",
+    "name": "Meetings",
+    "description": "Video calls, in-person meetings, and conferences",
+    "emoji": "📅",
+    "icon": "users",
+    "always_on": true,
+    "instructions": "Levels: high=actively speaking/presenting, medium=listening attentively, low=muted or multitasking during call. Detect via: video call UI, multiple speakers, calendar event visible."
+  },
+  {
+    "id": "call",
+    "name": "call",
+    "description": "a call you have planned",
+    "emoji": "📞",
+    "icon": "phone",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "deadline",
+    "name": "deadline",
+    "description": "a deadline you are working toward",
+    "emoji": "⏰",
+    "icon": "alarm-clock",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "appointment",
+    "name": "appointment",
+    "description": "an appointment on your calendar",
+    "emoji": "📌",
+    "icon": "pin",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "event",
+    "name": "event",
+    "description": "an event you plan to attend",
+    "emoji": "🎟️",
+    "icon": "ticket",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "travel",
+    "name": "travel",
+    "description": "travel you have planned",
+    "emoji": "✈️",
+    "icon": "plane",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "reminder",
+    "name": "reminder",
+    "description": "a reminder for something upcoming",
+    "emoji": "🔔",
+    "icon": "bell",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "errand",
+    "name": "errand",
+    "description": "an errand you plan to do",
+    "emoji": "🧾",
+    "icon": "receipt",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "celebration",
+    "name": "celebration",
+    "description": "a celebration on the calendar",
+    "emoji": "🎉",
+    "icon": "party-popper",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "doctor_appointment",
+    "name": "doctor appointment",
+    "description": "a medical appointment on your calendar",
+    "emoji": "🩺",
+    "icon": "stethoscope",
+    "instructions": "Scheduled events emitted by talent/schedule.md; not detected from sense data."
+  },
+  {
+    "id": "coding",
+    "name": "Coding",
+    "description": "Programming, code review, and debugging",
+    "emoji": "💻",
+    "icon": "code-xml",
+    "instructions": "Levels: high=writing or debugging code, medium=reading/reviewing code, low=IDE or editor open but not focused. Detect via: editors, terminals with dev tools, AI coding assistants, git operations. Includes focused code reading and thinking."
+  },
+  {
+    "id": "browsing",
+    "name": "Browsing",
+    "description": "Web browsing, research, and reading online",
+    "emoji": "🌐",
+    "icon": "globe",
+    "instructions": "Levels: high=actively navigating/researching, medium=reading a page, low=browser open but idle. Detect via: browser tabs, URL changes, search queries."
+  },
+  {
+    "id": "email",
+    "name": "Email",
+    "description": "Email reading and composition",
+    "emoji": "📧",
+    "icon": "mail",
+    "always_on": true,
+    "instructions": "Levels: high=composing or actively reading email, medium=scanning inbox, low=email client visible but idle. Detect via: email client UI, inbox view, compose window."
+  },
+  {
+    "id": "messaging",
+    "name": "Messaging",
+    "description": "Chat, Slack, Discord, and text messaging",
+    "emoji": "💬",
+    "icon": "messages-square",
+    "always_on": true,
+    "instructions": "Levels: high=active conversation, medium=reading messages, low=chat app visible but idle. Detect via: chat app UI, message notifications, typing indicators."
+  },
+  {
+    "id": "ai_conversation",
+    "name": "AI Conversation",
+    "description": "Conversations with AI assistants like ChatGPT, Claude, and Gemini",
+    "emoji": "🤖",
+    "icon": "bot",
+    "instructions": "Levels: high=actively prompting and reading responses, medium=reviewing AI output or refining prompts, low=AI chat open but idle. Detect via: AI assistant interfaces (ChatGPT, Claude, Gemini), imported AI conversation transcripts, prompt-response patterns. Do not confuse with messaging — AI conversation involves a human interacting with an AI model, not person-to-person chat."
+  },
+  {
+    "id": "writing",
+    "name": "Writing",
+    "description": "Documents, notes, and long-form writing",
+    "emoji": "✍️",
+    "icon": "pencil-line",
+    "instructions": "Levels: high=actively composing text, medium=editing/revising, low=document open but not being edited. Detect via: document editors, note apps, text content changing."
+  },
+  {
+    "id": "reading",
+    "name": "Reading",
+    "description": "Books, PDFs, articles, highlights, and documentation",
+    "emoji": "📖",
+    "icon": "book-open",
+    "instructions": "Levels: high=focused reading, medium=skimming content, low=document open but attention elsewhere. Detect via: PDF viewers, article pages, documentation sites, reading apps, imported book highlights and annotations. Do not use for reading code — that is coding."
+  },
+  {
+    "id": "video",
+    "name": "Video",
+    "description": "Watching videos and streaming content",
+    "emoji": "🎬",
+    "icon": "clapperboard",
+    "instructions": "Levels: high=actively watching, medium=video playing while doing something else, low=video paused or minimized. Detect via: video player UI, streaming sites, playback controls."
+  },
+  {
+    "id": "gaming",
+    "name": "Gaming",
+    "description": "Games and entertainment",
+    "emoji": "🎮",
+    "icon": "gamepad-2",
+    "instructions": "Levels: high=actively playing, medium=in menus or waiting, low=game open but tabbed out. Detect via: game window, controller input, game UI elements."
+  },
+  {
+    "id": "social",
+    "name": "Social Media",
+    "description": "Social media browsing and interaction",
+    "emoji": "📱",
+    "icon": "share-2",
+    "instructions": "Levels: high=posting or actively engaging, medium=scrolling feed, low=social app open but idle. Detect via: social media sites/apps, feed content, post composition."
+  },
+  {
+    "id": "planning",
+    "name": "Planning",
+    "description": "Scheduling, calendar management, meeting preparation, and agenda setting",
+    "emoji": "📋",
+    "icon": "calendar-check",
+    "instructions": "Levels: high=actively scheduling or preparing agendas, medium=reviewing calendar or event details, low=calendar visible but not being interacted with. Detect via: calendar apps, scheduling interfaces, event creation, imported calendar events, meeting invitations, agenda drafting. Use for scheduling and preparation work. Do not confuse with meeting — planning is the preparation, meeting is the actual synchronous interaction."
+  },
+  {
+    "id": "productivity",
+    "name": "Productivity",
+    "description": "Spreadsheets, slides, and task management",
+    "emoji": "📊",
+    "icon": "chart-column",
+    "instructions": "Levels: high=actively editing or organizing, medium=reviewing data, low=app open but not focused. Detect via: spreadsheet/slide editors, project management tools, task boards."
+  },
+  {
+    "id": "terminal",
+    "name": "Terminal",
+    "description": "Command line and shell sessions",
+    "emoji": "⌨️",
+    "icon": "terminal",
+    "instructions": "Levels: high=running commands or scripts, medium=reading output, low=terminal open but idle. Detect via: shell prompts, command output, tmux/screen sessions. If terminal use is clearly coding-related, prefer coding instead."
+  },
+  {
+    "id": "design",
+    "name": "Design",
+    "description": "Design tools and image editing",
+    "emoji": "🎨",
+    "icon": "palette",
+    "instructions": "Levels: high=actively creating or editing, medium=reviewing designs, low=design tool open but idle. Detect via: design apps (Figma, Photoshop, etc), canvas editing."
+  },
+  {
+    "id": "music",
+    "name": "Music",
+    "description": "Music listening and audio",
+    "emoji": "🎵",
+    "icon": "music",
+    "instructions": "Levels: high=actively choosing or browsing music, medium=playlist running while working, low=ambient background audio. Detect via: music player UI, audio playback indicators."
+  }
+]

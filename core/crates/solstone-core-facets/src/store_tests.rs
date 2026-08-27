@@ -17,10 +17,9 @@ use crate::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, create_facet,
     delete_facet, list_facet_entity_directories, read_activity_file, read_facet_declaration,
     read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
-    read_todo_file, rename_facet, repair_facet_entity_links,
-    repair_facet_entity_links_journal_wide, save_facet_entity_link, set_facet_muted, update_facet,
-    write_activity_file, write_facet_entity_observations, write_log_file, write_news_file,
-    write_todo_file,
+    rename_facet, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
+    save_facet_entity_link, set_facet_muted, update_facet, write_activity_file,
+    write_facet_entity_observations, write_log_file, write_news_file,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -234,7 +233,6 @@ fn facet_content_files_round_trip_without_parsing() {
     .unwrap();
     write_news_file(temporary.path(), "work", "notice.md", "# Notice\n").unwrap();
     write_log_file(temporary.path(), "work", "log.jsonl", "{\"log\": true}\n").unwrap();
-    write_todo_file(temporary.path(), "work", "todo.jsonl", "{\"todo\": true}\n").unwrap();
 
     assert_eq!(
         read_activity_file(temporary.path(), "work", "20260305.jsonl").unwrap(),
@@ -251,10 +249,6 @@ fn facet_content_files_round_trip_without_parsing() {
     assert_eq!(
         read_log_file(temporary.path(), "work", "log.jsonl").unwrap(),
         Some("{\"log\": true}\n".to_owned())
-    );
-    assert_eq!(
-        read_todo_file(temporary.path(), "work", "todo.jsonl").unwrap(),
-        Some("{\"todo\": true}\n".to_owned())
     );
 
     write_facet_entity_observations(

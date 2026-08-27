@@ -26,7 +26,6 @@ mod relationship_scans;
 mod repair;
 mod review_candidates;
 mod seeding;
-mod todos;
 mod write;
 
 pub use activities::{
@@ -111,7 +110,6 @@ pub use seeding::{
     SeedEntitiesError, SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult,
     SeedEntityOutcome, seed_entities,
 };
-pub use todos::{read_todo_file, write_todo_file};
 pub use write::{
     FacetRenameResult, create_facet, delete_facet, delete_facet_entity_link, rename_facet,
     save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted, update_facet,

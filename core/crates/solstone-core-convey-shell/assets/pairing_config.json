@@ -1,0 +1,4 @@
+{
+  "HOME_ADDRESS_INVALID": "enter an ipv4 address and port, like 192.168.1.44:7657",
+  "HOME_ADDRESS_HOSTNAME_UNSUPPORTED": "this needs an ip address — to reach home by name from anywhere, turn on your private network"
+}

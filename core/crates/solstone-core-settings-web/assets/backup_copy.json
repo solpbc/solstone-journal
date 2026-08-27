@@ -1,0 +1,15 @@
+{
+  "OFFLOAD_STALLED_LEAD": "offload is paused: your backup isn't working. nothing has been deleted.",
+  "OFFLOAD_STALL_REASON_LABELS": {
+    "backup_not_ready": "encrypted backup needs to finish setup before media offload can run.",
+    "backup_failing": "encrypted backup needs a healthy recent copy before media offload can run.",
+    "verification_missing": "backup verification needs to run before media offload can start.",
+    "verification_overdue": "backup verification is overdue. media offload will wait for a fresh verification.",
+    "verification_failed": "backup verification failed. media offload will wait for a healthy verification.",
+    "locked": "media offload is waiting for backup maintenance to finish.",
+    "archive_failed": "media offload could not add older media to encrypted backup.",
+    "confirm_failed": "media offload could not verify the backed-up media.",
+    "confirm_tool_failed": "media offload could not run the verification tool.",
+    "unexpected_error": "media offload stopped unexpectedly. try again after backup maintenance runs."
+  }
+}

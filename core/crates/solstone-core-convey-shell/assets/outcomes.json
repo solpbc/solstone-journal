@@ -1,0 +1,18 @@
+{
+  "SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL": "your private network is already on",
+  "SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't prepare the consent link",
+  "SPL_OUTCOME_GUIDANCE": {
+    "approved": null,
+    "pending": "Keep the approval page open while the request finishes.",
+    "revoked": "Consent was not granted. Start a new enable flow when ready.",
+    "expired": "This enable link is no longer active. Start a new enable flow.",
+    "malformed": "The service response was not understood. Update solstone and try again.",
+    "network_error": "The service could not be reached. Check network access and try again.",
+    "local_error": "Local service state could not be written. Check journal permissions and try again.",
+    "needs_subscription": "private network needs an active subscription before it can turn on. your consent is saved; set one up, then enable private network again.",
+    "relay_identity_conflict": "this solstone is already set up under a different identity. reach out to support to reset it, then try again.",
+    "relay_rotation_unsupported": "this solstone's security key changed and can't be re-registered automatically yet. reach out to support.",
+    "relay_unavailable": "the private network service isn't available right now. try again in a bit.",
+    "relay_rejected": "the relay couldn't finish setting up your private network (error {code})."
+  }
+}

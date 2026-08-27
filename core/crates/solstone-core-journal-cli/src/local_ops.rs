@@ -1411,6 +1411,53 @@ mod facet_merge_tests {
     }
 }
 
+#[cfg(test)]
+mod orphan_facet_tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::orphan_facets;
+
+    static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
+
+    struct TempJournal(PathBuf);
+
+    impl TempJournal {
+        fn new() -> Self {
+            let sequence = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "solstone-core-journal-cli-orphan-facets-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn retired_facet_content_alone_is_not_repaired_into_metadata() {
+        let journal = TempJournal::new();
+        let retired = journal.0.join("facets/retired/todos/20260801.jsonl");
+        fs::create_dir_all(retired.parent().unwrap()).unwrap();
+        fs::write(&retired, b"{\"text\":\"leave it alone\"}\n").unwrap();
+
+        assert_eq!(orphan_facets(&journal.0).unwrap(), Vec::<String>::new());
+        assert!(!journal.0.join("facets/retired/facet.json").exists());
+
+        let active = journal.0.join("facets/active/logs/20260801.jsonl");
+        fs::create_dir_all(active.parent().unwrap()).unwrap();
+        fs::write(active, b"{\"message\":\"still supported\"}\n").unwrap();
+        assert_eq!(orphan_facets(&journal.0).unwrap(), vec!["active"]);
+    }
+}
+
 fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
     let facets = journal.join("facets");
     let entries = match fs::read_dir(&facets) {
@@ -1437,7 +1484,7 @@ fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.to_string()),
         }
-        for content in ["entities", "todos", "activities", "news", "logs"] {
+        for content in ["entities", "activities", "news", "logs"] {
             if contains_content(&entry.path().join(content))? {
                 orphans.push(slug.to_owned());
                 break;

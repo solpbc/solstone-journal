@@ -10,7 +10,7 @@ linux, and macos on Apple Silicon. windows is not yet supported. AGPL-3.0-only, 
 
 <img src="docs/static/screenshot-home.png" alt="solstone daily dashboard" width="800">
 
-*Daily dashboard: goal, todos, upcoming events, and detected entities from your journal. Facet tabs organize your life by project or context.*
+*Daily dashboard: your goal, upcoming events, and detected entities from your journal. Facet tabs organize your life by project or context.*
 
 ## What you get
 
@@ -18,7 +18,7 @@ linux, and macos on Apple Silicon. windows is not yet supported. AGPL-3.0-only, 
 - **people and projects:** extracted from your conversations and remembered across time.
 - **knowledge graphs:** who works with whom, which projects connect to which people.
 - **meeting detection:** meetings identified, summarized, and linked, with prep that surfaces what you discussed last time.
-- **commitments:** todos extracted from natural conversation. No manual entry.
+- **commitments:** detected from natural conversation and kept with their source context. No manual entry.
 - **facet organization:** group everything by project or context (work, personal, a client name) with scoped views across all apps.
 - **ask about your journal:** get answers grounded in it.
 - **full-text search:** find anything in your journal.

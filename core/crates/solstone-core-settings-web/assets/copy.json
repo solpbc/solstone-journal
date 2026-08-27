@@ -1,0 +1,3 @@
+{
+  "LOCAL_ENDPOINT_DISCLOSURE": "inference runs on the endpoint you configured; your requests, including screen content for vision, are sent there."
+}

@@ -43,7 +43,7 @@ pub use store::{
     migrate_legacy_facet_entities, observation_day_counts, read_activity_file,
     read_detected_entities, read_detected_entity_names_strict, read_facet_declaration,
     read_facet_entity_link, read_facet_entity_observations, read_log, read_log_file,
-    read_news_file, read_todo_file, record_facet_candidates, record_import, record_import_nudge,
+    read_news_file, record_facet_candidates, record_import, record_import_nudge,
     record_import_offer_declined, record_observation_ops, refresh_connections_horizon,
     remove_activity, rename_facet, repair_facet_entity_links,
     repair_facet_entity_links_journal_wide, resolve_observation_entity_dir, save_detected_entity,
@@ -51,7 +51,6 @@ pub use store::{
     set_activity_hidden, set_facet_entity_link_detached, set_facet_muted, update_activity,
     update_activity_record, update_detected_entity, update_facet, upsert_detection_segment,
     write_activity_file, write_facet_entity_observations, write_log_file, write_news_file,
-    write_todo_file,
 };
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, detach_facet_entity,

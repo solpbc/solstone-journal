@@ -745,7 +745,6 @@ fn classify_facet_file(relative: &str) -> Option<&'static str> {
         ["activities", "activities.jsonl"] => Some("activity_config"),
         ["activities", day] if is_day_jsonl(day) => Some("activity_records"),
         ["activities", day, _, _, ..] if is_day(day) => Some("activity_output"),
-        ["todos", day] if is_day_jsonl(day) => Some("todos"),
         ["news", day] if is_day_md(day) => Some("news"),
         ["logs", day] if is_day_jsonl(day) => Some("logs"),
         _ => None,
@@ -1088,6 +1087,27 @@ mod tests {
             Some("activity_output")
         );
         assert_eq!(classify_facet_file("other/file.txt"), None);
+        assert_eq!(classify_facet_file("todos/20260203.jsonl"), None);
+    }
+
+    #[test]
+    fn facet_export_omits_retired_files_without_touching_source_bytes() {
+        let facet = tempfile::tempdir().unwrap();
+        let logs = facet.path().join("logs/20260203.jsonl");
+        let retired = facet.path().join("todos/20260203.jsonl");
+        fs::create_dir_all(logs.parent().unwrap()).unwrap();
+        fs::create_dir_all(retired.parent().unwrap()).unwrap();
+        fs::write(&logs, b"{\"message\":\"included\"}\n").unwrap();
+        fs::write(&retired, b"{\"text\":\"untouched\"}\n").unwrap();
+        let before = fs::read(&retired).unwrap();
+
+        let mut files = Vec::new();
+        collect_files(facet.path(), facet.path(), &mut files).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].1, "logs/20260203.jsonl");
+        assert_eq!(files[0].2, "logs");
+        assert_eq!(fs::read(&retired).unwrap(), before);
     }
 
     #[test]

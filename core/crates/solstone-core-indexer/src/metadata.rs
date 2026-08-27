@@ -138,7 +138,6 @@ mod tests {
                 "",
                 "import",
             ),
-            ("apps/todos/talents/digest.md", "", "", "todos:digest"),
             (
                 "20260101/import.ics/090000_300/imported.md",
                 "20260101",

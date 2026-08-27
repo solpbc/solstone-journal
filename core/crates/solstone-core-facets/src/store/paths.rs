@@ -12,7 +12,6 @@ pub(super) enum FacetContentKind {
     Activities,
     News,
     Logs,
-    Todos,
 }
 
 impl FacetContentKind {
@@ -21,7 +20,6 @@ impl FacetContentKind {
             Self::Activities => "activities",
             Self::News => "news",
             Self::Logs => "logs",
-            Self::Todos => "todos",
         }
     }
 }
@@ -115,10 +113,6 @@ pub(super) fn logs_dir(journal_root: &Path, facet_dir: &str) -> Result<PathBuf, 
     content_dir(journal_root, facet_dir, FacetContentKind::Logs)
 }
 
-pub(super) fn todos_dir(journal_root: &Path, facet_dir: &str) -> Result<PathBuf, FacetStoreError> {
-    content_dir(journal_root, facet_dir, FacetContentKind::Todos)
-}
-
 pub(super) fn content_file_path(
     journal_root: &Path,
     facet_dir: &str,
@@ -129,7 +123,6 @@ pub(super) fn content_file_path(
         FacetContentKind::Activities => activities_dir(journal_root, facet_dir)?,
         FacetContentKind::News => news_dir(journal_root, facet_dir)?,
         FacetContentKind::Logs => logs_dir(journal_root, facet_dir)?,
-        FacetContentKind::Todos => todos_dir(journal_root, facet_dir)?,
     };
     contained_path(&directory, relative_path).map_err(Into::into)
 }

@@ -47,7 +47,7 @@ Suggested sources (these agent streams exist and are populated — an empty resu
 1. `solstone call journal facets` — the active facets for the week
 2. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a pulse -n 12` — per-segment pulse synthesis (the richest week-in-review source)
 3. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a news -n 12` — facet newsletter / news-digest entries
-4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a action -n 12` — actions, todos, and follow-ups the agents logged
+4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a action -n 12` — actions and follow-ups the agents logged
 5. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to <+6>` — anticipated activities (forward look)
 6. Narrow `solstone call journal search "<term>"` queries for specific people or threads, and entity/relationship lookups via `solstone call`, only when they materially improve the reflection
 

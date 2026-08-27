@@ -393,6 +393,23 @@ fn valid_facet_name(name: &str) -> bool {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
         })
 }
+
+fn has_retired_facet_content(facets: &[Value]) -> bool {
+    facets.iter().any(|facet| {
+        facet
+            .get("files")
+            .and_then(Value::as_array)
+            .is_some_and(|files| {
+                files.iter().any(|descriptor| {
+                    let kind = descriptor.get("type").and_then(Value::as_str);
+                    let path = descriptor.get("path").and_then(Value::as_str);
+                    kind == Some("todos")
+                        || path.is_some_and(|path| path == "todos" || path.starts_with("todos/"))
+                })
+            })
+    })
+}
+
 pub(crate) async fn facets(
     State(app): State<AppState>,
     AxumPath(_): AxumPath<String>,
@@ -426,6 +443,14 @@ pub(crate) async fn facets(
             "Missing facets array".into(),
         );
     };
+    if has_retired_facet_content(facets) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "I couldn't use one of those values.",
+            "invalid_request_value",
+            "Retired facet content is not accepted; nothing was imported.".into(),
+        );
+    }
     let entity_state_path =
         match import_file(&app.root, identity.prefix(), "entities", "state.json") {
             Ok(path) => path,
@@ -1253,6 +1278,20 @@ mod tests {
         snapshot
     }
 
+    fn facet_body(metadata: Value, contents: &[&str]) -> Body {
+        let boundary = "facet-boundary";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n"
+        );
+        for (index, content) in contents.iter().enumerate() {
+            body.push_str(&format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_{index}\"; filename=\"facet.jsonl\"\r\n\r\n{content}\r\n"
+            ));
+        }
+        body.push_str(&format!("--{boundary}--\r\n"));
+        Body::from(body)
+    }
+
     async fn multipart_for_test(body: Body) -> Multipart {
         Multipart::from_request(
             Request::post("/")
@@ -1620,9 +1659,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         let boundary = "facet-provenance";
-        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260801.jsonl","type":"todos"},{"path":"logs/20260801.jsonl","type":"logs"}]}]});
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"logs/20260801.jsonl","type":"logs"}]}]});
         let body = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"text\":\"peer todo\"}}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_1\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"message\":\"peer log\"}}\r\n--{boundary}--\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"message\":\"peer log\"}}\r\n--{boundary}--\r\n"
         );
         let (status, _) = request(
             root.path(),
@@ -1706,9 +1745,9 @@ mod tests {
             whole_tree_snapshot(outside.path()),
         );
         let boundary = "facet-symlink";
-        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260101.jsonl","type":"todos"}]}]});
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"logs/20260101.jsonl","type":"logs"}]}]});
         let body = Body::from(format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260101.jsonl\"\r\n\r\n{{\"text\":\"must not escape\"}}\n\r\n--{boundary}--\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260101.jsonl\"\r\n\r\n{{\"message\":\"must not escape\"}}\n\r\n--{boundary}--\r\n"
         ));
         let (status, response) = request(
             root.path(),
@@ -1728,6 +1767,62 @@ mod tests {
             ),
             before,
         );
+    }
+
+    #[tokio::test]
+    async fn supported_facet_content_is_imported() {
+        let root = phase_root("empty");
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"logs/20260801.jsonl","type":"logs"}]}]});
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/facets"),
+            facet_body(metadata, &[r#"{"message":"peer log"}"#]),
+            "multipart/form-data; boundary=facet-boundary",
+            true,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(response["created"], 1);
+        assert_eq!(
+            fs::read(root.path().join("facets/work/logs/20260801.jsonl")).unwrap(),
+            b"{\"message\":\"peer log\"}\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn retired_facet_content_is_rejected_before_any_import_state_changes() {
+        let cases = [
+            (
+                json!({"facets":[{"name":"work","files":[{"path":"logs/20260801.jsonl","type":"logs"},{"path":"logs/20260802.jsonl","type":"todos"}]}]}),
+                vec![r#"{"message":"supported"}"#, r#"{"message":"retired"}"#],
+            ),
+            (
+                json!({"facets":[{"name":"work","files":[{"path":"logs/20260801.jsonl","type":"logs"},{"path":"todos/20260802.jsonl","type":"logs"}]}]}),
+                vec![r#"{"message":"supported"}"#, r#"{"message":"retired"}"#],
+            ),
+        ];
+        for (metadata, contents) in cases {
+            let root = phase_root("empty");
+            let before = whole_tree_snapshot(root.path());
+            let (status, response) = request(
+                root.path(),
+                &format!("/app/import/journal/{PREFIX}/ingest/facets"),
+                facet_body(metadata, &contents),
+                "multipart/form-data; boundary=facet-boundary",
+                true,
+            )
+            .await;
+
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
+            assert_eq!(response["reason_code"], "invalid_request_value");
+            assert!(
+                response["detail"]
+                    .as_str()
+                    .is_some_and(|detail| detail.contains("nothing was imported"))
+            );
+            assert_eq!(whole_tree_snapshot(root.path()), before);
+        }
     }
 
     fn write_entity(root: &std::path::Path, id: &str, value: Value) {

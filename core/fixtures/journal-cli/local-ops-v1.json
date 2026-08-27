@@ -115,7 +115,7 @@
       "default_declaration": {"title": "${TITLE_CASE_SLUG}", "description": "", "color": "#667eea", "emoji": "📦"},
       "capabilities": [
         "find sorted content-bearing facet directories that lack facet.json",
-        "content-bearing means a regular non-symlink file below entities, todos, activities, news, or logs excluding .gitkeep and *.lock",
+        "content-bearing means a regular non-symlink file below entities, activities, news, or logs excluding .gitkeep and *.lock",
         "report without writing by default",
         "with --fix publish the default declaration and its facet_heal audit entry in the Rust-owned append-only logs/facet-heals.jsonl as one recoverable transaction under the facet mutation lock",
         "the repair transaction uses a synced manifest with staged declaration, audit payload, transaction id, and phase; the next facet mutation rolls back a pre-commit crash or finishes an idempotent post-commit audit append before doing new work",

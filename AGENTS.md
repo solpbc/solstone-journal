@@ -295,7 +295,6 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Awareness (`awareness/current.json`, `awareness/YYYYMMDD.jsonl`) | `solstone/think/awareness.py` |
 | Awareness activity state (`awareness/activity_state.json`) | `solstone/think/thinking.py` |
 | Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `solstone/think/identity.py` |
-| Todos (`facets/*/todos/*.jsonl`) | `solstone/apps/todos/todo.py` |
 | Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `solstone/think/day_accumulator.py` |
 | Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `solstone/think/talent_provenance.py` |
 | Config (`config/journal.json`) | `solstone/think/journal_config.py` |

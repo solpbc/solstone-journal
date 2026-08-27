@@ -212,7 +212,6 @@ mod tests {
         );
         write(&root, "facets/work/news/20240101.md");
         write(&root, "imports/20260101_120000/summary.md");
-        write(&root, "apps/todos/talents/digest.md");
         write(&root, "config/actions/20240101.jsonl");
         write(&root, "facets/work/events/20240101.jsonl");
         write(&root, "facets/work/entities/20260304.jsonl");
@@ -251,7 +250,6 @@ mod tests {
                 "20240101/talents/flow.md",
                 "20240101/talents/morning_briefing.json",
                 "20260101/import.ics/090000_300/event_transcript.md",
-                "apps/todos/talents/digest.md",
                 "config/actions/20240101.jsonl",
                 "facets/work/activities/20240101.jsonl",
                 "facets/work/entities/20260304.jsonl",

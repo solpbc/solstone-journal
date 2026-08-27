@@ -205,7 +205,7 @@
           "staged": 0,
           "errors": [
             {"facet": "Work", "error": "Invalid facet name"},
-            {"facet": "work", "path": "todos/latest.jsonl", "error": "Invalid todos path"}
+            {"facet": "work", "path": "logs/latest.jsonl", "error": "Invalid logs path"}
           ]
         }
       ]
@@ -404,7 +404,7 @@
       ]
     },
     "manifest_facets_response": {
-      "description": "GET state.json for the facets area. ingest.rs:1564 seeds {\"received\":{}} as a refusal-test setup. The populated example uses the criterion_13 facet path work/todos/20260801.jsonl with the committed b\"device\" digest as a well-formed stand-in because no ingest.rs test asserts a populated facets state.json.",
+      "description": "GET state.json for the facets area. ingest.rs seeds {\"received\":{}} as a refusal-test setup. The populated example uses the criterion_13 facet path work/logs/20260801.jsonl with the committed b\"device\" digest as a well-formed stand-in because no ingest.rs test asserts a populated facets state.json.",
       "type": "object",
       "additionalProperties": true,
       "properties": {
@@ -413,7 +413,7 @@
       "examples": [
         {
           "received": {
-            "work/todos/20260801.jsonl": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"
+            "work/logs/20260801.jsonl": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"
           }
         }
       ]

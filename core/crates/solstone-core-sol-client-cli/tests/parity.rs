@@ -34,7 +34,6 @@ const HEALTH_COVERAGE_VECTORS: &str =
     include_str!("../../../fixtures/native-sol/parity/health_coverage.jsonl");
 const JOURNAL_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/journal.jsonl");
 const IMPORT_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/import.jsonl");
-const LEDGER_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/ledger.jsonl");
 const LINK_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/link.jsonl");
 const LINK_JOIN_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/link_join.jsonl");
 const LINK_SERVE_VECTORS: &str =
@@ -66,7 +65,6 @@ fn native_matches_sol_call_parity_vectors() {
         .chain(load_vectors(HEALTH_COVERAGE_VECTORS))
         .chain(load_vectors(JOURNAL_VECTORS))
         .chain(load_vectors(IMPORT_VECTORS))
-        .chain(load_vectors(LEDGER_VECTORS))
         .chain(load_vectors(LINK_VECTORS))
         .chain(load_vectors(LINK_JOIN_VECTORS))
         .chain(load_vectors(LINK_SERVE_VECTORS))
@@ -83,6 +81,30 @@ fn native_matches_sol_call_parity_vectors() {
     {
         run_vector(&vector);
     }
+}
+
+#[test]
+fn retired_commitment_ledger_commands_are_unsupported_without_http() {
+    let transport = ScriptedHttpTransport::new(vec![]);
+    let output = dispatch_sol_call_with_seams(
+        &["ledger".to_string(), "list".to_string()],
+        &BTreeMap::new(),
+        "",
+        "20260723",
+        DispatchSeams {
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+        },
+    );
+
+    assert_eq!(output.stdout, "");
+    assert_eq!(output.stderr, "unsupported command.\n");
+    assert_eq!(output.exit, 64);
+    transport.assert_done();
 }
 
 fn run_vector(vector: &Value) {

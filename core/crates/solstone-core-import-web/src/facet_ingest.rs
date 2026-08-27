@@ -312,41 +312,6 @@ fn merge_activity_id_items(
     })
 }
 
-pub(crate) fn merge_todos(
-    target: &Path,
-    bytes: &[u8],
-    new_facet: bool,
-) -> Result<MergeResult, String> {
-    let source = parse_jsonl(bytes)?;
-    let owner = if new_facet {
-        Vec::new()
-    } else {
-        parse_jsonl(&fs::read(target).unwrap_or_default())?
-    };
-    for item in owner.iter().chain(source.iter()) {
-        if item.get("text").is_none() {
-            return Err("todo item is missing text".into());
-        }
-    }
-    let append = source
-        .into_iter()
-        .filter(|item| {
-            !owner.iter().any(|old| {
-                old["text"] == item["text"] && old.get("created_at") == item.get("created_at")
-            })
-        })
-        .collect::<Vec<_>>();
-    append_jsonl(target, &append)?;
-    Ok(MergeResult {
-        status: "written",
-        reason: if new_facet {
-            "new_facet"
-        } else {
-            "overlap_merged"
-        },
-    })
-}
-
 pub(crate) fn merge_logs(
     target: &Path,
     bytes: &[u8],
@@ -458,7 +423,6 @@ fn parse_facet_path(path: &str, kind: &str) -> Result<(String, Option<String>), 
         {
             Some(parts[..3].join("/"))
         }
-        "todos" if parts.len() == 2 && parts[0] == "todos" && day_jsonl(parts[1]) => None,
         "news" if parts.len() == 2 && parts[0] == "news" && day_md(parts[1]) => None,
         "logs" if parts.len() == 2 && parts[0] == "logs" && day_jsonl(parts[1]) => None,
         _ => return Err(format!("Invalid {kind} path")),
@@ -568,7 +532,6 @@ pub(crate) fn process_facet(
                         .map_err(|error| error.to_string())?,
                     new_facet,
                 ),
-                "todos" => merge_todos(&target, &bytes, new_facet),
                 "news" => merge_news(&target, &bytes, new_facet),
                 "logs" => merge_logs(&target, &bytes, new_facet),
                 _ => unreachable!("path grammar accepts only known kinds"),
@@ -697,7 +660,7 @@ mod tests {
     use super::{
         DISPATCH_CALLS, FacetItem, FacetRoots, merge_activity_config, merge_activity_output,
         merge_activity_records, merge_detected_entities, merge_entity_relationship,
-        merge_facet_json, merge_logs, merge_news, merge_observations, merge_todos, process_facet,
+        merge_facet_json, merge_logs, merge_news, merge_observations, process_facet,
     };
     use serde_json::{Value, json};
     use sha2::Digest;
@@ -847,18 +810,6 @@ mod tests {
                     );
                 }
             }
-        }
-    }
-
-    #[test]
-    fn todos_require_text_for_both_latch_values() {
-        let temp = TempDir::new().unwrap();
-        for new_facet in [false, true] {
-            let target = temp.path().join(format!("todos-{new_facet}.jsonl"));
-            assert_eq!(
-                merge_todos(&target, b"{}\n", new_facet).err().as_deref(),
-                Some("todo item is missing text")
-            );
         }
     }
 
@@ -1109,14 +1060,14 @@ mod tests {
             "work-notes",
             &[
                 FacetItem {
-                    path: "todos/not-a-day.jsonl",
-                    kind: "todos",
-                    bytes: b"{\"text\":\"broken\"}\n",
+                    path: "logs/not-a-day.jsonl",
+                    kind: "logs",
+                    bytes: b"{\"message\":\"broken\"}\n",
                 },
                 FacetItem {
-                    path: "todos/20260101.jsonl",
-                    kind: "todos",
-                    bytes: b"{\"text\":\"kept\"}\n",
+                    path: "logs/20260101.jsonl",
+                    kind: "logs",
+                    bytes: b"{\"message\":\"kept\"}\n",
                 },
             ],
             &root.path().join("state/staged"),
@@ -1128,8 +1079,8 @@ mod tests {
         assert_eq!(result.decisions[0]["action"], "facet_file_error");
         assert_eq!(result.decisions[1]["action"], "facet_file_created");
         assert_eq!(
-            fs::read_to_string(root.path().join("facets/work-notes/todos/20260101.jsonl")).unwrap(),
-            "{\"text\":\"kept\"}\n"
+            fs::read_to_string(root.path().join("facets/work-notes/logs/20260101.jsonl")).unwrap(),
+            "{\"message\":\"kept\"}\n"
         );
         let metadata: Value = serde_json::from_slice(
             &fs::read(root.path().join("facets/work-notes/facet.json")).unwrap(),
@@ -1155,9 +1106,9 @@ mod tests {
             },
             "work",
             &[FacetItem {
-                path: "todos/20260101.jsonl",
-                kind: "todos",
-                bytes: b"{\"text\":\"must not escape\"}\n",
+                path: "logs/20260101.jsonl",
+                kind: "logs",
+                bytes: b"{\"message\":\"must not escape\"}\n",
             }],
             &root.path().join("imports/prefix/facets/staged"),
             &serde_json::Map::new(),

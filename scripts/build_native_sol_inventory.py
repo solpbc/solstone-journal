@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 170
-FINAL_HTTP_TOTAL = 165
+FINAL_ORACLE_TOTAL = 166
+FINAL_HTTP_TOTAL = 161
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
@@ -67,7 +67,6 @@ FINAL_HTTP_GROUP_COUNTS = {
     "health": 4,
     "import": 5,
     "journal": 17,
-    "ledger": 4,
     "link": 8,
     "profile": 4,
     "settings": 14,

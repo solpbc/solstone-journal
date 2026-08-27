@@ -19,10 +19,11 @@ pub fn summary(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day) = parsed.value("--day") {
         params.push(QueryParam::single("day", day));
     }
-    let report = match request_json(ctx, "/api/health/summary", params) {
+    let mut report = match request_json(ctx, "/api/health/summary", params) {
         Ok(report) => report,
         Err(error) => return health_error(error),
     };
+    prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
@@ -40,10 +41,11 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day) = parsed.value("--day") {
         params.push(QueryParam::single("day", day));
     }
-    let report = match request_json(ctx, "/api/health/full", params) {
+    let mut report = match request_json(ctx, "/api/health/full", params) {
         Ok(report) => report,
         Err(error) => return health_error(error),
     };
+    prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
@@ -64,10 +66,11 @@ pub fn for_range(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(day_to) = parsed.value("--day-to") {
         params.push(QueryParam::single("day_to", day_to));
     }
-    let report = match request_json(ctx, "/api/health/range", params) {
+    let mut report = match request_json(ctx, "/api/health/range", params) {
         Ok(report) => report,
         Err(error) => return health_error(error),
     };
+    prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
@@ -171,6 +174,17 @@ fn yesterday(today: &str) -> String {
         .unwrap_or_else(|_error| today.to_string())
 }
 
+fn prune_retired_consumer_signals(report: &mut Value) {
+    let Some(signals) = report
+        .get_mut("consumer_signal")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    signals.remove("ledger_open_items_total");
+    signals.remove("ledger_stale_items_count");
+}
+
 fn render_summary(report: &Value) -> Vec<String> {
     let capture = &report["capture_health"];
     let synthesis = &report["synthesis_health"];
@@ -244,14 +258,6 @@ fn render_summary(report: &Value) -> Vec<String> {
     ));
     render_backlog(&mut lines, &report["segment_backlog"]);
     lines.push("Consumer Signals".to_string());
-    lines.push(format!(
-        "  ledger_open_items_total: {}",
-        display_value(&consumer_signal["ledger_open_items_total"])
-    ));
-    lines.push(format!(
-        "  ledger_stale_items_count: {}",
-        display_value(&consumer_signal["ledger_stale_items_count"])
-    ));
     lines.push(format!(
         "  profile_entities_total: {}",
         display_value(&consumer_signal["profile_entities_total"])

@@ -1,7 +1,7 @@
 {
   "schema": "native-sol-applicability-v1",
   "note": "Applicability case IDs are requirements-first: each dispatch declares required adversarial behavior here before adding vectors. The coverage gate structurally enforces later multi-request boundaries, upload missing/unreadable/later-file/rejection cases, env explicit/absent or valid-absent cases, and dry-run preview/commit coverage.",
-  "http_count": 165,
+  "http_count": 161,
   "top_level_entries": {
     "import.top_level": {
       "surface": "sol-import",
@@ -471,54 +471,6 @@
       "group": "awareness",
       "pagination": {"enabled": true, "kind": "client-loop-last-n", "case_ids": {"empty": ["awareness-log-read-empty"], "one_page": ["awareness-log-read-one-page-kind-day"], "multi_page": ["awareness-log-read-multi-page"], "limit_truncation": ["awareness-log-read-limit-last-n-alias"], "later_page_failure": ["awareness-log-read-later-page-timeout"]}},
       "mutation": {"enabled": false, "methods": []},
-      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
-      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
-      "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},
-      "consent": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "dry_run": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "multi_request": {"enabled": false, "request_count": "single", "case_ids": {}}
-    },
-    "ledger.list": {
-      "path": ["ledger", "list"],
-      "group": "ledger",
-      "pagination": {"enabled": true, "kind": "client-loop", "case_ids": {"empty": ["ledger-list-empty-human"], "one_page": ["ledger-list-one-page-json-all-options"], "multi_page": ["ledger-list-multi-page-human"], "top_truncation": ["ledger-list-top-truncation"], "premature_empty_page": ["ledger-list-premature-empty-page"], "malformed_total": ["ledger-list-malformed-total"], "malformed_items": ["ledger-list-malformed-items"], "facet_query_encoding": ["ledger-list-one-page-json-all-options"]}},
-      "mutation": {"enabled": false, "methods": []},
-      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
-      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
-      "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},
-      "consent": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "dry_run": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "multi_request": {"enabled": false, "request_count": "single", "case_ids": {}}
-    },
-    "ledger.decisions": {
-      "path": ["ledger", "decisions"],
-      "group": "ledger",
-      "pagination": {"enabled": true, "kind": "client-loop", "case_ids": {"empty": ["ledger-decisions-empty-human"], "one_page": ["ledger-decisions-one-page-json-all-options"], "multi_page": ["ledger-decisions-multi-page-human"], "top_truncation": ["ledger-decisions-top-truncation"], "premature_empty_page": ["ledger-decisions-premature-empty-page"], "malformed_total": ["ledger-decisions-malformed-total"], "malformed_items": ["ledger-decisions-malformed-items"], "filter_query_encoding": ["ledger-decisions-one-page-json-all-options"]}},
-      "mutation": {"enabled": false, "methods": []},
-      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
-      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
-      "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},
-      "consent": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "dry_run": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "multi_request": {"enabled": false, "request_count": "single", "case_ids": {}}
-    },
-    "ledger.get": {
-      "path": ["ledger", "get"],
-      "group": "ledger",
-      "pagination": {"enabled": false, "case_ids": {}},
-      "mutation": {"enabled": false, "methods": []},
-      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
-      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
-      "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},
-      "consent": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "dry_run": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
-      "multi_request": {"enabled": false, "request_count": "single", "case_ids": {}}
-    },
-    "ledger.close": {
-      "path": ["ledger", "close"],
-      "group": "ledger",
-      "pagination": {"enabled": false, "case_ids": {}},
-      "mutation": {"enabled": true, "methods": ["POST"]},
       "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
       "env_default": {"enabled": false, "vars": [], "case_ids": {}},
       "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},

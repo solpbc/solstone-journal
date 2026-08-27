@@ -646,7 +646,6 @@
               "invalid_segment_or_stream",
               "invalid_state",
               "journal_source_problem",
-              "ledger_item_not_found",
               "linked_device_required",
               "local_request_only",
               "missing_request_body",

@@ -41,229 +41,45 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
-fn scan_top_level(source: &str, target: u8, mut on_offset: impl FnMut(usize) -> bool) {
-    let bytes = source.as_bytes();
-    let mut depth = 0usize;
-    let mut quote = None;
-    let mut escaped = false;
-    for (offset, byte) in bytes.iter().copied().enumerate() {
-        if let Some(quote_byte) = quote {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == quote_byte {
-                quote = None;
-            }
-            continue;
-        }
-        match byte {
-            b'\'' | b'"' => quote = Some(byte),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
-            _ if byte == target && depth == 0 && on_offset(offset) => return,
-            _ => {}
-        }
-    }
-}
-
-fn first_top_level_offset(source: &str, target: u8) -> Option<usize> {
-    let mut first = None;
-    scan_top_level(source, target, |offset| {
-        first = Some(offset);
-        true
+fn read_json(path: &Path) -> Value {
+    let source = fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!("convey data asset {} is readable: {error}", path.display())
     });
-    first
+    serde_json::from_str(&source).unwrap_or_else(|error| {
+        panic!(
+            "convey data asset {} is valid JSON: {error}",
+            path.display()
+        )
+    })
 }
 
-fn top_level_offsets(source: &str, target: u8) -> Vec<usize> {
-    let mut offsets = Vec::new();
-    scan_top_level(source, target, |offset| {
-        offsets.push(offset);
-        false
-    });
-    offsets
-}
-
-fn assignment_end(source: &str, start: usize) -> usize {
-    first_top_level_offset(&source[start..], b'\n').map_or(source.len(), |offset| start + offset)
-}
-
-fn python_strings(expression: &str, constant_name: &str) -> Vec<String> {
-    let bytes = expression.as_bytes();
-    let mut strings = Vec::new();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] != b'\'' && bytes[index] != b'"' {
-            index += 1;
-            continue;
-        }
-        let delimiter = bytes[index];
-        index += 1;
-        let mut value = Vec::new();
-        while index < bytes.len() && bytes[index] != delimiter {
-            if bytes[index] == b'\\' {
-                assert!(
-                    index + 1 < bytes.len(),
-                    "copy constant {constant_name} ends with a backslash; \
-                     this parser does not support general Python escape decoding"
-                );
-                let escaped = bytes[index + 1];
-                assert!(
-                    matches!(escaped, b'\\' | b'\'' | b'"'),
-                    "copy constant {constant_name} uses unsupported Python escape \\{}; \
-                     this parser does not support general Python escape decoding; \
-                     use different quoting or extend the parser",
-                    escaped as char
-                );
-                index += 1;
-            }
-            value.push(bytes[index]);
-            index += 1;
-        }
-        assert!(
-            index < bytes.len(),
-            "copy constant {constant_name} string is terminated"
-        );
-        index += 1;
-        let value = match String::from_utf8(value) {
-            Ok(value) => value,
-            Err(error) => panic!("copy constant {constant_name} is UTF-8: {error}"),
-        };
-        strings.push(value);
+fn read_object(path: &Path) -> serde_json::Map<String, Value> {
+    match read_json(path) {
+        Value::Object(value) => value,
+        _ => panic!("convey data asset {} is a JSON object", path.display()),
     }
-    strings
 }
 
-fn python_dict(expression: &str, constant_name: &str) -> serde_json::Map<String, Value> {
-    let expression = expression.trim();
-    assert!(
-        expression.starts_with('{'),
-        "copy constant {constant_name} dictionary is open"
-    );
-    assert!(
-        expression.ends_with('}'),
-        "copy constant {constant_name} dictionary is closed"
-    );
-    let body = &expression[1..expression.len() - 1];
-    let mut members = serde_json::Map::new();
-    let mut member_start = 0;
-    let mut member_ends = top_level_offsets(body, b',');
-    member_ends.push(body.len());
-    if !body.trim().is_empty() {
-        for member_end in member_ends {
-            let member = &body[member_start..member_end];
-            if member.trim().is_empty() {
-                assert!(
-                    member_end == body.len() && member_start > 0,
-                    "copy constant {constant_name} dictionary has an empty member"
-                );
-            } else {
-                let colon = first_top_level_offset(member, b':').unwrap_or_else(|| {
-                    panic!("copy constant {constant_name} dictionary member is missing `:`")
-                });
-                let key_source = &member[..colon];
-                let value_source = &member[colon + 1..];
-                assert!(
-                    !key_source.trim().is_empty(),
-                    "copy constant {constant_name} dictionary member has an empty key"
-                );
-                assert!(
-                    !value_source.trim().is_empty(),
-                    "copy constant {constant_name} dictionary member has an empty value"
-                );
-                let key_strings = python_strings(key_source, constant_name);
-                if value_source.trim() == "None" {
-                    let key = key_strings.concat();
-                    assert!(
-                        !key.is_empty(),
-                        "copy constant {constant_name} dictionary member has an empty key"
-                    );
-                    members.insert(key, Value::Null);
-                    member_start = member_end + usize::from(member_end < body.len());
-                    continue;
-                }
-                let value_strings = python_strings(value_source, constant_name);
-                assert!(
-                    !key_strings.is_empty(),
-                    "copy constant {constant_name} dictionary member key has no string value"
-                );
-                assert!(
-                    !value_strings.is_empty(),
-                    "copy constant {constant_name} dictionary member value has no string value"
-                );
-                let key = key_strings.concat();
-                assert!(
-                    !key.is_empty(),
-                    "copy constant {constant_name} dictionary member has an empty key"
-                );
-                members.insert(key, Value::String(value_strings.concat()));
-            }
-            member_start = member_end + usize::from(member_end < body.len());
-        }
-    }
-    assert!(
-        !members.is_empty(),
-        "copy constant {constant_name} dictionary has no members"
-    );
-    members
+fn prefixed_object(
+    values: &serde_json::Map<String, Value>,
+    prefix: &str,
+) -> serde_json::Map<String, Value> {
+    values
+        .iter()
+        .filter(|(name, _)| name.starts_with(prefix))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }
 
-fn python_constants(source: &str, required_prefix: Option<&str>) -> serde_json::Map<String, Value> {
-    let mut constants = serde_json::Map::new();
-    let mut line_offset = 0;
-    for source_line in source.split_inclusive('\n') {
-        let offset = line_offset;
-        line_offset += source_line.len();
-        let line = source_line.strip_suffix('\n').unwrap_or(source_line);
-        let Some((name, _)) = line.split_once(" =") else {
-            continue;
-        };
-        let name_bytes = name.as_bytes();
-        let name_is_constant = matches!(name_bytes.first(), Some(b'A'..=b'Z'))
-            && name_bytes[1..]
-                .iter()
-                .all(|byte| matches!(byte, b'A'..=b'Z' | b'0'..=b'9' | b'_'));
-        if !name_is_constant || !required_prefix.is_none_or(|prefix| name.starts_with(prefix)) {
-            continue;
-        }
-        assert!(
-            line.as_bytes()[name.len()..].starts_with(b" = "),
-            "copy constant {name} assignment uses expected `NAME = expression` shape"
-        );
-        let start = offset + name.len() + 3;
-        let end = assignment_end(source, start);
-        let expression = &source[start..end];
-        let trimmed = expression.trim_start();
-        let value = match trimmed.as_bytes().first() {
-            Some(b'[') => {
-                let strings = python_strings(expression, name);
-                assert!(
-                    !strings.is_empty(),
-                    "copy constant {name} list has no string values"
-                );
-                Value::Array(strings.into_iter().map(Value::String).collect())
-            }
-            Some(b'{') => Value::Object(python_dict(trimmed, name)),
-            _ => {
-                let strings = python_strings(expression, name);
-                assert!(
-                    !strings.is_empty(),
-                    "copy constant {name} string has no string value"
-                );
-                Value::String(strings.concat())
-            }
-        };
-        constants.insert(name.to_owned(), value);
-    }
-    constants
-}
-
-fn python_constant(source: &str, name: &str) -> String {
-    let assignment = format!("{name} =");
-    let start = source.find(&assignment).expect("copy constant exists") + assignment.len();
-    let end = assignment_end(source, start);
-    python_strings(&source[start..end], name).concat()
+fn required_string<'a>(
+    path: &Path,
+    values: &'a serde_json::Map<String, Value>,
+    name: &str,
+) -> &'a str {
+    values
+        .get(name)
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("convey data asset {} has string {name}", path.display()))
 }
 
 fn main() {
@@ -274,10 +90,10 @@ fn main() {
         .expect("repository root resolves");
     let static_root = manifest.join("assets/static");
     let speakers_root = manifest.join("assets/speakers");
-    let speakers_copy = speakers_root.join("copy.py");
-    let network_copy = manifest.join("assets/network_copy.py");
-    let outcomes = manifest.join("assets/outcomes.py");
-    let pairing_config = manifest.join("assets/pairing_config.py");
+    let speakers_copy = speakers_root.join("copy.json");
+    let network_copy = manifest.join("assets/network_copy.json");
+    let outcomes = manifest.join("assets/outcomes.json");
+    let pairing_config = manifest.join("assets/pairing_config.json");
     let entities_workspace = manifest.join("assets/entities/workspace.html");
     let body_workspace = manifest.join("assets/body/workspace.html");
     let favicon = root.join("favicon.ico");
@@ -343,36 +159,22 @@ fn main() {
     assets.push(("/app/network/static/network.js".to_owned(), network_static));
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
-    let copy_source = fs::read_to_string(&speakers_copy).expect("copy source is readable");
-    let speaker_copy =
-        serde_json::to_string(&Value::Object(python_constants(&copy_source, Some("SPK_"))))
-            .expect("copy payload serializes");
-    let network_copy_source = match fs::read_to_string(&network_copy) {
-        Ok(source) => source,
-        Err(error) => panic!(
-            "network copy source {} is readable: {error}",
-            network_copy.display()
-        ),
-    };
-    let network_copy_json =
-        serde_json::to_string(&Value::Object(python_constants(&network_copy_source, None)))
-            .expect("network copy serializes");
-    let outcomes_source = fs::read_to_string(&outcomes).expect("SPL outcome source is readable");
-    let spl_outcome_strings_json = serde_json::to_string(&Value::Object(python_constants(
-        &outcomes_source,
-        Some("SPL_"),
-    )))
-    .expect("SPL outcome copy serializes");
-    let pairing_config_source =
-        fs::read_to_string(&pairing_config).expect("pairing config source is readable");
-    let home_address_strings_json = serde_json::to_string(&Value::Object(python_constants(
-        &pairing_config_source,
-        Some("HOME_ADDRESS_"),
-    )))
-    .expect("home address copy serializes");
-    let not_in_new_voices =
-        serde_json::to_string(&python_constant(&copy_source, "TR_NOT_IN_NEW_VOICES"))
-            .expect("copy string serializes");
+    let speakers = read_object(&speakers_copy);
+    let speaker_copy = serde_json::to_string(&Value::Object(prefixed_object(&speakers, "SPK_")))
+        .expect("speaker copy serializes");
+    let network_copy_json = serde_json::to_string(&Value::Object(read_object(&network_copy)))
+        .expect("network copy serializes");
+    let spl_outcome_strings_json = serde_json::to_string(&Value::Object(read_object(&outcomes)))
+        .expect("SPL outcome copy serializes");
+    let home_address_strings_json =
+        serde_json::to_string(&Value::Object(read_object(&pairing_config)))
+            .expect("home address copy serializes");
+    let not_in_new_voices = serde_json::to_string(required_string(
+        &speakers_copy,
+        &speakers,
+        "TR_NOT_IN_NEW_VOICES",
+    ))
+    .expect("copy string serializes");
 
     let mut generated = String::from("pub(super) static GENERATED_ASSETS: &[EmbeddedAsset] = &[\n");
     for (route, path) in assets {

@@ -6,7 +6,7 @@ prefix_rule(
     pattern=["sol"],
     decision="allow",
     justification="sol invokes journal query, agent, and diagnostic commands",
-    match=["sol call todos list", "sol call entities list", "sol muse logs"],
+    match=["sol call entities list", "sol muse logs"],
     not_match=["solc", "solid"],
 )
 
