@@ -6,9 +6,8 @@ use std::collections::VecDeque;
 use serde_json::json;
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
-    BrainHealthState, ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource,
-    SessionRestartIds, TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp,
-    TopRestartTransport, TopState, TopTerminal, run_top_with,
+    BrainHealthState, ProcessObserver, ProcessSample, TopBrainSource, TopClock, TopInput,
+    TopReceiveTransport, TopRenderOp, TopState, TopTerminal, run_top_with,
 };
 
 struct Clock {
@@ -81,21 +80,6 @@ impl ProcessObserver for Observer {
         ProcessSample::Missing
     }
 }
-struct Restart(SessionRestartIds);
-impl TopRestartTransport for Restart {
-    fn emit_restart(&mut self, _: &str, _: &str) -> RestartEnqueueResult {
-        RestartEnqueueResult::Enqueued
-    }
-    fn current_generation(&self) -> u64 {
-        1
-    }
-    fn current_epoch(&self) -> u64 {
-        1
-    }
-    fn restart_ids(&mut self) -> &mut dyn RestartIdSource {
-        &mut self.0
-    }
-}
 struct Brain(VecDeque<Result<serde_json::Value, String>>);
 impl TopBrainSource for Brain {
     fn inspect(&mut self) -> Result<serde_json::Value, String> {
@@ -164,7 +148,6 @@ fn brain_failures_are_nonfatal_and_later_success_recovers_only_brain() {
         &mut terminal,
         &mut receive,
         &mut Observer,
-        &mut Restart(SessionRestartIds::with_nonce(1, [0; 16])),
         &mut brain,
     )
     .unwrap();

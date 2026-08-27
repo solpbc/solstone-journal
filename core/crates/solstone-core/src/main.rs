@@ -33,15 +33,15 @@ use solstone_core_cli::{
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    NAVIGATE_HELP, NAVIGATE_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions,
-    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
-    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
-    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
-    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
-    TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
-    TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
+    NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE,
+    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
+    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
+    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand,
+    TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
+    render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -360,16 +360,6 @@ fn main() -> ExitCode {
         Ok(Command::ConveyUsage(error)) => {
             eprint!("{CONVEY_USAGE}");
             eprintln!("journal convey: error: {}", error.0);
-            ExitCode::from(2)
-        }
-        Ok(Command::RestartConvey(options)) => run_restart_convey(options),
-        Ok(Command::RestartConveyHelp) => {
-            print!("{RESTART_CONVEY_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::RestartConveyUsage(error)) => {
-            eprint!("{RESTART_CONVEY_USAGE}");
-            eprintln!("journal restart-convey: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::Schedule(options)) => run_schedule(options),
@@ -1093,34 +1083,6 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
         Err(error) => {
             eprintln!("{error}");
             ExitCode::from(EXIT_TEMPFAIL)
-        }
-    }
-}
-
-fn run_restart_convey(options: RestartConveyOptions) -> ExitCode {
-    let journal = match resolve_journal_config_path(None) {
-        Ok(line) => line.path,
-        Err(error) => {
-            eprint_journal_path_error(error);
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
-    match solstone_core_convey_shell::restart_convey(
-        &journal,
-        solstone_core_convey_shell::RestartConveyOptions {
-            timeout: options.timeout,
-            verbose: options.verbose,
-        },
-    ) {
-        Ok(report) => {
-            print!("{}", report.stdout());
-            eprint!("{}", report.stderr());
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            print!("{}", error.stdout());
-            eprint!("{}", error.stderr());
-            ExitCode::from(1)
         }
     }
 }

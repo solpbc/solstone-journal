@@ -6,9 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 
-use crate::{
-    ProcessObserver, ProcessSample, TopState, acknowledge_restart, fail_discontinuous_restarts,
-};
+use crate::{ProcessObserver, ProcessSample, TopState};
 
 pub const STATUS_TIMEOUT_SECONDS: f64 = 5.0;
 
@@ -227,24 +225,6 @@ pub fn apply_receive_event(
             }
             let disposition = reduce_envelope(state, envelope, sample, observer);
             let effects = disposition.effects();
-            if matches!(disposition, ReductionDisposition::Applied(_))
-                && envelope.tract == "supervisor"
-                && matches!(
-                    envelope.event.as_str(),
-                    "restarting" | "started" | "stopped"
-                )
-                && let Some(service) = envelope.extra.get("service").and_then(Value::as_str)
-            {
-                let _ = acknowledge_restart(
-                    state,
-                    service,
-                    envelope.extra.get("restart_id").and_then(Value::as_str),
-                    *generation,
-                    *epoch,
-                    &envelope.event,
-                    sample.monotonic_seconds,
-                );
-            }
             if !matches!(disposition, ReductionDisposition::Applied(_)) {
                 return effects;
             }
@@ -273,13 +253,9 @@ pub fn apply_receive_event(
             epoch,
             phase,
         } => {
-            let generation_changed = *generation != state.continuity.generation;
             state.continuity.generation = *generation;
             state.continuity.epoch = *epoch;
             state.continuity.connection = phase.clone();
-            if generation_changed {
-                let _ = fail_discontinuous_restarts(state, *generation, sample.monotonic_seconds);
-            }
             if matches!(phase, CallosumConnectionPhase::Gapped { .. }) {
                 state.continuity.supervisor.incomplete();
                 state.continuity.tasks.incomplete();
@@ -305,19 +281,6 @@ pub fn apply_receive_event(
                 state.think_running = false;
                 state.think_status.clear();
                 state.think_last_completed.clear();
-                for attempt in state.restart_attempts.values_mut() {
-                    if matches!(
-                        attempt.phase,
-                        crate::RestartPhase::Pending
-                            | crate::RestartPhase::Restarting
-                            | crate::RestartPhase::Stopped
-                    ) {
-                        attempt.phase =
-                            crate::RestartPhase::Failed(crate::RestartFailure::Discontinuity);
-                        attempt.phase_at = sample.monotonic_seconds;
-                        attempt.terminal_at = Some(sample.monotonic_seconds);
-                    }
-                }
             }
             ReductionEffects::default()
         }

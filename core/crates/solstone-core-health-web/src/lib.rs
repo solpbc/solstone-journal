@@ -27,7 +27,6 @@ pub fn routes(journal_root: PathBuf) -> Router {
     let info_root = journal_root.clone();
     let brain_root = journal_root.clone();
     let retry_root = journal_root.clone();
-    let restart_root = journal_root.clone();
     Router::new()
         .route("/app/health/", get(assets::shell))
         .route("/app/health/workspace", get(assets::workspace))
@@ -46,10 +45,6 @@ pub fn routes(journal_root: PathBuf) -> Router {
             post(move || actions::check_brain(brain_root.clone())),
         )
         .route("/app/health/api/retry-import", post(actions::retry_import))
-        .route(
-            "/app/health/api/restart-capture",
-            post(move |body| actions::restart_capture(restart_root.clone(), body)),
-        )
         .route(
             "/app/health/api/reprocess",
             post(move |body| actions::reprocess(retry_root.clone(), body)),

@@ -1680,34 +1680,6 @@
 	    return `last reported ${relativeTime(deltaMs)} ago`;
 	  }
 
-	  function requestCaptureRestart(button, resultEl, errorEl) {
-	    button.disabled = true;
-	    button.textContent = 'restarting...';
-	    resultEl.textContent = '';
-	    errorEl.textContent = '';
-	    // Client rows are per registration key; supervisor restarts the shared sense worker.
-	    window.apiJson('/app/health/api/restart-capture', {
-	      method: 'POST',
-	      headers: { 'Content-Type': 'application/json' },
-	      body: JSON.stringify({ service: 'sense' })
-	    })
-	      .then(() => {
-	        button.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
-	        resultEl.textContent = 'restart requested';
-	      })
-	      .catch((err) => {
-	        window.logError(err, { context: 'health: restart-capture failed' });
-	        button.disabled = false;
-	        button.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
-	        errorEl.innerHTML = window.SurfaceState.error({
-	          heading: err.serverMessage || "couldn't restart processing.",
-	          desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
-	          detail: err,
-	          headingLevel: 'h4'
-	        });
-	      });
-	  }
-
 	  function requestBacklogReprocess(button) {
 	    const row = button.closest('.backlog-row');
 	    if (!row) return;
@@ -1820,21 +1792,6 @@
       skewEl.className = 'registered-client-skew' + (client.clock_skew ? '' : ' hidden');
       skewEl.textContent = 'clock skew';
 	      row.appendChild(skewEl);
-
-	      if (stateClass === 'stale') {
-	        const actionBtn = document.createElement('button');
-	        actionBtn.type = 'button';
-	        actionBtn.className = 'registered-client-action';
-	        actionBtn.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
-	        const resultEl = document.createElement('span');
-	        resultEl.className = 'registered-client-result';
-	        const errorEl = document.createElement('span');
-	        errorEl.className = 'registered-client-error';
-	        actionBtn.addEventListener('click', () => requestCaptureRestart(actionBtn, resultEl, errorEl));
-	        row.appendChild(actionBtn);
-	        row.appendChild(resultEl);
-	        row.appendChild(errorEl);
-	      }
 
 	      elements.registeredClientsStrip.appendChild(row);
     }

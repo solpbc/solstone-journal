@@ -8,7 +8,6 @@ mod process;
 mod production;
 mod reduce;
 mod render;
-mod restart;
 mod state;
 
 pub use r#loop::{
@@ -31,12 +30,6 @@ pub use render::{
     AnsiTopStyle, FrameSample, MAX_FRAME_OPS, PlainTopStyle, TopRenderOp, TopStyle, TrustedToken,
     format_log_age, format_runtime, format_uptime, render_frame, render_ops,
     transform_trusted_render,
-};
-pub use restart::{
-    RestartAttempt, RestartEnqueueResult, RestartFailure, RestartIdError, RestartIdSource,
-    RestartPhase, RestartRequestError, RestartRequestOutcome, RestartTransition, SessionRestartIds,
-    TopRestartTransport, acknowledge_restart, advance_restart_attempts,
-    fail_discontinuous_restarts, request_restart,
 };
 pub use state::{BrainHealthState, DomainContinuity, DomainRecovery, TopState};
 

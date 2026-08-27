@@ -37,49 +37,6 @@ pub async fn retry_import(body: Option<Json<Value>>) -> axum::response::Response
         .into_response()
 }
 
-pub async fn restart_capture(
-    root: std::path::PathBuf,
-    body: Option<Json<Value>>,
-) -> axum::response::Response {
-    let body = body.map(|v| v.0).unwrap_or_default();
-    let Some(service) = body
-        .get("service")
-        .and_then(Value::as_str)
-        .filter(|v| !v.is_empty())
-    else {
-        return missing("Missing service");
-    };
-    if service != "sense" {
-        return invalid("Unknown capture service");
-    }
-    restart_capture_with(service, |envelope| send(&root, envelope))
-}
-
-pub fn restart_capture_with<F>(service: &str, mut transport: F) -> axum::response::Response
-where
-    F: FnMut(&solstone_core_callosum::CallosumEnvelope) -> bool,
-{
-    let mut extra = serde_json::Map::new();
-    extra.insert("service".to_owned(), Value::String(service.to_owned()));
-    let envelope = solstone_core_callosum::CallosumEnvelope {
-        tract: "supervisor".to_owned(),
-        event: "restart".to_owned(),
-        ts: None,
-        extra,
-    };
-    let sent = transport(&envelope);
-    if !sent {
-        return error_envelope(
-            "capture_restart_failed",
-            "couldn't restart processing.",
-            "Could not reach the supervisor",
-            StatusCode::SERVICE_UNAVAILABLE,
-        )
-        .into_response();
-    }
-    Json(json!({"status":"restart_requested","service":service})).into_response()
-}
-
 pub async fn check_brain(root: std::path::PathBuf) -> axum::response::Response {
     let ok = brain::refresh(&root);
     let mut response = serde_json::Map::new();

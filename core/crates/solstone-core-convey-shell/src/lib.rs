@@ -129,7 +129,6 @@ pub mod refusal;
 pub mod registry;
 mod relay_admission;
 #[cfg(feature = "host")]
-mod restart;
 pub mod session;
 pub mod session_gate;
 mod speakers;
@@ -178,12 +177,6 @@ pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
 use assets::lookup;
 use refusal::AppNotConverted;
 use registry::{ShellPayload, known_app, shell_payload};
-
-#[cfg(feature = "host")]
-pub use restart::{
-    RestartConveyError, RestartConveyOptions, RestartConveyReport, RestartTransport,
-    restart_convey, restart_convey_with_transport,
-};
 
 /// Journal filesystem root shared with converted app route handlers.
 #[derive(Clone)]

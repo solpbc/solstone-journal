@@ -341,20 +341,17 @@ async fn ac9_brain_missing_and_unavailable_stay_distinct() {
 }
 
 #[tokio::test]
-async fn ac13_restart_capture_injects_one_restart_request_each_time() {
-    let calls = std::cell::RefCell::new(Vec::new());
-    for _ in 0..2 {
-        let response = crate::actions::restart_capture_with("sense", |envelope| {
-            calls.borrow_mut().push(envelope.clone());
-            true
-        });
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-    let calls = calls.into_inner();
-    assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|call| call.tract == "supervisor"
-        && call.event == "restart"
-        && call.extra["service"] == "sense"));
+async fn retired_restart_capture_route_is_not_found() {
+    let root = crate::test_support::root();
+    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+        .oneshot(
+            Request::post("/app/health/api/restart-capture")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[test]

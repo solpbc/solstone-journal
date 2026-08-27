@@ -8,9 +8,8 @@ use std::rc::Rc;
 use serde_json::json;
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
-    ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource, SessionRestartIds,
-    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopRestartTransport,
-    TopState, TopTerminal, run_top_with_outer_panic_cleanup,
+    ProcessObserver, ProcessSample, TopBrainSource, TopClock, TopInput, TopReceiveTransport,
+    TopRenderOp, TopState, TopTerminal, run_top_with_outer_panic_cleanup,
 };
 
 const EXPECTED_TRACE: &[&str] = &[
@@ -26,19 +25,6 @@ const EXPECTED_TRACE: &[&str] = &[
     "receive.next",
     "receive.next",
     "observer.sample",
-    "receive.next",
-    "terminal.width",
-    "terminal.render",
-    "terminal.input",
-    "restart.ids",
-    "restart.emit",
-    "restart.generation",
-    "restart.epoch",
-    "clock.monotonic",
-    "clock.sleep",
-    "clock.wall",
-    "clock.monotonic",
-    "clock.datetime",
     "receive.next",
     "terminal.width",
     "terminal.render",
@@ -159,33 +145,6 @@ impl ProcessObserver for Observer {
     }
 }
 
-struct Restart {
-    trace: Trace,
-    ids: SessionRestartIds,
-}
-
-impl TopRestartTransport for Restart {
-    fn emit_restart(&mut self, _: &str, _: &str) -> RestartEnqueueResult {
-        self.trace.record("restart", "restart.emit");
-        RestartEnqueueResult::Enqueued
-    }
-
-    fn current_generation(&self) -> u64 {
-        self.trace.record("restart", "restart.generation");
-        1
-    }
-
-    fn current_epoch(&self) -> u64 {
-        self.trace.record("restart", "restart.epoch");
-        1
-    }
-
-    fn restart_ids(&mut self) -> &mut dyn RestartIdSource {
-        self.trace.record("restart", "restart.ids");
-        &mut self.ids
-    }
-}
-
 struct Brain(Trace);
 
 impl TopBrainSource for Brain {
@@ -225,17 +184,13 @@ fn run_recording_composition(silenced: Option<&'static str>) -> Vec<String> {
     let mut clock = Clock(trace.clone());
     let mut terminal = Terminal {
         trace: trace.clone(),
-        inputs: VecDeque::from([TopInput::Restart, TopInput::Quit]),
+        inputs: VecDeque::from([TopInput::Quit]),
     };
     let mut receive = Receive {
         trace: trace.clone(),
         events,
     };
     let mut observer = Observer(trace.clone());
-    let mut restart = Restart {
-        trace: trace.clone(),
-        ids: SessionRestartIds::with_nonce(42, [7; 16]),
-    };
     let mut brain = Brain(trace.clone());
     run_top_with_outer_panic_cleanup(
         &mut state,
@@ -243,7 +198,6 @@ fn run_recording_composition(silenced: Option<&'static str>) -> Vec<String> {
         &mut terminal,
         &mut receive,
         &mut observer,
-        &mut restart,
         &mut brain,
     )
     .expect("recording composition should finish normally");
@@ -262,9 +216,7 @@ fn production_composition_reaches_every_owned_boundary_in_order() {
 
     // This reuses the identical full-trace predicate for each test-only
     // no-op seam. Removing any owner boundary makes the proof fail.
-    for seam in [
-        "clock", "terminal", "receive", "observer", "restart", "brain",
-    ] {
+    for seam in ["clock", "terminal", "receive", "observer", "brain"] {
         assert!(
             !matches_full_trace(&run_recording_composition(Some(seam))),
             "silencing {seam} unexpectedly satisfied the production trace"

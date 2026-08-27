@@ -27,9 +27,8 @@ use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_
 use solstone_core_system_health::sanitize_os_bytes_for_terminal;
 
 use crate::{
-    RestartEnqueueResult, RestartIdSource, SessionRestartIds, TopBrainSource, TopClock, TopInput,
-    TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal, TrustedToken,
-    platform_observer, run_top_with,
+    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopState, TopTerminal,
+    TrustedToken, platform_observer, run_top_with,
 };
 
 pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
@@ -42,7 +41,6 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
     }
     let shared = ProductionCallosum::new(journal.join("health/callosum.sock"))?;
     let mut receive = ProductionReceive::new(Arc::clone(&shared));
-    let mut restart = ProductionRestart::new(shared);
     let mut terminal = ProductionTerminal::new();
     let mut clock = ProductionClock::new();
     let mut observer = platform_observer();
@@ -53,7 +51,6 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
         &mut terminal,
         &mut receive,
         &mut observer,
-        &mut restart,
         &mut brain,
     )
     .map_err(|error| error.to_string())
@@ -68,11 +65,10 @@ pub fn run_top_with_outer_panic_cleanup(
     terminal: &mut dyn TopTerminal,
     receive: &mut dyn TopReceiveTransport,
     observer: &mut dyn crate::ProcessObserver,
-    restart: &mut dyn TopRestartTransport,
     brain: &mut dyn TopBrainSource,
 ) -> Result<(), crate::TopLoopError> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_top_with(state, clock, terminal, receive, observer, restart, brain)
+        run_top_with(state, clock, terminal, receive, observer, brain)
     })) {
         Ok(result) => result,
         Err(payload) => {
@@ -225,28 +221,6 @@ impl ProductionCallosum {
         runtime.block_on(connection.stop());
         Ok(())
     }
-    fn emit_restart(&self, service: &str, restart_id: &str) -> RestartEnqueueResult {
-        let Ok(inner) = self.inner.lock() else {
-            return RestartEnqueueResult::TransportError;
-        };
-        let mut values = Map::new();
-        values.insert("service".to_owned(), Value::String(service.to_owned()));
-        values.insert(
-            "restart_id".to_owned(),
-            Value::String(restart_id.to_owned()),
-        );
-        if inner.connection.emit("supervisor", "restart", values) {
-            RestartEnqueueResult::Enqueued
-        } else {
-            RestartEnqueueResult::Closed
-        }
-    }
-    fn generation(&self) -> u64 {
-        self.inner.lock().map_or(0, |inner| inner.generation)
-    }
-    fn epoch(&self) -> u64 {
-        self.inner.lock().map_or(0, |inner| inner.epoch)
-    }
 }
 pub struct ProductionReceive {
     shared: Arc<ProductionCallosum>,
@@ -267,33 +241,6 @@ impl TopReceiveTransport for ProductionReceive {
         self.shared.stop()
     }
 }
-pub(crate) struct ProductionRestart {
-    shared: Arc<ProductionCallosum>,
-    ids: SessionRestartIds,
-}
-impl ProductionRestart {
-    pub(crate) fn new(shared: Arc<ProductionCallosum>) -> Self {
-        Self {
-            shared,
-            ids: SessionRestartIds::new(),
-        }
-    }
-}
-impl TopRestartTransport for ProductionRestart {
-    fn emit_restart(&mut self, service: &str, restart_id: &str) -> RestartEnqueueResult {
-        self.shared.emit_restart(service, restart_id)
-    }
-    fn current_generation(&self) -> u64 {
-        self.shared.generation()
-    }
-    fn current_epoch(&self) -> u64 {
-        self.shared.epoch()
-    }
-    fn restart_ids(&mut self) -> &mut dyn RestartIdSource {
-        &mut self.ids
-    }
-}
-
 pub trait TerminalSyscalls {
     fn stdin_is_tty(&mut self) -> bool;
     fn stdout_is_tty(&mut self) -> bool;
@@ -589,11 +536,6 @@ pub(crate) fn map_event(event: Event) -> TopInput {
             {
                 TopInput::Quit
             }
-            (KeyCode::Char('r'), KeyEventKind::Press)
-                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                TopInput::Restart
-            }
             (KeyCode::Char('c' | 'C'), KeyEventKind::Press)
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
@@ -644,14 +586,13 @@ impl TopTerminal for ProductionTerminal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{TopReceiveTransport, TopRestartTransport};
+    use crate::TopReceiveTransport;
 
     #[test]
-    fn production_callosum_start_stop_and_restart_adapter_are_safe_without_server() {
+    fn production_callosum_start_stop_are_safe_without_server() {
         let path = std::env::temp_dir().join("solstone-top-no-server.sock");
         let shared = ProductionCallosum::new(path).unwrap();
         let mut receive = ProductionReceive::new(Arc::clone(&shared));
-        let mut restart = ProductionRestart::new(shared);
         receive.start().unwrap();
         assert!(matches!(
             receive.next().unwrap(),
@@ -661,11 +602,6 @@ mod tests {
                 phase: solstone_core_callosum::CallosumConnectionPhase::Connecting { attempt: 1 },
             })
         ));
-        assert_eq!(restart.current_generation(), 0);
-        assert_eq!(
-            restart.emit_restart("convey", "id"),
-            RestartEnqueueResult::Enqueued
-        );
         receive.stop().unwrap();
     }
 

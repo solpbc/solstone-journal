@@ -5,8 +5,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
     FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionDisposition,
-    ReductionSample, RestartAttempt, RestartPhase, TopMalformed, TopMalformedKind, TopRoute,
-    TopState, apply_receive_event, reduce_envelope, render_frame,
+    ReductionSample, TopMalformed, TopMalformedKind, TopRoute, TopState, apply_receive_event,
+    reduce_envelope, render_frame,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -535,20 +535,6 @@ fn malformed_event_has_no_side_effects_and_loop_continues() {
     state.continuity.generation = 1;
     state.continuity.epoch = 1;
     state.continuity.connection = CallosumConnectionPhase::Connected;
-    state.restart_attempts.insert(
-        "svc".to_owned(),
-        RestartAttempt {
-            restart_id: "id".to_owned(),
-            generation: 1,
-            epoch: 1,
-            phase: RestartPhase::Pending,
-            issued_at: 0.0,
-            phase_at: 0.0,
-            started_deadline: None,
-            terminal_at: None,
-        },
-    );
-    let attempts = state.restart_attempts.clone();
     let effects = apply_receive_event(
         &mut state,
         &CallosumReceiveEvent::Envelope {
@@ -564,7 +550,6 @@ fn malformed_event_has_no_side_effects_and_loop_continues() {
         &mut observer,
     );
     assert!(!effects.refresh_brain);
-    assert_eq!(state.restart_attempts, attempts);
     assert_eq!(observer.calls, 0);
     let valid = event(
         "logs",

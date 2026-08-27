@@ -22,7 +22,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] PATH\n",
@@ -648,23 +648,6 @@ pub const CONVEY_HELP: &str = concat!(
 /// The parse-error usage for `journal convey`.
 pub const CONVEY_USAGE: &str = "usage: journal convey [-h] --port PORT [-v] [-d]\n";
 
-/// `journal restart-convey --help`, captured verbatim from the retained owner command.
-pub const RESTART_CONVEY_HELP: &str = concat!(
-    "usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n",
-    "\n",
-    "Restart the Convey web service via supervisor\n",
-    "\n",
-    "options:\n",
-    "  -h, --help         show this help message and exit\n",
-    "  --timeout TIMEOUT  Maximum seconds to wait for restart (default: 30.0)\n",
-    "  -v, --verbose      Enable verbose output\n",
-    "  -d, --debug        Enable debug logging\n",
-);
-
-/// The parse-error usage for `journal restart-convey`.
-pub const RESTART_CONVEY_USAGE: &str =
-    "usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
-
 /// `journal schedule --help`, captured from the retained scheduler CLI.
 pub const SCHEDULE_HELP: &str = concat!(
     "usage: journal schedule [-h] [-v] [-d]\n",
@@ -763,9 +746,6 @@ pub enum Command {
     Convey(ConveyOptions),
     ConveyHelp,
     ConveyUsage(ConveyUsageError),
-    RestartConvey(RestartConveyOptions),
-    RestartConveyHelp,
-    RestartConveyUsage(RestartConveyUsageError),
     Schedule(ScheduleOptions),
     ScheduleHelp,
     ScheduleUsage(ScheduleUsageError),
@@ -1057,18 +1037,6 @@ pub struct ConveyUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CortexUsageError(pub String);
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RestartConveyOptions {
-    pub timeout: f64,
-    pub verbose: bool,
-    pub debug: bool,
-}
-
-impl Eq for RestartConveyOptions {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RestartConveyUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleOptions {
@@ -1617,13 +1585,6 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(ConveyParse::Help) => Ok(Command::ConveyHelp),
             Err(error) => Ok(Command::ConveyUsage(error)),
         },
-        [command, rest @ ..] if command == OsStr::new("restart-convey") => {
-            match parse_restart_convey(rest) {
-                Ok(RestartConveyParse::Run(options)) => Ok(Command::RestartConvey(options)),
-                Ok(RestartConveyParse::Help) => Ok(Command::RestartConveyHelp),
-                Err(error) => Ok(Command::RestartConveyUsage(error)),
-            }
-        }
         [command, rest @ ..] if command == OsStr::new("schedule") => match parse_schedule(rest) {
             Ok(ScheduleParse::Run(options)) => Ok(Command::Schedule(options)),
             Ok(ScheduleParse::Help) => Ok(Command::ScheduleHelp),
@@ -2797,65 +2758,6 @@ fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
             ConveyUsageError("the following arguments are required: --port".to_owned())
         })?,
         journal_override,
-    }))
-}
-
-enum RestartConveyParse {
-    Run(RestartConveyOptions),
-    Help,
-}
-
-fn parse_restart_convey(args: &[OsString]) -> Result<RestartConveyParse, RestartConveyUsageError> {
-    let mut timeout = 30.0;
-    let mut verbose = false;
-    let mut debug = false;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = args[index].as_os_str();
-        match argument.to_str() {
-            Some("-h" | "--help") => return Ok(RestartConveyParse::Help),
-            Some("-v" | "--verbose") => verbose = true,
-            Some("-d" | "--debug") => debug = true,
-            Some("--timeout") => {
-                let value = args.get(index + 1).ok_or_else(|| {
-                    RestartConveyUsageError("argument --timeout: expected one argument".to_owned())
-                })?;
-                let value = value.to_str().ok_or_else(|| {
-                    RestartConveyUsageError("argument --timeout: invalid float value".to_owned())
-                })?;
-                timeout = value.parse::<f64>().map_err(|_| {
-                    RestartConveyUsageError(format!(
-                        "argument --timeout: invalid float value: '{value}'"
-                    ))
-                })?;
-                index += 2;
-                continue;
-            }
-            Some(argument) if argument.starts_with("--timeout=") => {
-                let value = &argument[10..];
-                timeout = value.parse::<f64>().map_err(|_| {
-                    RestartConveyUsageError(format!(
-                        "argument --timeout: invalid float value: '{value}'"
-                    ))
-                })?;
-            }
-            _ => {
-                return Err(RestartConveyUsageError(format!(
-                    "unrecognized arguments: {}",
-                    args[index..]
-                        .iter()
-                        .map(|value| value.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )));
-            }
-        }
-        index += 1;
-    }
-    Ok(RestartConveyParse::Run(RestartConveyOptions {
-        timeout,
-        verbose,
-        debug,
     }))
 }
 
@@ -7158,7 +7060,6 @@ mod tests {
             );
         }
         assert!(USAGE.contains("journal convey"));
-        assert!(USAGE.contains("journal restart-convey"));
         assert!(USAGE.contains("journal schedule"));
         assert!(USAGE.starts_with("Usage:\n"));
     }

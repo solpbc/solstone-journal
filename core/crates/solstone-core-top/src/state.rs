@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumConnectionPhase;
 
-use crate::{ProcessIdentity, RestartAttempt, TopMalformed};
+use crate::{ProcessIdentity, TopMalformed};
 
 /// Native Brain inspection freshness, excluded from the retained fixture
 /// projection so a failed inspection cannot masquerade as fresh data.
@@ -152,7 +152,6 @@ pub struct TopState {
     pub malformed_events: u64,
     /// The latest typed malformed route classification, also native-only.
     pub last_malformed: Option<TopMalformed>,
-    pub restart_attempts: BTreeMap<String, RestartAttempt>,
 }
 
 impl Default for TopState {
@@ -187,7 +186,6 @@ impl Default for TopState {
             continuity: DomainContinuity::default(),
             malformed_events: 0,
             last_malformed: None,
-            restart_attempts: BTreeMap::new(),
         }
     }
 }

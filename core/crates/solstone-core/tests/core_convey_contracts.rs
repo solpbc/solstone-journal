@@ -14,8 +14,6 @@ mod convey_restart_grammar;
 mod convey_restart_no_python_spawn;
 #[path = "peer_export_cli.rs"]
 mod peer_export_cli;
-#[path = "restart_convey_supervisor_seam.rs"]
-mod restart_convey_supervisor_seam;
 #[path = "speaker_resolve.rs"]
 mod speaker_resolve;
 #[path = "spl_service.rs"]

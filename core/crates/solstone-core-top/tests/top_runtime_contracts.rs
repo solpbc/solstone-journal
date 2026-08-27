@@ -13,7 +13,5 @@ mod production_component;
 mod production_reach;
 #[path = "production_render_ops.rs"]
 mod production_render_ops;
-#[path = "restart_protocol.rs"]
-mod restart_protocol;
 #[path = "terminal_owner.rs"]
 mod terminal_owner;

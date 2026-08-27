@@ -5,9 +5,8 @@ use solstone_core_callosum::CallosumReceiveEvent;
 use solstone_core_system_health::sanitize_for_terminal;
 
 use crate::{
-    BrainHealthState, FrameSample, ProcessObserver, ReductionSample, TopRenderOp,
-    TopRestartTransport, TopState, advance_restart_attempts, apply_receive_event,
-    cleanup_processes, render_ops, request_restart,
+    BrainHealthState, FrameSample, ProcessObserver, ReductionSample, TopRenderOp, TopState,
+    apply_receive_event, cleanup_processes, render_ops,
 };
 
 /// Input accepted by the native top loop.
@@ -15,7 +14,6 @@ use crate::{
 pub enum TopInput {
     Up,
     Down,
-    Restart,
     Quit,
     Interrupt,
     EndOfFile,
@@ -77,7 +75,6 @@ pub fn run_top_with(
     terminal: &mut dyn TopTerminal,
     receive: &mut dyn TopReceiveTransport,
     observer: &mut dyn ProcessObserver,
-    restart: &mut dyn TopRestartTransport,
     brain: &mut dyn TopBrainSource,
 ) -> Result<(), TopLoopError> {
     receive.start().map_err(TopLoopError::Transport)?;
@@ -108,7 +105,6 @@ pub fn run_top_with(
                     refresh_brain(state, brain, sample.wall_seconds, sample.monotonic_seconds);
                 }
             }
-            let _ = advance_restart_attempts(state, frame_monotonic);
             let width = terminal.width().map_err(TopLoopError::Terminal)?;
             let ops = render_ops(
                 state,
@@ -125,17 +121,6 @@ pub fn run_top_with(
                 TopInput::Down => {
                     state.selected =
                         (state.selected + 1).min(state.services.len().saturating_sub(1))
-                }
-                TopInput::Restart => {
-                    if let Some(service) = state
-                        .services
-                        .get(state.selected)
-                        .and_then(|service| service.get("name"))
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned)
-                    {
-                        let _ = request_restart(state, &service, frame_monotonic, restart);
-                    }
                 }
                 TopInput::None => {}
             }
@@ -206,7 +191,6 @@ fn refresh_brain(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SessionRestartIds;
     use std::collections::VecDeque;
     struct Clock;
     impl TopClock for Clock {
@@ -272,54 +256,6 @@ mod tests {
             crate::ProcessSample::Missing
         }
     }
-    struct Restart(SessionRestartIds);
-    impl Default for Restart {
-        fn default() -> Self {
-            Self(SessionRestartIds::with_nonce(1, [0; 16]))
-        }
-    }
-    impl TopRestartTransport for Restart {
-        fn emit_restart(&mut self, _: &str, _: &str) -> crate::RestartEnqueueResult {
-            crate::RestartEnqueueResult::Enqueued
-        }
-        fn current_generation(&self) -> u64 {
-            0
-        }
-        fn current_epoch(&self) -> u64 {
-            0
-        }
-        fn restart_ids(&mut self) -> &mut dyn crate::RestartIdSource {
-            &mut self.0
-        }
-    }
-    struct RecordingRestart {
-        emissions: Vec<(String, String)>,
-        ids: SessionRestartIds,
-    }
-    impl Default for RecordingRestart {
-        fn default() -> Self {
-            Self {
-                emissions: Vec::new(),
-                ids: SessionRestartIds::with_nonce(1, [0; 16]),
-            }
-        }
-    }
-    impl TopRestartTransport for RecordingRestart {
-        fn emit_restart(&mut self, service: &str, restart_id: &str) -> crate::RestartEnqueueResult {
-            self.emissions
-                .push((service.to_owned(), restart_id.to_owned()));
-            crate::RestartEnqueueResult::Enqueued
-        }
-        fn current_generation(&self) -> u64 {
-            0
-        }
-        fn current_epoch(&self) -> u64 {
-            0
-        }
-        fn restart_ids(&mut self) -> &mut dyn crate::RestartIdSource {
-            &mut self.ids
-        }
-    }
     struct Brain;
     impl TopBrainSource for Brain {
         fn inspect(&mut self) -> Result<serde_json::Value, String> {
@@ -342,7 +278,6 @@ mod tests {
                 &mut terminal,
                 &mut receive,
                 &mut Observer,
-                &mut Restart::default(),
                 &mut Brain
             )
             .is_ok()
@@ -478,7 +413,6 @@ mod tests {
             "normal-ctrl-d",
             "key-up",
             "key-down",
-            "key-restart",
             "event-success",
             "context-error",
             "initial-render-error",
@@ -506,10 +440,6 @@ mod tests {
                     serde_json::json!({"name":"two", "pid":201, "ref":"two", "uptime_seconds":1}),
                 ];
                 state.selected = usize::from(name == "key-up");
-            } else if name == "key-restart" {
-                state.services = vec![
-                    serde_json::json!({"name":"convey", "pid":101, "ref":"convey", "uptime_seconds":1}),
-                ];
             }
             let mut clock = FailClock {
                 fail_sleep: name == "sleep-error",
@@ -544,7 +474,6 @@ mod tests {
                     }
                     "key-up" => VecDeque::from([TopInput::Up, TopInput::Quit]),
                     "key-down" => VecDeque::from([TopInput::Down, TopInput::Quit]),
-                    "key-restart" => VecDeque::from([TopInput::Restart, TopInput::Quit]),
                     _ => VecDeque::new(),
                 },
                 ..FailTerminal::default()
@@ -580,14 +509,12 @@ mod tests {
                 ..FailReceive::default()
             };
             let mut brain = FailBrain { fail: false };
-            let mut restart = RecordingRestart::default();
             let result = run_top_with(
                 &mut state,
                 &mut clock,
                 &mut terminal,
                 &mut receive,
                 &mut Observer,
-                &mut restart,
                 &mut brain,
             );
             if name == "context-error" {
@@ -605,7 +532,6 @@ mod tests {
                     | "normal-ctrl-d"
                     | "key-up"
                     | "key-down"
-                    | "key-restart"
                     | "event-success"
             ) {
                 assert!(result.is_ok(), "{name}: {result:?}");
@@ -631,10 +557,6 @@ mod tests {
                 ),
                 "key-up" => assert_eq!(state.selected, 0, "{name}"),
                 "key-down" => assert_eq!(state.selected, 1, "{name}"),
-                "key-restart" => {
-                    assert_eq!(restart.emissions.len(), 1, "{name}");
-                    assert_eq!(restart.emissions[0].0, "convey", "{name}");
-                }
                 "event-success" => assert_eq!(
                     state.command_queues.get("health"),
                     Some(&serde_json::json!(2))
@@ -643,7 +565,7 @@ mod tests {
                     assert!(clock.sleep_calls >= 2, "{name}");
                     assert!(state.finished_tasks.contains_key("periodic"), "{name}");
                 }
-                _ => assert!(restart.emissions.is_empty(), "{name}"),
+                _ => {}
             }
         }
     }
@@ -664,14 +586,12 @@ mod tests {
             ..Terminal::default()
         };
         let mut receive = Receive::default();
-        let mut restart = RecordingRestart::default();
         run_top_with(
             &mut state,
             &mut clock,
             &mut terminal,
             &mut receive,
             &mut Observer,
-            &mut restart,
             &mut Brain,
         )
         .unwrap();
@@ -720,7 +640,6 @@ mod tests {
             &mut terminal,
             &mut receive,
             &mut Observer,
-            &mut Restart::default(),
             &mut brain,
         )
         .unwrap();

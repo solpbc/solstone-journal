@@ -30,10 +30,6 @@ required-features = ["test-hooks"]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
 
-[[test]]
-name = "restart_protocol"
-path = "tests/restart_protocol.rs"
-
 # Cargo auto-discovery is disabled for this package, so this route-contract target is explicit.
 [[test]]
 name = "thinking_sol_reads"

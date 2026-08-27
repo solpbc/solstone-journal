@@ -2,9 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use solstone_core_top::{
-    ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource, SessionRestartIds,
-    TerminalOwner, TerminalOwnerError, TerminalSyscalls, TopBrainSource, TopClock, TopInput,
-    TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal,
+    ProcessObserver, ProcessSample, TerminalOwner, TerminalOwnerError, TerminalSyscalls,
+    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopState, TopTerminal,
     run_top_with_outer_panic_cleanup,
 };
 
@@ -431,21 +430,6 @@ impl ProcessObserver for Observer {
         ProcessSample::Missing
     }
 }
-struct Restart(SessionRestartIds);
-impl TopRestartTransport for Restart {
-    fn emit_restart(&mut self, _: &str, _: &str) -> RestartEnqueueResult {
-        RestartEnqueueResult::Enqueued
-    }
-    fn current_generation(&self) -> u64 {
-        0
-    }
-    fn current_epoch(&self) -> u64 {
-        0
-    }
-    fn restart_ids(&mut self) -> &mut dyn RestartIdSource {
-        &mut self.0
-    }
-}
 struct Brain;
 impl TopBrainSource for Brain {
     fn inspect(&mut self) -> Result<serde_json::Value, String> {
@@ -467,7 +451,6 @@ fn production_outer_panic_boundary_restores_and_stops_once() {
             &mut terminal,
             &mut receive,
             &mut Observer,
-            &mut Restart(SessionRestartIds::with_nonce(1, [0; 16])),
             &mut Brain,
         );
     }));

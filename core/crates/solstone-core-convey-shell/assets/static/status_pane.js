@@ -184,39 +184,9 @@ window.whenShellReady(() => {
       });
   }
 
-  function formatClientLastReported(clients) {
-    const seen = clients.filter(o => typeof o.last_seen === 'number');
-    if (!seen.length) return '';
-    const lastSeen = Math.max(...seen.map(o => o.last_seen));
-    return relativeTime(Date.now() - lastSeen) + ' ago';
-  }
-
   function captureMonthDay(ms) {
     return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
   }
-
-	  function restartCaptureFromStatusPane(button, resultEl) {
-	    button.disabled = true;
-	    button.textContent = 'reconnecting…';
-	    resultEl.textContent = '';
-	    // Client rows are per registration key; supervisor restarts the shared sense worker.
-	    window.apiJson('/app/health/api/restart-capture', {
-	      method: 'POST',
-	      headers: { 'Content-Type': 'application/json' },
-	      body: JSON.stringify({ service: 'sense' })
-	    })
-	      .then(() => {
-	        button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
-	        resultEl.style.color = '#6b7280';
-	        resultEl.textContent = 'reconnect requested';
-	      })
-	      .catch(err => {
-	        button.disabled = false;
-	        button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
-	        resultEl.style.color = '#ef4444';
-	        resultEl.textContent = err?.serverMessage || "couldn't restart processing.";
-	      });
-	  }
 
 	  function renderCaptureSection(capture) {
 	    const section = document.getElementById('capture-status-section');
@@ -294,23 +264,6 @@ window.whenShellReady(() => {
 		        appendLine('and ' + (degraded.length - 1) + ' more need attention', 'color: #6b7280; font-size: 12px; margin-top: 2px;');
 		      }
 		      return;
-		    } else if (status === 'stale') {
-		      const stale = (capture.clients || []).filter(o => o.status === 'stale');
-	      const names = stale.map(o => o.name).filter(Boolean).join(', ');
-	      const label = stale.length === 1 ? 'device' : 'devices';
-	      const lastReported = formatClientLastReported(stale);
-	      text.textContent = `${label} ${names || 'device'} last reported ${lastReported || 'recently'}`;
-	      text.style.color = '#f59e0b';
-	      const button = document.createElement('button');
-	      button.type = 'button';
-	      button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
-	      button.style.cssText = 'margin-left: 0.5rem; font-size: 12px; padding: 0.15rem 0.45rem; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;';
-	      const result = document.createElement('span');
-	      result.style.cssText = 'margin-left: 0.4rem; font-size: 12px;';
-	      button.addEventListener('click', () => restartCaptureFromStatusPane(button, result));
-	      text.appendChild(button);
-	      text.appendChild(result);
-	      return;
 	    } else if (status === 'offline') {
       text.style.color = '#ef4444';
     } else {

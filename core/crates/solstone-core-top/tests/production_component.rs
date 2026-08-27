@@ -74,8 +74,6 @@ fn terminal_input_maps_crossterm_events_from_the_scripted_source() {
         key(KeyCode::Down, KeyEventKind::Press, KeyModifiers::NONE),
         key(KeyCode::Char('q'), KeyEventKind::Press, KeyModifiers::NONE),
         key(KeyCode::Char('q'), KeyEventKind::Repeat, KeyModifiers::NONE),
-        key(KeyCode::Char('r'), KeyEventKind::Press, KeyModifiers::NONE),
-        key(KeyCode::Char('r'), KeyEventKind::Repeat, KeyModifiers::NONE),
         key(
             KeyCode::Char('c'),
             KeyEventKind::Press,
@@ -101,8 +99,6 @@ fn terminal_input_maps_crossterm_events_from_the_scripted_source() {
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Up);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Down);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Quit);
-    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
-    assert_eq!(terminal.input(0.0).unwrap(), TopInput::Restart);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Interrupt);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::EndOfFile);
