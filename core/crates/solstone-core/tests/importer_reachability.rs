@@ -927,7 +927,6 @@ impl AudioProcessingCompleter {
                         ),
                     )
                     .expect("write completed processing record");
-                    return;
                 }
                 thread::sleep(Duration::from_millis(10));
             }
