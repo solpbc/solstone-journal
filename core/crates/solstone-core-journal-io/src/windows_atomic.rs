@@ -4,12 +4,16 @@
 //! Windows detailed publication with descriptor-bound admission and path-based replacement.
 
 use std::ffi::{OsStr, OsString};
+#[cfg(any(test, feature = "test-hooks"))]
+use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::path::Path;
+#[cfg(any(test, feature = "test-hooks"))]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
@@ -389,6 +393,7 @@ fn move_stage_to_destination(
         .encode_wide()
         .chain(Some(0))
         .collect::<Vec<_>>();
+    pause_at_terminal_move_receipt(parent_path, stage_name);
     // SAFETY: both path buffers are NUL-terminated and remain live for the synchronous call.
     #[allow(unsafe_code)]
     let result = unsafe {
@@ -602,6 +607,9 @@ thread_local! {
     };
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+static WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 /// Run `op` while recording requested publication backoffs without sleeping.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn run_with_windows_detailed_atomic_backoffs<T>(op: impl FnOnce() -> T) -> (T, Vec<Duration>) {
@@ -792,12 +800,47 @@ fn checkpoint(step: &'static str) -> io::Result<()> {
 
 #[cfg(any(test, feature = "test-hooks"))]
 fn record_windows_real_move() {
+    WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT.fetch_add(1, Ordering::Relaxed);
     WINDOWS_PUBLICATION_TRACE.with(|trace| {
         if let Some(state) = trace.borrow_mut().as_mut() {
             state.real_moves += 1;
         }
     });
 }
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn pause_at_terminal_move_receipt(parent_path: &Path, stage_name: &OsStr) {
+    if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() != Some("terminal-move") {
+        return;
+    }
+    if let Ok(marker) = std::env::var("JOURNAL_IO_TEST_MARKER") {
+        if let Ok(file) = File::open(parent_path.join(stage_name)) {
+            if let Ok(identity) = file_identity(file.as_raw_handle()) {
+                let moves_so_far = WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT.load(Ordering::Relaxed);
+                let file_id_hex = identity
+                    .file_id()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                let payload = format!(
+                    "pid={}\nstage={}\nvolume_serial={}\nfile_id={}\nterminal_move_snapshot_present=1\nterminal_move_snapshot_count={}\n",
+                    std::process::id(),
+                    stage_name.to_string_lossy(),
+                    identity.volume_serial(),
+                    file_id_hex,
+                    moves_so_far,
+                );
+                let _ = fs::write(marker, payload);
+            }
+        }
+    }
+    loop {
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn pause_at_terminal_move_receipt(_parent_path: &Path, _stage_name: &OsStr) {}
 
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn checkpoint(_step: &'static str) -> io::Result<()> {

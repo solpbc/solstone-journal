@@ -53,19 +53,75 @@ fn wait_for_marker(marker: &Path, step: &str) {
 
 fn kill_paused_detailed_atomic_helper(child: &mut Child, marker: &Path, step: &str) -> ExitStatus {
     wait_for_marker(marker, step);
+    confirm_still_blocked_and_kill(child, step)
+}
+
+struct MoveReceipt {
+    pid: u32,
+    stage_name: String,
+    volume_serial: u64,
+    file_id: [u8; 16],
+    terminal_move_snapshot_present: bool,
+    terminal_move_snapshot_count: usize,
+}
+
+fn parse_move_receipt(bytes: &[u8]) -> Option<MoveReceipt> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut fields = std::collections::HashMap::new();
+    for line in text.lines() {
+        let (key, value) = line.split_once('=')?;
+        fields.insert(key, value);
+    }
+    let file_id_hex = *fields.get("file_id")?;
+    if file_id_hex.len() != 32 {
+        return None;
+    }
+    let mut file_id = [0u8; 16];
+    for (index, byte) in file_id.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&file_id_hex[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(MoveReceipt {
+        pid: fields.get("pid")?.parse().ok()?,
+        stage_name: (*fields.get("stage")?).to_owned(),
+        volume_serial: fields.get("volume_serial")?.parse().ok()?,
+        file_id,
+        terminal_move_snapshot_present: *fields.get("terminal_move_snapshot_present")? == "1",
+        terminal_move_snapshot_count: fields.get("terminal_move_snapshot_count")?.parse().ok()?,
+    })
+}
+
+fn confirm_still_blocked_and_kill(child: &mut Child, context: &str) -> ExitStatus {
     match child.try_wait() {
         Ok(None) => {}
         Ok(Some(status)) => {
-            panic!("detailed publication helper exited before kill at {step}: {status}")
+            panic!("detailed publication helper exited before kill at {context}: {status}")
         }
         Err(error) => {
             panic!(
-                "could not query detailed publication helper status before kill at {step}: {error}"
+                "could not query detailed publication helper status before kill at {context}: {error}"
             )
         }
     }
     child.kill().unwrap();
     child.wait().unwrap()
+}
+
+fn wait_for_move_receipt(child: &Child, marker: &Path) -> MoveReceipt {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if let Ok(bytes) = fs::read(marker) {
+            if let Some(receipt) = parse_move_receipt(&bytes) {
+                assert_eq!(
+                    receipt.pid,
+                    child.id(),
+                    "terminal-move acknowledgement token does not match the spawned child"
+                );
+                return receipt;
+            }
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("detailed publication did not produce a terminal-move acknowledgement in time");
 }
 
 fn assert_complete_stable_file(path: &Path, expected: &[u8]) {
@@ -540,21 +596,38 @@ fn hard_link_alias_retains_the_prepublication_file() {
 fn existing_destination_publication_receipt(root: &Path) {
     let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-existing");
     let sentinel = outside_sentinel(&parent);
+    assert!(stage_names(&parent).is_empty(), "clean stage baseline");
     let marker = parent.join("pause-marker");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
         .env("JOURNAL_IO_DETAILED_TARGET", &target)
-        .env("JOURNAL_IO_TEST_PAUSE_AT", "pre-publication-validation")
+        .env("JOURNAL_IO_TEST_PAUSE_AT", "terminal-move")
         .env("JOURNAL_IO_TEST_MARKER", &marker)
         .spawn()
         .unwrap();
-    let status =
-        kill_paused_detailed_atomic_helper(&mut child, &marker, "pre-publication-validation");
+    let receipt = wait_for_move_receipt(&child, &marker);
+    assert!(receipt.terminal_move_snapshot_present);
+    assert_eq!(
+        receipt.terminal_move_snapshot_count, 0,
+        "no real move may have occurred before the paused terminal-move acknowledgement"
+    );
+    let status = confirm_still_blocked_and_kill(&mut child, "terminal-move");
     assert!(
         !status.success(),
         "helper unexpectedly completed before existing-destination publication"
     );
     assert_complete_stable_file(&target, OLD);
+    let leaked = stage_names(&parent);
+    assert_eq!(
+        leaked,
+        vec![std::ffi::OsString::from(&receipt.stage_name)],
+        "exactly one same-parent stage must be leaked by the interrupted call"
+    );
+    assert_eq!(
+        file_identity(&parent.join(&receipt.stage_name)),
+        (receipt.volume_serial, receipt.file_id),
+        "leaked stage identity must match the acknowledgement"
+    );
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
@@ -568,21 +641,38 @@ fn absent_destination_publication_receipt(root: &Path) {
     let sentinel = outside_sentinel(&parent);
     fs::remove_file(&absent).unwrap();
     assert_file_not_found(&absent);
+    assert!(stage_names(&parent).is_empty(), "clean stage baseline");
     let marker = parent.join("pause-marker");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
         .env("JOURNAL_IO_DETAILED_TARGET", &absent)
-        .env("JOURNAL_IO_TEST_PAUSE_AT", "pre-publication-validation")
+        .env("JOURNAL_IO_TEST_PAUSE_AT", "terminal-move")
         .env("JOURNAL_IO_TEST_MARKER", &marker)
         .spawn()
         .unwrap();
-    let status =
-        kill_paused_detailed_atomic_helper(&mut child, &marker, "pre-publication-validation");
+    let receipt = wait_for_move_receipt(&child, &marker);
+    assert!(receipt.terminal_move_snapshot_present);
+    assert_eq!(
+        receipt.terminal_move_snapshot_count, 0,
+        "no real move may have occurred before the paused terminal-move acknowledgement"
+    );
+    let status = confirm_still_blocked_and_kill(&mut child, "terminal-move");
     assert!(
         !status.success(),
         "helper unexpectedly completed before absent-destination publication"
     );
     assert_file_not_found(&absent);
+    let leaked = stage_names(&parent);
+    assert_eq!(
+        leaked,
+        vec![std::ffi::OsString::from(&receipt.stage_name)],
+        "exactly one same-parent stage must be leaked by the interrupted call"
+    );
+    assert_eq!(
+        file_identity(&parent.join(&receipt.stage_name)),
+        (receipt.volume_serial, receipt.file_id),
+        "leaked stage identity must match the acknowledgement"
+    );
     assert!(matches!(
         atomic_replace_detailed(&absent, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
