@@ -15,9 +15,10 @@ use filetime::{FileTime, set_file_mtime};
 use solstone_core_system::lifecycle::{
     AdmissionWaitClock, HeartbeatClassification, HeartbeatV2, RunId, StaleHeartbeatCollectionError,
     SupervisorLifecycle, SyncIncompleteSnapshotReason, SyncScanFailure, SyncTickOutcome, WriterId,
-    run_with_windows_lifecycle_checkpoint, v2_heartbeat_filename,
+    run_with_windows_lifecycle_checkpoint, run_with_windows_lifecycle_deletion_attempt_witness,
+    v2_heartbeat_filename,
 };
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Foundation::{ERROR_SHARING_VIOLATION, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
     FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo,
@@ -225,6 +226,17 @@ fn file_identity(path: &Path) -> (u64, u64) {
     )
 }
 
+fn completed_scan_identity(lifecycle: &SupervisorLifecycle, filename: &str) -> (u64, u64) {
+    let observation = lifecycle
+        .last_completed_sync_result()
+        .expect("completed scan result")
+        .snapshot
+        .files
+        .get(OsStr::new(filename))
+        .expect("file observed in completed scan");
+    (observation.entry.device, observation.entry.inode)
+}
+
 fn hold_without_delete_sharing(path: &Path) -> OwnedHandle {
     let wide_path = wide(path.as_os_str());
     // SAFETY: `path` is NUL-terminated and the successful handle is owned exactly once.
@@ -275,25 +287,31 @@ fn phase_b_bounded_malformed_is_never_deleted(root: &Path) {
     let mut lifecycle = boot(temporary.path());
     let mut clock = ReceiptClock::new();
 
-    assert_completed(tick(&mut lifecycle, &mut clock));
-    let completed = lifecycle
-        .last_completed_sync_result()
-        .expect("bounded malformed tick completed");
-    let observation = completed
-        .peer_observations
-        .iter()
-        .find(|observation| observation.source_filename == OsStr::new(&filename))
-        .expect("bounded malformed peer observed");
-    assert!(matches!(
-        &observation.classification,
-        HeartbeatClassification::BoundedMalformed
-    ));
-    assert_eq!(fs::read(&peer).expect("read bounded malformed peer"), body);
+    let ((), deletion_attempts) = run_with_windows_lifecycle_deletion_attempt_witness(|| {
+        assert_completed(tick(&mut lifecycle, &mut clock));
+        let completed = lifecycle
+            .last_completed_sync_result()
+            .expect("bounded malformed tick completed");
+        let observation = completed
+            .peer_observations
+            .iter()
+            .find(|observation| observation.source_filename == OsStr::new(&filename))
+            .expect("bounded malformed peer observed");
+        assert!(matches!(
+            &observation.classification,
+            HeartbeatClassification::BoundedMalformed
+        ));
+        assert_eq!(fs::read(&peer).expect("read bounded malformed peer"), body);
 
-    assert_completed(tick(&mut lifecycle, &mut clock));
+        assert_completed(tick(&mut lifecycle, &mut clock));
+        assert_eq!(
+            fs::read(&peer).expect("retain bounded malformed peer"),
+            body
+        );
+    });
     assert_eq!(
-        fs::read(&peer).expect("retain bounded malformed peer"),
-        body
+        deletion_attempts, 0,
+        "bounded malformed heartbeats must never reach deletion"
     );
 }
 
@@ -355,11 +373,10 @@ fn phase_c_incomplete_scan_resets_candidates(root: &Path) {
 
 fn phase_d_replacement_identity_requires_two_fresh_ticks(root: &Path) {
     let temporary = phase_root(root, "stale-heartbeat-phase-d-");
-    let (_replaced_name, body, replaced) =
+    let (replaced_name, body, replaced) =
         write_stale_peer(temporary.path(), "55555555555555555555555555555555");
     let (_control_name, _control_body, control) =
         write_stale_peer(temporary.path(), "66666666666666666666666666666666");
-    let original_identity = file_identity(&replaced);
     let original_mtime = FileTime::from_last_modification_time(
         &fs::metadata(&replaced).expect("replacement fixture metadata"),
     );
@@ -369,6 +386,12 @@ fn phase_d_replacement_identity_requires_two_fresh_ticks(root: &Path) {
     assert_completed(tick(&mut lifecycle, &mut clock));
     assert!(replaced.exists());
     assert!(control.exists());
+    let original_identity = file_identity(&replaced);
+    let observed_original_identity = completed_scan_identity(&lifecycle, &replaced_name);
+    assert_eq!(
+        observed_original_identity, original_identity,
+        "completed-scan identity must match the native identity cross-check"
+    );
 
     let replacement = replaced.with_extension("replacement");
     fs::write(&replacement, &body).expect("write replacement heartbeat");
@@ -386,13 +409,22 @@ fn phase_d_replacement_identity_requires_two_fresh_ticks(root: &Path) {
         original_mtime,
         "replacement must retain the original mtime"
     );
+    let replacement_identity = file_identity(&replaced);
     assert_ne!(
-        file_identity(&replaced),
-        original_identity,
+        replacement_identity, original_identity,
         "replacement must have a distinct production-equivalent native identity"
     );
 
     assert_completed(tick(&mut lifecycle, &mut clock));
+    let observed_replacement_identity = completed_scan_identity(&lifecycle, &replaced_name);
+    assert_ne!(
+        observed_replacement_identity, observed_original_identity,
+        "completed-scan identity must change for the replacement"
+    );
+    assert_eq!(
+        observed_replacement_identity, replacement_identity,
+        "completed-scan replacement identity must match the native identity cross-check"
+    );
     assert!(
         replaced.exists(),
         "identity replacement must not satisfy the second candidate tick"
@@ -421,15 +453,27 @@ fn phase_e_held_handle_reports_and_recovers(root: &Path) {
         "first held-handle tick establishes a candidate"
     );
     let handle = hold_without_delete_sharing(&peer);
-    match tick(&mut lifecycle, &mut clock) {
+    let (outcome, deletion_attempts) =
+        run_with_windows_lifecycle_deletion_attempt_witness(|| tick(&mut lifecycle, &mut clock));
+    match outcome {
         SyncTickOutcome::StaleHeartbeatCollectionFailure(
             StaleHeartbeatCollectionError::WindowsRemoval {
                 filename: failed_filename,
-                ..
+                reason,
             },
-        ) => assert_eq!(failed_filename, OsStr::new(&filename)),
+        ) => {
+            assert_eq!(failed_filename, OsStr::new(&filename));
+            assert!(
+                reason.contains(&format!("os error {ERROR_SHARING_VIOLATION}")),
+                "held handle must report sharing violation, got {reason}"
+            );
+        }
         outcome => panic!("held handle must fail the one collecting tick, got {outcome:?}"),
     }
+    assert_eq!(
+        deletion_attempts, 1,
+        "held handle must cause exactly one real deletion attempt"
+    );
     assert_eq!(fs::read(&peer).expect("held peer remains on disk"), body);
 
     drop(handle);

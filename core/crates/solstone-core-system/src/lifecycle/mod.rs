@@ -69,7 +69,9 @@ pub use sync::{
 #[cfg(unix)]
 pub use sync::{SyncRescan, rescan_sync_read_only};
 #[cfg(all(windows, feature = "test-hooks"))]
-pub use windows::run_with_windows_lifecycle_checkpoint;
+pub use windows::{
+    run_with_windows_lifecycle_checkpoint, run_with_windows_lifecycle_deletion_attempt_witness,
+};
 
 /// Result of a supervisor heartbeat renewal and complete peer scan.
 #[derive(Debug)]
