@@ -456,12 +456,9 @@ fn entry_from_handle(
     path: &Path,
 ) -> Result<FlatDirectoryEntry, FlatDirectoryError> {
     let attributes = attribute_tag(handle, path)?;
-    if is_reparse_point(attributes) {
-        return Err(FlatDirectoryError::NotRegular {
-            path: path.to_path_buf(),
-        });
-    }
-    let kind = if is_directory(attributes) {
+    let kind = if is_reparse_point(attributes) {
+        JournalEntryKind::Other
+    } else if is_directory(attributes) {
         JournalEntryKind::Directory
     } else {
         let file_type = {

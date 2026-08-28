@@ -50,7 +50,7 @@ pub(crate) fn same_entry_metadata(left: &FlatDirectoryEntry, right: &FlatDirecto
         && left.mtime == right.mtime
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg(unix)]
 pub(crate) fn same_observation(left: &FileObservation, right: &FileObservation) -> bool {
     same_entry_metadata(&left.entry, &right.entry) && left.bytes == right.bytes
 }

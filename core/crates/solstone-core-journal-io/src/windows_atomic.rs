@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Descriptor-bound detailed publication for Windows.
+//! Windows detailed publication with descriptor-bound admission and path-based replacement.
 
 use std::ffi::{OsStr, OsString};
 use std::fs::File;

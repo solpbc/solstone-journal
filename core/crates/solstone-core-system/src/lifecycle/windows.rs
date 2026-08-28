@@ -149,7 +149,13 @@ pub(crate) fn boot_with_store(
         return Err(error);
     }
 
-    let identity = write_supervisor_identity(store, std::process::id(), start_time)?;
+    let identity = match write_supervisor_identity(store, std::process::id(), start_time) {
+        Ok(identity) => identity,
+        Err(error) => {
+            cleanup_after_failed_boot(store, &heartbeat_filename, &retained_self_heartbeat)?;
+            return Err(error);
+        }
+    };
     Ok(WindowsBootState {
         run_id,
         heartbeat_filename,
@@ -644,22 +650,19 @@ mod platform {
                 Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }) => {
                     return Err(WindowsPublicationFailure::Durability(source));
                 }
-                Ok(DetailedAtomicOutcome::PublishedParentPathRaced { sync_error }) => {
+                Ok(DetailedAtomicOutcome::PublishedParentPathRaced { sync_error: _ }) => {
                     return Err(WindowsPublicationFailure::Uncertain(
-                        publication_observation_error("published parent path changed", sync_error),
+                        publication_observation_error("published parent path changed"),
                     ));
                 }
                 Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
                     observation,
-                    sync_error,
+                    sync_error: _,
                 }) => {
                     return Err(WindowsPublicationFailure::Uncertain(
-                        publication_observation_error(
-                            &format!(
-                                "published parent path could not be reverified: {observation}"
-                            ),
-                            sync_error,
-                        ),
+                        publication_observation_error(&format!(
+                            "published parent path could not be reverified: {observation}"
+                        )),
                     ));
                 }
                 Err(source) => return Err(WindowsPublicationFailure::Publish(source)),
@@ -948,12 +951,8 @@ mod platform {
         }
     }
 
-    fn publication_observation_error(message: &str, sync_error: Option<io::Error>) -> io::Error {
-        let mut detail = message.to_owned();
-        if let Some(sync_error) = sync_error {
-            detail.push_str(&format!("; parent sync failed: {sync_error}"));
-        }
-        io::Error::other(detail)
+    fn publication_observation_error(message: &str) -> io::Error {
+        io::Error::other(message)
     }
 
     fn windows_hostname() -> String {
@@ -1000,6 +999,7 @@ mod tests {
         removal_attempts: Vec<(WindowsLifecycleDirectory, OsString)>,
         removed: Vec<(WindowsLifecycleDirectory, OsString)>,
         next_heartbeat_error: Option<HeartbeatWriteError>,
+        next_lifecycle_artifact_error: Option<LifecycleArtifactWriteError>,
         next_removal_error: Option<WindowsRemovalFailure>,
         sequence: u64,
     }
@@ -1069,7 +1069,10 @@ mod tests {
             body: &[u8],
         ) -> Result<FileObservation, LifecycleArtifactWriteError> {
             self.writes.push(format!("health:{name}"));
-            Ok(self.next_observation(name, body))
+            match self.next_lifecycle_artifact_error.take() {
+                Some(error) => Err(error),
+                None => Ok(self.next_observation(name, body)),
+            }
         }
 
         fn remove_observed(
@@ -1298,6 +1301,34 @@ mod tests {
             ))
         ));
         assert_eq!(store.writes.len(), 1);
+    }
+
+    #[test]
+    fn identity_publication_failure_cleans_up_self_heartbeat() {
+        let mut store = FakeWindowsLifecycleStore::with_scans([
+            ScanStep::Entries(Vec::new()),
+            ScanStep::Entries(Vec::new()),
+        ]);
+        store.next_lifecycle_artifact_error =
+            Some(LifecycleArtifactWriteError::ObservationMissing {
+                name: SUPERVISOR_PID,
+            });
+
+        assert!(matches!(
+            boot(&mut store),
+            Err(LifecycleError::LifecycleArtifactWrite(
+                LifecycleArtifactWriteError::ObservationMissing {
+                    name: SUPERVISOR_PID
+                }
+            ))
+        ));
+        assert_eq!(
+            store.removed,
+            vec![(
+                WindowsLifecycleDirectory::Sync,
+                OsString::from(sync::v2_heartbeat_filename(&writer_id(), &run_id())),
+            )]
+        );
     }
 
     #[test]
