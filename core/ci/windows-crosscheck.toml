@@ -3,7 +3,8 @@ target = "x86_64-pc-windows-msvc"
 
 [baseline]
 # Re-derived from Cargo metadata after `solstone-core-profile-web` joined the
-# workspace. That library crate increases both baselines by exactly one.
+# workspace. The census counts a package once when any target is `lib`, so this
+# mixed lib+bin rail increases both baselines by exactly one.
 workspace_packages = 134
 library_packages = 128
 

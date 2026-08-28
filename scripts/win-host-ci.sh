@@ -9,20 +9,9 @@ SCP=${SCP:-scp}
 SSH=${SSH:-ssh}
 ssh_output_file=
 cloud_sync_test=${JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST:-}
-refs_publication=${JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION:-}
 refs_root=${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-}
 owner_account=${SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT:-}
-refs_requested=0
-refs_publication_evidence=unrun/skipped
-refs_publication_filesystem=not-asserted
-refs_enumeration_evidence=unrun/skipped
-refs_enumeration_capability=not-asserted
-refs_revalidation_evidence=unrun/skipped
-refs_revalidation_capability=not-asserted
-refs_claimed_removal_evidence=unrun/skipped
-refs_claimed_removal_capability=unsupported
-refs_archive_traversal_evidence=unrun/skipped
-refs_archive_traversal_capability=not-asserted
+refs_publication=1
 
 case "$cloud_sync_test" in
   '') cloud_sync_test=0 ;;
@@ -33,26 +22,8 @@ case "$cloud_sync_test" in
     ;;
 esac
 
-case "$refs_publication" in
-  '') refs_publication=0 ;;
-  0|1) ;;
-  *)
-    echo "ERROR: win-host-ci: JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION must be unset, empty, 0, or 1" >&2
-    exit 1
-    ;;
-esac
-
-if [ -n "$refs_root" ]; then
-  if printf '%s\n' "$refs_root" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$'; then
-    refs_requested=1
-  else
-    echo "win-host-ci: SOLSTONE_JOURNAL_WIN_REFS_ROOT is not a safe absolute Windows path; ReFS matrix evidence will be skipped" >&2
-    refs_root=
-  fi
-fi
-
-if [ "$refs_publication" -eq 1 ] && [ "$refs_requested" -ne 1 ]; then
-  echo "ERROR: win-host-ci: JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION=1 requires a non-blank safe absolute SOLSTONE_JOURNAL_WIN_REFS_ROOT" >&2
+if [ -z "$refs_root" ] || ! printf '%s\n' "$refs_root" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$'; then
+  echo "ERROR: win-host-ci: SOLSTONE_JOURNAL_WIN_REFS_ROOT must be a non-blank safe absolute Windows path for mandatory ReFS receipts" >&2
   exit 1
 fi
 
@@ -179,7 +150,6 @@ fi
 remote_command="\$env:EXPECTED_JOURNAL_COMMIT = '$snapshot_sha'
 \$env:EXPECTED_JOURNAL_CARGO_LOCK_SHA256 = '$cargo_lock_sha256'
 \$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '$cloud_sync_test'
-\$env:JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION = '$refs_publication'
 \$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = '$refs_root'
 \$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = '$owner_account'
 & 'C:\\sol\\sj-ci.cmd'
@@ -201,6 +171,33 @@ if [ "$ssh_status" -ne 0 ]; then
 fi
 
 normalized_output=$(awk '{ sub(/\r$/, ""); print }' "$ssh_output_file")
+ok_count=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { count++ } END { print count + 0 }')
+if [ "$ok_count" -ne 1 ]; then
+  echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_OK acknowledgement, found $ok_count; rerun the complete box gate" >&2
+  exit 1
+fi
+ok_line=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { print NR }')
+require_native_receipt() {
+  receipt_key=$1
+  receipt_filesystem=$2
+  pass_line="$receipt_key=executed/pass"
+  filesystem_line="${receipt_key}_FILESYSTEM=$receipt_filesystem"
+  key_count=$(printf '%s\n' "$normalized_output" | awk -v key="$receipt_key" 'index($0, key "=") == 1 { count++ } END { print count + 0 }')
+  filesystem_key_count=$(printf '%s\n' "$normalized_output" | awk -v key="${receipt_key}_FILESYSTEM" 'index($0, key "=") == 1 { count++ } END { print count + 0 }')
+  pass_count=$(printf '%s\n' "$normalized_output" | awk -v expected="$pass_line" '$0 == expected { count++ } END { print count + 0 }')
+  filesystem_count=$(printf '%s\n' "$normalized_output" | awk -v expected="$filesystem_line" '$0 == expected { count++ } END { print count + 0 }')
+  pass_position=$(printf '%s\n' "$normalized_output" | awk -v expected="$pass_line" '$0 == expected { print NR }')
+  filesystem_position=$(printf '%s\n' "$normalized_output" | awk -v expected="$filesystem_line" '$0 == expected { print NR }')
+  if [ "$key_count" -ne 1 ] || [ "$filesystem_key_count" -ne 1 ] || [ "$pass_count" -ne 1 ] || [ "$filesystem_count" -ne 1 ] ||
+    [ "$pass_position" -ge "$ok_line" ] || [ "$filesystem_position" -ge "$ok_line" ]; then
+    echo "ERROR: win-host-ci: $receipt_key requires exactly one source-originated pass and $receipt_filesystem filesystem marker before JOURNAL_WIN_CI_OK" >&2
+    exit 1
+  fi
+}
+require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
+require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
+require_native_receipt JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP NTFS
+require_native_receipt JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP ReFS
 head_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { count++ } END { print count + 0 }')
 cargo_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { count++ } END { print count + 0 }')
 cloud_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=/ { count++ } END { print count + 0 }')
@@ -208,14 +205,6 @@ ordinary_owner_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOUR
 ordinary_owner_refs_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=/ { count++ } END { print count + 0 }')
 refs_publication_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_PUBLICATION=/ { count++ } END { print count + 0 }')
 refs_publication_filesystem_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=/ { count++ } END { print count + 0 }')
-refs_enumeration_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=/ { count++ } END { print count + 0 }')
-refs_enumeration_capability_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=/ { count++ } END { print count + 0 }')
-refs_revalidation_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=/ { count++ } END { print count + 0 }')
-refs_revalidation_capability_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=/ { count++ } END { print count + 0 }')
-refs_claimed_removal_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE=/ { count++ } END { print count + 0 }')
-refs_claimed_removal_capability_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY=/ { count++ } END { print count + 0 }')
-refs_archive_traversal_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=/ { count++ } END { print count + 0 }')
-refs_archive_traversal_capability_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=/ { count++ } END { print count + 0 }')
 if [ "$cloud_sync_test" -eq 1 ]; then
   expected_cloud_evidence=passed
 else
@@ -254,29 +243,6 @@ elif [ "$refs_publication_evidence_count" -ne 0 ] || [ "$refs_publication_filesy
   echo "ERROR: win-host-ci: unrequested ReFS publication receipt must not emit publication markers; rerun the complete box gate" >&2
   exit 1
 fi
-if [ "$refs_requested" -eq 1 ]; then
-  if [ "$refs_enumeration_evidence_count" -ne 1 ] ||
-    [ "$refs_enumeration_capability_count" -ne 1 ] ||
-    [ "$refs_revalidation_evidence_count" -ne 1 ] ||
-    [ "$refs_revalidation_capability_count" -ne 1 ] ||
-    [ "$refs_claimed_removal_evidence_count" -ne 1 ] ||
-    [ "$refs_claimed_removal_capability_count" -ne 1 ] ||
-    [ "$refs_archive_traversal_evidence_count" -ne 1 ] ||
-    [ "$refs_archive_traversal_capability_count" -ne 1 ]; then
-    echo "ERROR: win-host-ci: requested ReFS fixture requires exactly one marker for every matrix row and capability; rerun the complete box gate" >&2
-    exit 1
-  fi
-elif [ "$refs_enumeration_evidence_count" -ne 0 ] ||
-  [ "$refs_enumeration_capability_count" -ne 0 ] ||
-  [ "$refs_revalidation_evidence_count" -ne 0 ] ||
-  [ "$refs_revalidation_capability_count" -ne 0 ] ||
-  [ "$refs_claimed_removal_evidence_count" -ne 0 ] ||
-  [ "$refs_claimed_removal_capability_count" -ne 0 ] ||
-  [ "$refs_archive_traversal_evidence_count" -ne 0 ] ||
-  [ "$refs_archive_traversal_capability_count" -ne 0 ]; then
-  echo "ERROR: win-host-ci: unrequested ReFS fixture must not emit matrix markers; rerun the complete box gate" >&2
-  exit 1
-fi
 if [ "$refs_publication" -eq 1 ]; then
   refs_publication_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_PUBLICATION=//p')
   refs_publication_filesystem=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=//p')
@@ -296,29 +262,6 @@ if [ "$remote_cargo_lock_sha256" != "$cargo_lock_sha256" ]; then
   echo "ERROR: win-host-ci: remote Cargo.lock SHA-256 mismatch: expected $cargo_lock_sha256, actual $remote_cargo_lock_sha256; restore the transferred lockfile and rerun" >&2
   exit 1
 fi
-if [ "$refs_requested" -eq 1 ]; then
-  refs_enumeration_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=//p')
-  refs_enumeration_capability=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=//p')
-  refs_revalidation_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=//p')
-  refs_revalidation_capability=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=//p')
-  refs_claimed_removal_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE=//p')
-  refs_claimed_removal_capability=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY=//p')
-  refs_archive_traversal_evidence=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=//p')
-  refs_archive_traversal_capability=$(printf '%s\n' "$normalized_output" | sed -n 's/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=//p')
-  if [ "$refs_claimed_removal_evidence" != "unrun/skipped" ] || [ "$refs_claimed_removal_capability" != "unsupported" ]; then
-    echo "ERROR: win-host-ci: Windows claimed-removal must remain unrun/skipped and unsupported" >&2
-    exit 1
-  fi
-  if [ "$refs_enumeration_evidence" != "executed/pass" ] ||
-    [ "$refs_enumeration_capability" != "available" ] ||
-    [ "$refs_revalidation_evidence" != "executed/pass" ] ||
-    [ "$refs_revalidation_capability" != "available" ] ||
-    [ "$refs_archive_traversal_evidence" != "executed/pass" ] ||
-    [ "$refs_archive_traversal_capability" != "available" ]; then
-    echo "ERROR: win-host-ci: requested ReFS fixture did not produce complete available enumeration, revalidation, and archive-traversal evidence" >&2
-    exit 1
-  fi
-fi
 
 head_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { print NR }')
 cargo_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_CARGO_LOCK_SHA256=/ { print NR }')
@@ -335,27 +278,6 @@ if [ "$head_line" -ge "$ok_line" ] ||
   echo "ERROR: win-host-ci: source-binding, Cloud Files, and ordinary-owner evidence acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
   exit 1
 fi
-if [ "$refs_requested" -eq 1 ]; then
-  refs_enumeration_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE=/ { print NR }')
-  refs_enumeration_capability_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ENUMERATION_CAPABILITY=/ { print NR }')
-  refs_revalidation_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_REVALIDATION_EVIDENCE=/ { print NR }')
-  refs_revalidation_capability_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_REVALIDATION_CAPABILITY=/ { print NR }')
-  refs_claimed_removal_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_EVIDENCE=/ { print NR }')
-  refs_claimed_removal_capability_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_CLAIMED_REMOVAL_CAPABILITY=/ { print NR }')
-  refs_archive_traversal_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_EVIDENCE=/ { print NR }')
-  refs_archive_traversal_capability_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_REFS_ARCHIVE_TRAVERSAL_CAPABILITY=/ { print NR }')
-  if [ "$refs_enumeration_evidence_line" -ge "$ok_line" ] ||
-    [ "$refs_enumeration_capability_line" -ge "$ok_line" ] ||
-    [ "$refs_revalidation_evidence_line" -ge "$ok_line" ] ||
-    [ "$refs_revalidation_capability_line" -ge "$ok_line" ] ||
-    [ "$refs_claimed_removal_evidence_line" -ge "$ok_line" ] ||
-    [ "$refs_claimed_removal_capability_line" -ge "$ok_line" ] ||
-    [ "$refs_archive_traversal_evidence_line" -ge "$ok_line" ] ||
-    [ "$refs_archive_traversal_capability_line" -ge "$ok_line" ]; then
-    echo "ERROR: win-host-ci: ReFS matrix evidence acknowledgements must precede JOURNAL_WIN_CI_OK; rerun the current box gate" >&2
-    exit 1
-  fi
-fi
 if [ "$refs_publication" -eq 1 ]; then
   if [ "$ordinary_owner_refs_line" -ge "$ok_line" ] ||
     [ "$refs_publication_evidence_line" -ge "$ok_line" ] ||
@@ -365,4 +287,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed refs_publication_evidence=$refs_publication_evidence refs_publication_filesystem=$refs_publication_filesystem refs_enumeration_evidence=$refs_enumeration_evidence refs_enumeration_capability=$refs_enumeration_capability refs_revalidation_evidence=$refs_revalidation_evidence refs_revalidation_capability=$refs_revalidation_capability refs_claimed_removal_evidence=$refs_claimed_removal_evidence refs_claimed_removal_capability=$refs_claimed_removal_capability refs_archive_traversal_evidence=$refs_archive_traversal_evidence refs_archive_traversal_capability=$refs_archive_traversal_capability"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed ntfs_publication=executed/pass refs_publication=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

@@ -1,8 +1,8 @@
-# Journal filesystem contract
+# journal filesystem contract
 
 This is the shared vocabulary for a journal root, its identity, entry kinds, and
 refusals. It is not a generic VFS. `solstone-core-journal-io` supports Unix and
-Windows journal-root admission; `solstone-core-journal-archive` supports
+windows journal-root admission; `solstone-core-journal-archive` supports
 source-only traversal on both platforms. Archive encoding and publication remain
 Unix-only.
 
@@ -13,7 +13,7 @@ Unix-only.
 - **`JournalRoot`:** one admitted journal directory, retained by descriptor or
   handle.
 - **`ObjectIdentity`:** opaque platform identity: Unix `(device, inode)` or
-  Windows `(volume serial, 128-bit file ID)`. No public constructor, no
+  windows `(volume serial, 128-bit file ID)`. No public constructor, no
   accessors for the raw identity, no serde.
 - **`JournalEntryKind`:** exhaustive no-follow kind: `RegularFile`,
   `Directory`, `Symlink`, `Fifo`, `Socket`, `CharacterDevice`, `BlockDevice`,
@@ -38,9 +38,9 @@ Revalidate the admitted object (`fstat` of the retained descriptor against the
 frozen identity, and confirm it is still a directory). Do not walk the stored
 canonical path to reacquire.
 
-### Windows retained handle and gate-1 admission
+### windows retained handle and gate-1 admission
 
-Windows gate 1 admits only a journal root and its portable final name. Its
+windows gate 1 admits only a journal root and its portable final name. Its
 authoritative requested-root open uses `CreateFileW` with
 `FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | FILE_TRAVERSE` and
 `FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`. Admission also
@@ -68,7 +68,7 @@ admit; every other HRESULT refuses as unverifiable. `GetDriveTypeW` and
 already-validated path spelling, never identity reacquisition; identity comes
 exclusively from `FileIdInfo` on the retained handle.
 
-> **Known Windows gate-1 limitation:** the Win32 surface used here has no
+> **Known windows gate-1 limitation:** the Win32 surface used here has no
 > descriptor-relative open equivalent to Unix's `openat` + `O_NOFOLLOW` chain,
 > so the ancestor verification uses separate absolute-path opens. The final
 > target identity recheck catches final-target replacement, but cannot prove an
@@ -76,9 +76,9 @@ exclusively from `FileIdInfo` on the retained handle.
 > independent opens. This is materially weaker than Unix's descriptor-relative
 > walk and is a known gate-1 limitation, not equivalent-strength authority.
 
-### Windows retained-handle source operations
+### windows retained-handle source operations
 
-Windows source inventory and checked reads retain two independently admitted
+windows source inventory and checked reads retain two independently admitted
 root handles with one frozen identity: a synchronous listing/relative-open
 handle and an overlapped namespace-watch handle. Admission checks each handle
 as a non-reparse directory and refuses unless their `FileIdInfo` identities
@@ -98,7 +98,7 @@ There is no pre/post pathname listing fallback. The root's own identity
 revalidation remains necessary because directory change notifications do not
 report every change to the watched directory object itself.
 
-Recursive Windows inventory uses parent-relative child handles through the
+Recursive windows inventory uses parent-relative child handles through the
 handle-relative `NtCreateFile` route and `FileIdExtdDirectoryInfo`; every child
 is checked as a non-reparse directory or regular file and matched to its
 volume-serial plus 128-bit file identity before acceptance. To list a
@@ -107,24 +107,24 @@ same verified parent with listing access, then rechecks that second handle's
 identity against the first verification handle before recursing. It never
 reopens an already-open handle or uses a pathname fallback. A checked file read
 verifies every directory in its frozen route before reading, then rechecks the
-leaf metadata, root, and witness before returning any bytes. Windows retains
+leaf metadata, root, and witness before returning any bytes. windows retains
 the Gate-1 ancestor-swap and Cloud-Files-after-ancestor-rename limitation
 above; this source layer does not claim to strengthen it.
 
-### Windows retained-handle writer locks and leases
+### windows retained-handle writer locks and leases
 
-Windows writer coordination uses nonblocking whole-file advisory byte-range
+windows writer coordination uses nonblocking whole-file advisory byte-range
 locks through `LockFileEx` and `UnlockFileEx`. Lock and lease opens use broad
 read, write, and delete sharing so a second process can open the same sidecar
 and let the kernel report advisory contention rather than failing at open time.
 The lock range begins at zero and spans `0xFFFF_FFFF` low and high length words.
 
-Windows sidecar and persistent-lock opens request the reparse point itself and
-refuse it after a retained-handle attribute query; this is the Windows analogue
+windows sidecar and persistent-lock opens request the reparse point itself and
+refuse it after a retained-handle attribute query; this is the windows analogue
 of Unix `O_NOFOLLOW`. Persistent lock entries are revalidated after acquisition
 with `LockEntryIdentity` (volume serial plus a 128-bit file ID), matching the
 identity rule used by `ObjectIdentity`. Unix's mode-`0600` enforcement has no
-Windows ACL equivalent in this backend and is therefore not claimed.
+windows ACL equivalent in this backend and is therefore not claimed.
 
 `InventoryBudget` bounds complete source operations: total observed entries
 before portable policy filtering, recursive depth (admitted root is zero), one
@@ -170,7 +170,7 @@ Uses: archive manifest `source_journal`, export default path, and
 ## Archive reuse
 
 `ArchiveSource` holds exactly one `JournalRoot`. On Unix, inventory, `open_file`,
-and proof revalidation walk descendants through `AsFd`. On Windows, it freezes
+and proof revalidation walk descendants through `AsFd`. On windows, it freezes
 the witnessed journal-io inventory after applying the same portable deny policy;
 exact member reads delegate to journal-io's witnessed, retained-relative checked
 read and return complete verified bytes rather than a raw handle. In both cases,
@@ -182,7 +182,7 @@ read and return complete verified bytes rather than a raw handle. In both cases,
 
 `JournalRootError::Unsupported` is the explicit refusal for an unsupported
 backend policy; it is never a silent path-only mode. The Unix backend never
-emits it. Windows gate 1 uses it for reparse, filesystem, drive-type, and
+emits it. windows gate 1 uses it for reparse, filesystem, drive-type, and
 Cloud Files policy refusals; each carries a `WindowsRefusalCategory`.
 `CloudSyncRootStatusUnverifiable` carries the returned raw HRESULT when one
 exists, while `CloudSyncRootRegistered` denotes S_OK; `ReFS` roots do not
@@ -191,22 +191,41 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 
 ## Future-backend obligations
 
-Windows covers root admission, complete witnessed source enumeration, route
+windows covers root admission, complete witnessed source enumeration, route
 revalidation, checked archive-source reads, portable name admission, and
 durable `append_jsonl`.
 
-Detailed atomic publication has a Windows implementation pending Gate 4 native
-proof. It remains unsupported on Windows until a VPE-direct, source-bound native
-receipt has passed on both NTFS and ReFS. The proof exercises a
-stage-in-the-bound-parent, flush, no-follow revalidation, bounded transient-retry,
-and outcome-preserving path. Callers still must hold the stable writer lock; this
-does not provide a concurrent read-modify-write guarantee. An NTFS metadata flush
-does not establish ReFS durability; the receipt is filesystem-specific execution
-evidence, not a power-loss or universal-durability guarantee.
+windows `atomic_replace_detailed` stages beside the destination, writes and
+flushes the staged file, then calls path-based
+[`MoveFileExW`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)
+with `MOVEFILE_REPLACE_EXISTING`. It retries only bounded transient sharing,
+lock, and scanner-style access-denied failures. Validation, reparse or
+namespace changes, full disks, and unknown errors remain failures. There is no
+windows directory-fsync step in this surface. Callers still hold the stable
+writer lock; this does not provide a concurrent read-modify-write guarantee.
 
-Retention, packaging, archive encoding and publication, `flat_directory`,
-`snapshot`, `staged`, `health_marker`, `append_text`, and `claim_remove`
-remain explicitly Unix-only and unsupported on Windows in this slice.
+Same-volume replacement is not an atomicity guarantee Microsoft documents. A passed native
+receipt is filesystem-specific execution evidence, not a power-loss or
+universal-durability guarantee. `DetailedAtomicOutcome` preserves publication
+and later-observation uncertainty rather than calling an uncertain result a
+success.
+
+An interrupted publication leaves the old complete record or the new complete
+record and may leave a same-directory staged file. A leaked stage is an
+opportunistic-cleanup concern: it does not make a later write fail. A malformed
+or torn heartbeat is rejected by the bounded read and classification path; it
+is never silently accepted as a valid record.
+
+windows lifecycle collection may plain-delete a stale heartbeat only after the
+existing strict-more-than-24-hours age check and two consecutive complete,
+unchanged scans. An incomplete scan, changed observation, or malformed record
+does not earn deletion. windows does not implement the Unix claimed-removal
+state machine.
+
+Packaging, `snapshot`, `staged`, `health_marker`, `append_text`, and the Unix
+`FlatDirectory` and `claim_remove` APIs remain Unix-only. windows lifecycle
+uses its separate no-follow, bounded directory substrate only for the supported
+heartbeat path; this is not a general archive or packaging capability.
 
 A later backend must: admit once; retain an opaque identity; revalidate that
 object rather than reopen by path; surface the same four refusals; forbid
@@ -221,7 +240,7 @@ directory descriptor and a single normal name. They never open a parent via `AT_
 and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `Published` or
 `PublishedDurabilityUncertain` only; pathname-identity outcomes stay on `atomic_replace_detailed`.
 `acquire_existing_parent_lock_bound` uses `AsFd` on Unix and has a real `AsHandle` implementation
-on Windows; the other bound APIs remain Unix-only and `AsFd`-only.
+on windows; the other bound APIs remain Unix-only and `AsFd`-only.
 `acquire_existing_parent_lock_bound` returns `BoundParentLock`, which has no `path()`.
 Descendant walks remain the caller's (archive inventory).
 `is_day_key` is the single 8-digit day-key predicate.
@@ -267,65 +286,31 @@ Original disappearance after a valid observation is `UnknownLocation`, never
 benign absence. Ambiguous rename errors are reconciled by no-follow observation
 of both direct names before any deletion decision.
 
-An already-open descriptor can still mutate the claimed object. This API does
-not provide hard-link ownership proof, advisory locking, persistent claim
-registry or cleanup, claim-name hiding, recursive removal, Windows support,
+An already-open descriptor can still mutate the claimed object. This Unix API
+does not provide hard-link ownership proof, advisory locking, persistent claim
+registry or cleanup, claim-name hiding, recursive removal, windows support,
 heartbeat behavior, or archive refactoring.
 
-Windows `claim_and_remove_observed` is explicitly unsupported. The published
-Win32 and NTFS documentation establishes collision behavior, POSIX-style
-deletion, and metadata caching, but not the one property the Unix state
-machine depends on: an atomic transfer of the observed original into an
-absent claim name that holds under concurrent namespace creators, with
-directory-level durability.
-
-[`FILE_RENAME_INFO`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
-documents a handle-relative rename destination via `RootDirectory` and that a
-false `ReplaceIfExists` errors when the target exists, collision behavior,
-not a documented atomic transfer into an absent claim name under a concurrent
-creator.
-[`SetFileInformationByHandle`](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)
-documents the handle-information operation itself and warns that behavior can
-differ by information class across OS releases; it supplies no missing
-concurrency guarantee for the claim step, and it is also the source of the
-`ReFS` support statement addressed below. Once a claim exists,
-[`FILE_DISPOSITION_INFORMATION_EX`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)
-documents POSIX deletion semantics, closing the delete handle removes the
-visible link while existing handles remain usable, but this is a post-claim
-deletion mechanism that cannot repair the undocumented atomic claim step that
-has to happen first.
-[`File caching`](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching)
-states that filesystem metadata is cached, which is exactly why an
-undocumented durability barrier is disqualifying rather than incidental.
-
-[`CreateFile`'s write-through documentation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea)
-names rename metadata among the `NTFS` metadata changes
-`FILE_FLAG_WRITE_THROUGH` flushes. That is an `NTFS`-specific metadata-flush
-fact, not a documented atomic no-replace transfer under concurrent namespace
-creation, and it has no `ReFS` counterpart: `SetFileInformationByHandle`'s
-statement that the operation is supported on `ReFS` is support, not a
-durability proof, and none of these five documents supplies an equivalent
-`ReFS` durability guarantee. The missing atomic claim transfer is
-independently sufficient to keep this fail-closed on both `NTFS` and `ReFS`;
-the `NTFS` metadata-flush fact neither supplies that missing concurrency
-property nor extends to an equivalent `ReFS` durability guarantee. Windows
-therefore does not substitute a path-based claim, overwrite-capable rename,
-or uncertain delete for the Unix state machine.
+windows deliberately does not substitute a path-based claim or an
+overwrite-capable rename for this state machine. Its lifecycle heartbeat
+collector instead uses the separately stated age-and-stability gate before a
+plain verified deletion. That gate is specific to stale heartbeats: it is not a
+general replacement for Unix claim-and-remove semantics.
 
 ## Append JSONL
 
-`append_jsonl` is available on Unix and Windows. It serializes one record,
+`append_jsonl` is available on Unix and windows. It serializes one record,
 adds one newline, performs one append write, and requires `File::sync_all` to
 succeed before it returns success. A write error can still leave a partial
 record if the operating system reports a short write; callers must treat every
 error as indeterminate on-disk state.
 
 On Unix, a newly created record file also receives the existing best-effort
-parent-directory sync. Windows has no equivalent directory-handle sync in this
-surface, so a Windows success means the record file flush completed; it does
+parent-directory sync. windows has no equivalent directory-handle sync in this
+surface, so a windows success means the record file flush completed; it does
 not claim durable parent-directory entry creation. `append_text` remains
 Unix-only because this lane exposes only the JSONL primitive used by
-Callosum's Windows-compilable default surface.
+Callosum's windows-compilable default surface.
 
 ## No-replace platform support
 
@@ -360,7 +345,7 @@ and mutation.
 `resolve_segment_exact`, and `resolve_segment_locator_exact` are a
 strict-admission / exact-read preparatory API with stable pre-existing checks.
 They are not authoritative across namespace races until the following
-root-bound caller cutover. They are not Windows support.
+root-bound caller cutover. They are not windows support.
 
 `RecordIdentity` / `record_identity()` is the legacy sentinel: Direct spells as
 `_default`, and a literal Named `_default` directory is unrepresentable and

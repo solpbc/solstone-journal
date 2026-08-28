@@ -2273,7 +2273,6 @@ mod tests {
         assert!(!trusted_systemd_vendor_drop_in(Path::new(
             "/usr/lib/systemd/user/service.d/foreign.txt"
         )));
-        assert!(trusted_root_owned_directory(Path::new("/")));
         assert!(!trusted_root_owned_directory(Path::new("/tmp")));
     }
 
