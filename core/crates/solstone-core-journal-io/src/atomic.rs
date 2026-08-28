@@ -38,7 +38,9 @@ use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 #[cfg(unix)]
 use crate::errors::AtomicWriteError;
 #[cfg(unix)]
-use crate::flat_directory::{FileObservation, entry_from_stat, same_entry_metadata};
+use crate::flat_directory::entry_from_stat;
+#[cfg(unix)]
+use crate::observation::{FileObservation, same_entry_metadata};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -435,7 +437,8 @@ mod windows_atomic;
 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_atomic::{
-    run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
+    run_with_windows_detailed_atomic_backoffs, run_with_windows_detailed_atomic_barrier,
+    run_with_windows_detailed_atomic_faults, run_with_windows_detailed_atomic_faults_and_barrier,
 };
 
 /// Atomically replace a regular destination beneath an already-bound parent.

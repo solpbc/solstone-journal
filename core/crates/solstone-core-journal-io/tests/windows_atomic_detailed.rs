@@ -17,11 +17,14 @@ use std::time::{Duration, Instant};
 
 use solstone_core_journal_io::DetailedAtomicOutcome;
 use solstone_core_journal_io::atomic::{
-    atomic_replace_detailed, run_with_windows_detailed_atomic_barrier,
-    run_with_windows_detailed_atomic_faults,
+    atomic_replace_detailed, run_with_windows_detailed_atomic_backoffs,
+    run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
+    run_with_windows_detailed_atomic_faults_and_barrier,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, INVALID_HANDLE_VALUE,
+    ERROR_ACCESS_DENIED, ERROR_DISK_FULL, ERROR_INVALID_FUNCTION, ERROR_LOCK_VIOLATION,
+    ERROR_REPARSE_TAG_INVALID, ERROR_SHARING_VIOLATION, ERROR_USER_MAPPED_FILE,
+    INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
@@ -35,13 +38,6 @@ const OUTSIDE_SENTINEL: &[u8] = b"outside-before";
 
 fn wide(value: &OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
-}
-
-fn assert_old_or_new(bytes: &[u8]) {
-    assert!(
-        bytes == OLD || bytes == NEW,
-        "partial destination: {bytes:?}"
-    );
 }
 
 fn wait_for_marker(marker: &Path, step: &str) {
@@ -110,7 +106,6 @@ fn detailed_atomic_replace_survives_kill_at_every_checkpoint() {
         "close",
         "pre-publication-validation",
         "rename",
-        "fsync-bound-parent-dir",
         "post-publication-observation",
         "cleanup",
     ] {
@@ -131,7 +126,11 @@ fn detailed_atomic_replace_survives_kill_at_every_checkpoint() {
         child.kill().unwrap();
         let status = child.wait().unwrap();
         assert!(!status.success(), "helper unexpectedly completed at {step}");
-        assert_old_or_new(&fs::read(&target).unwrap());
+        let expected = match step {
+            "rename" | "post-publication-observation" => NEW,
+            _ => OLD,
+        };
+        assert_eq!(fs::read(&target).unwrap(), expected, "checkpoint {step}");
         assert!(fs::read_dir(&parent).unwrap().all(|entry| {
             let name = entry.unwrap().file_name();
             name == OsStr::new("unit.service")
@@ -158,12 +157,41 @@ fn partial_destination_mutation_is_observed_as_unverified() {
         result.unwrap(),
         DetailedAtomicOutcome::PublishedParentPathUnverified { .. }
     ));
-    let partial_is_rejected = catch_unwind(AssertUnwindSafe(|| assert_old_or_new(b"partial")));
+    let partial_is_rejected = catch_unwind(AssertUnwindSafe(|| {
+        assert!(b"partial" == OLD || b"partial" == NEW)
+    }));
     assert!(
         partial_is_rejected.is_err(),
         "old-or-new assertion is a no-op"
     );
     assert_eq!(fs::read(target).unwrap(), b"partial");
+    assert_sentinel_unchanged(&sentinel);
+}
+
+#[test]
+fn post_publication_validation_failure_is_observed_as_unverified() {
+    let (_temporary, parent, target) = target_fixture("post-publication-validation");
+    let sentinel = outside_sentinel(&parent);
+    let (result, attempted) = run_with_windows_detailed_atomic_faults(
+        [(
+            "post-publication-observation",
+            1,
+            ERROR_ACCESS_DENIED as i32,
+        )],
+        || atomic_replace_detailed(&target, NEW, 0o600),
+    );
+    assert!(matches!(
+        result.unwrap(),
+        DetailedAtomicOutcome::PublishedParentPathUnverified { .. }
+    ));
+    assert_eq!(fs::read(&target).unwrap(), NEW);
+    assert_eq!(
+        attempted
+            .iter()
+            .filter(|step| **step == "post-publication-observation")
+            .count(),
+        1
+    );
     assert_sentinel_unchanged(&sentinel);
 }
 
@@ -177,7 +205,6 @@ fn absent_destination_publishes_and_missing_parent_is_not_created() {
     assert!(matches!(
         atomic_replace_detailed(&absent, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
-            | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
     ));
     assert_eq!(fs::read(&absent).unwrap(), NEW);
     assert_sentinel_unchanged(&sentinel);
@@ -213,6 +240,30 @@ fn temp_redirection_cannot_move_the_stage_outside_the_destination_parent() {
 }
 
 #[test]
+fn leaked_stage_then_republish_succeeds() {
+    let (_temporary, parent, target) = target_fixture("leaked-stage-republish");
+    let sentinel = outside_sentinel(&parent);
+    let marker = parent.join("pause-marker");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_DETAILED_TARGET", &target)
+        .env("JOURNAL_IO_TEST_PAUSE_AT", "temp-create")
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    wait_for_marker(&marker, "temp-create");
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(!stage_names(&parent).is_empty());
+    assert!(matches!(
+        atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
+        DetailedAtomicOutcome::Published
+    ));
+    assert_eq!(fs::read(&target).unwrap(), NEW);
+    assert_sentinel_unchanged(&sentinel);
+}
+
+#[test]
 fn pre_publication_cleanup_failure_reports_the_orphan_stage() {
     let (_temporary, parent, target) = target_fixture("cleanup-failure");
     let sentinel = outside_sentinel(&parent);
@@ -235,58 +286,155 @@ fn pre_publication_cleanup_failure_reports_the_orphan_stage() {
 }
 
 #[test]
-fn transient_and_permanent_destination_failures_have_bounded_attempts() {
-    let (_temporary, parent, target) = target_fixture("transient-success");
-    let sentinel = outside_sentinel(&parent);
-    let (result, attempted) = run_with_windows_detailed_atomic_faults(
-        [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
-        || atomic_replace_detailed(&target, NEW, 0o600),
-    );
-    assert!(matches!(
-        result.unwrap(),
-        DetailedAtomicOutcome::Published
-            | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
-    ));
-    assert_eq!(
-        attempted.iter().filter(|step| **step == "rename").count(),
-        2
-    );
-    assert_sentinel_unchanged(&sentinel);
+fn retryable_publication_errors_have_four_attempts_and_three_recorded_backoffs() {
+    for (label, raw_error) in [
+        ("sharing", ERROR_SHARING_VIOLATION),
+        ("lock", ERROR_LOCK_VIOLATION),
+        ("access-denied", ERROR_ACCESS_DENIED),
+    ] {
+        let (_temporary, parent, target) = target_fixture(label);
+        let sentinel = outside_sentinel(&parent);
+        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+            run_with_windows_detailed_atomic_faults(
+                [
+                    ("rename", 1, raw_error as i32),
+                    ("rename", 2, raw_error as i32),
+                    ("rename", 3, raw_error as i32),
+                ],
+                || atomic_replace_detailed(&target, NEW, 0o600),
+            )
+        });
+        assert!(matches!(result.unwrap(), DetailedAtomicOutcome::Published));
+        assert_eq!(
+            attempted.iter().filter(|step| **step == "rename").count(),
+            4,
+            "{label}"
+        );
+        assert_eq!(backoffs, vec![Duration::from_millis(250); 3], "{label}");
+        assert_eq!(fs::read(&target).unwrap(), NEW);
+        assert_sentinel_unchanged(&sentinel);
+    }
+}
 
-    let (_temporary, parent, target) = target_fixture("permanent-hold");
+#[test]
+fn retryable_publication_errors_exhaust_without_replacing_the_destination() {
+    for (label, raw_error) in [
+        ("sharing-exhaust", ERROR_SHARING_VIOLATION),
+        ("lock-exhaust", ERROR_LOCK_VIOLATION),
+        ("access-denied-exhaust", ERROR_ACCESS_DENIED),
+    ] {
+        let (_temporary, parent, target) = target_fixture(label);
+        let sentinel = outside_sentinel(&parent);
+        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+            run_with_windows_detailed_atomic_faults(
+                [
+                    ("rename", 1, raw_error as i32),
+                    ("rename", 2, raw_error as i32),
+                    ("rename", 3, raw_error as i32),
+                    ("rename", 4, raw_error as i32),
+                ],
+                || atomic_replace_detailed(&target, NEW, 0o600),
+            )
+        });
+        assert!(result.is_err(), "{label}");
+        assert_eq!(
+            attempted.iter().filter(|step| **step == "rename").count(),
+            4,
+            "{label}"
+        );
+        assert_eq!(backoffs, vec![Duration::from_millis(250); 3], "{label}");
+        assert_eq!(fs::read(&target).unwrap(), OLD);
+        assert_sentinel_unchanged(&sentinel);
+    }
+}
+
+#[test]
+fn one_shot_publication_errors_are_not_retried() {
+    for (label, raw_error) in [
+        ("user-mapped", ERROR_USER_MAPPED_FILE),
+        ("reparse", ERROR_REPARSE_TAG_INVALID),
+        ("disk", ERROR_DISK_FULL),
+        ("unknown", ERROR_INVALID_FUNCTION),
+    ] {
+        let (_temporary, parent, target) = target_fixture(label);
+        let sentinel = outside_sentinel(&parent);
+        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+            run_with_windows_detailed_atomic_faults([("rename", 1, raw_error as i32)], || {
+                atomic_replace_detailed(&target, NEW, 0o600)
+            })
+        });
+        assert!(result.is_err(), "{label}");
+        assert_eq!(
+            attempted.iter().filter(|step| **step == "rename").count(),
+            1,
+            "{label}"
+        );
+        assert!(backoffs.is_empty(), "{label}");
+        assert_eq!(fs::read(&target).unwrap(), OLD);
+        assert_sentinel_unchanged(&sentinel);
+    }
+
+    let (_temporary, parent, target) = target_fixture("validation");
     let sentinel = outside_sentinel(&parent);
-    let (result, attempted) = run_with_windows_detailed_atomic_faults(
-        [
-            ("rename", 1, ERROR_LOCK_VIOLATION as i32),
-            ("rename", 2, ERROR_LOCK_VIOLATION as i32),
-            ("rename", 3, ERROR_LOCK_VIOLATION as i32),
-        ],
-        || atomic_replace_detailed(&target, NEW, 0o600),
-    );
+    let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        run_with_windows_detailed_atomic_faults(
+            [(
+                "pre-publication-validation",
+                1,
+                ERROR_INVALID_FUNCTION as i32,
+            )],
+            || atomic_replace_detailed(&target, NEW, 0o600),
+        )
+    });
     assert!(result.is_err());
-    assert_eq!(fs::read(&target).unwrap(), OLD);
+    assert_eq!(
+        attempted
+            .iter()
+            .filter(|step| **step == "pre-publication-validation")
+            .count(),
+        1
+    );
     assert_eq!(
         attempted.iter().filter(|step| **step == "rename").count(),
-        3
+        0
     );
+    assert!(backoffs.is_empty());
+    assert_eq!(fs::read(&target).unwrap(), OLD);
     assert_sentinel_unchanged(&sentinel);
 }
 
 #[test]
-fn permanent_publication_error_is_not_retried() {
-    let (_temporary, parent, target) = target_fixture("permanent-error");
-    let sentinel = outside_sentinel(&parent);
-    let (result, attempted) = run_with_windows_detailed_atomic_faults(
-        [("rename", 1, ERROR_ACCESS_DENIED as i32)],
-        || atomic_replace_detailed(&target, NEW, 0o600),
-    );
+fn changed_evidence_during_backoff_refuses_before_a_later_move() {
+    let (_temporary, parent, target) = target_fixture("backoff-race");
+    let outside = outside_sentinel(&parent);
+    let moved_parent = parent.with_extension("moved");
+    let raced_parent = parent.clone();
+    let raced_target = target.clone();
+    let ((result, attempted, fired), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        run_with_windows_detailed_atomic_faults_and_barrier(
+            [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
+            "before-publication-revalidation",
+            2,
+            move || {
+                fs::rename(&raced_parent, &moved_parent).unwrap();
+                fs::create_dir(&raced_parent).unwrap();
+                fs::write(&raced_target, b"raced-location").unwrap();
+            },
+            || atomic_replace_detailed(&target, NEW, 0o600),
+        )
+    });
+    assert!(fired);
     assert!(result.is_err());
-    assert_eq!(fs::read(&target).unwrap(), OLD);
     assert_eq!(
         attempted.iter().filter(|step| **step == "rename").count(),
         1
     );
-    assert_sentinel_unchanged(&sentinel);
+    assert_eq!(backoffs, vec![Duration::from_millis(250)]);
+    assert_eq!(
+        fs::read(parent.join("unit.service")).unwrap(),
+        b"raced-location"
+    );
+    assert_sentinel_unchanged(&outside);
 }
 
 #[test]
@@ -325,7 +473,6 @@ fn hard_link_alias_retains_the_prepublication_file() {
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
-            | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
     ));
     assert_eq!(fs::read(&target).unwrap(), NEW);
     assert_eq!(fs::read(&alias).unwrap(), OLD);
@@ -374,7 +521,6 @@ fn refs_publication_receipt() {
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
-            | DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
     ));
     assert_eq!(fs::read(target).unwrap(), NEW);
     assert_sentinel_unchanged(&sentinel);
