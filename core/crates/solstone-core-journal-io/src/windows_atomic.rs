@@ -398,6 +398,8 @@ fn move_stage_to_destination(
             MOVEFILE_REPLACE_EXISTING,
         )
     };
+    #[cfg(any(test, feature = "test-hooks"))]
+    record_windows_real_move();
     (result != 0)
         .then_some(())
         .ok_or_else(io::Error::last_os_error)?;
@@ -571,6 +573,7 @@ fn is_retryable_publication_error(error: &io::Error) -> bool {
 #[cfg(any(test, feature = "test-hooks"))]
 struct WindowsPublicationTraceState {
     attempted: Vec<&'static str>,
+    real_moves: usize,
     faults: Vec<WindowsPublicationFault>,
     barriers: Vec<WindowsPublicationBarrier>,
 }
@@ -644,7 +647,7 @@ fn sleep_or_record_publication_backoff(delay: Duration) {
 pub fn run_with_windows_detailed_atomic_faults<T>(
     faults: impl IntoIterator<Item = (&'static str, usize, i32)>,
     op: impl FnOnce() -> T,
-) -> (T, Vec<&'static str>) {
+) -> (T, Vec<&'static str>, usize) {
     WINDOWS_PUBLICATION_TRACE.with(|trace| {
         assert!(
             trace.borrow().is_none(),
@@ -652,6 +655,7 @@ pub fn run_with_windows_detailed_atomic_faults<T>(
         );
         *trace.borrow_mut() = Some(WindowsPublicationTraceState {
             attempted: Vec::new(),
+            real_moves: 0,
             faults: faults
                 .into_iter()
                 .map(|(step, ordinal, raw_error)| WindowsPublicationFault {
@@ -670,7 +674,7 @@ pub fn run_with_windows_detailed_atomic_faults<T>(
             .take()
             .expect("Windows detailed publication trace remains active")
     });
-    (result, state.attempted)
+    (result, state.attempted, state.real_moves)
 }
 
 /// Run `op` with one deterministic Windows detailed-publication barrier callback.
@@ -688,6 +692,7 @@ pub fn run_with_windows_detailed_atomic_barrier<T>(
         );
         *trace.borrow_mut() = Some(WindowsPublicationTraceState {
             attempted: Vec::new(),
+            real_moves: 0,
             faults: Vec::new(),
             barriers: vec![WindowsPublicationBarrier {
                 step,
@@ -722,6 +727,7 @@ pub fn run_with_windows_detailed_atomic_faults_and_barrier<T>(
         );
         *trace.borrow_mut() = Some(WindowsPublicationTraceState {
             attempted: Vec::new(),
+            real_moves: 0,
             faults: faults
                 .into_iter()
                 .map(|(step, ordinal, raw_error)| WindowsPublicationFault {
@@ -782,6 +788,15 @@ fn checkpoint(step: &'static str) -> io::Result<()> {
         callback();
     }
     Ok(())
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_windows_real_move() {
+    WINDOWS_PUBLICATION_TRACE.with(|trace| {
+        if let Some(state) = trace.borrow_mut().as_mut() {
+            state.real_moves += 1;
+        }
+    });
 }
 
 #[cfg(not(any(test, feature = "test-hooks")))]

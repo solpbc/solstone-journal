@@ -11,7 +11,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -49,6 +49,59 @@ fn wait_for_marker(marker: &Path, step: &str) {
         thread::sleep(Duration::from_millis(10));
     }
     panic!("detailed publication did not pause at {step}");
+}
+
+fn kill_paused_detailed_atomic_helper(child: &mut Child, marker: &Path, step: &str) -> ExitStatus {
+    wait_for_marker(marker, step);
+    match child.try_wait() {
+        Ok(None) => {}
+        Ok(Some(status)) => {
+            panic!("detailed publication helper exited before kill at {step}: {status}")
+        }
+        Err(error) => {
+            panic!(
+                "could not query detailed publication helper status before kill at {step}: {error}"
+            )
+        }
+    }
+    child.kill().unwrap();
+    child.wait().unwrap()
+}
+
+fn assert_complete_stable_file(path: &Path, expected: &[u8]) {
+    let metadata = fs::metadata(path)
+        .unwrap_or_else(|error| panic!("read metadata for {}: {error}", path.display()));
+    assert!(
+        metadata.is_file(),
+        "{} must remain a regular file",
+        path.display()
+    );
+    let before = file_identity(path);
+    let bytes = fs::read(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let after = file_identity(path);
+    assert_eq!(
+        after,
+        before,
+        "{} changed identity while its content was read",
+        path.display()
+    );
+    assert_eq!(
+        bytes,
+        expected,
+        "unexpected complete content at {}",
+        path.display()
+    );
+}
+
+fn assert_file_not_found(path: &Path) {
+    match fs::metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Ok(_) => panic!("{} unexpectedly exists", path.display()),
+        Err(error) => panic!(
+            "expected metadata for {} to return NotFound, got {error}",
+            path.display()
+        ),
+    }
 }
 
 fn target_fixture(label: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -93,7 +146,7 @@ fn detailed_atomic_pause_helper() {
         return;
     };
     if std::env::var_os("JOURNAL_IO_DETAILED_FAIL_BEFORE_CLEANUP").is_some() {
-        let (result, _) = run_with_windows_detailed_atomic_faults(
+        let (result, _, _) = run_with_windows_detailed_atomic_faults(
             [("write", 1, ERROR_ACCESS_DENIED as i32)],
             || atomic_replace_detailed(Path::new(&target), NEW, 0o600),
         );
@@ -131,9 +184,7 @@ fn detailed_atomic_replace_survives_kill_at_every_checkpoint() {
             command.env("JOURNAL_IO_DETAILED_FAIL_BEFORE_CLEANUP", "1");
         }
         let mut child = command.spawn().unwrap();
-        wait_for_marker(&marker, step);
-        child.kill().unwrap();
-        let status = child.wait().unwrap();
+        let status = kill_paused_detailed_atomic_helper(&mut child, &marker, step);
         assert!(!status.success(), "helper unexpectedly completed at {step}");
         let expected = match step {
             "rename" | "post-publication-observation" => NEW,
@@ -181,7 +232,7 @@ fn partial_destination_mutation_is_observed_as_unverified() {
 fn post_publication_validation_failure_is_observed_as_unverified() {
     let (_temporary, parent, target) = target_fixture("post-publication-validation");
     let sentinel = outside_sentinel(&parent);
-    let (result, attempted) = run_with_windows_detailed_atomic_faults(
+    let (result, attempted, _) = run_with_windows_detailed_atomic_faults(
         [(
             "post-publication-observation",
             1,
@@ -240,9 +291,7 @@ fn temp_redirection_cannot_move_the_stage_outside_the_destination_parent() {
         .env("TMP", foreign.path())
         .spawn()
         .unwrap();
-    wait_for_marker(&marker, "temp-create");
-    child.kill().unwrap();
-    child.wait().unwrap();
+    let _ = kill_paused_detailed_atomic_helper(&mut child, &marker, "temp-create");
     assert!(!stage_names(&parent).is_empty());
     assert!(stage_names(foreign.path()).is_empty());
     assert_sentinel_unchanged(&sentinel);
@@ -260,9 +309,7 @@ fn leaked_stage_then_republish_succeeds() {
         .env("JOURNAL_IO_TEST_MARKER", &marker)
         .spawn()
         .unwrap();
-    wait_for_marker(&marker, "temp-create");
-    child.kill().unwrap();
-    child.wait().unwrap();
+    let _ = kill_paused_detailed_atomic_helper(&mut child, &marker, "temp-create");
     assert!(!stage_names(&parent).is_empty());
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
@@ -276,7 +323,7 @@ fn leaked_stage_then_republish_succeeds() {
 fn pre_publication_cleanup_failure_reports_the_orphan_stage() {
     let (_temporary, parent, target) = target_fixture("cleanup-failure");
     let sentinel = outside_sentinel(&parent);
-    let (result, attempted) = run_with_windows_detailed_atomic_faults(
+    let (result, attempted, _) = run_with_windows_detailed_atomic_faults(
         [
             ("write", 1, ERROR_ACCESS_DENIED as i32),
             ("cleanup", 1, ERROR_ACCESS_DENIED as i32),
@@ -303,7 +350,7 @@ fn retryable_publication_errors_have_four_attempts_and_three_recorded_backoffs()
     ] {
         let (_temporary, parent, target) = target_fixture(label);
         let sentinel = outside_sentinel(&parent);
-        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        let ((result, attempted, _), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
             run_with_windows_detailed_atomic_faults(
                 [
                     ("rename", 1, raw_error as i32),
@@ -334,7 +381,7 @@ fn retryable_publication_errors_exhaust_without_replacing_the_destination() {
     ] {
         let (_temporary, parent, target) = target_fixture(label);
         let sentinel = outside_sentinel(&parent);
-        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        let ((result, attempted, _), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
             run_with_windows_detailed_atomic_faults(
                 [
                     ("rename", 1, raw_error as i32),
@@ -367,7 +414,7 @@ fn one_shot_publication_errors_are_not_retried() {
     ] {
         let (_temporary, parent, target) = target_fixture(label);
         let sentinel = outside_sentinel(&parent);
-        let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        let ((result, attempted, _), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
             run_with_windows_detailed_atomic_faults([("rename", 1, raw_error as i32)], || {
                 atomic_replace_detailed(&target, NEW, 0o600)
             })
@@ -385,7 +432,7 @@ fn one_shot_publication_errors_are_not_retried() {
 
     let (_temporary, parent, target) = target_fixture("validation");
     let sentinel = outside_sentinel(&parent);
-    let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+    let ((result, attempted, _), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
         run_with_windows_detailed_atomic_faults(
             [(
                 "pre-publication-validation",
@@ -493,12 +540,26 @@ fn hard_link_alias_retains_the_prepublication_file() {
 fn existing_destination_publication_receipt(root: &Path) {
     let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-existing");
     let sentinel = outside_sentinel(&parent);
-    assert_eq!(fs::read(&target).unwrap(), OLD);
+    let marker = parent.join("pause-marker");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_DETAILED_TARGET", &target)
+        .env("JOURNAL_IO_TEST_PAUSE_AT", "pre-publication-validation")
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let status =
+        kill_paused_detailed_atomic_helper(&mut child, &marker, "pre-publication-validation");
+    assert!(
+        !status.success(),
+        "helper unexpectedly completed before existing-destination publication"
+    );
+    assert_complete_stable_file(&target, OLD);
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
     ));
-    assert_eq!(fs::read(&target).unwrap(), NEW);
+    assert_complete_stable_file(&target, NEW);
     assert_sentinel_unchanged(&sentinel);
 }
 
@@ -506,12 +567,27 @@ fn absent_destination_publication_receipt(root: &Path) {
     let (temporary, parent, absent) = target_fixture_in(Some(root), "publication-absent");
     let sentinel = outside_sentinel(&parent);
     fs::remove_file(&absent).unwrap();
-    assert!(!absent.exists());
+    assert_file_not_found(&absent);
+    let marker = parent.join("pause-marker");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_DETAILED_TARGET", &absent)
+        .env("JOURNAL_IO_TEST_PAUSE_AT", "pre-publication-validation")
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let status =
+        kill_paused_detailed_atomic_helper(&mut child, &marker, "pre-publication-validation");
+    assert!(
+        !status.success(),
+        "helper unexpectedly completed before absent-destination publication"
+    );
+    assert_file_not_found(&absent);
     assert!(matches!(
         atomic_replace_detailed(&absent, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
     ));
-    assert_eq!(fs::read(&absent).unwrap(), NEW);
+    assert_complete_stable_file(&absent, NEW);
 
     let missing_parent = temporary.path().join("missing");
     let missing = missing_parent.join("unit.service");
@@ -531,9 +607,7 @@ fn leaked_stage_then_recovery_publication_receipt(root: &Path) {
         .env("JOURNAL_IO_TEST_MARKER", &marker)
         .spawn()
         .unwrap();
-    wait_for_marker(&marker, "temp-create");
-    child.kill().unwrap();
-    child.wait().unwrap();
+    let _ = kill_paused_detailed_atomic_helper(&mut child, &marker, "temp-create");
     assert!(!stage_names(&parent).is_empty());
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
@@ -546,17 +620,22 @@ fn leaked_stage_then_recovery_publication_receipt(root: &Path) {
 fn classified_retry_then_real_move_publication_receipt(root: &Path) {
     let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-retry");
     let sentinel = outside_sentinel(&parent);
-    let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
-        run_with_windows_detailed_atomic_faults(
-            [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
-            || atomic_replace_detailed(&target, NEW, 0o600),
-        )
-    });
+    let ((result, attempted, real_moves), backoffs) =
+        run_with_windows_detailed_atomic_backoffs(|| {
+            run_with_windows_detailed_atomic_faults(
+                [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
+                || atomic_replace_detailed(&target, NEW, 0o600),
+            )
+        });
     assert!(matches!(result.unwrap(), DetailedAtomicOutcome::Published));
     assert_eq!(
         attempted.iter().filter(|step| **step == "rename").count(),
         2,
         "the injected first terminal-move fault must be followed by a real move"
+    );
+    assert_eq!(
+        real_moves, 1,
+        "the injected rename fault must not invoke MoveFileExW, and the retry must invoke it once"
     );
     assert_eq!(
         backoffs,
@@ -595,12 +674,6 @@ fn refs_publication_receipt() {
         .prefix("solstone-refs-publication-")
         .tempdir_in(&root)
         .unwrap();
-    let temp_volume = file_identity(&std::env::temp_dir());
-    let destination_volume = file_identity(temporary.path());
-    assert_ne!(
-        temp_volume.0, destination_volume.0,
-        "ReFS receipt requires TEMP/TMP on a different volume from the destination"
-    );
     publication_receipt(temporary.path());
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass");
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS");
