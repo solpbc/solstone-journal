@@ -284,6 +284,7 @@ fn phase_a_two_tick_deletion(root: &Path) {
 fn phase_b_bounded_malformed_is_never_deleted(root: &Path) {
     let temporary = phase_root(root, "stale-heartbeat-phase-b-");
     let (filename, body, peer) = write_bounded_malformed_peer(temporary.path());
+    let pre_tick_identity = file_identity(&peer);
     let mut lifecycle = boot(temporary.path());
     let mut clock = ReceiptClock::new();
 
@@ -301,13 +302,37 @@ fn phase_b_bounded_malformed_is_never_deleted(root: &Path) {
             &observation.classification,
             HeartbeatClassification::BoundedMalformed
         ));
+        assert_eq!(
+            completed_scan_identity(&lifecycle, &filename),
+            pre_tick_identity,
+            "completed-scan identity must match the pre-tick native identity after tick 1"
+        );
         assert_eq!(fs::read(&peer).expect("read bounded malformed peer"), body);
+        assert!(peer.exists());
 
         assert_completed(tick(&mut lifecycle, &mut clock));
+        let completed = lifecycle
+            .last_completed_sync_result()
+            .expect("bounded malformed tick completed");
+        let observation = completed
+            .peer_observations
+            .iter()
+            .find(|observation| observation.source_filename == OsStr::new(&filename))
+            .expect("bounded malformed peer observed after second tick");
+        assert!(matches!(
+            &observation.classification,
+            HeartbeatClassification::BoundedMalformed
+        ));
+        assert_eq!(
+            completed_scan_identity(&lifecycle, &filename),
+            pre_tick_identity,
+            "completed-scan identity must match the pre-tick native identity after tick 2"
+        );
         assert_eq!(
             fs::read(&peer).expect("retain bounded malformed peer"),
             body
         );
+        assert!(peer.exists());
     });
     assert_eq!(
         deletion_attempts, 0,

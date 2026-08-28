@@ -3800,6 +3800,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-system::windows_lifecycle_receipt"
+package = "solstone-core-system"
+target = "windows_lifecycle_receipt"
+set = "component"
+areas = ["system"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-system::system_provider_runtime"
 package = "solstone-core-system"
 target = "system_provider_runtime"
