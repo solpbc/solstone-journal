@@ -1497,12 +1497,14 @@ mod tests {
         let source = ParentAdmissionSource {
             self_result: InspectResult::Present {
                 instance: parent_instance(std::process::id(), 1),
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(parent.pid),
                 pgid: None,
             },
             parent_result: InspectResult::Present {
                 instance: parent,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: None,
@@ -1524,6 +1526,7 @@ mod tests {
         let live = ParentCheckSource {
             result: InspectResult::Present {
                 instance: parent,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: None,

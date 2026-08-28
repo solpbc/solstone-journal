@@ -14,11 +14,13 @@ use super::{
     SystemProcessInstanceSource,
 };
 
-/// A descendant PID together with the process group observed before signaling.
+/// A descendant's exact identity and provenance observed before signaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Descendant {
     pub pid: i32,
+    pub ppid: i32,
     pub pgid: Option<i32>,
+    pub uid: u32,
 }
 
 /// Process tree captured before any termination signal is sent.
@@ -45,7 +47,10 @@ pub fn snapshot(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn tree_from_census(parent_pid: i32, rows: &[CensusRow]) -> io::Result<ProcessTreeSnapshot> {
+pub(crate) fn tree_from_census(
+    parent_pid: i32,
+    rows: &[CensusRow],
+) -> io::Result<ProcessTreeSnapshot> {
     let by_parent = rows
         .iter()
         .fold(BTreeMap::<i32, Vec<&CensusRow>>::new(), |mut map, row| {
@@ -70,7 +75,9 @@ fn tree_from_census(parent_pid: i32, rows: &[CensusRow]) -> io::Result<ProcessTr
                 };
                 if descendants.insert(Descendant {
                     pid: child_pid,
+                    ppid: current,
                     pgid: Some(child.pgid),
+                    uid: child.uid,
                 }) {
                     descendant_births.insert(child_pid, child.instance.birth);
                     pending.push(child_pid);
@@ -151,6 +158,7 @@ mod tests {
                 pid,
                 birth: ProcessBirth::linux(u64::from(pid), 1, 100),
             },
+            uid: 501,
             ppid,
             pgid,
             execution: super::super::ExecutionState::Running,
@@ -172,7 +180,9 @@ mod tests {
             tree.descendants,
             vec![Descendant {
                 pid: 11,
-                pgid: Some(10)
+                ppid: 10,
+                pgid: Some(10),
+                uid: 501,
             }]
         );
         assert_eq!(

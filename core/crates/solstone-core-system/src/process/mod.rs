@@ -40,9 +40,10 @@ pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::signal_pid;
 pub use terminate::{
-    CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
+    CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, DescendantObservationFailure,
+    DescendantTerminationOutcome, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
     TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, signal_exact_instance,
-    terminate, terminate_exact_instance,
+    terminate, terminate_descendants_exact, terminate_exact_instance,
 };
 
 /// Match Python `Popen.returncode`: normal exits are non-negative and signals

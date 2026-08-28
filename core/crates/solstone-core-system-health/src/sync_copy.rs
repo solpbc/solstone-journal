@@ -442,6 +442,7 @@ mod tests {
         let source = FakeProcessSource {
             result: InspectResult::Present {
                 instance: marker.process,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(7),
@@ -475,6 +476,7 @@ mod tests {
         let source = FakeProcessSource {
             result: InspectResult::Present {
                 instance: marker.process,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(7),

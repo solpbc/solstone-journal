@@ -429,6 +429,7 @@ mod tests {
     fn present(instance: ProcessInstance, ppid: Option<u32>) -> InspectResult {
         InspectResult::Present {
             instance,
+            uid: 501,
             execution: ExecutionState::Running,
             ppid,
             pgid: None,

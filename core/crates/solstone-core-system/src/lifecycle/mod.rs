@@ -6,6 +6,7 @@
 
 mod clock;
 mod parent;
+mod parent_loss_handoff;
 mod readiness;
 mod shutdown;
 #[cfg(unix)]
@@ -33,6 +34,12 @@ use thiserror::Error;
 pub use clock::AdmissionWaitClock;
 pub use parent::{
     DeclaredParent, ParentAdmissionFailure, ParentLossReason, ParentWatch, ParentWatchStatus,
+};
+pub use parent_loss_handoff::{
+    HostedServiceKind, ParentLossHandoffError, ParentLossHandoffPublishResult,
+    ParentLossHandoffTerminal, ParentLossHandoffUnresolvedReason, ParentLossServiceRegistration,
+    ParentLossServiceWitness, finalize_parent_loss_handoff, initialize_parent_loss_handoff,
+    read_parent_loss_handoff, record_parent_loss_service_witness, register_parent_loss_service,
 };
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 #[cfg(any(target_os = "linux", target_os = "macos"))]

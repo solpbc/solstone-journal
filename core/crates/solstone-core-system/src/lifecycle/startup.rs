@@ -700,6 +700,7 @@ mod tests {
             if pid == self.current.pid {
                 InspectResult::Present {
                     instance: self.current,
+                    uid: 501,
                     execution: ExecutionState::Running,
                     ppid: Some(1),
                     pgid: Some(self.current.pid as i32),
@@ -711,6 +712,7 @@ mod tests {
                             pid,
                             birth: ProcessBirth::linux(10, 100, 100),
                         },
+                        uid: 501,
                         execution: ExecutionState::Running,
                         ppid: Some(1),
                         pgid: Some(pid as i32),

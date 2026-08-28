@@ -174,6 +174,7 @@ pub enum InstanceVerdict {
 pub enum InspectResult {
     Present {
         instance: ProcessInstance,
+        uid: u32,
         execution: ExecutionState,
         ppid: Option<u32>,
         pgid: Option<i32>,
@@ -186,6 +187,7 @@ pub enum InspectResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CensusRow {
     pub instance: ProcessInstance,
+    pub uid: u32,
     pub ppid: u32,
     pub pgid: i32,
     pub execution: ExecutionState,
@@ -370,7 +372,7 @@ fn parse_boot_time(stat: &str) -> Option<u64> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64) -> InspectResult {
+fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> InspectResult {
     let Some(parsed) = parse_linux_stat(stat) else {
         return InspectResult::Unverifiable;
     };
@@ -382,10 +384,23 @@ fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64) -> InspectResul
             pid: parsed.pid,
             birth: ProcessBirth::linux(parsed.start_ticks, btime, clk_tck),
         },
+        uid,
         execution: parsed.execution,
         ppid: Some(parsed.ppid),
         pgid: Some(parsed.pgid),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_uid(pid: u32) -> Option<u32> {
+    std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
 }
 
 #[cfg(target_os = "linux")]
@@ -408,7 +423,10 @@ fn inspect_linux(pid: u32) -> InspectResult {
     let Some((btime, clk_tck)) = linux_boot_clock() else {
         return InspectResult::Unverifiable;
     };
-    inspect_from_linux_stat(&stat, btime, clk_tck)
+    let Some(uid) = linux_uid(pid) else {
+        return InspectResult::Unverifiable;
+    };
+    inspect_from_linux_stat(&stat, btime, clk_tck, uid)
 }
 
 #[cfg(target_os = "linux")]
@@ -435,26 +453,34 @@ fn census_linux() -> InstanceCensus {
                 complete = false;
                 continue;
             }
-            Ok(stat) => match inspect_from_linux_stat(&stat, btime, clk_tck) {
-                InspectResult::Unverifiable => {
+            Ok(stat) => {
+                let Some(uid) = linux_uid(pid) else {
                     complete = false;
+                    continue;
+                };
+                match inspect_from_linux_stat(&stat, btime, clk_tck, uid) {
+                    InspectResult::Unverifiable => {
+                        complete = false;
+                    }
+                    InspectResult::Absent => {}
+                    InspectResult::Present {
+                        instance,
+                        uid,
+                        execution,
+                        ppid: Some(ppid),
+                        pgid: Some(pgid),
+                    } => rows.push(CensusRow {
+                        instance,
+                        uid,
+                        ppid,
+                        pgid,
+                        execution,
+                    }),
+                    InspectResult::Present { .. } => {
+                        complete = false;
+                    }
                 }
-                InspectResult::Absent => {}
-                InspectResult::Present {
-                    instance,
-                    execution,
-                    ppid: Some(ppid),
-                    pgid: Some(pgid),
-                } => rows.push(CensusRow {
-                    instance,
-                    ppid,
-                    pgid,
-                    execution,
-                }),
-                InspectResult::Present { .. } => {
-                    complete = false;
-                }
-            },
+            }
         }
     }
     finalize_census(rows, complete)
@@ -542,12 +568,14 @@ fn collect_macos_census_row(pid: u32, rows: &mut Vec<CensusRow>) -> bool {
     match inspect_macos(pid) {
         InspectResult::Present {
             instance,
+            uid,
             execution,
             ppid: Some(ppid),
             pgid: Some(pgid),
         } => {
             rows.push(CensusRow {
                 instance,
+                uid,
                 ppid,
                 pgid,
                 execution,
@@ -588,13 +616,14 @@ fn census_macos_tree_with(
         if !visited.insert(pid) {
             continue;
         }
-        let (instance, execution, ppid, pgid) = match inspect(pid) {
+        let (instance, uid, execution, ppid, pgid) = match inspect(pid) {
             InspectResult::Present {
                 instance,
+                uid,
                 execution,
                 ppid: Some(ppid),
                 pgid: Some(pgid),
-            } => (instance, execution, ppid, pgid),
+            } => (instance, uid, execution, ppid, pgid),
             InspectResult::Absent | InspectResult::Present { .. } | InspectResult::Unverifiable => {
                 return InstanceCensus::Incomplete(rows);
             }
@@ -621,6 +650,7 @@ fn census_macos_tree_with(
         }
         rows.push(CensusRow {
             instance,
+            uid,
             ppid,
             pgid,
             execution,
@@ -797,6 +827,7 @@ mod tests {
                 pid: 7,
                 birth: ProcessBirth::linux(10, 100, 100),
             },
+            uid: 501,
             execution: ExecutionState::Running,
             ppid: Some(1),
             pgid: Some(7),
@@ -876,6 +907,7 @@ mod tests {
                     pid,
                     birth: ProcessBirth::linux(birth, 1, 100),
                 },
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(ppid),
                 pgid: Some(i32::try_from(pid).expect("synthetic PGID fits i32")),
@@ -912,15 +944,17 @@ mod tests {
     #[test]
     fn case1_well_formed_linux_stat_is_present_running() {
         let stat = linux_stat(42, 'S', 1, 42, 1234);
-        match inspect_from_linux_stat(&stat, 1_000, 100) {
+        match inspect_from_linux_stat(&stat, 1_000, 100, 501) {
             InspectResult::Present {
                 instance,
+                uid,
                 execution,
                 ppid,
                 pgid,
             } => {
                 assert_eq!(instance.pid, 42);
                 assert_eq!(instance.birth, ProcessBirth::linux(1234, 1_000, 100));
+                assert_eq!(uid, 501);
                 assert_eq!(execution, ExecutionState::Running);
                 assert_eq!(ppid, Some(1));
                 assert_eq!(pgid, Some(42));
@@ -932,14 +966,14 @@ mod tests {
     #[test]
     fn case2_linux_stopped_state_is_present_stopped() {
         let stat = linux_stat(9, 'T', 1, 9, 50);
-        match inspect_from_linux_stat(&stat, 1_000, 100) {
+        match inspect_from_linux_stat(&stat, 1_000, 100, 501) {
             InspectResult::Present { execution, .. } => {
                 assert_eq!(execution, ExecutionState::Stopped);
             }
             other => panic!("expected Present, got {other:?}"),
         }
         let lowercase = linux_stat(9, 't', 1, 9, 50);
-        match inspect_from_linux_stat(&lowercase, 1_000, 100) {
+        match inspect_from_linux_stat(&lowercase, 1_000, 100, 501) {
             InspectResult::Present { execution, .. } => {
                 assert_eq!(execution, ExecutionState::Stopped);
             }
@@ -974,11 +1008,11 @@ mod tests {
     #[test]
     fn case5_malformed_linux_stat_is_unverifiable() {
         assert_eq!(
-            inspect_from_linux_stat("no-close-paren 1 2 3", 1_000, 100),
+            inspect_from_linux_stat("no-close-paren 1 2 3", 1_000, 100, 501),
             InspectResult::Unverifiable
         );
         assert_eq!(
-            inspect_from_linux_stat("1 (comm) S 1 1", 1_000, 100),
+            inspect_from_linux_stat("1 (comm) S 1 1", 1_000, 100, 501),
             InspectResult::Unverifiable
         );
         assert!(parse_linux_stat("1 (comm").is_none());
@@ -988,7 +1022,7 @@ mod tests {
     fn case6_zombie_linux_stat_is_absent() {
         let stat = linux_stat(4, 'Z', 1, 4, 9);
         assert_eq!(
-            inspect_from_linux_stat(&stat, 1_000, 100),
+            inspect_from_linux_stat(&stat, 1_000, 100, 501),
             InspectResult::Absent
         );
     }
@@ -1000,6 +1034,7 @@ mod tests {
                 pid: 3,
                 birth: ProcessBirth::linux(1, 1, 100),
             },
+            uid: 501,
             ppid: 1,
             pgid: 3,
             execution: ExecutionState::Running,

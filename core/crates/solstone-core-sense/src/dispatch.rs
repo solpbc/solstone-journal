@@ -1150,7 +1150,9 @@ mod tests {
                 reason: "survived_sigkill",
                 survivors: vec![Descendant {
                     pid: 99,
+                    ppid: 1,
                     pgid: Some(99),
+                    uid: 501,
                 }],
             },
         )

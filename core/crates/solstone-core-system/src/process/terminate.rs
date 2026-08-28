@@ -11,11 +11,13 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
+use serde::{Deserialize, Serialize};
+
 use super::descendants::Descendant;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::{
-    InspectResult, InstanceVerdict, ProcessBirth, ProcessInstance, ProcessInstanceSource,
-    SystemProcessInstanceSource,
+    InspectResult, InstanceCensus, InstanceVerdict, ProcessBirth, ProcessInstance,
+    ProcessInstanceSource, SystemProcessInstanceSource,
     descendants::{ProcessTreeSnapshot, own_pgid, snapshot},
     signal_aware_exit_code,
 };
@@ -52,6 +54,235 @@ pub enum TerminationError {
     ExactInstanceUnavailable,
     #[error("process lifecycle I/O failed: {0}")]
     Io(#[from] io::Error),
+}
+
+/// The reason exact descendant coverage could not be proven.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DescendantObservationFailure {
+    #[error("descendant census was incomplete")]
+    CensusIncomplete,
+    #[error("service root was not the remembered live instance")]
+    RootNotSameOrExited,
+    #[error("service root could not be observed")]
+    RootUnverifiable,
+    #[error("service root was missing from a complete census")]
+    Missing,
+    #[error("descendant observation became stale")]
+    Stale,
+    #[error("descendant PID was reused")]
+    Reused,
+    #[error("descendant UID changed")]
+    WrongUid,
+    #[error("descendant could not be observed")]
+    Unverifiable,
+}
+
+/// The terminal result of exact descendant-only cleanup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DescendantTerminationOutcome {
+    Graceful,
+    EscalatedAndReaped,
+}
+
+/// Stop an exact, same-UID descendant tree without ever signalling `root`.
+///
+/// `stop_service` runs after the initial census and before the TERM census so
+/// callers can close listeners and drain work while preserving the first
+/// provenance observation for their handoff witness.
+pub fn terminate_descendants_exact<F>(
+    root: ProcessInstance,
+    owner_uid: u32,
+    timeout: Duration,
+    source: &dyn ProcessInstanceSource,
+    stop_service: F,
+) -> Result<DescendantTerminationOutcome, DescendantObservationFailure>
+where
+    F: FnOnce(),
+{
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        terminate_descendants_exact_with(
+            root,
+            owner_uid,
+            timeout,
+            source,
+            stop_service,
+            |pid, signal| {
+                let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal);
+            },
+        )
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (root, owner_uid, timeout, source);
+        stop_service();
+        Err(DescendantObservationFailure::CensusIncomplete)
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn terminate_descendants_exact_with<F, S>(
+    root: ProcessInstance,
+    owner_uid: u32,
+    timeout: Duration,
+    source: &dyn ProcessInstanceSource,
+    stop_service: F,
+    mut signal: S,
+) -> Result<DescendantTerminationOutcome, DescendantObservationFailure>
+where
+    F: FnOnce(),
+    S: FnMut(i32, nix::sys::signal::Signal),
+{
+    let _initial = exact_descendant_tree(root, owner_uid, source)?;
+    stop_service();
+
+    let before_term = exact_descendant_tree(root, owner_uid, source)?;
+    signal_exact_descendants(
+        &before_term,
+        root,
+        owner_uid,
+        source,
+        SignalKind::Terminate,
+        &mut signal,
+    )?;
+
+    // This second complete census is mandatory: a child forked while a direct
+    // parent was receiving TERM remains in the owned set for the escalation pass.
+    let after_term = exact_descendant_tree(root, owner_uid, source)?;
+    let deadline = Instant::now() + timeout;
+    let mut remaining = after_term;
+    while !remaining.descendants.is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+        remaining = exact_descendant_tree(root, owner_uid, source)?;
+    }
+    if remaining.descendants.is_empty() {
+        return Ok(DescendantTerminationOutcome::Graceful);
+    }
+
+    signal_exact_descendants(
+        &remaining,
+        root,
+        owner_uid,
+        source,
+        SignalKind::Kill,
+        &mut signal,
+    )?;
+    let kill_deadline = Instant::now() + KILL_REAP_GRACE;
+    loop {
+        let final_tree = exact_descendant_tree(root, owner_uid, source)?;
+        if final_tree.descendants.is_empty() {
+            return Ok(DescendantTerminationOutcome::EscalatedAndReaped);
+        }
+        if Instant::now() >= kill_deadline {
+            return Err(DescendantObservationFailure::Stale);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn exact_descendant_tree(
+    root: ProcessInstance,
+    owner_uid: u32,
+    source: &dyn ProcessInstanceSource,
+) -> Result<ProcessTreeSnapshot, DescendantObservationFailure> {
+    match source.inspect(root.pid) {
+        InspectResult::Absent => return Err(DescendantObservationFailure::RootNotSameOrExited),
+        InspectResult::Unverifiable => return Err(DescendantObservationFailure::RootUnverifiable),
+        InspectResult::Present { instance, uid, .. } if instance != root => {
+            return Err(DescendantObservationFailure::RootNotSameOrExited);
+        }
+        InspectResult::Present { uid, .. } if uid != owner_uid => {
+            return Err(DescendantObservationFailure::WrongUid);
+        }
+        InspectResult::Present { .. } => {}
+    }
+    let rows = match source.census_tree(root.pid, None) {
+        InstanceCensus::Complete(rows) => rows,
+        InstanceCensus::Incomplete(_) => {
+            return Err(DescendantObservationFailure::CensusIncomplete);
+        }
+    };
+    let Some(census_root) = rows.iter().find(|row| row.instance.pid == root.pid) else {
+        return Err(DescendantObservationFailure::Missing);
+    };
+    if census_root.instance != root {
+        return Err(DescendantObservationFailure::RootNotSameOrExited);
+    }
+    if census_root.uid != owner_uid {
+        return Err(DescendantObservationFailure::WrongUid);
+    }
+    super::descendants::tree_from_census(
+        i32::try_from(root.pid).map_err(|_| DescendantObservationFailure::Missing)?,
+        &rows,
+    )
+    .map_err(|_| DescendantObservationFailure::Missing)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn signal_exact_descendants<S>(
+    tree: &ProcessTreeSnapshot,
+    root: ProcessInstance,
+    owner_uid: u32,
+    source: &dyn ProcessInstanceSource,
+    kind: SignalKind,
+    signal: &mut S,
+) -> Result<(), DescendantObservationFailure>
+where
+    S: FnMut(i32, nix::sys::signal::Signal),
+{
+    let _ = root;
+    for descendant in &tree.descendants {
+        let expected_birth = tree
+            .descendant_births
+            .get(&descendant.pid)
+            .copied()
+            .ok_or(DescendantObservationFailure::Missing)?;
+        match revalidate_descendant(*descendant, expected_birth, owner_uid, source)? {
+            DescendantLiveness::Gone => {}
+            DescendantLiveness::Live => signal(descendant.pid, nix_signal(kind)),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+enum DescendantLiveness {
+    Gone,
+    Live,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn revalidate_descendant(
+    descendant: Descendant,
+    expected_birth: ProcessBirth,
+    owner_uid: u32,
+    source: &dyn ProcessInstanceSource,
+) -> Result<DescendantLiveness, DescendantObservationFailure> {
+    let pid = u32::try_from(descendant.pid).map_err(|_| DescendantObservationFailure::Missing)?;
+    match source.inspect(pid) {
+        InspectResult::Absent => Ok(DescendantLiveness::Gone),
+        InspectResult::Unverifiable => Err(DescendantObservationFailure::Unverifiable),
+        InspectResult::Present {
+            instance,
+            uid,
+            ppid,
+            ..
+        } => {
+            if instance.birth != expected_birth {
+                return Err(DescendantObservationFailure::Reused);
+            }
+            if uid != owner_uid || uid != descendant.uid {
+                return Err(DescendantObservationFailure::WrongUid);
+            }
+            if ppid.and_then(|value| i32::try_from(value).ok()) != Some(descendant.ppid) {
+                return Err(DescendantObservationFailure::Stale);
+            }
+            Ok(DescendantLiveness::Live)
+        }
+    }
 }
 
 /// Snapshot before every signal so escaped descendants retain direct PID targets.
@@ -527,10 +758,14 @@ pub(crate) fn signal_pid(pid: i32, signal: nix::sys::signal::Signal) -> nix::Res
 #[cfg(test)]
 mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use super::super::{ExecutionState, InstanceCensus};
+    use super::super::{CensusRow, ExecutionState, InstanceCensus};
     use super::*;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::collections::HashMap;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::collections::VecDeque;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::sync::Mutex;
 
     #[test]
     fn ac15_signal_guard_never_targets_the_caller_or_its_process_group() {
@@ -565,6 +800,197 @@ mod tests {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
+    struct SequenceSource {
+        inspections: Mutex<VecDeque<InspectResult>>,
+        censuses: Mutex<VecDeque<InstanceCensus>>,
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    impl ProcessInstanceSource for SequenceSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            self.inspections
+                .lock()
+                .expect("inspection queue")
+                .pop_front()
+                .unwrap_or(InspectResult::Unverifiable)
+        }
+
+        fn census(&self) -> InstanceCensus {
+            self.censuses
+                .lock()
+                .expect("census queue")
+                .pop_front()
+                .unwrap_or(InstanceCensus::Incomplete(Vec::new()))
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn exact(pid: u32, birth: u64, ppid: u32, uid: u32) -> InspectResult {
+        InspectResult::Present {
+            instance: ProcessInstance {
+                pid,
+                birth: ProcessBirth::linux(birth, 1, 100),
+            },
+            uid,
+            execution: ExecutionState::Running,
+            ppid: Some(ppid),
+            pgid: Some(i32::try_from(pid).expect("synthetic PID fits")),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn row(pid: u32, birth: u64, ppid: u32, uid: u32) -> CensusRow {
+        CensusRow {
+            instance: ProcessInstance {
+                pid,
+                birth: ProcessBirth::linux(birth, 1, 100),
+            },
+            uid,
+            ppid,
+            pgid: i32::try_from(pid).expect("synthetic PID fits"),
+            execution: ExecutionState::Running,
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn root() -> ProcessInstance {
+        ProcessInstance {
+            pid: 10,
+            birth: ProcessBirth::linux(1, 1, 100),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn exact_descendant_cleanup_catches_a_child_added_between_the_recensuses() {
+        let source = SequenceSource {
+            inspections: Mutex::new(VecDeque::from([
+                exact(10, 1, 1, 501),
+                exact(10, 1, 1, 501),
+                exact(20, 2, 10, 501),
+                exact(10, 1, 1, 501),
+                exact(20, 2, 10, 501),
+                exact(21, 3, 20, 501),
+                exact(10, 1, 1, 501),
+            ])),
+            censuses: Mutex::new(VecDeque::from([
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+                InstanceCensus::Complete(vec![
+                    row(10, 1, 1, 501),
+                    row(20, 2, 10, 501),
+                    row(21, 3, 20, 501),
+                ]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501)]),
+            ])),
+        };
+        let signals = Mutex::new(Vec::new());
+        let outcome = terminate_descendants_exact_with(
+            root(),
+            501,
+            Duration::ZERO,
+            &source,
+            || {},
+            |pid, signal| signals.lock().expect("signals").push((pid, signal)),
+        )
+        .expect("late child is covered by escalation");
+        assert_eq!(outcome, DescendantTerminationOutcome::EscalatedAndReaped);
+        assert_eq!(
+            *signals.lock().expect("signals"),
+            vec![
+                (20, nix::sys::signal::Signal::SIGTERM),
+                (20, nix::sys::signal::Signal::SIGKILL),
+                (21, nix::sys::signal::Signal::SIGKILL),
+            ]
+        );
+        assert!(
+            signals
+                .lock()
+                .expect("signals")
+                .iter()
+                .all(|(pid, _)| *pid != 10)
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn exact_descendant_cleanup_rejects_a_uid_change_without_signalling() {
+        let source = SequenceSource {
+            inspections: Mutex::new(VecDeque::from([
+                exact(10, 1, 1, 501),
+                exact(10, 1, 1, 501),
+                exact(20, 2, 10, 502),
+            ])),
+            censuses: Mutex::new(VecDeque::from([
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+            ])),
+        };
+        let signals = Mutex::new(Vec::new());
+        assert_eq!(
+            terminate_descendants_exact_with(
+                root(),
+                501,
+                Duration::ZERO,
+                &source,
+                || {},
+                |pid, signal| signals.lock().expect("signals").push((pid, signal)),
+            ),
+            Err(DescendantObservationFailure::WrongUid)
+        );
+        assert!(signals.lock().expect("signals").is_empty());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn exact_descendant_cleanup_rejects_pid_reuse_without_signalling() {
+        let source = SequenceSource {
+            inspections: Mutex::new(VecDeque::from([
+                exact(10, 1, 1, 501),
+                exact(10, 1, 1, 501),
+                exact(20, 99, 10, 501),
+            ])),
+            censuses: Mutex::new(VecDeque::from([
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+            ])),
+        };
+        let signals = Mutex::new(Vec::new());
+        assert_eq!(
+            terminate_descendants_exact_with(
+                root(),
+                501,
+                Duration::ZERO,
+                &source,
+                || {},
+                |pid, signal| signals.lock().expect("signals").push((pid, signal)),
+            ),
+            Err(DescendantObservationFailure::Reused)
+        );
+        assert!(signals.lock().expect("signals").is_empty());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn incomplete_census_cannot_report_empty_descendant_success() {
+        let source = SequenceSource {
+            inspections: Mutex::new(VecDeque::from([exact(10, 1, 1, 501)])),
+            censuses: Mutex::new(VecDeque::from([InstanceCensus::Incomplete(Vec::new())])),
+        };
+        assert_eq!(
+            terminate_descendants_exact_with(
+                root(),
+                501,
+                Duration::ZERO,
+                &source,
+                || panic!("stop must not run without initial complete census"),
+                |_, _| panic!("incomplete census must not signal"),
+            ),
+            Err(DescendantObservationFailure::CensusIncomplete)
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn case9_error(
         confirmed: Vec<Descendant>,
         unproven: Vec<Descendant>,
@@ -586,7 +1012,9 @@ mod tests {
         let current = ProcessBirth::linux(99, 100, 100);
         let survivor = Descendant {
             pid: 42,
+            ppid: 1,
             pgid: Some(42),
+            uid: 501,
         };
         let mut births = HashMap::new();
         births.insert(42, snapshotted);
@@ -596,6 +1024,7 @@ mod tests {
                     pid: 42,
                     birth: current,
                 },
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),
@@ -618,7 +1047,9 @@ mod tests {
         let snapshotted = ProcessBirth::linux(10, 100, 100);
         let survivor = Descendant {
             pid: 42,
+            ppid: 1,
             pgid: Some(42),
+            uid: 501,
         };
         let mut births = HashMap::new();
         births.insert(42, snapshotted);
@@ -642,13 +1073,16 @@ mod tests {
         let birth = ProcessBirth::linux(10, 100, 100);
         let survivor = Descendant {
             pid: 42,
+            ppid: 1,
             pgid: Some(42),
+            uid: 501,
         };
         let mut births = HashMap::new();
         births.insert(42, birth);
         let source = FakeSource {
             result: InspectResult::Present {
                 instance: ProcessInstance { pid: 42, birth },
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),
@@ -673,6 +1107,7 @@ mod tests {
                     pid: 42,
                     birth: ProcessBirth::linux(11, 100, 100),
                 },
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),

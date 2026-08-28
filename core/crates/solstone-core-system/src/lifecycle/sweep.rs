@@ -305,6 +305,7 @@ mod tests {
         let source = FakeSource {
             result: InspectResult::Present {
                 instance,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),
@@ -331,6 +332,7 @@ mod tests {
                     pid: 42,
                     birth: current,
                 },
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),
@@ -376,6 +378,7 @@ mod tests {
         assert_eq!(
             qualify_orphan_observation(InspectResult::Present {
                 instance,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: Some(42),
@@ -390,6 +393,7 @@ mod tests {
         assert_eq!(
             qualify_orphan_observation(InspectResult::Present {
                 instance,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(2),
                 pgid: Some(42),

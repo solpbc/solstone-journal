@@ -146,12 +146,14 @@ mod tests {
         let source = Source {
             self_result: InspectResult::Present {
                 instance: instance(std::process::id(), 1),
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(42),
                 pgid: None,
             },
             parent_result: InspectResult::Present {
                 instance: expected,
+                uid: 501,
                 execution: ExecutionState::Running,
                 ppid: Some(1),
                 pgid: None,

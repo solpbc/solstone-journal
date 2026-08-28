@@ -302,6 +302,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Push devices (`config/push-registry.json`) | `core/crates/solstone-core-push/` |
 | Local inference operational telemetry (`health/local-inference/YYYYMMDD.jsonl`) | `solstone/think/providers/local_admission.py` |
 | Direct-door operational record (`health/direct-door.json`) | `core/crates/solstone-core-system/` (`direct_door.rs`) via `publish_direct_door` / `withhold_direct_door`. `solstone-core-convey-shell` and `solstone-core/src/supervisor/runtime.rs` are callers only; they must not write this path directly. |
+| Hosted service parent-loss handoff (`health/parent-loss-handoff.json`) | `core/crates/solstone-core-system/src/lifecycle/parent_loss_handoff.rs` |
 | Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `core/crates/solstone-core-brain/` via `solstone-core brain <verb>`; `solstone/think/providers/brain_state.py` is transport only |
 | Provider install status records and proof cache (`health/providers/{local,parakeet}.json`, `health/providers/{local,parakeet}.proof-cache.json`) | `solstone/think/providers/install_state.py` + `solstone/think/providers/artifact_proof.py` |
 | Provider install leases (`health/providers/{local,parakeet}.lease`) | `solstone/think/providers/install_lease.py` |
