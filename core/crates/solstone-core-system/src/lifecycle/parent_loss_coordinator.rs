@@ -108,6 +108,16 @@ struct SealedAdmission {
     identity: AdmissionIdentity,
 }
 
+/// A witness may establish that a service completed its own shutdown work, but
+/// terminal success also requires an independent exact observation that every
+/// sealed member has exited.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RetirementValidation {
+    Complete(ParentLossTerminalDisposition),
+    Pending,
+    Unresolved(ParentLossUnresolvedReason),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct RetireExpectedControl {
     schema: u32,
@@ -273,13 +283,31 @@ impl ParentLossCoordinator {
         expected_retirement: bool,
         timeout: Duration,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        self.wait_for_retirement_with_deadline_and_source(
+            sealed,
+            digest,
+            expected_retirement,
+            timeout,
+            &SystemProcessInstanceSource,
+        )
+    }
+
+    fn wait_for_retirement_with_deadline_and_source(
+        &mut self,
+        sealed: &[SealedAdmission],
+        digest: String,
+        expected_retirement: bool,
+        timeout: Duration,
+        source: &dyn ProcessInstanceSource,
+    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
         let deadline = Instant::now() + timeout;
         loop {
-            match self.validate_witnesses(sealed, &digest, expected_retirement) {
-                Ok(
+            match self.validate_witnesses_with_source(sealed, &digest, expected_retirement, source)
+            {
+                Ok(RetirementValidation::Complete(
                     ParentLossTerminalDisposition::Completed { .. }
                     | ParentLossTerminalDisposition::RetiredExpected,
-                ) => {
+                )) => {
                     let disposition = if expected_retirement {
                         ParentLossTerminalDisposition::RetiredExpected
                     } else {
@@ -291,17 +319,23 @@ impl ParentLossCoordinator {
                     self.release_clean_lease();
                     return Ok(disposition);
                 }
-                Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::MissingWitness,
-                }) if Instant::now() < deadline => {
+                Ok(RetirementValidation::Pending) if Instant::now() < deadline => {
                     thread::sleep(
                         POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
                     );
                 }
-                Ok(ParentLossTerminalDisposition::Unresolved { reason }) => {
+                Ok(RetirementValidation::Pending) => {
+                    return self.terminal_unresolved(
+                        ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                            deadline_seconds: PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
+                        },
+                        Some(digest),
+                    );
+                }
+                Ok(RetirementValidation::Unresolved(reason)) => {
                     return self.terminal_unresolved(reason, Some(digest));
                 }
-                Ok(_) => {
+                Ok(RetirementValidation::Complete(_)) => {
                     return self.terminal_unresolved(
                         ParentLossUnresolvedReason::ArtifactFailure,
                         Some(digest),
@@ -433,67 +467,84 @@ impl ParentLossCoordinator {
         ))
     }
 
-    fn validate_witnesses(
+    fn validate_witnesses_with_source(
         &self,
         sealed: &[SealedAdmission],
         digest: &str,
         expected_retirement: bool,
-    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        source: &dyn ProcessInstanceSource,
+    ) -> Result<RetirementValidation, ParentLossCoordinatorError> {
         let expected: BTreeSet<_> = self.active.enabled.iter().copied().collect();
         let admitted: BTreeSet<_> = sealed.iter().filter_map(|entry| entry.service).collect();
         if admitted != expected {
-            return Ok(ParentLossTerminalDisposition::Unresolved {
-                reason: ParentLossUnresolvedReason::MissingAdmission,
-            });
+            return Ok(RetirementValidation::Unresolved(
+                ParentLossUnresolvedReason::MissingAdmission,
+            ));
         }
         for service in expected {
             let Some(admission) = sealed.iter().find(|entry| entry.service == Some(service)) else {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::MissingAdmission,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::MissingAdmission,
+                ));
             };
             let Some(witness) = read_witness(&self.ledger, self.active.generation, service)? else {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::MissingWitness,
-                });
+                return Ok(RetirementValidation::Pending);
             };
             if witness.identity != admission.identity || witness.parent != self.active.supervisor {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::WitnessInvalid,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::WitnessInvalid,
+                ));
             }
             if !witness.listener_stopped {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::ListenerReleaseFailed,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::ListenerReleaseFailed,
+                ));
             }
             if !witness.service_runner_stopped {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::ServiceRunnerDidNotStop,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::ServiceRunnerDidNotStop,
+                ));
             }
             if !witness.operational_artifacts_cleaned {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::OperationalArtifactsNotCleaned,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::OperationalArtifactsNotCleaned,
+                ));
             }
             if let Some(failure) = witness.descendant_failure {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::Descendant(failure),
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::Descendant(failure),
+                ));
             }
             if !witness.descendants_retired || !witness.shutdown_complete {
-                return Ok(ParentLossTerminalDisposition::Unresolved {
-                    reason: ParentLossUnresolvedReason::WitnessInvalid,
-                });
+                return Ok(RetirementValidation::Unresolved(
+                    ParentLossUnresolvedReason::WitnessInvalid,
+                ));
+            }
+        }
+        for admission in sealed {
+            match source.inspect(admission.identity.instance.pid) {
+                InspectResult::Absent => continue,
+                InspectResult::Unverifiable => return Ok(RetirementValidation::Pending),
+                InspectResult::Present { instance, uid, .. }
+                    if instance != admission.identity.instance || uid != admission.identity.uid =>
+                {
+                    return Ok(RetirementValidation::Unresolved(
+                        ParentLossUnresolvedReason::AdmissionIdentityMismatch,
+                    ));
+                }
+                InspectResult::Present { .. } => return Ok(RetirementValidation::Pending),
             }
         }
         if expected_retirement {
-            Ok(ParentLossTerminalDisposition::RetiredExpected)
+            Ok(RetirementValidation::Complete(
+                ParentLossTerminalDisposition::RetiredExpected,
+            ))
         } else {
-            Ok(ParentLossTerminalDisposition::Completed {
-                sealed_ledger_digest: digest.to_owned(),
-            })
+            Ok(RetirementValidation::Complete(
+                ParentLossTerminalDisposition::Completed {
+                    sealed_ledger_digest: digest.to_owned(),
+                },
+            ))
         }
     }
 
@@ -684,6 +735,7 @@ fn proof(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Mutex;
 
     use tempfile::TempDir;
 
@@ -694,9 +746,30 @@ mod tests {
         write_parent_loss_admission_result, write_parent_loss_service_witness,
     };
     use crate::process::{
-        Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, ManagedLaunchRequest,
-        ProcessBirth, SpawnOptions, launch_managed_hosted, set_hosted_admission_test_fault,
+        Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, InstanceCensus,
+        ManagedLaunchRequest, ProcessBirth, SpawnOptions, launch_managed_hosted,
+        set_hosted_admission_test_fault,
     };
+
+    struct MutableInspectSource {
+        result: Mutex<InspectResult>,
+    }
+
+    impl ProcessInstanceSource for MutableInspectSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            *self.result.lock().expect("inspect result lock")
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Complete(Vec::new())
+        }
+    }
+
+    fn gone_process_source() -> MutableInspectSource {
+        MutableInspectSource {
+            result: Mutex::new(InspectResult::Absent),
+        }
+    }
 
     fn instance(pid: u32, birth: u64) -> ProcessInstance {
         ProcessInstance {
@@ -824,13 +897,12 @@ mod tests {
         mutate(&mut witness);
         write_parent_loss_service_witness(journal, &witness).expect("service witness");
         let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = gone_process_source();
         assert_eq!(
             coordinator
-                .validate_witnesses(&sealed, &digest, false)
+                .validate_witnesses_with_source(&sealed, &digest, false, &source)
                 .expect("witness validation"),
-            ParentLossTerminalDisposition::Unresolved {
-                reason: expected.clone(),
-            }
+            RetirementValidation::Unresolved(expected.clone())
         );
         assert_eq!(
             coordinator
@@ -1070,9 +1142,16 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
         let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = gone_process_source();
         assert_eq!(
             coordinator
-                .wait_for_retirement(&sealed, digest, false)
+                .wait_for_retirement_with_deadline_and_source(
+                    &sealed,
+                    digest,
+                    false,
+                    Duration::from_millis(1),
+                    &source,
+                )
                 .expect("completed terminal"),
             ParentLossTerminalDisposition::Completed {
                 sealed_ledger_digest: coordinator
@@ -1085,6 +1164,49 @@ mod tests {
             }
         );
         assert!(coordinator._lease.is_none());
+    }
+
+    #[test]
+    fn successful_witness_waits_for_independent_exact_service_retirement() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        let identity =
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = MutableInspectSource {
+            result: Mutex::new(InspectResult::Present {
+                instance: identity.instance,
+                uid: identity.uid,
+                execution: crate::process::ExecutionState::Running,
+                ppid: None,
+                pgid: None,
+            }),
+        };
+
+        assert_eq!(
+            coordinator
+                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .expect("live service observation"),
+            RetirementValidation::Pending,
+            "a self-reported witness cannot complete a still-live service"
+        );
+        assert!(
+            coordinator
+                .ledger
+                .record(coordinator.generation())
+                .expect("record")
+                .expect("record exists")
+                .terminal
+                .is_none(),
+            "the pending live observation must not write a completed terminal record"
+        );
+
+        *source.result.lock().expect("inspect result lock") = InspectResult::Absent;
+        assert!(matches!(
+            coordinator
+                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .expect("retired service observation"),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
     }
 
     #[test]
@@ -1107,9 +1229,16 @@ mod tests {
                 .expect("retirement acknowledgement")
         );
         let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = gone_process_source();
         assert_eq!(
             coordinator
-                .wait_for_retirement(&sealed, digest, true)
+                .wait_for_retirement_with_deadline_and_source(
+                    &sealed,
+                    digest,
+                    true,
+                    Duration::from_millis(1),
+                    &source,
+                )
                 .expect("expected retirement terminal"),
             ParentLossTerminalDisposition::RetiredExpected
         );
@@ -1352,8 +1481,15 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
         let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = gone_process_source();
         let terminal = coordinator
-            .wait_for_retirement(&sealed, digest, false)
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Duration::from_millis(1),
+                &source,
+            )
             .expect("completed terminal");
         assert!(matches!(
             terminal,

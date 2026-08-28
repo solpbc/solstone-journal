@@ -20,6 +20,111 @@ const SPL_MOD: &str = include_str!("../../../solstone-core-spl/src/lib.rs");
 // cannot silently become a hosted-launch blind spot.
 const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     (
+        "core",
+        "brain_owner",
+        include_str!("../../../solstone-core/src/brain_owner.rs"),
+    ),
+    (
+        "core",
+        "check",
+        include_str!("../../../solstone-core/src/check.rs"),
+    ),
+    (
+        "core",
+        "config",
+        include_str!("../../../solstone-core/src/config.rs"),
+    ),
+    (
+        "core",
+        "contract",
+        include_str!("../../../solstone-core/src/contract/mod.rs"),
+    ),
+    (
+        "core",
+        "engage",
+        include_str!("../../../solstone-core/src/engage.rs"),
+    ),
+    (
+        "core",
+        "facet_candidates",
+        include_str!("../../../solstone-core/src/facet_candidates.rs"),
+    ),
+    (
+        "core",
+        "health",
+        include_str!("../../../solstone-core/src/health.rs"),
+    ),
+    (
+        "core",
+        "health_logs",
+        include_str!("../../../solstone-core/src/health_logs.rs"),
+    ),
+    (
+        "core",
+        "heartbeat",
+        include_str!("../../../solstone-core/src/heartbeat.rs"),
+    ),
+    (
+        "core",
+        "identity",
+        include_str!("../../../solstone-core/src/identity.rs"),
+    ),
+    (
+        "core",
+        "import_sources",
+        include_str!("../../../solstone-core/src/import_sources.rs"),
+    ),
+    (
+        "core",
+        "install_models",
+        include_str!("../../../solstone-core/src/install_models.rs"),
+    ),
+    (
+        "core",
+        "install_provider",
+        include_str!("../../../solstone-core/src/install_provider.rs"),
+    ),
+    (
+        "core",
+        "navigate",
+        include_str!("../../../solstone-core/src/navigate.rs"),
+    ),
+    (
+        "core",
+        "service",
+        include_str!("../../../solstone-core/src/service.rs"),
+    ),
+    (
+        "core",
+        "service_logs",
+        include_str!("../../../solstone-core/src/service_logs.rs"),
+    ),
+    (
+        "core",
+        "settings",
+        include_str!("../../../solstone-core/src/settings.rs"),
+    ),
+    (
+        "core",
+        "thinking",
+        include_str!("../../../solstone-core/src/thinking.rs"),
+    ),
+    (
+        "core",
+        "talent_contract",
+        include_str!("../../../solstone-core/src/talent_contract.rs"),
+    ),
+    (
+        "core",
+        "talent_preview",
+        include_str!("../../../solstone-core/src/talent_preview.rs"),
+    ),
+    (
+        "core",
+        "warm",
+        include_str!("../../../solstone-core/src/warm.rs"),
+    ),
+    (
         "supervisor",
         "bus",
         include_str!("../../../solstone-core/src/supervisor/bus.rs"),
@@ -452,6 +557,14 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
 ];
 
 const RAW_BYPASS_EXEMPT_SOURCES: &[(&str, &str)] = &[
+    // These top-level CLI helpers launch ordinary operator commands, not
+    // hosted-generation services. Their module declarations remain scanned so
+    // a new core module cannot escape the inventory.
+    ("core", "brain_owner"),
+    ("core", "config"),
+    ("core", "service"),
+    ("core", "service_logs"),
+    ("core", "warm"),
     // The one-shot Sense memory helper is explicitly outside the service-like
     // generation boundary; it remains enumerated so new modules cannot evade
     // the inventory check.
@@ -507,6 +620,7 @@ fn raw_bypass_exempt(owner: &str, module: &str) -> bool {
 #[test]
 fn scan_covers_every_declared_hosted_launch_module() {
     for (owner, root) in [
+        ("core", CORE_MAIN),
         ("supervisor", SUPERVISOR_MOD),
         ("cortex", CORTEX_MOD),
         ("sense", SENSE_MOD),

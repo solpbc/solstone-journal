@@ -543,7 +543,7 @@ fn run_convey_bound(
     }
     write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;
     if let Some(parent) = hosted_parent {
-        let reason = runtime.block_on(async {
+        runtime.block_on(async {
             tokio::select! {
                 reason = parent.await_parent_loss() => reason,
                 _ = wait_for_retire_expected_request(&parent) => ParentLossReason::ExitedOrReused,
@@ -563,15 +563,12 @@ fn run_convey_bound(
                 }
             });
         parent
-            .finish_parent_loss(
-                reason,
-                HostedServiceShutdownEvidence {
-                    listener_stopped: true,
-                    service_runner_stopped: true,
-                    operational_artifacts_cleaned: artifact_cleanup.is_ok(),
-                },
-            )
-            .map_err(|error| format!("convey: parent-loss handoff failed: {error}"))?;
+            .finish_parent_loss(HostedServiceShutdownEvidence {
+                listener_stopped: true,
+                service_runner_stopped: true,
+                operational_artifacts_cleaned: artifact_cleanup.is_ok(),
+            })
+            .map_err(|error| format!("convey: parent-loss coordination failed: {error}"))?;
         artifact_cleanup?;
         return Ok(());
     }

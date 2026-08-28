@@ -290,6 +290,28 @@ fn kill_supervisor_exact(supervisor: ProcessInstance) {
     .expect("SIGKILL the exact hosted supervisor PID");
 }
 
+fn assert_sealed_ledger_contains(
+    ledger: &ParentLossLedger,
+    generation: u64,
+    identity: ProcessInstance,
+    label: &str,
+) {
+    let entries: Vec<serde_json::Value> = serde_json::from_slice(
+        &fs::read(ledger.sealed_ledger_path(generation)).expect("sealed parent-loss ledger"),
+    )
+    .expect("sealed parent-loss ledger JSON");
+    let instance = serde_json::to_value(identity).expect("process identity JSON");
+    assert!(
+        entries.iter().any(|entry| {
+            entry
+                .get("identity")
+                .and_then(|identity| identity.get("instance"))
+                == Some(&instance)
+        }),
+        "sealed ledger must include the production-boundary Cortex descendant {label}"
+    );
+}
+
 fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
     let journal = TempJournal::new();
     let owned_convey_port = reserve_ephemeral_port();
@@ -441,6 +463,7 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
                 record.sealed_ledger_digest.as_deref(),
                 Some(sealed_ledger_digest.as_str())
             );
+            assert_sealed_ledger_contains(&ledger, active.generation, owned[5], "talent worker");
             let successor = ledger
                 .reserve_generation(current_instance(std::process::id(), "test successor"), [])
                 .expect("exactly one successor generation is eligible");
@@ -477,6 +500,13 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
                 .expect("active generation")
                 .expect("unresolved generation");
             let coordinator = active.coordinator.expect("coordinator identity");
+            assert_sealed_ledger_contains(&ledger, active.generation, owned[5], "talent worker");
+            assert_sealed_ledger_contains(
+                &ledger,
+                active.generation,
+                *owned.last().expect("hostile late spawner"),
+                "late spawner",
+            );
             wait_until_before(
                 terminal_deadline,
                 || instance_is_gone(coordinator),

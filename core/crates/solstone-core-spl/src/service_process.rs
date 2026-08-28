@@ -63,8 +63,8 @@ pub enum NativeServiceError {
     /// The supervised service stopped with a stable service error class.
     #[error("service supervision failed")]
     Service,
-    /// Parent-loss cleanup could not publish its durable handoff evidence.
-    #[error("hosted parent-loss handoff failed")]
+    /// Parent-loss cleanup could not publish its durable coordination evidence.
+    #[error("hosted parent-loss coordination failed")]
     ParentLoss,
 }
 
@@ -149,19 +149,16 @@ async fn run_native_service_async(
                 .retire_expected_requested()
                 .then_some(ParentLossReason::ExitedOrReused)
         });
-        if let Some(reason) = reason {
+        if reason.is_some() {
             parent
-                .finish_parent_loss(
-                    reason,
-                    HostedServiceShutdownEvidence {
-                        // A successful service loop includes relay cleanup and
-                        // the bounded Callosum-output stop.
-                        listener_stopped: service_stopped,
-                        service_runner_stopped: service_stopped,
-                        // SPL has no distinct health artifact to withdraw.
-                        operational_artifacts_cleaned: true,
-                    },
-                )
+                .finish_parent_loss(HostedServiceShutdownEvidence {
+                    // A successful service loop includes relay cleanup and
+                    // the bounded Callosum-output stop.
+                    listener_stopped: service_stopped,
+                    service_runner_stopped: service_stopped,
+                    // SPL has no distinct health artifact to withdraw.
+                    operational_artifacts_cleaned: true,
+                })
                 .map_err(|_| NativeServiceError::ParentLoss)?;
         }
     }

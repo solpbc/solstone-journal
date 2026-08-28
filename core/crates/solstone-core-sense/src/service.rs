@@ -25,7 +25,7 @@ pub struct SenseOptions {
 pub enum NativeServiceError {
     #[error("service runtime unavailable")]
     Runtime,
-    #[error("hosted parent-loss handoff failed")]
+    #[error("hosted parent-loss coordination failed")]
     ParentLoss,
 }
 impl NativeServiceError {
@@ -87,20 +87,17 @@ async fn run(
                 .retire_expected_requested()
                 .then_some(ParentLossReason::ExitedOrReused)
         });
-        if let Some(reason) = reason {
+        if reason.is_some() {
             // `connection.stop` is infallible and always runs before this point.
             // Worker joins are independently observed so a panic cannot claim a
-            // completed service runner in the parent-loss handoff.
+            // completed service runner in parent-loss coordination.
             parent
-                .finish_parent_loss(
-                    reason,
-                    HostedServiceShutdownEvidence {
-                        listener_stopped: true,
-                        service_runner_stopped: outcome.service_runner_stopped,
-                        // Sense has no separate health artifact to withdraw.
-                        operational_artifacts_cleaned: true,
-                    },
-                )
+                .finish_parent_loss(HostedServiceShutdownEvidence {
+                    listener_stopped: true,
+                    service_runner_stopped: outcome.service_runner_stopped,
+                    // Sense has no separate health artifact to withdraw.
+                    operational_artifacts_cleaned: true,
+                })
                 .map_err(|_| NativeServiceError::ParentLoss)?;
         }
     }

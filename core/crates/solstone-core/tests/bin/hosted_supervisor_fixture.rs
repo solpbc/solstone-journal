@@ -10,7 +10,13 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
 #[cfg(target_os = "macos")]
+use std::collections::BTreeMap;
+#[cfg(target_os = "macos")]
+use std::ffi::OsString;
+#[cfg(target_os = "macos")]
 use std::net::TcpListener;
+#[cfg(target_os = "macos")]
+use std::time::Duration;
 
 use solstone_core::supervisor::{
     SupervisorHostOutcome, receipt::write_hosted_supervisor_receipt, run_hosted,
@@ -20,7 +26,15 @@ use solstone_core_system::lifecycle::{
     CoordinatorBootstrap, DeclaredParent, HostedServiceKind, ParentLossCoordinator,
 };
 #[cfg(target_os = "macos")]
-use solstone_core_system::lifecycle::{HostedServiceShutdownEvidence, admit_hosted_service_parent};
+use solstone_core_system::lifecycle::{
+    HostedServiceParentRuntime, HostedServiceShutdownEvidence, acknowledge_hosted_child_admission,
+    admit_hosted_service_parent,
+};
+#[cfg(target_os = "macos")]
+use solstone_core_system::process::{
+    BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
+    launch_command_hosted,
+};
 use solstone_core_system::process::{ProcessBirth, ProcessInstance};
 
 #[cfg(target_os = "macos")]
@@ -216,13 +230,21 @@ fn run_darwin_hosted_service(
         },
         None => None,
     };
-    if kind == HostedServiceKind::Cortex
-        && let Err(error) =
-            spawn_darwin_cortex_descendants(&journal, darwin_parent_lifetime_hostile_mode())
-    {
-        eprintln!("hosted fixture: Darwin Cortex descendants failed: {error}");
-        return ExitCode::from(75);
-    }
+    let _cortex_descendants = if kind == HostedServiceKind::Cortex {
+        match spawn_darwin_cortex_descendants(
+            &journal,
+            &parent,
+            darwin_parent_lifetime_hostile_mode(),
+        ) {
+            Ok(descendants) => Some(descendants),
+            Err(error) => {
+                eprintln!("hosted fixture: Darwin Cortex descendants failed: {error}");
+                return ExitCode::from(75);
+            }
+        }
+    } else {
+        None
+    };
     if let Err(error) = std::fs::write(&marker, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin service readiness failed: {error}");
         return ExitCode::from(75);
@@ -238,62 +260,101 @@ fn run_darwin_hosted_service(
             return ExitCode::from(75);
         }
     };
-    let reason = runtime.block_on(parent.await_parent_loss());
+    runtime.block_on(parent.await_parent_loss());
     // The only fixture listener is Convey's test port. Dropping it is
-    // infallible and happens before the handoff evidence is recorded.
+    // infallible and happens before the coordination witness is recorded.
     drop(listener);
-    match parent.finish_parent_loss(
-        reason,
-        HostedServiceShutdownEvidence {
-            listener_stopped: true,
-            service_runner_stopped: true,
-            operational_artifacts_cleaned: true,
-        },
-    ) {
+    match parent.finish_parent_loss(HostedServiceShutdownEvidence {
+        listener_stopped: true,
+        service_runner_stopped: true,
+        operational_artifacts_cleaned: true,
+    }) {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("hosted fixture: Darwin service handoff failed: {error}");
+            eprintln!("hosted fixture: Darwin service coordination failed: {error}");
             ExitCode::from(70)
         }
     }
 }
 
 #[cfg(target_os = "macos")]
+struct DarwinCortexDescendants {
+    _authorities: Vec<LaunchAuthority>,
+}
+
+#[cfg(target_os = "macos")]
 fn spawn_darwin_cortex_descendants(
     journal: &std::path::Path,
+    parent: &HostedServiceParentRuntime,
     hostile_late_spawner: bool,
-) -> Result<(), String> {
+) -> Result<DarwinCortexDescendants, String> {
     let health = journal.join("health");
     let talent = health.join("darwin-talent-worker.pid");
     let late_spawner = health.join("darwin-late-spawner.pid");
     let late_child = health.join("darwin-late-descendant.pid");
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    Command::new(&executable)
-        .arg(if hostile_late_spawner {
+    let mut authorities = vec![launch_darwin_fixture_child(
+        &executable,
+        if hostile_late_spawner {
             "darwin-term-resistant"
         } else {
             "darwin-cooperative-child"
-        })
-        .arg(&talent)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| error.to_string())?;
+        },
+        vec![talent.as_os_str().to_os_string()],
+        parent.child_launch_provenance("fixture-cortex-talent".to_owned()),
+    )?];
     if hostile_late_spawner {
-        Command::new(executable)
-            .arg("darwin-late-spawner")
-            .arg(&late_spawner)
-            .arg(&late_child)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        wait_for_fixture_paths(&[talent, late_spawner])
+        authorities.push(launch_darwin_fixture_child(
+            &executable,
+            "darwin-late-spawner",
+            vec![
+                late_spawner.as_os_str().to_os_string(),
+                late_child.as_os_str().to_os_string(),
+            ],
+            parent.child_launch_provenance("fixture-cortex-late-spawner".to_owned()),
+        )?);
+        wait_for_fixture_paths(&[talent, late_spawner])?;
     } else {
-        wait_for_fixture_paths(&[talent])
+        wait_for_fixture_paths(&[talent])?;
     }
+    Ok(DarwinCortexDescendants {
+        _authorities: authorities,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn launch_darwin_fixture_child(
+    executable: &std::path::Path,
+    mode: &str,
+    arguments: Vec<OsString>,
+    provenance: solstone_core_system::process::HostedLaunchProvenance,
+) -> Result<LaunchAuthority, String> {
+    let request = CommandLaunchRequest {
+        program: executable.as_os_str().to_os_string(),
+        arguments: std::iter::once(OsString::from(mode))
+            .chain(arguments)
+            .collect(),
+        environment: BTreeMap::new(),
+        current_dir: None,
+        process_group: false,
+        stdin_piped: false,
+        stdout_piped: false,
+        stderr_piped: false,
+    };
+    launch_command_hosted(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(30),
+        },
+        request,
+        provenance,
+        darwin_fixture_child_terminate(),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_fixture_child_terminate() -> BoxedTerminateFn {
+    Box::new(|child, _| child.kill().map_err(LaunchError::Terminate))
 }
 
 #[cfg(target_os = "macos")]
@@ -320,6 +381,10 @@ fn block_sigterm() -> nix::sys::signal::SigSet {
 
 #[cfg(target_os = "macos")]
 fn run_darwin_term_resistant(ready: PathBuf) -> ExitCode {
+    if let Err(error) = acknowledge_darwin_fixture_child_admission() {
+        eprintln!("hosted fixture: Darwin resistant child admission failed: {error}");
+        return ExitCode::from(75);
+    }
     let _signals = block_sigterm();
     if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin resistant child readiness failed: {error}");
@@ -331,6 +396,10 @@ fn run_darwin_term_resistant(ready: PathBuf) -> ExitCode {
 
 #[cfg(target_os = "macos")]
 fn run_darwin_cooperative_child(ready: PathBuf) -> ExitCode {
+    if let Err(error) = acknowledge_darwin_fixture_child_admission() {
+        eprintln!("hosted fixture: Darwin cooperative child admission failed: {error}");
+        return ExitCode::from(75);
+    }
     if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin cooperative child readiness failed: {error}");
         return ExitCode::from(75);
@@ -341,6 +410,10 @@ fn run_darwin_cooperative_child(ready: PathBuf) -> ExitCode {
 
 #[cfg(target_os = "macos")]
 fn run_darwin_late_spawner(ready: PathBuf, late_child: PathBuf) -> ExitCode {
+    if let Err(error) = acknowledge_darwin_fixture_child_admission() {
+        eprintln!("hosted fixture: Darwin late-spawner admission failed: {error}");
+        return ExitCode::from(75);
+    }
     let signals = block_sigterm();
     if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin late-spawner readiness failed: {error}");
@@ -358,6 +431,9 @@ fn run_darwin_late_spawner(ready: PathBuf, late_child: PathBuf) -> ExitCode {
             if let Err(error) = Command::new(executable)
                 .arg("darwin-term-resistant")
                 .arg(late_child)
+                .env_remove("SOL_PARENT_LOSS_GENERATION")
+                .env_remove("SOL_PARENT_LOSS_LAUNCH_ID")
+                .env_remove("SOL_PARENT_LOSS_PARENT_LAUNCH_ID")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -378,6 +454,14 @@ fn run_darwin_late_spawner(ready: PathBuf, late_child: PathBuf) -> ExitCode {
             ExitCode::from(75)
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn acknowledge_darwin_fixture_child_admission() -> Result<(), String> {
+    let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from) else {
+        return Ok(());
+    };
+    acknowledge_hosted_child_admission(&journal).map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "macos")]

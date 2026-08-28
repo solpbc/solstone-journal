@@ -101,7 +101,6 @@ impl HostedServiceParentRuntime {
     /// immutable witness. The coordinator owns all terminal adjudication.
     pub fn finish_parent_loss(
         &self,
-        parent_loss: ParentLossReason,
         shutdown: HostedServiceShutdownEvidence,
     ) -> Result<(), HostedServiceParentLossError> {
         let descendants = terminate_descendants_exact(
@@ -128,7 +127,6 @@ impl HostedServiceParentRuntime {
             shutdown_complete: shutdown.listener_stopped && shutdown.service_runner_stopped,
             descendant_failure,
         };
-        let _ = parent_loss;
         write_parent_loss_service_witness(&self.journal, &witness)?;
         Ok(())
     }

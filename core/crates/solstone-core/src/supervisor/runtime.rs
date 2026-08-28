@@ -296,9 +296,9 @@ impl AppService {
 fn current_supervisor_instance() -> Result<ProcessInstance, String> {
     match SystemProcessInstanceSource.inspect(std::process::id()) {
         InspectResult::Present { instance, .. } => Ok(instance),
-        InspectResult::Absent | InspectResult::Unverifiable => {
-            Err("could not verify supervisor process identity for parent-loss handoff".to_owned())
-        }
+        InspectResult::Absent | InspectResult::Unverifiable => Err(
+            "could not verify supervisor process identity for parent-loss coordination".to_owned(),
+        ),
     }
 }
 
@@ -327,7 +327,11 @@ async fn bootstrap_parent_loss_coordinator(
     let coordinator = match SystemProcessInstanceSource.inspect(authority.pid()) {
         InspectResult::Present { instance, uid, .. } => LaunchedProcessIdentity { instance, uid },
         InspectResult::Absent | InspectResult::Unverifiable => {
-            let _ = authority.terminate(Duration::from_secs(2));
+            if authority.terminate(Duration::from_secs(2)).is_err()
+                || !matches!(authority.poll(), Ok(Some(_)))
+            {
+                return Err(ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified);
+            }
             return Err(ParentLossCoordinatorBootstrapFailure::IdentityEstablishment);
         }
     };

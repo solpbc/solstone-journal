@@ -232,8 +232,7 @@ pub enum ParentLossLedgerError {
 
 /// Canonical path authority and paths for one Journal lifecycle domain.
 ///
-/// Retaining `JournalRoot` makes the initial canonicalization a capability
-/// acquisition rather than path normalization performed by callers.
+/// `JournalRoot::open` provides alias convergence only; ledger I/O remains canonical-path based, not descriptor-pinned against TOCTOU.
 pub struct ParentLossLedger {
     _root: JournalRoot,
     canonical_root: PathBuf,

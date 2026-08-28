@@ -42,7 +42,7 @@ pub enum CortexServiceError {
     InstallationRoot(String),
     #[error("could not initialize cortex journal storage: {0}")]
     Storage(#[source] std::io::Error),
-    #[error("hosted parent-loss handoff failed: {0}")]
+    #[error("hosted parent-loss coordination failed: {0}")]
     ParentLoss(String),
 }
 
@@ -113,19 +113,16 @@ pub async fn run_native_service_with_hosted_parent(
                     .retire_expected_requested()
                     .then_some(ParentLossReason::ExitedOrReused)
             });
-        if let Some(reason) = reason {
+        if reason.is_some() {
             parent
-                .finish_parent_loss(
-                    reason,
-                    HostedServiceShutdownEvidence {
-                        // `run_until` returns `Ok` only after it has stopped the
-                        // Callosum connection and its service runner.
-                        listener_stopped: service_stopped,
-                        service_runner_stopped: service_stopped,
-                        // Cortex has no separate health artifact to withdraw.
-                        operational_artifacts_cleaned: true,
-                    },
-                )
+                .finish_parent_loss(HostedServiceShutdownEvidence {
+                    // `run_until` returns `Ok` only after it has stopped the
+                    // Callosum connection and its service runner.
+                    listener_stopped: service_stopped,
+                    service_runner_stopped: service_stopped,
+                    // Cortex has no separate health artifact to withdraw.
+                    operational_artifacts_cleaned: true,
+                })
                 .map_err(|error| CortexServiceError::ParentLoss(error.to_string()))?;
         }
     }

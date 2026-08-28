@@ -112,6 +112,8 @@ pub enum ParentLossAdmissionError {
     MissingProvenance,
     #[error("hosted admission acknowledgement did not match this process")]
     IdentityMismatch,
+    #[error("hosted admission launch ID must be a single safe path segment")]
+    InvalidLaunchId,
 }
 
 impl AdmissionIntent {
@@ -135,6 +137,7 @@ pub fn write_parent_loss_admission_intent(
     journal: &Path,
     intent: &AdmissionIntent,
 ) -> Result<(), ParentLossAdmissionError> {
+    validate_launch_id(&intent.launch_id)?;
     let ledger = ParentLossLedger::open(journal)?;
     write_immutable_json(
         &intent_path(&ledger, intent.generation, &intent.launch_id),
@@ -148,6 +151,7 @@ pub fn write_parent_loss_admission_result(
     launch_id: &str,
     result: &AdmissionResult,
 ) -> Result<(), ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
     let ledger = ParentLossLedger::open(journal)?;
     write_immutable_json(&result_path(&ledger, generation, launch_id), result)
 }
@@ -157,6 +161,7 @@ pub fn read_parent_loss_admission_acknowledgement(
     generation: ParentLossGeneration,
     launch_id: &str,
 ) -> Result<Option<AdmissionAcknowledgement>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
     let ledger = ParentLossLedger::open(journal)?;
     read_json_optional(&ack_path(&ledger, generation, launch_id))
 }
@@ -166,6 +171,7 @@ pub fn acknowledge_parent_loss_admission(
     journal: &Path,
     identity: AdmissionIdentity,
 ) -> Result<(), ParentLossAdmissionError> {
+    validate_launch_id(&identity.launch_id)?;
     let ledger = ParentLossLedger::open(journal)?;
     let acknowledgement = AdmissionAcknowledgement {
         schema: SCHEMA,
@@ -211,6 +217,7 @@ pub(crate) fn read_parent_loss_admission_intent(
     generation: ParentLossGeneration,
     launch_id: &str,
 ) -> Result<Option<AdmissionIntent>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
     read_json_optional(&intent_path(ledger, generation, launch_id))
 }
 
@@ -219,6 +226,7 @@ pub(crate) fn read_parent_loss_admission_result(
     generation: ParentLossGeneration,
     launch_id: &str,
 ) -> Result<Option<AdmissionResult>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
     read_json_optional(&result_path(ledger, generation, launch_id))
 }
 
@@ -291,6 +299,7 @@ pub(crate) fn parse_hosted_admission_environment(
         .ok()
         .filter(|value| !value.is_empty())
         .ok_or(ParentLossAdmissionError::MissingProvenance)?;
+    validate_launch_id(&launch_id)?;
     let parent_launch_id = std::env::var(HOSTED_PARENT_LAUNCH_ID_ENV)
         .ok()
         .filter(|value| !value.is_empty());
@@ -301,6 +310,19 @@ pub(crate) fn parse_hosted_admission_environment(
         uid,
         parent_launch_id,
     })
+}
+
+/// Admission drops are addressed by `launch_id`, so reject anything that is
+/// not one path component before it can reach a `PathBuf::join` call.
+pub(crate) fn validate_launch_id(launch_id: &str) -> Result<(), ParentLossAdmissionError> {
+    if launch_id.is_empty()
+        || !launch_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(ParentLossAdmissionError::InvalidLaunchId);
+    }
+    Ok(())
 }
 
 fn write_immutable_json<T: Serialize + for<'de> Deserialize<'de> + PartialEq>(
@@ -468,5 +490,25 @@ mod tests {
             parse_hosted_admission_environment(identity().instance, identity().uid),
             Err(ParentLossAdmissionError::MissingProvenance)
         ));
+    }
+
+    #[test]
+    fn traversal_launch_id_is_rejected_before_creating_an_admission_drop() {
+        let directory = TempDir::new().expect("temporary root");
+        let intent = AdmissionIntent::new(
+            7,
+            "../../outside-admissions",
+            Some(HostedServiceKind::Sense),
+            None,
+        );
+
+        assert!(matches!(
+            write_parent_loss_admission_intent(directory.path(), &intent),
+            Err(ParentLossAdmissionError::InvalidLaunchId)
+        ));
+        assert!(
+            !directory.path().join("health").exists(),
+            "invalid launch IDs must fail before the admission writer creates paths"
+        );
     }
 }
