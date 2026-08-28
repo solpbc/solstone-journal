@@ -9,7 +9,10 @@ mod service;
 mod state;
 mod storage;
 
-pub use service::{CortexOptions, CortexServiceError, ShutdownMode, run_native_service, run_until};
+pub use service::{
+    CortexOptions, CortexServiceError, ShutdownMode, run_native_service,
+    run_native_service_with_hosted_parent, run_until,
+};
 
 // Gated on `test-hooks` as well as `test` so `tests/cortex_child_supervisor.rs`
 // and `tests/bin/controller.rs` can drive crate-private spawn/stop surfaces.

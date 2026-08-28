@@ -4806,6 +4806,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
+ "solstone-core-system",
  "spl-core",
  "thiserror 2.0.20",
  "tokio",
@@ -4960,6 +4961,7 @@ dependencies = [
  "solstone-core-processing-record",
  "tempfile",
  "thiserror 2.0.20",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 

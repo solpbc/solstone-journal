@@ -85,7 +85,9 @@ pub use service::{
     POSTURE_POLL_INTERVAL, RelayRunTask, RelayServiceToken, ServiceDeps, ServiceError, ServicePoll,
     StartedRelay, run_service,
 };
-pub use service_process::{NativeServiceError, run_native_service};
+pub use service_process::{
+    NativeServiceError, run_native_service, run_native_service_with_hosted_parent,
+};
 pub use service_shutdown::{RelayStop, ServiceShutdownError, stop_relay_run};
 pub use service_transition::{
     PostureObservation, ServiceAction, ServiceLifecycle, TokenObservation, transition,

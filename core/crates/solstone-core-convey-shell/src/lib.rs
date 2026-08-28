@@ -407,12 +407,23 @@ async fn serve_loopback(
 /// Run the production Convey server until its process is terminated; port zero is unsupported.
 #[cfg(feature = "host")]
 pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
+    run_convey_with_hosted_parent(journal_root, port, None)
+}
+
+/// Run Convey with an optional birth-admitted hosted parent lifetime.
+#[cfg(feature = "host")]
+pub fn run_convey_with_hosted_parent(
+    journal_root: PathBuf,
+    port: u16,
+    hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+) -> Result<(), String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("convey could not inspect current executable: {error}"))?;
     let executable_dir = executable
         .parent()
         .ok_or_else(|| format!("convey executable has no parent: {}", executable.display()))?;
-    run_convey_from_executable_dir(journal_root, port, executable_dir)
+    let _roots = crate::thinking_sol_reads::TalentRoots::from_executable_dir(executable_dir)?;
+    run_convey_bound(journal_root, port, hosted_parent)
 }
 
 /// Like [`run_convey`], but resolves packaged talent roots from `executable_dir`.
@@ -423,17 +434,22 @@ pub fn run_convey_from_executable_dir(
     executable_dir: &std::path::Path,
 ) -> Result<(), String> {
     let _roots = crate::thinking_sol_reads::TalentRoots::from_executable_dir(executable_dir)?;
-    run_convey_bound(journal_root, port)
+    run_convey_bound(journal_root, port, None)
 }
 
 #[cfg(feature = "host")]
-fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
+fn run_convey_bound(
+    journal_root: PathBuf,
+    port: u16,
+    hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+) -> Result<(), String> {
     use solstone_core_journal_config::read_direct_door_port;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
     use solstone_core_system::direct_door::{
         DirectDoorOutcome, DirectDoorPublishResult, peek_direct_door_generation,
-        publish_direct_door,
+        publish_direct_door, withhold_direct_door,
     };
+    use solstone_core_system::lifecycle::HostedServiceShutdownEvidence;
     use tokio::sync::watch;
 
     if port == 0 {
@@ -519,6 +535,33 @@ fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
         }
     }
     write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;
+    if let Some(parent) = hosted_parent {
+        let reason = runtime.block_on(parent.await_parent_loss());
+        // `ConveyServeHandle::shutdown` synchronously aborts every listener
+        // task and has no fallible result; Convey has no separate runner once
+        // those tasks have been aborted.
+        handle.shutdown();
+        let artifact_cleanup = withhold_direct_door(&journal_root, generation, direct_port)
+            .map_err(|error| format!("convey: failed to withhold direct-door record: {error}"))
+            .and_then(|result| match result {
+                DirectDoorPublishResult::Published => remove_port_file(&journal_root),
+                DirectDoorPublishResult::RejectedStale => {
+                    Err("convey: direct-door withdrawal rejected as stale".to_owned())
+                }
+            });
+        parent
+            .finish_parent_loss(
+                reason,
+                HostedServiceShutdownEvidence {
+                    listener_stopped: true,
+                    service_runner_stopped: true,
+                    operational_artifacts_cleaned: artifact_cleanup.is_ok(),
+                },
+            )
+            .map_err(|error| format!("convey: parent-loss handoff failed: {error}"))?;
+        artifact_cleanup?;
+        return Ok(());
+    }
     runtime.block_on(handle.await_forever())
 }
 
@@ -540,6 +583,16 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
             let _ = std::fs::remove_file(&temporary);
             format!("convey could not write its port file: {error}")
         })
+}
+
+#[cfg(feature = "host")]
+fn remove_port_file(journal_root: &FsPath) -> Result<(), String> {
+    let path = journal_root.join("health/convey.port");
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("convey could not remove port file: {error}")),
+    }
 }
 
 pub fn router(journal_root: PathBuf) -> Router {

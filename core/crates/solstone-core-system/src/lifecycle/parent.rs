@@ -88,6 +88,11 @@ impl ParentWatch {
             }
         }
     }
+
+    /// The direct parent identity admitted for this process.
+    pub fn instance(&self) -> ProcessInstance {
+        self.declared.instance()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

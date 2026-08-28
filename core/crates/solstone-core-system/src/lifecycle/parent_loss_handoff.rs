@@ -218,6 +218,28 @@ pub fn record_parent_loss_service_witness(
     })
 }
 
+/// Publish a terminal unresolved outcome when parent-loss observation itself
+/// cannot support a completed witness.
+pub fn record_parent_loss_service_unresolved(
+    journal: &Path,
+    generation: ProcessInstance,
+    service: HostedServiceKind,
+    reason: ParentLossHandoffUnresolvedReason,
+) -> Result<ParentLossHandoffPublishResult, ParentLossHandoffError> {
+    mutate_matching_generation(journal, generation, |record| {
+        if record.terminal.is_some() {
+            return Ok(ParentLossHandoffPublishResult::RejectedTerminal);
+        }
+        if !record.enabled.contains(&service) {
+            return terminal_unresolved(
+                record,
+                ParentLossHandoffUnresolvedReason::MissingServiceRegistration,
+            );
+        }
+        terminal_unresolved(record, reason)
+    })
+}
+
 /// End a generation's bounded peer-witness wait without claiming completion.
 pub fn finalize_parent_loss_handoff(
     journal: &Path,
@@ -603,6 +625,43 @@ mod tests {
         assert_eq!(
             read_parent_loss_handoff(journal.path()).expect("read"),
             Some(ParentLossHandoffTerminal::Completed)
+        );
+    }
+
+    #[test]
+    fn failed_service_stop_is_unresolved_and_never_completed() {
+        let journal = journal();
+        let generation = instance(10, 1);
+        initialize_parent_loss_handoff(journal.path(), generation, [HostedServiceKind::Convey])
+            .expect("initialize");
+        let convey = registration(20, 1);
+        register_parent_loss_service(
+            journal.path(),
+            generation,
+            HostedServiceKind::Convey,
+            convey,
+        )
+        .expect("registration");
+        let mut failed = witness(generation, convey);
+        failed.service_runner_stopped = false;
+        failed.shutdown_complete = false;
+
+        assert!(matches!(
+            record_parent_loss_service_witness(
+                journal.path(),
+                generation,
+                HostedServiceKind::Convey,
+                failed,
+            ),
+            Err(ParentLossHandoffError::Unresolved(
+                ParentLossHandoffUnresolvedReason::ServiceRunnerDidNotStop
+            ))
+        ));
+        assert_eq!(
+            read_parent_loss_handoff(journal.path()).expect("read"),
+            Some(ParentLossHandoffTerminal::Unresolved {
+                reason: ParentLossHandoffUnresolvedReason::ServiceRunnerDidNotStop,
+            })
         );
     }
 

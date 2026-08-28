@@ -18,6 +18,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
+solstone-core-system.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt", "rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }

@@ -25,6 +25,9 @@ use solstone_core_journal_config::{
     ConfigLoadError, DirectDoorPortError, plain_defaults, read_direct_door_port,
     read_journal_config,
 };
+use solstone_core_system::lifecycle::{
+    HostedServiceParentRuntime, HostedServiceShutdownEvidence, ParentLossReason,
+};
 use tokio::{
     io::AsyncWriteExt,
     sync::{Notify, watch},
@@ -60,6 +63,9 @@ pub enum NativeServiceError {
     /// The supervised service stopped with a stable service error class.
     #[error("service supervision failed")]
     Service,
+    /// Parent-loss cleanup could not publish its durable handoff evidence.
+    #[error("hosted parent-loss handoff failed")]
+    ParentLoss,
 }
 
 impl NativeServiceError {
@@ -69,6 +75,7 @@ impl NativeServiceError {
         match self {
             Self::Runtime => "runtime",
             Self::Service => "supervision",
+            Self::ParentLoss => "parent-loss",
         }
     }
 }
@@ -86,30 +93,82 @@ pub fn run_native_service(
     journal_root: PathBuf,
     verbosity: Verbosity,
 ) -> Result<(), NativeServiceError> {
+    run_native_service_with_hosted_parent(journal_root, verbosity, None)
+}
+
+/// Starts SPL with an optional birth-admitted hosted parent lifetime.
+pub fn run_native_service_with_hosted_parent(
+    journal_root: PathBuf,
+    verbosity: Verbosity,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+) -> Result<(), NativeServiceError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("spl-service")
         .build()
         .map_err(|_| NativeServiceError::Runtime)?;
-    runtime.block_on(run_native_service_async(journal_root, verbosity))
+    runtime.block_on(run_native_service_async(
+        journal_root,
+        verbosity,
+        hosted_parent,
+    ))
 }
 
 async fn run_native_service_async(
     journal_root: PathBuf,
     verbosity: Verbosity,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), NativeServiceError> {
     let callosum = CallosumOutput::start(journal_root.join("health").join("callosum.sock"));
     if verbosity != Verbosity::Quiet {
         eprintln!("spl service: starting; watching link posture");
     }
     let (shutdown_send, shutdown_receive) = watch::channel(false);
-    let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send));
+    let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
+    let (parent_loss_send, mut parent_loss_receive) = tokio::sync::oneshot::channel();
+    let parent_task = hosted_parent.as_ref().map(|parent| {
+        tokio::spawn(wait_for_hosted_parent(
+            Arc::clone(parent),
+            shutdown_send.clone(),
+            parent_loss_send,
+        ))
+    });
     let mut deps = ProcessServiceDeps::new(journal_root, callosum, verbosity, shutdown_receive);
 
     let result = run_service(&mut deps).await.map_err(classify_service_error);
+    let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
+    if let Some(parent_task) = parent_task {
+        parent_task.abort();
+        let _ = parent_task.await;
+    }
+    if let (Some(parent), Ok(reason)) = (hosted_parent, parent_loss_receive.try_recv()) {
+        parent
+            .finish_parent_loss(
+                reason,
+                HostedServiceShutdownEvidence {
+                    // A successful service loop includes relay cleanup and
+                    // the bounded Callosum-output stop.
+                    listener_stopped: service_stopped,
+                    service_runner_stopped: service_stopped,
+                    // SPL has no distinct health artifact to withdraw.
+                    operational_artifacts_cleaned: true,
+                },
+            )
+            .map_err(|_| NativeServiceError::ParentLoss)?;
+    }
     result
+}
+
+async fn wait_for_hosted_parent(
+    parent: Arc<HostedServiceParentRuntime>,
+    shutdown: watch::Sender<bool>,
+    parent_loss: tokio::sync::oneshot::Sender<ParentLossReason>,
+) {
+    let reason = parent.await_parent_loss().await;
+    let _ = parent_loss.send(reason);
+    let _ = shutdown.send(true);
 }
 
 fn classify_service_error(_error: ServiceError) -> NativeServiceError {

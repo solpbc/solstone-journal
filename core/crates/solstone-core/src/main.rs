@@ -4,7 +4,7 @@
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use std::{
@@ -64,7 +64,8 @@ mod settings;
 use solstone_core::supervisor;
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, DeclaredParent,
-    ParentAdmissionFailure,
+    HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
+    admit_hosted_service_parent,
 };
 mod thinking;
 use solstone_core_indexer_query::{
@@ -99,6 +100,8 @@ const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
 /// `EX_PROTOCOL`: the caller broke a brain-session framing contract.
 const EXIT_PROTOCOL: u8 = 76;
+/// `EX_CONFIG`: hosted-service parent admission failed before service work.
+const EXIT_HOSTED_SERVICE_ADMISSION_REFUSED: u8 = 78;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -139,6 +142,34 @@ fn resolve_declared_parent(
         DeclaredParent::capture_current().map(Some)
     } else {
         Ok(None)
+    }
+}
+
+/// Gate every supervisor-spawned service before it can bind or publish any
+/// readiness artifact. Unhosted commands receive `None` and retain their
+/// existing service behavior unchanged.
+fn run_hosted_service<F>(journal: &Path, kind: HostedServiceKind, run: F) -> ExitCode
+where
+    F: FnOnce(Option<Arc<HostedServiceParentRuntime>>) -> ExitCode,
+{
+    match admit_hosted_service_parent(journal, kind) {
+        Ok(parent) => run(parent.map(Arc::new)),
+        Err(error) => {
+            eprintln!(
+                "hosted {} service admission refused: {error}",
+                kind_name(kind)
+            );
+            ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED)
+        }
+    }
+}
+
+const fn kind_name(kind: HostedServiceKind) -> &'static str {
+    match kind {
+        HostedServiceKind::Convey => "convey",
+        HostedServiceKind::Sense => "sense",
+        HostedServiceKind::Cortex => "cortex",
+        HostedServiceKind::Spl => "spl",
     }
 }
 
@@ -1103,13 +1134,20 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    match solstone_core_convey_shell::run_convey(journal, options.port) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(EXIT_TEMPFAIL)
+    let service_journal = journal.clone();
+    run_hosted_service(&journal, HostedServiceKind::Convey, move |parent| {
+        match solstone_core_convey_shell::run_convey_with_hosted_parent(
+            service_journal,
+            options.port,
+            parent,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
         }
-    }
+    })
 }
 
 fn run_schedule(_options: ScheduleOptions) -> ExitCode {
@@ -4599,14 +4637,21 @@ fn run_spl_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let verbosity = solstone_core_spl::Verbosity::from_flags(options.verbose, options.debug);
-    match solstone_core_spl::run_native_service(journal.path, verbosity) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("spl service failed: {}", error.class());
-            ExitCode::from(EXIT_TEMPFAIL)
+    let service_journal = journal.path.clone();
+    run_hosted_service(&journal.path, HostedServiceKind::Spl, move |parent| {
+        let verbosity = solstone_core_spl::Verbosity::from_flags(options.verbose, options.debug);
+        match solstone_core_spl::run_native_service_with_hosted_parent(
+            service_journal,
+            verbosity,
+            parent,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("spl service failed: {}", error.class());
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
         }
-    }
+    })
 }
 
 fn run_sense_service(options: ServiceOptions) -> ExitCode {
@@ -4617,19 +4662,23 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    match solstone_core_sense::run_native_service(
-        journal.path,
-        solstone_core_sense::SenseOptions {
-            verbose: options.verbose,
-            debug: options.debug,
-        },
-    ) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("sense service failed: {}", error.class());
-            ExitCode::from(EXIT_TEMPFAIL)
+    let service_journal = journal.path.clone();
+    run_hosted_service(&journal.path, HostedServiceKind::Sense, move |parent| {
+        match solstone_core_sense::run_native_service_with_hosted_parent(
+            service_journal,
+            solstone_core_sense::SenseOptions {
+                verbose: options.verbose,
+                debug: options.debug,
+            },
+            parent,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("sense service failed: {}", error.class());
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
         }
-    }
+    })
 }
 
 fn run_cortex_service(options: ServiceOptions) -> ExitCode {
@@ -4640,26 +4689,30 @@ fn run_cortex_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
-    };
-    match runtime.block_on(solstone_core_cortex::run_native_service(
-        journal.path,
-        solstone_core_cortex::CortexOptions {
-            verbose: options.verbose,
-            debug: options.debug,
-        },
-    )) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("cortex service failed: {error}");
-            ExitCode::from(EXIT_TEMPFAIL)
+    let service_journal = journal.path.clone();
+    run_hosted_service(&journal.path, HostedServiceKind::Cortex, move |parent| {
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
+        };
+        match runtime.block_on(solstone_core_cortex::run_native_service_with_hosted_parent(
+            service_journal,
+            solstone_core_cortex::CortexOptions {
+                verbose: options.verbose,
+                debug: options.debug,
+            },
+            parent,
+        )) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("cortex service failed: {error}");
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
         }
-    }
+    })
 }
 
 fn run_sense(options: SenseOptions) -> ExitCode {

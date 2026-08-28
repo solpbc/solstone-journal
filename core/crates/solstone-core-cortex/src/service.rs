@@ -3,12 +3,15 @@
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_callosum::CallosumSocketConnection;
+use solstone_core_system::lifecycle::{
+    HostedServiceParentRuntime, HostedServiceShutdownEvidence, ParentLossReason,
+};
 use thiserror::Error;
 use tokio::time::{Duration, MissedTickBehavior};
 
@@ -39,6 +42,8 @@ pub enum CortexServiceError {
     InstallationRoot(String),
     #[error("could not initialize cortex journal storage: {0}")]
     Storage(#[source] std::io::Error),
+    #[error("hosted parent-loss handoff failed: {0}")]
+    ParentLoss(String),
 }
 
 impl CortexServiceError {
@@ -48,6 +53,7 @@ impl CortexServiceError {
             Self::CurrentExecutable(_) => "executable",
             Self::InstallationRoot(_) => "installation-root",
             Self::Storage(_) => "storage",
+            Self::ParentLoss(_) => "parent-loss",
         }
     }
 }
@@ -55,6 +61,15 @@ impl CortexServiceError {
 pub async fn run_native_service(
     journal: PathBuf,
     options: CortexOptions,
+) -> Result<(), CortexServiceError> {
+    run_native_service_with_hosted_parent(journal, options, None).await
+}
+
+/// Run Cortex with an optional birth-admitted hosted parent lifetime.
+pub async fn run_native_service_with_hosted_parent(
+    journal: PathBuf,
+    options: CortexOptions,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), CortexServiceError> {
     if options.verbose {
         eprintln!("cortex: starting native service");
@@ -75,16 +90,40 @@ pub async fn run_native_service(
         })?;
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
-    run_until(
+    let parent_loss = Arc::new(Mutex::new(None));
+    let result = run_until(
         journal,
         connection,
         executable_dir,
         talent_root,
         apps_root,
         templates_dir,
-        shutdown_signal(),
+        shutdown_with_hosted_parent(hosted_parent.clone(), Arc::clone(&parent_loss)),
     )
-    .await
+    .await;
+    let service_stopped = result.is_ok();
+    if let (Some(parent), Some(reason)) = (
+        hosted_parent,
+        parent_loss
+            .lock()
+            .expect("hosted parent-loss reason lock poisoned")
+            .take(),
+    ) {
+        parent
+            .finish_parent_loss(
+                reason,
+                HostedServiceShutdownEvidence {
+                    // `run_until` returns `Ok` only after it has stopped the
+                    // Callosum connection and its service runner.
+                    listener_stopped: service_stopped,
+                    service_runner_stopped: service_stopped,
+                    // Cortex has no separate health artifact to withdraw.
+                    operational_artifacts_cleaned: true,
+                },
+            )
+            .map_err(|error| CortexServiceError::ParentLoss(error.to_string()))?;
+    }
+    result
 }
 
 pub(crate) fn package_roots_from_executable_dir(
@@ -299,6 +338,24 @@ async fn shutdown_signal() -> ShutdownMode {
     }
     let _ = tokio::signal::ctrl_c().await;
     ShutdownMode::Drain
+}
+
+async fn shutdown_with_hosted_parent(
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    parent_loss: Arc<Mutex<Option<ParentLossReason>>>,
+) -> ShutdownMode {
+    let Some(parent) = hosted_parent else {
+        return shutdown_signal().await;
+    };
+    tokio::select! {
+        mode = shutdown_signal() => mode,
+        reason = parent.await_parent_loss() => {
+            *parent_loss
+                .lock()
+                .expect("hosted parent-loss reason lock poisoned") = Some(reason);
+            ShutdownMode::Immediate
+        }
+    }
 }
 
 #[cfg(test)]

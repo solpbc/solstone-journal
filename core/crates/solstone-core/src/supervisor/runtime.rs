@@ -21,12 +21,13 @@ use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
 use solstone_core_system::lifecycle::{
-    DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
+    DEFAULT_INTERVAL_SECONDS, HostedServiceKind, ParentLossReason, ParentWatch, ParentWatchStatus,
     PreReadySupervisorLifecycle, ShutdownRegime, SupervisorLifecycle, SyncPeerObservation,
-    SyncSnapshot, SyncTickOutcome,
+    SyncSnapshot, SyncTickOutcome, initialize_parent_loss_handoff,
 };
 use solstone_core_system::process::{
-    ManagedProcess, RestartPolicy, STRUGGLING_THRESHOLD, SpawnOptions, describe_exit,
+    InspectResult, ManagedProcess, ProcessInstance, ProcessInstanceSource, RestartPolicy,
+    STRUGGLING_THRESHOLD, SpawnOptions, SystemProcessInstanceSource, describe_exit,
 };
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -137,6 +138,15 @@ impl AppService {
         }
     }
 
+    const fn hosted_service_kind(self) -> HostedServiceKind {
+        match self {
+            Self::Convey => HostedServiceKind::Convey,
+            Self::Sense => HostedServiceKind::Sense,
+            Self::Cortex => HostedServiceKind::Cortex,
+            Self::Spl => HostedServiceKind::Spl,
+        }
+    }
+
     fn production_argv(self, journal_binary: &Path, convey_port: u16) -> Vec<String> {
         let mut argv = vec![journal_binary.display().to_string()];
         match self {
@@ -150,6 +160,15 @@ impl AppService {
             Self::Spl => argv.push("spl".to_owned()),
         }
         argv
+    }
+}
+
+fn current_supervisor_instance() -> Result<ProcessInstance, String> {
+    match SystemProcessInstanceSource.inspect(std::process::id()) {
+        InspectResult::Present { instance, .. } => Ok(instance),
+        InspectResult::Absent | InspectResult::Unverifiable => {
+            Err("could not verify supervisor process identity for parent-loss handoff".to_owned())
+        }
     }
 }
 
@@ -1024,6 +1043,31 @@ pub(crate) async fn boot_and_tick(
         convey_port,
         fast_fixture_timing,
     );
+    let handoff_generation = match current_supervisor_instance() {
+        Ok(instance) => instance,
+        Err(error) => {
+            return Err(
+                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+            );
+        }
+    };
+    if let Err(error) = initialize_parent_loss_handoff(
+        &journal,
+        handoff_generation,
+        app_processes
+            .iter()
+            .filter(|app| app.enabled)
+            .map(|app| app.service.hosted_service_kind()),
+    ) {
+        return Err(abort_published_setup(
+            &lifecycle,
+            &queue,
+            &mut connection,
+            &server,
+            format!("could not initialize parent-loss handoff: {error}"),
+        )
+        .await);
+    }
     let mut state = SupervisorState {
         journal,
         is_remote_mode: remote,

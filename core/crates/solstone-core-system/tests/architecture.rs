@@ -9,6 +9,7 @@ use solstone_core_system::TASK_VERB_TOKENS;
 
 const JOURNAL_PROCESSES: &str = include_str!("../../solstone-core-journal-cli/src/processes.rs");
 const JOURNAL_MANIFEST: &str = include_str!("../../solstone-core-journal-cli/src/manifest.rs");
+const CORE_MAIN: &str = include_str!("../../solstone-core/src/main.rs");
 const LIB: &str = include_str!("../src/lib.rs");
 const ACTIVITY_STATE: &str = include_str!("../src/activity_state.rs");
 const CAP: &str = include_str!("../src/cap.rs");
@@ -33,8 +34,11 @@ const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
 const MACOS_PROC: &str = include_str!("../src/process/macos_proc.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
+const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
+const LIFECYCLE_HOSTED_SERVICE: &str = include_str!("../src/lifecycle/hosted_service.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
 const LIFECYCLE_PARENT: &str = include_str!("../src/lifecycle/parent.rs");
+const LIFECYCLE_PARENT_LOSS_HANDOFF: &str = include_str!("../src/lifecycle/parent_loss_handoff.rs");
 const LIFECYCLE_SHUTDOWN: &str = include_str!("../src/lifecycle/shutdown.rs");
 const LIFECYCLE_STARTUP: &str = include_str!("../src/lifecycle/startup.rs");
 const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
@@ -192,7 +196,10 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     ];
     let lifecycle_modules = [
         ("clock", LIFECYCLE_CLOCK),
+        ("darwin_parent_watch", LIFECYCLE_DARWIN_PARENT_WATCH),
+        ("hosted_service", LIFECYCLE_HOSTED_SERVICE),
         ("parent", LIFECYCLE_PARENT),
+        ("parent_loss_handoff", LIFECYCLE_PARENT_LOSS_HANDOFF),
         ("readiness", LIFECYCLE_READINESS),
         ("shutdown", LIFECYCLE_SHUTDOWN),
         ("startup", LIFECYCLE_STARTUP),
@@ -270,6 +277,9 @@ fn ac21_only_operational_log_module_names_write_primitives() {
                 && *name != "completion"
                 && *name != "store"
                 && *name != "catchup"
+                // This lifecycle module is the §7 L2 sole writer for the
+                // generation-fenced parent-loss handoff record.
+                && *name != "parent_loss_handoff"
         })
     {
         // Checked against PRODUCTION source only -- everything before a trailing
@@ -354,6 +364,30 @@ fn ac27_spawn_plan_and_spawn_parakeet_apply_parent_death_kill() {
     assert!(PROVIDER_RUNTIME_LAUNCH.contains("apply_parent_death_kill"));
     assert!(PROVIDER_RUNTIME_PARAKEET.contains("fn spawn_parakeet"));
     assert!(PROVIDER_RUNTIME_PARAKEET.contains("apply_parent_death_kill"));
+}
+
+#[test]
+fn ac1_all_hosted_service_routes_use_shared_parent_admission() {
+    for function in [
+        "fn run_convey(",
+        "fn run_spl_service(",
+        "fn run_sense_service(",
+        "fn run_cortex_service(",
+    ] {
+        assert!(function_body(CORE_MAIN, function).contains("run_hosted_service("));
+    }
+    assert!(
+        function_body(CORE_MAIN, "fn run_hosted_service<").contains("admit_hosted_service_parent(")
+    );
+}
+
+fn function_body<'a>(source: &'a str, function: &str) -> &'a str {
+    let start = source
+        .find(function)
+        .unwrap_or_else(|| panic!("missing function {function}"));
+    let body = &source[start..];
+    let end = body.find("\nfn ").unwrap_or(body.len());
+    &body[..end]
 }
 
 #[test]

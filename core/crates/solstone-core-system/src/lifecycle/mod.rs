@@ -5,6 +5,9 @@
 //! state but deliberately does not provide a supervisor binary or CLI.
 
 mod clock;
+#[cfg(target_os = "macos")]
+mod darwin_parent_watch;
+mod hosted_service;
 mod parent;
 mod parent_loss_handoff;
 mod readiness;
@@ -32,6 +35,12 @@ use solstone_core_journal_io::{
 use thiserror::Error;
 
 pub use clock::AdmissionWaitClock;
+#[cfg(target_os = "macos")]
+pub use darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
+pub use hosted_service::{
+    HostedServiceAdmissionFailure, HostedServiceParentRuntime, HostedServiceShutdownEvidence,
+    HostedServiceWatchError, admit_hosted_service_parent,
+};
 pub use parent::{
     DeclaredParent, ParentAdmissionFailure, ParentLossReason, ParentWatch, ParentWatchStatus,
 };
@@ -39,7 +48,8 @@ pub use parent_loss_handoff::{
     HostedServiceKind, ParentLossHandoffError, ParentLossHandoffPublishResult,
     ParentLossHandoffTerminal, ParentLossHandoffUnresolvedReason, ParentLossServiceRegistration,
     ParentLossServiceWitness, finalize_parent_loss_handoff, initialize_parent_loss_handoff,
-    read_parent_loss_handoff, record_parent_loss_service_witness, register_parent_loss_service,
+    read_parent_loss_handoff, record_parent_loss_service_unresolved,
+    record_parent_loss_service_witness, register_parent_loss_service,
 };
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
