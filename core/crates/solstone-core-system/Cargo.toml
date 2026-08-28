@@ -30,13 +30,15 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 solstone-core-journal-io = { workspace = true }
-solstone-core-journal-config = { workspace = true }
 solstone-core-processing-record = { workspace = true }
+solstone-core-format = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+solstone-core-journal-config = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-local = { workspace = true }
 solstone-core-assets = { workspace = true }
-solstone-core-format = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 filetime = "0.2.29"

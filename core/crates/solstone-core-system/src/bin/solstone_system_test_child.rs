@@ -104,9 +104,14 @@ fn main() {
             let _journal = args.next().expect("journal path");
             let ready_path = args.next().expect("ready path");
             if mode == "orphan-sweep-holder-resists-term" {
-                let mut signals = nix::sys::signal::SigSet::empty();
-                signals.add(nix::sys::signal::Signal::SIGTERM);
-                signals.thread_block().expect("block SIGTERM");
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                {
+                    let mut signals = nix::sys::signal::SigSet::empty();
+                    signals.add(nix::sys::signal::Signal::SIGTERM);
+                    signals.thread_block().expect("block SIGTERM");
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                std::process::exit(64);
             }
             #[cfg(target_os = "linux")]
             std::fs::write("/proc/self/comm", "journal:holder\n").expect("set proc title");
@@ -232,6 +237,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         "block-term-count" => {
             let ready_path = args.next().expect("ready path");
             let count_path = args.next().expect("count path");
@@ -252,6 +258,9 @@ fn main() {
                 }
             }
         }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        "block-term-count" => std::process::exit(64),
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         "block-term-sleep" => {
             let ready_path = args.next().expect("ready path");
             let mut signals = nix::sys::signal::SigSet::empty();
@@ -260,6 +269,8 @@ fn main() {
             std::fs::write(ready_path, "ready").expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
         }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        "block-term-sleep" => std::process::exit(64),
         "term-resistant-descendant" => {
             let ready_path = args.next().expect("ready path");
             let executable = std::env::current_exe().expect("fixture executable");
@@ -319,9 +330,14 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
     match model.trim() {
         "test-ready" | "test-ready-block-term" => {
             if model.trim() == "test-ready-block-term" {
-                let mut signals = nix::sys::signal::SigSet::empty();
-                signals.add(nix::sys::signal::Signal::SIGTERM);
-                signals.thread_block().expect("block SIGTERM");
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                {
+                    let mut signals = nix::sys::signal::SigSet::empty();
+                    signals.add(nix::sys::signal::Signal::SIGTERM);
+                    signals.thread_block().expect("block SIGTERM");
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                std::process::exit(64);
             }
             let listener = TcpListener::bind(("127.0.0.1", port.expect("launch port")))
                 .expect("bind launch stub");
