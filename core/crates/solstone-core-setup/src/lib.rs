@@ -147,17 +147,24 @@ fn resolve_identity_root(
         .unwrap_or_else(|| project_root.to_path_buf())
 }
 
+fn allows_recognized_legacy_path_shadow(
+    platform: PlatformTag,
+    executable_dir: &std::path::Path,
+    artifacts: &ArtifactBindingEvidence,
+    legacy_transition: bool,
+) -> bool {
+    matches!(platform, PlatformTag::Linux)
+        && executable_dir == std::path::Path::new("/usr/bin")
+        && legacy_transition
+        && matches!(artifacts, ArtifactBindingEvidence::LegacyUnguarded)
+}
+
 fn admit_setup_identity(
     home_dir: &std::path::Path,
     executable_dir: &std::path::Path,
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
 ) -> Result<SetupIdentityAdmission, IdentityError> {
-    if std::env::var_os("HOME").is_some_and(|home| std::path::Path::new(&home) == home_dir) {
-        legacy_launcher::validate_effective_path(home_dir, project_root, executable_dir).map_err(
-            |_| IdentityError::AdmissionRefused("PATH resolves outside the V2 installation"),
-        )?;
-    }
     let root = resolve_identity_root(executable_dir, project_root);
     let root_token = root_token_from_path(&root)?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
@@ -170,6 +177,19 @@ fn admit_setup_identity(
             solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
         ),
     );
+    if std::env::var_os("HOME").is_some_and(|home| std::path::Path::new(&home) == home_dir)
+        && legacy_launcher::validate_effective_path(home_dir, project_root, executable_dir).is_err()
+        && !allows_recognized_legacy_path_shadow(
+            PlatformTag::current(),
+            executable_dir,
+            artifacts.artifacts(),
+            artifacts.legacy_transition(),
+        )
+    {
+        return Err(IdentityError::AdmissionRefused(
+            "PATH resolves outside the V2 installation",
+        ));
+    }
     if !home_dir.exists()
         && matches!(artifacts.artifacts(), ArtifactBindingEvidence::Fresh)
         && matches!(
@@ -1087,6 +1107,46 @@ mod tests {
                 .path()
                 .exists()
         );
+    }
+
+    #[test]
+    fn path_shadow_admission_requires_a_recognized_legacy_transition() {
+        assert!(allows_recognized_legacy_path_shadow(
+            PlatformTag::Linux,
+            std::path::Path::new("/usr/bin"),
+            &ArtifactBindingEvidence::LegacyUnguarded,
+            true,
+        ));
+        for artifacts in [
+            ArtifactBindingEvidence::Fresh,
+            ArtifactBindingEvidence::Malformed,
+            ArtifactBindingEvidence::Ambiguous,
+        ] {
+            assert!(!allows_recognized_legacy_path_shadow(
+                PlatformTag::Linux,
+                std::path::Path::new("/usr/bin"),
+                &artifacts,
+                true,
+            ));
+        }
+        assert!(!allows_recognized_legacy_path_shadow(
+            PlatformTag::Linux,
+            std::path::Path::new("/usr/bin"),
+            &ArtifactBindingEvidence::LegacyUnguarded,
+            false,
+        ));
+        assert!(!allows_recognized_legacy_path_shadow(
+            PlatformTag::Macos,
+            std::path::Path::new("/usr/bin"),
+            &ArtifactBindingEvidence::LegacyUnguarded,
+            true,
+        ));
+        assert!(!allows_recognized_legacy_path_shadow(
+            PlatformTag::Linux,
+            std::path::Path::new("/opt/solstone/bin"),
+            &ArtifactBindingEvidence::LegacyUnguarded,
+            true,
+        ));
     }
 
     #[test]

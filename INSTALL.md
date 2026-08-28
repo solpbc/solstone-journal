@@ -187,7 +187,7 @@ Choose a provider in settings → providers. The available paths have different 
 
 - **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up](#set-up)).
 - **an engine you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure the solstone app with Google (Gemini), OpenAI, or Anthropic using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in settings → providers.
-- **confidential processing**, if you would rather not run a provider yourself. Available to approved scouts. Your journal must verify the service before material leaves; if it cannot verify the service, the material stays in your journal. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.
+- **confidential processing**, if you would rather not run a provider yourself. Available to approved scouts. It is off until you turn it on. While it is active, your journal verifies the service before material leaves; if it cannot verify the service, the material stays in your journal. Its audio setting is on by default; turn it off and transcription stays on your device. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.
 
 For the full picture of what is sent, to whom, and under whose terms, see [what material reaches your AI provider](DATA-FLOW.md).
 
@@ -207,15 +207,21 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 **Your journal itself is untouched by any of this.** It is a folder of dated directories and no installer owns it.
 
-Earlier releases installed the journal as a set of Python packages (`pip`, `uv tool`, or `pipx`). Install the tree as above, then run:
+Earlier releases installed the journal as a set of Python packages (`pip`, `uv tool`, or `pipx`). If you are moving specifically from v1.0.22 after installing this linux native `.deb` or `.rpm`, run this one time instead, even when `~/.local/bin/journal` comes first on your normal PATH:
+
+```bash
+/usr/bin/journal setup
+```
+
+This exception is only for that v1.0.22 linux package crossover. Do not remove the old install first: setup recognizes its runtime and service artifacts, preserves your journal, replaces only what it can identify, and saves recovery backups of recognized legacy launchers. For every other install route, run:
 
 ```bash
 journal setup
 ```
 
-That single command finds a real prior install — its `solstone`, `journal`, and `sol` binaries wherever `pip`/`uv`/`pipx` put them under `~/.local/bin` — stops its service, and replaces it, automatically, in one invocation. There is no separate cleanup command to run first. Running `pip uninstall` / `uv tool uninstall` / `pipx uninstall`, or `journal service stop` against the old install, yourself before running `journal setup` only removes the evidence setup needs to find and safely replace it; let `journal setup` do it.
+That one setup command finds a real prior install, its `solstone`, `journal`, and `sol` binaries wherever `pip`/`uv`/`pipx` put them under `~/.local/bin`, stops its service, and replaces it automatically in one invocation. There is no separate cleanup command to run first. Running `pip uninstall` / `uv tool uninstall` / `pipx uninstall`, or `journal service stop` against the old install, yourself before setup only removes the evidence it needs to find and safely replace the old runtime; let the applicable setup command above do it.
 
-Setup keeps a durable backup of anything it replaces under `~/.local/share/solstone/setup-backups/` before touching it, so nothing is destroyed outright.
+When setup replaces recognized legacy launchers, it keeps durable recovery backups under `~/.local/share/solstone/setup-backups/` before touching those launchers.
 
 ⚠ **There is no CUDA build of the tree.** If you were on `solstone-journal-cuda`, transcription moves to the CPU runtime. It uses the same model on the CPU, so long recordings take longer to process; nothing else about them changes. The local *model* provider still uses your GPU where it can. That path is separate and is described under [set up](#set-up).
 

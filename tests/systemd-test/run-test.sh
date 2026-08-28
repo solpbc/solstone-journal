@@ -15,11 +15,10 @@
 #                                          #   root-launchers, a separate journal
 #                                          #   console-script, Type=notify unit) rather
 #                                          #   than the older shape legacy-upgrade covers.
-#                                          #   Currently and correctly FAILS: a real
-#                                          #   v1.0.22 ~/.local/bin/journal shadows the
-#                                          #   .deb's /usr/bin/journal on PATH, so
-#                                          #   `journal setup` never reaches V2's
-#                                          #   crossover code. Not a fixture bug.
+#                                          #   Exercises the documented absolute V2
+#                                          #   command because a real v1.0.22
+#                                          #   ~/.local/bin/journal shadows the .deb's
+#                                          #   /usr/bin/journal on PATH.
 #   ./run-test.sh shell                    # leave container up + drop into a user shell
 #
 # Environment overrides:
@@ -591,8 +590,10 @@ PY
         # binary and verb (core/crates/solstone-core-service-unit/src/
         # systemd.rs::render_systemd_unit). Owners and testers are frozen on
         # 1.0.22 until the all-surfaces release, so this is the shape that
-        # matters; the fixture files under fixtures/legacy-v1022/ carry the
-        # exact bytes.
+        # matters. The retained launcher and unit fixtures mirror the tagged
+        # v1.0.22 layout; the fixture's process payload is deliberately a
+        # stand-in, so release validation must separately exercise the tagged
+        # v1.0.22 payload itself.
         log "legacy-upgrade-v1022: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
@@ -730,7 +731,7 @@ MANIFEST
                 -cf /tmp/journal-preexisting.before.tar
         '
 
-        log "verify: the bare \"journal\" an owner would type resolves to the newly-installed V2 binary, not the seeded v1 one"
+        log "verify: the bare \"journal\" an owner would type resolves to the seeded v1 binary, ahead of V2"
         # Real v1.0.22 owners had a real ~/.local/bin/journal from uv tool /
         # pipx / pip --user (that path is exactly _managed_wrapper("journal")
         # in v1.0.22's solstone/think/service.py). The .deb/.rpm route is a
@@ -739,22 +740,18 @@ MANIFEST
         # ~/.local/bin. A typical login shell's default PATH puts
         # ~/.local/bin ahead of /usr/bin, so the seeded v1 ~/.local/bin/
         # journal SHADOWS /usr/bin/journal for the bare `journal` command a
-        # real owner would type, and V2's crossover code inside `journal
-        # setup` never runs at all -- the wrong binary answers. This is a
-        # real gap in the documented happy path, not a fixture artifact;
-        # confirm it explicitly here rather than let `journal setup` hang
-        # or silently run v1's own (real, still-present) setup subcommand.
+        # real owner would type. The supported package crossover invokes the
+        # installed V2 command at its absolute path, without rewriting PATH.
         resolved_journal=$(docker exec -u "$TEST_USER" "$CONTAINER" \
             bash -lc 'readlink -f "$(command -v journal)"')
-        if [ "$resolved_journal" != "/usr/bin/journal" ]; then
-            log "bare \"journal\" resolves to $resolved_journal, not /usr/bin/journal"
-            log "this is the v1.0.22 PATH-shadowing gap: a legacy ~/.local/bin/journal shadows the newly-installed V2 binary, so \`journal setup\` never reaches V2's crossover code"
+        if [ "$resolved_journal" = "/usr/bin/journal" ]; then
+            log "bare \"journal\" unexpectedly resolves to /usr/bin/journal; the v1 shadow precondition is not present"
             exit 1
         fi
 
-        log "legacy-upgrade-v1022: one journal setup invocation"
+        log "legacy-upgrade-v1022: one /usr/bin/journal setup invocation under the unchanged normal PATH"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            'journal setup -y --accept-existing-journal --skip-models --skip-skills'
+            '/usr/bin/journal setup -y --accept-existing-journal --skip-models --skip-skills'
 
         log "verify: systemctl --user is-active solstone"
         for _ in $(seq 1 30); do
