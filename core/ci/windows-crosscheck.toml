@@ -59,20 +59,20 @@ expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOpt
 [[exclusions]]
 package = "solstone-core-system"
 class = "sibling-owned-platform-backend"
-reason = "Lane 3 owns process, signal, and system-control behavior; its current probe is blocked earlier by the documented MSVC ring oracle."
-expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+reason = "The provider-runtime/brain/local/journal-config/assets/ring closure has been removed from this crate's Windows graph. Separate pre-existing, out-of-scope gaps remain: catchup.rs, direct_door.rs, and schedule/{completion,config}.rs use Lane 2's Unix-only journal-io atomic/JSON backend; lifecycle/mod.rs and process/{restart,spawn,terminate}.rs use nix::errno/nix::sys::signal and retain a ProcessInstance/ProcessInstanceSource typing gap."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-top"
 class = "sibling-owned-platform-backend"
-reason = "Lane 4 owns terminal transport behavior; its current probe is blocked earlier by the documented MSVC ring oracle."
-expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+reason = "Lane 4 owns terminal transport behavior; its Windows probe is currently blocked transitively by solstone-core-system's documented pre-existing journal-io/nix/ProcessInstance compile gaps."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-cogitate-tools"
 class = "preserved-production-guarantee"
-reason = "The current implementation rejects Unix special files and kills whole process groups; a Windows backend is later port work, not a compile-only stub."
-expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+reason = "The current implementation rejects Unix special files and kills whole process groups; its Windows probe is currently blocked transitively by solstone-core-system's documented pre-existing journal-io/nix/ProcessInstance compile gaps."
+expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-pdf"

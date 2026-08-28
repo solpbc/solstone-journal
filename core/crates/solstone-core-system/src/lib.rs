@@ -13,10 +13,12 @@ pub mod memory_admission;
 pub mod operational_log_parse;
 pub mod partition;
 pub mod process;
+#[cfg(unix)]
 pub mod provider_runtime;
 pub mod queue;
 pub mod request;
 pub mod schedule;
+#[cfg(unix)]
 pub mod status_wire;
 pub mod stt_backend_choice;
 
