@@ -488,7 +488,7 @@ fn remove_lifecycle_artifact(
 #[cfg(windows)]
 mod platform {
     #[cfg(all(windows, feature = "test-hooks"))]
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::ffi::OsStr;
     #[cfg(all(windows, feature = "test-hooks"))]
     use std::ffi::OsString;
@@ -528,6 +528,7 @@ mod platform {
     thread_local! {
         static WINDOWS_LIFECYCLE_CHECKPOINT: RefCell<Option<WindowsLifecycleCheckpoint>> =
             const { RefCell::new(None) };
+        static WINDOWS_LIFECYCLE_CHECKPOINT_ACTIVE: Cell<bool> = const { Cell::new(false) };
     }
 
     #[cfg(all(windows, feature = "test-hooks"))]
@@ -539,6 +540,7 @@ mod platform {
             WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
                 let _ = armed.borrow_mut().take();
             });
+            WINDOWS_LIFECYCLE_CHECKPOINT_ACTIVE.with(|active| active.set(false));
         }
     }
 
@@ -549,6 +551,13 @@ mod platform {
         callback: impl FnOnce() + 'static,
         operation: impl FnOnce() -> T,
     ) -> (T, bool) {
+        WINDOWS_LIFECYCLE_CHECKPOINT_ACTIVE.with(|active| {
+            assert!(
+                !active.replace(true),
+                "Windows lifecycle checkpoint is already active"
+            );
+        });
+        let cleanup = WindowsLifecycleCheckpointCleanup;
         WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
             let mut armed = armed.borrow_mut();
             assert!(
@@ -557,7 +566,6 @@ mod platform {
             );
             *armed = Some((checkpoint, filename.to_os_string(), Box::new(callback)));
         });
-        let cleanup = WindowsLifecycleCheckpointCleanup;
         let result = operation();
         let consumed = WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| armed.borrow().is_none());
         drop(cleanup);

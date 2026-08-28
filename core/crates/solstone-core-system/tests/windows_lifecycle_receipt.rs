@@ -191,7 +191,21 @@ fn filesystem_name(path: &Path) -> io::Result<String> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "filesystem name is not UTF-16"))
 }
 
-fn file_identity(path: &Path) -> (u64, [u8; 16]) {
+fn folded_file_id(identifier: [u8; 16]) -> u64 {
+    let first = u64::from_le_bytes(
+        identifier[..8]
+            .try_into()
+            .expect("a Windows file ID has a 64-bit first half"),
+    );
+    let second = u64::from_le_bytes(
+        identifier[8..]
+            .try_into()
+            .expect("a Windows file ID has a 64-bit second half"),
+    );
+    first ^ second
+}
+
+fn file_identity(path: &Path) -> (u64, u64) {
     let handle = open_attributes_handle(path).expect("open identity handle");
     let mut info = FILE_ID_INFO::default();
     // SAFETY: `info` is writable for its exact size and the handle is valid.
@@ -205,7 +219,10 @@ fn file_identity(path: &Path) -> (u64, [u8; 16]) {
         )
     };
     assert_ne!(result, 0, "query file identity for {}", path.display());
-    (info.VolumeSerialNumber, info.FileId.Identifier)
+    (
+        info.VolumeSerialNumber,
+        folded_file_id(info.FileId.Identifier),
+    )
 }
 
 fn hold_without_delete_sharing(path: &Path) -> OwnedHandle {
@@ -372,7 +389,7 @@ fn phase_d_replacement_identity_requires_two_fresh_ticks(root: &Path) {
     assert_ne!(
         file_identity(&replaced),
         original_identity,
-        "replacement must have a distinct native file identity"
+        "replacement must have a distinct production-equivalent native identity"
     );
 
     assert_completed(tick(&mut lifecycle, &mut clock));
