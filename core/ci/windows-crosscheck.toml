@@ -11,80 +11,62 @@ library_packages = 128
 [[exclusions]]
 package = "solstone-core-backfill-cli"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, atomic_replace, and bump_stream_marker."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`, `solstone_core_journal_io::bump_stream_marker`"]
+reason = "The Unix-only health-marker backend still owns bump_stream_marker."
+expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_marker`"]
 
 [[exclusions]]
 package = "solstone-core-brain"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
-
-[[exclusions]]
-package = "solstone-core-convey-config"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
+reason = "The native inspection path still depends on nix, which has no Windows dependency here."
+expected_stderr = ["cannot find module or crate `nix`"]
 
 [[exclusions]]
 package = "solstone-core-identity"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions, append_text, and atomic_replace."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::append_text`, `solstone_core_journal_io::atomic_replace`"]
-
-[[exclusions]]
-package = "solstone-core-journal-config-write"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
+reason = "The Unix-only append_text writer remains outside this backend slice."
+expected_stderr = ["unresolved import `solstone_core_journal_io::append_text`"]
 
 [[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for atomic_replace, health markers, and locking."
-expected_stderr = ["unresolved import `solstone_core_journal_io::atomic::atomic_replace`"]
+reason = "The Unix-only health-marker and exclusive-write backends, plus retention's own Unix permissions read, remain."
+expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "solstone_core_journal_io::write_bytes_exclusive", "cannot find `unix` in `os`"]
 
 [[exclusions]]
 package = "solstone-core-segment"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions and write_bytes_exclusive."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::write_bytes_exclusive`"]
+reason = "The Unix-only exclusive, text, and health-marker writers remain outside this backend slice."
+expected_stderr = ["solstone_core_journal_io::write_bytes_exclusive", "solstone_core_journal_io::write_text", "solstone_core_journal_io::bump_stream_marker"]
 
 [[exclusions]]
 package = "solstone-core-speaker-id"
 class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for AtomicWriteOptions and atomic_replace."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`"]
+reason = "The Unix-only write_bytes_exclusive writer remains outside this backend slice."
+expected_stderr = ["unresolved import `solstone_core_journal_io::write_bytes_exclusive`"]
 
 [[exclusions]]
 package = "solstone-core-system"
 class = "sibling-owned-platform-backend"
-reason = "The provider-runtime/brain/local/journal-config/assets/ring closure has been removed from this crate's Windows graph. Separate pre-existing, out-of-scope gaps remain: catchup.rs, direct_door.rs, and schedule/{completion,config}.rs use Lane 2's Unix-only journal-io atomic/JSON backend; lifecycle/mod.rs and process/{restart,spawn,terminate}.rs use nix::errno/nix::sys::signal and retain a ProcessInstance/ProcessInstanceSource typing gap."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
+reason = "Catchup still uses Unix-only health markers; lifecycle and process handling retain the pre-existing nix and ProcessInstance gaps."
+expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-top"
 class = "sibling-owned-platform-backend"
-reason = "Lane 4 owns terminal transport behavior; its Windows probe is currently blocked transitively by solstone-core-system's documented pre-existing journal-io/nix/ProcessInstance compile gaps."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
+reason = "Lane 4's probe remains blocked transitively by system's health-marker and nix gaps."
+expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-cogitate-tools"
 class = "preserved-production-guarantee"
-reason = "The current implementation rejects Unix special files and kills whole process groups; its Windows probe is currently blocked transitively by solstone-core-system's documented pre-existing journal-io/nix/ProcessInstance compile gaps."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`", "unresolved imports `solstone_core_journal_io::AtomicWriteOptions`, `solstone_core_journal_io::atomic_replace`", "cannot find `sys` in `nix`"]
+reason = "The current Unix special-file and process-group behavior remains blocked by system's health-marker and nix gaps."
+expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-pdf"
 class = "preserved-production-guarantee"
 reason = "The worker enforces Unix address-space and CPU resource limits; a Windows Job Object equivalent belongs to the later backend lane."
 expected_stderr = ["could not compile `solstone-core-pdf`", "RLIMIT_AS"]
-
-[[exclusions]]
-package = "solstone-core-push"
-class = "sibling-owned-platform-backend"
-reason = "Lane 2 owns the Unix-only durability-write backend used here for JsonWriteOptions and write_json."
-expected_stderr = ["unresolved imports `solstone_core_journal_io::JsonWriteOptions`, `solstone_core_journal_io::write_json`"]
 
 [[exclusions]]
 package = "ring"

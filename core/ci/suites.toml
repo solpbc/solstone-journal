@@ -3071,6 +3071,19 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-io::windows_generic_writers"
+package = "solstone-core-journal-io"
+target = "windows_generic_writers"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-io::windows_ordinary_owner_inventory"
 package = "solstone-core-journal-io"
 target = "windows_ordinary_owner_inventory"

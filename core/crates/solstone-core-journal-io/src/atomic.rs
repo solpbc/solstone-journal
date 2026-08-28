@@ -4,7 +4,7 @@
 //! Crash-safe whole-file writers.
 
 use std::ffi::{OsStr, OsString};
-#[cfg(any(unix, all(windows, any(test, feature = "test-hooks"))))]
+#[cfg(any(unix, windows))]
 use std::fs;
 use std::fs::File;
 #[cfg(unix)]
@@ -23,7 +23,7 @@ use std::sync::atomic::Ordering;
 #[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use serde::Serialize;
 
 #[cfg(unix)]
@@ -35,7 +35,7 @@ use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
 #[cfg(unix)]
 use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::errors::AtomicWriteError;
 #[cfg(unix)]
 use crate::flat_directory::entry_from_stat;
@@ -285,7 +285,7 @@ impl std::error::Error for DetailedAtomicError {
 }
 
 /// Options shared by the byte-oriented whole-file writers.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AtomicWriteOptions {
     /// Final file mode, applied before the rename or hard-link publication.
@@ -293,7 +293,7 @@ pub struct AtomicWriteOptions {
 }
 
 /// JSON formatting and publication options.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy)]
 pub struct JsonWriteOptions {
     /// Final file mode, applied before publication.
@@ -304,7 +304,7 @@ pub struct JsonWriteOptions {
     pub sort_keys: bool,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Default for JsonWriteOptions {
     fn default() -> Self {
         Self {
@@ -706,6 +706,33 @@ pub fn atomic_replace(
     operation
 }
 
+/// Create a missing parent directory, then publish through the detailed Windows backend.
+///
+/// `options.mode` is inert on Windows beyond the backend's input validation.
+#[cfg(windows)]
+pub fn atomic_replace(
+    path: impl AsRef<Path>,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+) -> Result<(), AtomicWriteError> {
+    let path = path.as_ref();
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    let mode = options.mode.unwrap_or(0o644);
+    map_detailed_outcome(path, atomic_replace_detailed(path, contents, mode))
+}
+
+#[cfg(windows)]
+fn map_detailed_outcome(
+    path: &Path,
+    result: Result<DetailedAtomicOutcome, DetailedAtomicError>,
+) -> Result<(), AtomicWriteError> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(error) => Err(io_error(path, error.source)),
+    }
+}
+
 /// Publish `contents` only when `path` does not yet exist.
 ///
 /// Contents are written and synced to an unlinked temporary inode first, then
@@ -805,7 +832,7 @@ pub fn install_file(
 }
 
 /// Serialize and atomically replace a JSON file.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn write_json<T: Serialize>(
     path: impl AsRef<Path>,
     value: &T,
@@ -882,7 +909,7 @@ pub(crate) fn fsync_dir(path: &Path) {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn parent_dir(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -1078,7 +1105,7 @@ fn apply_mode(_file: &File, _mode: u32) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn io_error(path: &Path, source: io::Error) -> AtomicWriteError {
     AtomicWriteError::Io {
         path: path.to_path_buf(),
@@ -1086,12 +1113,12 @@ fn io_error(path: &Path, source: io::Error) -> AtomicWriteError {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn serialization_error(path: &Path, source: serde_json::Error) -> AtomicWriteError {
     io_error(path, io::Error::new(io::ErrorKind::InvalidData, source))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn serialize_json(value: &serde_json::Value, indent: Option<usize>) -> serde_json::Result<Vec<u8>> {
     match indent {
         Some(width) => {
@@ -1106,7 +1133,7 @@ fn serialize_json(value: &serde_json::Value, indent: Option<usize>) -> serde_jso
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn sort_json_keys(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(object) => {
@@ -1673,5 +1700,57 @@ mod tests {
             }) if observation.bytes == b"new" && source.kind() == io::ErrorKind::NotFound
         ));
         assert!(!target.exists());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::io;
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn detailed_publication_outcomes_map_to_success() {
+        let path = PathBuf::from("unit.service");
+        for outcome in [
+            DetailedAtomicOutcome::Published,
+            DetailedAtomicOutcome::PublishedDurabilityUncertain {
+                source: io::Error::other("x"),
+            },
+            DetailedAtomicOutcome::PublishedParentPathRaced { sync_error: None },
+            DetailedAtomicOutcome::PublishedParentPathUnverified {
+                observation: io::Error::other("x"),
+                sync_error: None,
+            },
+        ] {
+            assert!(map_detailed_outcome(&path, Ok(outcome)).is_ok());
+        }
+    }
+
+    #[test]
+    fn detailed_prepublication_error_maps_to_atomic_write_error() {
+        let path = PathBuf::from("unit.service");
+        let error = map_detailed_outcome(
+            &path,
+            Err(DetailedAtomicError {
+                path: path.clone(),
+                operation: "test",
+                source: io::Error::other("boom"),
+                orphan_stage: None,
+                cleanup_error: None,
+            }),
+        )
+        .expect_err("pre-publication error maps to atomic write error");
+
+        match error {
+            AtomicWriteError::Io {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert_eq!(source.to_string(), "boom");
+            }
+        }
     }
 }

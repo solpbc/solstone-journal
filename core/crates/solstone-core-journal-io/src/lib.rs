@@ -59,11 +59,8 @@ pub(crate) mod test_support;
 pub use append::append_jsonl;
 #[cfg(unix)]
 pub use append::append_text;
-#[cfg(unix)]
-pub use atomic::{
-    AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
-    write_json, write_jsonl, write_reader_exclusive, write_text,
-};
+#[cfg(any(unix, windows))]
+pub use atomic::{AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json};
 #[cfg(unix)]
 pub use atomic::{BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound};
 #[cfg(all(unix, feature = "test-hooks"))]
@@ -73,6 +70,10 @@ pub use atomic::{
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_detailed};
+#[cfg(unix)]
+pub use atomic::{
+    install_file, write_bytes_exclusive, write_jsonl, write_reader_exclusive, write_text,
+};
 #[cfg(unix)]
 pub use claim_remove::claim_and_remove_observed;
 #[cfg(all(unix, feature = "test-hooks"))]
