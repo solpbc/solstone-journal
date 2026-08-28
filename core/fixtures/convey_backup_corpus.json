@@ -77,8 +77,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 11909,
-        "body_sha256": "97a4fb720198009c9a5497429648a67cefc4c5de8aece22388e3f1d953f69e54",
+        "body_bytes": 12266,
+        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -579,8 +579,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 11909,
-        "body_sha256": "97a4fb720198009c9a5497429648a67cefc4c5de8aece22388e3f1d953f69e54",
+        "body_bytes": 12266,
+        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -885,8 +885,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 11909,
-        "body_sha256": "97a4fb720198009c9a5497429648a67cefc4c5de8aece22388e3f1d953f69e54",
+        "body_bytes": 12266,
+        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -1191,8 +1191,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 11909,
-        "body_sha256": "97a4fb720198009c9a5497429648a67cefc4c5de8aece22388e3f1d953f69e54",
+        "body_bytes": 12266,
+        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
