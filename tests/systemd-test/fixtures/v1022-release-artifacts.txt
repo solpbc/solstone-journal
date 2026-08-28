@@ -1,0 +1,8 @@
+# Public PyPI release artifacts used by the real v1.0.22 Linux crossover cell.
+# Format: SHA256 FILENAME URL
+# Annotated tag object: 6aa821da9af87a01ba4e7d4ef6a8e1e13e0fa137
+# Dereferenced source commit: 27440a1ed118486263eac6e662256f39e46cd6eb
+d7b24c5c04696145b3c395aa2aab0a2ef438fd17d3ab53a3f73a0a40ba5ce7b0 solstone-1.0.22-py3-none-any.whl https://files.pythonhosted.org/packages/d8/ce/ad99fa4167d8b2fb8e8ceb9cd2cb66c6e7a61a0c381805d5b9fba132503d/solstone-1.0.22-py3-none-any.whl
+6dc7d8210f618a558a344dc471b9ebf6af40ca9b7104dad3514fb760214f8078 solstone_journal-1.0.22-py3-none-any.whl https://files.pythonhosted.org/packages/c9/20/027dc25bd1748f508e43fd6cca624e389f399de5b61625c5609f474a9fc8/solstone_journal-1.0.22-py3-none-any.whl
+4b9ac02315c58d54b5008e0b7fd2bb43946bd68fef1df6c3c605667371c45b99 solstone_core-1.0.22-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl https://files.pythonhosted.org/packages/e0/4d/70abdb3949970550d6cabe114f345a6f7c6ab23a7b762e697bdc28087353/solstone_core-1.0.22-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+3f2c3420e5538ca23f9069365adfec1ca36124e07826d13454885111a0a8b10e solstone_core_speakers_analyze-1.0.22-py3-none-manylinux_2_27_x86_64.whl https://files.pythonhosted.org/packages/bb/08/32261bfa0ddc2362d6b2a504ef5e066a2ba8ea4a52ebb645accc6ffc10f5/solstone_core_speakers_analyze-1.0.22-py3-none-manylinux_2_27_x86_64.whl

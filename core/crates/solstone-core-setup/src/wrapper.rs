@@ -555,25 +555,27 @@ pub fn provision_wrappers(
     }
 
     let mut removals = Vec::new();
-    for (command, companion, main) in [
+    for (command, companion, main_indices) in [
         (
             "sol",
             environment.home_dir.join(".local/bin/sol"),
-            legacy_mains[0].1.as_ref(),
+            [Some(0_usize), Some(1_usize)],
         ),
         (
             "mlx-vlm-server",
             environment.home_dir.join(".local/bin/mlx-vlm-server"),
-            legacy_mains[1].1.as_ref(),
+            [Some(1_usize), None],
         ),
     ] {
-        let Some(main) = main else {
-            continue;
-        };
         if let Some(companion_launcher) =
             legacy_launcher::classify(&environment.home_dir, &companion, command)
                 .map_err(WrapperError)?
-            && main.same_installation(&companion_launcher)
+            && main_indices.into_iter().flatten().any(|index| {
+                legacy_mains[index]
+                    .1
+                    .as_ref()
+                    .is_some_and(|main| main.same_installation(&companion_launcher))
+            })
         {
             removals.push(companion.clone());
             legacy_expectations.push(LegacyExpectation {

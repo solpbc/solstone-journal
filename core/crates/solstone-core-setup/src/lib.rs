@@ -30,7 +30,8 @@ use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession, IdentityError,
     OwnerBase, PlatformTag, SetupAdmission, SetupAdmissionRequest, admit_clean_uninstall,
-    admit_setup, journal_token_from_path, namespace_name, root_token_from_path,
+    admit_setup, journal_token_from_path, load_installation_binding, namespace_name,
+    root_token_from_path,
 };
 use solstone_core_journal::{
     resolve_checkout_root_from_executable_dir, resolve_identity_root_from_executable_dir,
@@ -169,13 +170,16 @@ fn admit_setup_identity(
     let root_token = root_token_from_path(&root)?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
     let manifest = legacy_manifest_evidence(&manifest_path(&resolved.journal_path));
+    let owner = OwnerBase::at_home(home_dir.to_path_buf(), PlatformTag::current())?;
+    let admitted_retry = load_installation_binding(&owner, &root_token).is_ok();
     let artifacts = gather_setup_artifact_evidence(
         home_dir,
         &namespace,
-        matches!(
-            manifest,
-            solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
-        ),
+        admitted_retry
+            || matches!(
+                manifest,
+                solstone_core_installation_identity::LegacyManifestEvidence::ValidProviderlessSchemaV1
+            ),
     );
     if std::env::var_os("HOME").is_some_and(|home| std::path::Path::new(&home) == home_dir)
         && legacy_launcher::validate_effective_path(home_dir, project_root, executable_dir).is_err()
@@ -203,7 +207,7 @@ fn admit_setup_identity(
         })?;
     }
     let admission = admit_setup(SetupAdmissionRequest {
-        owner: OwnerBase::at_home(home_dir.to_path_buf(), PlatformTag::current())?,
+        owner,
         root_token,
         journal_token: journal_token_from_path(&resolved.journal_path)?,
         journal_is_explicit: matches!(resolved.journal_source.as_str(), "cli" | "env"),

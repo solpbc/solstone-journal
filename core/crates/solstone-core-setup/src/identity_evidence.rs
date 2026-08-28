@@ -177,13 +177,17 @@ fn read_setup_wrapper(
     command: &str,
     allow_legacy_launchers: bool,
 ) -> Result<Option<PresentArtifact>, ()> {
-    match read_wrapper(path) {
+    if allow_legacy_launchers {
+        let classified = legacy_launcher::classify(home_dir, path, command).map_err(|_| ())?;
+        match classified {
+            Some(_) => return Ok(Some(PresentArtifact::LegacyLauncher)),
+            None => {}
+        }
+    }
+    let wrapper = read_wrapper(path);
+    match wrapper {
+        Ok(Some(PresentArtifact::Unguarded)) if allow_legacy_launchers => Err(()),
         Ok(artifact) => Ok(artifact),
-        Err(()) if allow_legacy_launchers => legacy_launcher::classify(home_dir, path, command)
-            .map_err(|_| ())
-            .and_then(|artifact| {
-                artifact.map_or(Err(()), |_| Ok(Some(PresentArtifact::LegacyLauncher)))
-            }),
         Err(()) => Err(()),
     }
 }
@@ -407,6 +411,22 @@ mod tests {
         let setup = gather_setup_artifact_evidence(&home, &namespace, true);
         assert_eq!(setup.artifacts(), &ArtifactBindingEvidence::LegacyUnguarded);
         assert!(setup.legacy_transition());
+
+        let near_twin = public_bin.join("journal");
+        fs::write(
+            &near_twin,
+            concat!(
+                "#!/bin/sh\n",
+                "# managed-version: 7\n",
+                ": \"${SOLSTONE_JOURNAL:=/journal}\"\n",
+                "SOL_BIN='/owner-authored/journal'\n",
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&near_twin, fs::Permissions::from_mode(0o755)).unwrap();
+        let refused = gather_setup_artifact_evidence(&home, &namespace, true);
+        assert_eq!(refused.artifacts(), &ArtifactBindingEvidence::Malformed);
+        assert!(!refused.legacy_transition());
         let _ = fs::remove_dir_all(root);
     }
 }

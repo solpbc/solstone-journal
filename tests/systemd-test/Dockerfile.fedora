@@ -1,0 +1,66 @@
+# Fedora-based sibling of the Debian systemd reference image. The two images
+# exercise the native .deb and .rpm package routes without translating one
+# package format into the other.
+
+FROM fedora:42
+
+ENV container=docker
+ENV LC_ALL=C
+
+RUN dnf install -y \
+        systemd \
+        dbus-daemon \
+        util-linux \
+        shadow-utils \
+        sudo \
+        procps-ng \
+        iproute \
+        findutils \
+        tar \
+        gzip \
+        curl \
+        ca-certificates \
+        python3 \
+        less \
+    && dnf clean all
+
+RUN systemctl mask \
+        sys-kernel-config.mount \
+        sys-kernel-debug.mount \
+        sys-kernel-tracing.mount \
+        dev-hugepages.mount \
+        dev-mqueue.mount \
+        systemd-logind.service \
+        getty.target \
+        console-getty.service \
+        systemd-firstboot.service \
+        systemd-modules-load.service \
+        systemd-udevd.service \
+        systemd-udev-trigger.service
+
+ARG TEST_USER=solstone
+ARG TEST_UID=1000
+RUN useradd -m -u ${TEST_UID} -s /bin/bash ${TEST_USER} \
+    && printf '%s ALL=(ALL) NOPASSWD: ALL\n' "${TEST_USER}" > /etc/sudoers.d/${TEST_USER} \
+    && chmod 0440 /etc/sudoers.d/${TEST_USER}
+
+RUN mkdir -p /var/lib/systemd/linger \
+    && touch /var/lib/systemd/linger/${TEST_USER}
+
+# Fedora's user@.service expects pam_systemd/login1 to inject this variable.
+# login1 is deliberately masked in the container, so provide the same
+# per-user runtime coordinate directly to the user manager.
+RUN mkdir -p /etc/systemd/system/user@.service.d \
+    && printf '[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/%%i\n' \
+        > /etc/systemd/system/user@.service.d/20-container-runtime.conf
+
+USER ${TEST_USER}
+WORKDIR /home/${TEST_USER}
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/solstone/.local/bin:${PATH}"
+RUN echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/${TEST_USER}/.profile \
+    && echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/${TEST_USER}/.bashrc
+
+USER root
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

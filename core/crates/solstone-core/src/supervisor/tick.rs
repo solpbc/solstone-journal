@@ -593,6 +593,18 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
         if !app.enabled {
             continue;
         }
+        if app.process.is_none()
+            && app
+                .restart_at
+                .is_some_and(|restart_at| Instant::now() >= restart_at)
+            && let Err(error) = super::runtime::spawn_app_process(app, &journal, server.clone())
+        {
+            eprintln!(
+                "supervisor: failed to restart {}: {error}",
+                app.service.as_str()
+            );
+            apply_app_exit(app, &journal, AppExit::SpawnFailure);
+        }
         if let Some(process) = app.process.as_mut() {
             let reference = format!("supervisor-app-{}", app.service.as_str());
             let pid = process.pid();
@@ -629,20 +641,9 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
             samples.push(sample);
             continue;
         }
-        if app
-            .restart_at
-            .is_some_and(|restart_at| Instant::now() >= restart_at)
-            && let Err(error) = super::runtime::spawn_app_process(app, &journal, server.clone())
-        {
-            eprintln!(
-                "supervisor: failed to restart {}: {error}",
-                app.service.as_str()
-            );
-            apply_app_exit(app, &journal, AppExit::SpawnFailure);
-        }
         samples.push(AppProcessSample {
             service: app.service,
-            process_count: usize::from(app.process.is_some()),
+            process_count: 0,
             tuple: None,
         });
     }

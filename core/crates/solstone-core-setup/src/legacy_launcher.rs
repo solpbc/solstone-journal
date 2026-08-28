@@ -7,6 +7,8 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use crate::wrapper::parse_wrapper;
+
 const LAUNCHER_LIMIT: u64 = 32 * 1024;
 
 pub(crate) fn validate_effective_path(
@@ -97,7 +99,7 @@ pub(crate) struct LegacyLauncher {
 
 impl LegacyLauncher {
     pub(crate) fn same_installation(&self, other: &Self) -> bool {
-        self.family == other.family && self.installation_bin == other.installation_bin
+        self.installation_bin == other.installation_bin
     }
 }
 
@@ -148,14 +150,19 @@ pub(crate) fn classify(
     if bytes.len() as u64 > LAUNCHER_LIMIT {
         return Ok(None);
     }
-    let family = if python_launcher(command, &bytes) {
-        LegacyLauncherFamily::Python
+    let (family, installation_bin) = if python_launcher(command, &bytes) {
+        let Some(installation_bin) = resolved_path.parent().map(Path::to_path_buf) else {
+            return Ok(None);
+        };
+        (LegacyLauncherFamily::Python, installation_bin)
     } else if native_root_launcher(command, &bytes) {
-        LegacyLauncherFamily::NativeRoot
+        let Some(installation_bin) = resolved_path.parent().map(Path::to_path_buf) else {
+            return Ok(None);
+        };
+        (LegacyLauncherFamily::NativeRoot, installation_bin)
+    } else if let Some(managed) = managed_v1_wrapper(command, &bytes, &resolved_home) {
+        managed
     } else {
-        return Ok(None);
-    };
-    let Some(installation_bin) = resolved_path.parent().map(Path::to_path_buf) else {
         return Ok(None);
     };
     Ok(Some(LegacyLauncher {
@@ -168,6 +175,79 @@ pub(crate) fn classify(
         mode: metadata.permissions().mode(),
         bytes,
     }))
+}
+
+fn managed_v1_wrapper(
+    command: &str,
+    bytes: &[u8],
+    resolved_home: &Path,
+) -> Option<(LegacyLauncherFamily, PathBuf)> {
+    if !matches!(command, "sol" | "journal") {
+        return None;
+    }
+    let text = std::str::from_utf8(bytes).ok()?;
+    let parsed = parse_wrapper(text)?;
+    if parsed.version != 7
+        || text != managed_python_wrapper_bytes(command, &parsed.journal, &parsed.sol_bin)
+    {
+        return None;
+    }
+    let resolved_target = fs::canonicalize(&parsed.sol_bin).ok()?;
+    if !resolved_target.starts_with(resolved_home) {
+        return None;
+    }
+    let target_metadata = fs::metadata(&resolved_target).ok()?;
+    if !target_metadata.is_file()
+        || target_metadata.len() > LAUNCHER_LIMIT
+        || target_metadata.permissions().mode() & 0o111 == 0
+    {
+        return None;
+    }
+    let target_bytes = fs::read(&resolved_target).ok()?;
+    if target_bytes.len() as u64 > LAUNCHER_LIMIT {
+        return None;
+    }
+    let family = if python_launcher(command, &target_bytes) {
+        LegacyLauncherFamily::Python
+    } else if native_root_launcher(command, &target_bytes) {
+        LegacyLauncherFamily::NativeRoot
+    } else {
+        return None;
+    };
+    resolved_target
+        .parent()
+        .map(Path::to_path_buf)
+        .map(|installation_bin| (family, installation_bin))
+}
+
+fn managed_python_wrapper_bytes(command: &str, journal: &str, target: &Path) -> String {
+    format!(
+        concat!(
+            "#!/bin/bash\n",
+            "# {command} — managed by 'journal config'. Edits will be overwritten.\n",
+            "# managed-version: 7\n",
+            ": \"${{SOLSTONE_JOURNAL:={journal}}}\"\n",
+            "export SOLSTONE_JOURNAL\n",
+            "SOL_BIN='{}'\n",
+            "# Warn when pyproject.toml or uv.lock is newer than .installed.\n",
+            "# Skipped silently if .installed is absent.\n",
+            "REPO_ROOT=\"${{SOL_BIN%/.venv/bin/{command}}}\"\n",
+            "if [ -f \"$REPO_ROOT/.installed\" ]; then\n",
+            "  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n",
+            "     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n",
+            "    echo \"{command}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n",
+            "  fi\n",
+            "fi\n",
+            "if [ ! -x \"$SOL_BIN\" ]; then\n",
+            "    printf '{command}: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n",
+            "    exit 127\n",
+            "fi\n",
+            "exec \"$SOL_BIN\" \"$@\"\n",
+        ),
+        target.to_string_lossy().replace('\'', "'\\''"),
+        command = command,
+        journal = journal,
+    )
 }
 
 fn python_launcher(command: &str, bytes: &[u8]) -> bool {
@@ -337,6 +417,50 @@ mod tests {
         near.push('\n');
         write_executable(&target, &near);
         assert!(classify(&home, &public, "solstone").unwrap().is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognizes_the_exact_v1_setup_managed_wrappers_and_their_mixed_targets() {
+        let root = root("managed-python");
+        let home = root.join("home");
+        let bin = home.join(".local/share/uv/tools/solstone-journal/bin");
+        let target = bin.join("journal");
+        let body = format!(
+            "#!{}\n{}",
+            bin.join("python3").display(),
+            generated_console_script("solstone.think.sol_cli", "journal_main", '"')
+        );
+        write_executable(&target, &body);
+        let public = home.join(".local/bin/journal");
+        write_executable(
+            &public,
+            &managed_python_wrapper_bytes("journal", "/home/owner/journal", &target),
+        );
+
+        let found = classify(&home, &public, "journal").unwrap().unwrap();
+        assert_eq!(found.family, LegacyLauncherFamily::Python);
+        assert_eq!(found.installation_bin, bin);
+        assert!(found.public_link.is_none());
+
+        let sol_target = bin.join("sol");
+        write_executable(&sol_target, &native_root_launcher_bytes("sol"));
+        let sol_public = home.join(".local/bin/sol");
+        write_executable(
+            &sol_public,
+            &managed_python_wrapper_bytes("sol", "/home/owner/journal", &sol_target),
+        );
+        let sol = classify(&home, &sol_public, "sol").unwrap().unwrap();
+        assert_eq!(sol.family, LegacyLauncherFamily::NativeRoot);
+        assert!(found.same_installation(&sol));
+
+        let exact = fs::read_to_string(&public).unwrap();
+        write_executable(&public, &exact.replace("Edits will", "Changes will"));
+        assert!(classify(&home, &public, "journal").unwrap().is_none());
+
+        write_executable(&public, &exact);
+        write_executable(&target, &body.replace("journal_main", "journal_main2"));
+        assert!(classify(&home, &public, "journal").unwrap().is_none());
         let _ = fs::remove_dir_all(root);
     }
 
