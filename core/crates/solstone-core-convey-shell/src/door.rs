@@ -58,8 +58,10 @@ const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
 // drain before closing a one-shot pairing carrier.
 const PAIRING_CARRIER_DRAIN_GRACE: Duration = Duration::from_millis(250);
 // A peer may pre-open an unrelated logical stream and never send a request.
-// Close independently of stream bookkeeping after either success or the
-// failure cap so four peers cannot retain every cert-less carrier slot.
+// Close independently of stream bookkeeping after success, the failure cap,
+// or a stale admission. The same bound gives a newly stale carrier time to
+// receive the route-level refusal before its transport is retired, while four
+// peers still cannot retain every cert-less carrier slot indefinitely.
 const PAIRING_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 const MAX_PAIRING_CARRIERS: usize = 4;
 const MAX_PAIRING_FAILURES: usize = 3;
@@ -476,7 +478,7 @@ impl PairingCarrierRegistry {
                 && carrier.in_flight.load(Ordering::Acquire) == 0
                 && !carrier.successful_response_pending.load(Ordering::Acquire)
             {
-                carrier.close();
+                carrier.arm_close_deadline();
             }
             true
         });
@@ -1370,8 +1372,8 @@ mod access_tests {
     use tower::ServiceExt;
 
     use super::{
-        PairingAdmission, PairingCarrierRegistry, PairingCarrierState, PairingDelay,
-        constrain_pair_dispatch, linked_device_cid, record_pair_dispatch,
+        PAIRING_CLOSE_DEADLINE, PairingAdmission, PairingCarrierRegistry, PairingCarrierState,
+        PairingDelay, constrain_pair_dispatch, linked_device_cid, record_pair_dispatch,
     };
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
@@ -1529,10 +1531,11 @@ mod access_tests {
         assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
     }
 
-    #[test]
-    fn reaper_skips_an_in_flight_pair_then_closes_when_it_finishes() {
+    #[tokio::test]
+    async fn reaper_skips_an_in_flight_pair_then_arms_a_bounded_close() {
         let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal");
-        let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
+        let delay = Arc::new(RecordingDelay::default());
+        let registry = PairingCarrierRegistry::new(delay.clone());
         let (_, state, close) = registry
             .admit(PairingAdmission::Direct)
             .expect("carrier admission");
@@ -1540,12 +1543,26 @@ mod access_tests {
             .in_flight
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         registry.reap_closed_windows(temporary.path(), 0);
+        tokio::task::yield_now().await;
         assert!(!*close.borrow(), "in-flight pairing survives the reaper");
+        assert!(
+            delay.0.lock().expect("delay recorder lock").is_empty(),
+            "the reaper does not arm a deadline while a request is in flight"
+        );
         state
             .in_flight
             .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         registry.reap_closed_windows(temporary.path(), 0);
-        assert!(*close.borrow(), "idle pairing carrier is reaped");
+        tokio::task::yield_now().await;
+        assert!(
+            *close.borrow(),
+            "idle pairing carrier closes after its bound"
+        );
+        assert_eq!(
+            delay.0.lock().expect("delay recorder lock").as_slice(),
+            &[PAIRING_CLOSE_DEADLINE],
+            "the stale carrier gets one bounded route-refusal opportunity"
+        );
     }
 
     #[tokio::test]
