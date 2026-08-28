@@ -52,7 +52,16 @@ fn wait_for_marker(marker: &Path, step: &str) {
 }
 
 fn target_fixture(label: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let temporary = tempfile::Builder::new().prefix(label).tempdir().unwrap();
+    target_fixture_in(None, label)
+}
+
+fn target_fixture_in(root: Option<&Path>, label: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(label);
+    let temporary = match root {
+        Some(root) => builder.tempdir_in(root).unwrap(),
+        None => builder.tempdir().unwrap(),
+    };
     let parent = temporary.path().join("parent");
     fs::create_dir(&parent).unwrap();
     let target = parent.join("unit.service");
@@ -481,28 +490,39 @@ fn hard_link_alias_retains_the_prepublication_file() {
     assert_sentinel_unchanged(&sentinel);
 }
 
-#[test]
-#[ignore = "requires the native ReFS fixture selected by win-ci.cmd"]
-fn refs_publication_receipt() {
-    let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
-        .map(PathBuf::from)
-        .expect("ReFS publication receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
-    assert_eq!(filesystem_name(&root).unwrap(), "ReFS");
-    let temporary = tempfile::Builder::new()
-        .prefix("solstone-refs-publication-")
-        .tempdir_in(&root)
-        .unwrap();
-    let parent = temporary.path().join("parent");
-    fs::create_dir(&parent).unwrap();
+fn existing_destination_publication_receipt(root: &Path) {
+    let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-existing");
     let sentinel = outside_sentinel(&parent);
-    let target = parent.join("unit.service");
-    fs::write(&target, OLD).unwrap();
-    let temp_volume = file_identity(&std::env::temp_dir());
-    let destination_volume = file_identity(temporary.path());
-    assert_ne!(
-        temp_volume.0, destination_volume.0,
-        "ReFS receipt requires TEMP/TMP on a different volume from the destination"
-    );
+    assert_eq!(fs::read(&target).unwrap(), OLD);
+    assert!(matches!(
+        atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
+        DetailedAtomicOutcome::Published
+    ));
+    assert_eq!(fs::read(&target).unwrap(), NEW);
+    assert_sentinel_unchanged(&sentinel);
+}
+
+fn absent_destination_publication_receipt(root: &Path) {
+    let (temporary, parent, absent) = target_fixture_in(Some(root), "publication-absent");
+    let sentinel = outside_sentinel(&parent);
+    fs::remove_file(&absent).unwrap();
+    assert!(!absent.exists());
+    assert!(matches!(
+        atomic_replace_detailed(&absent, NEW, 0o600).unwrap(),
+        DetailedAtomicOutcome::Published
+    ));
+    assert_eq!(fs::read(&absent).unwrap(), NEW);
+
+    let missing_parent = temporary.path().join("missing");
+    let missing = missing_parent.join("unit.service");
+    assert!(atomic_replace_detailed(&missing, NEW, 0o600).is_err());
+    assert!(!missing_parent.exists());
+    assert_sentinel_unchanged(&sentinel);
+}
+
+fn leaked_stage_then_recovery_publication_receipt(root: &Path) {
+    let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-leaked-stage");
+    let sentinel = outside_sentinel(&parent);
     let marker = parent.join("pause-marker");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "detailed_atomic_pause_helper", "--nocapture"])
@@ -514,16 +534,75 @@ fn refs_publication_receipt() {
     wait_for_marker(&marker, "temp-create");
     child.kill().unwrap();
     child.wait().unwrap();
-    assert!(
-        !stage_names(&parent).is_empty(),
-        "stage did not remain beneath the ReFS destination parent"
-    );
+    assert!(!stage_names(&parent).is_empty());
     assert!(matches!(
         atomic_replace_detailed(&target, NEW, 0o600).unwrap(),
         DetailedAtomicOutcome::Published
     ));
-    assert_eq!(fs::read(target).unwrap(), NEW);
+    assert_eq!(fs::read(&target).unwrap(), NEW);
     assert_sentinel_unchanged(&sentinel);
+}
+
+fn classified_retry_then_real_move_publication_receipt(root: &Path) {
+    let (_temporary, parent, target) = target_fixture_in(Some(root), "publication-retry");
+    let sentinel = outside_sentinel(&parent);
+    let ((result, attempted), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
+        run_with_windows_detailed_atomic_faults(
+            [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
+            || atomic_replace_detailed(&target, NEW, 0o600),
+        )
+    });
+    assert!(matches!(result.unwrap(), DetailedAtomicOutcome::Published));
+    assert_eq!(
+        attempted.iter().filter(|step| **step == "rename").count(),
+        2,
+        "the injected first terminal-move fault must be followed by a real move"
+    );
+    assert_eq!(
+        backoffs,
+        vec![Duration::from_millis(250)],
+        "the injected first terminal-move fault must be consumed"
+    );
+    assert_eq!(fs::read(&target).unwrap(), NEW);
+    assert_sentinel_unchanged(&sentinel);
+}
+
+fn publication_receipt(root: &Path) {
+    existing_destination_publication_receipt(root);
+    absent_destination_publication_receipt(root);
+    leaked_stage_then_recovery_publication_receipt(root);
+    classified_retry_then_real_move_publication_receipt(root);
+}
+
+#[test]
+#[ignore = "requires a native NTFS filesystem"]
+fn ntfs_publication_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
+    publication_receipt(root.path());
+    println!("JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass");
+    println!("JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS");
+}
+
+#[test]
+#[ignore = "requires the native ReFS fixture selected by win-ci.cmd"]
+fn refs_publication_receipt() {
+    let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
+        .map(PathBuf::from)
+        .expect("ReFS publication receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
+    assert_eq!(filesystem_name(&root).unwrap(), "ReFS");
+    let temporary = tempfile::Builder::new()
+        .prefix("solstone-refs-publication-")
+        .tempdir_in(&root)
+        .unwrap();
+    let temp_volume = file_identity(&std::env::temp_dir());
+    let destination_volume = file_identity(temporary.path());
+    assert_ne!(
+        temp_volume.0, destination_volume.0,
+        "ReFS receipt requires TEMP/TMP on a different volume from the destination"
+    );
+    publication_receipt(temporary.path());
+    println!("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass");
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS");
 }
 
