@@ -428,4 +428,38 @@ mod tests {
         assert!(!refused.legacy_transition());
         let _ = fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn legacy_classify_error_refuses_before_valid_wrapper_fallback() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-identity-classify-error-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let home_dir = root.join("missing-home");
+        let wrapper_dir = root.join("separate-wrapper");
+        fs::create_dir_all(&wrapper_dir).unwrap();
+        let path = wrapper_dir.join("journal");
+        fs::write(
+            &path,
+            crate::wrapper::render_wrapper(
+                "journal",
+                std::path::Path::new("/journal"),
+                std::path::Path::new("/owner-authored/journal"),
+                &fields(),
+            ),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            read_wrapper(&path),
+            Ok(Some(PresentArtifact::Guarded(_)))
+        ));
+        assert!(matches!(
+            read_setup_wrapper(&home_dir, &path, "journal", true),
+            Err(())
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
 }
