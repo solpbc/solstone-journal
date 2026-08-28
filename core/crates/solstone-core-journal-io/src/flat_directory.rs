@@ -17,6 +17,7 @@ use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 use crate::errors::{FlatDirectoryError, PathError};
 use crate::journal_root::{JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity};
 use crate::name_admission::{NameAdmissionReason, check_portable_component};
+use crate::observation::{FileObservation, FlatDirectoryEntry, NativeMtime, same_entry_metadata};
 use crate::paths::create_directory_bound;
 
 const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
@@ -90,41 +91,6 @@ fn flat_directory_test_hook(primitive: FlatDirectoryTestPrimitive) {
 
 #[cfg(not(test))]
 fn flat_directory_test_hook(_primitive: FlatDirectoryTestPrimitive) {}
-
-/// A native-precision modification timestamp from a no-follow Unix stat result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NativeMtime {
-    /// Whole seconds in the platform stat timestamp.
-    pub seconds: i64,
-    /// Nanoseconds in the platform stat timestamp.
-    pub nanoseconds: i64,
-}
-
-/// Metadata for one direct entry in a [`FlatDirectory`].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FlatDirectoryEntry {
-    /// The direct entry name, with no path interpretation.
-    pub name: OsString,
-    /// No-follow filesystem kind.
-    pub kind: JournalEntryKind,
-    /// Device number from the no-follow stat result.
-    pub device: u64,
-    /// Inode number from the no-follow stat result.
-    pub inode: u64,
-    /// Byte size from the no-follow stat result.
-    pub size: u64,
-    /// Native-precision modification time from the no-follow stat result.
-    pub mtime: NativeMtime,
-}
-
-/// Complete stable observation of a direct regular-file entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FileObservation {
-    /// Entry metadata observed before and after the complete read.
-    pub entry: FlatDirectoryEntry,
-    /// Exact bytes read while the stable metadata remained unchanged.
-    pub bytes: Vec<u8>,
-}
 
 /// An acquired directory descriptor for direct-entry operations only.
 pub struct FlatDirectory {
@@ -427,18 +393,6 @@ pub(crate) fn stat_entry(
             error,
         )),
     }
-}
-
-pub(crate) fn same_entry_metadata(left: &FlatDirectoryEntry, right: &FlatDirectoryEntry) -> bool {
-    left.kind == right.kind
-        && left.device == right.device
-        && left.inode == right.inode
-        && left.size == right.size
-        && left.mtime == right.mtime
-}
-
-pub(crate) fn same_observation(left: &FileObservation, right: &FileObservation) -> bool {
-    same_entry_metadata(&left.entry, &right.entry) && left.bytes == right.bytes
 }
 
 fn portable_relative_components(relative: &Path) -> Result<Vec<&OsStr>, FlatDirectoryError> {

@@ -16,11 +16,11 @@ use crate::errors::{
     ClaimDurability, ClaimRemovalError, ClaimRemovalOutcome, ClaimUnchangedReason,
     FlatDirectoryError, IdentityChangeDisposition, NoReplacePrimitive,
 };
-use crate::flat_directory::{
-    FileObservation, FlatDirectory, FlatDirectoryEntry, read_observed_file_unchecked,
-    same_entry_metadata, same_observation, stat_entry,
-};
+use crate::flat_directory::{FlatDirectory, read_observed_file_unchecked, stat_entry};
 use crate::name_admission::{ClaimName, check_portable_component};
+use crate::observation::{
+    FileObservation, FlatDirectoryEntry, same_entry_metadata, same_observation,
+};
 
 /// Ordered checkpoints used by claim/removal fault and pause tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

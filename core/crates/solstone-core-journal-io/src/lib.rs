@@ -32,6 +32,7 @@ pub mod lease;
 #[cfg(any(unix, windows))]
 pub mod locking;
 pub mod name_admission;
+pub mod observation;
 pub mod paths;
 pub mod readers;
 pub mod removal;
@@ -41,11 +42,15 @@ pub mod snapshot;
 pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
+mod windows_identity;
+#[cfg(windows)]
 pub mod windows_inventory;
 #[cfg(windows)]
 mod windows_lock;
 #[cfg(windows)]
 mod windows_ntcreate;
+#[cfg(windows)]
+pub mod windows_sync_dir;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -89,9 +94,8 @@ pub use errors::{
 };
 #[cfg(unix)]
 pub use flat_directory::{
-    FileObservation, FlatDirectory, FlatDirectoryEntry, NativeMtime,
-    create_or_open_flat_directory_bound, list_flat_directory, open_flat_directory_bound,
-    read_observed_file, read_observed_file_bounded,
+    FlatDirectory, create_or_open_flat_directory_bound, list_flat_directory,
+    open_flat_directory_bound, read_observed_file, read_observed_file_bounded,
 };
 #[cfg(unix)]
 pub use health_marker::{
@@ -128,6 +132,7 @@ pub use name_admission::{
     ClaimName, ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason,
     NoFollowEntryKind, StreamName, check_portable_component,
 };
+pub use observation::{FileObservation, FlatDirectoryEntry, NativeMtime};
 #[cfg(unix)]
 pub use paths::create_directory_bound;
 pub use paths::{
@@ -169,4 +174,9 @@ pub use windows_lock::{
     WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,
     run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
     run_with_windows_lock_file_ex_trace, run_with_windows_unlock_file_ex_observation,
+};
+#[cfg(windows)]
+pub use windows_sync_dir::{
+    WindowsFlatDirectory, create_or_open_windows_flat_directory_bound, list_windows_flat_directory,
+    open_windows_flat_directory_bound, read_windows_observed_file_bounded,
 };

@@ -5,12 +5,16 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use solstone_core_journal_io::{FileObservation, FlatDirectoryError, JournalEntryKind};
+#[cfg(unix)]
 use solstone_core_journal_io::{
-    FileObservation, FlatDirectory, FlatDirectoryError, JournalEntryKind, JournalRoot,
-    JournalRootError, list_flat_directory, open_flat_directory_bound, read_observed_file_bounded,
+    FlatDirectory, JournalRoot, JournalRootError, list_flat_directory, open_flat_directory_bound,
+    read_observed_file_bounded,
 };
 
 use crate::process::ProcessInstance;
@@ -30,6 +34,7 @@ pub const MAX_SYNC_HEARTBEAT_BYTES: usize = 16_384;
 
 // `FlatDirectory` intentionally keeps its full diagnostic path private. This
 // relative spelling is presentation metadata only; it is never opened.
+#[cfg(unix)]
 const SYNC_FOLDER_DIAGNOSTIC: &str = "health/sync";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -733,6 +738,7 @@ impl IfEmpty for String {
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn scan_bound_sync(
     sync: &FlatDirectory,
     self_filename: &str,
@@ -812,6 +818,16 @@ pub(crate) fn scan_bound_sync(
         pending.push((observation, classification));
     }
 
+    Ok(assemble_sync_result(pending, self_filename, previous, now))
+}
+
+/// Build a sync result from identity-stable bounded reads on one platform.
+pub(crate) fn assemble_sync_result(
+    pending: impl IntoIterator<Item = (FileObservation, HeartbeatClassification)>,
+    self_filename: &str,
+    previous: Option<&SyncSnapshot>,
+    now: f64,
+) -> SyncCheckResult {
     let mut snapshot = SyncSnapshot::default();
     let mut peer_observations = Vec::new();
     for (observation, classification) in pending {
@@ -853,13 +869,14 @@ pub(crate) fn scan_bound_sync(
         .filter(|peer| peer.is_live)
         .cloned()
         .collect();
-    Ok(SyncCheckResult {
+    SyncCheckResult {
         snapshot,
         peer_observations,
         live_peer_observations,
-    })
+    }
 }
 
+#[cfg(unix)]
 pub fn rescan_sync_read_only(
     journal: &Path,
     self_filename: &str,
@@ -891,6 +908,7 @@ pub fn rescan_sync_read_only(
     scan_bound_sync(&sync, self_filename, previous, now).map(SyncRescan::Complete)
 }
 
+#[cfg(unix)]
 pub(crate) fn directory_binding_from_root(
     journal: &Path,
     error: JournalRootError,
@@ -940,7 +958,7 @@ fn classification_heartbeat(classification: &HeartbeatClassification) -> Option<
     }
 }
 
-fn classify_heartbeat(name: &OsStr, bytes: &[u8]) -> HeartbeatClassification {
+pub(crate) fn classify_heartbeat(name: &OsStr, bytes: &[u8]) -> HeartbeatClassification {
     if is_admission_wait_marker_filename_candidate(name) {
         return classify_admission_wait_marker(name, bytes);
     }
@@ -1036,7 +1054,7 @@ fn lower_hex(bytes: &[u8]) -> String {
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     #[cfg(unix)]
