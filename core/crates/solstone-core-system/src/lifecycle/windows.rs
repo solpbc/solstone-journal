@@ -487,7 +487,11 @@ fn remove_lifecycle_artifact(
 
 #[cfg(windows)]
 mod platform {
+    #[cfg(all(windows, feature = "test-hooks"))]
+    use std::cell::RefCell;
     use std::ffi::OsStr;
+    #[cfg(all(windows, feature = "test-hooks"))]
+    use std::ffi::OsString;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::time::Duration;
@@ -513,6 +517,77 @@ mod platform {
     use crate::lifecycle::{LifecycleError, SupervisorLifecycle};
 
     const MAX_LIFECYCLE_ARTIFACT_BYTES: usize = sync::MAX_SYNC_HEARTBEAT_BYTES;
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    const SCAN_BEFORE_OBSERVED_READ_CHECKPOINT: &str = "scan-before-observed-read";
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    type WindowsLifecycleCheckpoint = (&'static str, OsString, Box<dyn FnOnce()>);
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    thread_local! {
+        static WINDOWS_LIFECYCLE_CHECKPOINT: RefCell<Option<WindowsLifecycleCheckpoint>> =
+            const { RefCell::new(None) };
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    struct WindowsLifecycleCheckpointCleanup;
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    impl Drop for WindowsLifecycleCheckpointCleanup {
+        fn drop(&mut self) {
+            WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
+                let _ = armed.borrow_mut().take();
+            });
+        }
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    pub fn run_with_windows_lifecycle_checkpoint<T>(
+        checkpoint: &'static str,
+        filename: &OsStr,
+        callback: impl FnOnce() + 'static,
+        operation: impl FnOnce() -> T,
+    ) -> (T, bool) {
+        WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
+            let mut armed = armed.borrow_mut();
+            assert!(
+                armed.is_none(),
+                "Windows lifecycle checkpoint is already armed"
+            );
+            *armed = Some((checkpoint, filename.to_os_string(), Box::new(callback)));
+        });
+        let cleanup = WindowsLifecycleCheckpointCleanup;
+        let result = operation();
+        let consumed = WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| armed.borrow().is_none());
+        drop(cleanup);
+        (result, consumed)
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    fn fire_windows_lifecycle_checkpoint(checkpoint: &str, filename: &OsStr) {
+        let callback = WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
+            let mut armed = armed.borrow_mut();
+            if armed
+                .as_ref()
+                .is_some_and(|(armed_checkpoint, armed_filename, _)| {
+                    *armed_checkpoint == checkpoint && armed_filename == filename
+                })
+            {
+                Some(
+                    armed
+                        .take()
+                        .expect("matching Windows lifecycle checkpoint was armed")
+                        .2,
+                )
+            } else {
+                None
+            }
+        });
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
 
     pub(crate) fn boot(
         journal: impl AsRef<Path>,
@@ -845,6 +920,8 @@ mod platform {
                 });
             }
             let name = entry.name;
+            #[cfg(all(windows, feature = "test-hooks"))]
+            fire_windows_lifecycle_checkpoint(SCAN_BEFORE_OBSERVED_READ_CHECKPOINT, &name);
             let observation = match read_windows_observed_file_bounded(
                 directory,
                 &name,
@@ -967,6 +1044,8 @@ mod platform {
     }
 }
 
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use platform::run_with_windows_lifecycle_checkpoint;
 #[cfg(windows)]
 pub(crate) use platform::{boot, filesystem_store, hostname};
 

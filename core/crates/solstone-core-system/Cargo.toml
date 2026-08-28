@@ -42,6 +42,9 @@ thiserror = { workspace = true }
 filetime = "0.2.29"
 tempfile = "3.24.0"
 
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { workspace = true }
+
 [[bin]]
 name = "solstone-system-test-child"
 path = "src/bin/solstone_system_test_child.rs"
@@ -62,6 +65,13 @@ path = "tests/launch_authority.rs"
 [[test]]
 name = "system_lifecycle"
 path = "tests/system_lifecycle.rs"
+
+# Native Windows lifecycle receipts need the feature-gated checkpoint seam;
+# system_lifecycle's unconditional composed suite must not require test-hooks.
+[[test]]
+name = "windows_lifecycle_receipt"
+path = "tests/windows_lifecycle_receipt.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "system_provider_runtime"
