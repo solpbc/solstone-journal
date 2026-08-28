@@ -13,7 +13,7 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use zip::write::SimpleFileOptions;
 
@@ -142,8 +142,7 @@ impl AudioProcessingCompleter {
         let worker_stop = Arc::clone(&stop);
         let chronicle = journal.join("chronicle");
         let worker = thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_secs(35);
-            while !worker_stop.load(Ordering::Acquire) && Instant::now() < deadline {
+            while !worker_stop.load(Ordering::Acquire) {
                 if let Some(audio) = find_named_file(&chronicle, "imported_audio.m4a") {
                     let input_size = fs::metadata(&audio).expect("imported audio metadata").len();
                     fs::write(
