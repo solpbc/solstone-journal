@@ -72,26 +72,24 @@ async fn run(
         options.debug,
         outbound,
     ));
-    let parent_loss = run_until(
+    let outcome = run_until_with_shutdown_status(
         connection,
         dispatcher,
         receiver,
         shutdown_with_hosted_parent(hosted_parent.clone()),
     )
-    .await
-    .flatten();
+    .await;
+    let parent_loss = outcome.shutdown.flatten();
     if let (Some(parent), Some(reason)) = (hosted_parent, parent_loss) {
-        // `run_until` reaches this point only after `stop_and_wait` joined the
-        // dispatcher workers and `connection.stop` sent its infallible,
-        // internally bounded connection shutdown. `stop_and_wait` has no
-        // service-wide deadline, so this records observed completion rather
-        // than claiming the generic parent-loss budget enforced it.
+        // `connection.stop` is infallible and always runs before this point.
+        // Worker joins are independently observed so a panic cannot claim a
+        // completed service runner in the parent-loss handoff.
         parent
             .finish_parent_loss(
                 reason,
                 HostedServiceShutdownEvidence {
                     listener_stopped: true,
-                    service_runner_stopped: true,
+                    service_runner_stopped: outcome.service_runner_stopped,
                     // Sense has no separate health artifact to withdraw.
                     operational_artifacts_cleaned: true,
                 },
@@ -106,11 +104,30 @@ async fn run(
 /// The production signal path and socket integration tests share this exact
 /// lifecycle so worker output is always drained after bounded termination.
 pub async fn run_until<F, T>(
-    mut connection: CallosumSocketConnection,
+    connection: CallosumSocketConnection,
     dispatcher: Arc<SenseDispatcher>,
     receiver: mpsc::Receiver<Outbound>,
     shutdown: F,
 ) -> Option<T>
+where
+    F: Future<Output = T> + Send + 'static,
+{
+    run_until_with_shutdown_status(connection, dispatcher, receiver, shutdown)
+        .await
+        .shutdown
+}
+
+struct ServiceLoopOutcome<T> {
+    shutdown: Option<T>,
+    service_runner_stopped: bool,
+}
+
+async fn run_until_with_shutdown_status<F, T>(
+    mut connection: CallosumSocketConnection,
+    dispatcher: Arc<SenseDispatcher>,
+    receiver: mpsc::Receiver<Outbound>,
+    shutdown: F,
+) -> ServiceLoopOutcome<T>
 where
     F: Future<Output = T> + Send + 'static,
 {
@@ -135,10 +152,16 @@ where
         }
     };
     let stopping_dispatcher = Arc::clone(&dispatcher);
-    let _ = tokio::task::spawn_blocking(move || stopping_dispatcher.stop_and_wait()).await;
+    let service_runner_stopped =
+        tokio::task::spawn_blocking(move || stopping_dispatcher.stop_and_wait())
+            .await
+            .unwrap_or(false);
     drain(&connection, &receiver);
     connection.stop().await;
-    shutdown_outcome
+    ServiceLoopOutcome {
+        shutdown: shutdown_outcome,
+        service_runner_stopped,
+    }
 }
 
 async fn shutdown_with_hosted_parent(

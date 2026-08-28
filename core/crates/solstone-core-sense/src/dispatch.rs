@@ -507,24 +507,27 @@ impl SenseDispatcher {
     pub fn stop(&self) {
         self.state.lock().expect("sense state").stopping = true;
     }
-    pub fn stop_and_wait(&self) {
+    /// Returns whether every worker and cleanup thread joined without panic.
+    pub fn stop_and_wait(&self) -> bool {
         self.stop();
-        self.join_workers();
+        self.join_workers()
     }
 
     pub(crate) fn is_idle(&self) -> bool {
         let state = self.state.lock().expect("sense state");
         state.pending_files.is_empty() && state.segments.is_empty()
     }
-    fn join_workers(&self) {
+    fn join_workers(&self) -> bool {
+        let mut joined = true;
         let workers = std::mem::take(&mut *self.workers.lock().expect("sense workers"));
         for worker in workers {
-            let _ = worker.join();
+            joined &= worker.join().is_ok();
         }
         let cleanups = std::mem::take(&mut *self.cleanups.lock().expect("sense cleanups"));
         for cleanup in cleanups {
-            let _ = cleanup.join();
+            joined &= cleanup.join().is_ok();
         }
+        joined
     }
 }
 
@@ -995,6 +998,20 @@ mod tests {
                 ("files".into(), json!(["ignored.txt"])),
             ]),
         }
+    }
+
+    #[test]
+    fn stop_and_wait_reports_a_panicked_worker() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let (outbound, _receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
+        dispatcher
+            .workers
+            .lock()
+            .expect("sense workers")
+            .push(thread::spawn(|| panic!("worker panic")));
+
+        assert!(!dispatcher.stop_and_wait());
     }
 
     #[test]

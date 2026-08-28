@@ -135,13 +135,15 @@ where
     F: FnOnce(),
     S: FnMut(i32, nix::sys::signal::Signal),
 {
-    let _initial = exact_descendant_tree(root, owner_uid, source)?;
+    let initial = exact_descendant_tree(root, owner_uid, source)?;
+    let mut owned = Vec::new();
+    remember_descendants(&mut owned, &initial)?;
     stop_service();
 
     let before_term = exact_descendant_tree(root, owner_uid, source)?;
-    signal_exact_descendants(
-        &before_term,
-        root,
+    remember_descendants(&mut owned, &before_term)?;
+    signal_tracked_descendants(
+        &owned,
         owner_uid,
         source,
         SignalKind::Terminate,
@@ -151,28 +153,26 @@ where
     // This second complete census is mandatory: a child forked while a direct
     // parent was receiving TERM remains in the owned set for the escalation pass.
     let after_term = exact_descendant_tree(root, owner_uid, source)?;
+    remember_descendants(&mut owned, &after_term)?;
     let deadline = Instant::now() + timeout;
-    let mut remaining = after_term;
-    while !remaining.descendants.is_empty() && Instant::now() < deadline {
+    while Instant::now() < deadline {
+        if tracked_descendants_are_gone(&owned, owner_uid, source)? {
+            return Ok(DescendantTerminationOutcome::Graceful);
+        }
         std::thread::sleep(Duration::from_millis(10));
-        remaining = exact_descendant_tree(root, owner_uid, source)?;
+        let tree = exact_descendant_tree(root, owner_uid, source)?;
+        remember_descendants(&mut owned, &tree)?;
     }
-    if remaining.descendants.is_empty() {
+    if tracked_descendants_are_gone(&owned, owner_uid, source)? {
         return Ok(DescendantTerminationOutcome::Graceful);
     }
 
-    signal_exact_descendants(
-        &remaining,
-        root,
-        owner_uid,
-        source,
-        SignalKind::Kill,
-        &mut signal,
-    )?;
+    signal_tracked_descendants(&owned, owner_uid, source, SignalKind::Kill, &mut signal)?;
     let kill_deadline = Instant::now() + KILL_REAP_GRACE;
     loop {
-        let final_tree = exact_descendant_tree(root, owner_uid, source)?;
-        if final_tree.descendants.is_empty() {
+        let tree = exact_descendant_tree(root, owner_uid, source)?;
+        remember_descendants(&mut owned, &tree)?;
+        if tracked_descendants_are_gone(&owned, owner_uid, source)? {
             return Ok(DescendantTerminationOutcome::EscalatedAndReaped);
         }
         if Instant::now() >= kill_deadline {
@@ -222,9 +222,46 @@ fn exact_descendant_tree(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn signal_exact_descendants<S>(
+#[derive(Clone, Copy)]
+struct TrackedDescendant {
+    descendant: Descendant,
+    birth: ProcessBirth,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn remember_descendants(
+    owned: &mut Vec<TrackedDescendant>,
     tree: &ProcessTreeSnapshot,
-    root: ProcessInstance,
+) -> Result<(), DescendantObservationFailure> {
+    for descendant in &tree.descendants {
+        let birth = tree
+            .descendant_births
+            .get(&descendant.pid)
+            .copied()
+            .ok_or(DescendantObservationFailure::Missing)?;
+        if let Some(existing) = owned
+            .iter()
+            .find(|existing| existing.descendant.pid == descendant.pid)
+        {
+            if existing.birth != birth {
+                return Err(DescendantObservationFailure::Reused);
+            }
+            if existing.descendant.uid != descendant.uid {
+                return Err(DescendantObservationFailure::WrongUid);
+            }
+            continue;
+        }
+        owned.push(TrackedDescendant {
+            descendant: *descendant,
+            birth,
+        });
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn signal_tracked_descendants<S>(
+    owned: &[TrackedDescendant],
     owner_uid: u32,
     source: &dyn ProcessInstanceSource,
     kind: SignalKind,
@@ -233,19 +270,30 @@ fn signal_exact_descendants<S>(
 where
     S: FnMut(i32, nix::sys::signal::Signal),
 {
-    let _ = root;
-    for descendant in &tree.descendants {
-        let expected_birth = tree
-            .descendant_births
-            .get(&descendant.pid)
-            .copied()
-            .ok_or(DescendantObservationFailure::Missing)?;
-        match revalidate_descendant(*descendant, expected_birth, owner_uid, source)? {
+    for tracked in owned {
+        match revalidate_descendant(*tracked, owner_uid, source)? {
             DescendantLiveness::Gone => {}
-            DescendantLiveness::Live => signal(descendant.pid, nix_signal(kind)),
+            DescendantLiveness::Live => signal(tracked.descendant.pid, nix_signal(kind)),
         }
     }
     Ok(())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn tracked_descendants_are_gone(
+    owned: &[TrackedDescendant],
+    owner_uid: u32,
+    source: &dyn ProcessInstanceSource,
+) -> Result<bool, DescendantObservationFailure> {
+    for tracked in owned {
+        if matches!(
+            revalidate_descendant(*tracked, owner_uid, source)?,
+            DescendantLiveness::Live
+        ) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -256,29 +304,21 @@ enum DescendantLiveness {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn revalidate_descendant(
-    descendant: Descendant,
-    expected_birth: ProcessBirth,
+    tracked: TrackedDescendant,
     owner_uid: u32,
     source: &dyn ProcessInstanceSource,
 ) -> Result<DescendantLiveness, DescendantObservationFailure> {
-    let pid = u32::try_from(descendant.pid).map_err(|_| DescendantObservationFailure::Missing)?;
+    let pid =
+        u32::try_from(tracked.descendant.pid).map_err(|_| DescendantObservationFailure::Missing)?;
     match source.inspect(pid) {
         InspectResult::Absent => Ok(DescendantLiveness::Gone),
         InspectResult::Unverifiable => Err(DescendantObservationFailure::Unverifiable),
-        InspectResult::Present {
-            instance,
-            uid,
-            ppid,
-            ..
-        } => {
-            if instance.birth != expected_birth {
+        InspectResult::Present { instance, uid, .. } => {
+            if instance.birth != tracked.birth {
                 return Err(DescendantObservationFailure::Reused);
             }
-            if uid != owner_uid || uid != descendant.uid {
+            if uid != owner_uid || uid != tracked.descendant.uid {
                 return Err(DescendantObservationFailure::WrongUid);
-            }
-            if ppid.and_then(|value| i32::try_from(value).ok()) != Some(descendant.ppid) {
-                return Err(DescendantObservationFailure::Stale);
             }
             Ok(DescendantLiveness::Live)
         }
@@ -870,8 +910,11 @@ mod tests {
                 exact(20, 2, 10, 501),
                 exact(10, 1, 1, 501),
                 exact(20, 2, 10, 501),
+                exact(20, 2, 10, 501),
                 exact(21, 3, 20, 501),
                 exact(10, 1, 1, 501),
+                InspectResult::Absent,
+                InspectResult::Absent,
             ])),
             censuses: Mutex::new(VecDeque::from([
                 InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
@@ -909,6 +952,63 @@ mod tests {
                 .expect("signals")
                 .iter()
                 .all(|(pid, _)| *pid != 10)
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    struct ReparentedSource {
+        censuses: Mutex<VecDeque<InstanceCensus>>,
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    impl ProcessInstanceSource for ReparentedSource {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            match pid {
+                10 => exact(10, 1, 1, 501),
+                // The child remains live after it leaves the rooted tree.
+                20 => exact(20, 2, 1, 501),
+                _ => InspectResult::Unverifiable,
+            }
+        }
+
+        fn census(&self) -> InstanceCensus {
+            self.censuses
+                .lock()
+                .expect("census queue")
+                .pop_front()
+                .unwrap_or_else(|| InstanceCensus::Complete(vec![row(10, 1, 1, 501)]))
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn exact_descendant_cleanup_tracks_a_reparented_child_until_it_is_gone() {
+        let source = ReparentedSource {
+            censuses: Mutex::new(VecDeque::from([
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501), row(20, 2, 10, 501)]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501)]),
+                InstanceCensus::Complete(vec![row(10, 1, 1, 501)]),
+            ])),
+        };
+        let signals = Mutex::new(Vec::new());
+
+        assert_eq!(
+            terminate_descendants_exact_with(
+                root(),
+                501,
+                Duration::ZERO,
+                &source,
+                || {},
+                |pid, signal| signals.lock().expect("signals").push((pid, signal)),
+            ),
+            Err(DescendantObservationFailure::Stale)
+        );
+        assert_eq!(
+            *signals.lock().expect("signals"),
+            vec![
+                (20, nix::sys::signal::Signal::SIGTERM),
+                (20, nix::sys::signal::Signal::SIGKILL),
+            ]
         );
     }
 

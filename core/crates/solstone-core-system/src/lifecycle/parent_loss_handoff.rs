@@ -389,15 +389,17 @@ fn validate_record(record: &ParentLossHandoffRecord) -> Result<(), ParentLossHan
     {
         return Err(ParentLossHandoffUnresolvedReason::MalformedRecord.into());
     }
+    if record.witnesses.iter().any(|(service, witness)| {
+        let Some(registration) = record.registrations.get(service).copied() else {
+            return true;
+        };
+        witness_eligibility(record.generation, registration, *witness).is_some()
+    }) {
+        return Err(ParentLossHandoffUnresolvedReason::MalformedRecord.into());
+    }
     if matches!(record.terminal, Some(ParentLossHandoffTerminal::Completed))
         && record.enabled.iter().any(|service| {
-            let Some(registration) = record.registrations.get(service).copied() else {
-                return true;
-            };
-            let Some(witness) = record.witnesses.get(service).copied() else {
-                return true;
-            };
-            witness_eligibility(record.generation, registration, witness).is_some()
+            !record.registrations.contains_key(service) || !record.witnesses.contains_key(service)
         })
     {
         return Err(ParentLossHandoffUnresolvedReason::MalformedRecord.into());
@@ -552,6 +554,40 @@ mod tests {
         let path = record_path(journal.path());
         std::fs::create_dir_all(path.parent().expect("health")).expect("health");
         std::fs::write(path, b"not-json").expect("malformed record");
+        assert!(matches!(
+            read_parent_loss_handoff(journal.path()),
+            Err(ParentLossHandoffError::Unresolved(
+                ParentLossHandoffUnresolvedReason::MalformedRecord
+            ))
+        ));
+    }
+
+    #[test]
+    fn nonterminal_record_with_an_ineligible_witness_is_malformed_on_read() {
+        let journal = journal();
+        let generation = instance(10, 1);
+        let convey = registration(20, 1);
+        initialize_parent_loss_handoff(
+            journal.path(),
+            generation,
+            [HostedServiceKind::Convey, HostedServiceKind::Sense],
+        )
+        .expect("initialize");
+        let mut stale_witness = witness(generation, convey);
+        stale_witness.instance = instance(99, 2);
+        write_record(
+            &record_path(journal.path()),
+            &ParentLossHandoffRecord {
+                schema: PARENT_LOSS_HANDOFF_SCHEMA_V1,
+                generation,
+                enabled: vec![HostedServiceKind::Convey, HostedServiceKind::Sense],
+                registrations: BTreeMap::from([(HostedServiceKind::Convey, convey)]),
+                witnesses: BTreeMap::from([(HostedServiceKind::Convey, stale_witness)]),
+                terminal: None,
+            },
+        )
+        .expect("write nonterminal record");
+
         assert!(matches!(
             read_parent_loss_handoff(journal.path()),
             Err(ParentLossHandoffError::Unresolved(

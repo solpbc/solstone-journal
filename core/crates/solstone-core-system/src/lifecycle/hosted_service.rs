@@ -70,16 +70,6 @@ impl HostedServiceParentRuntime {
         }
     }
 
-    /// This service's birth-bound operating-system identity.
-    pub fn instance(&self) -> ProcessInstance {
-        self.instance
-    }
-
-    /// This service's observed operating-system UID.
-    pub fn uid(&self) -> u32 {
-        self.uid
-    }
-
     /// Stop every still-owned exact descendant after the caller has stopped
     /// its own listener and service runner, then publish this service's
     /// terminal handoff evidence.
