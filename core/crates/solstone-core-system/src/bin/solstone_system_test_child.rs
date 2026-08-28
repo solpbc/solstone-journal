@@ -3,12 +3,13 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use solstone_core_system::lifecycle::SupervisorLifecycle;
-use solstone_core_system::lifecycle::WriterId;
+use solstone_core_system::lifecycle::{
+    SupervisorLifecycle, WriterId, acknowledge_hosted_child_admission,
+};
 use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
 
 fn writer_id() -> WriterId {
@@ -16,6 +17,12 @@ fn writer_id() -> WriterId {
 }
 
 fn main() {
+    if let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL")
+        && let Err(error) = acknowledge_hosted_child_admission(Path::new(&journal))
+    {
+        eprintln!("hosted fixture child admission failed: {error}");
+        std::process::exit(78);
+    }
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
     match mode.as_str() {

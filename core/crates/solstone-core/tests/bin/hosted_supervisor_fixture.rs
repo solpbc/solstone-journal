@@ -5,6 +5,7 @@
 //! direct-parent birth identity and parent death cannot be represented by an
 //! in-process mock without losing the OS relationship under test.
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
@@ -15,15 +16,17 @@ use solstone_core::supervisor::{
     SupervisorHostOutcome, receipt::write_hosted_supervisor_receipt, run_hosted,
 };
 use solstone_core_cli::SupervisorOptions;
-use solstone_core_system::lifecycle::DeclaredParent;
-#[cfg(target_os = "macos")]
 use solstone_core_system::lifecycle::{
-    HostedServiceKind, HostedServiceShutdownEvidence, admit_hosted_service_parent,
+    CoordinatorBootstrap, DeclaredParent, HostedServiceKind, ParentLossCoordinator,
 };
+#[cfg(target_os = "macos")]
+use solstone_core_system::lifecycle::{HostedServiceShutdownEvidence, admit_hosted_service_parent};
 use solstone_core_system::process::{ProcessBirth, ProcessInstance};
 
 #[cfg(target_os = "macos")]
 const DARWIN_PARENT_LIFETIME_FIXTURE_ENV: &str = "SOLSTONE_DARWIN_PARENT_LIFETIME_FIXTURE";
+#[cfg(target_os = "macos")]
+const DARWIN_PARENT_LIFETIME_MODE_ENV: &str = "SOLSTONE_DARWIN_PARENT_LIFETIME_MODE";
 
 fn options() -> SupervisorOptions {
     SupervisorOptions {
@@ -110,9 +113,76 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: S
     }
 }
 
+/// The supervisor fixture is itself the hosted supervisor executable, so it
+/// must route the coordinator's hidden sibling verb back into the production
+/// coordinator state machine. This preserves the normal `current_exe()`
+/// launch shape used by `bootstrap_parent_loss_coordinator`.
+fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString>) -> ExitCode {
+    let mut supervisor = None;
+    let mut enabled = None;
+    while let Some(argument) = args.next() {
+        match argument.to_str() {
+            Some("--supervisor-json") => {
+                supervisor = args
+                    .next()
+                    .and_then(|value| value.into_string().ok())
+                    .and_then(|value| serde_json::from_str::<ProcessInstance>(&value).ok());
+            }
+            Some("--enabled-json") => {
+                enabled = args
+                    .next()
+                    .and_then(|value| value.into_string().ok())
+                    .and_then(|value| serde_json::from_str::<Vec<HostedServiceKind>>(&value).ok());
+            }
+            _ => {}
+        }
+    }
+    let (Some(supervisor), Some(enabled)) = (supervisor, enabled) else {
+        eprintln!("hosted fixture: invalid coordinator bootstrap arguments");
+        return ExitCode::from(64);
+    };
+    let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from) else {
+        eprintln!("hosted fixture: coordinator has no journal");
+        return ExitCode::from(75);
+    };
+    let mut capability = Vec::new();
+    if let Err(error) = std::io::stdin().read_to_end(&mut capability) {
+        eprintln!("hosted fixture: coordinator capability read failed: {error}");
+        return ExitCode::from(75);
+    }
+    if capability.len() < 32 {
+        eprintln!("hosted fixture: coordinator capability is missing");
+        return ExitCode::from(64);
+    }
+    let (coordinator, _) = match ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+        journal,
+        supervisor,
+        enabled,
+        capability,
+    }) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("hosted fixture: coordinator bootstrap failed: {error}");
+            return ExitCode::from(75);
+        }
+    };
+    match coordinator.run() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("hosted fixture: coordinator failed: {error}");
+            ExitCode::from(75)
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn darwin_parent_lifetime_fixture_enabled() -> bool {
     std::env::var(DARWIN_PARENT_LIFETIME_FIXTURE_ENV).as_deref() == Ok("1")
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_parent_lifetime_hostile_mode() -> bool {
+    std::env::var(DARWIN_PARENT_LIFETIME_MODE_ENV).as_deref() == Ok("hostile-late-spawner")
 }
 
 #[cfg(target_os = "macos")]
@@ -147,7 +217,8 @@ fn run_darwin_hosted_service(
         None => None,
     };
     if kind == HostedServiceKind::Cortex
-        && let Err(error) = spawn_darwin_cortex_descendants(&journal)
+        && let Err(error) =
+            spawn_darwin_cortex_descendants(&journal, darwin_parent_lifetime_hostile_mode())
     {
         eprintln!("hosted fixture: Darwin Cortex descendants failed: {error}");
         return ExitCode::from(75);
@@ -188,30 +259,41 @@ fn run_darwin_hosted_service(
 }
 
 #[cfg(target_os = "macos")]
-fn spawn_darwin_cortex_descendants(journal: &std::path::Path) -> Result<(), String> {
+fn spawn_darwin_cortex_descendants(
+    journal: &std::path::Path,
+    hostile_late_spawner: bool,
+) -> Result<(), String> {
     let health = journal.join("health");
     let talent = health.join("darwin-talent-worker.pid");
     let late_spawner = health.join("darwin-late-spawner.pid");
     let late_child = health.join("darwin-late-descendant.pid");
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     Command::new(&executable)
-        .arg("darwin-term-resistant")
+        .arg(if hostile_late_spawner {
+            "darwin-term-resistant"
+        } else {
+            "darwin-cooperative-child"
+        })
         .arg(&talent)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| error.to_string())?;
-    Command::new(executable)
-        .arg("darwin-late-spawner")
-        .arg(&late_spawner)
-        .arg(&late_child)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    wait_for_fixture_paths(&[talent, late_spawner])
+    if hostile_late_spawner {
+        Command::new(executable)
+            .arg("darwin-late-spawner")
+            .arg(&late_spawner)
+            .arg(&late_child)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        wait_for_fixture_paths(&[talent, late_spawner])
+    } else {
+        wait_for_fixture_paths(&[talent])
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -241,6 +323,16 @@ fn run_darwin_term_resistant(ready: PathBuf) -> ExitCode {
     let _signals = block_sigterm();
     if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin resistant child readiness failed: {error}");
+        return ExitCode::from(75);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(30));
+    ExitCode::SUCCESS
+}
+
+#[cfg(target_os = "macos")]
+fn run_darwin_cooperative_child(ready: PathBuf) -> ExitCode {
+    if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
+        eprintln!("hosted fixture: Darwin cooperative child readiness failed: {error}");
         return ExitCode::from(75);
     }
     std::thread::sleep(std::time::Duration::from_secs(30));
@@ -323,6 +415,7 @@ fn main() -> ExitCode {
         return ExitCode::from(64);
     };
     match mode.to_string_lossy().as_ref() {
+        "__parent-loss-coordinator" => run_parent_loss_coordinator(args),
         "host" => {
             let Some(journal) = args.next().map(PathBuf::from) else {
                 return ExitCode::from(64);
@@ -450,6 +543,21 @@ fn main() -> ExitCode {
             }
             #[cfg(target_os = "macos")]
             return run_darwin_term_resistant(ready);
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = ready;
+                ExitCode::from(64)
+            }
+        }
+        "darwin-cooperative-child" => {
+            let Some(ready) = args.next().map(PathBuf::from) else {
+                return ExitCode::from(64);
+            };
+            if args.next().is_some() {
+                return ExitCode::from(64);
+            }
+            #[cfg(target_os = "macos")]
+            return run_darwin_cooperative_child(ready);
             #[cfg(not(target_os = "macos"))]
             {
                 let _ = ready;

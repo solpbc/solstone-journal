@@ -24,7 +24,7 @@ use solstone_core::supervisor::{
 use solstone_core_system::direct_door::{
     DirectDoorOutcome, DirectDoorPublishResult, publish_direct_door,
 };
-use solstone_core_system::lifecycle::ParentAdmissionFailure;
+use solstone_core_system::lifecycle::{ParentAdmissionFailure, ParentLossLedger};
 use solstone_core_system::process::{
     InstanceCensus, InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
 };
@@ -1236,12 +1236,19 @@ fn readiness_publication_failure_clears_heartbeat_and_supervisor_identity() {
         DirectDoorPublishResult::Published
     );
     let source = SystemProcessInstanceSource;
+    let coordinator = ParentLossLedger::open(&journal.0)
+        .expect("open parent-loss ledger")
+        .active_generation()
+        .expect("read active parent-loss generation")
+        .expect("coordinator active generation")
+        .coordinator
+        .expect("coordinator identity");
     let rows = match source.census() {
         InstanceCensus::Complete(rows) | InstanceCensus::Incomplete(rows) => rows,
     };
     let app_instances = rows
         .into_iter()
-        .filter(|row| row.ppid == child.id())
+        .filter(|row| row.ppid == child.id() && row.instance != coordinator)
         .map(|row| row.instance)
         .collect::<Vec<_>>();
     assert!(

@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::{Pid, getpgid, getpgrp};
-use solstone_core_system::lifecycle::{ParentLossHandoffTerminal, read_parent_loss_handoff};
+use solstone_core_system::lifecycle::{
+    ParentLossLedger, ParentLossReaderOutcome, ParentLossTerminalDisposition,
+    ParentLossUnresolvedReason, read_parent_loss_outcome,
+};
 use solstone_core_system::process::{
     InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
@@ -26,7 +29,22 @@ use solstone_core_system::process::{
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
 
-const DEADLINE: Duration = Duration::from_secs(12);
+const DEADLINE: Duration = Duration::from_secs(15);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DarwinFixtureMode {
+    Cooperative,
+    HostileLateSpawner,
+}
+
+impl DarwinFixtureMode {
+    const fn environment_value(self) -> &'static str {
+        match self {
+            Self::Cooperative => "cooperative",
+            Self::HostileLateSpawner => "hostile-late-spawner",
+        }
+    }
+}
 
 struct TempJournal {
     directory: tempfile::TempDir,
@@ -111,6 +129,16 @@ fn port_is_bound(port: u16) -> bool {
 
 fn wait_until(mut check: impl FnMut() -> bool, label: &str) {
     let deadline = Instant::now() + DEADLINE;
+    while Instant::now() < deadline {
+        if check() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("timed out waiting for {label}");
+}
+
+fn wait_until_before(deadline: Instant, mut check: impl FnMut() -> bool, label: &str) {
     while Instant::now() < deadline {
         if check() {
             return;
@@ -215,7 +243,11 @@ fn spawn_control(
     }
 }
 
-fn start_hosted_supervisor(journal: &TempJournal, convey_port: u16) -> (Child, PathBuf) {
+fn start_hosted_supervisor(
+    journal: &TempJournal,
+    convey_port: u16,
+    mode: DarwinFixtureMode,
+) -> (Child, PathBuf) {
     let supervisor_pid = journal.health("darwin-hosted-supervisor.pid");
     let outcome = journal.health("darwin-hosted-supervisor.outcome");
     let convey_ready = journal.health("darwin-convey.ready");
@@ -238,6 +270,10 @@ fn start_hosted_supervisor(journal: &TempJournal, convey_port: u16) -> (Child, P
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture_binary())
         .env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", convey_argv)
         .env("SOLSTONE_DARWIN_PARENT_LIFETIME_FIXTURE", "1")
+        .env(
+            "SOLSTONE_DARWIN_PARENT_LIFETIME_MODE",
+            mode.environment_value(),
+        )
         .spawn()
         .expect("hosted supervisor launcher");
     (launcher, supervisor_pid)
@@ -254,8 +290,7 @@ fn kill_supervisor_exact(supervisor: ProcessInstance) {
     .expect("SIGKILL the exact hosted supervisor PID");
 }
 
-#[test]
-fn ac5_hosted_parent_loss_retires_only_the_owned_darwin_tree() {
+fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
     let journal = TempJournal::new();
     let owned_convey_port = reserve_ephemeral_port();
     let control_port = reserve_ephemeral_port();
@@ -310,7 +345,8 @@ fn ac5_hosted_parent_loss_retires_only_the_owned_darwin_tree() {
     ));
     assert_outer_controls_intact(&controls);
 
-    let (mut launcher, supervisor_pid_path) = start_hosted_supervisor(&journal, owned_convey_port);
+    let (mut launcher, supervisor_pid_path) =
+        start_hosted_supervisor(&journal, owned_convey_port, mode);
     let convey_ready = journal.health("darwin-convey.ready");
     let sense_ready = journal.health("fixture-sense.marker");
     let cortex_ready = journal.health("fixture-cortex.marker");
@@ -330,7 +366,7 @@ fn ac5_hosted_parent_loss_retires_only_the_owned_darwin_tree() {
                 && cortex_ready.exists()
                 && spl_ready.exists()
                 && talent_ready.exists()
-                && late_spawner_ready.exists()
+                && (mode == DarwinFixtureMode::Cooperative || late_spawner_ready.exists())
         },
         "hosted service tree readiness",
     );
@@ -348,41 +384,139 @@ fn ac5_hosted_parent_loss_retires_only_the_owned_darwin_tree() {
         current_instance(read_pid(&cortex_ready), "owned Cortex"),
         current_instance(read_pid(&spl_ready), "owned SPL"),
         current_instance(read_pid(&talent_ready), "Cortex talent worker"),
-        current_instance(read_pid(&late_spawner_ready), "Cortex late-child spawner"),
     ];
+    if mode == DarwinFixtureMode::HostileLateSpawner {
+        owned.push(current_instance(
+            read_pid(&late_spawner_ready),
+            "Cortex late-child spawner",
+        ));
+    }
 
     kill_supervisor_exact(supervisor);
     wait_until(
-        || {
-            assert_outer_controls_intact(&controls);
-            late_descendant_ready.exists()
-        },
-        "late indirect descendant after parent-loss TERM",
+        || instance_is_gone(supervisor),
+        "confirmed supervisor death",
     );
-    owned.push(current_instance(
-        read_pid(&late_descendant_ready),
-        "late indirect descendant",
-    ));
-    wait_until(
-        || {
-            assert_outer_controls_intact(&controls);
-            matches!(
-                read_parent_loss_handoff(journal.path()),
-                Ok(Some(ParentLossHandoffTerminal::Completed))
-            )
-        },
-        "completed parent-loss handoff",
-    );
-    wait_until(
-        || {
-            assert_outer_controls_intact(&controls);
-            owned.iter().copied().all(instance_is_gone)
-        },
-        "owned supervisor and descendant retirement",
-    );
+    let terminal_deadline = Instant::now() + DEADLINE;
+    match mode {
+        DarwinFixtureMode::Cooperative => {
+            wait_until_before(
+                terminal_deadline,
+                || {
+                    assert_outer_controls_intact(&controls);
+                    matches!(
+                        read_parent_loss_outcome(journal.path()),
+                        Ok(ParentLossReaderOutcome::Completed { .. })
+                    )
+                },
+                "completed coordinator terminal record",
+            );
+            wait_until_before(
+                terminal_deadline,
+                || {
+                    assert_outer_controls_intact(&controls);
+                    owned.iter().copied().all(instance_is_gone)
+                },
+                "owned supervisor and descendant retirement",
+            );
+            TcpListener::bind(("127.0.0.1", owned_convey_port))
+                .expect("owned Convey port released after parent loss");
 
-    TcpListener::bind(("127.0.0.1", owned_convey_port))
-        .expect("owned Convey port released after parent loss");
+            let ledger = ParentLossLedger::open(journal.path()).expect("parent-loss ledger");
+            let active = ledger
+                .active_generation()
+                .expect("active generation")
+                .expect("completed generation");
+            let record = ledger
+                .record(active.generation)
+                .expect("terminal record")
+                .expect("terminal record exists");
+            let ParentLossTerminalDisposition::Completed {
+                sealed_ledger_digest,
+            } = record.terminal.expect("completed terminal disposition")
+            else {
+                panic!("cooperative twin must record Completed");
+            };
+            assert_eq!(
+                record.sealed_ledger_digest.as_deref(),
+                Some(sealed_ledger_digest.as_str())
+            );
+            let successor = ledger
+                .reserve_generation(current_instance(std::process::id(), "test successor"), [])
+                .expect("exactly one successor generation is eligible");
+            assert_eq!(successor.generation, active.generation + 1);
+            assert!(
+                ledger
+                    .reserve_generation(
+                        current_instance(std::process::id(), "second successor"),
+                        []
+                    )
+                    .is_err()
+            );
+        }
+        DarwinFixtureMode::HostileLateSpawner => {
+            wait_until_before(
+                terminal_deadline,
+                || {
+                    assert_outer_controls_intact(&controls);
+                    matches!(
+                        read_parent_loss_outcome(journal.path()),
+                        Ok(ParentLossReaderOutcome::Unresolved {
+                            reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                                deadline_seconds: 15
+                            },
+                            ..
+                        })
+                    )
+                },
+                "deadline-bounded unresolved coordinator terminal record",
+            );
+            let ledger = ParentLossLedger::open(journal.path()).expect("parent-loss ledger");
+            let active = ledger
+                .active_generation()
+                .expect("active generation")
+                .expect("unresolved generation");
+            let coordinator = active.coordinator.expect("coordinator identity");
+            wait_until_before(
+                terminal_deadline,
+                || instance_is_gone(coordinator),
+                "coordinator exits after durable unresolved result",
+            );
+            assert!(
+                ledger
+                    .reserve_generation(
+                        current_instance(std::process::id(), "blocked successor"),
+                        []
+                    )
+                    .is_err()
+            );
+            assert!(
+                late_descendant_ready.exists(),
+                "hostile descendant was spawned after TERM"
+            );
+            let late_descendant =
+                current_instance(read_pid(&late_descendant_ready), "late indirect descendant");
+            kill(
+                Pid::from_raw(i32::try_from(late_descendant.pid).expect("late descendant PID")),
+                Signal::SIGKILL,
+            )
+            .expect("test cleanup SIGKILL for hostile late descendant");
+            wait_until(
+                || instance_is_gone(late_descendant),
+                "hostile descendant cleanup",
+            );
+        }
+    }
     assert_outer_controls_intact(&controls);
     let _ = launcher.wait();
+}
+
+#[test]
+fn ac5_cooperative_hosted_parent_loss_completes_the_sealed_darwin_tree() {
+    exercise_parent_loss_twin(DarwinFixtureMode::Cooperative);
+}
+
+#[test]
+fn ac5_hostile_reparented_descendant_becomes_deadline_unresolved() {
+    exercise_parent_loss_twin(DarwinFixtureMode::HostileLateSpawner);
 }
