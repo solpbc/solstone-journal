@@ -723,6 +723,7 @@ MANIFEST
                 ! -path "./config/journal.json" \
                 ! -path "./config/journal.json.lock" \
                 ! -path "./health/setup-state.json" \
+                ! -path "./health/service.log" \
                 ! -path "./.claude/skills" ! -path "./.claude/skills/*" \
                 ! -path "./.agents/skills" ! -path "./.agents/skills/*" \
                 -print0 > /tmp/journal-preexisting.paths
