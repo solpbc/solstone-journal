@@ -8,20 +8,28 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use solstone_core_journal_io::{
-    BoundAtomicOutcome, BoundParentLock, ClaimName, ClaimRemovalError, ClaimRemovalOutcome,
-    DetailedAtomicError, ExistingParentLockError, FileObservation, FlatDirectory,
-    FlatDirectoryError, JournalRoot, acquire_existing_parent_lock_bound, atomic_replace_bound,
+    BoundAtomicOutcome, BoundParentLock, ClaimName, ExistingParentLockError, FlatDirectory,
+    JournalRoot, acquire_existing_parent_lock_bound, atomic_replace_bound,
     claim_and_remove_observed, create_or_open_flat_directory_bound,
+};
+use solstone_core_journal_io::{
+    ClaimRemovalError, ClaimRemovalOutcome, DetailedAtomicError, FileObservation,
+    FlatDirectoryError,
 };
 use thiserror::Error;
 
 use super::LifecycleError;
+#[cfg(unix)]
 use super::readiness::ReadinessMarker;
 
+#[cfg(unix)]
 static SELF_HEARTBEAT_CLAIM_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 fn health(journal: &Path) -> PathBuf {
@@ -29,12 +37,14 @@ fn health(journal: &Path) -> PathBuf {
 }
 
 /// The retained health capability and singleton lock acquired beneath it.
+#[cfg(unix)]
 pub(crate) struct SupervisorLock {
     pub(crate) health: FlatDirectory,
     pub(crate) lease: BoundParentLock,
 }
 
 #[derive(Debug, Error)]
+#[cfg(unix)]
 pub(crate) enum SupervisorLockError {
     #[error("supervisor already running")]
     AlreadyRunning,
@@ -150,6 +160,7 @@ pub enum SelfHeartbeatRemoval {
     Removed,
     NotClean { outcome: ClaimRemovalOutcome },
     NotCleanError { source: ClaimRemovalError },
+    VerificationFailed { reason: String },
 }
 
 /// Failure to remove a retained admission-wait marker through the only safe
@@ -179,10 +190,17 @@ impl fmt::Display for SelfHeartbeatRemoval {
             Self::NotCleanError { source } => {
                 write!(formatter, "self heartbeat cleanup failed: {source}")
             }
+            Self::VerificationFailed { reason } => {
+                write!(
+                    formatter,
+                    "self heartbeat cleanup could not be verified: {reason}"
+                )
+            }
         }
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn write_readiness(
     health: &FlatDirectory,
     identity: &SupervisorIdentityArtifacts,
@@ -213,6 +231,7 @@ pub fn clear_ready(journal: &Path) -> Result<(), LifecycleError> {
 
 /// Atomically publish a heartbeat through the retained sync descriptor, then
 /// retain only an exact stable observation of the bytes that were published.
+#[cfg(unix)]
 pub fn write_sync_heartbeat(
     sync: &FlatDirectory,
     filename: &str,
@@ -249,6 +268,7 @@ pub fn write_sync_heartbeat(
 }
 
 /// Remove only the exact observation retained after a prior successful publish.
+#[cfg(unix)]
 pub fn clear_self_heartbeat(
     sync: &FlatDirectory,
     self_filename: &str,
@@ -266,6 +286,7 @@ pub fn clear_self_heartbeat(
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn clear_lifecycle_artifact(
     directory: &FlatDirectory,
     name: &'static str,
@@ -282,6 +303,7 @@ pub(crate) fn clear_lifecycle_artifact(
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn require_lifecycle_artifact_removed(
     name: &'static str,
     removal: Result<SelfHeartbeatRemoval, LifecycleError>,
@@ -292,6 +314,7 @@ pub(crate) fn require_lifecycle_artifact_removed(
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn clear_supervisor_identity(
     health: &FlatDirectory,
     identity: &SupervisorIdentityArtifacts,
@@ -312,6 +335,7 @@ pub(crate) fn clear_supervisor_identity(
     start_time
 }
 
+#[cfg(unix)]
 fn write_lifecycle_artifact(
     directory: &FlatDirectory,
     name: &'static str,
@@ -356,6 +380,7 @@ fn write_lifecycle_artifact(
 /// exact observation of those bytes and remove only that observation before
 /// returning the durability error, so a refused boot does not strand its own
 /// lifecycle artifact.
+#[cfg(unix)]
 fn cleanup_uncertain_publication(
     directory: &FlatDirectory,
     name: &OsStr,
@@ -369,6 +394,7 @@ fn cleanup_uncertain_publication(
     }
 }
 
+#[cfg(unix)]
 fn durability_uncertain_source(
     source: std::io::Error,
     cleanup: Result<(), String>,
@@ -382,6 +408,7 @@ fn durability_uncertain_source(
     }
 }
 
+#[cfg(unix)]
 fn publication_observation_uncertain_source(
     source: std::io::Error,
     durability_source: Option<std::io::Error>,
@@ -401,6 +428,7 @@ fn publication_observation_uncertain_source(
 
 /// Claim-remove a wait marker only when the exact published observation was
 /// retained. Any outcome other than a durably removed marker is a failure.
+#[cfg(unix)]
 pub(crate) fn clear_admission_wait_marker(
     sync: &FlatDirectory,
     filename: &str,
@@ -421,6 +449,7 @@ pub(crate) fn clear_admission_wait_marker(
     ))
 }
 
+#[cfg(unix)]
 fn admission_wait_marker_cleanup_result(
     result: Result<ClaimRemovalOutcome, ClaimRemovalError>,
 ) -> Result<(), LifecycleError> {
@@ -435,6 +464,7 @@ fn admission_wait_marker_cleanup_result(
     }
 }
 
+#[cfg(unix)]
 fn heartbeat_name(filename: &str) -> Result<&OsStr, HeartbeatWriteError> {
     validate_heartbeat_filename(filename).map_err(|_| HeartbeatWriteError::InvalidFilename)?;
     Ok(OsStr::new(filename))
@@ -453,6 +483,7 @@ pub(crate) fn validate_heartbeat_filename(filename: &str) -> Result<(), Lifecycl
     Ok(())
 }
 
+#[cfg(unix)]
 pub(crate) fn next_claim_name() -> Result<ClaimName, LifecycleError> {
     let sequence = SELF_HEARTBEAT_CLAIM_SEQUENCE
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
@@ -596,7 +627,7 @@ pub(crate) fn write_supervisor_identity(
 // Process start-time identity is owned by process::instance.
 // iOS still has no supported process-start-time source.
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn test_supervisor_journal(
     name: &str,
     pid: u32,
@@ -622,12 +653,12 @@ pub(crate) fn test_supervisor_journal(
     root
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn remove_test_supervisor_journal(root: PathBuf) {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use solstone_core_journal_io::{
         ClaimDurability, ClaimRemovalOutcome, ClaimUnchangedReason, IdentityChangeDisposition,

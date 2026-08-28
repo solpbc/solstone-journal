@@ -12,6 +12,7 @@ use solstone_core_journal_io::{
     BoundParentLock, FlatDirectory, JournalRoot, create_or_open_flat_directory_bound,
 };
 
+use super::clock::{AdmissionWaitClock, wall_clock_discontinuous};
 use super::{
     LifecycleError, OrphanSweepOutcome, SupervisorLifecycle, epoch_seconds, hostname,
     self_heartbeat_filename,
@@ -28,15 +29,6 @@ pub const ADMISSION_WAIT_TERMINAL_COPY: &str = "a recent heartbeat from another 
 pub const ADMISSION_WAIT_ACTIVE_COPY: &str = "another solstone start is waiting after finding recent journal activity.\nthis start did not continue while that wait was active.\nwait a moment, then try again.";
 pub const ADMISSION_WAIT_UNVERIFIABLE_COPY: &str =
     "startup status couldn't be verified.\nwait a moment, then try again.";
-
-/// Time and sleep dependencies used by the bounded admission wait.
-///
-/// The monotonic deadline makes the one wait independent of wall-clock changes.
-pub trait AdmissionWaitClock {
-    fn wall_seconds(&mut self) -> f64;
-    fn monotonic_seconds(&mut self) -> f64;
-    fn sleep_until(&mut self, deadline_seconds: f64);
-}
 
 struct SystemAdmissionWaitClock {
     started: Instant,
@@ -503,19 +495,6 @@ fn remove_stale_wait_markers(
         state::clear_admission_wait_marker(sync_directory, filename, Some(&observation))?;
     }
     Ok(())
-}
-
-pub(crate) fn wall_clock_discontinuous(
-    first_wall_seconds: f64,
-    second_wall_seconds: f64,
-    first_monotonic_seconds: f64,
-    second_monotonic_seconds: f64,
-) -> bool {
-    let wall_elapsed = second_wall_seconds - first_wall_seconds;
-    let monotonic_elapsed = second_monotonic_seconds - first_monotonic_seconds;
-    wall_elapsed.is_sign_negative()
-        || monotonic_elapsed.is_sign_negative()
-        || wall_elapsed > monotonic_elapsed + sync::DEFAULT_INTERVAL_SECONDS
 }
 
 fn admission_wait_scan_failure(failure: sync::SyncScanFailure) -> LifecycleError {

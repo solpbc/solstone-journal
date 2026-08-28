@@ -4,13 +4,16 @@
 //! Supervisor lifecycle primitives. This module owns `health/` operational
 //! state but deliberately does not provide a supervisor binary or CLI.
 
+mod clock;
 mod parent;
 mod readiness;
 mod shutdown;
+#[cfg(unix)]
 mod startup;
 mod state;
 mod sweep;
 mod sync;
+mod windows;
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -19,11 +22,15 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use solstone_core_journal_io::{
-    BoundParentLock, ClaimName, ClaimRemovalError, ClaimRemovalOutcome, ExistingParentLockError,
-    FileObservation, FlatDirectory, JournalEntryKind, JournalRoot, claim_and_remove_observed,
+    BoundParentLock, ExistingParentLockError, FileObservation, JournalEntryKind, JournalRoot,
+};
+#[cfg(unix)]
+use solstone_core_journal_io::{
+    ClaimName, ClaimRemovalError, ClaimRemovalOutcome, FlatDirectory, claim_and_remove_observed,
 };
 use thiserror::Error;
 
+pub use clock::AdmissionWaitClock;
 pub use parent::{
     DeclaredParent, ParentAdmissionFailure, ParentLossReason, ParentWatch, ParentWatchStatus,
 };
@@ -34,15 +41,17 @@ pub use shutdown::{
     ArtifactClearOutcome, ShutdownDisposition, ShutdownDriver, ShutdownOutcome, ShutdownPhase,
     ShutdownRegime, ShutdownReport, shutdown,
 };
+#[cfg(unix)]
 pub use startup::{
     ADMISSION_WAIT_ACTIVE_COPY, ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_TRANSIENT_COPY,
-    ADMISSION_WAIT_UNVERIFIABLE_COPY, AdmissionWaitClock, AdmissionWaitMarkerProblem,
-    AdmissionWaitTerminalReason, PreReadySupervisorLifecycle, SupervisorBootAdmission,
+    ADMISSION_WAIT_UNVERIFIABLE_COPY, AdmissionWaitMarkerProblem, AdmissionWaitTerminalReason,
+    PreReadySupervisorLifecycle, SupervisorBootAdmission,
 };
+#[cfg(unix)]
+pub use state::{AdmissionWaitMarkerCleanupError, clear_self_heartbeat, write_sync_heartbeat};
 pub use state::{
-    AdmissionWaitMarkerCleanupError, HeartbeatWriteError, LifecycleArtifactWriteError,
-    SelfHeartbeatRemoval, append_supervisor_log, clear_ready as clear_readiness,
-    clear_self_heartbeat, compact_log_if_oversized, recorded_supervisor_pid, write_sync_heartbeat,
+    HeartbeatWriteError, LifecycleArtifactWriteError, SelfHeartbeatRemoval, append_supervisor_log,
+    clear_ready as clear_readiness, compact_log_if_oversized, recorded_supervisor_pid,
 };
 pub use sweep::{OrphanSweepOutcome, OrphanSweepReport, sweep_orphans};
 pub use sync::{
@@ -51,13 +60,14 @@ pub use sync::{
     HEARTBEAT_SCHEMA_V2, Heartbeat, HeartbeatClassification, HeartbeatV2,
     MAX_SYNC_DIRECTORY_ENTRIES, MAX_SYNC_HEARTBEAT_BYTES, RunId, RunIdGenerationError,
     SyncCheckResult, SyncConflictEvent, SyncDirectoryOperation, SyncIncompleteSnapshotReason,
-    SyncPeerDiagnostic, SyncPeerIdentity, SyncPeerObservation, SyncReadOperation, SyncRescan,
-    SyncScanFailure, SyncSnapshot, SyncUnsafeReason, V2HeartbeatFilenameError, WriterId,
-    WriterIdParseError, admission_wait_marker_filename,
-    is_admission_wait_marker_filename_candidate, parse_admission_wait_marker_filename,
-    parse_v2_heartbeat_filename, rescan_sync_read_only, sanitize_hostname, sync_conflict_event,
-    sync_peer_diagnostic, v2_heartbeat_filename,
+    SyncPeerDiagnostic, SyncPeerIdentity, SyncPeerObservation, SyncReadOperation, SyncScanFailure,
+    SyncSnapshot, SyncUnsafeReason, V2HeartbeatFilenameError, WriterId, WriterIdParseError,
+    admission_wait_marker_filename, is_admission_wait_marker_filename_candidate,
+    parse_admission_wait_marker_filename, parse_v2_heartbeat_filename, sanitize_hostname,
+    sync_conflict_event, sync_peer_diagnostic, v2_heartbeat_filename,
 };
+#[cfg(unix)]
+pub use sync::{SyncRescan, rescan_sync_read_only};
 
 /// Result of a supervisor heartbeat renewal and complete peer scan.
 #[derive(Debug)]
@@ -73,22 +83,27 @@ pub enum SyncTickOutcome {
 /// A failed identity-safe collection of a proven stale v2 heartbeat.
 #[derive(Debug, Error)]
 pub enum StaleHeartbeatCollectionError {
+    #[cfg(unix)]
     #[error("could not generate a stale-heartbeat claim name: {source}")]
     ClaimName {
         #[source]
         source: Box<LifecycleError>,
     },
+    #[cfg(unix)]
     #[error("stale heartbeat {filename:?} was not cleanly removed: {outcome:?}")]
     Outcome {
         filename: OsString,
         outcome: ClaimRemovalOutcome,
     },
+    #[cfg(unix)]
     #[error("could not claim and remove stale heartbeat {filename:?}: {source}")]
     Claim {
         filename: OsString,
         #[source]
         source: Box<ClaimRemovalError>,
     },
+    #[error("could not verify and remove stale heartbeat {filename:?}: {reason}")]
+    WindowsRemoval { filename: OsString, reason: String },
     #[error("stale-heartbeat successful-tick sequence exhausted")]
     TickSequenceExhausted,
 }
@@ -118,8 +133,10 @@ pub enum LifecycleError {
     HeartbeatWrite(#[from] HeartbeatWriteError),
     #[error("admission-wait marker publication or retention failed: {0}")]
     AdmissionWaitMarkerPublication(#[source] HeartbeatWriteError),
+    #[cfg(unix)]
     #[error("admission-wait marker cleanup failed: {0}")]
     AdmissionWaitMarkerCleanup(#[source] AdmissionWaitMarkerCleanupError),
+    #[cfg(unix)]
     #[error("admission-wait marker needs attention: {0}")]
     AdmissionWaitMarkerNeedsAttention(AdmissionWaitMarkerProblem),
     #[error("another admitting solstone process is waiting on this journal")]
@@ -131,6 +148,7 @@ pub enum LifecycleError {
     },
     #[error("could not establish this process's identity for an admission-wait marker")]
     AdmissionWaitProcessIdentity,
+    #[cfg(unix)]
     #[error("{0}")]
     AdmissionWaitTerminal(AdmissionWaitTerminalReason),
     #[error("post-publication self-heartbeat cleanup failed: {0}")]
@@ -152,7 +170,9 @@ pub struct SupervisorLifecycle {
     heartbeat_filename: String,
     last_orphan_sweep: OrphanSweepOutcome,
     _journal_root: JournalRoot,
+    #[cfg(unix)]
     _health: FlatDirectory,
+    #[cfg(unix)]
     sync: FlatDirectory,
     _lease: BoundParentLock,
     identity: state::SupervisorIdentityArtifacts,
@@ -182,16 +202,16 @@ struct TickClockSample {
 }
 
 #[derive(Default)]
-struct StaleHeartbeatGc {
+pub(crate) struct StaleHeartbeatGc {
     candidates: BTreeMap<OsString, StaleHeartbeatCandidate>,
     last_tick_clock: Option<TickClockSample>,
     successful_tick: u64,
 }
 
 impl StaleHeartbeatGc {
-    fn begin_tick(&mut self, wall_seconds: f64, monotonic_seconds: f64) -> bool {
+    pub(crate) fn begin_tick(&mut self, wall_seconds: f64, monotonic_seconds: f64) -> bool {
         let discontinuous = self.last_tick_clock.is_some_and(|previous| {
-            startup::wall_clock_discontinuous(
+            clock::wall_clock_discontinuous(
                 previous.wall_seconds,
                 wall_seconds,
                 previous.monotonic_seconds,
@@ -208,7 +228,7 @@ impl StaleHeartbeatGc {
         discontinuous
     }
 
-    fn clear_candidates(&mut self) {
+    pub(crate) fn clear_candidates(&mut self) {
         self.candidates.clear();
     }
 
@@ -217,10 +237,7 @@ impl StaleHeartbeatGc {
         result: &SyncCheckResult,
         self_filename: &str,
         now: f64,
-        mut remove: impl FnMut(
-            &OsStr,
-            &FileObservation,
-        ) -> Result<ClaimRemovalOutcome, StaleHeartbeatCollectionError>,
+        mut remove: impl FnMut(&OsStr, &FileObservation) -> Result<(), StaleHeartbeatCollectionError>,
     ) -> Result<Vec<OsString>, StaleHeartbeatCollectionError> {
         let Some(tick) = self.successful_tick.checked_add(1) else {
             self.clear_candidates();
@@ -267,13 +284,9 @@ impl StaleHeartbeatGc {
         let mut removed = Vec::new();
         for (filename, observation) in ready_to_collect {
             match remove(&filename, &observation) {
-                Ok(ClaimRemovalOutcome::Removed) => {
+                Ok(()) => {
                     self.candidates.remove(&filename);
                     removed.push(filename);
-                }
-                Ok(outcome) => {
-                    self.clear_candidates();
-                    return Err(StaleHeartbeatCollectionError::Outcome { filename, outcome });
                 }
                 Err(error) => {
                     self.clear_candidates();
@@ -330,7 +343,10 @@ fn timestamp_is_strictly_stale(timestamp: f64, now: f64) -> bool {
         && now - timestamp > STALE_HEARTBEAT_MINIMUM_AGE_SECONDS
 }
 
-fn remove_collected_from_sync_result(result: &mut SyncCheckResult, removed: &[OsString]) {
+pub(crate) fn remove_collected_from_sync_result(
+    result: &mut SyncCheckResult,
+    removed: &[OsString],
+) {
     for filename in removed {
         result.snapshot.files.remove(filename);
     }
@@ -342,6 +358,7 @@ fn remove_collected_from_sync_result(result: &mut SyncCheckResult, removed: &[Os
         .retain(|peer| !removed.contains(&peer.source_filename));
 }
 
+#[cfg(unix)]
 fn next_stale_heartbeat_claim_name(
     snapshot: &SyncSnapshot,
 ) -> Result<ClaimName, StaleHeartbeatCollectionError> {
@@ -388,9 +405,13 @@ impl SupervisorLifecycle {
             .map(PreReadySupervisorLifecycle::into_lifecycle)
     }
 
-    /// iOS and other unsupported targets have no supported process-start-time
-    /// identity reader.
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(windows)]
+    pub fn boot(journal: impl AsRef<Path>, writer_id: WriterId) -> Result<Self, LifecycleError> {
+        windows::boot(journal, writer_id)
+    }
+
+    /// Other unsupported targets have no supported lifecycle substrate.
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     pub fn boot(_journal: impl AsRef<Path>, _writer_id: WriterId) -> Result<Self, LifecycleError> {
         Err(LifecycleError::Identity(
             "supervisor lifecycle is unsupported on this platform",
@@ -402,53 +423,96 @@ impl SupervisorLifecycle {
         ready_at: f64,
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), LifecycleError> {
-        let observation = state::write_readiness(&self._health, &self.identity, ready_at, extra)?;
-        self.retained_readiness = Some(observation);
-        sd_notify("READY=1");
-        Ok(())
+        #[cfg(unix)]
+        {
+            let observation =
+                state::write_readiness(&self._health, &self.identity, ready_at, extra)?;
+            self.retained_readiness = Some(observation);
+            sd_notify("READY=1");
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            let mut store = windows::filesystem_store(&self._journal_root);
+            let observation =
+                windows::write_readiness_with_store(&mut store, &self.identity, ready_at, extra)?;
+            self.retained_readiness = Some(observation);
+            sd_notify("READY=1");
+            Ok(())
+        }
     }
 
     pub fn clear_ready(&mut self) -> Result<(), LifecycleError> {
         let Some(observation) = self.retained_readiness.clone() else {
             return Ok(());
         };
-        let result = state::require_lifecycle_artifact_removed(
-            "supervisor.ready",
-            state::clear_lifecycle_artifact(&self._health, "supervisor.ready", Some(&observation)),
-        );
-        if result.is_ok() {
-            self.retained_readiness = None;
+        #[cfg(unix)]
+        {
+            let result = state::require_lifecycle_artifact_removed(
+                "supervisor.ready",
+                state::clear_lifecycle_artifact(
+                    &self._health,
+                    "supervisor.ready",
+                    Some(&observation),
+                ),
+            );
+            if result.is_ok() {
+                self.retained_readiness = None;
+            }
+            result
         }
-        result
+        #[cfg(windows)]
+        {
+            let mut store = windows::filesystem_store(&self._journal_root);
+            let result = windows::clear_ready_with_store(&mut store, &observation);
+            if result.is_ok() {
+                self.retained_readiness = None;
+            }
+            result
+        }
     }
 
     /// Refuse a boot that published its heartbeat but did not publish
     /// readiness. Every cleanup is attempted; the earliest failure wins.
     pub fn abort_before_ready(&self) -> Result<(), LifecycleError> {
-        let heartbeat = match state::clear_self_heartbeat(
-            &self.sync,
-            &self.heartbeat_filename,
-            self.retained_self_heartbeat.as_ref(),
-        ) {
-            Ok(state::SelfHeartbeatRemoval::Removed) => Ok(()),
-            Ok(outcome) => Err(LifecycleError::PostPublicationHeartbeatCleanup(outcome)),
-            Err(error) => Err(error),
-        };
-        let readiness = match self.retained_readiness.as_ref() {
-            Some(observation) => state::require_lifecycle_artifact_removed(
-                "supervisor.ready",
-                state::clear_lifecycle_artifact(
-                    &self._health,
+        #[cfg(unix)]
+        {
+            let heartbeat = match state::clear_self_heartbeat(
+                &self.sync,
+                &self.heartbeat_filename,
+                self.retained_self_heartbeat.as_ref(),
+            ) {
+                Ok(state::SelfHeartbeatRemoval::Removed) => Ok(()),
+                Ok(outcome) => Err(LifecycleError::PostPublicationHeartbeatCleanup(outcome)),
+                Err(error) => Err(error),
+            };
+            let readiness = match self.retained_readiness.as_ref() {
+                Some(observation) => state::require_lifecycle_artifact_removed(
                     "supervisor.ready",
-                    Some(observation),
+                    state::clear_lifecycle_artifact(
+                        &self._health,
+                        "supervisor.ready",
+                        Some(observation),
+                    ),
                 ),
-            ),
-            None => Ok(()),
-        };
-        let identity = state::clear_supervisor_identity(&self._health, &self.identity);
-        heartbeat?;
-        readiness?;
-        identity
+                None => Ok(()),
+            };
+            let identity = state::clear_supervisor_identity(&self._health, &self.identity);
+            heartbeat?;
+            readiness?;
+            identity
+        }
+        #[cfg(windows)]
+        {
+            let mut store = windows::filesystem_store(&self._journal_root);
+            windows::abort_before_ready_with_store(
+                &mut store,
+                &self.heartbeat_filename,
+                self.retained_self_heartbeat.as_ref(),
+                self.retained_readiness.as_ref(),
+                &self.identity,
+            )
+        }
     }
 
     pub fn last_orphan_sweep(&self) -> &OrphanSweepOutcome {
@@ -479,90 +543,120 @@ impl SupervisorLifecycle {
         now: f64,
         monotonic_now: f64,
     ) -> SyncTickOutcome {
-        let previous = previous.cloned().or_else(|| {
-            self.last_completed_sync_result
-                .as_ref()
-                .map(|result| result.snapshot.clone())
-        });
-        let clock_discontinuous = self.stale_heartbeat_gc.begin_tick(now, monotonic_now);
-        let heartbeat = sync::HeartbeatV2::new(
-            self.writer_id.clone(),
-            self.run_id,
-            hostname(),
-            std::process::id(),
-            now.to_string(),
-            env!("CARGO_PKG_VERSION").to_owned(),
-            sync::DEFAULT_INTERVAL_SECONDS as u32,
-            self.journal.display().to_string(),
-        );
-        let body = serde_json::to_vec(&heartbeat).expect("heartbeat serializes");
-        let observation =
-            match state::write_sync_heartbeat(&self.sync, &self.heartbeat_filename, &body) {
-                Ok(observation) => observation,
-                Err(
-                    error @ (HeartbeatWriteError::Publish { .. }
-                    | HeartbeatWriteError::DurabilityUncertain { .. }),
-                ) => {
-                    self.stale_heartbeat_gc.clear_candidates();
-                    return SyncTickOutcome::RenewalFailure(error);
-                }
-                Err(
-                    error @ (HeartbeatWriteError::ObservationMissing
-                    | HeartbeatWriteError::Observation { .. }
-                    | HeartbeatWriteError::ObservationBytesMismatched
-                    | HeartbeatWriteError::PublicationObservationUncertain { .. }),
-                ) => {
-                    self.stale_heartbeat_gc.clear_candidates();
-                    return SyncTickOutcome::RetainedObservationFailure(error);
-                }
-                Err(HeartbeatWriteError::InvalidFilename) => {
-                    self.stale_heartbeat_gc.clear_candidates();
-                    return SyncTickOutcome::RenewalFailure(HeartbeatWriteError::InvalidFilename);
-                }
-            };
-        self.retained_self_heartbeat = Some(observation);
-
-        let result = match sync::scan_bound_sync(
-            &self.sync,
-            &self.heartbeat_filename,
-            previous.as_ref(),
-            now,
-        ) {
-            Ok(result) => result,
-            Err(error) => {
-                self.stale_heartbeat_gc.clear_candidates();
-                return SyncTickOutcome::CompleteScanFailure(error);
-            }
-        };
-        let mut result = result;
-        if !clock_discontinuous {
-            let self_filename = self.heartbeat_filename.clone();
-            let collected = self.stale_heartbeat_gc.observe_completed_tick(
-                &result,
-                &self_filename,
-                now,
-                |filename, prior| {
-                    let claim = next_stale_heartbeat_claim_name(&result.snapshot)?;
-                    claim_and_remove_observed(&self.sync, filename, prior, &claim).map_err(
-                        |source| StaleHeartbeatCollectionError::Claim {
-                            filename: filename.to_os_string(),
-                            source: Box::new(source),
-                        },
-                    )
+        #[cfg(windows)]
+        {
+            let mut store = windows::filesystem_store(&self._journal_root);
+            return windows::tick_with_store(
+                &mut store,
+                windows::WindowsTickContext {
+                    journal: &self.journal,
+                    writer_id: &self.writer_id,
+                    run_id: self.run_id,
+                    heartbeat_filename: &self.heartbeat_filename,
+                    retained_self_heartbeat: &mut self.retained_self_heartbeat,
+                    last_completed_sync_result: &mut self.last_completed_sync_result,
+                    stale_heartbeat_gc: &mut self.stale_heartbeat_gc,
                 },
+                windows::hostname(),
+                previous,
+                now,
+                monotonic_now,
             );
-            let collected = match collected {
-                Ok(collected) => collected,
-                Err(error) => return SyncTickOutcome::StaleHeartbeatCollectionFailure(error),
-            };
-            remove_collected_from_sync_result(&mut result, &collected);
         }
-        let conflict = result.is_tick_conflict(previous.as_ref());
-        self.last_completed_sync_result = Some(result.clone());
-        if conflict {
-            SyncTickOutcome::Conflict(Box::new(result))
-        } else {
-            SyncTickOutcome::Healthy
+        #[cfg(unix)]
+        {
+            let previous = previous.cloned().or_else(|| {
+                self.last_completed_sync_result
+                    .as_ref()
+                    .map(|result| result.snapshot.clone())
+            });
+            let clock_discontinuous = self.stale_heartbeat_gc.begin_tick(now, monotonic_now);
+            let heartbeat = sync::HeartbeatV2::new(
+                self.writer_id.clone(),
+                self.run_id,
+                hostname(),
+                std::process::id(),
+                now.to_string(),
+                env!("CARGO_PKG_VERSION").to_owned(),
+                sync::DEFAULT_INTERVAL_SECONDS as u32,
+                self.journal.display().to_string(),
+            );
+            let body = serde_json::to_vec(&heartbeat).expect("heartbeat serializes");
+            let observation =
+                match state::write_sync_heartbeat(&self.sync, &self.heartbeat_filename, &body) {
+                    Ok(observation) => observation,
+                    Err(
+                        error @ (HeartbeatWriteError::Publish { .. }
+                        | HeartbeatWriteError::DurabilityUncertain { .. }),
+                    ) => {
+                        self.stale_heartbeat_gc.clear_candidates();
+                        return SyncTickOutcome::RenewalFailure(error);
+                    }
+                    Err(
+                        error @ (HeartbeatWriteError::ObservationMissing
+                        | HeartbeatWriteError::Observation { .. }
+                        | HeartbeatWriteError::ObservationBytesMismatched
+                        | HeartbeatWriteError::PublicationObservationUncertain { .. }),
+                    ) => {
+                        self.stale_heartbeat_gc.clear_candidates();
+                        return SyncTickOutcome::RetainedObservationFailure(error);
+                    }
+                    Err(HeartbeatWriteError::InvalidFilename) => {
+                        self.stale_heartbeat_gc.clear_candidates();
+                        return SyncTickOutcome::RenewalFailure(
+                            HeartbeatWriteError::InvalidFilename,
+                        );
+                    }
+                };
+            self.retained_self_heartbeat = Some(observation);
+
+            let result = match sync::scan_bound_sync(
+                &self.sync,
+                &self.heartbeat_filename,
+                previous.as_ref(),
+                now,
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    self.stale_heartbeat_gc.clear_candidates();
+                    return SyncTickOutcome::CompleteScanFailure(error);
+                }
+            };
+            let mut result = result;
+            if !clock_discontinuous {
+                let self_filename = self.heartbeat_filename.clone();
+                let collected = self.stale_heartbeat_gc.observe_completed_tick(
+                    &result,
+                    &self_filename,
+                    now,
+                    |filename, prior| {
+                        let claim = next_stale_heartbeat_claim_name(&result.snapshot)?;
+                        match claim_and_remove_observed(&self.sync, filename, prior, &claim) {
+                            Ok(ClaimRemovalOutcome::Removed) => Ok(()),
+                            Ok(outcome) => Err(StaleHeartbeatCollectionError::Outcome {
+                                filename: filename.to_os_string(),
+                                outcome,
+                            }),
+                            Err(source) => Err(StaleHeartbeatCollectionError::Claim {
+                                filename: filename.to_os_string(),
+                                source: Box::new(source),
+                            }),
+                        }
+                    },
+                );
+                let collected = match collected {
+                    Ok(collected) => collected,
+                    Err(error) => return SyncTickOutcome::StaleHeartbeatCollectionFailure(error),
+                };
+                remove_collected_from_sync_result(&mut result, &collected);
+            }
+            let conflict = result.is_tick_conflict(previous.as_ref());
+            self.last_completed_sync_result = Some(result.clone());
+            if conflict {
+                SyncTickOutcome::Conflict(Box::new(result))
+            } else {
+                SyncTickOutcome::Healthy
+            }
         }
     }
 
@@ -577,70 +671,91 @@ impl SupervisorLifecycle {
         regime: ShutdownRegime,
         sync_conflict: bool,
     ) -> ShutdownOutcome {
-        let readiness = match self.retained_readiness.as_ref() {
-            Some(observation) => match state::require_lifecycle_artifact_removed(
-                "supervisor.ready",
-                state::clear_lifecycle_artifact(
-                    &self._health,
-                    "supervisor.ready",
-                    Some(observation),
-                ),
-            ) {
-                Ok(()) => ArtifactClearOutcome::Cleared,
-                Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
-            },
-            None => ArtifactClearOutcome::Skipped,
-        };
-        let clear_identity =
-            || match state::clear_supervisor_identity(&self._health, &self.identity) {
-                Ok(()) => ArtifactClearOutcome::Cleared,
-                Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
-            };
-        let (self_heartbeat, identity) = if sync_conflict {
-            (ArtifactClearOutcome::Skipped, ArtifactClearOutcome::Skipped)
-        } else {
-            match state::clear_self_heartbeat(
-                &self.sync,
+        #[cfg(windows)]
+        {
+            let mut store = windows::filesystem_store(&self._journal_root);
+            let (readiness, self_heartbeat, identity) = windows::shutdown_cleanup_with_store(
+                &mut store,
                 &self.heartbeat_filename,
                 self.retained_self_heartbeat.as_ref(),
-            ) {
-                Ok(SelfHeartbeatRemoval::Removed) => {
-                    (ArtifactClearOutcome::Cleared, clear_identity())
+                self.retained_readiness.as_ref(),
+                &self.identity,
+                sync_conflict,
+            );
+            return ShutdownOutcome {
+                report: shutdown::shutdown(driver, regime),
+                readiness,
+                self_heartbeat,
+                identity,
+            };
+        }
+        #[cfg(unix)]
+        {
+            let readiness = match self.retained_readiness.as_ref() {
+                Some(observation) => match state::require_lifecycle_artifact_removed(
+                    "supervisor.ready",
+                    state::clear_lifecycle_artifact(
+                        &self._health,
+                        "supervisor.ready",
+                        Some(observation),
+                    ),
+                ) {
+                    Ok(()) => ArtifactClearOutcome::Cleared,
+                    Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
+                },
+                None => ArtifactClearOutcome::Skipped,
+            };
+            let clear_identity =
+                || match state::clear_supervisor_identity(&self._health, &self.identity) {
+                    Ok(()) => ArtifactClearOutcome::Cleared,
+                    Err(error) => ArtifactClearOutcome::Failed(error.to_string()),
+                };
+            let (self_heartbeat, identity) = if sync_conflict {
+                (ArtifactClearOutcome::Skipped, ArtifactClearOutcome::Skipped)
+            } else {
+                match state::clear_self_heartbeat(
+                    &self.sync,
+                    &self.heartbeat_filename,
+                    self.retained_self_heartbeat.as_ref(),
+                ) {
+                    Ok(SelfHeartbeatRemoval::Removed) => {
+                        (ArtifactClearOutcome::Cleared, clear_identity())
+                    }
+                    Ok(SelfHeartbeatRemoval::NoCleanupAuthority) => {
+                        (ArtifactClearOutcome::Skipped, clear_identity())
+                    }
+                    Ok(outcome) => (
+                        ArtifactClearOutcome::Failed(outcome.to_string()),
+                        ArtifactClearOutcome::Skipped,
+                    ),
+                    Err(error) => (
+                        ArtifactClearOutcome::Failed(error.to_string()),
+                        ArtifactClearOutcome::Skipped,
+                    ),
                 }
-                Ok(SelfHeartbeatRemoval::NoCleanupAuthority) => {
-                    (ArtifactClearOutcome::Skipped, clear_identity())
-                }
-                Ok(outcome) => (
-                    ArtifactClearOutcome::Failed(outcome.to_string()),
-                    ArtifactClearOutcome::Skipped,
-                ),
-                Err(error) => (
-                    ArtifactClearOutcome::Failed(error.to_string()),
-                    ArtifactClearOutcome::Skipped,
-                ),
+            };
+            ShutdownOutcome {
+                report: shutdown::shutdown(driver, regime),
+                readiness,
+                self_heartbeat,
+                identity,
             }
-        };
-        ShutdownOutcome {
-            report: shutdown::shutdown(driver, regime),
-            readiness,
-            self_heartbeat,
-            identity,
         }
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(unix)]
 fn hostname() -> String {
     let raw = nix::unistd::gethostname().unwrap_or_default();
     sync::sanitize_hostname(&raw.to_string_lossy())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(unix)]
 fn self_heartbeat_filename(writer_id: &WriterId, run_id: &RunId) -> String {
     sync::v2_heartbeat_filename(writer_id, run_id)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(unix)]
 fn epoch_seconds() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -891,9 +1006,7 @@ mod stale_heartbeat_gc_tests {
         assert_eq!(gc.candidates.len(), 1);
 
         let removed = gc
-            .observe_completed_tick(&result, "self.check", NOW + 1.0, |_, _| {
-                Ok(ClaimRemovalOutcome::Removed)
-            })
+            .observe_completed_tick(&result, "self.check", NOW + 1.0, |_, _| Ok(()))
             .expect("second identical observation");
         assert_eq!(removed.len(), 1);
         assert!(gc.candidates.is_empty());
@@ -1009,7 +1122,10 @@ mod stale_heartbeat_gc_tests {
                 .expect("first observation");
             assert!(matches!(
                 gc.observe_completed_tick(&result, "self.check", NOW + 1.0, |_, _| {
-                    Ok(outcome.clone())
+                    Err(StaleHeartbeatCollectionError::Outcome {
+                        filename: OsString::from("stale.check"),
+                        outcome: outcome.clone(),
+                    })
                 }),
                 Err(StaleHeartbeatCollectionError::Outcome { .. })
             ));
