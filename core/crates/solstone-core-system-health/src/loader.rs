@@ -4,7 +4,9 @@
 //! Bounded stderr capture and dynamic-loader failure classification.
 
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::path::Path;
 
 /// Bytes of helper stderr retained for classification and rendering.
@@ -100,6 +102,7 @@ fn unresolved_linux_library(stderr: &[u8]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&stderr[library_start..suffix_start]).into_owned())
 }
 
+#[cfg(unix)]
 fn unresolved_darwin_library(stderr: &[u8]) -> Option<String> {
     let prefix = DARWIN_LOADER_PREFIX.as_bytes();
     let library_start = find_bytes(stderr, prefix)? + prefix.len();
@@ -115,13 +118,18 @@ fn unresolved_darwin_library(stderr: &[u8]) -> Option<String> {
         .map(|name| name.to_string_lossy().into_owned())
 }
 
+#[cfg(not(unix))]
+fn unresolved_darwin_library(_stderr: &[u8]) -> Option<String> {
+    None
+}
+
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::{
         classify_loader_failure, unresolved_darwin_library, unresolved_library,

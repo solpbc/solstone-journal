@@ -81,11 +81,21 @@ impl HealthLogSource for FilesystemHealthLogSource {
 }
 
 pub fn day_is_complete(journal: &std::path::Path, day: &str) -> Result<bool, HealthError> {
-    let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
-    Ok(solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete())
+    #[cfg(not(unix))]
+    {
+        let _ = (journal, day);
+        return Err(HealthError::CapabilityUnavailable {
+            needed: "health-markers",
+        });
+    }
+    #[cfg(unix)]
+    {
+        let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
+        Ok(solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete())
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
 

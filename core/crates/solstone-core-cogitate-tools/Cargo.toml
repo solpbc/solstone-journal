@@ -14,7 +14,6 @@ test-hooks = []
 
 [dependencies]
 regex.workspace = true
-rustix = { workspace = true, features = ["process"] }
 solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
 solstone-core-system.workspace = true
@@ -26,6 +25,9 @@ tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["signal"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
 
 [[test]]
 name = "sol_execution_process"

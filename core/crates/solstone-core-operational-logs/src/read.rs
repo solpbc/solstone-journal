@@ -352,7 +352,7 @@ pub(crate) fn sort_os_strings_like_python(names: &mut [OsString]) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::cell::RefCell;
     use std::ffi::OsString;

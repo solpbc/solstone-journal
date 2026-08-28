@@ -15,12 +15,6 @@ reason = "The Unix-only health-marker backend still owns bump_stream_marker."
 expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_marker`"]
 
 [[exclusions]]
-package = "solstone-core-brain"
-class = "sibling-owned-platform-backend"
-reason = "The native inspection path still depends on nix, which has no Windows dependency here."
-expected_stderr = ["cannot find module or crate `nix`"]
-
-[[exclusions]]
 package = "solstone-core-identity"
 class = "sibling-owned-platform-backend"
 reason = "The Unix-only append_text writer remains outside this backend slice."
@@ -43,24 +37,6 @@ package = "solstone-core-speaker-id"
 class = "sibling-owned-platform-backend"
 reason = "The Unix-only write_bytes_exclusive writer remains outside this backend slice."
 expected_stderr = ["unresolved import `solstone_core_journal_io::write_bytes_exclusive`"]
-
-[[exclusions]]
-package = "solstone-core-system"
-class = "sibling-owned-platform-backend"
-reason = "Catchup still uses Unix-only health markers; lifecycle and process handling retain the pre-existing nix and ProcessInstance gaps."
-expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
-
-[[exclusions]]
-package = "solstone-core-top"
-class = "sibling-owned-platform-backend"
-reason = "Lane 4's probe remains blocked transitively by system's health-marker and nix gaps."
-expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
-
-[[exclusions]]
-package = "solstone-core-cogitate-tools"
-class = "preserved-production-guarantee"
-reason = "The current Unix special-file and process-group behavior remains blocked by system's health-marker and nix gaps."
-expected_stderr = ["solstone_core_journal_io::read_health_marker", "cannot find `sys` in `nix`"]
 
 [[exclusions]]
 package = "solstone-core-pdf"

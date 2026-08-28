@@ -151,8 +151,11 @@ pub enum LifecycleError {
     AlreadyRunning,
     #[error("lifecycle I/O failed: {0}")]
     Io(#[from] std::io::Error),
+    #[cfg(unix)]
     #[error("lifecycle system call failed: {0}")]
     Nix(#[from] nix::errno::Errno),
+    #[error("host capability unavailable: {needed}")]
+    CapabilityUnavailable { needed: &'static str },
     #[error("lifecycle JSON failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("invalid supervisor identity: {0}")]
@@ -196,6 +199,14 @@ pub enum LifecycleError {
         name: &'static str,
         outcome: SelfHeartbeatRemoval,
     },
+}
+
+/// Supervisor liveness distinguishes a proven down state from unavailable proof.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupervisorLiveness {
+    Up,
+    Down,
+    Unverifiable,
 }
 
 /// Held singleton admission and retained descriptor capabilities.
@@ -808,27 +819,27 @@ fn monotonic_seconds() -> f64 {
 
 /// Preserve Python's conservative pid-file status contract.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub fn is_supervisor_up(journal: impl AsRef<Path>) -> bool {
-    is_supervisor_up_with_start_time(journal, state::process_start_time_epoch_seconds)
+pub fn supervisor_liveness(journal: impl AsRef<Path>) -> SupervisorLiveness {
+    supervisor_liveness_with_start_time(journal, state::process_start_time_epoch_seconds)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub fn is_supervisor_up(_journal: impl AsRef<Path>) -> bool {
-    false
+pub fn supervisor_liveness(_journal: impl AsRef<Path>) -> SupervisorLiveness {
+    SupervisorLiveness::Unverifiable
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub(crate) fn is_supervisor_up_with_start_time(
+pub(crate) fn supervisor_liveness_with_start_time(
     journal: impl AsRef<Path>,
     process_start_time: impl Fn(u32) -> Result<f64, LifecycleError>,
-) -> bool {
+) -> SupervisorLiveness {
     let health = journal.as_ref().join("health");
     let Ok(pid) = std::fs::read_to_string(health.join("supervisor.pid")).and_then(|text| {
         text.trim()
             .parse::<u32>()
             .map_err(|_| std::io::Error::other("invalid pid"))
     }) else {
-        return false;
+        return SupervisorLiveness::Down;
     };
     let Ok(recorded) =
         std::fs::read_to_string(health.join("supervisor.start_time")).and_then(|text| {
@@ -837,12 +848,16 @@ pub(crate) fn is_supervisor_up_with_start_time(
                 .map_err(|_| std::io::Error::other("invalid start time"))
         })
     else {
-        return false;
+        return SupervisorLiveness::Down;
     };
     let Ok(actual) = process_start_time(pid) else {
-        return false;
+        return SupervisorLiveness::Down;
     };
-    (recorded - actual).abs() <= START_TIME_TOLERANCE_SECONDS
+    if (recorded - actual).abs() <= START_TIME_TOLERANCE_SECONDS {
+        SupervisorLiveness::Up
+    } else {
+        SupervisorLiveness::Down
+    }
 }
 
 /// Best-effort systemd readiness notification.
@@ -882,7 +897,7 @@ pub fn sd_notify_to(address: &str, state_value: &str) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod stale_heartbeat_gc_tests {
     use std::collections::BTreeMap;
     use std::ffi::OsString;
@@ -1304,8 +1319,8 @@ mod tests {
 
     use super::{
         ArtifactClearOutcome, LifecycleError, ShutdownDisposition, ShutdownDriver, ShutdownPhase,
-        ShutdownRegime, SupervisorLifecycle, SyncTickOutcome, WriterId,
-        is_supervisor_up_with_start_time, state,
+        ShutdownRegime, SupervisorLifecycle, SupervisorLiveness, SyncTickOutcome, WriterId, state,
+        supervisor_liveness_with_start_time,
     };
 
     fn temporary_journal() -> tempfile::TempDir {
@@ -1356,8 +1371,14 @@ mod tests {
     fn ac3_injected_start_time_rejects_reused_pid() {
         let root =
             state::test_supervisor_journal("supervisor-probe", std::process::id(), 100.0, None);
-        assert!(is_supervisor_up_with_start_time(&root, |_| Ok(100.0)));
-        assert!(!is_supervisor_up_with_start_time(&root, |_| Ok(101.6)));
+        assert_eq!(
+            supervisor_liveness_with_start_time(&root, |_| Ok(100.0)),
+            SupervisorLiveness::Up
+        );
+        assert_eq!(
+            supervisor_liveness_with_start_time(&root, |_| Ok(101.6)),
+            SupervisorLiveness::Down
+        );
         state::remove_test_supervisor_journal(root);
     }
 
@@ -1369,9 +1390,12 @@ mod tests {
             100.0,
             None,
         );
-        assert!(!is_supervisor_up_with_start_time(&root, |_| {
-            Err(LifecycleError::Identity("process start time"))
-        }));
+        assert_eq!(
+            supervisor_liveness_with_start_time(&root, |_| {
+                Err(LifecycleError::Identity("process start time"))
+            }),
+            SupervisorLiveness::Down
+        );
         state::remove_test_supervisor_journal(root);
     }
 

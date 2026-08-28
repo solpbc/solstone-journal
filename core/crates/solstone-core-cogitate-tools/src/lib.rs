@@ -52,11 +52,11 @@ pub use types::{
     ReadPayload, ReadResult, ToolName,
 };
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod bed;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod conformance;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod oracle;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod runtime_conformance;

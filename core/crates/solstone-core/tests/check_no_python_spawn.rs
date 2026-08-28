@@ -204,7 +204,8 @@ fn invoke_native_library_paths(journal: &std::path::Path) {
             exit_code: 1,
             exit_status: "error".to_owned(),
         },
-    );
+    )
+    .unwrap();
     record_segment_repair_attempt(journal, "20260101", 1.0);
     record_segment_repair_outcome(
         journal,

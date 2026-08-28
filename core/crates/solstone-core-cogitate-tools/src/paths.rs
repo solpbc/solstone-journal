@@ -135,7 +135,7 @@ pub(crate) fn realpath_non_strict(path: &Path) -> Result<PathBuf, io::Error> {
     Ok(resolved)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;

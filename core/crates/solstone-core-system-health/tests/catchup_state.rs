@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     PublishOutcome, bump_stream_marker, publish_daily_marker_if_current,
@@ -97,21 +99,24 @@ fn daily_catchup_completion_keeps_admitted_marker_provenance_in_the_envelope() {
         .unwrap(),
         PublishOutcome::Published(admitted_generation)
     );
-    assert!(record_daily_catchup_outcome(
-        native_root.path(),
-        DAY,
-        "supervisor-catchup-20250101",
-        admitted_generation,
-        &fingerprint,
-        DailyCatchupOutcome {
-            success: false,
-            timed_out: false,
-            timeout_seconds: None,
-            ended_at: 20.0,
-            exit_code: 7,
-            exit_status: "error".to_owned(),
-        },
-    ));
+    assert!(
+        record_daily_catchup_outcome(
+            native_root.path(),
+            DAY,
+            "supervisor-catchup-20250101",
+            admitted_generation,
+            &fingerprint,
+            DailyCatchupOutcome {
+                success: false,
+                timed_out: false,
+                timeout_seconds: None,
+                ended_at: 20.0,
+                exit_code: 7,
+                exit_status: "error".to_owned(),
+            },
+        )
+        .unwrap()
+    );
 
     let actual: Value = serde_json::from_slice(
         &std::fs::read(native_root.path().join("health/catchup-state.json")).unwrap(),

@@ -222,7 +222,10 @@ async fn search_index_warning_tracks_the_native_supervisor_identity_contract() {
         "health/supervisor.start_time",
         this_process_started_at().to_string().as_bytes(),
     );
-    assert!(solstone_core_system::lifecycle::is_supervisor_up(up.path()));
+    assert_eq!(
+        solstone_core_system::lifecycle::supervisor_liveness(up.path()),
+        solstone_core_system::lifecycle::SupervisorLiveness::Up
+    );
     let up_response = delete_request(delete_app(up.path(), Duration::from_secs(1))).await;
     assert!(up_response.get("search_index_warning").is_none());
     assert_eq!(

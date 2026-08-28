@@ -363,6 +363,7 @@ mod tests {
             Some((120, 777))
         );
     }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn platform_observer_rejects_unrepresentable_native_pid() {
         let mut observer = platform_observer();

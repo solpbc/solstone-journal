@@ -8,10 +8,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind};
+#[cfg(unix)]
 use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_TRANSIENT_COPY, HeartbeatClassification, SyncCheckResult,
-    SyncIncompleteSnapshotReason, SyncRescan, SyncScanFailure, SyncUnsafeReason,
-    is_admission_wait_marker_filename_candidate, rescan_sync_read_only,
+    ADMISSION_WAIT_TRANSIENT_COPY, SyncRescan, rescan_sync_read_only,
+};
+use solstone_core_system::lifecycle::{
+    HeartbeatClassification, SyncCheckResult, SyncIncompleteSnapshotReason, SyncScanFailure,
+    SyncUnsafeReason, is_admission_wait_marker_filename_candidate,
 };
 use solstone_core_system::process::ProcessInstanceSource;
 
@@ -39,8 +42,16 @@ pub const ADMISSION_WAIT_UNVERIFIABLE_COPY: &str = "Installation: needs attentio
 
 /// Format the passive waiting state from the lifecycle-owned transient copy.
 #[must_use]
+#[cfg(unix)]
 pub fn format_admission_waiting_copy() -> String {
     format!("Installation: waiting\n{ADMISSION_WAIT_TRANSIENT_COPY}")
+}
+
+/// Non-Unix platforms cannot inspect an admission wait marker.
+#[must_use]
+#[cfg(not(unix))]
+pub fn format_admission_waiting_copy() -> String {
+    ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned()
 }
 
 /// Format the locked terminal copy for a descriptor-bound sync scan failure.
@@ -100,15 +111,28 @@ pub fn describe_sync_rescan(
     now: f64,
     process_source: &dyn ProcessInstanceSource,
 ) -> SyncRescanDiagnosis {
-    match rescan_sync_read_only(journal, self_filename, None, now) {
-        Ok(SyncRescan::Absent) => SyncRescanDiagnosis::Clean(None),
-        Ok(SyncRescan::Complete(result)) => diagnose_complete_rescan(result, now, process_source),
-        Err(failure) if admission_wait_marker_scan_failure(&failure) => {
-            SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
-                ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
-            )
+    #[cfg(not(unix))]
+    {
+        let _ = (journal, self_filename, now, process_source);
+        return SyncRescanDiagnosis::Unsafe(
+            "Installation: needs attention\nsync rescan capability is unavailable on this platform."
+                .to_owned(),
+        );
+    }
+    #[cfg(unix)]
+    {
+        match rescan_sync_read_only(journal, self_filename, None, now) {
+            Ok(SyncRescan::Absent) => SyncRescanDiagnosis::Clean(None),
+            Ok(SyncRescan::Complete(result)) => {
+                diagnose_complete_rescan(result, now, process_source)
+            }
+            Err(failure) if admission_wait_marker_scan_failure(&failure) => {
+                SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
+                    ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
+                )
+            }
+            Err(failure) => SyncRescanDiagnosis::Unsafe(format_sync_scan_failure_copy(&failure)),
         }
-        Err(failure) => SyncRescanDiagnosis::Unsafe(format_sync_scan_failure_copy(&failure)),
     }
 }
 
@@ -311,7 +335,7 @@ fn entry_kind_description(kind: JournalEntryKind) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;

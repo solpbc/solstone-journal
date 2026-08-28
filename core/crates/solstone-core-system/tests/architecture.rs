@@ -21,17 +21,20 @@ const PARTITION: &str = include_str!("../src/partition.rs");
 const QUEUE: &str = include_str!("../src/queue.rs");
 const REQUEST: &str = include_str!("../src/request.rs");
 const PROCESS_MOD: &str = include_str!("../src/process/mod.rs");
-const AUTHORITY: &str = include_str!("../src/process/authority.rs");
+const PROCESS_COMMON: &str = include_str!("../src/process/common.rs");
 const EVENTS: &str = include_str!("../src/process/events.rs");
 const RESTART: &str = include_str!("../src/process/restart.rs");
 const LOG: &str = include_str!("../src/process/log.rs");
-const SPAWN: &str = include_str!("../src/process/spawn.rs");
-const TERMINATE: &str = include_str!("../src/process/terminate.rs");
-const DESCENDANTS: &str = include_str!("../src/process/descendants.rs");
-const INSTANCE: &str = include_str!("../src/process/instance.rs");
 const OBSERVATION: &str = include_str!("../src/process/observation.rs");
-const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
-const MACOS_PROC: &str = include_str!("../src/process/macos_proc.rs");
+const PROCESS_UNIX: &str = include_str!("../src/process/unix/mod.rs");
+const AUTHORITY: &str = include_str!("../src/process/unix/authority.rs");
+const DESCENDANTS: &str = include_str!("../src/process/unix/descendants.rs");
+const INSTANCE: &str = include_str!("../src/process/unix/instance.rs");
+const MACOS_PROC: &str = include_str!("../src/process/unix/macos_proc.rs");
+const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
+const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
+const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
+const PROCESS_WINDOWS: &str = include_str!("../src/process/windows.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
@@ -80,6 +83,8 @@ const PROVIDER_RUNTIME_SEAMS: &str = include_str!("../src/provider_runtime/seams
 const PROVIDER_RUNTIME_STORE: &str = include_str!("../src/provider_runtime/store.rs");
 const PROVIDER_RUNTIME_STOP: &str = include_str!("../src/provider_runtime/stop.rs");
 const PROVIDER_RUNTIME_WEDGE: &str = include_str!("../src/provider_runtime/wedge.rs");
+const TRANSCRIPT_DELETE: &str = include_str!("../../solstone-core-transcripts-web/src/delete.rs");
+const SUPERVISOR_RUNTIME: &str = include_str!("../../solstone-core/src/supervisor/runtime.rs");
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {
     source
@@ -186,15 +191,19 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("stt_backend_choice", STT_BACKEND_CHOICE),
     ];
     let process_modules = [
+        ("common", PROCESS_COMMON),
+        ("events", EVENTS),
+        ("log", LOG),
+        ("observation", OBSERVATION),
+        ("restart", RESTART),
+        ("platform", PROCESS_UNIX),
+    ];
+    let unix_process_modules = [
         ("authority", AUTHORITY),
         ("descendants", DESCENDANTS),
-        ("events", EVENTS),
         ("instance", INSTANCE),
-        ("log", LOG),
         ("macos_proc", MACOS_PROC),
-        ("observation", OBSERVATION),
         ("pdeathsig", PDEATHSIG),
-        ("restart", RESTART),
         ("spawn", SPAWN),
         ("terminate", TERMINATE),
     ];
@@ -260,6 +269,10 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         process_modules.iter().map(|(name, _)| *name).collect()
     );
     assert_eq!(
+        declared_modules(PROCESS_UNIX),
+        unix_process_modules.iter().map(|(name, _)| *name).collect()
+    );
+    assert_eq!(
         declared_modules(SCHEDULE),
         schedule_modules.iter().map(|(name, _)| *name).collect()
     );
@@ -274,6 +287,8 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     for (name, source) in root_modules
         .into_iter()
         .chain(process_modules)
+        .chain(unix_process_modules)
+        .chain([("windows", PROCESS_WINDOWS)])
         .chain(lifecycle_modules)
         .chain(schedule_modules)
         .chain(provider_runtime_modules)
@@ -414,4 +429,35 @@ fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_support() {
     assert!(INSTANCE.contains("#[cfg(target_os = \"linux\")]"));
     assert!(INSTANCE.contains("#[cfg(target_os = \"macos\")]"));
     assert!(LIFECYCLE_STATE.contains("iOS still has no supported process-start-time source"));
+}
+
+#[test]
+fn ac28_process_common_and_non_unix_facade_are_unix_free() {
+    for (name, source) in [("common", PROCESS_COMMON), ("windows", PROCESS_WINDOWS)] {
+        assert!(!source.contains("nix::"), "{name} must not name nix");
+        assert!(
+            !source.contains("std::os::unix"),
+            "{name} must not name Unix std extensions"
+        );
+    }
+    assert!(
+        !PROCESS_WINDOWS.contains("Command::spawn"),
+        "the non-Unix process facade must not spawn owned children"
+    );
+}
+
+#[test]
+fn ac29_liveness_and_instance_consumers_preserve_unverifiable_outcomes() {
+    let production_consumers = [
+        ("transcript delete", TRANSCRIPT_DELETE),
+        ("supervisor runtime", SUPERVISOR_RUNTIME),
+    ];
+    assert_eq!(
+        production_consumers.len(),
+        2,
+        "census has a nonzero denominator"
+    );
+    assert!(TRANSCRIPT_DELETE.contains("SupervisorLiveness"));
+    assert!(TRANSCRIPT_DELETE.contains("SupervisorLiveness::Unverifiable"));
+    assert!(SUPERVISOR_RUNTIME.contains("InspectResult::Unverifiable"));
 }

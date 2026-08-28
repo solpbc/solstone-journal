@@ -74,9 +74,16 @@ pub fn describe_exit(return_code: i32) -> String {
         return format!("exit {return_code}");
     }
     let signal_number = -return_code;
-    match nix::sys::signal::Signal::try_from(signal_number) {
-        Ok(signal) => format!("exit {return_code} / {signal:?}"),
-        Err(_) => format!("exit {return_code} / signal {signal_number}"),
+    #[cfg(unix)]
+    {
+        match nix::sys::signal::Signal::try_from(signal_number) {
+            Ok(signal) => format!("exit {return_code} / {signal:?}"),
+            Err(_) => format!("exit {return_code} / signal {signal_number}"),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        format!("exit {return_code} / signal {signal_number}")
     }
 }
 

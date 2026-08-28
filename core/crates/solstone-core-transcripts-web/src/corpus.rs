@@ -15,6 +15,7 @@ mod tests {
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use solstone_core_journal_stats_cli::bounded_input_mtime;
+    use solstone_core_system::lifecycle::SupervisorLiveness;
     use tempfile::TempDir;
     use tower::ServiceExt;
 
@@ -697,6 +698,41 @@ mod tests {
         assert!(phases.contains(&"pending"));
         assert!(phases.contains(&"cancelled"));
         assert!(!phases.contains(&"committed"));
+    }
+
+    #[tokio::test]
+    async fn unverifiable_supervisor_liveness_keeps_deletion_pending_and_visible() {
+        let root = root();
+        let app = crate::router_with_test_liveness(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+            shell,
+            Duration::from_secs(60),
+            SupervisorLiveness::Unverifiable,
+        );
+
+        let response = delete_request(app.clone()).await;
+        assert_eq!(response["search_index_warning"], true);
+        assert_eq!(response["supervisor_liveness"], "unverifiable");
+        let pending = response["pending"].as_str().expect("pending ID");
+        assert!(
+            action_rows(root.path())
+                .iter()
+                .any(|row| row["params"]["phase"] == "pending")
+        );
+
+        let (status, _, body) = request(
+            app,
+            Method::POST,
+            &format!("/app/transcripts/api/cancel-delete/{pending}"),
+            &BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).expect("cancel response"),
+            json!({"cancelled":pending})
+        );
     }
 
     #[tokio::test]

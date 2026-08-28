@@ -111,7 +111,7 @@ fn matches_filters(row: &ParsedHealthLogRow, query: &HealthLogsQuery) -> bool {
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::cell::RefCell;
     use std::io;

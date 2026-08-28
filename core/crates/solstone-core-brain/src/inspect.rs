@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs::{self, OpenOptions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::{Map, Value};
 
@@ -74,22 +78,35 @@ pub fn load_existing_fingerprint_key(journal_path: &Path) -> Option<[u8; FINGERP
 }
 
 pub fn probe_file_lease_held(path: &Path) -> std::io::Result<bool> {
-    let file = match OpenOptions::new().read(true).write(true).open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error),
-    };
-    match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
-        Ok(lock) => {
-            drop(lock);
-            Ok(false)
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "file lease probing is unavailable on this platform",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        let file = match OpenOptions::new().read(true).write(true).open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+            Ok(lock) => {
+                drop(lock);
+                Ok(false)
+            }
+            Err((_file, error))
+                if error == Errno::EACCES
+                    || error == Errno::EAGAIN
+                    || error == Errno::EWOULDBLOCK =>
+            {
+                Ok(true)
+            }
+            Err((_file, error)) => Err(std::io::Error::from_raw_os_error(error as i32)),
         }
-        Err((_file, error))
-            if error == Errno::EACCES || error == Errno::EAGAIN || error == Errno::EWOULDBLOCK =>
-        {
-            Ok(true)
-        }
-        Err((_file, error)) => Err(std::io::Error::from_raw_os_error(error as i32)),
     }
 }
 

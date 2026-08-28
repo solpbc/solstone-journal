@@ -9,28 +9,13 @@ use std::{
     time::Instant,
 };
 
-use super::{
-    CensusRow, InspectResult, InstanceCensus, ProcessBirth, ProcessInstanceSource,
+use super::super::Descendant;
+#[cfg(test)]
+use super::super::ProcessBirth;
+use super::super::{
+    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, ProcessTreeSnapshot,
     SystemProcessInstanceSource,
 };
-
-/// A descendant's exact identity and provenance observed before signaling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Descendant {
-    pub pid: i32,
-    pub ppid: i32,
-    pub pgid: Option<i32>,
-    pub uid: u32,
-}
-
-/// Process tree captured before any termination signal is sent.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessTreeSnapshot {
-    pub parent_pid: i32,
-    pub parent_pgid: Option<i32>,
-    pub descendants: Vec<Descendant>,
-    pub descendant_births: HashMap<i32, ProcessBirth>,
-}
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn snapshot(
@@ -154,14 +139,14 @@ mod tests {
 
     fn row(pid: u32, ppid: u32, pgid: i32) -> CensusRow {
         CensusRow {
-            instance: super::super::ProcessInstance {
+            instance: super::super::super::ProcessInstance {
                 pid,
                 birth: ProcessBirth::linux(u64::from(pid), 1, 100),
             },
             uid: 501,
             ppid,
             pgid,
-            execution: super::super::ExecutionState::Running,
+            execution: super::super::super::ExecutionState::Running,
         }
     }
 

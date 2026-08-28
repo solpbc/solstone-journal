@@ -5,128 +5,27 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::super::{
+    BoxedTerminateFn, CommandLaunchRequest, Disposition, HostedLaunchProvenance, InspectResult,
+    LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessInstanceSource,
+    SERVICE_SHUTDOWN_TIMEOUT, SpawnError, SystemProcessInstanceSource,
+    require_managed_process_capability,
+};
 #[cfg(any(test, feature = "test-hooks"))]
-use std::cell::Cell;
-
-use thiserror::Error;
-
-use super::spawn::{LaunchedProcessIdentity, ManagedProcess, SpawnError, SpawnOptions};
-use super::terminate::{SERVICE_SHUTDOWN_TIMEOUT, terminate_exact_instance};
-use super::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
+use super::super::{HostedAdmissionTestFault, hosted_admission_test_fault};
+use super::spawn::ManagedProcess;
+use super::terminate::terminate_exact_instance;
 use crate::lifecycle::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, HostedServiceKind,
-    ParentLossLedger, ParentLossPhase, read_parent_loss_admission_acknowledgement,
+    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossLedger,
+    ParentLossPhase, read_parent_loss_admission_acknowledgement,
     write_parent_loss_admission_intent, write_parent_loss_admission_result,
 };
 use solstone_core_journal_io::{LockOptions, hold_lock};
-
-/// How a launched child is owned and when it is expected to end.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Disposition {
-    IndependentLongLived,
-    IndependentBoundedHelper { timeout: Duration },
-    InheritedParentScope,
-    ExplicitlyUnowned { reason: String },
-}
-
-/// Boundary-facing launch and termination failures.
-#[derive(Debug, Error)]
-pub enum LaunchError {
-    #[error("host capability unavailable: {needed}")]
-    CapabilityUnavailable { needed: &'static str },
-    #[error("ExplicitlyUnowned reason must be nonempty")]
-    EmptyUnownedReason,
-    #[error("failed to spawn child: {0}")]
-    Spawn(#[source] io::Error),
-    #[error(transparent)]
-    SpawnManaged(SpawnError),
-    #[error("post-spawn confirmation failed for pid {pid}: {source}")]
-    ConfirmationFailed {
-        pid: u32,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to terminate child: {0}")]
-    Terminate(#[source] io::Error),
-    #[error("child output is unavailable")]
-    OutputUnavailable,
-    #[error("this authority is not explicitly unowned")]
-    NotExplicitlyUnowned,
-    #[error("hosted launch admission failed: {0}")]
-    Admission(String),
-}
-
-pub type BoxedTerminateFn = Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>;
-
-/// Declarative raw-command construction.  Production callers name a program,
-/// arguments, environment and stdio policy; this module is the only place
-/// that converts that request into `std::process::Command`.
-#[derive(Clone, Debug)]
-pub struct CommandLaunchRequest {
-    pub program: OsString,
-    pub arguments: Vec<OsString>,
-    pub environment: BTreeMap<OsString, OsString>,
-    pub current_dir: Option<PathBuf>,
-    /// Start a separate process group when the helper owns a descendant tree.
-    pub process_group: bool,
-    pub stdin_piped: bool,
-    pub stdout_piped: bool,
-    pub stderr_piped: bool,
-}
-
-/// Declarative managed launch inputs.  Hosted provenance may only be used
-/// with exact managed launch; the boundary captures PID/birth/UID itself.
-#[derive(Clone)]
-pub struct ManagedLaunchRequest {
-    pub command: Vec<String>,
-    pub options: SpawnOptions,
-}
-
-/// The generation-scoped provenance required for every gated hosted launch.
-#[derive(Clone, Debug)]
-pub struct HostedLaunchProvenance {
-    pub journal: PathBuf,
-    pub generation: u64,
-    pub launch_id: String,
-    pub service: Option<HostedServiceKind>,
-    pub parent_launch_id: Option<String>,
-    pub acknowledgement_timeout: Duration,
-}
-
-/// Test-only failure points at the exact admission-rejection boundary.
-///
-/// They deliberately model a failure to prove termination, rather than
-/// changing ordinary spawned-child behavior.  Production callers cannot
-/// enable either outcome.
-#[cfg(any(test, feature = "test-hooks"))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[doc(hidden)]
-pub enum HostedAdmissionTestFault {
-    ExactReap,
-    ExitProof,
-}
-
-#[cfg(any(test, feature = "test-hooks"))]
-thread_local! {
-    static HOSTED_ADMISSION_TEST_FAULT: Cell<Option<HostedAdmissionTestFault>> = const { Cell::new(None) };
-}
-
-#[cfg(any(test, feature = "test-hooks"))]
-#[doc(hidden)]
-pub fn set_hosted_admission_test_fault(fault: Option<HostedAdmissionTestFault>) {
-    HOSTED_ADMISSION_TEST_FAULT.with(|slot| slot.set(fault));
-}
-
-#[cfg(any(test, feature = "test-hooks"))]
-fn hosted_admission_test_fault() -> Option<HostedAdmissionTestFault> {
-    HOSTED_ADMISSION_TEST_FAULT.with(Cell::get)
-}
 
 enum Inner {
     Managed(ManagedProcess),
@@ -196,7 +95,7 @@ impl LaunchAuthority {
             Inner::Managed(process) => process.poll(),
             Inner::Raw { child, .. } => child
                 .try_wait()
-                .map(|status| status.map(|value| super::signal_aware_exit_code(&value))),
+                .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value))),
         }
     }
 
@@ -205,7 +104,7 @@ impl LaunchAuthority {
             Inner::Managed(process) => process.wait(),
             Inner::Raw { child, .. } => child
                 .wait()
-                .map(|status| super::signal_aware_exit_code(&status)),
+                .map(|status| super::super::signal_aware_exit_code(&status)),
         }
     }
 
@@ -669,9 +568,7 @@ where
     Conf: FnOnce(u32) -> io::Result<()>,
 {
     reject_empty_unowned_reason(&disposition)?;
-    if claims_independent_scope(&disposition) {
-        capability(&disposition)?;
-    }
+    capability(&disposition)?;
     let mut child = spawn().map_err(LaunchError::Spawn)?;
     if claims_independent_scope(&disposition) {
         let pid = child.id();
@@ -701,9 +598,7 @@ where
     Cap: FnOnce(&Disposition) -> Result<(), LaunchError>,
 {
     reject_empty_unowned_reason(&disposition)?;
-    if claims_independent_scope(&disposition) {
-        capability(&disposition)?;
-    }
+    capability(&disposition)?;
     let process = spawn().map_err(LaunchError::SpawnManaged)?;
     Ok(LaunchAuthority {
         inner: Some(Inner::Managed(process)),
@@ -728,19 +623,9 @@ const fn claims_independent_scope(disposition: &Disposition) -> bool {
 }
 
 fn production_capability_probe(disposition: &Disposition) -> Result<(), LaunchError> {
-    if !claims_independent_scope(disposition) {
-        return Ok(());
-    }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        Ok(())
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        Err(LaunchError::CapabilityUnavailable {
-            needed: "process-groups",
-        })
-    }
+    let _ = disposition;
+    require_managed_process_capability()
+        .map_err(|needed| LaunchError::CapabilityUnavailable { needed })
 }
 
 fn production_confirm(pid: u32) -> io::Result<()> {
@@ -771,7 +656,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::super::spawn::SpawnOptions;
+    use super::super::super::SpawnOptions;
     use crate::lifecycle::{
         AdmissionResult, AdmissionResultState, HostedServiceKind, ParentLossLedger,
         ParentLossPhase, acknowledge_parent_loss_admission, write_parent_loss_admission_result,

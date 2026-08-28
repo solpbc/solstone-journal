@@ -16,8 +16,8 @@ use solstone_core_system::lifecycle::sweep_orphans;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
     AdmissionWaitClock, AdmissionWaitTerminalReason, LifecycleError, OrphanSweepOutcome,
-    SupervisorBootAdmission, is_supervisor_up, readiness_is_valid, recorded_supervisor_pid,
-    wait_ready_with,
+    SupervisorBootAdmission, SupervisorLiveness, readiness_is_valid, recorded_supervisor_pid,
+    supervisor_liveness, wait_ready_with,
 };
 use solstone_core_system::lifecycle::{
     AdmissionWaitMarker, AdmissionWaitReason, FRESH_WINDOW_SECONDS, Heartbeat, HeartbeatV2, RunId,
@@ -368,7 +368,7 @@ fn ac8_ac17_identity_and_readiness_are_pid_bound() {
     extra.insert("ready_at".to_owned(), serde_json::json!(0));
     extra.insert("stage".to_owned(), serde_json::json!("ready"));
     lifecycle.signal_ready(123.0, extra).expect("marker");
-    assert!(is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Up);
     assert!(readiness_is_valid(&bed.root));
     let marker: serde_json::Value = serde_json::from_slice(
         &fs::read(bed.root.join("health/supervisor.ready")).expect("marker bytes"),
@@ -395,10 +395,10 @@ fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
         .parse()
         .expect("number");
     fs::write(&start_path, (actual + 1.49).to_string()).expect("under tolerance");
-    assert!(is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Up);
     assert!(readiness_is_valid(&bed.root));
     fs::write(&start_path, (actual + 1.51).to_string()).expect("over tolerance");
-    assert!(!is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Down);
     assert!(!readiness_is_valid(&bed.root));
     fs::write(&start_path, actual.to_string()).expect("restore identity");
     let ready_path = bed.root.join("health/supervisor.ready");
@@ -408,11 +408,11 @@ fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
     fs::write(&ready_path, serde_json::to_vec(&marker).expect("json")).expect("wrong marker start");
     assert!(readiness_is_valid(&bed.root));
     fs::remove_file(bed.root.join("health/supervisor.pid")).expect("remove pid");
-    assert!(!is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Down);
     fs::write(bed.root.join("health/supervisor.pid"), "nope").expect("bad pid");
-    assert!(!is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Down);
     fs::write(bed.root.join("health/supervisor.pid"), "99999999").expect("dead pid");
-    assert!(!is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Down);
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -460,7 +460,7 @@ fn ac3_ac8_stale_pid_identity_is_rejected() {
         (actual + solstone_core_system::lifecycle::START_TIME_TOLERANCE_SECONDS + 0.1).to_string(),
     )
     .expect("stale identity");
-    assert!(!is_supervisor_up(&bed.root));
+    assert_eq!(supervisor_liveness(&bed.root), SupervisorLiveness::Down);
     assert!(!readiness_is_valid(&bed.root));
 }
 

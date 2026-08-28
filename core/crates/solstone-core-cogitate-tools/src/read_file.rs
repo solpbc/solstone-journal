@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
@@ -43,8 +44,7 @@ pub fn read_file(
         Ok(metadata) => metadata,
         Err(error) => return refused(ToolName::ReadFile, stat_refusal(&error)),
     };
-    let kind = metadata.file_type();
-    if kind.is_socket() || kind.is_block_device() || kind.is_char_device() || kind.is_fifo() {
+    if is_special(&metadata) {
         return refused(ToolName::ReadFile, REFUSAL_SPECIAL_FILE);
     }
     if !metadata.is_file() {
@@ -149,8 +149,16 @@ pub(crate) fn stat_refusal(error: &std::io::Error) -> &'static str {
     }
 }
 pub(crate) fn is_special(metadata: &fs::Metadata) -> bool {
-    let kind = metadata.file_type();
-    kind.is_socket() || kind.is_block_device() || kind.is_char_device() || kind.is_fifo()
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        let kind = metadata.file_type();
+        kind.is_socket() || kind.is_block_device() || kind.is_char_device() || kind.is_fifo()
+    }
 }
 
 #[cfg(test)]

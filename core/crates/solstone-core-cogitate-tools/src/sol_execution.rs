@@ -2,14 +2,21 @@
 // Copyright (c) 2026 sol pbc
 
 use std::env;
+#[cfg(unix)]
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 use solstone_core_cogitate::{AccessTierError, classify_command};
+#[cfg(unix)]
 use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 
 use crate::{BudgetExhaustedEvent, SlotLease, SlotReacquireError, SolCallBudget};
@@ -111,6 +118,7 @@ pub fn run_command(argv: &[String], journal_root: &Path) -> Result<SolObservatio
     )
 }
 
+#[cfg(unix)]
 fn run_command_with_timeout(
     argv: &[String],
     journal_root: &Path,
@@ -185,12 +193,23 @@ fn run_command_with_timeout(
     })
 }
 
+#[cfg(not(unix))]
+fn run_command_with_timeout(
+    _argv: &[String],
+    _journal_root: &Path,
+    _timeout: Duration,
+) -> Result<SolObservation, String> {
+    Err("process capability unavailable on this platform".to_owned())
+}
+
+#[cfg(unix)]
 struct ProcessGroupChild {
     authority: LaunchAuthority,
     group: rustix::process::Pid,
     timeout: Duration,
 }
 
+#[cfg(unix)]
 impl ProcessGroupChild {
     fn spawn(command: &mut Command, timeout: Duration) -> std::io::Result<Self> {
         command
@@ -258,6 +277,7 @@ impl ProcessGroupChild {
     }
 }
 
+#[cfg(unix)]
 fn read_all(mut stream: impl Read) -> Vec<u8> {
     let mut bytes = Vec::new();
     let _ = stream.read_to_end(&mut bytes);

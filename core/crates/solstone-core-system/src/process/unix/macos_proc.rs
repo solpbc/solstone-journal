@@ -4,7 +4,7 @@
 //! Native macOS process birth observation.
 
 #[cfg(any(target_os = "macos", test))]
-use super::{ExecutionState, InspectResult, ProcessBirth, ProcessInstance};
+use super::super::{ExecutionState, InspectResult, ProcessBirth, ProcessInstance};
 
 /// The stable subset copied from `proc_bsdinfo`; keeping this independent of
 /// libc makes the birth extractor hermetic on non-macOS test hosts.

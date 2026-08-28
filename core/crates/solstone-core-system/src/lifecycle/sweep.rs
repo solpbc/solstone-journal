@@ -195,7 +195,7 @@ fn sweepable_name(name: &str) -> bool {
         || matches!(name, "llama-server" | "parakeet-server" | "mlx-vlm-server")
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrphanQualification {
     Eligible(ProcessInstance),
@@ -203,7 +203,7 @@ enum OrphanQualification {
     Unproven,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
 fn qualify_orphan_observation(observation: InspectResult) -> OrphanQualification {
     match observation {
         InspectResult::Present {

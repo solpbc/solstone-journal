@@ -23,9 +23,6 @@ test-hooks = ["solstone-core-journal-io/test-hooks"]
 chrono = { workspace = true }
 getrandom = { workspace = true }
 libc = { workspace = true }
-# `feature` enables sysconf/SysconfVar for Linux process start-time identity.
-# `fs` is already unified from the workspace; name it here for lifecycle fd APIs.
-nix = { workspace = true, features = ["event", "feature", "fs", "hostname", "process", "signal"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -36,6 +33,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [target.'cfg(unix)'.dependencies]
+# `feature` enables sysconf/SysconfVar for Linux process start-time identity.
+# `fs` is already unified from the workspace; name it here for lifecycle fd APIs.
+nix = { workspace = true, features = ["event", "feature", "fs", "hostname", "process", "signal"] }
 solstone-core-journal-config = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-local = { workspace = true }

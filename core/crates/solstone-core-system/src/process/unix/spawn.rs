@@ -13,51 +13,21 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use chrono::Local;
-use thiserror::Error;
-
 use crate::partition::partition_for;
+use chrono::Local;
 
-use super::events::{OutputStream, ProcessEvent, ProcessEventSink};
-use super::log::DailyLogWriter;
+use super::super::events::{OutputStream, ProcessEvent, ProcessEventSink};
+use super::super::log::DailyLogWriter;
+use super::super::{
+    DRAIN_JOIN_TIMEOUT, InspectResult, LaunchedProcessIdentity, ProcessInstance,
+    ProcessInstanceSource, SERVICE_SHUTDOWN_TIMEOUT, SignalKind, SpawnError, SpawnOptions,
+    SystemProcessInstanceSource, TerminationError, TerminationOutcome,
+    require_managed_process_capability,
+};
 use super::pdeathsig::apply_parent_death_kill;
-use super::signal_aware_exit_code;
 use super::terminate::{
-    DRAIN_JOIN_TIMEOUT, SERVICE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
     signal_exact_instance, terminate, terminate_exact_instance, terminate_exact_instance_until,
 };
-use super::{InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource};
-
-#[derive(Debug, Error)]
-pub enum SpawnError {
-    #[error("cannot spawn an empty command")]
-    EmptyCommand,
-    #[error("failed to prepare operational log: {0}")]
-    Log(#[source] io::Error),
-    #[error("failed to spawn child: {0}")]
-    Spawn(#[source] io::Error),
-    #[error("failed to capture birth-bound identity for spawned pid {pid}")]
-    ExactInstanceUnavailable { pid: u32 },
-}
-
-/// Inputs owned by the caller rather than process-global state.
-#[derive(Clone)]
-pub struct SpawnOptions {
-    pub journal_root: PathBuf,
-    pub reference: String,
-    pub day: Option<String>,
-    pub sink: Option<Arc<dyn ProcessEventSink>>,
-    pub environment: BTreeMap<OsString, OsString>,
-}
-
-/// The single process-table sample captured for an exact launch.  Keeping UID
-/// beside the birth-bound instance prevents a later authority from widening a
-/// signal decision to a same-PID or wrong-user process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LaunchedProcessIdentity {
-    pub instance: ProcessInstance,
-    pub uid: u32,
-}
 
 /// A child process with journal-system operational logs and bounded cleanup.
 pub struct ManagedProcess {
@@ -96,6 +66,21 @@ impl ManagedProcess {
         options: SpawnOptions,
         exact: bool,
     ) -> Result<Self, SpawnError> {
+        Self::spawn_with_capability(cmd, options, exact, require_managed_process_capability)
+    }
+
+    /// Test seam for proving the capability gate runs before command validation
+    /// or child creation.
+    pub(crate) fn spawn_with_capability<Capability>(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+        exact: bool,
+        capability: Capability,
+    ) -> Result<Self, SpawnError>
+    where
+        Capability: FnOnce() -> Result<(), &'static str>,
+    {
+        capability().map_err(|needed| SpawnError::CapabilityUnavailable { needed })?;
         if cmd.is_empty() {
             return Err(SpawnError::EmptyCommand);
         }
@@ -252,13 +237,13 @@ impl ManagedProcess {
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
         self.child
             .try_wait()
-            .map(|status| status.map(|value| signal_aware_exit_code(&value)))
+            .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value)))
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
         self.child
             .wait()
-            .map(|status| signal_aware_exit_code(&status))
+            .map(|status| super::super::signal_aware_exit_code(&status))
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
@@ -315,10 +300,7 @@ impl ManagedProcess {
         self.drains.clear();
     }
 
-    pub fn signal_exact(
-        &mut self,
-        signal: nix::sys::signal::Signal,
-    ) -> Result<(), TerminationError> {
+    pub fn signal_exact(&mut self, signal: SignalKind) -> Result<(), TerminationError> {
         match self.termination_mode {
             TerminationMode::Exact(expected) => {
                 let source = SystemProcessInstanceSource;
@@ -344,7 +326,7 @@ impl ManagedProcess {
             return Err(TerminationError::ExactInstanceUnavailable);
         };
         Ok(TerminationOutcome::Graceful {
-            exit_code: Some(signal_aware_exit_code(&status)),
+            exit_code: Some(super::super::signal_aware_exit_code(&status)),
         })
     }
 
@@ -367,7 +349,7 @@ impl ManagedProcess {
             .try_wait()
             .ok()
             .flatten()
-            .map(|status| signal_aware_exit_code(&status));
+            .map(|status| super::super::signal_aware_exit_code(&status));
         let log_path = self.log_path();
         emit(
             &self.sink,
@@ -403,7 +385,7 @@ impl ManagedProcess {
             .try_wait()
             .ok()
             .flatten()
-            .map(|status| signal_aware_exit_code(&status));
+            .map(|status| super::super::signal_aware_exit_code(&status));
         let log_path = self.log_path();
         emit(
             &self.sink,
@@ -552,5 +534,33 @@ fn format_log_line(name: &str, stream: OutputStream, line: &str) -> String {
 fn emit(sink: &Option<Arc<dyn ProcessEventSink>>, event: ProcessEvent) {
     if let Some(sink) = sink {
         sink.emit(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capability_refusal_precedes_spawn_validation() {
+        let result = ManagedProcess::spawn_with_capability(
+            Vec::new(),
+            SpawnOptions {
+                journal_root: PathBuf::from("unused"),
+                reference: "unused".to_owned(),
+                day: None,
+                sink: None,
+                environment: BTreeMap::new(),
+            },
+            false,
+            || Err("process-groups"),
+        );
+
+        assert!(matches!(
+            result,
+            Err(SpawnError::CapabilityUnavailable {
+                needed: "process-groups"
+            })
+        ));
     }
 }

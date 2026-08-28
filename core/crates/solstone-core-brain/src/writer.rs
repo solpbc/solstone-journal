@@ -1223,6 +1223,7 @@ fn atomic_error(error: solstone_core_journal_io::AtomicWriteError) -> WriterErro
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1478,6 +1479,7 @@ mod tests {
         assert!(permit.is_none());
         assert!(!brain_refresh_lease_path(journal.path()).exists());
         let record = fs::read(brain_state_path(journal.path())).unwrap();
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(brain_state_path(journal.path()))
                 .unwrap()
@@ -1830,6 +1832,7 @@ mod tests {
         assert_eq!(first, second);
         let path = brain_fingerprint_key_path(journal.path());
         assert_eq!(fs::read(path).unwrap(), first);
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(brain_fingerprint_key_path(journal.path()))
                 .unwrap()

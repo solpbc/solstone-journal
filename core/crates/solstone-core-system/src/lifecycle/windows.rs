@@ -12,6 +12,8 @@ use std::path::Path;
 
 use solstone_core_journal_io::FileObservation;
 
+use crate::process::require_managed_process_capability;
+
 use super::state::{HeartbeatWriteError, LifecycleArtifactWriteError, SelfHeartbeatRemoval};
 use super::sync::{self, SyncCheckResult, SyncScanFailure, SyncSnapshot};
 use super::{
@@ -95,6 +97,14 @@ pub(crate) struct WindowsBootState {
     pub(crate) last_completed_sync_result: SyncCheckResult,
 }
 
+struct WindowsBootInputs {
+    writer_id: WriterId,
+    run_id: RunId,
+    hostname: String,
+    now: f64,
+    start_time: f64,
+}
+
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) struct WindowsTickContext<'a> {
     pub(crate) journal: &'a Path,
@@ -117,18 +127,39 @@ pub(crate) fn boot_with_store(
     now: f64,
     start_time: f64,
 ) -> Result<WindowsBootState, LifecycleError> {
-    let heartbeat_filename = sync::v2_heartbeat_filename(&writer_id, &run_id);
+    boot_with_store_with_capability(
+        store,
+        journal,
+        WindowsBootInputs {
+            writer_id,
+            run_id,
+            hostname,
+            now,
+            start_time,
+        },
+        require_managed_process_capability,
+    )
+}
+
+fn boot_with_store_with_capability(
+    store: &mut impl WindowsLifecycleStore,
+    journal: &Path,
+    inputs: WindowsBootInputs,
+    capability: impl FnOnce() -> Result<(), &'static str>,
+) -> Result<WindowsBootState, LifecycleError> {
+    capability().map_err(|needed| LifecycleError::CapabilityUnavailable { needed })?;
+    let heartbeat_filename = sync::v2_heartbeat_filename(&inputs.writer_id, &inputs.run_id);
     let first = store
-        .scan_sync(&heartbeat_filename, None, now)
+        .scan_sync(&heartbeat_filename, None, inputs.now)
         .map_err(|error| LifecycleError::SyncScan(Box::new(error)))?;
     reject_live_or_unverifiable(&first)?;
 
     let heartbeat = sync::HeartbeatV2::new(
-        writer_id.clone(),
-        run_id,
-        hostname,
+        inputs.writer_id.clone(),
+        inputs.run_id,
+        inputs.hostname,
         std::process::id(),
-        now.to_string(),
+        inputs.now.to_string(),
         env!("CARGO_PKG_VERSION").to_owned(),
         sync::DEFAULT_INTERVAL_SECONDS as u32,
         journal.display().to_string(),
@@ -137,7 +168,7 @@ pub(crate) fn boot_with_store(
     let retained_self_heartbeat =
         store.write_sync_heartbeat(&heartbeat_filename, &heartbeat_body)?;
 
-    let second = match store.scan_sync(&heartbeat_filename, Some(&first.snapshot), now) {
+    let second = match store.scan_sync(&heartbeat_filename, Some(&first.snapshot), inputs.now) {
         Ok(result) => result,
         Err(error) => {
             cleanup_after_failed_boot(store, &heartbeat_filename, &retained_self_heartbeat)?;
@@ -149,7 +180,7 @@ pub(crate) fn boot_with_store(
         return Err(error);
     }
 
-    let identity = match write_supervisor_identity(store, std::process::id(), start_time) {
+    let identity = match write_supervisor_identity(store, std::process::id(), inputs.start_time) {
         Ok(identity) => identity,
         Err(error) => {
             cleanup_after_failed_boot(store, &heartbeat_filename, &retained_self_heartbeat)?;
@@ -157,7 +188,7 @@ pub(crate) fn boot_with_store(
         }
     };
     Ok(WindowsBootState {
-        run_id,
+        run_id: inputs.run_id,
         heartbeat_filename,
         identity,
         retained_self_heartbeat,
@@ -505,9 +536,8 @@ mod platform {
     };
 
     use super::{
-        HeartbeatWriteError, LifecycleArtifactWriteError, SUPERVISOR_PID, SUPERVISOR_START_TIME,
-        WindowsBootState, WindowsLifecycleDirectory, WindowsLifecycleStore, WindowsRemovalFailure,
-        boot_with_store,
+        HeartbeatWriteError, LifecycleArtifactWriteError, WindowsLifecycleDirectory,
+        WindowsLifecycleStore, WindowsRemovalFailure, boot_with_store,
     };
     use crate::lifecycle::sweep;
     use crate::lifecycle::sync::{
@@ -831,7 +861,7 @@ mod platform {
             now: f64,
         ) -> Result<SyncCheckResult, SyncScanFailure> {
             let sync = self.sync().map_err(|reason| {
-                directory_failure(
+                sync_directory_failure(
                     self.root.canonical_path().join("health/sync"),
                     SyncDirectoryOperation::BindSync,
                     reason,
@@ -1082,11 +1112,19 @@ mod platform {
         operation: SyncDirectoryOperation,
         reason: FlatDirectoryError,
     ) -> LifecycleError {
-        LifecycleError::SyncScan(Box::new(SyncScanFailure::DirectoryBinding {
+        LifecycleError::SyncScan(Box::new(sync_directory_failure(path, operation, reason)))
+    }
+
+    fn sync_directory_failure(
+        path: PathBuf,
+        operation: SyncDirectoryOperation,
+        reason: FlatDirectoryError,
+    ) -> SyncScanFailure {
+        SyncScanFailure::DirectoryBinding {
             path,
             operation,
             reason: Box::new(reason),
-        }))
+        }
     }
 
     fn missing_directory(path: PathBuf) -> FlatDirectoryError {
@@ -1312,6 +1350,32 @@ mod tests {
             NOW,
             NOW,
         )
+    }
+
+    #[test]
+    fn capability_refusal_precedes_sync_scan_and_all_lifecycle_writes() {
+        let mut store = FakeWindowsLifecycleStore::with_scans([]);
+
+        assert!(matches!(
+            boot_with_store_with_capability(
+                &mut store,
+                Path::new("/journal"),
+                WindowsBootInputs {
+                    writer_id: writer_id(),
+                    run_id: run_id(),
+                    hostname: "host".to_owned(),
+                    now: NOW,
+                    start_time: NOW,
+                },
+                || Err("process-groups"),
+            ),
+            Err(LifecycleError::CapabilityUnavailable {
+                needed: "process-groups"
+            })
+        ));
+        assert_eq!(store.scans_completed, 0);
+        assert!(store.writes.is_empty());
+        assert!(store.removed.is_empty());
     }
 
     fn tick(

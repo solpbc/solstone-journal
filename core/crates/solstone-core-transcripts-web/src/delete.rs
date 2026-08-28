@@ -14,6 +14,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_retention::door;
 use solstone_core_retention::{NoIndex, Outcome, RemovalReason, Target};
+use solstone_core_system::lifecycle::SupervisorLiveness;
 
 use crate::{AppState, legacy_error_response};
 
@@ -53,8 +54,12 @@ pub(crate) async fn delete_segment(
             );
         }
     };
-    let search_index_warning =
-        !solstone_core_system::lifecycle::is_supervisor_up(&*state.journal_root);
+    let (search_index_warning, supervisor_liveness) =
+        match (state.supervisor_liveness)(&state.journal_root) {
+            SupervisorLiveness::Up => (false, None),
+            SupervisorLiveness::Down => (true, None),
+            SupervisorLiveness::Unverifiable => (true, Some("unverifiable")),
+        };
     let request = DeleteRequest {
         day,
         stream,
@@ -81,6 +86,9 @@ pub(crate) async fn delete_segment(
     });
     if search_index_warning {
         body["search_index_warning"] = json!(true);
+    }
+    if let Some(liveness) = supervisor_liveness {
+        body["supervisor_liveness"] = json!(liveness);
     }
     Json(body).into_response()
 }

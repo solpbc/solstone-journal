@@ -489,7 +489,30 @@ pub(crate) fn initialize_catchup(
     today: chrono::NaiveDate,
     now: SystemTime,
 ) -> Result<(), CatchupError> {
-    reconcile_stale_catchup_attempts(journal, now);
+    initialize_catchup_with_reconcile(
+        journal,
+        queue,
+        is_remote,
+        no_daily,
+        today,
+        now,
+        reconcile_stale_catchup_attempts,
+    )
+}
+
+pub(crate) fn initialize_catchup_with_reconcile<Reconcile>(
+    journal: &Path,
+    queue: &TaskQueue,
+    is_remote: bool,
+    no_daily: bool,
+    today: chrono::NaiveDate,
+    now: SystemTime,
+    reconcile: Reconcile,
+) -> Result<(), CatchupError>
+where
+    Reconcile: FnOnce(&Path, SystemTime) -> Result<(), CatchupError>,
+{
+    reconcile(journal, now)?;
     if is_remote || no_daily || processing_is_deferred(journal) {
         return Ok(());
     }
@@ -2092,6 +2115,43 @@ mod tests {
         let stale = &state["entries"]["20260101:daily-catchup"];
         assert_eq!(stale["last_outcome"], "interrupted");
         assert_eq!(stale["next_retry_at"], 620.0);
+    }
+
+    #[test]
+    fn capability_refusal_stops_startup_catchup_before_queue_drain_or_ledger_mutation() {
+        let bed = Bed::new("startup-catchup-capability");
+        bed.enable_thinking();
+        let day = "20260101";
+        let health = bed.root.join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health).expect("health directory");
+        fs::write(
+            health.join("stream.updated"),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        )
+        .expect("stream marker");
+        let state_path = bed.root.join("health/catchup-state.json");
+        fs::create_dir_all(state_path.parent().expect("health directory")).expect("health");
+        fs::write(
+            &state_path,
+            br#"{"version":1,"entries":{"20260101:daily-catchup":{"day":"20260101","command_kind":"daily-catchup","active":{"ref":"lost","started_at":1.0}}}}"#,
+        )
+        .expect("catchup state");
+        let before = fs::read(&state_path).expect("catchup state");
+        let queue = queue(&bed.root);
+
+        let result = initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(20),
+            |_, _| Err(CatchupError::CapabilityUnavailable),
+        );
+
+        assert!(matches!(result, Err(CatchupError::CapabilityUnavailable)));
+        assert_eq!(pending(&queue), 0, "refusal must precede queue drain");
+        assert_eq!(fs::read(&state_path).expect("catchup state"), before);
     }
 
     #[test]

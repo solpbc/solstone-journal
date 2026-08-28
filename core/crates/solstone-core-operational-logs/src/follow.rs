@@ -581,7 +581,7 @@ fn output_error(source: io::Error) -> FollowFatalError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, VecDeque};

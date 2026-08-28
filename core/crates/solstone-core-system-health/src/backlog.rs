@@ -287,18 +287,26 @@ fn unknown_day(day: &str, stage: &str, error: HealthError) -> BacklogDay {
 }
 
 fn stream_updated_ms(journal: &Path, day: &str) -> Option<i64> {
-    match solstone_core_journal_io::read_health_marker(
-        journal,
-        day,
-        solstone_core_journal_io::HealthMarkerKind::Stream,
-    )
-    .ok()?
+    #[cfg(not(unix))]
     {
-        solstone_core_journal_io::HealthMarkerState::Absent => None,
-        solstone_core_journal_io::HealthMarkerState::LegacyEmpty { modified }
-        | solstone_core_journal_io::HealthMarkerState::MalformedNonEmpty { modified }
-        | solstone_core_journal_io::HealthMarkerState::Versioned { modified, .. } => {
-            Some(system_time_ms(modified))
+        let _ = (journal, day);
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        match solstone_core_journal_io::read_health_marker(
+            journal,
+            day,
+            solstone_core_journal_io::HealthMarkerKind::Stream,
+        )
+        .ok()?
+        {
+            solstone_core_journal_io::HealthMarkerState::Absent => None,
+            solstone_core_journal_io::HealthMarkerState::LegacyEmpty { modified }
+            | solstone_core_journal_io::HealthMarkerState::MalformedNonEmpty { modified }
+            | solstone_core_journal_io::HealthMarkerState::Versioned { modified, .. } => {
+                Some(system_time_ms(modified))
+            }
         }
     }
 }

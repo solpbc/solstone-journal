@@ -9,82 +9,16 @@ use std::process::Child;
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use thiserror::Error;
-
-use serde::{Deserialize, Serialize};
-
-use super::descendants::Descendant;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use super::{
-    InspectResult, InstanceCensus, InstanceVerdict, ProcessBirth, ProcessInstance,
-    ProcessInstanceSource, SystemProcessInstanceSource,
-    descendants::{ProcessTreeSnapshot, own_pgid, snapshot},
-    signal_aware_exit_code,
+use super::super::signal_aware_exit_code;
+use super::super::{
+    Descendant, DescendantObservationFailure, DescendantTerminationOutcome, InspectResult,
+    InstanceCensus, InstanceVerdict, KILL_REAP_GRACE, ProcessBirth, ProcessInstance,
+    ProcessInstanceSource, ProcessTreeSnapshot, SignalKind, SystemProcessInstanceSource,
+    TerminationError, TerminationOutcome,
 };
-
-/// Task cap enforcement's bounded graceful window.
-pub const CAP_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
-/// Future TaskQueue shutdown's distinct default window.
-pub const TASK_QUEUE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
-/// Long-lived service shutdown's distinct default window.
-pub const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
-/// Unconditional bounded reap window after SIGKILL escalation.
-pub const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
-/// Bounded drain-thread join after the child and descendants are reaped.
-pub const DRAIN_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TerminationOutcome {
-    Graceful { exit_code: Option<i32> },
-    EscalatedAndReaped { exit_code: Option<i32> },
-}
-
-#[derive(Debug, Error)]
-pub enum TerminationError {
-    #[error("managed parent missed the graceful termination window")]
-    ParentGraceTimeout,
-    #[error("process tree not reaped: {reason}; survivors={survivors:?}")]
-    ProcessTreeNotReaped {
-        reason: &'static str,
-        survivors: Vec<Descendant>,
-    },
-    #[error("descendant coverage unavailable on this platform")]
-    DescendantCoverageUnavailable,
-    #[error("exact process identity is unavailable")]
-    ExactInstanceUnavailable,
-    #[error("process lifecycle I/O failed: {0}")]
-    Io(#[from] io::Error),
-}
-
-/// The reason exact descendant coverage could not be proven.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DescendantObservationFailure {
-    #[error("descendant census was incomplete")]
-    CensusIncomplete,
-    #[error("service root was not the remembered live instance")]
-    RootNotSameOrExited,
-    #[error("service root could not be observed")]
-    RootUnverifiable,
-    #[error("service root was missing from a complete census")]
-    Missing,
-    #[error("descendant observation became stale")]
-    Stale,
-    #[error("descendant PID was reused")]
-    Reused,
-    #[error("descendant UID changed")]
-    WrongUid,
-    #[error("descendant could not be observed")]
-    Unverifiable,
-}
-
-/// The terminal result of exact descendant-only cleanup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DescendantTerminationOutcome {
-    Graceful,
-    EscalatedAndReaped,
-}
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::descendants::{own_pgid, snapshot};
 
 /// Stop an exact, same-UID descendant tree without ever signalling `root`.
 ///
@@ -386,13 +320,13 @@ pub(crate) fn terminate_exact_instance_until(
 /// Send a direct signal only after revalidating the exact remembered process.
 pub fn signal_exact_instance(
     expected: ProcessInstance,
-    signal: nix::sys::signal::Signal,
+    signal: SignalKind,
     source: &dyn ProcessInstanceSource,
 ) -> Result<(), TerminationError> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let guard = SignalGuard::current();
-        signal_parent_exact(expected, signal, &guard, source)
+        signal_parent_exact(expected, nix_signal(signal), &guard, source)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
@@ -665,13 +599,6 @@ fn select_confirmed_descendants(
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Clone, Copy)]
-enum SignalKind {
-    Terminate,
-    Kill,
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[derive(Debug, Clone, Copy)]
 struct SignalGuard {
     own_pid: i32,
     own_pgid: Option<i32>,
@@ -798,7 +725,7 @@ pub(crate) fn signal_pid(pid: i32, signal: nix::sys::signal::Signal) -> nix::Res
 #[cfg(test)]
 mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use super::super::{CensusRow, ExecutionState, InstanceCensus};
+    use super::super::super::{CensusRow, ExecutionState, InstanceCensus};
     use super::*;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::collections::HashMap;

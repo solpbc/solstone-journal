@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
+#[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -703,6 +704,7 @@ fn inspection_outcomes_are_real_filesystem_conditions() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn lease_and_fingerprint_key_probes_are_read_only() {
     let journal = TestJournal::new();
@@ -729,6 +731,7 @@ fn lease_and_fingerprint_key_probes_are_read_only() {
     assert_eq!(load_existing_fingerprint_key(&journal.path), None);
 }
 
+#[cfg(unix)]
 #[test]
 fn read_operations_preserve_every_journal_file_across_the_full_matrix() {
     for record_kind in ["present", "absent", "corrupt"] {

@@ -12,10 +12,14 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cap::CapResolver;
+#[cfg(not(test))]
+use crate::catchup::admit_daily_catchup;
 use crate::catchup::{
-    DailyCatchupAdmission, DailyCatchupOutcome, admit_daily_catchup,
+    CatchupError, DailyCatchupAdmission, DailyCatchupOutcome,
     record_daily_catchup_admission_failure, record_daily_catchup_outcome,
 };
+#[cfg(test)]
+use crate::catchup::{admit_daily_catchup_with_capability, catchup_marker_capability};
 use crate::partition::Partition;
 use crate::process::{
     CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, LaunchAuthority,
@@ -216,6 +220,9 @@ type QueueProcessSpawner = Arc<
 >;
 
 #[cfg(test)]
+type CatchupAdmissionCapability = Arc<dyn Fn() -> Result<(), CatchupError> + Send + Sync>;
+
+#[cfg(test)]
 type WorkerThreadSpawner =
     Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>> + Send + Sync>;
 
@@ -296,6 +303,8 @@ struct QueueInner {
     state: Mutex<QueueState>,
     reaped: Condvar,
     worker_spawner: Mutex<QueueProcessSpawner>,
+    #[cfg(test)]
+    catchup_admission_capability: Mutex<CatchupAdmissionCapability>,
     #[cfg(test)]
     worker_thread_spawner: Mutex<WorkerThreadSpawner>,
     #[cfg(test)]
@@ -437,6 +446,8 @@ impl TaskQueue {
                 }),
                 reaped: Condvar::new(),
                 worker_spawner: Mutex::new(Arc::new(spawn_managed_queue_process)),
+                #[cfg(test)]
+                catchup_admission_capability: Mutex::new(Arc::new(catchup_marker_capability)),
                 #[cfg(test)]
                 worker_thread_spawner: Mutex::new(Arc::new(|worker| {
                     thread::Builder::new().spawn(worker)
@@ -857,6 +868,15 @@ impl TaskQueue {
     }
 
     #[cfg(test)]
+    fn set_catchup_admission_capability(&self, capability: CatchupAdmissionCapability) {
+        *self
+            .inner
+            .catchup_admission_capability
+            .lock()
+            .expect("queue catchup-admission capability lock poisoned") = capability;
+    }
+
+    #[cfg(test)]
     fn join_test_workers(&self, expected: usize, timeout: Duration) -> Result<(), String> {
         let deadline = Instant::now() + timeout;
         let mut handles = self
@@ -977,13 +997,43 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
     let worker_inner = Arc::clone(&inner);
     if let Some(provenance) = &dispatch.submission.daily_catchup_provenance {
         let started_at = unix_seconds_f64();
-        match admit_daily_catchup(
+        #[cfg(test)]
+        let admission = {
+            let capability = Arc::clone(
+                &inner
+                    .catchup_admission_capability
+                    .lock()
+                    .expect("queue catchup-admission capability lock poisoned"),
+            );
+            admit_daily_catchup_with_capability(
+                &inner.options.journal_root,
+                &provenance.day,
+                &dispatch.submission.reference,
+                started_at,
+                move || capability(),
+            )
+        };
+        #[cfg(not(test))]
+        let admission = admit_daily_catchup(
             &inner.options.journal_root,
             &provenance.day,
             &dispatch.submission.reference,
             started_at,
-        ) {
+        );
+        match admission {
             Ok(admission) => dispatch.daily_catchup_admission = Some(admission),
+            Err(CatchupError::CapabilityUnavailable) => {
+                record_completion(&inner, &dispatch, -1, "capability_unavailable".to_owned());
+                let next = finish_worker(
+                    &inner,
+                    &dispatch.submission.partition,
+                    &dispatch.submission.reference,
+                );
+                if let Some(next) = next {
+                    start_dispatch(inner, next);
+                }
+                return;
+            }
             Err(_) => {
                 record_daily_catchup_admission_failure(
                     &inner.options.journal_root,
@@ -1171,7 +1221,7 @@ fn record_completion(
         &dispatch.daily_catchup_admission,
     ) {
         let timed_out = status == TIMEOUT_EXIT_STATUS;
-        record_daily_catchup_outcome(
+        if let Err(error) = record_daily_catchup_outcome(
             &inner.options.journal_root,
             &provenance.day,
             &dispatch.submission.reference,
@@ -1191,7 +1241,9 @@ fn record_completion(
                 exit_code,
                 exit_status: status,
             },
-        );
+        ) {
+            eprintln!("failed to record daily catchup outcome: {error}");
+        }
     }
     for reference in &dispatch.references {
         emit_queue_event(
@@ -2044,6 +2096,7 @@ mod tests {
         release.wait();
     }
 
+    #[cfg(unix)]
     #[test]
     fn catchup_child_spawn_failure_records_one_primary_terminal_outcome() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2093,6 +2146,7 @@ mod tests {
         assert!(record["next_retry_at"].as_f64().unwrap() > 0.0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn queued_catchup_samples_primary_admission_and_retains_it_for_terminal_correlation() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2200,6 +2254,7 @@ mod tests {
         assert_eq!(terminal["active"], serde_json::Value::Null);
     }
 
+    #[cfg(unix)]
     #[test]
     fn unreadable_primary_admission_records_terminal_backoff_without_spawning_child() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2250,6 +2305,57 @@ mod tests {
         assert!(record["next_retry_at"].as_f64().unwrap() > 0.0);
     }
 
+    #[test]
+    fn capability_unavailable_primary_admission_keeps_the_ledger_untouched_without_spawning() {
+        let journal = tempfile::tempdir().expect("journal");
+        let day = "20260101";
+        let state_path = crate::catchup::catchup_state_path(journal.path());
+        fs::create_dir_all(state_path.parent().expect("health directory")).expect("health");
+        fs::write(
+            &state_path,
+            br#"{"version":1,"entries":{"20260101:daily-catchup":{"sentinel":"keep"}}}"#,
+        )
+        .expect("seed catchup state");
+        let before = fs::read(&state_path).expect("seeded catchup state");
+        let child_spawns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let spawn_count = Arc::clone(&child_spawns);
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(Arc::new(move |_, _, _| {
+            spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(SpawnError::EmptyCommand)
+        }));
+        queue.set_catchup_admission_capability(Arc::new(|| {
+            Err(CatchupError::CapabilityUnavailable)
+        }));
+        assert_eq!(
+            queue.submit(command_request(
+                &["svc", "catchup"],
+                "catchup",
+                Some(DailyCatchupProvenance {
+                    day: day.to_owned(),
+                }),
+            )),
+            SubmitOutcome::Dispatched,
+        );
+
+        assert_eq!(
+            child_spawns.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "capability refusal must happen before worker spawn"
+        );
+        assert_eq!(fs::read(&state_path).expect("catchup state"), before);
+        assert_eq!(queue.history()[0].exit_status, "capability_unavailable");
+    }
+
+    #[cfg(unix)]
     #[test]
     fn catchup_worker_thread_spawn_failure_records_terminal_outcome() {
         let journal = tempfile::tempdir().expect("journal");
