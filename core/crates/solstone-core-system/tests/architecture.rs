@@ -38,7 +38,11 @@ const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwi
 const LIFECYCLE_HOSTED_SERVICE: &str = include_str!("../src/lifecycle/hosted_service.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
 const LIFECYCLE_PARENT: &str = include_str!("../src/lifecycle/parent.rs");
-const LIFECYCLE_PARENT_LOSS_HANDOFF: &str = include_str!("../src/lifecycle/parent_loss_handoff.rs");
+const LIFECYCLE_PARENT_LOSS_ADMISSION: &str =
+    include_str!("../src/lifecycle/parent_loss_admission.rs");
+const LIFECYCLE_PARENT_LOSS_COORDINATOR: &str =
+    include_str!("../src/lifecycle/parent_loss_coordinator.rs");
+const LIFECYCLE_PARENT_LOSS_LEDGER: &str = include_str!("../src/lifecycle/parent_loss_ledger.rs");
 const LIFECYCLE_SHUTDOWN: &str = include_str!("../src/lifecycle/shutdown.rs");
 const LIFECYCLE_STARTUP: &str = include_str!("../src/lifecycle/startup.rs");
 const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
@@ -199,7 +203,9 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("darwin_parent_watch", LIFECYCLE_DARWIN_PARENT_WATCH),
         ("hosted_service", LIFECYCLE_HOSTED_SERVICE),
         ("parent", LIFECYCLE_PARENT),
-        ("parent_loss_handoff", LIFECYCLE_PARENT_LOSS_HANDOFF),
+        ("parent_loss_admission", LIFECYCLE_PARENT_LOSS_ADMISSION),
+        ("parent_loss_coordinator", LIFECYCLE_PARENT_LOSS_COORDINATOR),
+        ("parent_loss_ledger", LIFECYCLE_PARENT_LOSS_LEDGER),
         ("readiness", LIFECYCLE_READINESS),
         ("shutdown", LIFECYCLE_SHUTDOWN),
         ("startup", LIFECYCLE_STARTUP),
@@ -277,9 +283,12 @@ fn ac21_only_operational_log_module_names_write_primitives() {
                 && *name != "completion"
                 && *name != "store"
                 && *name != "catchup"
-                // This lifecycle module is the §7 L2 sole writer for the
-                // generation-fenced parent-loss handoff record.
-                && *name != "parent_loss_handoff"
+                // These lifecycle modules own the isolated admission and
+                // witness drops, generation ledger, and terminal coordinator
+                // record under health/parent-loss.
+                && *name != "parent_loss_admission"
+                && *name != "parent_loss_coordinator"
+                && *name != "parent_loss_ledger"
         })
     {
         // Checked against PRODUCTION source only -- everything before a trailing

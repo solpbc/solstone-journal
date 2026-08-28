@@ -3,22 +3,30 @@
 
 //! Bounded client for the native discovery-cluster helper.
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use solstone_core_system::lifecycle::HostedServiceParentRuntime;
+use solstone_core_system::process::{
+    CommandLaunchRequest, Disposition, LaunchAuthority, launch_command, launch_command_hosted,
+};
 
 const HELPER: &str = "solstone-core-speakers-analyze";
 const REQUEST_SCHEMA: &str = "solstone-speaker-discovery-cluster-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-speaker-discovery-cluster-response-v1";
 const ALGORITHM: &str = "hdbscan-eom-euclidean-f64-prim-mst";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static HOSTED_CHILD_LAUNCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 const STDOUT_LIMIT: usize = 1024 * 1024;
 const STDERR_LIMIT: usize = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(180);
@@ -30,23 +38,6 @@ struct InvocationBudget {
     terminate_grace: Duration,
     stdout_limit: usize,
     stderr_limit: usize,
-}
-
-struct ReapOnDrop(Child);
-
-impl ReapOnDrop {
-    fn child(&mut self) -> &mut Child {
-        &mut self.0
-    }
-}
-
-impl Drop for ReapOnDrop {
-    fn drop(&mut self) {
-        if !matches!(self.0.try_wait(), Ok(Some(_))) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
 }
 
 const DEFAULT_BUDGET: InvocationBudget = InvocationBudget {
@@ -64,9 +55,10 @@ pub(crate) struct DiscoveryHelperError {
 
 pub(crate) async fn discovery_cluster(
     embeddings: Vec<Vec<f32>>,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
     let helper = sibling_helper()?;
-    tokio::task::spawn_blocking(move || run(&helper, &embeddings))
+    tokio::task::spawn_blocking(move || run(&helper, &embeddings, hosted_parent))
         .await
         .map_err(|_| DiscoveryHelperError {
             stage: "invoke",
@@ -92,14 +84,19 @@ fn sibling_helper() -> Result<PathBuf, DiscoveryHelperError> {
     Ok(path)
 }
 
-fn run(helper: &Path, embeddings: &[Vec<f32>]) -> Result<Vec<i64>, DiscoveryHelperError> {
-    run_with_budget(helper, embeddings, DEFAULT_BUDGET)
+fn run(
+    helper: &Path,
+    embeddings: &[Vec<f32>],
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+) -> Result<Vec<i64>, DiscoveryHelperError> {
+    run_with_budget(helper, embeddings, DEFAULT_BUDGET, hosted_parent)
 }
 
 fn run_with_budget(
     helper: &Path,
     embeddings: &[Vec<f32>],
     budget: InvocationBudget,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
     let width = embeddings.first().map(Vec::len).unwrap_or(0);
     if width == 0 || embeddings.iter().any(|row| row.len() != width) {
@@ -109,32 +106,52 @@ fn run_with_budget(
     let result = (|| {
         let payload = dir.join("embeddings.f32le");
         write_payload(&payload, embeddings)?;
-        let request = json!({"schema":REQUEST_SCHEMA,"embeddings_f32le_path":payload,"payload_format":"raw-f32le-row-major-v1","dtype":"float32-le","shape":[embeddings.len(),width],"min_cluster_size":5,"min_samples":3});
-        let mut child = ReapOnDrop(
-            Command::new(helper)
-                .arg("discovery-cluster")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|error| invoke(error.to_string()))?,
-        );
+        let payload_request = json!({"schema":REQUEST_SCHEMA,"embeddings_f32le_path":payload,"payload_format":"raw-f32le-row-major-v1","dtype":"float32-le","shape":[embeddings.len(),width],"min_cluster_size":5,"min_samples":3});
+        let command = CommandLaunchRequest {
+            program: helper.as_os_str().to_os_string(),
+            arguments: vec![OsString::from("discovery-cluster")],
+            environment: BTreeMap::new(),
+            current_dir: None,
+            process_group: false,
+            stdin_piped: true,
+            stdout_piped: true,
+            stderr_piped: true,
+        };
+        let terminate = Box::new(|child: &mut Child, grace| {
+            terminate_raw_child(child, grace);
+            Ok(())
+        });
+        let mut child = match hosted_parent {
+            Some(parent) => launch_command_hosted(
+                Disposition::IndependentBoundedHelper {
+                    timeout: budget.timeout,
+                },
+                command,
+                parent.child_launch_provenance(format!(
+                    "convey-speakers-{}",
+                    HOSTED_CHILD_LAUNCH_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+                )),
+                terminate,
+            ),
+            None => launch_command(
+                Disposition::IndependentBoundedHelper {
+                    timeout: budget.timeout,
+                },
+                command,
+                terminate,
+            ),
+        }
+        .map_err(|error| invoke(error.to_string()))?;
         child
-            .child()
-            .stdin
-            .take()
+            .take_stdin()
             .ok_or_else(|| invoke("stdin-unavailable"))?
-            .write_all(request.to_string().as_bytes())
+            .write_all(payload_request.to_string().as_bytes())
             .map_err(|error| invoke(error.to_string()))?;
         let stdout = child
-            .child()
-            .stdout
-            .take()
+            .take_stdout()
             .ok_or_else(|| invoke("stdout-unavailable"))?;
         let stderr = child
-            .child()
-            .stderr
-            .take()
+            .take_stderr()
             .ok_or_else(|| invoke("stderr-unavailable"))?;
         let (capture_tx, capture_rx) = mpsc::channel();
         let stdout_reader = drain(stdout, budget.stdout_limit, "stdout", capture_tx.clone());
@@ -142,25 +159,21 @@ fn run_with_budget(
         let deadline = Instant::now() + budget.timeout;
         loop {
             if let Ok(error) = capture_rx.try_recv() {
-                terminate_and_reap(child.child(), budget.terminate_grace);
+                terminate_and_reap(&mut child, budget.terminate_grace);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(invoke(error));
             }
-            if let Some(status) = child
-                .child()
-                .try_wait()
-                .map_err(|error| invoke(error.to_string()))?
-            {
+            if let Some(exit_code) = child.poll().map_err(|error| invoke(error.to_string()))? {
                 let stdout = join_capture(stdout_reader)?;
                 let _stderr = join_capture(stderr_reader)?;
-                if !status.success() {
-                    return Err(invoke(format!("exit-{}", status.code().unwrap_or(-1))));
+                if exit_code != 0 {
+                    return Err(invoke(format!("exit-{exit_code}")));
                 }
                 return parse(&String::from_utf8_lossy(&stdout), embeddings.len());
             }
             if Instant::now() >= deadline {
-                terminate_and_reap(child.child(), budget.terminate_grace);
+                terminate_and_reap(&mut child, budget.terminate_grace);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(invoke("timeout"));
@@ -208,7 +221,13 @@ fn join_capture(
         .map_err(invoke)
 }
 
-fn terminate_and_reap(child: &mut Child, grace: Duration) {
+fn terminate_and_reap(child: &mut LaunchAuthority, grace: Duration) {
+    if child.terminate_exact(grace).is_err() {
+        let _ = child.terminate(grace);
+    }
+}
+
+fn terminate_raw_child(child: &mut Child, grace: Duration) {
     #[cfg(unix)]
     {
         use nix::sys::signal::{Signal, kill};
@@ -323,6 +342,7 @@ pub fn drive_discovery_cluster_helper(
             stdout_limit,
             stderr_limit: 1024,
         },
+        None,
     )
     .map_err(|error| (error.stage.to_owned(), error.reason))
 }

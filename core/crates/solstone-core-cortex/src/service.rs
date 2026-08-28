@@ -98,30 +98,36 @@ pub async fn run_native_service_with_hosted_parent(
         talent_root,
         apps_root,
         templates_dir,
+        hosted_parent.clone(),
         shutdown_with_hosted_parent(hosted_parent.clone(), Arc::clone(&parent_loss)),
     )
     .await;
     let service_stopped = result.is_ok();
-    if let (Some(parent), Some(reason)) = (
-        hosted_parent,
-        parent_loss
+    if let Some(parent) = hosted_parent {
+        let reason = parent_loss
             .lock()
             .expect("hosted parent-loss reason lock poisoned")
-            .take(),
-    ) {
-        parent
-            .finish_parent_loss(
-                reason,
-                HostedServiceShutdownEvidence {
-                    // `run_until` returns `Ok` only after it has stopped the
-                    // Callosum connection and its service runner.
-                    listener_stopped: service_stopped,
-                    service_runner_stopped: service_stopped,
-                    // Cortex has no separate health artifact to withdraw.
-                    operational_artifacts_cleaned: true,
-                },
-            )
-            .map_err(|error| CortexServiceError::ParentLoss(error.to_string()))?;
+            .take()
+            .or_else(|| {
+                parent
+                    .retire_expected_requested()
+                    .then_some(ParentLossReason::ExitedOrReused)
+            });
+        if let Some(reason) = reason {
+            parent
+                .finish_parent_loss(
+                    reason,
+                    HostedServiceShutdownEvidence {
+                        // `run_until` returns `Ok` only after it has stopped the
+                        // Callosum connection and its service runner.
+                        listener_stopped: service_stopped,
+                        service_runner_stopped: service_stopped,
+                        // Cortex has no separate health artifact to withdraw.
+                        operational_artifacts_cleaned: true,
+                    },
+                )
+                .map_err(|error| CortexServiceError::ParentLoss(error.to_string()))?;
+        }
     }
     result
 }
@@ -137,6 +143,7 @@ pub(crate) fn package_roots_from_executable_dir(
     Some((talent_root, apps_root, templates_dir))
 }
 
+#[allow(clippy::too_many_arguments)] // Service paths and hosted-parent ownership are independently injected.
 pub async fn run_until<F>(
     journal: PathBuf,
     connection: CallosumSocketConnection,
@@ -144,6 +151,7 @@ pub async fn run_until<F>(
     talent_root: PathBuf,
     apps_root: PathBuf,
     templates_dir: PathBuf,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     shutdown: F,
 ) -> Result<(), CortexServiceError>
 where
@@ -158,6 +166,7 @@ where
             apps_root,
             templates_dir,
         },
+        hosted_parent,
         shutdown,
         ServiceDependencies::production(),
     )
@@ -208,6 +217,7 @@ async fn run_until_with<F>(
     journal: PathBuf,
     mut connection: CallosumSocketConnection,
     execution_paths: TalentExecutionPaths,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     shutdown: F,
     dependencies: ServiceDependencies,
 ) -> Result<(), CortexServiceError>
@@ -230,6 +240,7 @@ where
             execution_paths.apps_root,
             execution_paths.templates_dir,
             spawn_rx,
+            hosted_parent,
         )
     });
     let cancel_state = state.clone();

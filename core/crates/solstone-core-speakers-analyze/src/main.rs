@@ -3,6 +3,7 @@
 
 use std::env;
 use std::io::{self, Read};
+use std::path::Path;
 use std::process;
 
 use solstone_core_speakers_analyze::{
@@ -15,6 +16,18 @@ const EXIT_UNAVAILABLE: i32 = 69;
 const EXIT_TEMPFAIL: i32 = 75;
 
 fn main() {
+    if env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some() {
+        let Some(journal) = env::var_os("SOLSTONE_JOURNAL") else {
+            eprintln!("hosted speakers analysis child is missing SOLSTONE_JOURNAL");
+            process::exit(EXIT_TEMPFAIL);
+        };
+        if let Err(error) =
+            solstone_core_system::lifecycle::acknowledge_hosted_child_admission(Path::new(&journal))
+        {
+            eprintln!("hosted speakers analysis admission failed: {error}");
+            process::exit(EXIT_TEMPFAIL);
+        }
+    }
     let args: Vec<_> = env::args_os().skip(1).collect();
     let command = match evaluate_args(&args) {
         Ok(command) => command,

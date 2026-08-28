@@ -143,20 +143,27 @@ async fn run_native_service_async(
         parent_task.abort();
         let _ = parent_task.await;
     }
-    if let (Some(parent), Ok(reason)) = (hosted_parent, parent_loss_receive.try_recv()) {
-        parent
-            .finish_parent_loss(
-                reason,
-                HostedServiceShutdownEvidence {
-                    // A successful service loop includes relay cleanup and
-                    // the bounded Callosum-output stop.
-                    listener_stopped: service_stopped,
-                    service_runner_stopped: service_stopped,
-                    // SPL has no distinct health artifact to withdraw.
-                    operational_artifacts_cleaned: true,
-                },
-            )
-            .map_err(|_| NativeServiceError::ParentLoss)?;
+    if let Some(parent) = hosted_parent {
+        let reason = parent_loss_receive.try_recv().ok().or_else(|| {
+            parent
+                .retire_expected_requested()
+                .then_some(ParentLossReason::ExitedOrReused)
+        });
+        if let Some(reason) = reason {
+            parent
+                .finish_parent_loss(
+                    reason,
+                    HostedServiceShutdownEvidence {
+                        // A successful service loop includes relay cleanup and
+                        // the bounded Callosum-output stop.
+                        listener_stopped: service_stopped,
+                        service_runner_stopped: service_stopped,
+                        // SPL has no distinct health artifact to withdraw.
+                        operational_artifacts_cleaned: true,
+                    },
+                )
+                .map_err(|_| NativeServiceError::ParentLoss)?;
+        }
     }
     result
 }

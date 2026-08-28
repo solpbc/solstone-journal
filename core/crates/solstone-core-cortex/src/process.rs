@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -13,9 +13,10 @@ use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
+use solstone_core_system::lifecycle::HostedServiceParentRuntime;
 use solstone_core_system::process::{
-    self, Disposition, ExecutionState, InstanceCensus, LaunchAuthority, LaunchError,
-    ProcessInstanceSource, SystemProcessInstanceSource,
+    self, CommandLaunchRequest, Disposition, ExecutionState, InstanceCensus, LaunchAuthority,
+    LaunchError, ProcessInstanceSource, SystemProcessInstanceSource,
 };
 
 use crate::state::{CortexState, ResolvedTalent, Work};
@@ -28,6 +29,7 @@ pub(crate) fn spawn_worker(
     apps_root: PathBuf,
     templates_dir: PathBuf,
     receiver: mpsc::Receiver<Work>,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) {
     while let Ok(work) = receiver.recv() {
         state.spawn_begin(&work.use_id);
@@ -42,6 +44,7 @@ pub(crate) fn spawn_worker(
                     &apps_root,
                     &templates_dir,
                     work.clone(),
+                    hosted_parent.clone(),
                 )
             })) {
                 Ok(Ok(())) => {}
@@ -63,6 +66,7 @@ pub fn spawn_one(
     apps_root: &Path,
     templates_dir: &Path,
     work: Work,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), String> {
     let name = work
         .request
@@ -93,7 +97,7 @@ pub fn spawn_one(
         &work.request,
         resolved.as_ref().and_then(|facts| facts.timeout_seconds),
     );
-    let mut command = build_talent_worker_command(
+    let command = build_talent_worker_command(
         &executable_dir,
         state.journal(),
         resolved.as_ref(),
@@ -101,19 +105,25 @@ pub fn spawn_one(
     )?;
     let request_line = serde_json::to_vec(&Value::Object(work.request.clone()))
         .map_err(|error| error.to_string())?;
-    let authority = process::launch(
-        Disposition::IndependentBoundedHelper {
-            timeout: Duration::from_secs(timeout),
-        },
-        || command.spawn(),
-        Box::new(|child, _timeout| {
-            let pgid = i32::try_from(child.id()).map_err(|_| {
-                LaunchError::Terminate(std::io::Error::other("child pid does not fit i32"))
-            })?;
-            stop_group(pgid);
-            Ok(())
-        }),
-    )
+    let disposition = Disposition::IndependentBoundedHelper {
+        timeout: Duration::from_secs(timeout),
+    };
+    let terminate = Box::new(|child: &mut std::process::Child, _timeout| {
+        let pgid = i32::try_from(child.id()).map_err(|_| {
+            LaunchError::Terminate(std::io::Error::other("child pid does not fit i32"))
+        })?;
+        stop_group(pgid);
+        Ok(())
+    });
+    let authority = match hosted_parent {
+        Some(parent) => process::launch_command_hosted(
+            disposition,
+            command,
+            parent.child_launch_provenance(format!("cortex-talent-{}", work.use_id)),
+            terminate,
+        ),
+        None => process::launch_command(disposition, command, terminate),
+    }
     .map_err(|error| error.to_string())?;
     let authority: Arc<Mutex<LaunchAuthority>> = Arc::new(Mutex::new(authority));
     let Some(mut stdin) = authority
@@ -223,48 +233,52 @@ pub(crate) fn build_talent_worker_command(
     journal: &Path,
     resolved: Option<&ResolvedTalent>,
     request: &Map<String, Value>,
-) -> Result<Command, String> {
+) -> Result<CommandLaunchRequest, String> {
     let worker = solstone_core_journal_cli::sibling_native_in_dir(executable_dir, "solstone-core")
         .map_err(|error| error.to_string())?;
-    let mut command = Command::new(worker);
-    command
-        .arg("__talent-worker")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if resolved.is_some_and(|facts| {
-        facts.talent_type.as_deref() == Some("cogitate")
-            && facts.declared_cwd.as_deref() == Some("journal")
-    }) {
-        command.current_dir(journal);
-    }
+    let current_dir = resolved
+        .is_some_and(|facts| {
+            facts.talent_type.as_deref() == Some("cogitate")
+                && facts.declared_cwd.as_deref() == Some("journal")
+        })
+        .then(|| journal.to_path_buf());
+    let mut environment = BTreeMap::new();
     if let Some(facet) = request
         .get("facet")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
     {
-        command.env("SOL_FACET", facet);
+        environment.insert(OsString::from("SOL_FACET"), OsString::from(facet));
     }
     if let Some(day) = request
         .get("day")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
     {
-        command.env("SOL_DAY", day);
+        environment.insert(OsString::from("SOL_DAY"), OsString::from(day));
     }
     if let Some(env) = request.get("env").and_then(Value::as_object) {
         for (key, value) in env {
-            command.env(
-                key,
+            environment.insert(
+                OsString::from(key),
                 value
                     .as_str()
                     .map(str::to_owned)
-                    .unwrap_or_else(|| value.to_string()),
+                    .unwrap_or_else(|| value.to_string())
+                    .into(),
             );
         }
     }
-    command.process_group(0);
-    Ok(command)
+    Ok(CommandLaunchRequest {
+        program: worker.into_os_string(),
+        arguments: vec![OsString::from("__talent-worker")],
+        environment,
+        current_dir,
+        process_group: true,
+        stdin_piped: true,
+        stdout_piped: true,
+        stderr_piped: true,
+    })
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -455,7 +469,7 @@ mod tests {
         journal: &Path,
         resolved: Option<&ResolvedTalent>,
         request: &Map<String, Value>,
-    ) -> Command {
+    ) -> CommandLaunchRequest {
         let mut captured = Vec::new();
         captured
             .push(build_talent_worker_command(executable_dir, journal, resolved, request).unwrap());
@@ -528,19 +542,20 @@ mod tests {
         }))
         .unwrap();
         let command = captured_command(&executable_dir, directory.path(), None, &request);
-        let program = PathBuf::from(command.get_program());
+        let program = PathBuf::from(&command.program);
         assert_eq!(program, executable_dir.join("solstone-core"));
         let args: Vec<String> = command
-            .get_args()
+            .arguments
+            .iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
         assert_eq!(args, ["__talent-worker"]);
         let facet = command
-            .get_envs()
-            .find(|(key, _)| *key == "SOL_FACET")
-            .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()));
+            .environment
+            .get(&OsString::from("SOL_FACET"))
+            .map(|value| value.to_string_lossy().into_owned());
         assert_eq!(facet.as_deref(), Some("override"));
-        assert!(command.get_current_dir().is_none());
+        assert!(command.current_dir.is_none());
     }
 
     #[test]
@@ -617,10 +632,11 @@ mod tests {
         }))
         .unwrap();
         let command = captured_command(&executable_dir, directory.path(), None, &request);
-        let program = PathBuf::from(command.get_program());
+        let program = PathBuf::from(&command.program);
         assert_eq!(program, executable_dir.join("solstone-core"));
         let args: Vec<String> = command
-            .get_args()
+            .arguments
+            .iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
         assert_eq!(args, ["__talent-worker"]);

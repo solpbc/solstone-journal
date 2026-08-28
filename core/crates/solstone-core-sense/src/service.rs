@@ -66,11 +66,12 @@ async fn run(
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
     let (outbound, receiver) = mpsc::channel::<Outbound>();
-    let dispatcher = Arc::new(SenseDispatcher::new(
+    let dispatcher = Arc::new(SenseDispatcher::new_with_hosted_parent(
         journal,
         options.verbose,
         options.debug,
         outbound,
+        hosted_parent.clone(),
     ));
     let outcome = run_until_with_shutdown_status(
         connection,
@@ -80,21 +81,28 @@ async fn run(
     )
     .await;
     let parent_loss = outcome.shutdown.flatten();
-    if let (Some(parent), Some(reason)) = (hosted_parent, parent_loss) {
-        // `connection.stop` is infallible and always runs before this point.
-        // Worker joins are independently observed so a panic cannot claim a
-        // completed service runner in the parent-loss handoff.
-        parent
-            .finish_parent_loss(
-                reason,
-                HostedServiceShutdownEvidence {
-                    listener_stopped: true,
-                    service_runner_stopped: outcome.service_runner_stopped,
-                    // Sense has no separate health artifact to withdraw.
-                    operational_artifacts_cleaned: true,
-                },
-            )
-            .map_err(|_| NativeServiceError::ParentLoss)?;
+    if let Some(parent) = hosted_parent {
+        let reason = parent_loss.or_else(|| {
+            parent
+                .retire_expected_requested()
+                .then_some(ParentLossReason::ExitedOrReused)
+        });
+        if let Some(reason) = reason {
+            // `connection.stop` is infallible and always runs before this point.
+            // Worker joins are independently observed so a panic cannot claim a
+            // completed service runner in the parent-loss handoff.
+            parent
+                .finish_parent_loss(
+                    reason,
+                    HostedServiceShutdownEvidence {
+                        listener_stopped: true,
+                        service_runner_stopped: outcome.service_runner_stopped,
+                        // Sense has no separate health artifact to withdraw.
+                        operational_artifacts_cleaned: true,
+                    },
+                )
+                .map_err(|_| NativeServiceError::ParentLoss)?;
+        }
     }
     Ok(())
 }

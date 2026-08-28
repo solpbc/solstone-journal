@@ -182,6 +182,13 @@ use registry::{ShellPayload, known_app, shell_payload};
 #[derive(Clone)]
 pub(crate) struct JournalRoot(pub PathBuf);
 
+/// Optional hosted-generation provenance carried to handlers that launch a
+/// service-like helper. Unhosted Convey keeps the existing ordinary path.
+#[derive(Clone)]
+pub(crate) struct HostedLaunchContext(
+    pub(crate) Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+);
+
 /// Reason the paired-device door was not made available at startup.
 #[cfg(feature = "host")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,7 +456,7 @@ fn run_convey_bound(
         DirectDoorOutcome, DirectDoorPublishResult, peek_direct_door_generation,
         publish_direct_door, withhold_direct_door,
     };
-    use solstone_core_system::lifecycle::HostedServiceShutdownEvidence;
+    use solstone_core_system::lifecycle::{HostedServiceShutdownEvidence, ParentLossReason};
     use tokio::sync::watch;
 
     if port == 0 {
@@ -466,7 +473,7 @@ fn run_convey_bound(
     let (authorization_sender, authorization_receiver) = watch::channel(
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
-    let loopback_router = router(journal_root.clone());
+    let loopback_router = router_with_hosted_parent(journal_root.clone(), hosted_parent.clone());
     let door_router = authorization_gate::authorized_router_with_router(
         loopback_router.clone(),
         journal_root.clone(),
@@ -536,7 +543,13 @@ fn run_convey_bound(
     }
     write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;
     if let Some(parent) = hosted_parent {
-        let reason = runtime.block_on(parent.await_parent_loss());
+        let reason = runtime.block_on(async {
+            tokio::select! {
+                reason = parent.await_parent_loss() => reason,
+                _ = wait_for_retire_expected_request(&parent) => ParentLossReason::ExitedOrReused,
+                _ = wait_for_hosted_termination_signal() => ParentLossReason::ExitedOrReused,
+            }
+        });
         // `ConveyServeHandle::shutdown` synchronously aborts every listener
         // task and has no fallible result; Convey has no separate runner once
         // those tasks have been aborted.
@@ -563,6 +576,32 @@ fn run_convey_bound(
         return Ok(());
     }
     runtime.block_on(handle.await_forever())
+}
+
+#[cfg(feature = "host")]
+async fn wait_for_retire_expected_request(
+    parent: &Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>,
+) {
+    loop {
+        if parent.retire_expected_requested() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[cfg(feature = "host")]
+async fn wait_for_hosted_termination_signal() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut signal) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            let _ = signal.recv().await;
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[cfg(feature = "host")]
@@ -596,6 +635,13 @@ fn remove_port_file(journal_root: &FsPath) -> Result<(), String> {
 }
 
 pub fn router(journal_root: PathBuf) -> Router {
+    router_with_hosted_parent(journal_root, None)
+}
+
+fn router_with_hosted_parent(
+    journal_root: PathBuf,
+    hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
@@ -865,7 +911,8 @@ pub fn router(journal_root: PathBuf) -> Router {
         ))
         .merge(solstone_core_support_web::routes(journal_root.clone()))
         .layer(Extension(shell))
-        .layer(Extension(route_journal_root));
+        .layer(Extension(route_journal_root))
+        .layer(Extension(HostedLaunchContext(hosted_parent)));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)
 }
 

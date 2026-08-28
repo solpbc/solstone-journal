@@ -10,6 +10,7 @@ publish = false
 serde_json.workspace = true
 solstone-core-speakers.workspace = true
 solstone-core-speakers-onnx.workspace = true
+solstone-core-system.workspace = true
 
 [lints]
 workspace = true

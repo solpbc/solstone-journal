@@ -19,12 +19,12 @@ use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::{LockOptions, SegmentLayout, hold_lock};
 
-use crate::JournalRoot;
 use crate::speakers_attribution::action;
 use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
     UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
 };
+use crate::{HostedLaunchContext, JournalRoot};
 
 const DISCOVERY_UNIT_NORM_TOLERANCE: f32 = 1.0e-3;
 const MIN_CLUSTER_SIZE: usize = 5;
@@ -504,7 +504,10 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 }
 
 /// Run a native discovery scan and publish its derived cache on successful clustering.
-pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn scan(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    Extension(hosted_launch): Extension<HostedLaunchContext>,
+) -> Response {
     let (rows, issues) = match discovery_candidates(&root.0) {
         Ok(DiscoveryCandidates::IdentityInvalid) => {
             return error(
@@ -553,7 +556,12 @@ pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         .iter()
         .map(|row| row.embedding.clone())
         .collect::<Vec<_>>();
-    let labels = match crate::speakers_analyze_client::discovery_cluster(embeddings).await {
+    let labels = match crate::speakers_analyze_client::discovery_cluster(
+        embeddings,
+        hosted_launch.0,
+    )
+    .await
+    {
         Ok(labels) => labels,
         Err(error) => {
             let status = if error.stage == "invoke" {

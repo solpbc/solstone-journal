@@ -255,6 +255,7 @@ fn native_sibling_is_selected_and_lands_finish() {
         &apps_root,
         &templates_dir,
         work,
+        None,
     )
     .unwrap();
     assert_eq!(poll_file(&marker, Duration::from_secs(2)).trim(), "x");
@@ -365,6 +366,7 @@ fn stdin_write_failure_terminates_and_reaps_spawned_child() {
             &apps_root,
             &templates_dir,
             work,
+            None,
         )
         .is_err()
     );

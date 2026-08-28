@@ -4,14 +4,16 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
+use solstone_core_system::lifecycle::HostedServiceParentRuntime;
 use solstone_core_system::process::{
-    ManagedProcess, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions, TerminationError,
+    Disposition, ManagedLaunchRequest, ManagedProcess, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions,
+    TerminationError, launch_managed_hosted, launch_managed_request,
 };
 
 use crate::beacon::Health;
@@ -28,6 +30,7 @@ use crate::registry::{
 use crate::work::{SegmentContext, SegmentKey, SegmentState, WorkItem};
 
 const PROVIDER_BLOCKED: i32 = 69;
+static HOSTED_CHILD_LAUNCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct Outbound {
@@ -79,6 +82,7 @@ struct WorkerContext {
     program: Result<PathBuf, DispatcherResolveError>,
     tally: Arc<JobTally>,
     cleanups: Arc<Mutex<Vec<thread::JoinHandle<()>>>>,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 }
 
 /// Per-run handler outcome counts. Incremented as `run_job` finishes, then
@@ -132,12 +136,25 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
     ) -> Self {
+        Self::new_with_hosted_parent(journal, verbose, debug, outbound, None)
+    }
+
+    /// Construct a dispatcher whose service-like children participate in the
+    /// hosted generation that admitted this Sense service.
+    pub fn new_with_hosted_parent(
+        journal: PathBuf,
+        verbose: bool,
+        debug: bool,
+        outbound: mpsc::Sender<Outbound>,
+        hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    ) -> Self {
         Self::new_with_admission(
             journal,
             verbose,
             debug,
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
+            hosted_parent,
         )
     }
 
@@ -147,6 +164,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
+        hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         Self::new_inner(
             journal,
@@ -156,6 +174,7 @@ impl SenseDispatcher {
             admission,
             resolve_program_from_current_exe(),
             BatchContext::default(),
+            hosted_parent,
         )
     }
 
@@ -177,6 +196,7 @@ impl SenseDispatcher {
             Admission::new(Arc::new(SystemMemoryProbe)),
             Ok(program),
             BatchContext::default(),
+            None,
         )
     }
 
@@ -246,9 +266,11 @@ impl SenseDispatcher {
             Admission::new(Arc::new(SystemMemoryProbe)),
             program,
             batch,
+            None,
         )
     }
 
+    #[allow(clippy::too_many_arguments)] // Distinct construction seams remain independently injectable.
     fn new_inner(
         journal: PathBuf,
         verbose: bool,
@@ -257,6 +279,7 @@ impl SenseDispatcher {
         admission: Admission,
         program: Result<PathBuf, DispatcherResolveError>,
         batch: BatchContext,
+        hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
             segments: HashMap::new(),
@@ -291,6 +314,7 @@ impl SenseDispatcher {
                     program: program.clone(),
                     tally: Arc::clone(&tally),
                     cleanups: Arc::clone(&cleanups),
+                    hosted_parent: hosted_parent.clone(),
                 };
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
@@ -670,6 +694,11 @@ fn run_job(
         events::queue_wait_ms(job.item.queued_at).to_string().into(),
     );
     environment.extend(worker_context.batch.child_environment.clone());
+    let hosted_launch_id = format!(
+        "sense-{}-{reference}-{}",
+        job.item.handler,
+        HOSTED_CHILD_LAUNCH_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+    );
     let options = SpawnOptions {
         journal_root: worker_context.journal.clone(),
         reference,
@@ -677,7 +706,16 @@ fn run_job(
         sink: None,
         environment,
     };
-    let Ok(mut process) = ManagedProcess::spawn(command, options) else {
+    let launch = ManagedLaunchRequest { command, options };
+    let launched = match worker_context.hosted_parent.as_ref() {
+        Some(parent) => launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            launch,
+            parent.child_launch_provenance(hosted_launch_id),
+        ),
+        None => launch_managed_request(Disposition::InheritedParentScope, launch),
+    };
+    let Ok(authority) = launched else {
         worker_context.tally.failure();
         complete(
             state,
@@ -686,6 +724,23 @@ fn run_job(
             &key,
             Some(&file),
             Some(format!("{} spawn failed", job.item.handler)),
+            None,
+            worker_context.batch.marker_policy,
+        );
+        return;
+    };
+    let Ok(mut process) = authority.into_managed() else {
+        worker_context.tally.failure();
+        complete(
+            state,
+            outbound,
+            &worker_context.journal,
+            &key,
+            Some(&file),
+            Some(format!(
+                "{} launch authority was not managed",
+                job.item.handler
+            )),
             None,
             worker_context.batch.marker_policy,
         );
@@ -1469,6 +1524,7 @@ mod tests {
                 path: PathBuf::from("/opt/solstone-core-journal"),
             }),
             BatchContext::default(),
+            None,
         );
         let mut message = observing("one", "120000_1");
         message.extra.insert("files".into(), json!(["audio.flac"]));

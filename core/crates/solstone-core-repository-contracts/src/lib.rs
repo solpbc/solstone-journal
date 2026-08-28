@@ -43,6 +43,9 @@ mod distribution_payload;
 #[path = "contracts/distribution_workspace_bins.rs"]
 mod distribution_workspace_bins;
 #[cfg(test)]
+#[path = "contracts/hosted_launch_admission_boundary.rs"]
+mod hosted_launch_admission_boundary;
+#[cfg(test)]
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]
