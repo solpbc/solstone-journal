@@ -32,6 +32,7 @@ const OBSERVATION: &str = include_str!("../src/process/observation.rs");
 const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
 const MACOS_PROC: &str = include_str!("../src/process/macos_proc.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
+const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
 const LIFECYCLE_PARENT: &str = include_str!("../src/lifecycle/parent.rs");
 const LIFECYCLE_SHUTDOWN: &str = include_str!("../src/lifecycle/shutdown.rs");
@@ -39,6 +40,7 @@ const LIFECYCLE_STARTUP: &str = include_str!("../src/lifecycle/startup.rs");
 const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
+const LIFECYCLE_WINDOWS: &str = include_str!("../src/lifecycle/windows.rs");
 const MEMORY_ADMISSION: &str = include_str!("../src/memory_admission.rs");
 const STATUS_WIRE: &str = include_str!("../src/status_wire.rs");
 const STT_BACKEND_CHOICE: &str = include_str!("../src/stt_backend_choice.rs");
@@ -189,6 +191,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("terminate", TERMINATE),
     ];
     let lifecycle_modules = [
+        ("clock", LIFECYCLE_CLOCK),
         ("parent", LIFECYCLE_PARENT),
         ("readiness", LIFECYCLE_READINESS),
         ("shutdown", LIFECYCLE_SHUTDOWN),
@@ -196,6 +199,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("state", LIFECYCLE_STATE),
         ("sweep", LIFECYCLE_SWEEP),
         ("sync", LIFECYCLE_SYNC),
+        ("windows", LIFECYCLE_WINDOWS),
     ];
     let schedule_modules = [
         ("caps", SCHEDULE_CAPS),

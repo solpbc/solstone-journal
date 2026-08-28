@@ -119,7 +119,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # script needs these args to find limits.h. Leaving install off this list made
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and install itself must carry it too.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
