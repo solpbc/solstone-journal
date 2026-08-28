@@ -186,6 +186,9 @@ case "$phase" in
         if [ "$retirement_status" -eq 0 ]; then
             fail "legacy retirement fault unexpectedly succeeded"
         fi
+        grep -Fq 'injected reference fault: refusing legacy service stop' \
+            "$state_dir/retirement-failure.out" \
+            || fail "legacy retirement failure did not reach the injected stop boundary"
         kill -0 "$v1_main"
         kill -0 "$v1_child"
         [ "$(listener_inode)" = "$v1_listener" ] || fail "v1 listener changed after retirement failure"

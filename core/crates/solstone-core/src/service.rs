@@ -1251,6 +1251,55 @@ fn parse_systemd_words(value: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
+fn systemd_drop_ins_are_trusted(value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    let Some(paths) = parse_systemd_words(value) else {
+        return false;
+    };
+    !paths.is_empty()
+        && paths
+            .iter()
+            .all(|path| trusted_systemd_vendor_drop_in(Path::new(path)))
+}
+
+fn trusted_systemd_vendor_drop_in(path: &Path) -> bool {
+    let vendor_directory = Path::new("/usr/lib/systemd/user/service.d");
+    if path.parent() != Some(vendor_directory)
+        || path.extension() != Some(OsStr::new("conf"))
+        || path.file_stem().is_none()
+    {
+        return false;
+    }
+    let trusted_directories = [
+        Path::new("/"),
+        Path::new("/usr"),
+        Path::new("/usr/lib"),
+        Path::new("/usr/lib/systemd"),
+        Path::new("/usr/lib/systemd/user"),
+        vendor_directory,
+    ];
+    if !trusted_directories
+        .iter()
+        .all(|directory| trusted_root_owned_directory(directory))
+    {
+        return false;
+    }
+    let Ok(file) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    file.file_type().is_file() && file.uid() == 0 && file.permissions().mode() & 0o022 == 0
+}
+
+fn trusted_root_owned_directory(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| {
+        metadata.file_type().is_dir()
+            && metadata.uid() == 0
+            && metadata.permissions().mode() & 0o022 == 0
+    })
+}
+
 fn parse_hex(
     characters: &mut std::iter::Peekable<impl Iterator<Item = char>>,
     digits: usize,
@@ -1365,7 +1414,7 @@ fn classify_systemd_runtime(
     if values["LoadState"] != "loaded"
         || values["FragmentPath"] != path_text(canonical)?
         || !values["SourcePath"].is_empty()
-        || !values["DropInPaths"].is_empty()
+        || !systemd_drop_ins_are_trusted(values["DropInPaths"])
         || !matches!(values["UnitFileState"], "enabled" | "disabled" | "static")
         || !launchers
             .iter()
@@ -2215,6 +2264,17 @@ mod tests {
             classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(),
             RuntimeTruth::Foreign
         );
+        assert!(!trusted_systemd_vendor_drop_in(Path::new(
+            "/etc/systemd/user/service.d/foreign.conf"
+        )));
+        assert!(!trusted_systemd_vendor_drop_in(Path::new(
+            "/usr/lib/systemd/user/service.d/nested/foreign.conf"
+        )));
+        assert!(!trusted_systemd_vendor_drop_in(Path::new(
+            "/usr/lib/systemd/user/service.d/foreign.txt"
+        )));
+        assert!(trusted_root_owned_directory(Path::new("/")));
+        assert!(!trusted_root_owned_directory(Path::new("/tmp")));
     }
 
     #[test]
