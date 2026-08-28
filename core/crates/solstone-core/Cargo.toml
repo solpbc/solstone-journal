@@ -138,6 +138,7 @@ solstone-core-spp-ratls.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+getrandom.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-think-cli.workspace = true
 solstone-core-thinking.workspace = true

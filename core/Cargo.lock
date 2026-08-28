@@ -3080,6 +3080,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "futures-util",
+ "getrandom 0.3.4",
  "image",
  "jsonschema",
  "log",
@@ -4213,6 +4214,7 @@ dependencies = [
  "solstone-core-journal-archive",
  "solstone-core-journal-io",
  "solstone-core-sol-client",
+ "solstone-core-system",
 ]
 
 [[package]]
@@ -4784,6 +4786,7 @@ dependencies = [
  "serde_json",
  "solstone-core-speakers",
  "solstone-core-speakers-onnx",
+ "solstone-core-system",
 ]
 
 [[package]]

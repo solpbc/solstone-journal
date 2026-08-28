@@ -50,6 +50,15 @@ pub struct SpawnOptions {
     pub environment: BTreeMap<OsString, OsString>,
 }
 
+/// The single process-table sample captured for an exact launch.  Keeping UID
+/// beside the birth-bound instance prevents a later authority from widening a
+/// signal decision to a same-PID or wrong-user process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaunchedProcessIdentity {
+    pub instance: ProcessInstance,
+    pub uid: u32,
+}
+
 /// A child process with journal-system operational logs and bounded cleanup.
 pub struct ManagedProcess {
     child: Child,
@@ -62,6 +71,7 @@ pub struct ManagedProcess {
     sink: Option<Arc<dyn ProcessEventSink>>,
     exit_emitted: bool,
     termination_mode: TerminationMode,
+    exact_identity: Option<LaunchedProcessIdentity>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -164,6 +174,7 @@ impl ManagedProcess {
             sink: options.sink,
             exit_emitted: false,
             termination_mode: TerminationMode::Legacy,
+            exact_identity: None,
         };
         if exact {
             delay_exact_identity_observation_for_test(&options.environment);
@@ -174,8 +185,9 @@ impl ManagedProcess {
                 source.inspect(pid)
             };
             match observation {
-                InspectResult::Present { instance, .. } => {
+                InspectResult::Present { instance, uid, .. } => {
                     process.termination_mode = TerminationMode::Exact(instance);
+                    process.exact_identity = Some(LaunchedProcessIdentity { instance, uid });
                 }
                 _ if process
                     .child
@@ -203,6 +215,11 @@ impl ManagedProcess {
 
     pub fn pid(&self) -> u32 {
         self.child.id()
+    }
+
+    /// Return the exact PID/birth/UID captured atomically after `spawn_exact`.
+    pub fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
+        self.exact_identity
     }
 
     /// Return the child's process group on platforms that support process groups.

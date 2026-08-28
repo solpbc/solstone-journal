@@ -7,29 +7,25 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use thiserror::Error;
 use tokio::sync::Notify;
 
-#[cfg(target_os = "macos")]
-use super::darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
 use super::{
-    DeclaredParent, HostedServiceKind, ParentAdmissionFailure, ParentLossHandoffError,
-    ParentLossHandoffPublishResult, ParentLossHandoffUnresolvedReason, ParentLossReason,
-    ParentLossServiceRegistration, ParentLossServiceWitness, ParentWatch, ParentWatchStatus,
-    finalize_parent_loss_handoff, read_parent_loss_handoff, record_parent_loss_service_unresolved,
-    record_parent_loss_service_witness, register_parent_loss_service,
+    AdmissionIdentity, DeclaredParent, HostedServiceKind, ParentAdmissionFailure,
+    ParentLossAdmissionError, ParentLossLedger, ParentLossPhase, ParentLossReason,
+    ParentLossServiceWitnessDrop, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
+    acknowledge_parent_loss_admission, write_parent_loss_service_witness,
 };
 use crate::process::{
-    InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
-    terminate_descendants_exact,
+    HostedLaunchProvenance, InspectResult, ProcessInstance, ProcessInstanceSource,
+    SystemProcessInstanceSource, terminate_descendants_exact,
 };
 
 const HOSTED_PARENT_ENV: &str = "SOL_SUPERVISOR_SPAWNED";
-const PARENT_WATCH_INTERVAL: Duration = Duration::from_secs(1);
 const PARENT_LOSS_DESCENDANT_TIMEOUT: Duration = Duration::from_secs(2);
-const PARENT_LOSS_HANDOFF_WAIT: Duration = Duration::from_secs(3);
+const HOSTED_LAUNCH_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The admitted hosted-service state. It is absent for ordinary, unhosted
 /// command invocation so those commands keep their pre-existing lifecycle.
@@ -39,6 +35,7 @@ pub struct HostedServiceParentRuntime {
     parent: ParentWatch,
     instance: ProcessInstance,
     uid: u32,
+    admission: AdmissionIdentity,
     loss_signal: Arc<ParentLossSignal>,
 }
 
@@ -53,6 +50,19 @@ pub struct HostedServiceShutdownEvidence {
 }
 
 impl HostedServiceParentRuntime {
+    /// Derive exact generation provenance for one child launched by this
+    /// already-admitted hosted service.
+    pub fn child_launch_provenance(&self, launch_id: String) -> HostedLaunchProvenance {
+        HostedLaunchProvenance {
+            journal: self.journal.clone(),
+            generation: self.admission.generation,
+            launch_id,
+            service: None,
+            parent_launch_id: Some(self.admission.launch_id.clone()),
+            acknowledgement_timeout: HOSTED_LAUNCH_ACKNOWLEDGEMENT_TIMEOUT,
+        }
+    }
+
     /// Wait until the armed platform watcher confirms (or fail-closed cannot
     /// verify) the admitted parent has gone away.
     pub async fn await_parent_loss(&self) -> ParentLossReason {
@@ -70,14 +80,30 @@ impl HostedServiceParentRuntime {
         }
     }
 
+    /// A hosted service may write its own shutdown witness during a requested
+    /// graceful supervisor stop. The coordinator still authenticates the
+    /// control drop with its private capability before it can publish
+    /// `retired_expected`; this merely lets the service take its normal
+    /// listener/runner cleanup path instead of being killed mid-cleanup.
+    pub fn retire_expected_requested(&self) -> bool {
+        ParentLossLedger::open(&self.journal)
+            .map(|ledger| {
+                ledger
+                    .generation_path(self.admission.generation)
+                    .join("control/retire-expected.json")
+                    .is_file()
+            })
+            .unwrap_or(false)
+    }
+
     /// Stop every still-owned exact descendant after the caller has stopped
-    /// its own listener and service runner, then publish this service's
-    /// terminal handoff evidence.
+    /// its own listener and service runner, then write only this service's
+    /// immutable witness. The coordinator owns all terminal adjudication.
     pub fn finish_parent_loss(
         &self,
         parent_loss: ParentLossReason,
         shutdown: HostedServiceShutdownEvidence,
-    ) -> Result<ParentLossHandoffPublishResult, ParentLossHandoffError> {
+    ) -> Result<(), HostedServiceParentLossError> {
         let descendants = terminate_descendants_exact(
             self.instance,
             self.uid,
@@ -86,63 +112,25 @@ impl HostedServiceParentRuntime {
             || {},
         );
 
-        if matches!(parent_loss, ParentLossReason::Unverifiable) {
-            return record_parent_loss_service_unresolved(
-                &self.journal,
-                self.parent.instance(),
-                self.kind,
-                ParentLossHandoffUnresolvedReason::ParentUnverifiable,
-            );
-        }
-        if !shutdown.operational_artifacts_cleaned {
-            return record_parent_loss_service_unresolved(
-                &self.journal,
-                self.parent.instance(),
-                self.kind,
-                ParentLossHandoffUnresolvedReason::ArtifactFailure,
-            );
-        }
-
-        let (descendants_retired, census_complete, descendant_failure) = match descendants {
-            Ok(_) => (true, true, None),
-            Err(failure) => (false, false, Some(failure)),
+        let (descendants_retired, descendant_failure) = match descendants {
+            Ok(_) => (true, None),
+            Err(failure) => (false, Some(failure)),
         };
-        let witness = ParentLossServiceWitness {
+        let witness = ParentLossServiceWitnessDrop {
+            schema: 1,
+            service: self.kind,
             parent: self.parent.instance(),
-            instance: self.instance,
-            uid: self.uid,
+            identity: self.admission.clone(),
             listener_stopped: shutdown.listener_stopped,
             service_runner_stopped: shutdown.service_runner_stopped,
-            initial_census_complete: census_complete,
-            post_term_census_complete: census_complete,
-            final_census_complete: census_complete,
+            operational_artifacts_cleaned: shutdown.operational_artifacts_cleaned,
             descendants_retired,
             shutdown_complete: shutdown.listener_stopped && shutdown.service_runner_stopped,
             descendant_failure,
         };
-        let result = record_parent_loss_service_witness(
-            &self.journal,
-            self.parent.instance(),
-            self.kind,
-            witness,
-        )?;
-        if !matches!(result, ParentLossHandoffPublishResult::Recorded) {
-            return Ok(result);
-        }
-        self.wait_for_peer_witnesses()
-    }
-
-    fn wait_for_peer_witnesses(
-        &self,
-    ) -> Result<ParentLossHandoffPublishResult, ParentLossHandoffError> {
-        let deadline = Instant::now() + PARENT_LOSS_HANDOFF_WAIT;
-        while Instant::now() < deadline {
-            if read_parent_loss_handoff(&self.journal)?.is_some() {
-                return Ok(ParentLossHandoffPublishResult::RejectedTerminal);
-            }
-            thread::sleep(Duration::from_millis(25));
-        }
-        finalize_parent_loss_handoff(&self.journal, self.parent.instance())
+        let _ = parent_loss;
+        write_parent_loss_service_witness(&self.journal, &witness)?;
+        Ok(())
     }
 }
 
@@ -157,16 +145,24 @@ pub enum HostedServiceAdmissionFailure {
     Watch(#[source] HostedServiceWatchError),
     #[error("hosted service could not verify its own process identity")]
     SelfUnverifiable,
-    #[error("hosted service handoff registration failed: {0}")]
-    Handoff(#[source] ParentLossHandoffError),
+    #[error("hosted service admission failed: {0}")]
+    Admission(#[source] ParentLossAdmissionError),
+    #[error("hosted service lifecycle state rejects admission")]
+    LifecycleRejected,
+}
+
+/// Failure writing the service's own parent-loss evidence drop.
+#[derive(Debug, Error)]
+pub enum HostedServiceParentLossError {
+    #[error("hosted service witness write failed: {0}")]
+    Witness(#[from] ParentLossAdmissionError),
 }
 
 /// A failure installing the watcher that must make admission fail closed.
 #[derive(Debug, Error)]
 pub enum HostedServiceWatchError {
-    #[cfg(target_os = "macos")]
-    #[error("Darwin kqueue parent watch failed: {0}")]
-    Darwin(#[from] DarwinParentWatchError),
+    #[error("hosted parent exit watcher failed: {0}")]
+    Parent(#[from] super::ParentExitWatchError),
     #[error("could not start hosted parent watcher: {0}")]
     Thread(#[source] std::io::Error),
 }
@@ -192,21 +188,29 @@ pub fn admit_hosted_service_parent(
             return Err(HostedServiceAdmissionFailure::SelfUnverifiable);
         }
     };
-    let registration = register_parent_loss_service(
-        journal,
-        parent.instance(),
-        kind,
-        ParentLossServiceRegistration { instance, uid },
-    )
-    .map_err(HostedServiceAdmissionFailure::Handoff)?;
-    if !matches!(registration, ParentLossHandoffPublishResult::Recorded) {
-        return Err(HostedServiceAdmissionFailure::Handoff(
-            ParentLossHandoffUnresolvedReason::ArtifactFailure.into(),
-        ));
+    let admission = super::parent_loss_admission::parse_hosted_admission_environment(instance, uid)
+        .map_err(HostedServiceAdmissionFailure::Admission)?;
+    let ledger = ParentLossLedger::open(journal).map_err(|error| {
+        HostedServiceAdmissionFailure::Admission(ParentLossAdmissionError::Ledger(error))
+    })?;
+    let active = ledger
+        .active_generation()
+        .map_err(|error| {
+            HostedServiceAdmissionFailure::Admission(ParentLossAdmissionError::Ledger(error))
+        })?
+        .ok_or(HostedServiceAdmissionFailure::LifecycleRejected)?;
+    if active.generation != admission.generation
+        || active.supervisor != parent.instance()
+        || active.phase != ParentLossPhase::Admitting
+        || active.coordinator.is_none()
+    {
+        return Err(HostedServiceAdmissionFailure::LifecycleRejected);
     }
+    acknowledge_parent_loss_admission(journal, admission.clone())
+        .map_err(HostedServiceAdmissionFailure::Admission)?;
 
     let watcher = PlatformParentExitWatcher::arm(parent.instance())
-        .map_err(HostedServiceAdmissionFailure::Watch)?;
+        .map_err(|error| HostedServiceAdmissionFailure::Watch(error.into()))?;
     if let ParentWatchStatus::Lost(reason) = parent.check(&source) {
         return Err(HostedServiceAdmissionFailure::ParentLostBeforeServing(
             reason,
@@ -226,6 +230,7 @@ pub fn admit_hosted_service_parent(
         parent,
         instance,
         uid,
+        admission,
         loss_signal,
     }))
 }
@@ -243,47 +248,5 @@ impl ParentLossSignal {
             .lock()
             .expect("hosted parent-loss signal lock poisoned") = Some(reason);
         self.notify.notify_waiters();
-    }
-}
-
-enum PlatformParentExitWatcher {
-    #[cfg(target_os = "macos")]
-    Darwin(DarwinParentExitWatcher),
-    Poll,
-}
-
-impl PlatformParentExitWatcher {
-    fn arm(parent: ProcessInstance) -> Result<Self, HostedServiceWatchError> {
-        #[cfg(target_os = "macos")]
-        {
-            return DarwinParentExitWatcher::register(parent)
-                .map(Self::Darwin)
-                .map_err(HostedServiceWatchError::from);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = parent;
-            Ok(Self::Poll)
-        }
-    }
-
-    fn wait_for_loss(self, parent: ParentWatch) -> ParentLossReason {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::Darwin(watcher) => match watcher.wait_for_exit() {
-                Ok(()) => match parent.check(&SystemProcessInstanceSource) {
-                    ParentWatchStatus::Lost(reason) => reason,
-                    ParentWatchStatus::Live => ParentLossReason::Unverifiable,
-                },
-                Err(_) => ParentLossReason::Unverifiable,
-            },
-            Self::Poll => loop {
-                thread::sleep(PARENT_WATCH_INTERVAL);
-                match parent.check(&SystemProcessInstanceSource) {
-                    ParentWatchStatus::Live => {}
-                    ParentWatchStatus::Lost(reason) => return reason,
-                }
-            },
-        }
     }
 }

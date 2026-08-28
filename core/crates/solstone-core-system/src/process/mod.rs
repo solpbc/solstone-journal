@@ -16,9 +16,13 @@ mod terminate;
 use std::process::ExitStatus;
 
 pub use authority::{
-    BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch, launch_managed,
-    launch_managed_with, launch_with,
+    BoxedTerminateFn, CommandLaunchRequest, Disposition, HostedLaunchProvenance, LaunchAuthority,
+    LaunchError, ManagedLaunchRequest, launch, launch_command, launch_command_hosted,
+    launch_managed, launch_managed_hosted, launch_managed_request, launch_managed_with,
+    launch_with,
 };
+#[cfg(any(test, feature = "test-hooks"))]
+pub use authority::{HostedAdmissionTestFault, set_hosted_admission_test_fault};
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 #[cfg(target_os = "linux")]
@@ -36,7 +40,7 @@ pub use restart::{
     EXIT_TEMPFAIL, RestartPolicy, STRUGGLING_THRESHOLD, TEMPFAIL_DELAY, describe_exit,
     exit_status_for_code,
 };
-pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
+pub use spawn::{LaunchedProcessIdentity, ManagedProcess, SpawnError, SpawnOptions};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::signal_pid;
 pub use terminate::{

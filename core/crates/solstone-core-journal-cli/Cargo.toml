@@ -16,6 +16,7 @@ solstone-core-callosum = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
 solstone-core-facets = { workspace = true }
 solstone-core-sol-client = { workspace = true }
+solstone-core-system = { workspace = true }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-indexer-query = { workspace = true }

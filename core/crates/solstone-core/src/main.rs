@@ -63,10 +63,11 @@ mod service_logs;
 mod settings;
 use solstone_core::supervisor;
 use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, DeclaredParent,
-    HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
-    admit_hosted_service_parent,
+    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
+    DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
+    ParentLossCoordinator, acknowledge_hosted_child_admission, admit_hosted_service_parent,
 };
+use solstone_core_system::process::ProcessInstance;
 mod thinking;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -387,6 +388,7 @@ fn main() -> ExitCode {
         Ok(Command::Backup(args)) => run_backup(args),
         Ok(Command::Maintenance(args)) => run_maintenance(args),
         Ok(Command::TalentWorker(args)) => run_talent_worker(args),
+        Ok(Command::ParentLossCoordinator(args)) => run_parent_loss_coordinator(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Talent(args)) => run_talent(args),
@@ -903,7 +905,68 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
         Ok(journal) => journal.path,
         Err(error) => return print_journal_error(error),
     };
+    if let Err(error) = acknowledge_hosted_child_admission(&journal) {
+        eprintln!("talent worker parent-loss admission failed: {error}");
+        return ExitCode::from(EXIT_TEMPFAIL);
+    }
     solstone_core_talent_runtime::run_worker(&arguments, &journal)
+}
+
+fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
+    let mut supervisor = None;
+    let mut enabled = None;
+    let mut arguments = args.iter().filter_map(|argument| argument.to_str());
+    while let Some(argument) = arguments.next() {
+        match argument {
+            "--supervisor-json" => {
+                supervisor = arguments
+                    .next()
+                    .and_then(|value| serde_json::from_str::<ProcessInstance>(value).ok());
+            }
+            "--enabled-json" => {
+                enabled = arguments
+                    .next()
+                    .and_then(|value| serde_json::from_str::<Vec<HostedServiceKind>>(value).ok());
+            }
+            _ => {}
+        }
+    }
+    let (Some(supervisor), Some(enabled)) = (supervisor, enabled) else {
+        eprintln!("parent-loss coordinator: invalid bootstrap arguments");
+        return ExitCode::from(2);
+    };
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let mut capability = Vec::new();
+    if let Err(error) = std::io::Read::read_to_end(&mut std::io::stdin(), &mut capability) {
+        eprintln!("parent-loss coordinator: could not read bootstrap capability: {error}");
+        return ExitCode::from(EXIT_TEMPFAIL);
+    }
+    if capability.len() < 32 {
+        eprintln!("parent-loss coordinator: missing private bootstrap capability");
+        return ExitCode::from(2);
+    }
+    let (coordinator, _) = match ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+        journal,
+        supervisor,
+        enabled,
+        capability,
+    }) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("parent-loss coordinator: bootstrap failed: {error}");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match coordinator.run() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("parent-loss coordinator: lifecycle failed: {error}");
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
 }
 
 fn run_reprocess(args: Vec<OsString>) -> ExitCode {

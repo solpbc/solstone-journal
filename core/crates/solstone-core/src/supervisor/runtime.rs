@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(any(test, feature = "test-hooks"))]
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,13 +24,16 @@ use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
 use solstone_core_system::lifecycle::{
-    DEFAULT_INTERVAL_SECONDS, HostedServiceKind, ParentLossReason, ParentWatch, ParentWatchStatus,
-    PreReadySupervisorLifecycle, ShutdownRegime, SupervisorLifecycle, SyncPeerObservation,
-    SyncSnapshot, SyncTickOutcome, initialize_parent_loss_handoff,
+    DEFAULT_INTERVAL_SECONDS, HostedServiceKind, ParentLossCoordinator, ParentLossLedger,
+    ParentLossPhase, ParentLossReason, ParentLossTerminalDisposition, ParentWatch,
+    ParentWatchStatus, PreReadySupervisorLifecycle, ShutdownRegime, SupervisorLifecycle,
+    SyncPeerObservation, SyncSnapshot, SyncTickOutcome, write_retire_expected_control,
 };
 use solstone_core_system::process::{
-    InspectResult, ManagedProcess, ProcessInstance, ProcessInstanceSource, RestartPolicy,
-    STRUGGLING_THRESHOLD, SpawnOptions, SystemProcessInstanceSource, describe_exit,
+    CommandLaunchRequest, Disposition, HostedLaunchProvenance, InspectResult, InstanceVerdict,
+    LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ManagedProcess, ProcessInstance,
+    ProcessInstanceSource, RestartPolicy, STRUGGLING_THRESHOLD, SpawnOptions,
+    SystemProcessInstanceSource, describe_exit, launch_command, launch_managed_hosted,
 };
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -61,6 +67,75 @@ const FAST_FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(5);
 const FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(20);
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
 const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
+const PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
+const PARENT_LOSS_CHILD_ADMISSION_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The typed refusal returned when hosted start cannot establish the sole
+/// parent-loss terminal authority before it could admit any service work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParentLossCoordinatorBootstrapFailure {
+    Launch,
+    IdentityEstablishment,
+    InitialAdmissionHandshake,
+    CoordinatorRetirementUnverified,
+}
+
+impl std::fmt::Display for ParentLossCoordinatorBootstrapFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Launch => formatter.write_str("coordinator launch failed"),
+            Self::IdentityEstablishment => {
+                formatter.write_str("coordinator exact identity establishment failed")
+            }
+            Self::InitialAdmissionHandshake => {
+                formatter.write_str("coordinator initial-admission handshake failed")
+            }
+            Self::CoordinatorRetirementUnverified => {
+                formatter.write_str("coordinator exact retirement could not be verified")
+            }
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[doc(hidden)]
+pub(crate) enum ParentLossCoordinatorBootstrapTestFault {
+    Launch,
+    IdentityEstablishment,
+    InitialAdmissionHandshake,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_FAULT: Cell<Option<ParentLossCoordinatorBootstrapTestFault>> = const { Cell::new(None) };
+    static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED: RefCell<Option<ProcessInstance>> = const { RefCell::new(None) };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub(crate) fn set_parent_loss_coordinator_bootstrap_test_fault(
+    fault: Option<ParentLossCoordinatorBootstrapTestFault>,
+) {
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_FAULT.with(|slot| slot.set(fault));
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow_mut() = None);
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn parent_loss_coordinator_bootstrap_test_fault() -> Option<ParentLossCoordinatorBootstrapTestFault>
+{
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_FAULT.with(Cell::get)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_parent_loss_coordinator_bootstrap_test_spawn(instance: ProcessInstance) {
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow_mut() = Some(instance));
+}
+
+#[cfg(test)]
+fn parent_loss_coordinator_bootstrap_test_spawned() -> Option<ProcessInstance> {
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow())
+}
 
 pub(crate) struct SupervisorTiming {
     pub tick_interval: Duration,
@@ -105,6 +180,61 @@ pub(crate) struct SupervisorState {
     pub last_retry_expiry_drain: Instant,
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
+    pub parent_loss_coordinator: Option<ParentLossCoordinatorSession>,
+}
+
+/// Supervisor-held capability for the independent coordinator. The random
+/// bytes are sent once over the coordinator stdin and otherwise remain only in
+/// the two process memories; they authenticate graceful-retirement control.
+pub(crate) struct ParentLossCoordinatorSession {
+    generation: u64,
+    supervisor: ProcessInstance,
+    capability: Vec<u8>,
+}
+
+impl ParentLossCoordinatorSession {
+    pub(crate) fn write_retire_expected(&self, journal: &Path) -> Result<(), String> {
+        write_retire_expected_control(journal, self.generation, self.supervisor, &self.capability)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Wait only for the coordinator's durable graceful-retirement
+    /// acknowledgement. A timeout deliberately does not alter lifecycle state:
+    /// the supervisor must still finish its own shutdown and the coordinator
+    /// remains the sole terminal authority.
+    pub(crate) fn wait_for_retire_expected_ack(
+        &self,
+        journal: &Path,
+        timeout: Duration,
+    ) -> Result<bool, String> {
+        let ledger = ParentLossLedger::open(journal).map_err(|error| error.to_string())?;
+        let deadline = Instant::now() + timeout;
+        loop {
+            let Some(active) = ledger
+                .active_generation()
+                .map_err(|error| error.to_string())?
+            else {
+                return Ok(false);
+            };
+            if active.generation != self.generation || active.supervisor != self.supervisor {
+                return Ok(false);
+            }
+            if active.phase == ParentLossPhase::RetiringAcknowledged {
+                return Ok(true);
+            }
+            if active.phase == ParentLossPhase::Terminal {
+                return Ok(matches!(
+                    ledger.record(self.generation).map_err(|error| error.to_string())?,
+                    Some(record) if matches!(record.terminal, Some(ParentLossTerminalDisposition::RetiredExpected))
+                ));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(false);
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(10)));
+        }
+    }
 }
 
 #[derive(Default)]
@@ -168,6 +298,161 @@ fn current_supervisor_instance() -> Result<ProcessInstance, String> {
         InspectResult::Present { instance, .. } => Ok(instance),
         InspectResult::Absent | InspectResult::Unverifiable => {
             Err("could not verify supervisor process identity for parent-loss handoff".to_owned())
+        }
+    }
+}
+
+async fn bootstrap_parent_loss_coordinator(
+    journal: &Path,
+    supervisor: ProcessInstance,
+    enabled: Vec<HostedServiceKind>,
+) -> Result<ParentLossCoordinatorSession, ParentLossCoordinatorBootstrapFailure> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if parent_loss_coordinator_bootstrap_test_fault()
+        == Some(ParentLossCoordinatorBootstrapTestFault::Launch)
+    {
+        return Err(ParentLossCoordinatorBootstrapFailure::Launch);
+    }
+    let mut capability = vec![0_u8; 32];
+    getrandom::fill(&mut capability)
+        .map_err(|_| ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)?;
+    let mut authority = launch_command(
+        Disposition::ExplicitlyUnowned {
+            reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
+        },
+        parent_loss_coordinator_launch_request(journal, supervisor, &enabled)?,
+        Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+    )
+    .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+    let coordinator = match SystemProcessInstanceSource.inspect(authority.pid()) {
+        InspectResult::Present { instance, uid, .. } => LaunchedProcessIdentity { instance, uid },
+        InspectResult::Absent | InspectResult::Unverifiable => {
+            let _ = authority.terminate(Duration::from_secs(2));
+            return Err(ParentLossCoordinatorBootstrapFailure::IdentityEstablishment);
+        }
+    };
+    authority
+        .bind_exact_identity(coordinator)
+        .map_err(|_| ParentLossCoordinatorBootstrapFailure::IdentityEstablishment)?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    record_parent_loss_coordinator_bootstrap_test_spawn(coordinator.instance);
+    #[cfg(any(test, feature = "test-hooks"))]
+    if parent_loss_coordinator_bootstrap_test_fault()
+        == Some(ParentLossCoordinatorBootstrapTestFault::IdentityEstablishment)
+    {
+        retire_bootstrap_coordinator(&mut authority, coordinator)?;
+        return Err(ParentLossCoordinatorBootstrapFailure::IdentityEstablishment);
+    }
+    let Some(mut stdin) = authority.take_stdin() else {
+        retire_bootstrap_coordinator(&mut authority, coordinator)?;
+        return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
+    };
+    if stdin
+        .write_all(&capability)
+        .and_then(|()| stdin.flush())
+        .is_err()
+    {
+        drop(stdin);
+        retire_bootstrap_coordinator(&mut authority, coordinator)?;
+        return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
+    }
+    drop(stdin);
+    #[cfg(any(test, feature = "test-hooks"))]
+    if parent_loss_coordinator_bootstrap_test_fault()
+        == Some(ParentLossCoordinatorBootstrapTestFault::InitialAdmissionHandshake)
+    {
+        retire_bootstrap_coordinator(&mut authority, coordinator)?;
+        return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
+    }
+    let deadline = Instant::now() + PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT;
+    while Instant::now() < deadline {
+        match ParentLossCoordinator::read_bootstrap_ready(journal) {
+            Ok(Some(ready))
+                if ready.coordinator == coordinator.instance
+                    && ParentLossCoordinator::bootstrap_ready_is_authenticated(
+                        &ready,
+                        &capability,
+                    ) =>
+            {
+                authority.relinquish_explicitly_unowned().map_err(|error| {
+                    let _ = error;
+                    ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified
+                })?;
+                return Ok(ParentLossCoordinatorSession {
+                    generation: ready.generation,
+                    supervisor,
+                    capability,
+                });
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let _ = error;
+                retire_bootstrap_coordinator(&mut authority, coordinator)?;
+                return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    retire_bootstrap_coordinator(&mut authority, coordinator)?;
+    Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)
+}
+
+fn parent_loss_coordinator_launch_request(
+    journal: &Path,
+    supervisor: ProcessInstance,
+    enabled: &[HostedServiceKind],
+) -> Result<CommandLaunchRequest, ParentLossCoordinatorBootstrapFailure> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if parent_loss_coordinator_bootstrap_test_fault().is_some() {
+        return Ok(CommandLaunchRequest {
+            program: OsString::from("/bin/sleep"),
+            arguments: vec![OsString::from("60")],
+            environment: BTreeMap::new(),
+            current_dir: None,
+            process_group: false,
+            stdin_piped: true,
+            stdout_piped: false,
+            stderr_piped: false,
+        });
+    }
+    let executable =
+        std::env::current_exe().map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+    let supervisor_json = serde_json::to_string(&supervisor)
+        .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+    let enabled_json = serde_json::to_string(enabled)
+        .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+    Ok(CommandLaunchRequest {
+        program: executable.into_os_string(),
+        arguments: vec![
+            OsString::from("__parent-loss-coordinator"),
+            OsString::from("--supervisor-json"),
+            OsString::from(supervisor_json),
+            OsString::from("--enabled-json"),
+            OsString::from(enabled_json),
+        ],
+        environment: BTreeMap::from([(
+            OsString::from("SOLSTONE_JOURNAL"),
+            journal.as_os_str().to_os_string(),
+        )]),
+        current_dir: None,
+        process_group: false,
+        stdin_piped: true,
+        stdout_piped: false,
+        stderr_piped: false,
+    })
+}
+
+fn retire_bootstrap_coordinator(
+    authority: &mut solstone_core_system::process::LaunchAuthority,
+    coordinator: LaunchedProcessIdentity,
+) -> Result<(), ParentLossCoordinatorBootstrapFailure> {
+    authority
+        .terminate_exact(Duration::from_secs(2))
+        .map_err(|_| ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified)?;
+    match SystemProcessInstanceSource.observe(&coordinator.instance) {
+        InstanceVerdict::NotSameOrExited => Ok(()),
+        InstanceVerdict::SameLive { .. } | InstanceVerdict::Unverifiable => {
+            Err(ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified)
         }
     }
 }
@@ -532,6 +817,7 @@ pub(crate) struct SupervisorOutcome {
 #[derive(Debug)]
 pub(crate) enum RuntimeBootError {
     Startup(String),
+    BootstrapRecoveryRequired(ParentLossCoordinatorBootstrapFailure),
     SyncScan(solstone_core_system::lifecycle::SyncScanFailure),
     AdmissionWaitTerminal,
     ParentLostBeforeReadiness(ParentLossReason),
@@ -541,6 +827,12 @@ impl std::fmt::Display for RuntimeBootError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Startup(error) => formatter.write_str(error),
+            Self::BootstrapRecoveryRequired(reason) => {
+                write!(
+                    formatter,
+                    "parent-loss coordinator bootstrap recovery required: {reason}"
+                )
+            }
             Self::SyncScan(error) => write!(formatter, "sync scan failed: {error}"),
             Self::AdmissionWaitTerminal => {
                 formatter.write_str("post-publication heartbeat conflict")
@@ -693,20 +985,48 @@ pub(crate) fn spawn_app_process(
             .map_err(|error| format!("failed to retain direct-door cleanup authority: {error}"))?;
         app.direct_door_generation = Some(generation);
     }
-    let process = ManagedProcess::spawn_exact(
-        app.argv.clone(),
-        SpawnOptions {
-            journal_root: journal.to_path_buf(),
-            reference: format!("supervisor-app-{}", app.service.as_str()),
-            day: None,
-            sink: Some(Arc::new(SupervisorProcessSink { server: sink })),
-            environment: BTreeMap::from([(
-                OsString::from("SOL_SUPERVISOR_SPAWNED"),
-                OsString::from("1"),
-            )]),
+    let ledger = ParentLossLedger::open(journal)
+        .map_err(|error| format!("could not open parent-loss lifecycle: {error}"))?;
+    let active = ledger
+        .active_generation()
+        .map_err(|error| format!("could not read parent-loss lifecycle: {error}"))?
+        .ok_or_else(|| "parent-loss coordinator has no active generation".to_owned())?;
+    let launch_id = format!(
+        "{}-{}-{}",
+        app.service.as_str(),
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |value| value.as_nanos())
+    );
+    let authority = launch_managed_hosted(
+        Disposition::InheritedParentScope,
+        ManagedLaunchRequest {
+            command: app.argv.clone(),
+            options: SpawnOptions {
+                journal_root: journal.to_path_buf(),
+                reference: format!("supervisor-app-{}", app.service.as_str()),
+                day: None,
+                sink: Some(Arc::new(SupervisorProcessSink { server: sink })),
+                environment: BTreeMap::from([(
+                    OsString::from("SOL_SUPERVISOR_SPAWNED"),
+                    OsString::from("1"),
+                )]),
+            },
+        },
+        HostedLaunchProvenance {
+            journal: journal.to_path_buf(),
+            generation: active.generation,
+            launch_id,
+            service: Some(app.service.hosted_service_kind()),
+            parent_launch_id: None,
+            acknowledgement_timeout: PARENT_LOSS_CHILD_ADMISSION_TIMEOUT,
         },
     )
     .map_err(|error| error.to_string())?;
+    let process = authority
+        .into_managed()
+        .map_err(|error| error.to_string())?;
     app.process = Some(process);
     app.started_at = Some(Instant::now());
     app.restart_at = None;
@@ -1017,6 +1337,45 @@ pub(crate) async fn boot_and_tick(
             }
         }
     };
+    let app_processes = app_processes(
+        &options,
+        &journal,
+        fixture_binary.as_deref(),
+        journal_binary.as_deref(),
+        convey_port,
+        fast_fixture_timing,
+    );
+    let supervisor_generation = match current_supervisor_instance() {
+        Ok(instance) => instance,
+        Err(error) => {
+            return Err(
+                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+            );
+        }
+    };
+    let parent_loss_coordinator = match bootstrap_parent_loss_coordinator(
+        &journal,
+        supervisor_generation,
+        app_processes
+            .iter()
+            .filter(|app| app.enabled)
+            .map(|app| app.service.hosted_service_kind())
+            .collect(),
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(error) => {
+            return Err(abort_published_setup_with_error(
+                &lifecycle,
+                &queue,
+                &mut connection,
+                &server,
+                RuntimeBootError::BootstrapRecoveryRequired(error),
+            )
+            .await);
+        }
+    };
     let direct_port = match selected_direct_door_port(&journal, options.direct_port) {
         Ok(port) => port,
         Err(error) => {
@@ -1034,39 +1393,6 @@ pub(crate) async fn boot_and_tick(
         return Err(
             abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
         );
-    }
-    let app_processes = app_processes(
-        &options,
-        &journal,
-        fixture_binary.as_deref(),
-        journal_binary.as_deref(),
-        convey_port,
-        fast_fixture_timing,
-    );
-    let handoff_generation = match current_supervisor_instance() {
-        Ok(instance) => instance,
-        Err(error) => {
-            return Err(
-                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
-            );
-        }
-    };
-    if let Err(error) = initialize_parent_loss_handoff(
-        &journal,
-        handoff_generation,
-        app_processes
-            .iter()
-            .filter(|app| app.enabled)
-            .map(|app| app.service.hosted_service_kind()),
-    ) {
-        return Err(abort_published_setup(
-            &lifecycle,
-            &queue,
-            &mut connection,
-            &server,
-            format!("could not initialize parent-loss handoff: {error}"),
-        )
-        .await);
     }
     let mut state = SupervisorState {
         journal,
@@ -1092,6 +1418,7 @@ pub(crate) async fn boot_and_tick(
         last_retry_expiry_drain: Instant::now(),
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
+        parent_loss_coordinator: Some(parent_loss_coordinator),
     };
     let startup_journal = state.journal.clone();
     let startup_server = Arc::clone(&state.server);
@@ -1200,7 +1527,23 @@ async fn abort_published_setup(
     server: &Arc<CallosumSocketServer>,
     error: impl std::fmt::Display,
 ) -> RuntimeBootError {
-    let startup = RuntimeBootError::Startup(error.to_string());
+    abort_published_setup_with_error(
+        lifecycle,
+        queue,
+        connection,
+        server,
+        RuntimeBootError::Startup(error.to_string()),
+    )
+    .await
+}
+
+async fn abort_published_setup_with_error(
+    lifecycle: &SupervisorLifecycle,
+    queue: &TaskQueue,
+    connection: &mut CallosumSocketConnection,
+    server: &Arc<CallosumSocketServer>,
+    startup: RuntimeBootError,
+) -> RuntimeBootError {
     let queue_report = queue.shutdown();
     connection.stop().await;
     server.stop().await;
@@ -1360,13 +1703,24 @@ async fn wait_for_callosum_connection(
 #[cfg(test)]
 mod tests {
     use super::{
-        AppService, JournalBinaryPreflightError, ManagedAppProcess, RuntimeBootError,
-        cleanup_result, resolve_journal_binary_from, selected_direct_door_port,
-        shutdown_regime_for, validate_journal_binary, withhold_app_direct_door,
+        AppService, JournalBinaryPreflightError, ManagedAppProcess,
+        ParentLossCoordinatorBootstrapFailure, ParentLossCoordinatorBootstrapTestFault,
+        ParentLossCoordinatorSession, RuntimeBootError, bootstrap_parent_loss_coordinator,
+        cleanup_result, parent_loss_coordinator_bootstrap_test_spawned,
+        resolve_journal_binary_from, selected_direct_door_port,
+        set_parent_loss_coordinator_bootstrap_test_fault, shutdown_regime_for,
+        validate_journal_binary, withhold_app_direct_door,
     };
     use std::path::{Path, PathBuf};
+    use std::time::Duration;
 
-    use solstone_core_system::lifecycle::{ParentLossReason, ShutdownRegime, SyncTickOutcome};
+    use solstone_core_system::lifecycle::{
+        CoordinatorBootstrap, DeclaredParent, ParentLossCoordinator, ParentLossLedger,
+        ParentLossReason, ParentLossTerminalDisposition, ShutdownRegime, SyncTickOutcome,
+    };
+    use solstone_core_system::process::{
+        InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
 
     use super::super::tick::{SupervisorSignal, SupervisorStopReason};
 
@@ -1376,6 +1730,119 @@ mod tests {
             resolve_journal_binary_from(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/solstone-core-journal")
         );
+    }
+
+    #[test]
+    fn supervisor_wait_observes_live_coordinator_retirement_acknowledgement() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        let supervisor = DeclaredParent::capture_current()
+            .expect("live direct parent")
+            .instance();
+        let capability = b"supervisor-retirement-ack-test-capability".to_vec();
+        let (coordinator, _) = ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+            journal: journal.path().to_path_buf(),
+            supervisor,
+            enabled: Vec::new(),
+            capability: capability.clone(),
+        })
+        .expect("coordinator bootstrap");
+        let session = ParentLossCoordinatorSession {
+            generation: coordinator.generation(),
+            supervisor,
+            capability,
+        };
+
+        session
+            .write_retire_expected(journal.path())
+            .expect("authenticated retirement request");
+        let coordinator = std::thread::spawn(move || coordinator.run());
+
+        assert!(
+            session
+                .wait_for_retire_expected_ack(journal.path(), Duration::from_secs(2))
+                .expect("read coordinator acknowledgement")
+        );
+        assert_eq!(
+            coordinator
+                .join()
+                .expect("coordinator thread")
+                .expect("coordinator retirement"),
+            ParentLossTerminalDisposition::RetiredExpected
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bootstrap_faults_refuse_before_service_side_effects_and_reap_spawned_coordinator() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            for (fault, expected) in [
+                (
+                    ParentLossCoordinatorBootstrapTestFault::Launch,
+                    ParentLossCoordinatorBootstrapFailure::Launch,
+                ),
+                (
+                    ParentLossCoordinatorBootstrapTestFault::IdentityEstablishment,
+                    ParentLossCoordinatorBootstrapFailure::IdentityEstablishment,
+                ),
+                (
+                    ParentLossCoordinatorBootstrapTestFault::InitialAdmissionHandshake,
+                    ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
+                ),
+            ] {
+                let journal = tempfile::TempDir::new().expect("temporary journal");
+                let supervisor = DeclaredParent::capture_current()
+                    .expect("live supervisor identity")
+                    .instance();
+                set_parent_loss_coordinator_bootstrap_test_fault(Some(fault));
+                let outcome = bootstrap_parent_loss_coordinator(
+                    journal.path(),
+                    supervisor,
+                    vec![solstone_core_system::lifecycle::HostedServiceKind::Sense],
+                )
+                .await;
+                let spawned = parent_loss_coordinator_bootstrap_test_spawned();
+                set_parent_loss_coordinator_bootstrap_test_fault(None);
+
+                let reason = match outcome {
+                    Err(reason) => reason,
+                    Ok(_) => panic!("injected bootstrap failure unexpectedly admitted"),
+                };
+                assert_eq!(reason, expected);
+                assert!(matches!(
+                    RuntimeBootError::BootstrapRecoveryRequired(reason),
+                    RuntimeBootError::BootstrapRecoveryRequired(recovery) if recovery == expected
+                ));
+                assert!(
+                    ParentLossLedger::open(journal.path())
+                        .expect("fresh parent-loss ledger")
+                        .active_generation()
+                        .expect("read active generation")
+                        .is_none(),
+                    "bootstrap failure must precede admission and all coordinator state"
+                );
+                assert!(!journal.path().join("health/direct-door.json").exists());
+                assert!(!journal.path().join("health/callosum.sock").exists());
+                assert!(!journal.path().join("health/supervisor.ready").exists());
+                assert!(
+                    !journal
+                        .path()
+                        .join("health/parent-loss/bootstrap-ready.json")
+                        .exists()
+                );
+                if let Some(identity) = spawned {
+                    assert!(matches!(
+                        SystemProcessInstanceSource.observe(&identity),
+                        InstanceVerdict::NotSameOrExited
+                    ));
+                } else {
+                    assert_eq!(fault, ParentLossCoordinatorBootstrapTestFault::Launch);
+                }
+            }
+        });
     }
 
     #[cfg(unix)]

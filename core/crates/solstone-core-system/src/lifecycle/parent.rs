@@ -3,11 +3,17 @@
 
 //! Birth-bound direct-parent admission for hosted supervisors.
 
+use std::thread;
+use std::time::Duration;
+
+#[cfg(target_os = "macos")]
+use super::darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
 use crate::process::{
     InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// A host's declaration of the process which must remain this process's direct
 /// parent. A PID alone is deliberately insufficient because it can be reused.
@@ -112,6 +118,61 @@ pub enum ParentWatchStatus {
 pub enum ParentLossReason {
     ExitedOrReused,
     Unverifiable,
+}
+
+/// Platform parent-exit registration shared by hosted services and the
+/// independent coordinator. Darwin uses kqueue; other targets preserve the
+/// existing poll fallback.
+pub enum PlatformParentExitWatcher {
+    #[cfg(target_os = "macos")]
+    Darwin(DarwinParentExitWatcher),
+    Poll,
+}
+
+#[derive(Debug, Error)]
+pub enum ParentExitWatchError {
+    #[cfg(target_os = "macos")]
+    #[error("Darwin kqueue parent watch failed: {0}")]
+    Darwin(#[from] DarwinParentWatchError),
+    #[cfg(not(target_os = "macos"))]
+    #[error("platform parent watcher is unavailable")]
+    Unavailable,
+}
+
+impl PlatformParentExitWatcher {
+    pub fn arm(parent: ProcessInstance) -> Result<Self, ParentExitWatchError> {
+        #[cfg(target_os = "macos")]
+        {
+            return DarwinParentExitWatcher::register(parent)
+                .map(Self::Darwin)
+                .map_err(ParentExitWatchError::from);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = parent;
+            Ok(Self::Poll)
+        }
+    }
+
+    pub fn wait_for_loss(self, parent: ParentWatch) -> ParentLossReason {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::Darwin(watcher) => match watcher.wait_for_exit() {
+                Ok(()) => match parent.check(&SystemProcessInstanceSource) {
+                    ParentWatchStatus::Lost(reason) => reason,
+                    ParentWatchStatus::Live => ParentLossReason::Unverifiable,
+                },
+                Err(_) => ParentLossReason::Unverifiable,
+            },
+            Self::Poll => loop {
+                thread::sleep(Duration::from_secs(1));
+                match parent.check(&SystemProcessInstanceSource) {
+                    ParentWatchStatus::Live => {}
+                    ParentWatchStatus::Lost(reason) => return reason,
+                }
+            },
+        }
+    }
 }
 
 #[cfg(test)]

@@ -14,6 +14,11 @@ use solstone_core_system::provider_runtime::{
 
 use super::runtime::SupervisorState;
 
+/// The coordinator normally polls every 25 ms. This cap makes graceful
+/// shutdown deterministic when healthy without retaining a supervisor that
+/// needs to exit because its coordinator is wedged or unavailable.
+const PARENT_LOSS_RETIRE_ACK_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub(super) trait BoundedShutdownDiagnosticSink: Send + Sync {
     fn emit(&self, service: &str, message: &str) -> io::Result<()>;
 }
@@ -68,6 +73,37 @@ impl ShutdownDriver for SupervisorShutdownDriver {
             return self.stop_children_until(cap);
         }
         let mut disposition = ShutdownDisposition::Orderly;
+        if let Some(coordinator) = self.state.parent_loss_coordinator.as_ref() {
+            match coordinator.write_retire_expected(&self.state.journal) {
+                Ok(()) => match coordinator.wait_for_retire_expected_ack(
+                    &self.state.journal,
+                    PARENT_LOSS_RETIRE_ACK_TIMEOUT,
+                ) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        // The coordinator remains the sole terminal authority.
+                        // Continue shutdown rather than converting a bounded
+                        // acknowledgement wait into an indefinite supervisor.
+                        eprintln!(
+                            "supervisor: parent-loss retirement acknowledgement timed out; continuing shutdown"
+                        );
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "supervisor: could not read parent-loss retirement acknowledgement: {error}; continuing shutdown"
+                        );
+                    }
+                },
+                Err(error) => {
+                    // A normal shutdown cannot authorize graceful retirement
+                    // without the coordinator's private-generation material.
+                    eprintln!(
+                        "supervisor: could not request expected parent-loss retirement: {error}"
+                    );
+                    disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+                }
+            }
+        }
         for app in &mut self.state.app_processes {
             app.enabled = false;
             app.restart_at = None;
@@ -389,6 +425,7 @@ mod tests {
                 tick_interval: Duration::from_secs(1),
                 status_interval: Duration::from_secs(5),
             },
+            parent_loss_coordinator: None,
         };
         Fixture {
             driver: SupervisorShutdownDriver::new(

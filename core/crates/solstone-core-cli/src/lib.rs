@@ -733,6 +733,7 @@ pub enum Command {
     Backup(Vec<OsString>),
     Maintenance(Vec<OsString>),
     TalentWorker(Vec<OsString>),
+    ParentLossCoordinator(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
@@ -1539,6 +1540,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, ..] if command == OsStr::new("__talent-worker") => {
             Ok(Command::TalentWorker(args.to_vec()))
+        }
+        [command, ..] if command == OsStr::new("__parent-loss-coordinator") => {
+            Ok(Command::ParentLossCoordinator(args.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))

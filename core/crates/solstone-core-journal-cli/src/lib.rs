@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::{OsStr, OsString};
+use std::path::Path;
 use std::process::ExitCode;
 
 use solstone_core_cli_boundary::JOURNAL_EXPORT_TOMBSTONE;
@@ -69,6 +70,14 @@ pub struct RealProcessSpawner;
 
 impl ProcessSpawner for RealProcessSpawner {
     fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
+        if std::env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some() {
+            let journal = std::env::var_os("SOLSTONE_JOURNAL")
+                .ok_or_else(|| std::io::Error::other("hosted child is missing SOLSTONE_JOURNAL"))?;
+            solstone_core_system::lifecycle::acknowledge_hosted_child_admission(Path::new(
+                &journal,
+            ))
+            .map_err(std::io::Error::other)?;
+        }
         runner::exec_process(program, args)
     }
 }
