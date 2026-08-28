@@ -1722,6 +1722,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::darwin_hosted_parent_lifetime"
+package = "solstone-core"
+target = "darwin_hosted_parent_lifetime"
+set = "component"
+areas = ["core"]
+platforms = ["macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::identity_cli"
 package = "solstone-core"
 target = "identity_cli"
@@ -3764,6 +3778,19 @@ runtime = "none"
 id = "solstone-core-system::system_contracts"
 package = "solstone-core-system"
 target = "system_contracts"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-system::architecture"
+package = "solstone-core-system"
+target = "architecture"
 set = "component"
 areas = ["system"]
 platforms = ["linux", "macos"]

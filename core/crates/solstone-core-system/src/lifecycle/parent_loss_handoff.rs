@@ -131,13 +131,13 @@ pub fn initialize_parent_loss_handoff(
     let path = record_path(journal);
     std::fs::create_dir_all(path.parent().expect("handoff record has health parent"))?;
     let _lock = handoff_lock(&path)?;
-    if let Some(existing) = read_record_unlocked(&path)? {
-        if existing.generation == generation {
-            if existing.enabled == enabled {
-                return Ok(());
-            }
-            return Err(ParentLossHandoffUnresolvedReason::ArtifactFailure.into());
+    if let Some(existing) = read_record_unlocked(&path)?
+        && existing.generation == generation
+    {
+        if existing.enabled == enabled {
+            return Ok(());
         }
+        return Err(ParentLossHandoffUnresolvedReason::ArtifactFailure.into());
     }
     write_record(
         &path,

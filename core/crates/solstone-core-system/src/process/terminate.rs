@@ -191,9 +191,7 @@ fn exact_descendant_tree(
     match source.inspect(root.pid) {
         InspectResult::Absent => return Err(DescendantObservationFailure::RootNotSameOrExited),
         InspectResult::Unverifiable => return Err(DescendantObservationFailure::RootUnverifiable),
-        InspectResult::Present {
-            instance, uid: _, ..
-        } if instance != root => {
+        InspectResult::Present { instance, .. } if instance != root => {
             return Err(DescendantObservationFailure::RootNotSameOrExited);
         }
         InspectResult::Present { uid, .. } if uid != owner_uid => {

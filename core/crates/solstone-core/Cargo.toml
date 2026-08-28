@@ -60,6 +60,12 @@ path = "tests/supervisor_tick.rs"
 name = "provider_install_component"
 path = "tests/provider_install_component.rs"
 
+# Real parent-death, kqueue, and process-tree signal state cannot safely share
+# an in-process harness with the ordinary integration tests.
+[[test]]
+name = "darwin_hosted_parent_lifetime"
+path = "tests/darwin_hosted_parent_lifetime.rs"
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
