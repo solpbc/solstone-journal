@@ -288,7 +288,9 @@ impl std::error::Error for DetailedAtomicError {
 #[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AtomicWriteOptions {
-    /// Final file mode, applied before the rename or hard-link publication.
+    /// Final file mode, applied before the rename or hard-link publication
+    /// on Unix. On Windows this is validated (must be `<= 0o777`) but
+    /// otherwise inert — there is no file mode to apply.
     pub mode: Option<u32>,
 }
 
@@ -296,7 +298,8 @@ pub struct AtomicWriteOptions {
 #[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy)]
 pub struct JsonWriteOptions {
-    /// Final file mode, applied before publication.
+    /// Final file mode, applied before publication on Unix. On Windows this
+    /// is validated (must be `<= 0o777`) but otherwise inert.
     pub mode: Option<u32>,
     /// Pretty-print indentation width. `None` emits compact JSON.
     pub indent: Option<usize>,
