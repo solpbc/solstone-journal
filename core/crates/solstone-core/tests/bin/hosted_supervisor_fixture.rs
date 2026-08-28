@@ -26,6 +26,7 @@ fn options() -> SupervisorOptions {
         no_spl: false,
         remote: None,
         direct_port: None,
+        hosted_parent: false,
     }
 }
 

@@ -32,13 +32,19 @@ fn assert_help(args: &[&str], expected: &str) {
 
 #[test]
 fn malformed_supervisor_invocation_exits_2_with_its_own_usage() {
-    let output = run_core(&["supervisor", "--nonsense"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stdout, b"");
-    assert_eq!(
-        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(SUPERVISOR_USAGE, "journal supervisor")
-    );
+    for args in [
+        ["supervisor", "--nonsense"].as_slice(),
+        ["supervisor", "--hosted-parent"].as_slice(),
+    ] {
+        let output = run_core(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+            expected_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
+            "{args:?}"
+        );
+    }
 }
 #[test]
 fn supervisor_help_is_byte_identical_for_both_spellings() {
@@ -52,13 +58,19 @@ fn supervisor_help_is_byte_identical_for_both_spellings() {
 
 #[test]
 fn malformed_start_invocation_exits_2_with_its_own_usage() {
-    let output = run_core(&["start", "--nonsense"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stdout, b"");
-    assert_eq!(
-        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(START_USAGE, "journal start")
-    );
+    for args in [
+        ["start", "--nonsense"].as_slice(),
+        ["start", "--app-supervised", "5015"].as_slice(),
+    ] {
+        let output = run_core(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+            expected_usage_error(START_USAGE, "journal start"),
+            "{args:?}"
+        );
+    }
 }
 
 #[test]

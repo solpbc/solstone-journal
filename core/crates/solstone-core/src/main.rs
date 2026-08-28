@@ -63,7 +63,8 @@ mod service_logs;
 mod settings;
 use solstone_core::supervisor;
 use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY,
+    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, DeclaredParent,
+    ParentAdmissionFailure,
 };
 mod thinking;
 use solstone_core_indexer_query::{
@@ -131,7 +132,25 @@ fn install_logger() {
         .try_init();
 }
 
+fn resolve_declared_parent(
+    hosted_parent: bool,
+) -> Result<Option<DeclaredParent>, ParentAdmissionFailure> {
+    if hosted_parent {
+        DeclaredParent::capture_current().map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
+    let parent = match resolve_declared_parent(options.hosted_parent) {
+        Ok(parent) => parent,
+        Err(error) => {
+            return render_supervisor_host_outcome(supervisor::SupervisorHostOutcome::Refused {
+                reason: supervisor::SupervisorBootRefusal::ParentLiveness(error),
+            });
+        }
+    };
     let journal = match resolve_journal_config_path(options.journal_override.clone()) {
         Ok(line) => line.path,
         Err(error) => {
@@ -150,7 +169,13 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    match runtime.block_on(supervisor::run_hosted(&journal, options, None)) {
+    render_supervisor_host_outcome(
+        runtime.block_on(supervisor::run_hosted(&journal, options, parent)),
+    )
+}
+
+fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) -> ExitCode {
+    match outcome {
         supervisor::SupervisorHostOutcome::Refused {
             reason: supervisor::SupervisorBootRefusal::SyncScan(copy),
         } => {
@@ -5470,6 +5495,29 @@ mod tests {
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
         assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    #[test]
+    fn resolve_declared_parent_skips_capture_when_hosting_is_disabled() {
+        assert_eq!(resolve_declared_parent(false), Ok(None));
+    }
+
+    #[test]
+    fn resolve_declared_parent_captures_the_live_direct_parent_when_hosting_is_enabled() {
+        assert!(matches!(resolve_declared_parent(true), Ok(Some(_))));
+    }
+
+    #[test]
+    fn parent_liveness_refusal_uses_the_existing_temporary_failure_renderer() {
+        let outcome = supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::ParentLiveness(
+                ParentAdmissionFailure::Unverifiable,
+            ),
+        };
+        assert_eq!(
+            render_supervisor_host_outcome(outcome),
+            ExitCode::from(EXIT_TEMPFAIL)
+        );
     }
 
     #[test]

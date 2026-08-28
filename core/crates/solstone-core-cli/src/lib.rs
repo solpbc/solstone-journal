@@ -364,8 +364,8 @@ pub const SUPERVISOR_USAGE: &str = concat!(
 pub const START_USAGE: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
-    "                     [-v] [-d]\n",
+    "                     [--hosted-parent] [--journal JOURNAL]\n",
+    "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
     "                     [port]\n",
 );
 
@@ -402,8 +402,8 @@ pub const SUPERVISOR_HELP: &str = concat!(
 pub const START_HELP: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
-    "                     [-v] [-d]\n",
+    "                     [--hosted-parent] [--journal JOURNAL]\n",
+    "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
     "                     [port]\n",
     "\n",
     "Monitor journal system health\n",
@@ -421,6 +421,7 @@ pub const START_HELP: &str = concat!(
     "  --no-schedule      Do not initialize or run the schedule engine\n",
     "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
     "                     implemented)\n",
+    "  --hosted-parent    Require the direct parent process to remain live\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
     "                     journal resolution.\n",
     "  --direct-port DIRECT_PORT\n",
@@ -1061,6 +1062,7 @@ pub struct SupervisorOptions {
     pub no_spl: bool,
     pub remote: Option<OsString>,
     pub direct_port: Option<u16>,
+    pub hosted_parent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2374,13 +2376,14 @@ fn grab_parse_error(message: &str) -> GrabCommand {
 }
 
 fn parse_supervisor_invocation(rest: &[OsString], usage: Command, help: Command) -> Command {
+    let is_start = matches!(usage, Command::StartUsage);
     if rest.iter().any(is_help) {
         return help;
     }
-    match parse_supervisor(rest) {
+    match parse_supervisor(rest, is_start) {
         Ok(options) => Command::Supervisor(options),
         Err(SupervisorParseError::Invalid(error)) => {
-            if matches!(usage, Command::StartUsage) {
+            if is_start {
                 Command::StartInvalid(error)
             } else {
                 Command::SupervisorInvalid(error)
@@ -2449,7 +2452,10 @@ fn parse_direct_port_value(value: &str) -> Result<u16, SupervisorParseError> {
     Ok(parsed as u16)
 }
 
-fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, SupervisorParseError> {
+fn parse_supervisor(
+    args: &[OsString],
+    is_start: bool,
+) -> Result<SupervisorOptions, SupervisorParseError> {
     let mut port = 0;
     let mut port_consumed = false;
     let mut journal_override = None;
@@ -2460,6 +2466,7 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, SupervisorPa
     let mut no_spl = false;
     let mut remote = None;
     let mut direct_port = None;
+    let mut hosted_parent = false;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_os_str() {
@@ -2496,6 +2503,13 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, SupervisorPa
                     return Err(SupervisorParseError::Usage);
                 }
                 no_spl = true;
+                index += 1;
+            }
+            value if is_start && value == OsStr::new("--hosted-parent") => {
+                if hosted_parent {
+                    return Err(SupervisorParseError::Usage);
+                }
+                hosted_parent = true;
                 index += 1;
             }
             value if value == OsStr::new("--direct-port") => {
@@ -2572,6 +2586,7 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, SupervisorPa
         no_spl,
         remote,
         direct_port,
+        hosted_parent,
     })
 }
 
@@ -7589,6 +7604,7 @@ mod tests {
                 no_spl: false,
                 remote: None,
                 direct_port: None,
+                hosted_parent: false,
             }))
         );
         assert_eq!(
@@ -7611,6 +7627,7 @@ mod tests {
                 no_spl: false,
                 remote: None,
                 direct_port: None,
+                hosted_parent: false,
             }))
         );
         assert_eq!(
@@ -8086,6 +8103,7 @@ mod tests {
                 no_spl: true,
                 remote: Some(OsString::from("https://example.test")),
                 direct_port: None,
+                hosted_parent: false,
             }))
         );
     }
@@ -8104,6 +8122,7 @@ mod tests {
                 no_spl: false,
                 remote: None,
                 direct_port: None,
+                hosted_parent: false,
             }))
         );
         assert_eq!(
@@ -8118,6 +8137,7 @@ mod tests {
                 no_spl: false,
                 remote: None,
                 direct_port: Some(9000),
+                hosted_parent: false,
             }))
         );
         assert_eq!(
@@ -8132,6 +8152,7 @@ mod tests {
                 no_spl: false,
                 remote: None,
                 direct_port: Some(9000),
+                hosted_parent: false,
             }))
         );
         for (values, needle) in [
@@ -8166,6 +8187,121 @@ mod tests {
                 }
                 other => panic!("{values:?}: {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn start_hosted_parent_preserves_every_other_supervisor_option() {
+        let no_flags = [
+            (1, "--no-daily"),
+            (2, "--no-schedule"),
+            (4, "--no-convey"),
+            (8, "--no-cortex"),
+            (16, "--no-spl"),
+        ];
+
+        for no_flag_mask in 0..32 {
+            for journal_override in [false, true] {
+                for remote in [false, true] {
+                    for direct_port in [false, true] {
+                        for convey_port in [None, Some("5015")] {
+                            let mut plain = vec![OsString::from("start")];
+                            for (mask, flag) in no_flags {
+                                if no_flag_mask & mask != 0 {
+                                    plain.push(OsString::from(flag));
+                                }
+                            }
+                            if journal_override {
+                                plain.extend([
+                                    OsString::from("--journal"),
+                                    OsString::from("/tmp/journal"),
+                                ]);
+                            }
+                            if remote {
+                                plain.extend([
+                                    OsString::from("--remote"),
+                                    OsString::from("https://example.test"),
+                                ]);
+                            }
+                            if direct_port {
+                                plain.extend([
+                                    OsString::from("--direct-port"),
+                                    OsString::from("9000"),
+                                ]);
+                            }
+                            if let Some(port) = convey_port {
+                                plain.push(OsString::from(port));
+                            }
+
+                            let plain_options = match evaluate_args(&plain) {
+                                Ok(Command::Supervisor(options)) => options,
+                                other => panic!("{plain:?}: {other:?}"),
+                            };
+                            let mut hosted = plain.clone();
+                            hosted.insert(1, OsString::from("--hosted-parent"));
+                            let hosted_options = match evaluate_args(&hosted) {
+                                Ok(Command::Supervisor(options)) => options,
+                                other => panic!("{hosted:?}: {other:?}"),
+                            };
+
+                            assert!(!plain_options.hosted_parent, "{plain:?}");
+                            assert_eq!(
+                                hosted_options,
+                                SupervisorOptions {
+                                    hosted_parent: true,
+                                    ..plain_options
+                                },
+                                "{plain:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn start_hosted_parent_accepts_a_following_convey_port() {
+        match evaluate_args(&args(&["start", "--hosted-parent", "5015"])) {
+            Ok(Command::Supervisor(options)) => {
+                assert_eq!(options.port, 5015);
+                assert!(options.hosted_parent);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn hosted_parent_is_start_only_and_app_supervised_remains_unknown() {
+        for values in [
+            &["supervisor", "--hosted-parent"][..],
+            &["supervisor", "--hosted-parent", "5015"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::SupervisorUsage),
+                "{values:?}"
+            );
+        }
+        for values in [
+            &["start", "--hosted-parent", "--hosted-parent"][..],
+            &["start", "--app-supervised", "5015"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::StartUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hosted_parent_is_documented_only_for_start() {
+        for text in [START_USAGE, START_HELP] {
+            assert!(text.contains("--hosted-parent"));
+        }
+        for text in [SUPERVISOR_USAGE, SUPERVISOR_HELP] {
+            assert!(!text.contains("--hosted-parent"));
         }
     }
 
