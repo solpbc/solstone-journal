@@ -324,6 +324,9 @@ fn eligible_stale_observations(
                     heartbeat.wall_time.parse::<f64>().ok()?
                 }
                 HeartbeatClassification::BoundedMalformed => {
+                    if cfg!(windows) {
+                        return None;
+                    }
                     sync::native_mtime_seconds(observation)
                 }
                 HeartbeatClassification::AdmissionWaitMarker(_)
@@ -1183,12 +1186,20 @@ mod stale_heartbeat_gc_tests {
             AdmissionWaitReason::FreshNonSelfHeartbeat,
         );
         let candidate_classifications = vec![
-            HeartbeatClassification::SchemaV1(legacy.clone()),
-            HeartbeatClassification::UnknownFuture(legacy),
-            HeartbeatClassification::IdentityMismatch(valid_v2.clone()),
-            HeartbeatClassification::BoundedMalformed,
+            (HeartbeatClassification::SchemaV1(legacy.clone()), 1),
+            (HeartbeatClassification::UnknownFuture(legacy), 1),
+            (
+                HeartbeatClassification::IdentityMismatch(valid_v2.clone()),
+                1,
+            ),
+            (
+                HeartbeatClassification::BoundedMalformed,
+                if cfg!(windows) { 0 } else { 1 },
+            ),
         ];
-        for (index, classification) in candidate_classifications.into_iter().enumerate() {
+        for (index, (classification, expected_candidates)) in
+            candidate_classifications.into_iter().enumerate()
+        {
             let result = complete(
                 classification,
                 observation(
@@ -1201,7 +1212,7 @@ mod stale_heartbeat_gc_tests {
             let mut gc = StaleHeartbeatGc::default();
             gc.observe_completed_tick(&result, "self.check", NOW, |_, _| unreachable!())
                 .expect("first candidate tick");
-            assert_eq!(gc.candidates.len(), 1);
+            assert_eq!(gc.candidates.len(), expected_candidates);
         }
 
         let marker_classifications = vec![
