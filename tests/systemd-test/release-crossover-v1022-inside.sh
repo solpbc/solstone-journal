@@ -54,7 +54,8 @@ inspect_and_install_candidate() {
         deb)
             package=$(find /artifacts -maxdepth 1 -name 'solstone-journal-*-linux-x86_64.deb' -print | sort -V | tail -1)
             [ -n "$package" ] || fail "candidate .deb missing"
-            dpkg-deb -c "$package" | grep -Eq '[./]usr/bin/journal$'
+            dpkg-deb --fsys-tarfile "$package" | tar -tf - | sort > /tmp/deb-data-members
+            grep -Eq '^(\./)?usr/bin/journal$' /tmp/deb-data-members
             rm -rf /tmp/deb-control
             mkdir /tmp/deb-control
             dpkg-deb -e "$package" /tmp/deb-control
@@ -65,7 +66,8 @@ inspect_and_install_candidate() {
             if grep -Ev '^(\./)?(control)?$' /tmp/deb-control-members; then
                 fail "deb control archive contains more than control metadata"
             fi
-            if dpkg-deb --fsys-tarfile "$package" | tar -tf - | grep -Eq '(^|/)(preinst|postinst|prerm|postrm|_gpgorigin|.*\.sig)$'; then
+            if grep -Eq '(^|/)(preinst|postinst|prerm|postrm|_gpgorigin|.*\.sig)$' \
+                /tmp/deb-data-members; then
                 fail "deb data archive contains a prohibited script/signature"
             fi
             printf 'candidate package: %s\n' "$(sha256sum "$package")"
@@ -163,10 +165,25 @@ case "$phase" in
         rm "$HOME/.local/share/solstone/setup-backups"
 
         log "legacy retirement failure: v1 authority must remain and the same command must be retryable"
-        sed -i '/^\[Unit\]$/a RefuseManualStop=yes' "$HOME/.config/systemd/user/solstone.service"
-        systemctl --user daemon-reload
+        restore_systemctl() {
+            if sudo test -e /usr/bin/systemctl.reference-real; then
+                sudo mv /usr/bin/systemctl.reference-real /usr/bin/systemctl
+            fi
+        }
+        sudo mv /usr/bin/systemctl /usr/bin/systemctl.reference-real
+        trap restore_systemctl EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        sudo cp /opt/systemctl-stop-fault.sh /usr/bin/systemctl
+        sudo chmod 755 /usr/bin/systemctl
         retirement_unit_hash=$(sha256sum "$HOME/.config/systemd/user/solstone.service")
-        if "${setup[@]}" > "$state_dir/retirement-failure.out" 2>&1; then
+        retirement_lock_identity=$(stat -c '%d:%i:%a' "$HOME/journal/health/supervisor.lock")
+        retirement_status=0
+        "${setup[@]}" > "$state_dir/retirement-failure.out" 2>&1 \
+            || retirement_status=$?
+        restore_systemctl
+        trap - EXIT INT TERM
+        if [ "$retirement_status" -eq 0 ]; then
             fail "legacy retirement fault unexpectedly succeeded"
         fi
         kill -0 "$v1_main"
@@ -174,9 +191,12 @@ case "$phase" in
         [ "$(listener_inode)" = "$v1_listener" ] || fail "v1 listener changed after retirement failure"
         [ "$(sha256sum "$HOME/.config/systemd/user/solstone.service")" = "$retirement_unit_hash" ] \
             || fail "v2 service unit published after failed legacy retirement"
+        [ "$(stat -c '%d:%i:%a' "$HOME/journal/health/supervisor.lock")" \
+            = "$retirement_lock_identity" ] \
+            || fail "legacy supervisor lock changed before retirement completed"
+        [ "$(stat -c %a "$HOME/journal/health/supervisor.lock")" = "644" ] \
+            || fail "failed retirement did not preserve the v1 lock mode"
         assert_payload
-        sed -i '/^RefuseManualStop=yes$/d' "$HOME/.config/systemd/user/solstone.service"
-        systemctl --user daemon-reload
 
         log "retrying the same absolute setup command without product cleanup"
         "${setup[@]}"
@@ -192,8 +212,11 @@ case "$phase" in
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/solstone"
         [ ! -e "$HOME/.local/bin/sol" ] || fail "v1 sol authority survived crossover"
         journal --version | grep -F '2.0.0'
-        grep -Eq '^ExecStart=/usr/bin/journal start 5015$' "$HOME/.config/systemd/user/solstone.service"
+        grep -Fq "ExecStart=$HOME/.local/bin/journal start 5015" \
+            "$HOME/.config/systemd/user/solstone.service"
         grep -Fq 'SOLSTONE_INSTALLATION_NAMESPACE=' "$HOME/.config/systemd/user/solstone.service"
+        [ "$(stat -c %a "$HOME/journal/health/supervisor.lock")" = "600" ] \
+            || fail "legacy supervisor lock mode did not migrate to 600"
         candidate_main=$(systemctl --user show solstone.service --property=MainPID --value)
         [ "$(readlink -f "/proc/$candidate_main/exe")" = "/usr/bin/solstone-core" ] \
             || fail "active v2 unit is not executing the candidate runtime"

@@ -179,9 +179,8 @@ fn read_setup_wrapper(
 ) -> Result<Option<PresentArtifact>, ()> {
     if allow_legacy_launchers {
         let classified = legacy_launcher::classify(home_dir, path, command).map_err(|_| ())?;
-        match classified {
-            Some(_) => return Ok(Some(PresentArtifact::LegacyLauncher)),
-            None => {}
+        if classified.is_some() {
+            return Ok(Some(PresentArtifact::LegacyLauncher));
         }
     }
     let wrapper = read_wrapper(path);

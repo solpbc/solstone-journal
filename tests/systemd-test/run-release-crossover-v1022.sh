@@ -126,7 +126,10 @@ start_user_manager
 
 docker cp "$script_dir/release-crossover-v1022-inside.sh" \
     "$CONTAINER:/opt/release-crossover-v1022-inside.sh"
+docker cp "$script_dir/systemctl-stop-fault.sh" \
+    "$CONTAINER:/opt/systemctl-stop-fault.sh"
 docker exec "$CONTAINER" chmod 755 /opt/release-crossover-v1022-inside.sh
+docker exec "$CONTAINER" chmod 755 /opt/systemctl-stop-fault.sh
 
 run_phase crossover
 

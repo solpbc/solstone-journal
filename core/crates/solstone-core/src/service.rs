@@ -5,9 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -213,6 +213,11 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     }
     let target = unit_path(platform, home);
     let initial = classify_unit(platform, &target)?;
+    let upgrade_legacy_lock = platform == Platform::Linux
+        && matches!(
+            &initial,
+            UnitTruth::Managed(snapshot) if !systemd_unit_has_installation_guard(&snapshot.bytes)
+        );
     if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
         return Err(truth_error("install", &target, &initial));
     }
@@ -263,6 +268,9 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
         remove_runtime_registration(platform, &target)?;
     }
     revalidate_initial(platform, &target, &initial)?;
+    if upgrade_legacy_lock {
+        upgrade_legacy_supervisor_lock(&journal)?;
+    }
     require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
     println!("wrote {}", path_display(&target));
 
@@ -780,6 +788,85 @@ fn service_guard_is_valid(environment: &BTreeMap<&str, &str>) -> bool {
         }
     }
     parse_service_guard_environment(&guard).is_ok()
+}
+
+fn systemd_unit_has_installation_guard(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    text.lines()
+        .filter_map(|line| line.strip_prefix("Environment="))
+        .map(|value| value.trim_matches('"'))
+        .any(|value| value.starts_with("SOLSTONE_INSTALLATION_NAMESPACE="))
+}
+
+/// V1 created `health/supervisor.lock` as an ordinary 0644 advisory-lock
+/// file. Once its exact managed unit is quiescent, narrow that known legacy
+/// entry to the native runtime's 0600 contract without following or replacing
+/// it. Other modes and namespace shapes remain fail-closed.
+fn upgrade_legacy_supervisor_lock(journal: &Path) -> Result<(), String> {
+    let path = journal.join("health/supervisor.lock");
+    let observed = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("inspect legacy supervisor lock: {error}")),
+    };
+    if !observed.file_type().is_file() {
+        return Err("legacy supervisor lock is not a regular file".to_owned());
+    }
+    let observed_mode = observed.permissions().mode() & 0o7777;
+    if observed_mode == 0o600 {
+        return Ok(());
+    }
+    if observed_mode != 0o644
+        || observed.uid() != nix::unistd::Uid::effective().as_raw()
+        || observed.nlink() != 1
+    {
+        return Err(format!(
+            "legacy supervisor lock cannot be upgraded safely (mode {observed_mode:o})"
+        ));
+    }
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(nix::libc::O_CLOEXEC | nix::libc::O_NOFOLLOW)
+        .open(&path)
+        .map_err(|error| format!("open legacy supervisor lock: {error}"))?;
+    let opened = file
+        .metadata()
+        .map_err(|error| format!("stat legacy supervisor lock: {error}"))?;
+    if !opened.file_type().is_file()
+        || opened.dev() != observed.dev()
+        || opened.ino() != observed.ino()
+        || opened.uid() != observed.uid()
+        || opened.nlink() != 1
+        || opened.permissions().mode() & 0o7777 != 0o644
+    {
+        return Err("legacy supervisor lock changed during upgrade".to_owned());
+    }
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|error| format!("restrict legacy supervisor lock: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("sync legacy supervisor lock: {error}"))?;
+    let upgraded = file
+        .metadata()
+        .map_err(|error| format!("verify legacy supervisor lock: {error}"))?;
+    if upgraded.permissions().mode() & 0o7777 != 0o600 {
+        return Err("legacy supervisor lock mode did not converge to 600".to_owned());
+    }
+    let named = fs::symlink_metadata(&path)
+        .map_err(|error| format!("revalidate legacy supervisor lock: {error}"))?;
+    if !named.file_type().is_file()
+        || named.dev() != upgraded.dev()
+        || named.ino() != upgraded.ino()
+        || named.uid() != upgraded.uid()
+        || named.nlink() != 1
+        || named.permissions().mode() & 0o7777 != 0o600
+    {
+        return Err("legacy supervisor lock changed after upgrade".to_owned());
+    }
+    Ok(())
 }
 
 fn systemd_unit_exec_matches(value: &str, launcher: &Path) -> bool {
@@ -1897,6 +1984,7 @@ mod tests {
         )
         .unwrap();
         assert!(systemd_managed(systemd.as_bytes(), launcher));
+        assert!(systemd_unit_has_installation_guard(systemd.as_bytes()));
         assert!(!systemd_managed(
             systemd
                 .replace(
@@ -1926,6 +2014,52 @@ mod tests {
         let mut partial_bytes = Vec::new();
         partial.to_writer_xml(&mut partial_bytes).unwrap();
         assert!(!launchd_managed(&partial_bytes, launcher, LABEL));
+    }
+
+    #[test]
+    fn legacy_supervisor_lock_upgrade_is_exact_and_fail_closed() {
+        let root = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal = root.path().join("journal");
+        let health = journal.join("health");
+        fs::create_dir_all(&health).unwrap();
+        let lock = health.join("supervisor.lock");
+
+        upgrade_legacy_supervisor_lock(&journal).unwrap();
+        fs::write(&lock, b"").unwrap();
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+        upgrade_legacy_supervisor_lock(&journal).unwrap();
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o640)).unwrap();
+        let error = upgrade_legacy_supervisor_lock(&journal).unwrap_err();
+        assert!(error.contains("cannot be upgraded safely"));
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o4644)).unwrap();
+        let error = upgrade_legacy_supervisor_lock(&journal).unwrap_err();
+        assert!(error.contains("cannot be upgraded safely"));
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o7777,
+            0o4644
+        );
+
+        let outside = root.path().join("outside.lock");
+        fs::write(&outside, b"").unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::remove_file(&lock).unwrap();
+        std::os::unix::fs::symlink(&outside, &lock).unwrap();
+        let error = upgrade_legacy_supervisor_lock(&journal).unwrap_err();
+        assert!(error.contains("not a regular file"));
+        assert_eq!(
+            fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
     }
 
     #[test]
@@ -1973,6 +2107,9 @@ mod tests {
             "WantedBy=default.target\n",
         );
         assert!(systemd_managed(legacy_systemd.as_bytes(), sol));
+        assert!(!systemd_unit_has_installation_guard(
+            legacy_systemd.as_bytes()
+        ));
 
         let environment = BTreeMap::from([
             ("HOME".to_owned(), "/home/owner".to_owned()),
