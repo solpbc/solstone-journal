@@ -1142,8 +1142,7 @@ h2.card-title {
   overflow-wrap: anywhere;
 }
 
-.vitals-chip svg,
-.trust-indicator svg {
+.vitals-chip svg {
   width: 1em;
   height: 1em;
   stroke: currentColor;
@@ -1151,21 +1150,6 @@ h2.card-title {
   stroke-width: 1.5;
   flex: 0 0 auto;
   vertical-align: -0.125em;
-}
-
-.trust-indicator {
-  font-size: 0.75em;
-  opacity: 1.0;
-  color: #374151;
-  padding: 0.4em 0.8em;
-  text-align: left;
-  background: #e5e7eb;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  align-self: flex-start;
-  margin-top: 0.5em;
 }
 
 #cortexGrid .activity-card-id,
@@ -1346,19 +1330,6 @@ h2.card-title {
   }
 }
 
-@media (max-width: 375px) {
-  .trust-indicator {
-    display: block;
-    width: 100%;
-    font-size: 0.7em;
-    text-align: center;
-  }
-
-  .trust-indicator svg {
-    display: inline-block;
-    margin-right: 0.4em;
-  }
-}
 </style>
 
 <div class="health-dashboard">
@@ -1441,7 +1412,6 @@ h2.card-title {
         <div class="vitals-value" id="schedulesValue" aria-hidden="true"></div>
       </div>
     </div>
-    <div class="trust-indicator" id="trustIndicator"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /> </svg></span> all data stored locally on your device</div>
   </div>
 
   <div class="dashboard-card activity-section hidden" id="errorSummary">

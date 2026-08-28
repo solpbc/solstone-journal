@@ -162,7 +162,6 @@
     logsAnnouncer: document.getElementById('logsAnnouncer'),
     logsCollapseIndicator: document.getElementById('logsCollapseIndicator'),
     connectionIndicator: document.getElementById('connectionIndicator'),
-    trustIndicator: document.getElementById('trustIndicator'),
     vitalsBar: document.querySelector('.vitals-bar'),
     vitalsCheckBtn: document.getElementById('vitalsCheckBtn'),
     logExportBtn: document.getElementById('logExportBtn'),
