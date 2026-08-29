@@ -292,6 +292,7 @@ impl SupervisorBootAdmission {
         })
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn activate(self) -> Result<PreReadySupervisorLifecycle, LifecycleError> {
         let heartbeat = sync::HeartbeatV2::new(
             self.writer_id.clone(),

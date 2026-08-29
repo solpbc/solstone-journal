@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use nix::errno::Errno;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
 use solstone_core_system::process::{
-    self, CommandLaunchRequest, Disposition, ExecutionState, InstanceCensus, LaunchAuthority,
-    LaunchError, ProcessInstanceSource, SystemProcessInstanceSource,
+    self, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
 };
 
 use crate::state::{CortexState, ResolvedTalent, Work};
@@ -419,16 +419,7 @@ pub fn stop_group_with_grace(pgid: i32, grace: Duration) {
 }
 
 fn group_has_live_processes(pgid: i32) -> bool {
-    match SystemProcessInstanceSource.census() {
-        InstanceCensus::Incomplete(_) => true,
-        InstanceCensus::Complete(rows) => rows.iter().any(|row| {
-            row.pgid == pgid
-                && matches!(
-                    row.execution,
-                    ExecutionState::Running | ExecutionState::Stopped
-                )
-        }),
-    }
+    !matches!(killpg(Pid::from_raw(pgid), None), Err(Errno::ESRCH))
 }
 
 pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String, String)>) {

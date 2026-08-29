@@ -9,6 +9,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,7 @@ use crate::process::ProcessInstance;
 use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
 
 const SCHEMA: u32 = 1;
+#[cfg(unix)]
 const FILE_MODE: u32 = 0o600;
 pub const HOSTED_GENERATION_ENV: &str = "SOL_PARENT_LOSS_GENERATION";
 pub const HOSTED_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_LAUNCH_ID";
@@ -335,7 +337,11 @@ fn write_immutable_json<T: Serialize + for<'de> Deserialize<'de> + PartialEq>(
     let mut bytes = bytes;
     bytes.push(b'\n');
     let mut options = OpenOptions::new();
-    options.write(true).create_new(true).mode(FILE_MODE);
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        options.mode(FILE_MODE);
+    }
     match options.open(path) {
         Ok(mut file) => {
             file.write_all(&bytes)?;

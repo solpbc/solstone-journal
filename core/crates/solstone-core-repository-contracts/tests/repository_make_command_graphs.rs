@@ -1436,6 +1436,7 @@ fn windows_transport_fixture(name: &str) -> TempDir {
         &scripts.join("win-host-ci.sh"),
         include_str!("../../../../scripts/win-host-ci.sh"),
     );
+    write_executable(&scripts.join("flock"), "#!/bin/sh\nexit 0\n");
     fs::create_dir(temp.path.join("core")).expect("create fixture core directory");
     fs::write(temp.path.join("core/Cargo.lock"), b"version = 4\n")
         .expect("write fixture Cargo.lock");
@@ -1449,6 +1450,7 @@ fn windows_transport_fixture(name: &str) -> TempDir {
             "scripts/check-win-sync-tree.sh",
             "scripts/sync-win-host.sh",
             "scripts/win-host-ci.sh",
+            "scripts/flock",
         ][..],
         &["commit", "-q", "-m", "fixture"][..],
     ] {
@@ -1555,6 +1557,7 @@ fn run_native_receipt_driver(
         .env("SOLSTONE_SSH_SCENARIO", scenario)
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
+        .env("PATH", fixture_path(&temp.path.join("scripts")))
         .output()
         .expect("run mandatory native receipt driver")
 }

@@ -603,7 +603,7 @@ mod tests {
     use std::ffi::OsString;
     use std::fs::{self, File, FileTimes};
     use std::io::{self, Read};
-    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::{MetadataExt, symlink};
     use std::time::{Duration, UNIX_EPOCH};
 

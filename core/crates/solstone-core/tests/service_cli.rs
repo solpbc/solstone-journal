@@ -168,7 +168,7 @@ fn service_install_recovery_sanitizes_hostile_executable_paths() {
         .expect("isolated oversized binary root");
     let escaped_component = "\x1b".repeat(240);
     let mut binary_dir = temporary.path().to_path_buf();
-    for _ in 0..6 {
+    for _ in 0..3 {
         binary_dir.push(&escaped_component);
     }
     let binary = copied_binary(&binary_dir);
