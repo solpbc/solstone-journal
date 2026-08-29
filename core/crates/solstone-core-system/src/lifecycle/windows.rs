@@ -12,7 +12,7 @@ use std::path::Path;
 
 use solstone_core_journal_io::FileObservation;
 
-use crate::process::require_managed_process_capability;
+use crate::process::ProcessInstance;
 
 use super::state::{HeartbeatWriteError, LifecycleArtifactWriteError, SelfHeartbeatRemoval};
 use super::sync::{self, SyncCheckResult, SyncScanFailure, SyncSnapshot};
@@ -24,6 +24,7 @@ use super::{RunId, WriterId};
 
 const SUPERVISOR_PID: &str = "supervisor.pid";
 const SUPERVISOR_START_TIME: &str = "supervisor.start_time";
+pub(crate) const SUPERVISOR_PROCESS_INSTANCE: &str = "supervisor.process_instance";
 const SUPERVISOR_READY: &str = "supervisor.ready";
 
 /// The two lifecycle directories reachable below an admitted journal root.
@@ -92,17 +93,28 @@ pub(crate) trait WindowsLifecycleStore {
 pub(crate) struct WindowsBootState {
     pub(crate) run_id: RunId,
     pub(crate) heartbeat_filename: String,
-    pub(crate) identity: super::state::SupervisorIdentityArtifacts,
+    pub(crate) identity: WindowsSupervisorIdentityArtifacts,
     pub(crate) retained_self_heartbeat: FileObservation,
     pub(crate) last_completed_sync_result: SyncCheckResult,
 }
 
-struct WindowsBootInputs {
+pub(crate) struct WindowsBootInputs {
     writer_id: WriterId,
     run_id: RunId,
     hostname: String,
     now: f64,
     start_time: f64,
+    process_instance: ProcessInstance,
+}
+
+/// Windows retains a third identity artifact containing the exact native
+/// process-birth token; Unix continues to use the two-artifact base unchanged.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) struct WindowsSupervisorIdentityArtifacts {
+    pub(crate) base: super::state::SupervisorIdentityArtifacts,
+    #[allow(dead_code)]
+    pub(crate) process_instance: ProcessInstance,
+    pub(crate) process_instance_observation: FileObservation,
 }
 
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
@@ -121,33 +133,8 @@ pub(crate) struct WindowsTickContext<'a> {
 pub(crate) fn boot_with_store(
     store: &mut impl WindowsLifecycleStore,
     journal: &Path,
-    writer_id: WriterId,
-    run_id: RunId,
-    hostname: String,
-    now: f64,
-    start_time: f64,
-) -> Result<WindowsBootState, LifecycleError> {
-    boot_with_store_with_capability(
-        store,
-        journal,
-        WindowsBootInputs {
-            writer_id,
-            run_id,
-            hostname,
-            now,
-            start_time,
-        },
-        require_managed_process_capability,
-    )
-}
-
-fn boot_with_store_with_capability(
-    store: &mut impl WindowsLifecycleStore,
-    journal: &Path,
     inputs: WindowsBootInputs,
-    capability: impl FnOnce() -> Result<(), &'static str>,
 ) -> Result<WindowsBootState, LifecycleError> {
-    capability().map_err(|needed| LifecycleError::CapabilityUnavailable { needed })?;
     let heartbeat_filename = sync::v2_heartbeat_filename(&inputs.writer_id, &inputs.run_id);
     let first = store
         .scan_sync(&heartbeat_filename, None, inputs.now)
@@ -180,7 +167,12 @@ fn boot_with_store_with_capability(
         return Err(error);
     }
 
-    let identity = match write_supervisor_identity(store, std::process::id(), inputs.start_time) {
+    let identity = match write_supervisor_identity(
+        store,
+        std::process::id(),
+        inputs.start_time,
+        inputs.process_instance,
+    ) {
         Ok(identity) => identity,
         Err(error) => {
             cleanup_after_failed_boot(store, &heartbeat_filename, &retained_self_heartbeat)?;
@@ -298,7 +290,7 @@ pub(crate) fn tick_with_store(
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn write_readiness_with_store(
     store: &mut impl WindowsLifecycleStore,
-    identity: &super::state::SupervisorIdentityArtifacts,
+    identity: &WindowsSupervisorIdentityArtifacts,
     ready_at: f64,
     mut extra: serde_json::Map<String, serde_json::Value>,
 ) -> Result<FileObservation, LifecycleError> {
@@ -306,9 +298,9 @@ pub(crate) fn write_readiness_with_store(
     extra.remove("ready_at");
     extra.remove("start_time");
     let marker = super::ReadinessMarker {
-        pid: identity.pid,
+        pid: identity.base.pid,
         ready_at,
-        start_time: identity.start_time,
+        start_time: identity.base.start_time,
         extra,
     };
     store
@@ -335,7 +327,7 @@ pub(crate) fn abort_before_ready_with_store(
     heartbeat_filename: &str,
     retained_self_heartbeat: Option<&FileObservation>,
     retained_readiness: Option<&FileObservation>,
-    identity: &super::state::SupervisorIdentityArtifacts,
+    identity: &WindowsSupervisorIdentityArtifacts,
 ) -> Result<(), LifecycleError> {
     let heartbeat = remove_self_heartbeat(store, heartbeat_filename, retained_self_heartbeat);
     let readiness = retained_readiness.map_or(Ok(()), |observation| {
@@ -353,7 +345,7 @@ pub(crate) fn shutdown_cleanup_with_store(
     heartbeat_filename: &str,
     retained_self_heartbeat: Option<&FileObservation>,
     retained_readiness: Option<&FileObservation>,
-    identity: &super::state::SupervisorIdentityArtifacts,
+    identity: &WindowsSupervisorIdentityArtifacts,
     sync_conflict: bool,
 ) -> (
     super::ArtifactClearOutcome,
@@ -428,7 +420,9 @@ fn write_supervisor_identity(
     store: &mut impl WindowsLifecycleStore,
     pid: u32,
     start_time: f64,
-) -> Result<super::state::SupervisorIdentityArtifacts, LifecycleError> {
+    process_instance: ProcessInstance,
+) -> Result<WindowsSupervisorIdentityArtifacts, LifecycleError> {
+    let process_instance_body = serde_json::to_vec(&process_instance)?;
     let pid_observation = store
         .write_lifecycle_artifact(SUPERVISOR_PID, pid.to_string().as_bytes())
         .map_err(LifecycleError::from)?;
@@ -437,42 +431,78 @@ fn write_supervisor_identity(
     {
         Ok(observation) => observation,
         Err(error) => {
-            remove_lifecycle_artifact(
+            let cleanup = remove_lifecycle_artifact(
                 store,
                 WindowsLifecycleDirectory::Health,
                 SUPERVISOR_PID,
                 &pid_observation,
-            )?;
-            return Err(error.into());
+            );
+            return match cleanup {
+                Err(cleanup_error) => Err(cleanup_error),
+                Ok(()) => Err(error.into()),
+            };
         }
     };
-    Ok(super::state::SupervisorIdentityArtifacts {
-        pid,
-        start_time,
-        pid_observation,
-        start_time_observation,
+    let process_instance_observation =
+        match store.write_lifecycle_artifact(SUPERVISOR_PROCESS_INSTANCE, &process_instance_body) {
+            Ok(observation) => observation,
+            Err(error) => {
+                let start_time_cleanup = remove_lifecycle_artifact(
+                    store,
+                    WindowsLifecycleDirectory::Health,
+                    SUPERVISOR_START_TIME,
+                    &start_time_observation,
+                );
+                let pid_cleanup = remove_lifecycle_artifact(
+                    store,
+                    WindowsLifecycleDirectory::Health,
+                    SUPERVISOR_PID,
+                    &pid_observation,
+                );
+                return Err(start_time_cleanup
+                    .err()
+                    .or_else(|| pid_cleanup.err())
+                    .unwrap_or_else(|| error.into()));
+            }
+        };
+    Ok(WindowsSupervisorIdentityArtifacts {
+        base: super::state::SupervisorIdentityArtifacts {
+            pid,
+            start_time,
+            pid_observation,
+            start_time_observation,
+        },
+        process_instance,
+        process_instance_observation,
     })
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
 fn clear_identity_with_store(
     store: &mut impl WindowsLifecycleStore,
-    identity: &super::state::SupervisorIdentityArtifacts,
+    identity: &WindowsSupervisorIdentityArtifacts,
 ) -> Result<(), LifecycleError> {
-    let pid = remove_lifecycle_artifact(
+    let process_instance = remove_lifecycle_artifact(
         store,
         WindowsLifecycleDirectory::Health,
-        SUPERVISOR_PID,
-        &identity.pid_observation,
+        SUPERVISOR_PROCESS_INSTANCE,
+        &identity.process_instance_observation,
     );
     let start_time = remove_lifecycle_artifact(
         store,
         WindowsLifecycleDirectory::Health,
         SUPERVISOR_START_TIME,
-        &identity.start_time_observation,
+        &identity.base.start_time_observation,
     );
-    pid?;
-    start_time
+    let pid = remove_lifecycle_artifact(
+        store,
+        WindowsLifecycleDirectory::Health,
+        SUPERVISOR_PID,
+        &identity.base.pid_observation,
+    );
+    process_instance?;
+    start_time?;
+    pid
 }
 
 fn remove_self_heartbeat(
@@ -536,8 +566,8 @@ mod platform {
     };
 
     use super::{
-        HeartbeatWriteError, LifecycleArtifactWriteError, WindowsLifecycleDirectory,
-        WindowsLifecycleStore, WindowsRemovalFailure, boot_with_store,
+        HeartbeatWriteError, LifecycleArtifactWriteError, WindowsBootInputs,
+        WindowsLifecycleDirectory, WindowsLifecycleStore, WindowsRemovalFailure, boot_with_store,
     };
     use crate::lifecycle::sweep;
     use crate::lifecycle::sync::{
@@ -727,20 +757,27 @@ mod platform {
             )
         })?;
 
+        let process_instance = crate::process::current_windows_process_instance()?;
+        let filetime = process_instance
+            .birth
+            .windows_filetime()
+            .expect("the Windows process sampler always returns a Windows FILETIME birth token");
         let run_id = super::RunId::generate()?;
         let now = wall_seconds();
-        // This is not a PID-reuse-proof process-birth timestamp.
-        let start_time = wall_seconds();
+        let start_time = crate::process::windows_filetime_epoch_seconds(filetime);
         let hostname = windows_hostname();
         let mut store = WindowsFilesystemStore { root: &root };
         let state = boot_with_store(
             &mut store,
             &journal,
-            writer_id.clone(),
-            run_id,
-            hostname,
-            now,
-            start_time,
+            WindowsBootInputs {
+                writer_id: writer_id.clone(),
+                run_id,
+                hostname,
+                now,
+                start_time,
+                process_instance,
+            },
         )?;
         let last_orphan_sweep = sweep::sweep_orphans(&journal, Duration::from_secs(1));
         Ok(SupervisorLifecycle {
@@ -1189,6 +1226,8 @@ mod tests {
         next_heartbeat_error: Option<HeartbeatWriteError>,
         next_lifecycle_artifact_error: Option<LifecycleArtifactWriteError>,
         next_removal_error: Option<WindowsRemovalFailure>,
+        lifecycle_artifact_errors: VecDeque<(&'static str, LifecycleArtifactWriteError)>,
+        removal_errors: VecDeque<WindowsRemovalFailure>,
         sequence: u64,
     }
 
@@ -1257,6 +1296,17 @@ mod tests {
             body: &[u8],
         ) -> Result<FileObservation, LifecycleArtifactWriteError> {
             self.writes.push(format!("health:{name}"));
+            if self
+                .lifecycle_artifact_errors
+                .front()
+                .is_some_and(|(expected_name, _)| *expected_name == name)
+            {
+                return Err(self
+                    .lifecycle_artifact_errors
+                    .pop_front()
+                    .expect("front error was present")
+                    .1);
+            }
             match self.next_lifecycle_artifact_error.take() {
                 Some(error) => Err(error),
                 None => Ok(self.next_observation(name, body)),
@@ -1271,6 +1321,9 @@ mod tests {
         ) -> Result<(), WindowsRemovalFailure> {
             self.removal_attempts.push((directory, name.to_os_string()));
             if let Some(error) = self.next_removal_error.take() {
+                return Err(error);
+            }
+            if let Some(error) = self.removal_errors.pop_front() {
                 return Err(error);
             }
             self.removed.push((directory, name.to_os_string()));
@@ -1344,38 +1397,18 @@ mod tests {
         boot_with_store(
             store,
             Path::new("/journal"),
-            writer_id(),
-            run_id(),
-            "host".to_owned(),
-            NOW,
-            NOW,
-        )
-    }
-
-    #[test]
-    fn capability_refusal_precedes_sync_scan_and_all_lifecycle_writes() {
-        let mut store = FakeWindowsLifecycleStore::with_scans([]);
-
-        assert!(matches!(
-            boot_with_store_with_capability(
-                &mut store,
-                Path::new("/journal"),
-                WindowsBootInputs {
-                    writer_id: writer_id(),
-                    run_id: run_id(),
-                    hostname: "host".to_owned(),
-                    now: NOW,
-                    start_time: NOW,
+            WindowsBootInputs {
+                writer_id: writer_id(),
+                run_id: run_id(),
+                hostname: "host".to_owned(),
+                now: NOW,
+                start_time: NOW,
+                process_instance: ProcessInstance {
+                    pid: std::process::id(),
+                    birth: crate::process::ProcessBirth::windows(116_444_736_000_000_000),
                 },
-                || Err("process-groups"),
-            ),
-            Err(LifecycleError::CapabilityUnavailable {
-                needed: "process-groups"
-            })
-        ));
-        assert_eq!(store.scans_completed, 0);
-        assert!(store.writes.is_empty());
-        assert!(store.removed.is_empty());
+            },
+        )
     }
 
     fn tick(
@@ -1461,10 +1494,11 @@ mod tests {
         boot(&mut store).expect("boot");
 
         assert_eq!(store.scans_completed, 2);
-        assert_eq!(store.writes.len(), 3);
+        assert_eq!(store.writes.len(), 4);
         assert!(store.writes[0].starts_with("sync:"));
         assert_eq!(store.writes[1], "health:supervisor.pid");
         assert_eq!(store.writes[2], "health:supervisor.start_time");
+        assert_eq!(store.writes[3], "health:supervisor.process_instance");
     }
 
     #[test]
@@ -1542,6 +1576,83 @@ mod tests {
                 WindowsLifecycleDirectory::Sync,
                 OsString::from(sync::v2_heartbeat_filename(&writer_id(), &run_id())),
             )]
+        );
+    }
+
+    #[test]
+    fn third_identity_write_rolls_back_all_prior_members_and_cleanup_failure_wins() {
+        let mut store = FakeWindowsLifecycleStore::with_scans([
+            ScanStep::Entries(Vec::new()),
+            ScanStep::Entries(Vec::new()),
+        ]);
+        store.lifecycle_artifact_errors.push_back((
+            SUPERVISOR_PROCESS_INSTANCE,
+            LifecycleArtifactWriteError::ObservationMissing {
+                name: SUPERVISOR_PROCESS_INSTANCE,
+            },
+        ));
+        store
+            .removal_errors
+            .push_back(WindowsRemovalFailure::new("start-time cleanup failed"));
+
+        assert!(matches!(
+            boot(&mut store),
+            Err(LifecycleError::LifecycleArtifactCleanup {
+                name: SUPERVISOR_START_TIME,
+                ..
+            })
+        ));
+        assert_eq!(
+            store.removal_attempts,
+            vec![
+                (
+                    WindowsLifecycleDirectory::Health,
+                    OsString::from(SUPERVISOR_START_TIME)
+                ),
+                (
+                    WindowsLifecycleDirectory::Health,
+                    OsString::from(SUPERVISOR_PID)
+                ),
+                (
+                    WindowsLifecycleDirectory::Sync,
+                    OsString::from(sync::v2_heartbeat_filename(&writer_id(), &run_id())),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn identity_clear_attempts_the_entire_three_artifact_family() {
+        let mut store = FakeWindowsLifecycleStore::with_scans([
+            ScanStep::Entries(Vec::new()),
+            ScanStep::Entries(Vec::new()),
+        ]);
+        let state = boot(&mut store).expect("boot");
+        store.next_removal_error = Some(WindowsRemovalFailure::new("process token cleanup failed"));
+
+        assert!(matches!(
+            clear_identity_with_store(&mut store, &state.identity),
+            Err(LifecycleError::LifecycleArtifactCleanup {
+                name: SUPERVISOR_PROCESS_INSTANCE,
+                ..
+            })
+        ));
+        assert_eq!(
+            &store.removal_attempts[0..3],
+            [
+                (
+                    WindowsLifecycleDirectory::Health,
+                    OsString::from(SUPERVISOR_PROCESS_INSTANCE)
+                ),
+                (
+                    WindowsLifecycleDirectory::Health,
+                    OsString::from(SUPERVISOR_START_TIME)
+                ),
+                (
+                    WindowsLifecycleDirectory::Health,
+                    OsString::from(SUPERVISOR_PID)
+                ),
+            ]
         );
     }
 

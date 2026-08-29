@@ -14,10 +14,12 @@ use std::path::{Path, PathBuf};
 use filetime::{FileTime, set_file_mtime};
 use solstone_core_system::lifecycle::{
     AdmissionWaitClock, HeartbeatClassification, HeartbeatV2, RunId, StaleHeartbeatCollectionError,
-    SupervisorLifecycle, SyncIncompleteSnapshotReason, SyncScanFailure, SyncTickOutcome, WriterId,
-    run_with_windows_lifecycle_checkpoint, run_with_windows_lifecycle_deletion_attempt_witness,
-    v2_heartbeat_filename,
+    SupervisorLifecycle, SupervisorLiveness, SyncIncompleteSnapshotReason, SyncScanFailure,
+    SyncTickOutcome, WriterId, run_with_windows_lifecycle_checkpoint,
+    run_with_windows_lifecycle_deletion_attempt_witness,
+    supervisor_liveness_with_process_instance_for_test, v2_heartbeat_filename,
 };
+use solstone_core_system::process::{ExecutionState, InstanceVerdict};
 use windows_sys::Win32::Foundation::{ERROR_SHARING_VIOLATION, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
@@ -511,12 +513,54 @@ fn phase_e_held_handle_reports_and_recovers(root: &Path) {
     assert!(!peer.exists(), "second post-release tick deletes the peer");
 }
 
+fn phase_f_process_instance_mutation_control(root: &Path) {
+    let temporary = phase_root(root, "process-instance-phase-f-");
+    let health = temporary.path().join("health");
+    fs::create_dir_all(&health).expect("create health directory");
+    fs::write(health.join("supervisor.pid"), "7").expect("write PID");
+    fs::write(health.join("supervisor.start_time"), "1.5").expect("write start time");
+    let write_instance = |body: &str| {
+        fs::write(health.join("supervisor.process_instance"), body).expect("write process token")
+    };
+
+    write_instance(r#"{"pid":7,"birth":{"kind":"windows","filetime":116444736000000000}}"#);
+    assert_eq!(
+        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| {
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            }
+        }),
+        SupervisorLiveness::Up
+    );
+
+    write_instance(r#"{"pid":7,"birth":{"kind":"windows","filetime":116444736000000001}}"#);
+    assert_eq!(
+        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| {
+            InstanceVerdict::NotSameOrExited
+        }),
+        SupervisorLiveness::Down
+    );
+
+    write_instance("not JSON");
+    assert_eq!(
+        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| unreachable!()),
+        SupervisorLiveness::Unverifiable
+    );
+
+    write_instance(r#"{"pid":7,"birth":{"kind":"future-kind","filetime":1}}"#);
+    assert_eq!(
+        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| unreachable!()),
+        SupervisorLiveness::Unverifiable
+    );
+}
+
 fn stale_heartbeat_cleanup_receipt(root: &Path) {
     phase_a_two_tick_deletion(root);
     phase_b_bounded_malformed_is_never_deleted(root);
     phase_c_incomplete_scan_resets_candidates(root);
     phase_d_replacement_identity_requires_two_fresh_ticks(root);
     phase_e_held_handle_reports_and_recovers(root);
+    phase_f_process_instance_mutation_control(root);
 }
 
 #[test]

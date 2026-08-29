@@ -43,7 +43,14 @@ enum ProcessBirthInner {
         clk_tck: u64,
     },
     #[allow(dead_code)]
-    Macos { epoch_micros: i64 },
+    Macos {
+        epoch_micros: i64,
+    },
+    #[allow(dead_code)]
+    Windows {
+        filetime: u64,
+    },
+    Unknown,
 }
 
 impl PartialEq for ProcessBirth {
@@ -67,6 +74,10 @@ impl PartialEq for ProcessBirth {
                     epoch_micros: right,
                 },
             ) => left == right,
+            (
+                ProcessBirthInner::Windows { filetime: left },
+                ProcessBirthInner::Windows { filetime: right },
+            ) => left == right,
             _ => false,
         }
     }
@@ -85,6 +96,11 @@ enum ProcessBirthWire {
     Macos {
         epoch_micros: i64,
     },
+    Windows {
+        filetime: u64,
+    },
+    #[serde(other)]
+    Unknown,
 }
 
 impl Serialize for ProcessBirth {
@@ -103,6 +119,8 @@ impl Serialize for ProcessBirth {
                 clk_tck,
             },
             ProcessBirthInner::Macos { epoch_micros } => ProcessBirthWire::Macos { epoch_micros },
+            ProcessBirthInner::Windows { filetime } => ProcessBirthWire::Windows { filetime },
+            ProcessBirthInner::Unknown => ProcessBirthWire::Unknown,
         };
         wire.serialize(serializer)
     }
@@ -124,20 +142,26 @@ impl<'de> Deserialize<'de> for ProcessBirth {
                 clk_tck,
             },
             ProcessBirthWire::Macos { epoch_micros } => ProcessBirthInner::Macos { epoch_micros },
+            ProcessBirthWire::Windows { filetime } => ProcessBirthInner::Windows { filetime },
+            ProcessBirthWire::Unknown => ProcessBirthInner::Unknown,
         };
         Ok(Self { inner })
     }
 }
 
 impl ProcessBirth {
-    pub fn epoch_seconds(&self) -> f64 {
+    pub fn epoch_seconds(&self) -> Option<f64> {
         match self.inner {
             ProcessBirthInner::Linux {
                 start_ticks,
                 btime,
                 clk_tck,
-            } => btime as f64 + start_ticks as f64 / clk_tck as f64,
-            ProcessBirthInner::Macos { epoch_micros } => epoch_micros as f64 / 1_000_000.0,
+            } => Some(btime as f64 + start_ticks as f64 / clk_tck as f64),
+            ProcessBirthInner::Macos { epoch_micros } => Some(epoch_micros as f64 / 1_000_000.0),
+            ProcessBirthInner::Windows { filetime } => {
+                Some(windows_filetime_epoch_seconds(filetime))
+            }
+            ProcessBirthInner::Unknown => None,
         }
     }
 
@@ -157,6 +181,96 @@ impl ProcessBirth {
         Self {
             inner: ProcessBirthInner::Macos { epoch_micros },
         }
+    }
+
+    pub fn windows(filetime: u64) -> Self {
+        Self {
+            inner: ProcessBirthInner::Windows { filetime },
+        }
+    }
+
+    pub fn windows_filetime(&self) -> Option<u64> {
+        match self.inner {
+            ProcessBirthInner::Windows { filetime } => Some(filetime),
+            _ => None,
+        }
+    }
+
+    pub fn is_verifiable(&self) -> bool {
+        !matches!(self.inner, ProcessBirthInner::Unknown)
+    }
+}
+
+/// Convert the Windows FILETIME epoch (1601-01-01) to Unix epoch seconds.
+pub(crate) fn windows_filetime_epoch_seconds(filetime: u64) -> f64 {
+    const WINDOWS_TO_UNIX_EPOCH_100NS: u64 = 116_444_736_000_000_000;
+    (filetime as i128 - WINDOWS_TO_UNIX_EPOCH_100NS as i128) as f64 / 10_000_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UNKNOWN_BIRTH_JSON: &str = r#"{"kind":"totally-unrecognized-future-kind","token":1}"#;
+
+    struct FixedAbsentSource;
+
+    impl ProcessInstanceSource for FixedAbsentSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            InspectResult::Absent
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    #[test]
+    fn windows_filetime_epoch_controls() {
+        const WINDOWS_TO_UNIX_EPOCH_100NS: u64 = 116_444_736_000_000_000;
+        assert_eq!(
+            windows_filetime_epoch_seconds(WINDOWS_TO_UNIX_EPOCH_100NS),
+            0.0
+        );
+        assert_eq!(
+            windows_filetime_epoch_seconds(WINDOWS_TO_UNIX_EPOCH_100NS + 15_000_000),
+            1.5
+        );
+    }
+
+    #[test]
+    fn windows_process_birth_wire_round_trip_preserves_filetime_above_f64_precision() {
+        const FILETIME: u64 = 9_007_199_254_740_993;
+        let birth = ProcessBirth::windows(FILETIME);
+        let decoded: ProcessBirth =
+            serde_json::from_slice(&serde_json::to_vec(&birth).expect("serialize Windows birth"))
+                .expect("deserialize Windows birth");
+
+        assert_eq!(decoded.windows_filetime(), Some(FILETIME));
+        assert_eq!(decoded, ProcessBirth::windows(FILETIME));
+    }
+
+    #[test]
+    fn foreign_process_birth_kind_deserializes_to_unknown_and_never_compares_equal() {
+        let left: ProcessBirth = serde_json::from_str(UNKNOWN_BIRTH_JSON)
+            .expect("unknown process-birth kind remains decodable");
+        let right: ProcessBirth = serde_json::from_str(UNKNOWN_BIRTH_JSON)
+            .expect("unknown process-birth kind remains decodable");
+
+        assert!(!left.is_verifiable());
+        assert_ne!(left, right);
+    }
+
+    #[test]
+    fn default_observe_returns_unverifiable_for_unknown_expected_birth() {
+        let birth: ProcessBirth = serde_json::from_str(UNKNOWN_BIRTH_JSON)
+            .expect("unknown process-birth kind remains decodable");
+        let expected = ProcessInstance { pid: 42, birth };
+
+        assert_eq!(
+            FixedAbsentSource.observe(&expected),
+            InstanceVerdict::Unverifiable
+        );
     }
 }
 
@@ -224,9 +338,15 @@ pub trait ProcessInstanceSource: Send + Sync {
     }
 
     fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
+        if !expected.birth.is_verifiable() {
+            return InstanceVerdict::Unverifiable;
+        }
         match self.inspect(expected.pid) {
             InspectResult::Unverifiable => InstanceVerdict::Unverifiable,
             InspectResult::Absent => InstanceVerdict::NotSameOrExited,
+            InspectResult::Present { instance, .. } if !instance.birth.is_verifiable() => {
+                InstanceVerdict::Unverifiable
+            }
             InspectResult::Present {
                 instance,
                 execution,

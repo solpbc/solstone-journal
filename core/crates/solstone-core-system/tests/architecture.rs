@@ -34,7 +34,8 @@ const MACOS_PROC: &str = include_str!("../src/process/unix/macos_proc.rs");
 const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
 const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
-const PROCESS_WINDOWS: &str = include_str!("../src/process/windows.rs");
+const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
+const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
@@ -197,6 +198,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("observation", OBSERVATION),
         ("restart", RESTART),
         ("platform", PROCESS_UNIX),
+        ("windows_identity_tests", PROCESS_WINDOWS_IDENTITY),
     ];
     let unix_process_modules = [
         ("authority", AUTHORITY),
@@ -433,7 +435,11 @@ fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_support() {
 
 #[test]
 fn ac28_process_common_and_non_unix_facade_are_unix_free() {
-    for (name, source) in [("common", PROCESS_COMMON), ("windows", PROCESS_WINDOWS)] {
+    for (name, source) in [
+        ("common", PROCESS_COMMON),
+        ("windows facade", PROCESS_WINDOWS),
+        ("windows identity", PROCESS_WINDOWS_IDENTITY),
+    ] {
         assert!(!source.contains("nix::"), "{name} must not name nix");
         assert!(
             !source.contains("std::os::unix"),
@@ -441,9 +447,11 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         );
     }
     assert!(
-        !PROCESS_WINDOWS.contains("Command::spawn"),
+        !PROCESS_WINDOWS.contains(".spawn("),
         "the non-Unix process facade must not spawn owned children"
     );
+    assert!(PROCESS_WINDOWS.contains("pub enum ManagedProcess {}"));
+    assert!(PROCESS_WINDOWS.contains("pub enum LaunchAuthority {}"));
 }
 
 #[test]
