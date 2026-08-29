@@ -217,7 +217,7 @@ fn assert_outer_controls_intact(controls: &[&ControlWitness]) {
     for control in controls {
         control.assert_intact();
     }
-    let caller = u32::try_from(std::process::id()).expect("caller PID");
+    let caller = std::process::id();
     assert_same_live(
         current_instance(caller, "outer test caller"),
         "outer test caller",
@@ -445,21 +445,17 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
                 terminal_deadline,
                 || {
                     assert_outer_controls_intact(&controls);
-                    if let Ok(outcome) = read_parent_loss_outcome(journal.path()) {
-                        match outcome {
+                    match read_parent_loss_outcome(journal.path()) {
+                        Ok(
                             outcome @ (ParentLossReaderOutcome::Completed { .. }
                             | ParentLossReaderOutcome::Unresolved { .. }
                             | ParentLossReaderOutcome::RetiredExpected { .. }
-                            | ParentLossReaderOutcome::CancelledBeforeAdmission {
-                                ..
-                            }) => {
-                                terminal = Some(outcome);
-                                true
-                            }
-                            _ => false,
+                            | ParentLossReaderOutcome::CancelledBeforeAdmission { .. }),
+                        ) => {
+                            terminal = Some(outcome);
+                            true
                         }
-                    } else {
-                        false
+                        _ => false,
                     }
                 },
                 "completed coordinator terminal record",
