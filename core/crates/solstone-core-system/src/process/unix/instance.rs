@@ -9,9 +9,11 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::super::{
-    CensusRow, ExecutionState, InspectResult, InstanceCensus, InstanceVerdict, ProcessBirth,
-    ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
+    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
 };
+#[cfg(any(target_os = "linux", test))]
+use super::super::{ExecutionState, InstanceVerdict, ProcessBirth, ProcessInstance};
+
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
 
@@ -399,6 +401,9 @@ fn census_macos_tree_with(
                 ppid: Some(ppid),
                 pgid: Some(pgid),
             } => (instance, uid, execution, ppid, pgid),
+            // A listed non-root child can exit before its identity sample; it
+            // is already gone and cannot escape exact retirement.
+            InspectResult::Absent if enumerated_parent.is_some() => continue,
             InspectResult::Absent | InspectResult::Present { .. } | InspectResult::Unverifiable => {
                 return InstanceCensus::Incomplete(rows);
             }
@@ -419,6 +424,7 @@ fn census_macos_tree_with(
                 ..
             } if current.birth == instance.birth
                 && enumerated_parent.is_none_or(|parent| current_ppid == parent) => {}
+            InspectResult::Absent if enumerated_parent.is_some() => continue,
             InspectResult::Absent | InspectResult::Present { .. } | InspectResult::Unverifiable => {
                 return InstanceCensus::Incomplete(rows);
             }
@@ -673,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn macos_targeted_census_rejects_parent_mismatch_and_birth_reuse() {
+    fn macos_targeted_census_handles_vanished_children_and_rejects_mismatch_or_reuse() {
         use std::collections::{BTreeMap, VecDeque};
 
         fn present(pid: u32, birth: u64, ppid: u32) -> InspectResult {
@@ -705,6 +711,30 @@ mod tests {
             |pid, _| Some(if pid == 10 { vec![11] } else { Vec::new() }),
         );
         assert!(matches!(mismatch, InstanceCensus::Incomplete(_)));
+
+        let mut vanished = BTreeMap::from([
+            (10, VecDeque::from([present(10, 1, 1), present(10, 1, 1)])),
+            (11, VecDeque::from([InspectResult::Absent])),
+            (
+                12,
+                VecDeque::from([present(12, 3, 10), InspectResult::Absent]),
+            ),
+        ]);
+        let vanished = census_macos_tree_with(
+            10,
+            None,
+            |pid| {
+                vanished
+                    .get_mut(&pid)
+                    .and_then(VecDeque::pop_front)
+                    .unwrap_or(InspectResult::Unverifiable)
+            },
+            |pid, _| Some(if pid == 10 { vec![11, 12] } else { Vec::new() }),
+        );
+        assert!(matches!(
+            vanished,
+            InstanceCensus::Complete(rows) if rows.len() == 1 && rows[0].instance.pid == 10
+        ));
 
         let mut reused = VecDeque::from([present(10, 1, 1), present(10, 2, 1)]);
         let reused = census_macos_tree_with(

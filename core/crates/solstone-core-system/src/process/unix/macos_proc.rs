@@ -124,11 +124,11 @@ pub(crate) fn read_bsd_info(pid: u32) -> Result<MacosBsdInfo, MacosProcError> {
         return Err(classify_proc_pidinfo_failure(wrote, errno));
     }
     Ok(MacosBsdInfo {
-        pid: u32::try_from(raw.pbi_pid).map_err(|_| MacosProcError::Unavailable)?,
-        ppid: u32::try_from(raw.pbi_ppid).map_err(|_| MacosProcError::Unavailable)?,
+        pid: raw.pbi_pid,
+        ppid: raw.pbi_ppid,
         pgid: i32::try_from(raw.pbi_pgid).map_err(|_| MacosProcError::Unavailable)?,
         uid: raw.pbi_uid,
-        status: u32::try_from(raw.pbi_status).map_err(|_| MacosProcError::Unavailable)?,
+        status: raw.pbi_status,
         start_tvsec: raw.pbi_start_tvsec,
         start_tvusec: raw.pbi_start_tvusec,
     })

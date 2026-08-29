@@ -905,7 +905,7 @@ mod tests {
             sealed_ledger_digest: digest.clone(),
         });
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )
@@ -997,7 +997,7 @@ mod tests {
             sealed_ledger_digest: digest.clone(),
         });
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )
@@ -1077,7 +1077,7 @@ mod tests {
             .expect("record exists");
         record.generation += 1;
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )
@@ -1136,7 +1136,7 @@ mod tests {
             sealed_ledger_digest: record.sealed_ledger_digest.clone().expect("digest"),
         });
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &matching_record,
             json_options(),
         )
@@ -1311,7 +1311,7 @@ mod tests {
             sealed_ledger_digest: digest.clone(),
         });
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )
@@ -1399,7 +1399,7 @@ mod tests {
             .expect("record exists");
         record.generation += 1;
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )
@@ -1580,7 +1580,7 @@ mod tests {
             .expect("record exists");
         record.generation += 1;
         write_json(
-            &ledger.record_path(active.generation),
+            ledger.record_path(active.generation),
             &record,
             json_options(),
         )

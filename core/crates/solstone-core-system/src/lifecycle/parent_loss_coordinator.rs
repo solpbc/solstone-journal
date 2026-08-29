@@ -38,6 +38,7 @@ use crate::process::{
 /// this duration after a confirmed supervisor loss.
 pub const PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
+const PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET: Duration = Duration::from_secs(1);
 const ADMISSION_SEAL_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const BOOTSTRAP_SCHEMA: u32 = 1;
 const FILE_MODE: u32 = 0o600;
@@ -252,6 +253,9 @@ impl ParentLossCoordinator {
     fn handle_confirmed_parent_loss(
         &mut self,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        let deadline = Instant::now()
+            + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE
+                .saturating_sub(PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET);
         let (sealed, digest) = self.seal_admissions()?;
         if sealed.is_empty() {
             let disposition = ParentLossTerminalDisposition::CancelledBeforeAdmission;
@@ -259,7 +263,7 @@ impl ParentLossCoordinator {
             self.release_clean_lease();
             return Ok(disposition);
         }
-        self.wait_for_retirement(&sealed, digest, false)
+        self.wait_for_retirement_until(&sealed, digest, false, deadline)
     }
 
     fn wait_for_retirement(
@@ -283,11 +287,26 @@ impl ParentLossCoordinator {
         expected_retirement: bool,
         timeout: Duration,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        self.wait_for_retirement_until(
+            sealed,
+            digest,
+            expected_retirement,
+            Instant::now() + timeout,
+        )
+    }
+
+    fn wait_for_retirement_until(
+        &mut self,
+        sealed: &[SealedAdmission],
+        digest: String,
+        expected_retirement: bool,
+        deadline: Instant,
+    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
         self.wait_for_retirement_with_deadline_and_source(
             sealed,
             digest,
             expected_retirement,
-            timeout,
+            deadline,
             &SystemProcessInstanceSource,
         )
     }
@@ -297,10 +316,9 @@ impl ParentLossCoordinator {
         sealed: &[SealedAdmission],
         digest: String,
         expected_retirement: bool,
-        timeout: Duration,
+        deadline: Instant,
         source: &dyn ProcessInstanceSource,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
-        let deadline = Instant::now() + timeout;
         loop {
             match self.validate_witnesses_with_source(sealed, &digest, expected_retirement, source)
             {
@@ -509,6 +527,16 @@ impl ParentLossCoordinator {
                 return Ok(RetirementValidation::Unresolved(
                     ParentLossUnresolvedReason::OperationalArtifactsNotCleaned,
                 ));
+            }
+            // A complete descendant census is a precondition for an exact
+            // closure proof. The service preserves that ambiguity in its
+            // immutable witness; the coordinator keeps the generation
+            // nonterminal until its one bounded retirement deadline instead
+            // of converting an incomplete observation into a false closure.
+            if witness.descendant_failure
+                == Some(crate::process::DescendantObservationFailure::CensusIncomplete)
+            {
+                return Ok(RetirementValidation::Pending);
             }
             if let Some(failure) = witness.descendant_failure {
                 return Ok(RetirementValidation::Unresolved(
@@ -1149,7 +1177,7 @@ mod tests {
                     &sealed,
                     digest,
                     false,
-                    Duration::from_millis(1),
+                    Instant::now() + Duration::from_millis(1),
                     &source,
                 )
                 .expect("completed terminal"),
@@ -1236,7 +1264,7 @@ mod tests {
                     &sealed,
                     digest,
                     true,
-                    Duration::from_millis(1),
+                    Instant::now() + Duration::from_millis(1),
                     &source,
                 )
                 .expect("expected retirement terminal"),
@@ -1302,6 +1330,83 @@ mod tests {
                 crate::process::DescendantObservationFailure::Reused,
             ),
         );
+        assert!(
+            coordinator
+                .ledger
+                .reserve_generation(instance(400, 40), [])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn incomplete_descendant_census_remains_nonterminal_until_the_retirement_deadline() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        let identity = admitted_identity(&coordinator, HostedServiceKind::Sense);
+        write_parent_loss_admission_intent(
+            journal.path(),
+            &AdmissionIntent::new(
+                coordinator.generation(),
+                identity.launch_id.clone(),
+                Some(HostedServiceKind::Sense),
+                None,
+            ),
+        )
+        .expect("admission intent");
+        write_parent_loss_admission_result(
+            journal.path(),
+            coordinator.generation(),
+            &identity.launch_id,
+            &AdmissionResult {
+                schema: 1,
+                identity: Some(identity.clone()),
+                state: AdmissionResultState::Admitted,
+            },
+        )
+        .expect("admission result");
+        write_parent_loss_service_witness(
+            journal.path(),
+            &ParentLossServiceWitnessDrop {
+                schema: 1,
+                service: HostedServiceKind::Sense,
+                parent: coordinator.active.supervisor,
+                identity,
+                listener_stopped: true,
+                service_runner_stopped: true,
+                operational_artifacts_cleaned: true,
+                descendants_retired: false,
+                shutdown_complete: true,
+                descendant_failure: Some(
+                    crate::process::DescendantObservationFailure::CensusIncomplete,
+                ),
+            },
+        )
+        .expect("incomplete-census witness");
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = gone_process_source();
+
+        assert_eq!(
+            coordinator
+                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .expect("incomplete census remains pending"),
+            RetirementValidation::Pending
+        );
+        assert_eq!(
+            coordinator
+                .wait_for_retirement_with_deadline_and_source(
+                    &sealed,
+                    digest,
+                    false,
+                    Instant::now() + Duration::from_millis(1),
+                    &source,
+                )
+                .expect("deadline-bounded unresolved terminal"),
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                    deadline_seconds: PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
+                },
+            }
+        );
+        assert!(coordinator._lease.is_some());
         assert!(
             coordinator
                 .ledger
@@ -1487,7 +1592,7 @@ mod tests {
                 &sealed,
                 digest,
                 false,
-                Duration::from_millis(1),
+                Instant::now() + Duration::from_millis(1),
                 &source,
             )
             .expect("completed terminal");

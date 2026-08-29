@@ -22,7 +22,7 @@ use solstone_core_system::lifecycle::{
     ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
 use solstone_core_system::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
+    InspectResult, InstanceCensus, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 
@@ -156,6 +156,13 @@ fn read_pid(path: &Path) -> u32 {
         .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
 }
 
+fn pid_file_is_ready(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| contents.trim().parse::<u32>().ok())
+        .is_some()
+}
+
 fn current_instance(pid: u32, label: &str) -> ProcessInstance {
     match SystemProcessInstanceSource.inspect(pid) {
         InspectResult::Present { instance, .. } => instance,
@@ -178,6 +185,15 @@ fn instance_is_gone(instance: ProcessInstance) -> bool {
         SystemProcessInstanceSource.observe(&instance),
         InstanceVerdict::NotSameOrExited
     )
+}
+
+fn assert_tree_census_complete(root: ProcessInstance, label: &str) {
+    match SystemProcessInstanceSource.census_tree(root.pid, None) {
+        InstanceCensus::Complete(_) => {}
+        InstanceCensus::Incomplete(rows) => panic!(
+            "{label} process tree was not completely observable before parent loss: {rows:?}"
+        ),
+    }
 }
 
 fn same_pid_with_different_birth(instance: ProcessInstance) -> ProcessInstance {
@@ -233,7 +249,7 @@ fn spawn_control(
         .stderr(Stdio::null())
         .spawn()
         .unwrap_or_else(|error| panic!("spawn {label}: {error}"));
-    wait_until(|| ready.exists(), label);
+    wait_until(|| pid_file_is_ready(&ready), label);
     assert_eq!(read_pid(&ready), child.id(), "{label} readiness PID");
     ControlWitness {
         label,
@@ -382,13 +398,14 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
             if let Some(status) = launcher.try_wait().expect("hosted launcher status") {
                 panic!("hosted launcher exited before service readiness: {status}");
             }
-            supervisor_pid_path.exists()
-                && convey_ready.exists()
-                && sense_ready.exists()
-                && cortex_ready.exists()
-                && spl_ready.exists()
-                && talent_ready.exists()
-                && (mode == DarwinFixtureMode::Cooperative || late_spawner_ready.exists())
+            pid_file_is_ready(&supervisor_pid_path)
+                && pid_file_is_ready(&convey_ready)
+                && pid_file_is_ready(&sense_ready)
+                && pid_file_is_ready(&cortex_ready)
+                && pid_file_is_ready(&spl_ready)
+                && pid_file_is_ready(&talent_ready)
+                && (mode == DarwinFixtureMode::Cooperative
+                    || pid_file_is_ready(&late_spawner_ready))
         },
         "hosted service tree readiness",
     );
@@ -413,6 +430,7 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
             "Cortex late-child spawner",
         ));
     }
+    assert_tree_census_complete(owned[3], "Cortex");
 
     kill_supervisor_exact(supervisor);
     wait_until(
@@ -422,16 +440,33 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
     let terminal_deadline = Instant::now() + DEADLINE;
     match mode {
         DarwinFixtureMode::Cooperative => {
+            let mut terminal = None;
             wait_until_before(
                 terminal_deadline,
                 || {
                     assert_outer_controls_intact(&controls);
-                    matches!(
-                        read_parent_loss_outcome(journal.path()),
-                        Ok(ParentLossReaderOutcome::Completed { .. })
-                    )
+                    if let Ok(outcome) = read_parent_loss_outcome(journal.path()) {
+                        match outcome {
+                            outcome @ (ParentLossReaderOutcome::Completed { .. }
+                            | ParentLossReaderOutcome::Unresolved { .. }
+                            | ParentLossReaderOutcome::RetiredExpected { .. }
+                            | ParentLossReaderOutcome::CancelledBeforeAdmission {
+                                ..
+                            }) => {
+                                terminal = Some(outcome);
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
                 },
                 "completed coordinator terminal record",
+            );
+            assert!(
+                matches!(terminal, Some(ParentLossReaderOutcome::Completed { .. })),
+                "cooperative twin must complete, got {terminal:?}"
             );
             wait_until_before(
                 terminal_deadline,
@@ -478,21 +513,33 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
             );
         }
         DarwinFixtureMode::HostileLateSpawner => {
+            let mut terminal = None;
             wait_until_before(
                 terminal_deadline,
                 || {
                     assert_outer_controls_intact(&controls);
-                    matches!(
-                        read_parent_loss_outcome(journal.path()),
-                        Ok(ParentLossReaderOutcome::Unresolved {
-                            reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
-                                deadline_seconds: 15
-                            },
-                            ..
-                        })
-                    )
+                    if let Ok(outcome @ ParentLossReaderOutcome::Unresolved { .. }) =
+                        read_parent_loss_outcome(journal.path())
+                    {
+                        terminal = Some(outcome);
+                        true
+                    } else {
+                        false
+                    }
                 },
                 "deadline-bounded unresolved coordinator terminal record",
+            );
+            assert!(
+                matches!(
+                    terminal,
+                    Some(ParentLossReaderOutcome::Unresolved {
+                        reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                            deadline_seconds: 15
+                        },
+                        ..
+                    })
+                ),
+                "hostile twin must become deadline-bounded unresolved, got {terminal:?}"
             );
             let ledger = ParentLossLedger::open(journal.path()).expect("parent-loss ledger");
             let active = ledger
@@ -534,6 +581,28 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
             wait_until(
                 || instance_is_gone(late_descendant),
                 "hostile descendant cleanup",
+            );
+            let late_spawner = *owned.last().expect("hostile late spawner");
+            assert_same_live(late_spawner, "hostile late spawner before cleanup");
+            kill(
+                Pid::from_raw(i32::try_from(late_spawner.pid).expect("late spawner PID")),
+                Signal::SIGKILL,
+            )
+            .expect("test cleanup SIGKILL for hostile late spawner");
+            wait_until(
+                || instance_is_gone(late_spawner),
+                "hostile late spawner cleanup",
+            );
+            let talent_worker = owned[5];
+            assert_same_live(talent_worker, "hostile talent worker before cleanup");
+            kill(
+                Pid::from_raw(i32::try_from(talent_worker.pid).expect("talent worker PID")),
+                Signal::SIGKILL,
+            )
+            .expect("test cleanup SIGKILL for hostile talent worker");
+            wait_until(
+                || instance_is_gone(talent_worker),
+                "hostile talent worker cleanup",
             );
         }
     }

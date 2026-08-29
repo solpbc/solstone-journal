@@ -364,7 +364,7 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
-        path
+        fs::canonicalize(path).unwrap()
     }
 
     fn write_executable(path: &Path, content: &str) {

@@ -361,7 +361,12 @@ fn darwin_fixture_child_terminate() -> BoxedTerminateFn {
 fn wait_for_fixture_paths(paths: &[PathBuf]) -> Result<(), String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while std::time::Instant::now() < deadline {
-        if paths.iter().all(|path| path.exists()) {
+        if paths.iter().all(|path| {
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|contents| contents.trim().parse::<u32>().ok())
+                .is_some()
+        }) {
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
@@ -400,12 +405,25 @@ fn run_darwin_cooperative_child(ready: PathBuf) -> ExitCode {
         eprintln!("hosted fixture: Darwin cooperative child admission failed: {error}");
         return ExitCode::from(75);
     }
+    let _signals = block_sigterm();
     if let Err(error) = std::fs::write(ready, std::process::id().to_string()) {
         eprintln!("hosted fixture: Darwin cooperative child readiness failed: {error}");
         return ExitCode::from(75);
     }
-    std::thread::sleep(std::time::Duration::from_secs(30));
-    ExitCode::SUCCESS
+    // Remain live through the mandatory post-TERM census, then cooperate.
+    // This proves the service tracks a known child without manufacturing an
+    // ambiguous Darwin census in the positive completion case.
+    match _signals.wait() {
+        Ok(nix::sys::signal::Signal::SIGTERM) => ExitCode::SUCCESS,
+        Ok(signal) => {
+            eprintln!("hosted fixture: Darwin cooperative child received unexpected {signal:?}");
+            ExitCode::from(75)
+        }
+        Err(error) => {
+            eprintln!("hosted fixture: Darwin cooperative child wait failed: {error}");
+            ExitCode::from(75)
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -430,7 +448,7 @@ fn run_darwin_late_spawner(ready: PathBuf, late_child: PathBuf) -> ExitCode {
             };
             if let Err(error) = Command::new(executable)
                 .arg("darwin-term-resistant")
-                .arg(late_child)
+                .arg(&late_child)
                 .env_remove("SOL_PARENT_LOSS_GENERATION")
                 .env_remove("SOL_PARENT_LOSS_LAUNCH_ID")
                 .env_remove("SOL_PARENT_LOSS_PARENT_LAUNCH_ID")
@@ -440,6 +458,23 @@ fn run_darwin_late_spawner(ready: PathBuf, late_child: PathBuf) -> ExitCode {
                 .spawn()
             {
                 eprintln!("hosted fixture: Darwin late descendant failed: {error}");
+                return ExitCode::from(75);
+            }
+            if let Err(error) = wait_for_fixture_paths(&[late_child]) {
+                eprintln!("hosted fixture: Darwin late descendant readiness failed: {error}");
+                return ExitCode::from(75);
+            }
+            // The unadmitted grandchild exists before Cortex crashes. This
+            // gives the coordinator a real reparented process plus a missing
+            // Cortex witness: it must refuse the sealed generation at its
+            // bounded deadline rather than mistake PGID membership for proof.
+            let cortex = nix::unistd::getppid();
+            if cortex.as_raw() <= 1 {
+                eprintln!("hosted fixture: Darwin late-spawner has no Cortex parent");
+                return ExitCode::from(75);
+            }
+            if let Err(error) = nix::sys::signal::kill(cortex, nix::sys::signal::Signal::SIGKILL) {
+                eprintln!("hosted fixture: Darwin Cortex crash failed: {error}");
                 return ExitCode::from(75);
             }
             std::thread::sleep(std::time::Duration::from_secs(30));

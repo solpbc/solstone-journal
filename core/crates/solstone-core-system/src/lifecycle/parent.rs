@@ -143,9 +143,9 @@ impl PlatformParentExitWatcher {
     pub fn arm(parent: ProcessInstance) -> Result<Self, ParentExitWatchError> {
         #[cfg(target_os = "macos")]
         {
-            return DarwinParentExitWatcher::register(parent)
+            DarwinParentExitWatcher::register(parent)
                 .map(Self::Darwin)
-                .map_err(ParentExitWatchError::from);
+                .map_err(ParentExitWatchError::from)
         }
         #[cfg(not(target_os = "macos"))]
         {
