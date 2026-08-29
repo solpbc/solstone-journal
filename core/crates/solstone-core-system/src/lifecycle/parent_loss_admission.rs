@@ -16,9 +16,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::parent_loss_ledger::{
-    HostedServiceKind, ParentLossGeneration, ParentLossLedger, ParentLossLedgerError,
-};
+use super::HostedServiceKind;
+use super::parent_loss_ledger::{ParentLossGeneration, ParentLossLedger, ParentLossLedgerError};
 use crate::process::ProcessInstance;
 use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
 

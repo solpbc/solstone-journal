@@ -21,6 +21,7 @@ use solstone_core_journal_io::{
 };
 use thiserror::Error;
 
+use super::HostedServiceKind;
 use crate::process::{
     DescendantObservationFailure, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
@@ -32,16 +33,6 @@ const LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Monotonically allocated lifecycle generation for one canonical journal.
 pub type ParentLossGeneration = u64;
-
-/// The fixed set of services hosted by the Journal supervisor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HostedServiceKind {
-    Convey,
-    Sense,
-    Cortex,
-    Spl,
-}
 
 /// Durable state of an active generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
