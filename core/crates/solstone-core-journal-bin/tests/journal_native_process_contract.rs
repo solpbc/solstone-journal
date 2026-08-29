@@ -1083,6 +1083,12 @@ impl BrainProbeStub {
             {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("make accepted brain probe stream blocking");
+                        stream
+                            .set_read_timeout(Some(PROBE_TIMEOUT))
+                            .expect("bound accepted brain probe stream reads");
                         let request = read_http_request(&mut stream);
                         let tool_call = request.contains("emit_final");
                         worker_requests
