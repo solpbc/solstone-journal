@@ -1404,7 +1404,22 @@ ci-under-poison:
 	@echo "Run 'make ci-full' from an operator final-tree session for the canonical host gate."
 
 ci-full:
+ifneq ($(strip $(HOPPER_LID)),)
+	@echo "ci-full is not supported for Hopper; make ci is the only pass needed." >&2; exit 2
+else
+ifneq ($(strip $(SOLSTONE_CI_CLOUD)),)
+ifneq ($(SOLSTONE_CI_CLOUD),1)
+$(error SOLSTONE_CI_CLOUD must be exactly 1 when set)
+endif
+	@command -v extro-cloud-ci >/dev/null 2>&1 || { \
+		echo "SOLSTONE_CI_CLOUD=1 requires extro-cloud-ci on PATH" >&2; \
+		exit 2; \
+	}
+	extro-cloud-ci run --source "$(CURDIR)"
+else
 	$(call run-rust-gate-under-poison,ci-full-under-poison)
+endif
+endif
 
 ci-full-under-poison:
 	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-under-poison is internal; run 'make ci-full'" >&2; exit 2; }
