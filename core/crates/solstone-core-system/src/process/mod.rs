@@ -9,9 +9,12 @@ mod observation;
 #[path = "unix/mod.rs"]
 mod platform;
 #[cfg(not(unix))]
-#[path = "windows.rs"]
+#[path = "windows/mod.rs"]
 mod platform;
 mod restart;
+#[cfg(all(unix, test))]
+#[path = "windows/identity.rs"]
+mod windows_identity_tests;
 
 #[cfg(unix)]
 use std::process::ExitStatus;
@@ -20,6 +23,8 @@ pub use common::CensusRow;
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) use common::hosted_admission_test_fault;
 pub(crate) use common::require_managed_process_capability;
+#[cfg(windows)]
+pub(crate) use common::windows_filetime_epoch_seconds;
 pub use common::{
     BoxedTerminateFn, CAP_TERMINATION_TIMEOUT, CommandLaunchRequest, DRAIN_JOIN_TIMEOUT,
     Descendant, DescendantObservationFailure, DescendantTerminationOutcome, Disposition,
@@ -34,6 +39,8 @@ pub use common::{HostedAdmissionTestFault, set_hosted_admission_test_fault};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
+#[cfg(windows)]
+pub(crate) use platform::current_windows_process_instance;
 #[cfg(target_os = "linux")]
 pub(crate) use platform::hold_while_instance_live;
 #[cfg(target_os = "macos")]

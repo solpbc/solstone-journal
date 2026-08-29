@@ -155,7 +155,7 @@ mod tests {
         let first = process_birth_from_macos_bsd_info(info(1)).expect("birth");
         let second = process_birth_from_macos_bsd_info(info(2)).expect("birth");
         assert_ne!(first, second);
-        assert_eq!(first.epoch_seconds(), 100.000_001);
+        assert_eq!(first.epoch_seconds(), Some(100.000_001));
     }
 
     #[test]

@@ -11,10 +11,17 @@ use std::time::{Duration, Instant};
 use super::{
     BoxedTerminateFn, CommandLaunchRequest, DescendantObservationFailure,
     DescendantTerminationOutcome, Disposition, HostedLaunchProvenance, InspectResult,
-    InstanceCensus, LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessInstance,
-    ProcessInstanceSource, SignalKind, SpawnError, SpawnOptions, SystemProcessInstanceSource,
-    TerminationError, TerminationOutcome, require_managed_process_capability,
+    InstanceCensus, InstanceVerdict, LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest,
+    ProcessInstance, ProcessInstanceSource, SignalKind, SpawnError, SpawnOptions,
+    SystemProcessInstanceSource, TerminationError, TerminationOutcome,
+    require_managed_process_capability,
 };
+
+#[cfg(any(windows, test))]
+mod identity;
+
+#[cfg(windows)]
+pub(crate) use identity::current_windows_process_instance;
 
 impl ProcessInstanceSource for SystemProcessInstanceSource {
     fn inspect(&self, _pid: u32) -> InspectResult {
@@ -33,6 +40,24 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
         }
         #[cfg(not(target_os = "ios"))]
         InstanceCensus::Incomplete(Vec::new())
+    }
+
+    fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
+        #[cfg(windows)]
+        {
+            return identity::verdict_from_windows_probe(
+                expected,
+                identity::sample_windows_process_with(
+                    &identity::SystemWindowsProcessApi,
+                    expected.pid,
+                ),
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = expected;
+            InstanceVerdict::Unverifiable
+        }
     }
 }
 

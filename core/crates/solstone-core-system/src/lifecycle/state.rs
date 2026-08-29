@@ -587,7 +587,10 @@ pub(crate) fn process_start_time_epoch_seconds(pid: u32) -> Result<f64, Lifecycl
     use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
 
     match SystemProcessInstanceSource.inspect(pid) {
-        InspectResult::Present { instance, .. } => Ok(instance.birth.epoch_seconds()),
+        InspectResult::Present { instance, .. } => Ok(instance
+            .birth
+            .epoch_seconds()
+            .expect("Linux and macOS process birth tokens always have epoch seconds")),
         InspectResult::Absent | InspectResult::Unverifiable => {
             Err(LifecycleError::Identity("process start time"))
         }

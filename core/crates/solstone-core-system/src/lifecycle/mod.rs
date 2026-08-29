@@ -173,8 +173,6 @@ pub enum LifecycleError {
     #[cfg(unix)]
     #[error("lifecycle system call failed: {0}")]
     Nix(#[from] nix::errno::Errno),
-    #[error("host capability unavailable: {needed}")]
-    CapabilityUnavailable { needed: &'static str },
     #[error("lifecycle JSON failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("invalid supervisor identity: {0}")]
@@ -241,7 +239,10 @@ pub struct SupervisorLifecycle {
     #[cfg(unix)]
     sync: FlatDirectory,
     _lease: BoundParentLock,
+    #[cfg(unix)]
     identity: state::SupervisorIdentityArtifacts,
+    #[cfg(windows)]
+    identity: windows::WindowsSupervisorIdentityArtifacts,
     retained_self_heartbeat: Option<FileObservation>,
     retained_readiness: Option<FileObservation>,
     last_completed_sync_result: Option<SyncCheckResult>,
@@ -842,7 +843,15 @@ pub fn supervisor_liveness(journal: impl AsRef<Path>) -> SupervisorLiveness {
     supervisor_liveness_with_start_time(journal, state::process_start_time_epoch_seconds)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(windows)]
+pub fn supervisor_liveness(journal: impl AsRef<Path>) -> SupervisorLiveness {
+    use crate::process::{ProcessInstanceSource, SystemProcessInstanceSource};
+
+    let source = SystemProcessInstanceSource;
+    supervisor_liveness_with_process_instance(journal, |instance| source.observe(instance))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub fn supervisor_liveness(_journal: impl AsRef<Path>) -> SupervisorLiveness {
     SupervisorLiveness::Unverifiable
 }
@@ -876,6 +885,182 @@ pub(crate) fn supervisor_liveness_with_start_time(
         SupervisorLiveness::Up
     } else {
         SupervisorLiveness::Down
+    }
+}
+
+#[cfg(any(windows, test))]
+pub(crate) fn supervisor_liveness_with_process_instance(
+    journal: impl AsRef<Path>,
+    observe: impl Fn(&crate::process::ProcessInstance) -> crate::process::InstanceVerdict,
+) -> SupervisorLiveness {
+    fn optional_file(path: &Path) -> Result<Option<String>, ()> {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => Ok(Some(contents)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(()),
+        }
+    }
+
+    let health = journal.as_ref().join("health");
+    let Ok(pid_text) = optional_file(&health.join("supervisor.pid")) else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    let Ok(start_time_text) = optional_file(&health.join("supervisor.start_time")) else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    let Ok(process_instance_text) =
+        optional_file(&health.join(windows::SUPERVISOR_PROCESS_INSTANCE))
+    else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    let (pid_text, start_time_text, process_instance_text) =
+        match (pid_text, start_time_text, process_instance_text) {
+            (None, None, None) => return SupervisorLiveness::Down,
+            (Some(pid), Some(start_time), Some(process_instance)) => {
+                (pid, start_time, process_instance)
+            }
+            _ => return SupervisorLiveness::Unverifiable,
+        };
+    let Ok(pid) = pid_text.trim().parse::<u32>() else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    if pid == 0 {
+        return SupervisorLiveness::Unverifiable;
+    }
+    let Ok(start_time) = start_time_text.trim().parse::<f64>() else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    if !start_time.is_finite() {
+        return SupervisorLiveness::Unverifiable;
+    }
+    let Ok(process_instance) =
+        serde_json::from_str::<crate::process::ProcessInstance>(&process_instance_text)
+    else {
+        return SupervisorLiveness::Unverifiable;
+    };
+    if process_instance.pid != pid || process_instance.birth.windows_filetime().is_none() {
+        return SupervisorLiveness::Unverifiable;
+    }
+    match observe(&process_instance) {
+        crate::process::InstanceVerdict::SameLive { .. } => SupervisorLiveness::Up,
+        crate::process::InstanceVerdict::NotSameOrExited => SupervisorLiveness::Down,
+        crate::process::InstanceVerdict::Unverifiable => SupervisorLiveness::Unverifiable,
+    }
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn supervisor_liveness_with_process_instance_for_test(
+    journal: impl AsRef<Path>,
+    observe: impl Fn(&crate::process::ProcessInstance) -> crate::process::InstanceVerdict,
+) -> SupervisorLiveness {
+    supervisor_liveness_with_process_instance(journal, observe)
+}
+
+#[cfg(test)]
+mod tests_windows_liveness {
+    use std::fs;
+
+    use crate::process::{ExecutionState, InstanceVerdict, ProcessBirth, ProcessInstance};
+
+    use super::{SupervisorLiveness, supervisor_liveness_with_process_instance};
+
+    fn write_complete(journal: &std::path::Path, pid: u32, instance_pid: u32, birth: &str) {
+        let health = journal.join("health");
+        fs::create_dir_all(&health).expect("health directory");
+        fs::write(health.join("supervisor.pid"), pid.to_string()).expect("pid");
+        fs::write(health.join("supervisor.start_time"), "1.5").expect("start time");
+        fs::write(
+            health.join("supervisor.process_instance"),
+            format!(r#"{{"pid":{instance_pid},"birth":{birth}}}"#),
+        )
+        .expect("process instance");
+    }
+
+    #[test]
+    fn windows_liveness_distinguishes_absent_partial_and_complete_receipts() {
+        let journal = tempfile::tempdir().expect("journal");
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| unreachable!()),
+            SupervisorLiveness::Down
+        );
+
+        fs::create_dir_all(journal.path().join("health")).expect("health");
+        fs::write(journal.path().join("health/supervisor.pid"), "7").expect("pid");
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| unreachable!()),
+            SupervisorLiveness::Unverifiable
+        );
+
+        write_complete(
+            journal.path(),
+            7,
+            7,
+            r#"{"kind":"windows","filetime":116444736000000000}"#,
+        );
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| {
+                InstanceVerdict::SameLive {
+                    execution: ExecutionState::Running,
+                }
+            }),
+            SupervisorLiveness::Up
+        );
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| {
+                InstanceVerdict::NotSameOrExited
+            }),
+            SupervisorLiveness::Down
+        );
+    }
+
+    #[test]
+    fn windows_liveness_rejects_mixed_and_unverifiable_receipts() {
+        let journal = tempfile::tempdir().expect("journal");
+        write_complete(
+            journal.path(),
+            7,
+            8,
+            r#"{"kind":"windows","filetime":116444736000000000}"#,
+        );
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| unreachable!()),
+            SupervisorLiveness::Unverifiable
+        );
+
+        write_complete(journal.path(), 7, 7, r#"{"kind":"future","token":1}"#);
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| unreachable!()),
+            SupervisorLiveness::Unverifiable
+        );
+
+        write_complete(
+            journal.path(),
+            7,
+            7,
+            r#"{"kind":"linux","start_ticks":1,"btime":1,"clk_tck":1}"#,
+        );
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| unreachable!()),
+            SupervisorLiveness::Unverifiable
+        );
+
+        let expected = ProcessInstance {
+            pid: 7,
+            birth: ProcessBirth::windows(116_444_736_000_000_000),
+        };
+        write_complete(
+            journal.path(),
+            expected.pid,
+            expected.pid,
+            &serde_json::to_string(&expected.birth).expect("birth JSON"),
+        );
+        assert_eq!(
+            supervisor_liveness_with_process_instance(journal.path(), |_| {
+                InstanceVerdict::Unverifiable
+            }),
+            SupervisorLiveness::Unverifiable
+        );
     }
 }
 

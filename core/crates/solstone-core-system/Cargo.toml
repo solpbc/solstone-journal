@@ -45,7 +45,7 @@ solstone-core-assets = { workspace = true }
 filetime = "0.2.29"
 tempfile = "3.24.0"
 
-[target.'cfg(windows)'.dev-dependencies]
+[target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }
 
 [[bin]]
