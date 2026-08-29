@@ -173,8 +173,6 @@ pub enum LifecycleError {
     #[cfg(unix)]
     #[error("lifecycle system call failed: {0}")]
     Nix(#[from] nix::errno::Errno),
-    #[error("host capability unavailable: {needed}")]
-    CapabilityUnavailable { needed: &'static str },
     #[error("lifecycle JSON failed: {0}")]
     Json(#[from] serde_json::Error),
     #[error("invalid supervisor identity: {0}")]

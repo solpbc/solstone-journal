@@ -26,9 +26,10 @@ pub struct ProcessInstance {
     pub birth: ProcessBirth,
 }
 
-/// Opaque start-time identity. Equality is exact (tick-level on Linux,
-/// microsecond-level proc_bsdinfo on macOS). [`ProcessBirth::epoch_seconds`] is only for
-/// supervisor pid-file identity, which applies `START_TIME_TOLERANCE_SECONDS`.
+/// Opaque process-birth identity. Equality is exact: tick-level on Linux,
+/// microsecond-level `proc_bsdinfo` on macOS, and creation FILETIME on Windows.
+/// [`ProcessBirth::epoch_seconds`] is a lossy supervisor start-time value; exact
+/// identity and verdict comparisons never use it or a tolerance.
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessBirth {
     inner: ProcessBirthInner,
