@@ -17,6 +17,7 @@ pub(crate) struct WindowsFileTime {
 
 /// Result of opening the target process with the rights needed for identity sampling.
 #[derive(Debug)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) enum WindowsOpenResult<H> {
     Opened(H),
     Exited,
@@ -33,6 +34,7 @@ pub(crate) enum WindowsProcessTimesResult {
 
 /// Result of a zero-timeout process wait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) enum WindowsWaitResult {
     Live,
     Signaled,

@@ -47,12 +47,12 @@ impl Drop for TestRoot {
 }
 
 fn context() -> (CheckContext, TestRoot) {
-    let root = std::env::temp_dir().join(format!(
-        "solstone-doctor-service-check-{}-{}",
+    let root = PathBuf::from("/tmp").join(format!(
+        "sol-doctor-{}-{}",
         std::process::id(),
         NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    fs::create_dir_all(&root).expect("create staged test root");
+    fs::create_dir(&root).expect("create staged test root exclusively");
     (
         CheckContext {
             home_dir: root.join("home"),
