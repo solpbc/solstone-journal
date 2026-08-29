@@ -393,6 +393,45 @@ mod tests {
             WindowsProcessProbe::Exited
         );
         assert_eq!(drops.get(), 3);
+
+        let api = fake(
+            &drops,
+            WindowsOpenResult::Exited,
+            WindowsProcessTimesResult::NotAttempted,
+            WindowsWaitResult::NotAttempted,
+        );
+        assert_eq!(
+            sample_windows_process_with(&api, 42),
+            WindowsProcessProbe::Exited
+        );
+        assert_eq!(api.opens.get(), 1);
+        assert_eq!(drops.get(), 3);
+
+        let api = fake(
+            &drops,
+            WindowsOpenResult::Unverifiable,
+            WindowsProcessTimesResult::NotAttempted,
+            WindowsWaitResult::NotAttempted,
+        );
+        assert_eq!(
+            sample_windows_process_with(&api, 42),
+            WindowsProcessProbe::Unverifiable
+        );
+        assert_eq!(api.opens.get(), 1);
+        assert_eq!(drops.get(), 3);
+
+        let api = fake(
+            &drops,
+            WindowsOpenResult::Opened(()),
+            WindowsProcessTimesResult::Creation(WindowsFileTime { high: 0, low: 1 }),
+            WindowsWaitResult::Unverifiable,
+        );
+        assert_eq!(
+            sample_windows_process_with(&api, 42),
+            WindowsProcessProbe::Unverifiable
+        );
+        assert_eq!(api.opens.get(), 1);
+        assert_eq!(drops.get(), 4);
     }
 
     #[test]
