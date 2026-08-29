@@ -519,17 +519,19 @@ fn one_shot_publication_errors_are_not_retried() {
 fn changed_evidence_during_backoff_refuses_before_a_later_move() {
     let (_temporary, parent, target) = target_fixture("backoff-race");
     let outside = outside_sentinel(&parent);
-    let moved_parent = parent.with_extension("moved");
-    let raced_parent = parent.clone();
+    let displaced_target = parent.join("displaced.service");
     let raced_target = target.clone();
+    let raced_displaced_target = displaced_target.clone();
     let ((result, attempted, fired), backoffs) = run_with_windows_detailed_atomic_backoffs(|| {
         run_with_windows_detailed_atomic_faults_and_barrier(
             [("rename", 1, ERROR_SHARING_VIOLATION as i32)],
             "before-publication-revalidation",
             2,
             move || {
-                fs::rename(&raced_parent, &moved_parent).unwrap();
-                fs::create_dir(&raced_parent).unwrap();
+                // The publication attempt intentionally retains the staged child handle, so
+                // Windows cannot rename the parent directory here. Race the destination entry
+                // that production revalidates instead.
+                fs::rename(&raced_target, &raced_displaced_target).unwrap();
                 fs::write(&raced_target, b"raced-location").unwrap();
             },
             || atomic_replace_detailed(&target, NEW, 0o600),
@@ -546,6 +548,7 @@ fn changed_evidence_during_backoff_refuses_before_a_later_move() {
         fs::read(parent.join("unit.service")).unwrap(),
         b"raced-location"
     );
+    assert_eq!(fs::read(displaced_target).unwrap(), OLD);
     assert_sentinel_unchanged(&outside);
 }
 
