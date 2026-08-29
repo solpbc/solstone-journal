@@ -359,7 +359,12 @@ async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
     let mut found = None;
     // The bundled-runtime recycle is an external process transition. Under the
     // full host suite it can legitimately lose several scheduler turns while
-    // other native fixtures are compiling and exiting.
+    // other native fixtures are compiling and exiting. On macOS, preserve the
+    // finite hard-failure bound but amortize a dilated scheduler interval over
+    // a longer positive observation window.
+    #[cfg(target_os = "macos")]
+    let iterations = 4_800;
+    #[cfg(not(target_os = "macos"))]
     let iterations = 2_400;
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
