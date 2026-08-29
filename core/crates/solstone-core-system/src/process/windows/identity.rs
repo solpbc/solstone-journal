@@ -67,6 +67,28 @@ pub(crate) fn filetime_value(filetime: WindowsFileTime) -> u64 {
     (u64::from(filetime.high) << 32) | u64::from(filetime.low)
 }
 
+#[cfg(windows)]
+fn windows_filetime_from_raw(
+    filetime: windows_sys::Win32::Foundation::FILETIME,
+) -> WindowsFileTime {
+    WindowsFileTime {
+        high: filetime.dwHighDateTime,
+        low: filetime.dwLowDateTime,
+    }
+}
+
+/// Exercise the production raw-FILETIME conversion boundary from native receipts.
+#[cfg(all(windows, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn windows_filetime_value_from_raw_for_test(high: u32, low: u32) -> u64 {
+    filetime_value(windows_filetime_from_raw(
+        windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: low,
+            dwHighDateTime: high,
+        },
+    ))
+}
+
 /// Convert one set of raw Windows API outcomes into a process probe.
 pub(crate) fn map_windows_process_outcomes(
     pid: u32,
@@ -217,10 +239,7 @@ impl WindowsProcessApi for SystemWindowsProcessApi {
         if succeeded == 0 {
             WindowsProcessTimesResult::Unverifiable
         } else {
-            WindowsProcessTimesResult::Creation(WindowsFileTime {
-                high: creation.dwHighDateTime,
-                low: creation.dwLowDateTime,
-            })
+            WindowsProcessTimesResult::Creation(windows_filetime_from_raw(creation))
         }
     }
 

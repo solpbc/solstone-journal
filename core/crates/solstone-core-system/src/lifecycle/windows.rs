@@ -599,6 +599,12 @@ mod platform {
     }
 
     #[cfg(all(windows, feature = "test-hooks"))]
+    thread_local! {
+        static WINDOWS_LIFECYCLE_DELETION_FAILURE: Cell<bool> = const { Cell::new(false) };
+        static WINDOWS_LIFECYCLE_DELETION_FAILURE_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
     struct WindowsLifecycleCheckpointCleanup;
 
     #[cfg(all(windows, feature = "test-hooks"))]
@@ -621,6 +627,17 @@ mod platform {
                 let _ = attempts.borrow_mut().take();
             });
             WINDOWS_LIFECYCLE_DELETION_ATTEMPTS_ACTIVE.with(|active| active.set(false));
+        }
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    struct WindowsLifecycleDeletionFailureCleanup;
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    impl Drop for WindowsLifecycleDeletionFailureCleanup {
+        fn drop(&mut self) {
+            WINDOWS_LIFECYCLE_DELETION_FAILURE.with(|failure| failure.set(false));
+            WINDOWS_LIFECYCLE_DELETION_FAILURE_ACTIVE.with(|active| active.set(false));
         }
     }
 
@@ -683,6 +700,29 @@ mod platform {
     }
 
     #[cfg(all(windows, feature = "test-hooks"))]
+    pub fn run_with_windows_lifecycle_deletion_failure<T>(
+        operation: impl FnOnce() -> T,
+    ) -> (T, bool) {
+        WINDOWS_LIFECYCLE_DELETION_FAILURE_ACTIVE.with(|active| {
+            assert!(
+                !active.replace(true),
+                "Windows lifecycle deletion failure is already active"
+            );
+        });
+        let cleanup = WindowsLifecycleDeletionFailureCleanup;
+        WINDOWS_LIFECYCLE_DELETION_FAILURE.with(|failure| {
+            assert!(
+                !failure.replace(true),
+                "Windows lifecycle deletion failure is already armed"
+            );
+        });
+        let result = operation();
+        let consumed = WINDOWS_LIFECYCLE_DELETION_FAILURE.with(|failure| !failure.get());
+        drop(cleanup);
+        (result, consumed)
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
     fn fire_windows_lifecycle_checkpoint(checkpoint: &str, filename: &OsStr) {
         let callback = WINDOWS_LIFECYCLE_CHECKPOINT.with(|armed| {
             let mut armed = armed.borrow_mut();
@@ -714,6 +754,11 @@ mod platform {
                 *attempts += 1;
             }
         });
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    fn take_windows_lifecycle_deletion_failure() -> bool {
+        WINDOWS_LIFECYCLE_DELETION_FAILURE.with(|failure| failure.replace(false))
     }
 
     pub(crate) fn boot(
@@ -964,6 +1009,12 @@ mod platform {
             }
             #[cfg(all(windows, any(test, feature = "test-hooks")))]
             record_windows_lifecycle_deletion_attempt();
+            #[cfg(all(windows, feature = "test-hooks"))]
+            if take_windows_lifecycle_deletion_failure() {
+                return Err(WindowsRemovalFailure::new(
+                    "injected Windows lifecycle deletion failure",
+                ));
+            }
             match remove_file(
                 self.root.canonical_path(),
                 &Self::relative_path(directory, name),
@@ -1193,6 +1244,7 @@ pub(crate) use platform::{boot, filesystem_store, hostname};
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use platform::{
     run_with_windows_lifecycle_checkpoint, run_with_windows_lifecycle_deletion_attempt_witness,
+    run_with_windows_lifecycle_deletion_failure,
 };
 
 #[cfg(test)]

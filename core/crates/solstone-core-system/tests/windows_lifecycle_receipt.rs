@@ -17,10 +17,10 @@ use solstone_core_system::lifecycle::{
     SupervisorLifecycle, SupervisorLiveness, SyncIncompleteSnapshotReason, SyncScanFailure,
     SyncTickOutcome, WriterId, run_with_windows_lifecycle_checkpoint,
     run_with_windows_lifecycle_deletion_attempt_witness,
-    supervisor_liveness_with_process_instance_for_test, v2_heartbeat_filename,
+    run_with_windows_lifecycle_deletion_failure, supervisor_liveness, v2_heartbeat_filename,
 };
-use solstone_core_system::process::{ExecutionState, InstanceVerdict};
-use windows_sys::Win32::Foundation::{ERROR_SHARING_VIOLATION, INVALID_HANDLE_VALUE};
+use solstone_core_system::process::windows_filetime_value_from_raw_for_test;
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
     FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo,
@@ -209,6 +209,20 @@ fn folded_file_id(identifier: [u8; 16]) -> u64 {
 }
 
 fn file_identity(path: &Path) -> (u64, u64) {
+    let identity = full_file_identity(path);
+    (
+        identity.volume_serial_number,
+        folded_file_id(identity.file_id),
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeFileIdentity {
+    volume_serial_number: u64,
+    file_id: [u8; 16],
+}
+
+fn full_file_identity(path: &Path) -> NativeFileIdentity {
     let handle = open_attributes_handle(path).expect("open identity handle");
     let mut info = FILE_ID_INFO::default();
     // SAFETY: `info` is writable for its exact size and the handle is valid.
@@ -222,10 +236,10 @@ fn file_identity(path: &Path) -> (u64, u64) {
         )
     };
     assert_ne!(result, 0, "query file identity for {}", path.display());
-    (
-        info.VolumeSerialNumber,
-        folded_file_id(info.FileId.Identifier),
-    )
+    NativeFileIdentity {
+        volume_serial_number: info.VolumeSerialNumber,
+        file_id: info.FileId.Identifier,
+    }
 }
 
 fn completed_scan_identity(lifecycle: &SupervisorLifecycle, filename: &str) -> (u64, u64) {
@@ -237,34 +251,6 @@ fn completed_scan_identity(lifecycle: &SupervisorLifecycle, filename: &str) -> (
         .get(OsStr::new(filename))
         .expect("file observed in completed scan");
     (observation.entry.device, observation.entry.inode)
-}
-
-fn hold_without_delete_sharing(path: &Path) -> OwnedHandle {
-    let wide_path = wide(path.as_os_str());
-    // SAFETY: `path` is NUL-terminated and the successful handle is owned exactly once.
-    #[allow(unsafe_code)]
-    let raw = unsafe {
-        CreateFileW(
-            wide_path.as_ptr(),
-            FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            std::ptr::null(),
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-            std::ptr::null_mut(),
-        )
-    };
-    assert_ne!(
-        raw,
-        INVALID_HANDLE_VALUE,
-        "open held lifecycle receipt handle for {}",
-        path.display()
-    );
-    // SAFETY: `raw` passed the invalid-handle sentinel check and is uniquely owned here.
-    #[allow(unsafe_code)]
-    unsafe {
-        OwnedHandle::from_raw_handle(raw)
-    }
 }
 
 fn phase_a_two_tick_deletion(root: &Path) {
@@ -467,21 +453,21 @@ fn phase_d_replacement_identity_requires_two_fresh_ticks(root: &Path) {
     );
 }
 
-fn phase_e_held_handle_reports_and_recovers(root: &Path) {
+fn phase_e_deletion_failure_reports_and_recovers(root: &Path) {
     let temporary = phase_root(root, "stale-heartbeat-phase-e-");
     let (filename, body, peer) =
         write_stale_peer(temporary.path(), "77777777777777777777777777777777");
+    let retained_identity = full_file_identity(&peer);
     let mut lifecycle = boot(temporary.path());
     let mut clock = ReceiptClock::new();
 
     assert_completed(tick(&mut lifecycle, &mut clock));
-    assert!(
-        peer.exists(),
-        "first held-handle tick establishes a candidate"
-    );
-    let handle = hold_without_delete_sharing(&peer);
-    let (outcome, deletion_attempts) =
-        run_with_windows_lifecycle_deletion_attempt_witness(|| tick(&mut lifecycle, &mut clock));
+    assert!(peer.exists(), "first phase-E tick establishes a candidate");
+    let ((outcome, deletion_attempts), failure_fired) =
+        run_with_windows_lifecycle_deletion_failure(|| {
+            run_with_windows_lifecycle_deletion_attempt_witness(|| tick(&mut lifecycle, &mut clock))
+        });
+    assert!(failure_fired, "phase-E deletion failure did not fire");
     match outcome {
         SyncTickOutcome::StaleHeartbeatCollectionFailure(
             StaleHeartbeatCollectionError::WindowsRemoval {
@@ -490,76 +476,99 @@ fn phase_e_held_handle_reports_and_recovers(root: &Path) {
             },
         ) => {
             assert_eq!(failed_filename, OsStr::new(&filename));
-            assert!(
-                reason.contains(&format!("os error {ERROR_SHARING_VIOLATION}")),
-                "held handle must report sharing violation, got {reason}"
-            );
+            assert_eq!(reason, "injected Windows lifecycle deletion failure");
         }
-        outcome => panic!("held handle must fail the one collecting tick, got {outcome:?}"),
+        outcome => panic!("phase-E fault must fail the collecting tick, got {outcome:?}"),
     }
     assert_eq!(
         deletion_attempts, 1,
-        "held handle must cause exactly one real deletion attempt"
+        "phase-E fault must follow exactly one identity-verified deletion attempt"
     );
-    assert_eq!(fs::read(&peer).expect("held peer remains on disk"), body);
+    assert_eq!(fs::read(&peer).expect("phase-E peer remains on disk"), body);
+    assert_eq!(
+        full_file_identity(&peer),
+        retained_identity,
+        "failed deletion must retain the exact native file identity"
+    );
 
-    drop(handle);
-    assert_completed(tick(&mut lifecycle, &mut clock));
+    let (outcome, deletion_attempts) =
+        run_with_windows_lifecycle_deletion_attempt_witness(|| tick(&mut lifecycle, &mut clock));
+    assert_completed(outcome);
+    assert_eq!(
+        deletion_attempts, 0,
+        "first recovery tick must not attempt deletion"
+    );
     assert!(
         peer.exists(),
         "first post-release tick establishes fresh evidence"
     );
-    assert_completed(tick(&mut lifecycle, &mut clock));
+    let (outcome, deletion_attempts) =
+        run_with_windows_lifecycle_deletion_attempt_witness(|| tick(&mut lifecycle, &mut clock));
+    assert_completed(outcome);
+    assert_eq!(
+        deletion_attempts, 1,
+        "second recovery tick must attempt deletion exactly once"
+    );
     assert!(!peer.exists(), "second post-release tick deletes the peer");
 }
 
 fn phase_f_process_instance_mutation_control(root: &Path) {
     let temporary = phase_root(root, "process-instance-phase-f-");
-    let health = temporary.path().join("health");
-    fs::create_dir_all(&health).expect("create health directory");
-    fs::write(health.join("supervisor.pid"), "7").expect("write PID");
-    fs::write(health.join("supervisor.start_time"), "1.5").expect("write start time");
-    let write_instance = |body: &str| {
-        fs::write(health.join("supervisor.process_instance"), body).expect("write process token")
-    };
-
-    write_instance(r#"{"pid":7,"birth":{"kind":"windows","filetime":116444736000000000}}"#);
+    let _lifecycle = boot(temporary.path());
+    let process_instance_path = temporary.path().join("health/supervisor.process_instance");
     assert_eq!(
-        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| {
-            InstanceVerdict::SameLive {
-                execution: ExecutionState::Running,
-            }
-        }),
+        supervisor_liveness(temporary.path()),
         SupervisorLiveness::Up
     );
 
-    write_instance(r#"{"pid":7,"birth":{"kind":"windows","filetime":116444736000000001}}"#);
+    let original = fs::read(&process_instance_path).expect("read published process instance");
+    let mut mutated: serde_json::Value =
+        serde_json::from_slice(&original).expect("parse published process instance");
+    let token = mutated["birth"]["filetime"]
+        .as_u64()
+        .expect("published Windows FILETIME");
+    mutated["birth"]["filetime"] = serde_json::Value::from(token.wrapping_add(1));
+    fs::write(
+        &process_instance_path,
+        serde_json::to_vec(&mutated).expect("serialize mutated process instance"),
+    )
+    .expect("write mutated process instance");
     assert_eq!(
-        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| {
-            InstanceVerdict::NotSameOrExited
-        }),
+        supervisor_liveness(temporary.path()),
         SupervisorLiveness::Down
     );
 
-    write_instance("not JSON");
+    fs::write(&process_instance_path, "not JSON").expect("write malformed process token");
     assert_eq!(
-        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| unreachable!()),
+        supervisor_liveness(temporary.path()),
         SupervisorLiveness::Unverifiable
     );
 
-    write_instance(r#"{"pid":7,"birth":{"kind":"future-kind","filetime":1}}"#);
+    let mut unknown: serde_json::Value =
+        serde_json::from_slice(&original).expect("reparse published process instance");
+    unknown["birth"] = serde_json::json!({"kind": "future-kind", "filetime": 1});
+    fs::write(
+        &process_instance_path,
+        serde_json::to_vec(&unknown).expect("serialize unknown process token"),
+    )
+    .expect("write unknown process token");
     assert_eq!(
-        supervisor_liveness_with_process_instance_for_test(temporary.path(), |_| unreachable!()),
+        supervisor_liveness(temporary.path()),
         SupervisorLiveness::Unverifiable
     );
 }
 
 fn stale_heartbeat_cleanup_receipt(root: &Path) {
+    assert_eq!(
+        windows_filetime_value_from_raw_for_test(0x0123_4567, 0x89ab_cdef),
+        0x0123_4567_89ab_cdef,
+        "native receipt must execute the production raw-FILETIME conversion boundary"
+    );
     phase_a_two_tick_deletion(root);
     phase_b_bounded_malformed_is_never_deleted(root);
     phase_c_incomplete_scan_resets_candidates(root);
     phase_d_replacement_identity_requires_two_fresh_ticks(root);
-    phase_e_held_handle_reports_and_recovers(root);
+    phase_e_deletion_failure_reports_and_recovers(root);
     phase_f_process_instance_mutation_control(root);
 }
 
