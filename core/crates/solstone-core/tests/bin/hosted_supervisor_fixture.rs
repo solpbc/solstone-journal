@@ -134,6 +134,7 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: S
 fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString>) -> ExitCode {
     let mut supervisor = None;
     let mut enabled = None;
+    let mut supervisor_heartbeat_filename = None;
     while let Some(argument) = args.next() {
         match argument.to_str() {
             Some("--supervisor-json") => {
@@ -148,10 +149,16 @@ fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString
                     .and_then(|value| value.into_string().ok())
                     .and_then(|value| serde_json::from_str::<Vec<HostedServiceKind>>(&value).ok());
             }
+            Some("--supervisor-heartbeat") => {
+                supervisor_heartbeat_filename =
+                    args.next().and_then(|value| value.into_string().ok());
+            }
             _ => {}
         }
     }
-    let (Some(supervisor), Some(enabled)) = (supervisor, enabled) else {
+    let (Some(supervisor), Some(enabled), Some(supervisor_heartbeat_filename)) =
+        (supervisor, enabled, supervisor_heartbeat_filename)
+    else {
         eprintln!("hosted fixture: invalid coordinator bootstrap arguments");
         return ExitCode::from(64);
     };
@@ -172,6 +179,7 @@ fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString
         journal,
         supervisor,
         enabled,
+        supervisor_heartbeat_filename,
         capability,
     }) {
         Ok(value) => value,

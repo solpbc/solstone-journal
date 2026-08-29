@@ -915,6 +915,7 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
 fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
     let mut supervisor = None;
     let mut enabled = None;
+    let mut supervisor_heartbeat_filename = None;
     let mut arguments = args.iter().filter_map(|argument| argument.to_str());
     while let Some(argument) = arguments.next() {
         match argument {
@@ -928,10 +929,15 @@ fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
                     .next()
                     .and_then(|value| serde_json::from_str::<Vec<HostedServiceKind>>(value).ok());
             }
+            "--supervisor-heartbeat" => {
+                supervisor_heartbeat_filename = arguments.next().map(ToOwned::to_owned);
+            }
             _ => {}
         }
     }
-    let (Some(supervisor), Some(enabled)) = (supervisor, enabled) else {
+    let (Some(supervisor), Some(enabled), Some(supervisor_heartbeat_filename)) =
+        (supervisor, enabled, supervisor_heartbeat_filename)
+    else {
         eprintln!("parent-loss coordinator: invalid bootstrap arguments");
         return ExitCode::from(2);
     };
@@ -952,6 +958,7 @@ fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
         journal,
         supervisor,
         enabled,
+        supervisor_heartbeat_filename,
         capability,
     }) {
         Ok(value) => value,

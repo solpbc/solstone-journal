@@ -306,6 +306,7 @@ async fn bootstrap_parent_loss_coordinator(
     journal: &Path,
     supervisor: ProcessInstance,
     enabled: Vec<HostedServiceKind>,
+    supervisor_heartbeat_filename: String,
 ) -> Result<ParentLossCoordinatorSession, ParentLossCoordinatorBootstrapFailure> {
     #[cfg(any(test, feature = "test-hooks"))]
     if parent_loss_coordinator_bootstrap_test_fault()
@@ -320,7 +321,12 @@ async fn bootstrap_parent_loss_coordinator(
         Disposition::ExplicitlyUnowned {
             reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
         },
-        parent_loss_coordinator_launch_request(journal, supervisor, &enabled)?,
+        parent_loss_coordinator_launch_request(
+            journal,
+            supervisor,
+            &enabled,
+            &supervisor_heartbeat_filename,
+        )?,
         Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
     )
     .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
@@ -405,6 +411,7 @@ fn parent_loss_coordinator_launch_request(
     journal: &Path,
     supervisor: ProcessInstance,
     enabled: &[HostedServiceKind],
+    supervisor_heartbeat_filename: &str,
 ) -> Result<CommandLaunchRequest, ParentLossCoordinatorBootstrapFailure> {
     #[cfg(any(test, feature = "test-hooks"))]
     if parent_loss_coordinator_bootstrap_test_fault().is_some() {
@@ -433,6 +440,8 @@ fn parent_loss_coordinator_launch_request(
             OsString::from(supervisor_json),
             OsString::from("--enabled-json"),
             OsString::from(enabled_json),
+            OsString::from("--supervisor-heartbeat"),
+            OsString::from(supervisor_heartbeat_filename),
         ],
         environment: BTreeMap::from([(
             OsString::from("SOLSTONE_JOURNAL"),
@@ -1361,6 +1370,7 @@ pub(crate) async fn boot_and_tick(
             );
         }
     };
+    let supervisor_heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
     let parent_loss_coordinator = match bootstrap_parent_loss_coordinator(
         &journal,
         supervisor_generation,
@@ -1369,6 +1379,7 @@ pub(crate) async fn boot_and_tick(
             .filter(|app| app.enabled)
             .map(|app| app.service.hosted_service_kind())
             .collect(),
+        supervisor_heartbeat_filename,
     )
     .await
     {
@@ -1749,10 +1760,19 @@ mod tests {
             Path::new("/tmp/parent-loss-coordinator-process-group"),
             supervisor,
             &[],
+            "solstone-v2-test-test.check",
         )
         .expect("coordinator launch request");
 
         assert!(request.process_group);
+        assert!(
+            request
+                .arguments
+                .windows(2)
+                .any(|pair| pair[0] == "--supervisor-heartbeat"
+                    && pair[1] == "solstone-v2-test-test.check"),
+            "the coordinator receives the exact supervisor heartbeat it may later claim"
+        );
     }
 
     #[test]
@@ -1766,6 +1786,7 @@ mod tests {
             journal: journal.path().to_path_buf(),
             supervisor,
             enabled: Vec::new(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
             capability: capability.clone(),
         })
         .expect("coordinator bootstrap");
@@ -1825,6 +1846,7 @@ mod tests {
                     journal.path(),
                     supervisor,
                     vec![solstone_core_system::lifecycle::HostedServiceKind::Sense],
+                    "solstone-v2-test-test.check".to_owned(),
                 )
                 .await;
                 let spawned = parent_loss_coordinator_bootstrap_test_spawned();

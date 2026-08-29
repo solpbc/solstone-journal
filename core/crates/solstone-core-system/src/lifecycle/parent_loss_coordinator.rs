@@ -4,6 +4,7 @@
 //! The single terminal authority for one hosted parent-loss generation.
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,7 +14,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    FileLease, LeaseError, LeaseOptions, LockOptions, acquire_file_lease, hold_lock,
+    FileLease, JournalRoot, LeaseError, LeaseOptions, LockOptions, acquire_file_lease, hold_lock,
+    open_flat_directory_bound, read_observed_file_bounded,
 };
 use thiserror::Error;
 
@@ -27,9 +29,10 @@ use super::parent_loss_ledger::{
     ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
     ParentLossUnresolvedReason,
 };
+use super::state;
 use super::{
-    DeclaredParent, HostedServiceKind, ParentLossReason, ParentWatch, ParentWatchStatus,
-    PlatformParentExitWatcher,
+    DeclaredParent, HEARTBEAT_SCHEMA_V2, HeartbeatV2, HostedServiceKind, MAX_SYNC_HEARTBEAT_BYTES,
+    ParentLossReason, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
 };
 use crate::process::{
     InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
@@ -50,6 +53,8 @@ pub struct CoordinatorBootstrap {
     pub journal: PathBuf,
     pub supervisor: ProcessInstance,
     pub enabled: Vec<HostedServiceKind>,
+    /// The v2 self-heartbeat owned by `supervisor` for this exact lifecycle run.
+    pub supervisor_heartbeat_filename: String,
     /// Random bytes received over the coordinator's private inherited stdin.
     pub capability: Vec<u8>,
 }
@@ -101,6 +106,7 @@ pub struct ParentLossCoordinator {
     active: ActiveGeneration,
     coordinator: ProcessInstance,
     capability: Vec<u8>,
+    supervisor_heartbeat_filename: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -167,6 +173,7 @@ impl ParentLossCoordinator {
                 active,
                 coordinator,
                 capability: bootstrap.capability,
+                supervisor_heartbeat_filename: bootstrap.supervisor_heartbeat_filename,
             },
             ready,
         ))
@@ -258,6 +265,9 @@ impl ParentLossCoordinator {
             + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE
                 .saturating_sub(PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET);
         let (sealed, digest) = self.seal_admissions()?;
+        if sealed.is_empty() && !self.clear_lost_supervisor_heartbeat() {
+            return self.terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None);
+        }
         if sealed.is_empty() {
             let disposition = ParentLossTerminalDisposition::CancelledBeforeAdmission;
             self.publish_terminal(disposition.clone(), Some(digest))?;
@@ -334,6 +344,12 @@ impl ParentLossCoordinator {
                             sealed_ledger_digest: digest.clone(),
                         }
                     };
+                    if !expected_retirement && !self.clear_lost_supervisor_heartbeat() {
+                        return self.terminal_unresolved(
+                            ParentLossUnresolvedReason::ArtifactFailure,
+                            Some(digest),
+                        );
+                    }
                     self.publish_terminal(disposition.clone(), Some(digest))?;
                     self.release_clean_lease();
                     return Ok(disposition);
@@ -618,6 +634,58 @@ impl ParentLossCoordinator {
         Ok(true)
     }
 
+    /// Release a heartbeat only after confirmed parent loss, independent
+    /// service-retirement proof, and a fresh descriptor-bound observation of
+    /// the exact v2 entry for that lost supervisor. Any ambiguity remains
+    /// durably blocking instead of making a replacement wait out its freshness
+    /// window or treating another process's heartbeat as ours.
+    fn clear_lost_supervisor_heartbeat(&self) -> bool {
+        let Ok(root) = JournalRoot::open(self.ledger.canonical_root()) else {
+            return false;
+        };
+        let health =
+            match open_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path()) {
+                Ok(Some(health)) => health,
+                Ok(None) => return true,
+                Err(_) => return false,
+            };
+        let health_path = root.canonical_path().join("health");
+        let sync = match open_flat_directory_bound(&health, OsStr::new("sync"), &health_path) {
+            Ok(Some(sync)) => sync,
+            Ok(None) => return true,
+            Err(_) => return false,
+        };
+        let name = OsStr::new(&self.supervisor_heartbeat_filename);
+        let observation = match read_observed_file_bounded(&sync, name, MAX_SYNC_HEARTBEAT_BYTES) {
+            Ok(Some(observation)) => observation,
+            Ok(None) => return true,
+            Err(_) => return false,
+        };
+        let Ok((writer_id, run_id)) =
+            super::parse_v2_heartbeat_filename(&self.supervisor_heartbeat_filename)
+        else {
+            return false;
+        };
+        let Ok(heartbeat) = serde_json::from_slice::<HeartbeatV2>(&observation.bytes) else {
+            return false;
+        };
+        if heartbeat.schema != HEARTBEAT_SCHEMA_V2
+            || heartbeat.writer_id != writer_id
+            || heartbeat.run_id != run_id
+            || heartbeat.pid != self.active.supervisor.pid
+        {
+            return false;
+        }
+        matches!(
+            state::clear_self_heartbeat(
+                &sync,
+                &self.supervisor_heartbeat_filename,
+                Some(&observation),
+            ),
+            Ok(super::SelfHeartbeatRemoval::Removed)
+        )
+    }
+
     fn publish_terminal(
         &mut self,
         disposition: ParentLossTerminalDisposition,
@@ -764,15 +832,18 @@ fn proof(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::ffi::OsStr;
     use std::sync::Mutex;
 
+    use solstone_core_journal_io::{JournalRoot, create_or_open_flat_directory_bound};
     use tempfile::TempDir;
 
     use super::*;
     use crate::lifecycle::{
-        AdmissionIntent, AdmissionResult, ParentLossReaderOutcome, ParentLossServiceWitnessDrop,
-        read_parent_loss_outcome, write_parent_loss_admission_intent,
-        write_parent_loss_admission_result, write_parent_loss_service_witness,
+        AdmissionIntent, AdmissionResult, HeartbeatV2, ParentLossReaderOutcome,
+        ParentLossServiceWitnessDrop, RunId, WriterId, read_parent_loss_outcome,
+        write_parent_loss_admission_intent, write_parent_loss_admission_result,
+        write_parent_loss_service_witness, write_sync_heartbeat,
     };
     use crate::process::{
         Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, InstanceCensus,
@@ -817,6 +888,7 @@ mod tests {
             journal: journal.path().to_path_buf(),
             supervisor: declared_parent.instance(),
             enabled: enabled.into_iter().collect(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
             capability: capability.clone(),
         })
         .expect("coordinator bootstrap");
@@ -952,6 +1024,7 @@ mod tests {
             journal: journal.path().to_path_buf(),
             supervisor,
             enabled: Vec::new(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
             capability: capability.clone(),
         })
         .expect("coordinator bootstrap");
@@ -996,6 +1069,7 @@ mod tests {
             journal: journal.path().to_path_buf(),
             supervisor: declared_parent.instance(),
             enabled: Vec::new(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
             capability,
         });
         assert!(matches!(result, Err(CoordinatorBootstrapError::Contended)));
@@ -1301,6 +1375,7 @@ mod tests {
             journal: journal.path().to_path_buf(),
             supervisor: declared_parent.instance(),
             enabled: Vec::new(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
             capability,
         })
         .expect("successor coordinator");
@@ -1608,6 +1683,129 @@ mod tests {
             .reserve_generation(instance(900, 90), [])
             .expect("successor after fresh validation");
         assert_eq!(successor.generation, 2);
+    }
+
+    fn bound_sync(root_path: &Path) -> solstone_core_journal_io::FlatDirectory {
+        let root = JournalRoot::open(root_path).expect("open journal root");
+        let health = create_or_open_flat_directory_bound(
+            &root,
+            OsStr::new("health"),
+            0o700,
+            root.canonical_path(),
+        )
+        .expect("bind health");
+        create_or_open_flat_directory_bound(
+            &health,
+            OsStr::new("sync"),
+            0o700,
+            &root.canonical_path().join("health"),
+        )
+        .expect("bind sync")
+    }
+
+    fn coordinator_with_lost_heartbeat(
+        journal: &TempDir,
+        heartbeat_pid: u32,
+        enabled: Vec<HostedServiceKind>,
+    ) -> (ParentLossCoordinator, String) {
+        let writer_id = WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID");
+        let run_id = RunId::parse("fedcba9876543210fedcba9876543210").expect("run ID");
+        let filename = super::super::v2_heartbeat_filename(&writer_id, &run_id);
+        let supervisor = instance(99_999_999, 901);
+        let heartbeat = HeartbeatV2::new(
+            writer_id,
+            run_id,
+            "lost-supervisor".to_owned(),
+            heartbeat_pid,
+            "0".to_owned(),
+            "test".to_owned(),
+            15,
+            journal.path().display().to_string(),
+        );
+        write_sync_heartbeat(
+            &bound_sync(journal.path()),
+            &filename,
+            &serde_json::to_vec(&heartbeat).expect("heartbeat JSON"),
+        )
+        .expect("write heartbeat");
+        let (coordinator, _) = ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+            journal: journal.path().to_path_buf(),
+            supervisor,
+            enabled,
+            supervisor_heartbeat_filename: filename.clone(),
+            capability: b"coordinator-heartbeat-test-capability".to_vec(),
+        })
+        .expect("coordinator bootstrap");
+        (coordinator, filename)
+    }
+
+    #[test]
+    fn confirmed_parent_loss_removes_only_its_validated_supervisor_heartbeat() {
+        let journal = TempDir::new().expect("temporary journal");
+        let (mut coordinator, filename) =
+            coordinator_with_lost_heartbeat(&journal, 99_999_999, Vec::new());
+
+        assert_eq!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("confirmed loss cleans exact heartbeat"),
+            ParentLossTerminalDisposition::CancelledBeforeAdmission
+        );
+        assert!(
+            !journal.path().join("health/sync").join(filename).exists(),
+            "the generation heartbeat is gone before a successor may proceed"
+        );
+        assert!(coordinator._lease.is_none());
+    }
+
+    #[test]
+    fn confirmed_parent_loss_keeps_a_mismatched_heartbeat_durably_blocking() {
+        let journal = TempDir::new().expect("temporary journal");
+        let (mut coordinator, filename) =
+            coordinator_with_lost_heartbeat(&journal, 99_999_998, Vec::new());
+
+        assert_eq!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("mismatch records an unresolved terminal"),
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::ArtifactFailure,
+            }
+        );
+        assert!(
+            journal.path().join("health/sync").join(filename).exists(),
+            "the coordinator must not claim a heartbeat that does not name its supervisor"
+        );
+        assert!(coordinator._lease.is_some());
+    }
+
+    #[test]
+    fn completed_parent_loss_removes_its_validated_supervisor_heartbeat() {
+        let journal = TempDir::new().expect("temporary journal");
+        let (mut coordinator, filename) =
+            coordinator_with_lost_heartbeat(&journal, 99_999_999, vec![HostedServiceKind::Sense]);
+        write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admission");
+
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_millis(1),
+                &gone_process_source(),
+            )
+            .expect("completed parent loss");
+
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(
+            !journal.path().join("health/sync").join(filename).exists(),
+            "the successor cannot inherit a fresh heartbeat from a completed loss"
+        );
+        assert!(coordinator._lease.is_none());
     }
 
     #[cfg(unix)]
