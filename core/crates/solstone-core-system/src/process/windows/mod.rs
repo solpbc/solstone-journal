@@ -22,6 +22,8 @@ mod identity;
 
 #[cfg(windows)]
 pub(crate) use identity::current_windows_process_instance;
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use identity::windows_filetime_value_from_raw_for_test;
 
 impl ProcessInstanceSource for SystemProcessInstanceSource {
     fn inspect(&self, _pid: u32) -> InspectResult {

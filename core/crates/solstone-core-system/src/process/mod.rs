@@ -47,6 +47,8 @@ pub(crate) use platform::hold_while_instance_live;
 pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use platform::windows_filetime_value_from_raw_for_test;
 pub use platform::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
     launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,
