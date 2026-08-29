@@ -23,12 +23,13 @@ use super::parent_loss_admission::{
     read_parent_loss_admission_result, witness_path,
 };
 use super::parent_loss_ledger::{
-    ActiveGeneration, BootstrapRecoveryReason, HostedServiceKind, ParentLossGeneration,
-    ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
+    ActiveGeneration, BootstrapRecoveryReason, ParentLossGeneration, ParentLossLedger,
+    ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
     ParentLossUnresolvedReason,
 };
 use super::{
-    DeclaredParent, ParentLossReason, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
+    DeclaredParent, HostedServiceKind, ParentLossReason, ParentWatch, ParentWatchStatus,
+    PlatformParentExitWatcher,
 };
 use crate::process::{
     InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,

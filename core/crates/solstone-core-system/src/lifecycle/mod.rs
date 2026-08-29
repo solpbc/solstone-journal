@@ -7,10 +7,14 @@
 mod clock;
 #[cfg(target_os = "macos")]
 mod darwin_parent_watch;
+#[cfg(unix)]
 mod hosted_service;
 mod parent;
+#[cfg(unix)]
 mod parent_loss_admission;
+#[cfg(unix)]
 mod parent_loss_coordinator;
+#[cfg(unix)]
 mod parent_loss_ledger;
 mod readiness;
 mod shutdown;
@@ -27,6 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     BoundParentLock, ExistingParentLockError, FileObservation, JournalEntryKind, JournalRoot,
 };
@@ -39,6 +44,7 @@ use thiserror::Error;
 pub use clock::AdmissionWaitClock;
 #[cfg(target_os = "macos")]
 pub use darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
+#[cfg(unix)]
 pub use hosted_service::{
     HostedServiceAdmissionFailure, HostedServiceParentLossError, HostedServiceParentRuntime,
     HostedServiceShutdownEvidence, HostedServiceWatchError, admit_hosted_service_parent,
@@ -47,6 +53,18 @@ pub use parent::{
     DeclaredParent, ParentAdmissionFailure, ParentExitWatchError, ParentLossReason, ParentWatch,
     ParentWatchStatus, PlatformParentExitWatcher,
 };
+/// The fixed set of services hosted by the Journal supervisor. Portable:
+/// also named by `process::common::HostedLaunchProvenance` on every target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostedServiceKind {
+    Convey,
+    Sense,
+    Cortex,
+    Spl,
+}
+
+#[cfg(unix)]
 pub use parent_loss_admission::{
     AdmissionAcknowledgement, AdmissionIdentity, AdmissionIntent, AdmissionResult,
     AdmissionResultState, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
@@ -55,16 +73,17 @@ pub use parent_loss_admission::{
     write_parent_loss_admission_intent, write_parent_loss_admission_result,
     write_parent_loss_service_witness,
 };
+#[cfg(unix)]
 pub use parent_loss_coordinator::{
     CoordinatorBootstrap, CoordinatorBootstrapError, CoordinatorBootstrapReady,
     PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE, ParentLossCoordinator, ParentLossCoordinatorError,
     write_retire_expected_control,
 };
+#[cfg(unix)]
 pub use parent_loss_ledger::{
-    ActiveGeneration, BootstrapReservation, HostedServiceKind, PARENT_LOSS_LEDGER_SCHEMA_V1,
-    ParentLossGeneration, ParentLossLedger, ParentLossLedgerError, ParentLossPhase,
-    ParentLossReaderOutcome, ParentLossTerminalDisposition, ParentLossUnresolvedReason,
-    read_parent_loss_outcome,
+    ActiveGeneration, BootstrapReservation, PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGeneration,
+    ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
+    ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 #[cfg(any(target_os = "linux", target_os = "macos"))]

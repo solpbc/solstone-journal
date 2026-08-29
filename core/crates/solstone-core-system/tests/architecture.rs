@@ -461,3 +461,67 @@ fn ac29_liveness_and_instance_consumers_preserve_unverifiable_outcomes() {
     assert!(TRANSCRIPT_DELETE.contains("SupervisorLiveness::Unverifiable"));
     assert!(SUPERVISOR_RUNTIME.contains("InspectResult::Unverifiable"));
 }
+
+#[test]
+fn ac30_parent_loss_chain_is_unix_only_and_hosted_service_kind_is_portable() {
+    let preceding_line = |marker: &str| {
+        let (before, _) = LIFECYCLE
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("missing lifecycle marker {marker}"));
+        before
+            .strip_suffix('\n')
+            .and_then(|before| before.rsplit_once('\n').map(|(_, line)| line))
+            .unwrap_or_else(|| panic!("missing line before lifecycle marker {marker}"))
+            .to_owned()
+    };
+
+    for module in [
+        "hosted_service",
+        "parent_loss_admission",
+        "parent_loss_coordinator",
+        "parent_loss_ledger",
+    ] {
+        assert_eq!(
+            preceding_line(&format!("mod {module};")),
+            "#[cfg(unix)]",
+            "{module} module must be Unix-only"
+        );
+        assert_eq!(
+            preceding_line(&format!("pub use {module}::{{")),
+            "#[cfg(unix)]",
+            "{module} exports must be Unix-only"
+        );
+    }
+
+    assert!(
+        !preceding_line("mod parent;").starts_with("#[cfg"),
+        "portable parent vocabulary must remain ungated"
+    );
+    assert!(
+        !preceding_line("pub use parent::{").starts_with("#[cfg"),
+        "portable parent exports must remain ungated"
+    );
+
+    let parent_exports = LIFECYCLE
+        .find("pub use parent::{")
+        .expect("portable parent exports");
+    let hosted_service_kind = LIFECYCLE
+        .find("pub enum HostedServiceKind")
+        .expect("portable hosted service kind");
+    let admission_exports = LIFECYCLE
+        .find("pub use parent_loss_admission::{")
+        .expect("parent-loss admission exports");
+
+    assert!(
+        parent_exports < hosted_service_kind && hosted_service_kind < admission_exports,
+        "HostedServiceKind must stay in the portable lifecycle surface"
+    );
+    assert!(
+        !LIFECYCLE[parent_exports..hosted_service_kind].contains("#[cfg(unix)]"),
+        "HostedServiceKind must not be introduced under a Unix gate"
+    );
+    assert!(
+        !LIFECYCLE_PARENT_LOSS_LEDGER.contains("pub enum HostedServiceKind"),
+        "HostedServiceKind must not move back into the Unix-only ledger"
+    );
+}
