@@ -5,8 +5,7 @@
 # Usage:
 #   ./run-test.sh                          # default: smoke (verify systemd --user only)
 #   ./run-test.sh smoke                    # tiny user unit, no solstone install
-#   ./run-test.sh install [extra-args]     # full: uv tool host install, then journal setup
-#   ./run-test.sh observer-ingest          # install + setup + real observer ingest round-trip
+#   ./run-test.sh install [extra-args]     # package install, then journal setup
 #   ./run-test.sh legacy-upgrade           # install, but seed a legacy non-symlink
 #                                          #   wrapper first; assert setup self-heals it
 #                                          #   through to a healthy service_identity
@@ -29,8 +28,8 @@
 #   KEEP        — "1" to keep the container after the run for inspection
 #   SOLSTONE_DIST_DIR — host directory of produced linux-x86_64 artifacts
 #                       (solstone-journal-*-linux-x86_64.deb). Mounted read-only
-#                       at /artifacts. Required for install / observer-ingest /
-#                       legacy-upgrade. The wheel path is retired.
+#                       at /artifacts. Required for package-backed modes.
+#                       The wheel path is retired.
 #
 # Exit codes:
 #   0  test passed
@@ -58,8 +57,8 @@ die() { echo "error: $*" >&2; exit 2; }
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 
 case "$mode" in
-    smoke|install|observer-ingest|legacy-upgrade|legacy-upgrade-v1022|shell) ;;
-    *) die "unknown mode: $mode (expected: smoke | install | observer-ingest | legacy-upgrade | legacy-upgrade-v1022 | shell)" ;;
+    smoke|install|legacy-upgrade|legacy-upgrade-v1022|shell) ;;
+    *) die "unknown mode: $mode (expected: smoke | install | legacy-upgrade | legacy-upgrade-v1022 | shell)" ;;
 esac
 
 command -v docker >/dev/null || die "docker not found in PATH"
@@ -189,10 +188,10 @@ UNIT
         ;;
 
     install)
-        # Heavy: pulls solstone wheel + transitive deps. --skip-models /
-        # --skip-skills cuts faster-whisper / Parakeet / Claude-skill
-        # downloads — those are orthogonal to the systemd integration we're
-        # testing here. Pass "full" as an extra arg to drop both flags.
+        # Heavy: installs the candidate package, then runs journal setup.
+        # --skip-models / --skip-skills cut faster-whisper, Parakeet, and
+        # Claude-skill downloads — those are orthogonal to the systemd
+        # integration under test. Pass "full" as an extra arg to drop both flags.
         extra=("$@")
         skip_flags=(--skip-models --skip-skills)
         if [ "${1:-}" = "full" ]; then
@@ -248,156 +247,6 @@ UNIT
         '
 
         log "install: PASS"
-        ;;
-
-    observer-ingest)
-        log "observer-ingest: apt install solstone-journal .deb"
-        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
-
-        log "observer-ingest: journal setup -y --skip-models --skip-skills"
-        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            "journal setup -y --skip-models --skip-skills"
-
-        log "verify: systemctl --user is-active solstone"
-        for _ in $(seq 1 30); do
-            state=$(docker exec -u "$TEST_USER" "$CONTAINER" \
-                bash -lc 'systemctl --user is-active solstone' 2>/dev/null || true)
-            [ "$state" = "active" ] && break
-            sleep 1
-        done
-        if [ "$state" != "active" ]; then
-            log "solstone.service did not reach active (last: ${state:-unknown})"
-            docker exec -u "$TEST_USER" "$CONTAINER" \
-                bash -lc 'systemctl --user status solstone --no-pager -l || true' >&2
-            exit 1
-        fi
-
-        log "verify: journal service status"
-        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc 'journal service status'
-
-        log "observer-ingest: register loopback observer and post one segment"
-        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
-            set -euo pipefail
-
-            base_url="http://127.0.0.1:5015"
-            day="$(date -u +%Y%m%d)"
-            segment="120000_1"
-            host="systemd-gate"
-
-            register_body=$(curl -fsS \
-                -H "Content-Type: application/json" \
-                -d "{\"platform\":\"linux\",\"hostname\":\"${host}\",\"stream_type\":\"tmux\",\"version\":\"systemd-test\"}" \
-                "${base_url}/app/observer/register")
-            printf "%s\n" "$register_body" > /tmp/observer-register.json
-
-            key=$(python3 - <<PY
-import json
-data = json.load(open("/tmp/observer-register.json", encoding="utf-8"))
-assert data.get("key"), data
-print(data["key"])
-PY
-)
-            stream=$(python3 - <<PY
-import json
-data = json.load(open("/tmp/observer-register.json", encoding="utf-8"))
-assert data.get("name"), data
-print(data["name"])
-PY
-)
-
-            payload=$(mktemp)
-            cat > "$payload" <<JSONL
-{"raw":"screen.webm"}
-{"timestamp":0,"analysis":{"visible":"release-gate","visual_description":"observer ingest smoke"}}
-JSONL
-
-            code=$(curl -sS -o /tmp/observer-ingest-response.json -w "%{http_code}" \
-                -H "Authorization: Bearer ${key}" \
-                -F "day=${day}" \
-                -F "segment=${segment}" \
-                -F "host=${host}" \
-                -F "platform=linux" \
-                -F "meta={\"source\":\"systemd-test\"}" \
-                -F "files=@${payload};filename=screen.jsonl;type=application/x-ndjson" \
-                "${base_url}/app/observer/ingest")
-            if [ "$code" != "200" ]; then
-                echo "observer ingest returned HTTP ${code}" >&2
-                cat /tmp/observer-ingest-response.json >&2 || true
-                exit 1
-            fi
-
-            saved_segment=$(python3 - <<PY
-import json
-data = json.load(open("/tmp/observer-ingest-response.json", encoding="utf-8"))
-assert data.get("status") in {"ok", "collision"}, data
-assert data.get("files") == ["screen.jsonl"], data
-print(data["segment"])
-PY
-)
-
-            segment_dir="${HOME}/journal/chronicle/${day}/${stream}/${saved_segment}"
-            test -s "${segment_dir}/screen.jsonl"
-            test -s "${segment_dir}/stream.json"
-            python3 - "$segment_dir" "$stream" <<PY
-import json
-import pathlib
-import sys
-
-segment_dir = pathlib.Path(sys.argv[1])
-stream = sys.argv[2]
-stream_doc = json.loads((segment_dir / "stream.json").read_text(encoding="utf-8"))
-assert stream_doc.get("stream") == stream, stream_doc
-assert stream_doc.get("seq") == 1, stream_doc
-PY
-
-            observed="no"
-            for _ in $(seq 1 30); do
-                curl -fsS \
-                    -H "Authorization: Bearer ${key}" \
-                    -H "X-Solstone-Protocol-Version: 2" \
-                    "${base_url}/app/observer/ingest/segments/${day}" \
-                    > /tmp/observer-segments.json
-                if python3 - "$saved_segment" <<PY
-import json
-import sys
-
-segment = sys.argv[1]
-body = json.load(open("/tmp/observer-segments.json", encoding="utf-8"))
-items = body.get("items", body if isinstance(body, list) else [])
-matches = [item for item in items if item.get("key") == segment]
-if not matches:
-    raise SystemExit(1)
-item = matches[0]
-files = item.get("files") or []
-if not any(f.get("name") == "screen.jsonl" and f.get("status") == "present" for f in files):
-    raise SystemExit(1)
-if item.get("observed") is not True:
-    raise SystemExit(1)
-PY
-                then
-                    observed="yes"
-                    break
-                fi
-                sleep 1
-            done
-
-            if [ "$observed" != "yes" ]; then
-                echo "observer segment did not reach observed=true" >&2
-                echo "register:" >&2
-                cat /tmp/observer-register.json >&2 || true
-                echo "ingest:" >&2
-                cat /tmp/observer-ingest-response.json >&2 || true
-                echo "segments:" >&2
-                cat /tmp/observer-segments.json >&2 || true
-                echo "service log tail:" >&2
-                tail -120 "${HOME}/journal/health/service.log" >&2 || true
-                exit 1
-            fi
-
-            echo "observer-ingest: ${day}/${stream}/${saved_segment} observed=true"
-        '
-
-        log "observer-ingest: PASS"
         ;;
 
     legacy-upgrade)

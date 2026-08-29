@@ -16,18 +16,39 @@ Do not add shims, fallback aliases, or dual Python/Rust paths.
 
 ## iOS canary
 
-Subsystem logic stays in `check-rust-ios` unless a host-only adapter makes
-that impossible.
+`check-rust-ios` is a native-macOS, `aarch64-apple-ios` compile canary for
+portable Rust libraries. It is engineering insurance for a later mobile-runtime
+effort, not a claim that the journal currently supports an iOS runtime. The
+desktop-first product decision keeps mobile-runtime requirements out of the
+current journal release.
 
-Excluded on purpose (product shape, not deferred debt):
+The Makefile's `check-rust-ios` target is the executable authority for what the
+canary checks. Its current exclusions are grouped here so a green result is not
+mistaken for workspace-wide iOS coverage:
 
-- `solstone-core-indexer-store` / `solstone-core-indexer-query` — bundled C SQLite
-- `solstone-core-speakers-analyze` / `solstone-core-speakers-onnx` — ONNX host runtime
-- `solstone-core-sol-link` — desktop/link surface; phones use `spl-swift`
-- `solstone-core-convey-http` / `solstone-core-settings-web` — journal-host HTTP; phones are clients
+- desktop and journal-host entry points: `solstone-core`,
+  `solstone-core-journal-cli`, `solstone-core-sol-link`,
+  `solstone-core-generate-wire`, `solstone-core-serving`
+- journal-host HTTP and browser surfaces: `solstone-core-convey-http`,
+  `solstone-core-convey-shell`, `solstone-core-clients-web`,
+  `solstone-core-settings-web`, `solstone-core-facets-web`,
+  `solstone-core-convey-body`
+- journal-host storage, ingest, import, and rebuild paths:
+  `solstone-core-indexer-store`, `solstone-core-indexer-query`,
+  `solstone-core-entity`, `solstone-core-facets`, `solstone-core-segment`,
+  `solstone-core-ingest`, `solstone-core-entities`,
+  `solstone-core-body-rebuild`, `solstone-core-import-host`
+- confidential-service components: `solstone-core-spp-attest`,
+  `solstone-core-spp-ratls`
+- native media and model components: `solstone-core-transcribe`,
+  `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`,
+  `solstone-core-describe`, `solstone-core-observe-audio`,
+  `solstone-core-vad-analyze`
 
-`solstone-core-speakers` (DSP/clustering) and `solstone-core-indexer` (markdown
-discovery) stay in the canary.
+An exclusion is a boundary of this canary, not evidence that the package fails
+to compile for iOS or that it is accepted into a future iOS runtime. Conversely,
+the included `solstone-core-speakers` (DSP/clustering) and
+`solstone-core-indexer` (markdown discovery) remain portability canaries.
 
 ## Native dependency proof
 

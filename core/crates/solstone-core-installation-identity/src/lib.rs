@@ -3535,6 +3535,17 @@ mod tests {
         }
     }
 
+    struct RestorePermissionsOnDrop {
+        path: PathBuf,
+        mode: u32,
+    }
+
+    impl Drop for RestorePermissionsOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
+        }
+    }
+
     fn serial() -> std::sync::MutexGuard<'static, ()> {
         TEST_SERIAL
             .get_or_init(|| Mutex::new(()))
@@ -4569,12 +4580,14 @@ mod tests {
         let _serial = serial();
         clear_control();
         let fixture = TestRoot::new();
-        fs::create_dir(fixture.root.join("home").join("unrelated")).expect("outside sibling");
-        fs::set_permissions(
-            fixture.root.join("home").join("unrelated"),
-            fs::Permissions::from_mode(0o000),
-        )
-        .expect("unreadable sibling");
+        let unrelated = fixture.root.join("home").join("unrelated");
+        fs::create_dir(&unrelated).expect("outside sibling");
+        let _restore_unrelated_permissions = RestorePermissionsOnDrop {
+            path: unrelated.clone(),
+            mode: 0o700,
+        };
+        fs::set_permissions(&unrelated, fs::Permissions::from_mode(0o000))
+            .expect("unreadable sibling");
         admit_setup(fixture.request(b"/install/clean", b"/journal/clean"))
             .expect("outside sibling ignored");
         let provider = open_provider(&fixture.owner, true).expect("provider");
