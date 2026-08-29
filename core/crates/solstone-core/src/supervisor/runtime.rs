@@ -413,7 +413,7 @@ fn parent_loss_coordinator_launch_request(
             arguments: vec![OsString::from("60")],
             environment: BTreeMap::new(),
             current_dir: None,
-            process_group: false,
+            process_group: true,
             stdin_piped: true,
             stdout_piped: false,
             stderr_piped: false,
@@ -439,7 +439,11 @@ fn parent_loss_coordinator_launch_request(
             journal.as_os_str().to_os_string(),
         )]),
         current_dir: None,
-        process_group: false,
+        // The coordinator's sole role after admission is to observe the
+        // supervisor and publish its terminal ledger result. It must not
+        // share the supervisor's containment group: a parent-loss cleanup may
+        // retire that group before the coordinator has observed the death.
+        process_group: true,
         stdin_piped: true,
         stdout_piped: false,
         stderr_piped: false,
@@ -1711,9 +1715,9 @@ mod tests {
         ParentLossCoordinatorBootstrapFailure, ParentLossCoordinatorBootstrapTestFault,
         ParentLossCoordinatorSession, RuntimeBootError, bootstrap_parent_loss_coordinator,
         cleanup_result, parent_loss_coordinator_bootstrap_test_spawned,
-        resolve_journal_binary_from, selected_direct_door_port,
-        set_parent_loss_coordinator_bootstrap_test_fault, shutdown_regime_for,
-        validate_journal_binary, withhold_app_direct_door,
+        parent_loss_coordinator_launch_request, resolve_journal_binary_from,
+        selected_direct_door_port, set_parent_loss_coordinator_bootstrap_test_fault,
+        shutdown_regime_for, validate_journal_binary, withhold_app_direct_door,
     };
     use std::path::{Path, PathBuf};
     use std::time::Duration;
@@ -1734,6 +1738,21 @@ mod tests {
             resolve_journal_binary_from(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/solstone-core-journal")
         );
+    }
+
+    #[test]
+    fn parent_loss_coordinator_has_an_independent_process_group() {
+        let supervisor = DeclaredParent::capture_current()
+            .expect("live supervisor identity")
+            .instance();
+        let request = parent_loss_coordinator_launch_request(
+            Path::new("/tmp/parent-loss-coordinator-process-group"),
+            supervisor,
+            &[],
+        )
+        .expect("coordinator launch request");
+
+        assert!(request.process_group);
     }
 
     #[test]
