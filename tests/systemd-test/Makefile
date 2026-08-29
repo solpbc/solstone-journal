@@ -4,7 +4,7 @@
 IMAGE ?= solstone-systemd-test:latest
 FEDORA_IMAGE ?= solstone-systemd-test:fedora
 
-.PHONY: build build-fedora smoke install observer-ingest full legacy-upgrade legacy-upgrade-v1022 release-crossover-v1022-deb release-crossover-v1022-rpm shell clean rebuild
+.PHONY: build build-fedora smoke install full legacy-upgrade legacy-upgrade-v1022 release-crossover-v1022-deb release-crossover-v1022-rpm shell clean rebuild
 
 build:
 	docker build -t $(IMAGE) .
@@ -18,8 +18,6 @@ smoke: build
 install: build
 	IMAGE=$(IMAGE) ./run-test.sh install
 
-observer-ingest: build
-	IMAGE=$(IMAGE) ./run-test.sh observer-ingest
 
 # Full path: also runs the model + Claude-skill installers. Slow.
 full: build
