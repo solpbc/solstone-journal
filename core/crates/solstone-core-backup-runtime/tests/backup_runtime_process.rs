@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,8 +24,9 @@ use solstone_core_backup_runtime::engine::{
 use solstone_core_backup_runtime::hosted_runtime::HttpError;
 use solstone_core_backup_runtime::{
     BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
-    JournalMaintenanceError, SystemToolRunner, ToolOutput, ToolRequest, ToolRunner, run_backup,
-    run_restic,
+    JournalMaintenanceError, SystemToolRunner, ToolOutput, ToolRequest, ToolRunner,
+    backup_journal_resolved_hook_armed, install_backup_journal_resolved_hook,
+    reset_backup_journal_resolved_hook, run_backup, run_restic,
 };
 
 const OUTER_DEADLINE: Duration = Duration::from_secs(2);
@@ -186,6 +190,16 @@ impl ToolRunner for PanicRunner {
     }
 }
 
+struct RecordingHttp {
+    urls: RefCell<Vec<String>>,
+}
+impl HttpTransport for RecordingHttp {
+    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        self.urls.borrow_mut().push(request.url.clone());
+        Err(HttpError::Unreachable)
+    }
+}
+
 struct FixedClock;
 impl Clock for FixedClock {
     fn now_unix(&self) -> i64 {
@@ -204,6 +218,141 @@ impl JournalMaintenance for Maintenance {
     fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
         Ok(())
     }
+}
+
+fn configure_byo(journal: &Path) {
+    let destination = solstone_core_backup::Destination {
+        repository: "s3:repo".into(),
+        backend: "s3".into(),
+        credentials: serde_json::json!({
+            "access_key_id": "access",
+            "secret_access_key": "secret"
+        })
+        .as_object()
+        .expect("credentials object")
+        .clone(),
+    };
+    solstone_core_backup::set_destination(journal, &destination).expect("destination writes");
+    solstone_core_backup::generate_and_store_keys(journal).expect("keys write");
+    solstone_core_backup::set_enabled(journal, true).expect("backup enables");
+}
+
+fn backup_services<'a>(
+    runner: &'a dyn ToolRunner,
+    http: &'a dyn HttpTransport,
+    clock: &'a dyn Clock,
+    maintenance: &'a Maintenance,
+) -> BackupServices<'a> {
+    BackupServices {
+        runner,
+        http,
+        clock,
+        restic_path: Some(Path::new("/fixture/bin/restic")),
+        rclone_path: Some(Path::new("/fixture/bin/rclone")),
+        version: "test",
+        journal_maintenance: maintenance,
+    }
+}
+
+#[test]
+fn external_hook_fires_between_canonical_resolution_and_config_read() {
+    reset_backup_journal_resolved_hook();
+    let source = tempfile::tempdir().expect("source journal creates");
+    configure_byo(source.path());
+    let replacement = tempfile::tempdir().expect("replacement journal creates");
+    configure_byo(replacement.path());
+    let sandbox = tempfile::tempdir().expect("sandbox creates");
+    let alias = sandbox.path().join("journal");
+    symlink(source.path(), &alias).expect("alias creates");
+
+    let source_path = source.path().to_path_buf();
+    let replacement_path = replacement.path().to_path_buf();
+    let hook_alias = alias.clone();
+    let firings = Rc::new(Cell::new(0));
+    let hook_firings = Rc::clone(&firings);
+    install_backup_journal_resolved_hook(move || {
+        hook_firings.set(hook_firings.get() + 1);
+        solstone_core_backup::set_mode(&source_path, "operated").expect("source mode changes");
+        solstone_core_backup::save_hosted_binding(
+            &source_path,
+            &solstone_core_backup::HostedBinding {
+                broker_endpoint: "https://source-broker.example".into(),
+                account_id: "account".into(),
+                instance_id: "instance".into(),
+                bucket: "bucket".into(),
+                prefix: "prefix".into(),
+                broker_token: "token".into(),
+            },
+        )
+        .expect("source binding writes");
+        fs::remove_file(&hook_alias).expect("old alias removes");
+        symlink(&replacement_path, &hook_alias).expect("alias retargets");
+    });
+
+    let runner = PanicRunner;
+    let http = RecordingHttp {
+        urls: RefCell::new(Vec::new()),
+    };
+    let clock = FixedClock;
+    let maintenance = Maintenance;
+    let result = run_backup(
+        &alias,
+        &backup_services(&runner, &http, &clock, &maintenance),
+    );
+
+    assert_eq!(firings.get(), 1);
+    assert!(!backup_journal_resolved_hook_armed());
+    assert_eq!(result.status, "error");
+    assert_eq!(result.error_reason.as_deref(), Some("broker_unreachable"));
+    assert_eq!(http.urls.borrow().len(), 1);
+    assert!(http.urls.borrow()[0].starts_with("https://source-broker.example/"));
+}
+
+#[test]
+fn second_hook_install_fails_without_replacing_the_first() {
+    reset_backup_journal_resolved_hook();
+    let firings = Rc::new(Cell::new(0));
+    let hook_firings = Rc::clone(&firings);
+    install_backup_journal_resolved_hook(move || hook_firings.set(hook_firings.get() + 1));
+    let second = std::panic::catch_unwind(|| install_backup_journal_resolved_hook(|| {}));
+    assert!(second.is_err());
+    assert!(backup_journal_resolved_hook_armed());
+
+    let journal = tempfile::tempdir().expect("journal creates");
+    let runner = PanicRunner;
+    let http = PanicHttp;
+    let clock = FixedClock;
+    let maintenance = Maintenance;
+    let _ = run_backup(
+        journal.path(),
+        &backup_services(&runner, &http, &clock, &maintenance),
+    );
+    assert_eq!(firings.get(), 1);
+    assert!(!backup_journal_resolved_hook_armed());
+}
+
+#[test]
+fn failed_resolution_clears_hook_instead_of_leaking_to_the_next_run() {
+    reset_backup_journal_resolved_hook();
+    let firings = Rc::new(Cell::new(0));
+    let hook_firings = Rc::clone(&firings);
+    install_backup_journal_resolved_hook(move || hook_firings.set(hook_firings.get() + 1));
+
+    let sandbox = tempfile::tempdir().expect("sandbox creates");
+    let runner = PanicRunner;
+    let http = PanicHttp;
+    let clock = FixedClock;
+    let maintenance = Maintenance;
+    let services = backup_services(&runner, &http, &clock, &maintenance);
+    let first = run_backup(&sandbox.path().join("missing"), &services);
+    assert_eq!(
+        first.error_reason.as_deref(),
+        Some("journal_path_unresolved")
+    );
+    assert!(!backup_journal_resolved_hook_armed());
+
+    let _ = run_backup(sandbox.path(), &services);
+    assert_eq!(firings.get(), 0);
 }
 
 /// Binds a real Unix socket, so this lives in the `test-hooks` integration harness

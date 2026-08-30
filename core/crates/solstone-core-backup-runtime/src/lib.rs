@@ -2,6 +2,20 @@
 // Copyright (c) 2026 sol pbc
 
 //! Native runtime primitives for journal backup.
+//!
+//! Resolver fault-injection hooks are not part of a default build:
+//!
+//! ```compile_fail,E0432
+//! use solstone_core_backup_runtime::install_backup_journal_resolved_hook;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use solstone_core_backup_runtime::reset_backup_journal_resolved_hook;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use solstone_core_backup_runtime::backup_journal_resolved_hook_armed;
+//! ```
 
 pub mod destination;
 pub mod engine;
@@ -25,6 +39,12 @@ pub use engine::{
     NativeRestoreRecorder, PruneResult, RestoreRecorder, VerificationResult,
     check_archive_snapshot_files, record_backup_error, run_archive_backup, run_backup, run_prune,
     run_verification,
+};
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use engine::{
+    backup_journal_resolved_hook_armed, install_backup_journal_resolved_hook,
+    reset_backup_journal_resolved_hook,
 };
 pub use hosted_runtime::{
     BROKER_TIMEOUT_SECONDS, HostedCredentials, HostedCredsUnavailable, HostedResticSession,

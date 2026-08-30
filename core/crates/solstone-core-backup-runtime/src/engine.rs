@@ -404,9 +404,15 @@ fn backup_timeout_seconds(config: &Map<String, Value>) -> u64 {
 }
 
 fn prepare_backup_run(journal: &Path) -> Result<AdmittedBackupRun, BackupAdmissionTerminal> {
-    let resolved_journal =
-        resolve_backup_journal(journal).map_err(|_| BackupAdmissionTerminal::Unresolved)?;
-    #[cfg(test)]
+    let resolved_journal = match resolve_backup_journal(journal) {
+        Ok(resolved_journal) => resolved_journal,
+        Err(_) => {
+            #[cfg(any(test, feature = "test-hooks"))]
+            clear_backup_journal_resolved_hook();
+            return Err(BackupAdmissionTerminal::Unresolved);
+        }
+    };
+    #[cfg(any(test, feature = "test-hooks"))]
     run_on_backup_journal_resolved_hook();
 
     let config =
@@ -444,7 +450,7 @@ fn prepare_backup_run(journal: &Path) -> Result<AdmittedBackupRun, BackupAdmissi
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static ON_BACKUP_JOURNAL_RESOLVED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
         std::cell::RefCell::new(None)
@@ -458,7 +464,7 @@ thread_local! {
     };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn run_on_backup_journal_resolved_hook() {
     let hook = ON_BACKUP_JOURNAL_RESOLVED.with(|slot| slot.borrow_mut().take());
     if let Some(hook) = hook {
@@ -466,11 +472,8 @@ fn run_on_backup_journal_resolved_hook() {
     }
 }
 
-#[cfg(test)]
-fn run_with_backup_journal_resolved_hook<T>(
-    hook: impl FnOnce() + 'static,
-    op: impl FnOnce() -> T,
-) -> T {
+#[cfg(any(test, feature = "test-hooks"))]
+fn arm_backup_journal_resolved_hook(hook: impl FnOnce() + 'static) {
     ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
         assert!(
             slot.borrow().is_none(),
@@ -478,6 +481,21 @@ fn run_with_backup_journal_resolved_hook<T>(
         );
         *slot.borrow_mut() = Some(Box::new(hook));
     });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn clear_backup_journal_resolved_hook() {
+    ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
+        slot.borrow_mut().take();
+    });
+}
+
+#[cfg(test)]
+fn run_with_backup_journal_resolved_hook<T>(
+    hook: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> T {
+    arm_backup_journal_resolved_hook(hook);
     let result = op();
     ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
         assert!(
@@ -486,6 +504,30 @@ fn run_with_backup_journal_resolved_hook<T>(
         );
     });
     result
+}
+
+/// Test-only instrumentation: arm a one-shot callback after journal path resolution.
+///
+/// The callback runs before backup configuration is read. Arming a second callback
+/// on the same thread fails visibly instead of replacing the first callback.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn install_backup_journal_resolved_hook(hook: impl FnOnce() + 'static) {
+    arm_backup_journal_resolved_hook(hook);
+}
+
+/// Test-only instrumentation: discard any armed resolver-completion callback.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn reset_backup_journal_resolved_hook() {
+    clear_backup_journal_resolved_hook();
+}
+
+/// Test-only instrumentation: report whether this thread has an armed callback.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn backup_journal_resolved_hook_armed() -> bool {
+    ON_BACKUP_JOURNAL_RESOLVED.with(|slot| slot.borrow().is_some())
 }
 
 /// Test-only instrumentation: reset the per-thread `resolve_backup_journal` attempt count.
