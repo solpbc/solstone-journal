@@ -401,6 +401,7 @@ pub(crate) enum AdmittedBackupMode {
 }
 
 #[derive(Debug)]
+/// Tool-resolution failure closed to restic or rclone unavailability.
 pub enum ClosedToolError {
     ResticUnavailable,
     RcloneUnavailable,
@@ -842,6 +843,7 @@ fn record_verify(journal: &Path, clock: &dyn Clock, result: &VerificationResult)
 }
 
 impl AdmittedCapability {
+    /// Consume the capability and run the admitted backup, recording the outcome at its resolved journal.
     pub fn execute(self, services: &BackupServices<'_>) -> BackupResult {
         let AdmittedCapability {
             resolved_journal,
@@ -928,6 +930,7 @@ impl AdmittedCapability {
         result
     }
 
+    /// Consume the capability and record a tool-resolution failure at its resolved journal.
     pub fn record_tool_error(self, clock: &dyn Clock, error: ClosedToolError) -> BackupResult {
         let reason = match error {
             ClosedToolError::ResticUnavailable => "restic_unavailable",
