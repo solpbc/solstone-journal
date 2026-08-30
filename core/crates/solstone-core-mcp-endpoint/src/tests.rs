@@ -148,6 +148,15 @@ fn malformed_and_invalid_capability_configs_stop_before_endpoint_state() {
     ));
     assert_no_endpoint(malformed.path());
 
+    let unreadable = TempDir::new().expect("test root creates");
+    fs::create_dir_all(unreadable.path().join("config/journal.json"))
+        .expect("test unreadable config directory creates");
+    assert!(matches!(
+        bootstrap_mcp_endpoint_owner_identity(unreadable.path()),
+        Err(McpEndpointBootstrapError::ConfigRead)
+    ));
+    assert_no_endpoint(unreadable.path());
+
     let capability = TempDir::new().expect("test root creates");
     write_config(capability.path(), br#"{"mcp_endpoint":{"enabled":"yes"}}"#);
     assert!(matches!(
@@ -1126,10 +1135,19 @@ fn sensitive_inputs_never_reach_mcp_endpoint_diagnostics_or_public_context() {
     assert!(fired);
     assert_canaries_are_redacted(result, &canaries);
 
-    let success = TempDir::new().expect("test root creates");
-    write_enabled_config(success.path());
-    write_identity(success.path(), StateLayout::Primary);
-    let context = bootstrap_context(success.path());
+    let success_sandbox = TempDir::new().expect("test root creates");
+    let success = success_sandbox.path().join(PATH_COMPONENT);
+    fs::create_dir(&success).expect("canary success journal directory creates");
+    write_enabled_config(&success);
+    let success_spki = write_identity(&success, StateLayout::Primary);
+    let success_instance_id =
+        solstone_core_sol_link::ca::jid_from_spki(&success_spki).expect("test JID derives");
+    fs::write(
+        success.join("link/state.json"),
+        format!(r#"{{"instance_id":"{success_instance_id}","home_label":"{HOME_LABEL}"}}"#),
+    )
+    .expect("canary success state writes");
+    let context = bootstrap_context(&success);
     assert_eq!(context.test_verifying_key_bytes().len(), 32);
     // The public type has no Display, Debug, or accessor implementation. The
     // compile-fail doctests on McpEndpointOwnerContext pin that caller boundary.

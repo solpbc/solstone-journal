@@ -148,40 +148,6 @@ pub(crate) fn run_with_owner_barrier<T>(
     (result, trace.barriers_fired == 1)
 }
 
-/// Run `op` with two deterministic owner-bootstrap barrier callbacks.
-#[allow(dead_code)]
-pub(crate) fn run_with_two_owner_barriers<T>(
-    first_primitive: OwnerBootstrapPrimitive,
-    first_ordinal: usize,
-    first_callback: impl FnOnce() + 'static,
-    second_primitive: OwnerBootstrapPrimitive,
-    second_ordinal: usize,
-    second_callback: impl FnOnce() + 'static,
-    op: impl FnOnce() -> T,
-) -> (T, usize) {
-    install_trace(TraceState {
-        attempted: Vec::new(),
-        faults: Vec::new(),
-        faults_consumed: 0,
-        barriers: vec![
-            Barrier {
-                primitive: first_primitive,
-                ordinal: first_ordinal,
-                callback: Box::new(first_callback),
-            },
-            Barrier {
-                primitive: second_primitive,
-                ordinal: second_ordinal,
-                callback: Box::new(second_callback),
-            },
-        ],
-        barriers_fired: 0,
-    });
-    let result = op();
-    let trace = take_trace();
-    (result, trace.barriers_fired)
-}
-
 pub(crate) fn checkpoint(primitive: OwnerBootstrapPrimitive) -> io::Result<()> {
     let (fault, barrier) = TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();

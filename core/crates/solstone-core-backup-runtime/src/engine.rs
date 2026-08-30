@@ -1174,6 +1174,8 @@ mod tests {
             Some("journal_path_unresolved")
         );
         assert!(runner.commands.borrow().is_empty());
+        // The dangling journal path cannot receive a durable record, so this fixture cannot
+        // independently observe the recorder call.
     }
 
     #[test]
