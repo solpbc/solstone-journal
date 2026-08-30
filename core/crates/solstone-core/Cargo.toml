@@ -12,6 +12,7 @@ workspace = true
 
 [features]
 test-hooks = ["solstone-core-system/test-hooks"]
+journal-mcp-endpoint = []
 
 [lib]
 path = "src/lib.rs"

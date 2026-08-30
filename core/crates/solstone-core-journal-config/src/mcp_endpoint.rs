@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Journal-local MCP endpoint capability.
+
+use serde_json::Value;
+
+use crate::JournalConfigRead;
+
+/// Whether the journal-local MCP endpoint is enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpEndpointCapability {
+    Disabled,
+    Enabled,
+}
+
+/// Invalid explicit `mcp_endpoint.enabled` configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpEndpointCapabilityError {
+    EnabledMustBeBoolean,
+}
+
+/// Loopback port reserved for the journal-local MCP endpoint.
+pub const MCP_ENDPOINT_LOOPBACK_PORT: u16 = 7658;
+
+/// Return the MCP endpoint capability from an already-loaded journal config.
+pub fn mcp_endpoint_capability(
+    read: &JournalConfigRead,
+) -> Result<McpEndpointCapability, McpEndpointCapabilityError> {
+    let Some(config) = read.config.as_ref() else {
+        return Ok(McpEndpointCapability::Disabled);
+    };
+    let Some(endpoint) = config.get("mcp_endpoint") else {
+        return Ok(McpEndpointCapability::Disabled);
+    };
+    let Some(endpoint) = endpoint.as_object() else {
+        return Err(McpEndpointCapabilityError::EnabledMustBeBoolean);
+    };
+    match endpoint.get("enabled") {
+        None | Some(Value::Bool(false)) => Ok(McpEndpointCapability::Disabled),
+        Some(Value::Bool(true)) => Ok(McpEndpointCapability::Enabled),
+        Some(_) => Err(McpEndpointCapabilityError::EnabledMustBeBoolean),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Map, Value, json};
+
+    use super::*;
+
+    fn read(config: Option<Map<String, Value>>) -> JournalConfigRead {
+        JournalConfigRead {
+            present: config.is_some(),
+            sha256: None,
+            config,
+        }
+    }
+
+    fn config_with_endpoint(endpoint: Value) -> Map<String, Value> {
+        let mut config = Map::new();
+        config.insert("mcp_endpoint".to_owned(), endpoint);
+        config
+    }
+
+    #[test]
+    fn missing_config_is_disabled() {
+        assert_eq!(
+            mcp_endpoint_capability(&JournalConfigRead {
+                present: false,
+                sha256: None,
+                config: None,
+            }),
+            Ok(McpEndpointCapability::Disabled)
+        );
+    }
+
+    #[test]
+    fn empty_config_is_disabled() {
+        assert_eq!(
+            mcp_endpoint_capability(&read(Some(Map::new()))),
+            Ok(McpEndpointCapability::Disabled)
+        );
+    }
+
+    #[test]
+    fn endpoint_without_enabled_is_disabled() {
+        assert_eq!(
+            mcp_endpoint_capability(&read(Some(config_with_endpoint(json!({}))))),
+            Ok(McpEndpointCapability::Disabled)
+        );
+    }
+
+    #[test]
+    fn false_enabled_is_disabled() {
+        assert_eq!(
+            mcp_endpoint_capability(&read(Some(config_with_endpoint(json!({"enabled": false}))))),
+            Ok(McpEndpointCapability::Disabled)
+        );
+    }
+
+    #[test]
+    fn true_enabled_is_enabled() {
+        assert_eq!(
+            mcp_endpoint_capability(&read(Some(config_with_endpoint(json!({"enabled": true}))))),
+            Ok(McpEndpointCapability::Enabled)
+        );
+    }
+
+    #[test]
+    fn invalid_enabled_values_fail_closed() {
+        for value in [
+            json!(null),
+            json!("x"),
+            json!(1),
+            json!([1]),
+            json!({"a": 1}),
+        ] {
+            assert_eq!(
+                mcp_endpoint_capability(&read(Some(config_with_endpoint(json!({
+                    "enabled": value
+                }))))),
+                Err(McpEndpointCapabilityError::EnabledMustBeBoolean)
+            );
+        }
+    }
+
+    #[test]
+    fn non_object_endpoint_fails_closed() {
+        assert_eq!(
+            mcp_endpoint_capability(&read(Some(config_with_endpoint(json!("not-an-object"))))),
+            Err(McpEndpointCapabilityError::EnabledMustBeBoolean)
+        );
+    }
+
+    #[test]
+    fn unrelated_sibling_keys_are_inert() {
+        let config = json!({
+            "mcp_endpoint": {"enabled": true, "unrelated": 1},
+            "other_top_level_key": "x",
+        });
+        assert_eq!(
+            mcp_endpoint_capability(&read(config.as_object().cloned())),
+            Ok(McpEndpointCapability::Enabled)
+        );
+    }
+
+    #[test]
+    fn error_debug_name_is_stable() {
+        assert_eq!(
+            format!("{:?}", McpEndpointCapabilityError::EnabledMustBeBoolean),
+            "EnabledMustBeBoolean"
+        );
+    }
+}

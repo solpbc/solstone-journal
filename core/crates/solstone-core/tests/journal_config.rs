@@ -32,6 +32,31 @@ fn write(root: &Path, relative: &str, contents: &[u8]) {
     fs::write(path, contents).expect("write test file");
 }
 
+fn snapshot_directory(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn visit(root: &Path, directory: &Path, snapshot: &mut Vec<(PathBuf, Vec<u8>)>) {
+        for entry in fs::read_dir(directory).expect("snapshot directory reads") {
+            let path = entry.expect("snapshot entry reads").path();
+            if path.is_dir() {
+                visit(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.push((
+                    path.strip_prefix(root)
+                        .expect("snapshot path is below root")
+                        .to_path_buf(),
+                    fs::read(path).expect("snapshot file reads"),
+                ));
+            }
+        }
+    }
+
+    let mut snapshot = Vec::new();
+    if root.is_dir() {
+        visit(root, root, &mut snapshot);
+    }
+    snapshot.sort_by(|left, right| left.0.cmp(&right.0));
+    snapshot
+}
+
 fn run(root: &Path, args: &[&str], stdin: &[u8]) -> Output {
     let mut child = Command::new(bin())
         .arg("journal-config")
@@ -98,6 +123,66 @@ fn journal_config_read_present_prints_exact_fingerprint_and_config() {
             .is_some_and(|hash| hash.starts_with("sha256:"))
     );
     assert_eq!(output["config"], json!({"known": "value"}));
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn journal_config_read_with_mcp_endpoint_disabled_key_is_unaffected() {
+    let root = temp_path("read-mcp-endpoint-disabled");
+    write(
+        &root,
+        "config/journal.json",
+        b"{\"mcp_endpoint\": {\"enabled\": false}}",
+    );
+    let before = snapshot_directory(&root);
+
+    let output = read(&root);
+
+    assert_eq!(snapshot_directory(&root), before);
+    assert_eq!(output["present"], true);
+    assert_eq!(
+        output["config"],
+        json!({"mcp_endpoint": {"enabled": false}})
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn journal_config_read_with_mcp_endpoint_enabled_key_is_unaffected() {
+    let root = temp_path("read-mcp-endpoint-enabled");
+    write(
+        &root,
+        "config/journal.json",
+        b"{\"mcp_endpoint\": {\"enabled\": true}}",
+    );
+    let before = snapshot_directory(&root);
+
+    let output = read(&root);
+
+    assert_eq!(snapshot_directory(&root), before);
+    assert_eq!(output["present"], true);
+    assert_eq!(output["config"], json!({"mcp_endpoint": {"enabled": true}}));
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn journal_config_read_with_malformed_mcp_endpoint_key_is_unaffected() {
+    let root = temp_path("read-mcp-endpoint-malformed");
+    write(
+        &root,
+        "config/journal.json",
+        b"{\"mcp_endpoint\": {\"enabled\": \"yes\"}}",
+    );
+    let before = snapshot_directory(&root);
+
+    let output = read(&root);
+
+    assert_eq!(snapshot_directory(&root), before);
+    assert_eq!(output["present"], true);
+    assert_eq!(
+        output["config"],
+        json!({"mcp_endpoint": {"enabled": "yes"}})
+    );
     fs::remove_dir_all(root).expect("cleanup root");
 }
 

@@ -3032,6 +3032,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-config::mcp_endpoint_public_surface"
+package = "solstone-core-journal-config"
+target = "mcp_endpoint_public_surface"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-io::journal_io_lock_component"
 package = "solstone-core-journal-io"
 target = "journal_io_lock_component"

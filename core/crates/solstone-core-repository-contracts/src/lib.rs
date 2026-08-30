@@ -49,6 +49,9 @@ mod hosted_launch_admission_boundary;
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]
+#[path = "contracts/mcp_endpoint_gate_purity.rs"]
+mod mcp_endpoint_gate_purity;
+#[cfg(test)]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;
 #[cfg(test)]
