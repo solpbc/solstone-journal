@@ -1,6 +1,6 @@
 # Sol Journal
 
-The journal layout and CLI reference moved to [talent/journal/SKILL.md](../talent/journal/SKILL.md).
+The journal layout and CLI reference moved to [core/payload/solstone/talent/journal/SKILL.md](../core/payload/solstone/talent/journal/SKILL.md).
 
 This file is a breadcrumb for old links.
 

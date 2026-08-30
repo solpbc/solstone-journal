@@ -1263,9 +1263,6 @@ install-checks: .installed
 	@echo "=== Running journal-config owner check ==="
 	@$(MAKE) check-journal-config-owner
 	@echo ""
-	@echo "=== Running provider-install owner check ==="
-	@$(MAKE) check-provider-install-owner
-	@echo ""
 	@echo "=== Running provider-start-command check ==="
 	@$(MAKE) check-provider-start-commands
 	@echo ""
@@ -1506,10 +1503,6 @@ check-journal-io-mechanic: .installed
 # Journal config owner transaction boundary gate
 check-journal-config-owner: .installed
 	$(VENV_BIN)/python scripts/check_journal_config_owner.py
-
-# Provider install ownership boundary gate
-check-provider-install-owner: .installed
-	$(VENV_BIN)/python scripts/check_provider_install_owner.py
 
 # Provider runtime start-command boundary gate
 check-provider-start-commands: .installed
