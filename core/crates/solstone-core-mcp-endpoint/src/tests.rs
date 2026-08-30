@@ -10,7 +10,8 @@ use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use nix::fcntl::OFlag;
+use nix::errno::Errno;
+use nix::fcntl::{Flock, FlockArg, OFlag};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat};
 use nix::unistd::{geteuid, mkfifo};
 use ring::rand::SystemRandom;
@@ -18,8 +19,8 @@ use ring::signature::{Ed25519KeyPair, KeyPair as _};
 use tempfile::TempDir;
 
 use crate::test_seam::{
-    OwnerBootstrapPrimitive, run_with_owner_barrier, run_with_owner_fault,
-    run_with_two_owner_faults,
+    OwnerBootstrapPrimitive, run_with_owner_barrier, run_with_owner_barrier_and_fault,
+    run_with_owner_fault, run_with_two_owner_faults,
 };
 use crate::unix::{
     FILE_OPEN_FLAGS, LOCK_OPEN_FLAGS, identity, is_directory, is_exact_directory, is_exact_regular,
@@ -610,16 +611,21 @@ fn post_precheck_hostile_key_plants_are_never_overwritten_or_trusted_when_invali
     let planted_key = valid_pkcs8();
     let expected = verifying_key(&planted_key);
     let planted_path = endpoint_path(planted.path()).join("pop.ed25519.pk8");
+    let planted_path_for_barrier = planted_path.clone();
+    let planted_key_for_barrier = planted_key.clone();
     let (result, fired) = run_with_owner_barrier(
         OwnerBootstrapPrimitive::KeyGenerate,
         1,
-        move || write_private_file(&planted_path, &planted_key),
+        move || write_private_file(&planted_path_for_barrier, &planted_key_for_barrier),
         || bootstrap_mcp_endpoint_owner_identity(planted.path()),
     );
     assert!(fired);
-    let context = result
-        .expect("planted valid key bootstrap succeeds")
-        .expect("enabled endpoint returns a context");
+    assert_endpoint_error(result);
+    assert_eq!(
+        fs::read(&planted_path).expect("valid plant remains readable"),
+        planted_key
+    );
+    let context = bootstrap_context(planted.path());
     assert_eq!(context.test_verifying_key_bytes(), expected);
 
     for plant in ["corrupt", "symlink", "fifo"] {
@@ -641,6 +647,83 @@ fn post_precheck_hostile_key_plants_are_never_overwritten_or_trusted_when_invali
         assert!(fired, "{plant} plant barrier fires");
         assert_endpoint_error(result);
     }
+}
+
+#[test]
+fn acquired_lock_name_must_still_bind_before_any_key_work() {
+    let root = prepared_enabled_root();
+    let endpoint = prepare_endpoint_directory(root.path());
+    let lock_path = endpoint.join(".create.lock");
+    let aside = endpoint.join(".create.lock.aside");
+    write_private_file(&lock_path, b"original lock");
+    let callback_lock = lock_path.clone();
+    let callback_aside = aside.clone();
+    let (result, fired, later_key_checkpoint_reached) = run_with_owner_barrier_and_fault(
+        OwnerBootstrapPrimitive::LockBindingAfterAcquire,
+        1,
+        move || {
+            fs::rename(&callback_lock, &callback_aside).expect("locked inode moves aside");
+            write_private_file(&callback_lock, b"replacement lock");
+        },
+        OwnerBootstrapPrimitive::KeyPrecheckStat,
+        1,
+        nix::libc::EIO,
+        || bootstrap_mcp_endpoint_owner_identity(root.path()),
+    );
+    assert!(fired, "post-acquire lock-binding checkpoint fires");
+    assert!(
+        !later_key_checkpoint_reached,
+        "lock-name replacement must fail before key precheck"
+    );
+    assert_endpoint_error(result);
+    assert_eq!(
+        fs::read(&aside).expect("original lock remains"),
+        b"original lock"
+    );
+    assert_eq!(
+        fs::read(&lock_path).expect("replacement lock remains"),
+        b"replacement lock"
+    );
+    assert!(!endpoint.join("pop.ed25519.pk8").exists());
+}
+
+#[test]
+fn lock_guard_remains_held_until_after_the_last_content_read() {
+    let root = prepared_enabled_root();
+    let _context = bootstrap_context(root.path());
+    let lock_path = endpoint_path(root.path()).join(".create.lock");
+    let callback_lock = lock_path.clone();
+    let (result, fired) = run_with_owner_barrier(
+        OwnerBootstrapPrimitive::FinalKeyRead,
+        1,
+        move || {
+            let probe = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&callback_lock)
+                .expect("canonical lock opens for nonblocking probe");
+            match Flock::lock(probe, FlockArg::LockExclusiveNonblock) {
+                Ok(_unexpected_lock) => panic!("bootstrap lock was released before final read"),
+                Err((_probe, errno)) => assert_eq!(
+                    errno,
+                    Errno::EAGAIN,
+                    "held lock refuses with EAGAIN/EWOULDBLOCK"
+                ),
+            }
+        },
+        || bootstrap_mcp_endpoint_owner_identity(root.path()),
+    );
+    assert!(fired);
+    assert!(matches!(result, Ok(Some(_))));
+
+    let probe = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("canonical lock reopens after bootstrap");
+    let acquired = Flock::lock(probe, FlockArg::LockExclusiveNonblock)
+        .expect("lock is available after bootstrap returns");
+    drop(acquired);
 }
 
 fn assert_fifo_replacement_is_bounded(
@@ -695,7 +778,7 @@ fn assert_final_key_name_replacement_is_rejected(root: &Path) {
     let aside = endpoint_path(root).join("pop.ed25519.pk8.aside");
     let replacement = valid_pkcs8();
     let (result, fired) = run_with_owner_barrier(
-        OwnerBootstrapPrimitive::FinalKeyOpen,
+        OwnerBootstrapPrimitive::FinalKeyFsync,
         1,
         move || {
             fs::rename(&key_path, &aside).expect("current key moves aside");
@@ -719,44 +802,56 @@ fn final_key_name_replacements_are_rejected_for_existing_and_fresh_keys() {
 
 #[test]
 fn final_key_content_compare_rejects_same_inode_overwrites_and_accepts_unchanged_bytes() {
-    let root = prepared_enabled_root();
-    let _context = bootstrap_context(root.path());
-    let key_path = endpoint_path(root.path()).join("pop.ed25519.pk8");
-    let before = fs::metadata(&key_path).expect("key metadata");
-    let replacement = valid_pkcs8();
-    assert_eq!(
-        replacement.len(),
-        fs::read(&key_path).expect("key reads").len()
-    );
-    let overwrite_path = key_path.clone();
-    let replacement_for_barrier = replacement.clone();
-    let (result, fired) = run_with_owner_barrier(
+    for primitive in [
         OwnerBootstrapPrimitive::FinalKeyContentCompare,
-        1,
-        move || {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .open(&overwrite_path)
-                .expect("same inode opens for overwrite");
-            file.seek(SeekFrom::Start(0)).expect("overwrite seeks");
-            file.write_all(&replacement_for_barrier)
-                .expect("same-length overwrite writes");
-            file.sync_all().expect("overwrite syncs");
-        },
-        || bootstrap_mcp_endpoint_owner_identity(root.path()),
-    );
-    assert!(fired);
-    assert_endpoint_error(result);
-    let after = fs::metadata(&key_path).expect("key metadata");
-    assert_eq!(before.ino(), after.ino());
-    assert_eq!(
-        before.permissions().mode() & 0o777,
-        after.permissions().mode() & 0o777
-    );
-    assert_eq!(
-        fs::read(&key_path).expect("overwritten key reads"),
-        replacement
-    );
+        OwnerBootstrapPrimitive::FinalKeyFsync,
+        OwnerBootstrapPrimitive::FinalDirectoryFsync,
+        OwnerBootstrapPrimitive::FinalKeyRead,
+    ] {
+        let root = prepared_enabled_root();
+        let _context = bootstrap_context(root.path());
+        let key_path = endpoint_path(root.path()).join("pop.ed25519.pk8");
+        let before = fs::metadata(&key_path).expect("key metadata");
+        let replacement = valid_pkcs8();
+        assert_eq!(
+            replacement.len(),
+            fs::read(&key_path).expect("key reads").len()
+        );
+        let overwrite_path = key_path.clone();
+        let replacement_for_barrier = replacement.clone();
+        let (result, fired) = run_with_owner_barrier(
+            primitive,
+            1,
+            move || {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .open(&overwrite_path)
+                    .expect("same inode opens for overwrite");
+                file.seek(SeekFrom::Start(0)).expect("overwrite seeks");
+                file.write_all(&replacement_for_barrier)
+                    .expect("same-length overwrite writes");
+                file.sync_all().expect("overwrite syncs");
+            },
+            || bootstrap_mcp_endpoint_owner_identity(root.path()),
+        );
+        assert!(fired, "{primitive:?} overwrite barrier fires");
+        assert_endpoint_error(result);
+        let after = fs::metadata(&key_path).expect("key metadata");
+        assert_eq!(before.ino(), after.ino());
+        assert_eq!(
+            before.permissions().mode() & 0o777,
+            after.permissions().mode() & 0o777
+        );
+        assert_eq!(
+            fs::read(&key_path).expect("overwritten key reads"),
+            replacement
+        );
+        let recovered = bootstrap_context(root.path());
+        assert_eq!(
+            recovered.test_verifying_key_bytes(),
+            verifying_key(&replacement)
+        );
+    }
 
     let clean = prepared_enabled_root();
     let _context = bootstrap_context(clean.path());
@@ -768,6 +863,52 @@ fn final_key_content_compare_rejects_same_inode_overwrites_and_accepts_unchanged
     );
     assert!(fired);
     assert!(matches!(result, Ok(Some(_))));
+}
+
+#[test]
+fn final_authority_checks_reject_metadata_and_lock_name_changes() {
+    for target in ["lock", "directory", "key"] {
+        let root = prepared_enabled_root();
+        let _context = bootstrap_context(root.path());
+        let endpoint = endpoint_path(root.path());
+        let changed = match target {
+            "lock" => endpoint.join(".create.lock"),
+            "directory" => endpoint,
+            "key" => endpoint.join("pop.ed25519.pk8"),
+            _ => unreachable!("known metadata target"),
+        };
+        let changed_mode = if target == "directory" { 0o755 } else { 0o644 };
+        let (result, fired) = run_with_owner_barrier(
+            OwnerBootstrapPrimitive::FinalDirectoryFsync,
+            1,
+            move || set_mode(&changed, changed_mode),
+            || bootstrap_mcp_endpoint_owner_identity(root.path()),
+        );
+        assert!(fired, "{target} metadata barrier fires");
+        assert_endpoint_error(result);
+    }
+
+    let root = prepared_enabled_root();
+    let _context = bootstrap_context(root.path());
+    let endpoint = endpoint_path(root.path());
+    let lock_path = endpoint.join(".create.lock");
+    let aside = endpoint.join(".create.lock.final-aside");
+    let callback_lock = lock_path.clone();
+    let (result, fired) = run_with_owner_barrier(
+        OwnerBootstrapPrimitive::FinalLockBinding,
+        1,
+        move || {
+            fs::rename(&callback_lock, &aside).expect("locked inode moves aside");
+            write_private_file(&callback_lock, b"replacement lock");
+        },
+        || bootstrap_mcp_endpoint_owner_identity(root.path()),
+    );
+    assert!(fired, "final lock-name binding checkpoint fires");
+    assert_endpoint_error(result);
+    assert_eq!(
+        fs::read(&lock_path).expect("replacement lock remains"),
+        b"replacement lock"
+    );
 }
 
 #[test]
@@ -897,6 +1038,7 @@ const OWNER_FAULT_PRIMITIVES: &[OwnerBootstrapPrimitive] = &[
     OwnerBootstrapPrimitive::LockFchmod,
     OwnerBootstrapPrimitive::LockFstat,
     OwnerBootstrapPrimitive::LockAcquire,
+    OwnerBootstrapPrimitive::LockBindingAfterAcquire,
     OwnerBootstrapPrimitive::KeyPrecheckStat,
     OwnerBootstrapPrimitive::KeyOpen,
     OwnerBootstrapPrimitive::KeyFstat,
@@ -907,10 +1049,19 @@ const OWNER_FAULT_PRIMITIVES: &[OwnerBootstrapPrimitive] = &[
     OwnerBootstrapPrimitive::KeyPublish,
     OwnerBootstrapPrimitive::FinalKeyOpen,
     OwnerBootstrapPrimitive::FinalKeyRestat,
+    OwnerBootstrapPrimitive::FinalKeyInitialNameBinding,
     OwnerBootstrapPrimitive::FinalKeyContentCompare,
     OwnerBootstrapPrimitive::FinalKeyFsync,
     OwnerBootstrapPrimitive::FinalDirectoryFsync,
+    OwnerBootstrapPrimitive::FinalLockBinding,
+    OwnerBootstrapPrimitive::FinalDirectoryRestat,
+    OwnerBootstrapPrimitive::FinalKeyAuthorityRestat,
+    OwnerBootstrapPrimitive::FinalKeyNameBinding,
+    OwnerBootstrapPrimitive::FinalRootRevalidate,
     OwnerBootstrapPrimitive::DirectoryBindingCheckBeforeSuccess,
+    OwnerBootstrapPrimitive::FinalKeySeek,
+    OwnerBootstrapPrimitive::FinalKeyRead,
+    OwnerBootstrapPrimitive::FinalKeyDecode,
 ];
 
 #[test]
@@ -999,9 +1150,9 @@ fn root_with_preexisting_key(bytes: &[u8]) -> TempDir {
 
 #[test]
 fn oversized_key_prechecks_avoid_reads_and_exact_limit_reaches_decode() {
-    let mut exactly_513 = valid_pkcs8();
-    exactly_513.resize(513, 0);
-    let exact = root_with_preexisting_key(&exactly_513);
+    let mut exactly_512 = valid_pkcs8();
+    exactly_512.resize(512, 0);
+    let exact = root_with_preexisting_key(&exactly_512);
     assert_endpoint_error(bootstrap_mcp_endpoint_owner_identity(exact.path()));
     let (result, consumed) = run_with_owner_fault(
         OwnerBootstrapPrimitive::KeyDecode,
@@ -1012,7 +1163,7 @@ fn oversized_key_prechecks_avoid_reads_and_exact_limit_reaches_decode() {
     assert_endpoint_error(result);
     assert!(consumed, "exact-limit input reaches the decode checkpoint");
 
-    let large = root_with_preexisting_key(&vec![b'x'; 514]);
+    let large = root_with_preexisting_key(&vec![b'x'; 513]);
     let (result, consumed) =
         run_with_owner_fault(OwnerBootstrapPrimitive::KeyRead, 1, nix::libc::EIO, || {
             bootstrap_mcp_endpoint_owner_identity(large.path())
@@ -1045,6 +1196,24 @@ fn oversized_key_prechecks_avoid_reads_and_exact_limit_reaches_decode() {
         });
     assert_endpoint_error(result);
     assert!(!consumed, "sparse oversized key is refused before reading");
+
+    let grown = root_with_preexisting_key(&valid_pkcs8());
+    let grown_path = endpoint_path(grown.path()).join("pop.ed25519.pk8");
+    let (result, fired) = run_with_owner_barrier(
+        OwnerBootstrapPrimitive::KeyRead,
+        1,
+        move || {
+            OpenOptions::new()
+                .write(true)
+                .open(&grown_path)
+                .expect("race-growth key opens")
+                .set_len(1024 * 1024 * 1024)
+                .expect("race-growth key becomes sparse");
+        },
+        || bootstrap_mcp_endpoint_owner_identity(grown.path()),
+    );
+    assert!(fired, "bounded read race checkpoint fires");
+    assert_endpoint_error(result);
 }
 
 #[test]

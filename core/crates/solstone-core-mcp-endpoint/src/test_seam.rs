@@ -24,6 +24,7 @@ pub(crate) enum OwnerBootstrapPrimitive {
     LockFchmod,
     LockFstat,
     LockAcquire,
+    LockBindingAfterAcquire,
     KeyPrecheckStat,
     KeyOpen,
     KeyFstat,
@@ -34,10 +35,19 @@ pub(crate) enum OwnerBootstrapPrimitive {
     KeyPublish,
     FinalKeyOpen,
     FinalKeyRestat,
+    FinalKeyInitialNameBinding,
     FinalKeyContentCompare,
     FinalKeyFsync,
     FinalDirectoryFsync,
+    FinalLockBinding,
+    FinalDirectoryRestat,
+    FinalKeyAuthorityRestat,
+    FinalKeyNameBinding,
+    FinalRootRevalidate,
     DirectoryBindingCheckBeforeSuccess,
+    FinalKeySeek,
+    FinalKeyRead,
+    FinalKeyDecode,
 }
 
 struct Fault {
@@ -146,6 +156,41 @@ pub(crate) fn run_with_owner_barrier<T>(
     let result = op();
     let trace = take_trace();
     (result, trace.barriers_fired == 1)
+}
+
+/// Run `op` with one deterministic barrier and one later fault witness.
+#[allow(dead_code)]
+pub(crate) fn run_with_owner_barrier_and_fault<T>(
+    barrier_primitive: OwnerBootstrapPrimitive,
+    barrier_ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    fault_primitive: OwnerBootstrapPrimitive,
+    fault_ordinal: usize,
+    raw_errno: i32,
+    op: impl FnOnce() -> T,
+) -> (T, bool, bool) {
+    install_trace(TraceState {
+        attempted: Vec::new(),
+        faults: vec![Fault {
+            primitive: fault_primitive,
+            ordinal: fault_ordinal,
+            error: Errno::from_raw(raw_errno),
+        }],
+        faults_consumed: 0,
+        barriers: vec![Barrier {
+            primitive: barrier_primitive,
+            ordinal: barrier_ordinal,
+            callback: Box::new(callback),
+        }],
+        barriers_fired: 0,
+    });
+    let result = op();
+    let trace = take_trace();
+    (
+        result,
+        trace.barriers_fired == 1,
+        trace.faults_consumed == 1,
+    )
 }
 
 pub(crate) fn checkpoint(primitive: OwnerBootstrapPrimitive) -> io::Result<()> {
