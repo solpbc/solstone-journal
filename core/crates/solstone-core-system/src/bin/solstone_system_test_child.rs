@@ -37,6 +37,43 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        #[cfg(windows)]
+        "exit-code" => {
+            let code = args
+                .next()
+                .expect("exit code")
+                .parse::<u32>()
+                .expect("numeric exit code");
+            std::process::exit(code as i32);
+        }
+        #[cfg(windows)]
+        "probe-handle-absent" => {
+            use windows_sys::Win32::Foundation::{ERROR_INVALID_HANDLE, GetHandleInformation};
+
+            let raw = args
+                .next()
+                .expect("handle value")
+                .parse::<usize>()
+                .expect("numeric handle value") as *mut _;
+            let mut flags = 0;
+            // SAFETY: this intentionally probes only the numeric handle value
+            // supplied by the parent; the API writes one HANDLE_FLAGS result.
+            #[allow(unsafe_code)]
+            let result = unsafe { GetHandleInformation(raw, &raw mut flags) };
+            if result != 0 {
+                println!("present");
+            } else if std::io::Error::last_os_error().raw_os_error()
+                == Some(ERROR_INVALID_HANDLE as i32)
+            {
+                println!("absent");
+            } else {
+                eprintln!(
+                    "unexpected GetHandleInformation failure: {}",
+                    std::io::Error::last_os_error()
+                );
+                std::process::exit(65);
+            }
+        }
         "host-death-managed" => {
             let ready_path = args.next().expect("ready path");
             let journal_root = args.next().expect("journal root");
