@@ -1,24 +1,9 @@
 # solstone Makefile
-# Python-based AI-driven desktop journaling toolkit
-
-# Route pytest tmp dirs to /var/tmp (disk) instead of default /tmp (tmpfs/RAM).
-# Each top-level pytest invocation gets its own --basetemp so concurrent runs
-# in different worktrees do not share /var/tmp/pytest-of-$USER/pytest-N/. The
-# basetemp is created at recipe runtime (not parse time) and removed via shell
-# trap on exit, so non-test make targets don't leak empty dirs and test runs
-# don't leak full ones. PYTEST_BASETEMP_INIT must be on the same recipe shell
-# line as PYTEST_BASETEMP_FLAG (each recipe line is its own shell). Do not
-# re-add --basetemp to pyproject — it would pin all runs to one path and
-# pytest wipes it on startup, destroying concurrent state.
-# Keep temporary work disk-backed while using one physical spelling on hosts
-# such as macOS where /var/tmp is an alias of /private/var/tmp.
-export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
-PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
-PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
+# Rust-native AI-driven desktop journaling toolkit
 
 .PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
-# Default target - build the native workspace during the Rust-conversion freeze
+# Default target: build the native workspace.
 all: build
 
 # Virtual environment directory
@@ -319,7 +304,7 @@ REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_V
 # Require uv only for goals that actually use it. `preflight` is a pure
 # stdlib readiness battery and `install` runs preflight as its own fail-fast
 # pre-step, so neither should abort at parse time when uv is absent — they
-# report uv-absence themselves. Rust-only and frozen/gated goals are likewise
+# report uv-absence themselves. Rust-only and retired/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
 UV_OPTIONAL_GOALS := \
@@ -334,7 +319,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
 	ci-contained ci-prep-ffmpeg \
 	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
-	verify test build format format-check \
+	verify test build format format-check report-rust-code-evidence \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
 	test-cov test-integration test-performance test-app test-only watch coverage
 ifndef UV
@@ -343,13 +328,9 @@ $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install
 endif
 endif
 
-# --- Rust-conversion freeze guards ------------------------------------------
-# FREEZE_GUARD: the release rail and the alternate Python test rails are
-# frozen for the duration of the Rust-conversion effort. There is no flag
-# that restores them — the freeze lifts only when this Makefile is edited
-# again. See docs/PORTING.md.
-define FREEZE_GUARD
-	@echo "$(1): frozen for the Rust-conversion effort (development gate is Rust-only; see docs/PORTING.md)" >&2
+# --- Retired Python test rails ----------------------------------------------
+define RETIRED_PYTHON_TEST_RAIL
+	@echo "$(1): retired. Use the Rust test hierarchy documented in AGENTS.md." >&2
 	@exit 1
 endef
 
@@ -1213,19 +1194,19 @@ check-journal-device-sim:
 	python3 -m unittest discover -s tools/journal_device_sim/tests -p 'test_*.py' -v
 
 test-cov:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 test-integration:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 test-performance:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 test-app:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 test-only:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 format:
 	cargo fmt --manifest-path $(RUST_MANIFEST) --all
@@ -1474,13 +1455,13 @@ ci-full-under-poison:
 	$(SOLSTONE_CI_RUNNER) run
 
 verify: ci
-	@echo "Verification complete! (alias for ci during the Rust-conversion freeze)"
+	@echo "Verification complete."
 
 watch:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 coverage:
-	$(call FREEZE_GUARD,$@)
+	$(call RETIRED_PYTHON_TEST_RAIL,$@)
 
 # Update all dependencies to latest versions and refresh genai-prices
 update: .installed
