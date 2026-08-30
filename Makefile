@@ -119,7 +119,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # script needs these args to find limits.h. Leaving install off this list made
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and install itself must carry it too.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-rust-release-manifest audit ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
@@ -653,6 +653,10 @@ export SOLSTONE_CI_AREAS := $(AREAS)
 export SOLSTONE_CI_PACKAGES := $(PACKAGES)
 export SOLSTONE_CI_TARGETS := $(TARGETS)
 export SOLSTONE_CI_RECEIPT := $(RECEIPT)
+export AUDIT_ADVISORY_BUNDLE := $(AUDIT_ADVISORY_BUNDLE)
+export AUDIT_ADVISORY_RECEIPT := $(AUDIT_ADVISORY_RECEIPT)
+export AUDIT_ADVISORY_PUBKEY := $(AUDIT_ADVISORY_PUBKEY)
+export AUDIT_ADVISORY_LOCATOR := $(AUDIT_ADVISORY_LOCATOR)
 
 .PHONY: check-rust-ci-topology ci-full-plan check-rust-clippy-full check-rust-doc check-rust-onnx-ready check-rust-pdf-ready check-rust-registry-suite check-rust-registry-package
 
@@ -1013,9 +1017,32 @@ check-rust-shipped-binaries: build
 		esac; \
 	fi
 
+.PHONY: audit check-rust-release-manifest
+check-rust-release-manifest:
+	@$(REQUIRE_CARGO)
+	@set -eu; \
+	if [ -n "$${MANIFEST:-}" ] && [ -n "$${RELEASE_DIR:-}" ]; then \
+		echo "release manifest: MANIFEST and RELEASE_DIR are mutually exclusive" >&2; exit 2; \
+	elif [ -n "$${MANIFEST:-}" ]; then \
+		$(SOLSTONE_CI_RUNNER) release-manifest-check --manifest "$${MANIFEST}"; \
+	elif [ -n "$${RELEASE_DIR:-}" ]; then \
+		$(SOLSTONE_CI_RUNNER) release-manifest-check --release-dir "$${RELEASE_DIR}"; \
+	else \
+		$(SOLSTONE_CI_RUNNER) release-manifest-check; \
+	fi
+
 audit:
 	@$(REQUIRE_CARGO)
-	cargo deny --manifest-path $(RUST_MANIFEST) check
+	@set -eu; \
+	[ -n "$${AUDIT_ADVISORY_BUNDLE:-}" ] || { echo "audit: AUDIT_ADVISORY_BUNDLE is required" >&2; exit 2; }; \
+	[ -n "$${AUDIT_ADVISORY_RECEIPT:-}" ] || { echo "audit: AUDIT_ADVISORY_RECEIPT is required" >&2; exit 2; }; \
+	[ -n "$${AUDIT_ADVISORY_PUBKEY:-}" ] || { echo "audit: AUDIT_ADVISORY_PUBKEY is required" >&2; exit 2; }; \
+	[ -n "$${AUDIT_ADVISORY_LOCATOR:-}" ] || { echo "audit: AUDIT_ADVISORY_LOCATOR is required" >&2; exit 2; }; \
+	$(SOLSTONE_CI_RUNNER) advisory-audit \
+		--bundle "$${AUDIT_ADVISORY_BUNDLE}" \
+		--receipt "$${AUDIT_ADVISORY_RECEIPT}" \
+		--pubkey "$${AUDIT_ADVISORY_PUBKEY}" \
+		--locator "$${AUDIT_ADVISORY_LOCATOR}"
 
 # Re-vendor brand assets from the canonical brand source. CI verifies the
 # committed output (it does not run brand-sync) — run this locally when the
@@ -1254,6 +1281,7 @@ install-checks: .installed
 	@echo "=== Running schema-bounds check ==="
 	@echo ""
 	@echo "=== Running rust release-manifest check ==="
+	@$(MAKE) check-rust-release-manifest
 	@echo ""
 	@echo "=== Running SPL dependency-pin check ==="
 	@$(MAKE) check-spl-dependency-pin
@@ -1499,7 +1527,6 @@ check-brain-health-cutover: .installed
 check-speaker-identity-cutover: .installed
 	$(VENV_BIN)/python scripts/check_speaker_identity_cutover.py
 
-# Rust release-manifest schema, semantic, determinism, and transaction gate
 # SPL git dependency pin guard
 check-spl-dependency-pin:
 	python3 scripts/check_spl_dependency_pin.py

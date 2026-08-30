@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod advisory_audit;
 pub mod ci;
 #[cfg(test)]
 mod payload_inventory;
+pub mod release_manifest;
 pub mod windows_crosscheck;
 
 #[cfg(test)]

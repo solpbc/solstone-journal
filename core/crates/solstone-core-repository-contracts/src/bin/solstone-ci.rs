@@ -2,10 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 use serde::Serialize;
+use solstone_core_repository_contracts::advisory_audit::{
+    AdvisoryAuditRequest, run_advisory_audit,
+};
 use solstone_core_repository_contracts::ci::{
     Leg, PackageSuite, Registry, Suite, load_registry, scan_routine_boundaries, validate_boundary,
     validate_registry,
 };
+use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File};
@@ -34,6 +38,16 @@ fn run() -> Result<i32, String> {
     let registry_path = repo.join("core/ci/suites.toml");
 
     match command.as_str() {
+        "release-manifest-check" => {
+            let selection = parse_manifest_selection(args)?;
+            println!("{}", run_manifest_check(&repo, selection)?);
+            Ok(0)
+        }
+        "advisory-audit" => {
+            let request = parse_advisory_audit(args)?;
+            println!("{}", run_advisory_audit(&repo, &request)?);
+            Ok(0)
+        }
         "validate" => {
             if args.next().is_some() {
                 return Err("validate does not accept arguments".to_owned());
@@ -71,13 +85,70 @@ fn run() -> Result<i32, String> {
         }
         "help" | "--help" | "-h" => {
             println!(
-                "usage: solstone-ci <validate|plan|run|boundary-snapshot> [--sets CSV] [--areas CSV] [--packages CSV] [--targets CSV] [--receipt PATH]"
+                "usage: solstone-ci <validate|plan|run|boundary-snapshot|release-manifest-check|advisory-audit> [options]"
             );
             println!("selectors union within a dimension and intersect across dimensions");
             Ok(0)
         }
         _ => Err(format!("unknown command {command:?}")),
     }
+}
+
+fn parse_manifest_selection(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ManifestSelection, String> {
+    let mut manifest = None;
+    let mut release_dir = None;
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .ok_or_else(|| format!("{flag} requires a value"))?;
+        match flag.as_str() {
+            "--manifest" if manifest.is_none() => manifest = Some(PathBuf::from(value)),
+            "--release-dir" if release_dir.is_none() => release_dir = Some(PathBuf::from(value)),
+            _ => {
+                return Err(format!(
+                    "unknown or duplicate release-manifest option {flag}"
+                ));
+            }
+        }
+    }
+    match (manifest, release_dir) {
+        (None, None) => Ok(ManifestSelection::SelfTest),
+        (Some(path), None) => Ok(ManifestSelection::Manifest(path)),
+        (None, Some(path)) => Ok(ManifestSelection::ReleaseDir(path)),
+        (Some(_), Some(_)) => Err("--manifest and --release-dir are mutually exclusive".to_owned()),
+    }
+}
+
+fn parse_advisory_audit(
+    mut args: impl Iterator<Item = String>,
+) -> Result<AdvisoryAuditRequest, String> {
+    let mut bundle = None;
+    let mut receipt = None;
+    let mut public_key = None;
+    let mut locator = None;
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .ok_or_else(|| format!("{flag} requires a value"))?;
+        let slot = match flag.as_str() {
+            "--bundle" => &mut bundle,
+            "--receipt" => &mut receipt,
+            "--pubkey" => &mut public_key,
+            "--locator" => &mut locator,
+            _ => return Err(format!("unknown advisory-audit option {flag}")),
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("duplicate advisory-audit option {flag}"));
+        }
+    }
+    Ok(AdvisoryAuditRequest {
+        bundle: PathBuf::from(bundle.ok_or("--bundle is required")?),
+        receipt: PathBuf::from(receipt.ok_or("--receipt is required")?),
+        public_key: PathBuf::from(public_key.ok_or("--pubkey is required")?),
+        locator: locator.ok_or("--locator is required")?,
+    })
 }
 
 fn validate_all(repo: &Path, registry_path: &Path) -> Result<(), String> {
