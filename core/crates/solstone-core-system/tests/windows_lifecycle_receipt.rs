@@ -21,6 +21,9 @@ use solstone_core_system::lifecycle::{
 };
 use solstone_core_system::process::{
     windows_filetime_value_from_raw_for_test,
+    windows_job_duplicate_handle_negative_control_for_test,
+    windows_job_process_no_inheritance_premise_for_test,
+    windows_job_process_owner_receipt_for_test,
     windows_launch_environment_preparation_receipt_for_test,
     windows_launch_path_preparation_receipt_for_test,
 };
@@ -616,4 +619,28 @@ fn windows_launch_path_preparation_receipt() {
     windows_launch_path_preparation_receipt_for_test()
         .expect("exercise production Windows path preparation");
     println!("JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass");
+}
+
+#[test]
+#[ignore = "requires native Windows Job and process APIs"]
+fn windows_job_list_no_handle_inheritance_receipt() {
+    windows_job_process_no_inheritance_premise_for_test()
+        .expect("prove JOB_LIST enrollment with bInheritHandles=FALSE");
+    println!("JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE=executed/pass");
+}
+
+#[test]
+#[ignore = "requires native Windows Job and process APIs"]
+fn windows_job_process_owner_receipt() {
+    windows_job_process_owner_receipt_for_test()
+        .expect("exercise production Windows Job/process ownership");
+    println!("JOURNAL_WIN_CI_JOB_PROCESS_OWNER=executed/pass");
+}
+
+#[test]
+#[ignore = "requires native Windows Job and process APIs"]
+fn windows_job_last_handle_negative_receipt() {
+    windows_job_duplicate_handle_negative_control_for_test()
+        .expect("prove the final Job handle owns the complete process tree");
+    println!("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass");
 }

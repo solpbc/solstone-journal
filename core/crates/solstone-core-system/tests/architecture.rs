@@ -672,15 +672,29 @@ fn ac38_windows_job_process_has_one_atomic_create_process_call_site() {
         .map_or(PROCESS_WINDOWS_JOB_PROCESS, |(production, _)| production);
     assert_eq!(production.matches("CreateProcessW(").count(), 1);
     assert!(production.contains("EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT"));
+    assert!(production.contains("CREATE_NO_WINDOW"));
 }
 
 #[test]
 fn ac39_windows_startup_info_separates_one_job_from_three_child_handles() {
     assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("job_list: Box<[RawWindowsHandle; 1]>"));
-    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("handle_list: Box<[RawWindowsHandle; 3]>"));
+    assert!(
+        PROCESS_WINDOWS_STARTUP_INFO.contains("handle_list: Option<Box<[RawWindowsHandle; 3]>>")
+    );
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("new_job_only"));
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("if handles.is_some() { 2 } else { 1 }"));
     assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("update_job_list"));
     assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("update_handle_list"));
     assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("never to the inheritable handles"));
+    let production_launch = PROCESS_WINDOWS_JOB_PROCESS
+        .split_once("pub(super) fn launch_windows_job_process")
+        .expect("production Job launch")
+        .1
+        .split_once("#[cfg(all(windows, feature = \"test-hooks\"))]")
+        .map_or(PROCESS_WINDOWS_JOB_PROCESS, |(production, _)| production);
+    assert!(production_launch.contains("WindowsStartupInfo::new("));
+    assert!(production_launch.contains("Some(pipes), true"));
+    assert!(!production_launch.contains("new_job_only"));
 }
 
 #[test]

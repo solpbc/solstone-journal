@@ -207,6 +207,9 @@ require_platform_receipt() {
 }
 require_platform_receipt JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION
 require_platform_receipt JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION
+require_platform_receipt JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE
+require_platform_receipt JOURNAL_WIN_CI_JOB_PROCESS_OWNER
+require_platform_receipt JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE
 require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE NTFS
@@ -302,4 +305,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

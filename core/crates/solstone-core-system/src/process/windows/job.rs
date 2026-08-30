@@ -23,6 +23,7 @@ pub(super) enum JobMembership {
 pub(super) trait WindowsJobApi {
     fn create_unnamed_job(&self) -> io::Result<JobHandle>;
     fn enable_kill_on_close(&self, job: &JobHandle) -> io::Result<()>;
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()>;
     fn accounting(&self, job: &JobHandle) -> io::Result<JobAccounting>;
@@ -39,6 +40,7 @@ pub(super) fn create_kill_on_close_job(api: &impl WindowsJobApi) -> io::Result<J
     Ok(job)
 }
 
+#[cfg(windows)]
 pub(super) struct SystemWindowsJobApi;
 
 #[cfg(windows)]

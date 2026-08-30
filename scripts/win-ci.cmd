@@ -74,6 +74,9 @@ del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed"
 call :run_platform_receipt "Windows launch environment preparation" "solstone-core-system" "windows_lifecycle_receipt" "windows_launch_environment_preparation_receipt" "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION" || exit /b 1
 call :run_platform_receipt "Windows launch path preparation" "solstone-core-system" "windows_lifecycle_receipt" "windows_launch_path_preparation_receipt" "JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION" || exit /b 1
+call :run_platform_receipt "Windows JOB_LIST without handle inheritance" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_list_no_handle_inheritance_receipt" "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE" || exit /b 1
+call :run_platform_receipt "Windows Job process owner" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_process_owner_receipt" "JOURNAL_WIN_CI_JOB_PROCESS_OWNER" || exit /b 1
+call :run_platform_receipt "Windows Job last-handle negative" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_last_handle_negative_receipt" "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE" || exit /b 1
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
 call :run_receipt "NTFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_managed_log_reference_receipt" "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE" "NTFS" || exit /b 1
@@ -103,7 +106,7 @@ echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
 echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
-echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; launch preparation plus mandatory NTFS and ReFS publication, managed-log reference, and stale-heartbeat receipt markers were emitted and validated from their child logs ===
+echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; launch preparation, Job ownership, and mandatory NTFS and ReFS receipt markers were emitted and validated from their child logs ===
 exit /b 0
 
 :ordinary_owner_failed

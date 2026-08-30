@@ -74,6 +74,26 @@ fn main() {
                 std::process::exit(65);
             }
         }
+        #[cfg(windows)]
+        "job-tree-root" => {
+            let root_ready = args.next().expect("root readiness path");
+            let grandchild_ready = args.next().expect("grandchild readiness path");
+            let executable = std::env::current_exe().expect("fixture executable");
+            let mut grandchild = Command::new(executable)
+                .args(["job-tree-grandchild", &grandchild_ready])
+                .spawn()
+                .expect("spawn Job-tree grandchild");
+            std::fs::write(root_ready, std::process::id().to_string())
+                .expect("publish Job-tree root PID");
+            let _ = grandchild.wait();
+        }
+        #[cfg(windows)]
+        "job-tree-grandchild" => {
+            let ready_path = args.next().expect("grandchild readiness path");
+            std::fs::write(ready_path, std::process::id().to_string())
+                .expect("publish Job-tree grandchild PID");
+            std::thread::sleep(Duration::from_secs(30));
+        }
         "host-death-managed" => {
             let ready_path = args.next().expect("ready path");
             let journal_root = args.next().expect("journal root");

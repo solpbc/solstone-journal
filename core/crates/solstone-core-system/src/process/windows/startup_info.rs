@@ -9,7 +9,9 @@ use std::io;
 use super::handle::{JobHandle, PipeEndHandle, RawWindowsHandle};
 
 #[repr(align(16))]
-struct AttributeStorage([u8; 16]);
+struct AttributeStorage {
+    _bytes: [u8; 16],
+}
 
 pub(super) trait WindowsStartupInfoApi {
     fn attribute_list_size(&self, attribute_count: u32) -> io::Result<usize>;
@@ -34,13 +36,13 @@ pub(super) trait WindowsStartupInfoApi {
     fn delete_attribute_list(&self, list: *mut c_void);
 }
 
-/// Stable backing storage for the two process-thread attribute values.
+/// Stable backing storage for the process-thread attribute values.
 pub(super) struct WindowsStartupInfo {
     _storage: Vec<AttributeStorage>,
     list: *mut c_void,
     initialized: bool,
     job_list: Box<[RawWindowsHandle; 1]>,
-    handle_list: Box<[RawWindowsHandle; 3]>,
+    handle_list: Option<Box<[RawWindowsHandle; 3]>>,
 }
 
 impl WindowsStartupInfo {
@@ -51,36 +53,63 @@ impl WindowsStartupInfo {
         child_stdout: &PipeEndHandle,
         child_stderr: &PipeEndHandle,
     ) -> io::Result<Self> {
-        const ATTRIBUTE_COUNT: u32 = 2;
+        Self::new_with_handle_list(
+            api,
+            job,
+            Some([child_stdin.raw(), child_stdout.raw(), child_stderr.raw()]),
+        )
+    }
 
-        let required = api.attribute_list_size(ATTRIBUTE_COUNT)?;
+    pub(super) fn new_job_only(
+        api: &impl WindowsStartupInfoApi,
+        job: &JobHandle,
+    ) -> io::Result<Self> {
+        Self::new_with_handle_list(api, job, None)
+    }
+
+    fn new_with_handle_list(
+        api: &impl WindowsStartupInfoApi,
+        job: &JobHandle,
+        handles: Option<[RawWindowsHandle; 3]>,
+    ) -> io::Result<Self> {
+        let attribute_count = if handles.is_some() { 2 } else { 1 };
+
+        let required = api.attribute_list_size(attribute_count)?;
         let slot_count = required.div_ceil(std::mem::size_of::<AttributeStorage>());
         let mut storage = Vec::with_capacity(slot_count);
-        storage.resize_with(slot_count, || AttributeStorage([0; 16]));
+        storage.resize_with(slot_count, || AttributeStorage { _bytes: [0; 16] });
         let list = storage.as_mut_ptr().cast();
         let job_list = Box::new([job.raw()]);
         // The Job is deliberately absent from this list: it belongs only to
         // PROC_THREAD_ATTRIBUTE_JOB_LIST, never to the inheritable handles.
-        let handle_list = Box::new([child_stdin.raw(), child_stdout.raw(), child_stderr.raw()]);
+        let handle_list = handles.map(Box::new);
 
-        api.initialize_attribute_list(list, ATTRIBUTE_COUNT, required)?;
-        let startup = Self {
+        api.initialize_attribute_list(list, attribute_count, required)?;
+        let mut startup = Self {
             _storage: storage,
             list,
             initialized: true,
             job_list,
             handle_list,
         };
-        api.update_job_list(
+        if let Err(error) = api.update_job_list(
             startup.list,
             startup.job_list.as_ptr(),
             std::mem::size_of_val(startup.job_list.as_ref()),
-        )?;
-        api.update_handle_list(
-            startup.list,
-            startup.handle_list.as_ptr(),
-            std::mem::size_of_val(startup.handle_list.as_ref()),
-        )?;
+        ) {
+            startup.delete_with(api);
+            return Err(error);
+        }
+        if let Some(handle_list) = startup.handle_list.as_ref()
+            && let Err(error) = api.update_handle_list(
+                startup.list,
+                handle_list.as_ptr(),
+                std::mem::size_of_val(handle_list.as_ref()),
+            )
+        {
+            startup.delete_with(api);
+            return Err(error);
+        }
         Ok(startup)
     }
 
@@ -94,9 +123,7 @@ impl WindowsStartupInfo {
     #[cfg(windows)]
     pub(super) fn as_startup_info(
         &self,
-        child_stdin: RawWindowsHandle,
-        child_stdout: RawWindowsHandle,
-        child_stderr: RawWindowsHandle,
+        stdio: Option<[RawWindowsHandle; 3]>,
     ) -> windows_sys::Win32::System::Threading::STARTUPINFOEXW {
         use std::mem::size_of;
 
@@ -104,10 +131,17 @@ impl WindowsStartupInfo {
 
         let mut startup = STARTUPINFOEXW::default();
         startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
-        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-        startup.StartupInfo.hStdInput = child_stdin;
-        startup.StartupInfo.hStdOutput = child_stdout;
-        startup.StartupInfo.hStdError = child_stderr;
+        assert_eq!(
+            self.handle_list.is_some(),
+            stdio.is_some(),
+            "startup stdio must match the initialized handle-list mode"
+        );
+        if let Some([child_stdin, child_stdout, child_stderr]) = stdio {
+            startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startup.StartupInfo.hStdInput = child_stdin;
+            startup.StartupInfo.hStdOutput = child_stdout;
+            startup.StartupInfo.hStdError = child_stderr;
+        }
         startup.lpAttributeList = self.list;
         startup
     }
@@ -120,6 +154,7 @@ impl Drop for WindowsStartupInfo {
     }
 }
 
+#[cfg(windows)]
 pub(super) struct SystemWindowsStartupInfoApi;
 
 #[cfg(windows)]
@@ -137,12 +172,13 @@ impl WindowsStartupInfoApi for SystemWindowsStartupInfoApi {
         let initialized = unsafe {
             InitializeProcThreadAttributeList(null_mut(), attribute_count, 0, &raw mut bytes)
         };
-        if initialized != 0
-            || io::Error::last_os_error().raw_os_error() == Some(ERROR_INSUFFICIENT_BUFFER as i32)
-        {
-            return Ok(bytes);
-        }
-        Err(io::Error::last_os_error())
+        let error = io::Error::last_os_error();
+        validate_attribute_list_size(
+            initialized != 0,
+            error.raw_os_error() == Some(ERROR_INSUFFICIENT_BUFFER as i32),
+            bytes,
+            error,
+        )
     }
 
     fn initialize_attribute_list(
@@ -236,6 +272,28 @@ impl WindowsStartupInfoApi for SystemWindowsStartupInfoApi {
     }
 }
 
+fn validate_attribute_list_size(
+    succeeded: bool,
+    error_is_insufficient_buffer: bool,
+    bytes: usize,
+    error: io::Error,
+) -> io::Result<usize> {
+    if succeeded {
+        return Err(io::Error::other(
+            "attribute-list sizing call unexpectedly succeeded",
+        ));
+    }
+    if !error_is_insufficient_buffer {
+        return Err(error);
+    }
+    if bytes == 0 {
+        return Err(io::Error::other(
+            "attribute-list sizing call returned a zero size",
+        ));
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -249,13 +307,14 @@ mod tests {
     #[derive(Default)]
     struct FakeStartupApi {
         calls: RefCell<Vec<&'static str>>,
+        counts: RefCell<Vec<u32>>,
         job_bytes: RefCell<usize>,
         handle_bytes: RefCell<usize>,
     }
 
     impl WindowsStartupInfoApi for FakeStartupApi {
         fn attribute_list_size(&self, attribute_count: u32) -> io::Result<usize> {
-            assert_eq!(attribute_count, 2);
+            self.counts.borrow_mut().push(attribute_count);
             self.calls.borrow_mut().push("size");
             Ok(64)
         }
@@ -263,9 +322,10 @@ mod tests {
         fn initialize_attribute_list(
             &self,
             _list: *mut c_void,
-            _attribute_count: u32,
+            attribute_count: u32,
             _bytes: usize,
         ) -> io::Result<()> {
+            self.counts.borrow_mut().push(attribute_count);
             self.calls.borrow_mut().push("initialize");
             Ok(())
         }
@@ -312,9 +372,10 @@ mod tests {
             *api.calls.borrow(),
             ["size", "initialize", "job", "handles"]
         );
+        assert_eq!(*api.counts.borrow(), [2, 2]);
         assert_eq!(*info.job_list, [1usize as RawWindowsHandle]);
         assert_eq!(
-            *info.handle_list,
+            **info.handle_list.as_ref().expect("handle list"),
             [
                 2usize as RawWindowsHandle,
                 3usize as RawWindowsHandle,
@@ -331,5 +392,52 @@ mod tests {
         );
         info.delete_with(&api);
         assert_eq!(api.calls.borrow().last(), Some(&"delete"));
+    }
+
+    #[test]
+    fn job_only_mode_initializes_one_attribute_without_a_handle_list() {
+        let api = FakeStartupApi::default();
+        let job = JobHandle::new(1usize as RawWindowsHandle);
+        let mut info = WindowsStartupInfo::new_job_only(&api, &job).expect("attributes initialize");
+
+        assert_eq!(*api.calls.borrow(), ["size", "initialize", "job"]);
+        assert_eq!(*api.counts.borrow(), [1, 1]);
+        assert_eq!(*info.job_list, [1usize as RawWindowsHandle]);
+        assert!(info.handle_list.is_none());
+        assert_eq!(*api.handle_bytes.borrow(), 0);
+        info.delete_with(&api);
+        assert_eq!(api.calls.borrow().last(), Some(&"delete"));
+    }
+
+    #[test]
+    fn sizing_requires_false_insufficient_buffer_and_nonzero_bytes() {
+        assert_eq!(
+            super::validate_attribute_list_size(
+                false,
+                true,
+                64,
+                io::Error::from_raw_os_error(122),
+            )
+            .expect("documented sizing result"),
+            64
+        );
+        assert_eq!(
+            super::validate_attribute_list_size(true, true, 64, io::Error::from_raw_os_error(122),)
+                .expect_err("TRUE is invalid")
+                .to_string(),
+            "attribute-list sizing call unexpectedly succeeded"
+        );
+        assert_eq!(
+            super::validate_attribute_list_size(false, false, 64, io::Error::from_raw_os_error(5),)
+                .expect_err("wrong error is invalid")
+                .raw_os_error(),
+            Some(5)
+        );
+        assert_eq!(
+            super::validate_attribute_list_size(false, true, 0, io::Error::from_raw_os_error(122),)
+                .expect_err("zero bytes is invalid")
+                .to_string(),
+            "attribute-list sizing call returned a zero size"
+        );
     }
 }

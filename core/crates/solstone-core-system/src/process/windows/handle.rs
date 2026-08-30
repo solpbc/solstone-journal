@@ -26,10 +26,12 @@ impl RawOwnedHandle {
         self.raw.expect("owned Windows handle is present")
     }
 
+    #[cfg(test)]
     pub(super) fn into_raw(mut self) -> RawWindowsHandle {
         self.raw.take().expect("owned Windows handle is present")
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn take_raw(&mut self) -> RawWindowsHandle {
         self.raw.take().expect("owned Windows handle is present")
     }
@@ -75,18 +77,6 @@ macro_rules! semantic_handle {
             pub(super) fn raw(&self) -> RawWindowsHandle {
                 self.0.raw()
             }
-
-            pub(super) fn close(&mut self) -> io::Result<()> {
-                self.0.close()
-            }
-
-            pub(super) fn into_raw(self) -> RawWindowsHandle {
-                self.0.into_raw()
-            }
-
-            pub(super) fn take_raw(&mut self) -> RawWindowsHandle {
-                self.0.take_raw()
-            }
         }
     };
 }
@@ -107,6 +97,29 @@ semantic_handle!(
     PipeEndHandle,
     "An owning endpoint of an anonymous stdio pipe."
 );
+
+impl PrimaryThreadHandle {
+    #[cfg(windows)]
+    pub(super) fn close(&mut self) -> io::Result<()> {
+        self.0.close()
+    }
+}
+
+impl PipeEndHandle {
+    pub(super) fn close(&mut self) -> io::Result<()> {
+        self.0.close()
+    }
+
+    #[cfg(all(windows, feature = "test-hooks"))]
+    pub(super) fn take_raw(&mut self) -> RawWindowsHandle {
+        self.0.take_raw()
+    }
+
+    #[cfg(test)]
+    pub(super) fn release_for_test(&mut self) {
+        let _ = self.0.take_raw();
+    }
+}
 
 #[cfg(test)]
 mod tests {

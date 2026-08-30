@@ -1498,6 +1498,11 @@ printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$cloud"
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed'
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed'
 emit_receipts() {
+  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_JOB_PROCESS_OWNER=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass'
   printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass'
   printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
   printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
@@ -1595,6 +1600,11 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
     let runner = include_str!("../../../../scripts/win-ci.cmd");
     let driver = include_str!("../../../../scripts/win-host-ci.sh");
     for selector in [
+        "windows_launch_environment_preparation_receipt",
+        "windows_launch_path_preparation_receipt",
+        "windows_job_list_no_handle_inheritance_receipt",
+        "windows_job_process_owner_receipt",
+        "windows_job_last_handle_negative_receipt",
         "ntfs_publication_receipt",
         "refs_publication_receipt",
         "ntfs_managed_log_reference_receipt",
@@ -1608,6 +1618,11 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         );
     }
     for marker in [
+        "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
+        "JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION",
+        "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE",
+        "JOURNAL_WIN_CI_JOB_PROCESS_OWNER",
+        "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE",
         "JOURNAL_WIN_CI_NTFS_PUBLICATION",
         "JOURNAL_WIN_CI_REFS_PUBLICATION",
         "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE",
