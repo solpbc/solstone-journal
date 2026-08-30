@@ -31,6 +31,8 @@ pub mod journal_root;
 pub mod lease;
 #[cfg(any(unix, windows))]
 pub mod locking;
+mod managed_log_lock_boundary;
+mod managed_log_names;
 pub mod name_admission;
 pub mod observation;
 pub mod paths;
@@ -47,6 +49,14 @@ mod windows_identity;
 pub mod windows_inventory;
 #[cfg(windows)]
 mod windows_lock;
+#[cfg(windows)]
+mod windows_managed_log_lock;
+#[cfg(windows)]
+mod windows_managed_log_open;
+#[cfg(windows)]
+mod windows_managed_log_record;
+#[cfg(windows)]
+mod windows_managed_log_resolve;
 #[cfg(windows)]
 mod windows_ntcreate;
 #[cfg(windows)]

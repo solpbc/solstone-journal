@@ -18,6 +18,14 @@ pub(crate) struct WindowsFileIdentity {
 }
 
 impl WindowsFileIdentity {
+    /// Reconstruct an identity decoded from a fixed-width on-disk representation.
+    pub(crate) const fn from_parts(volume_serial: u64, file_id: [u8; 16]) -> Self {
+        Self {
+            volume_serial,
+            file_id,
+        }
+    }
+
     pub(crate) const fn volume_serial(self) -> u64 {
         self.volume_serial
     }

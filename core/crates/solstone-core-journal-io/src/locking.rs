@@ -47,6 +47,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use crate::errors::{ExistingParentLockError, LockError, LockTimeout};
 #[cfg(windows)]
+use crate::windows_identity::{WindowsFileIdentity, file_identity};
+#[cfg(windows)]
 use crate::windows_lock::{
     WindowsLockGuard, is_contention as windows_contention, try_lock_exclusive, try_lock_shared,
 };
@@ -422,6 +424,16 @@ pub struct BoundParentLock {
     _guard: Flock<File>,
     #[cfg(windows)]
     _guard: WindowsLockGuard,
+    #[cfg(windows)]
+    parent_identity: WindowsFileIdentity,
+}
+
+#[cfg(windows)]
+impl BoundParentLock {
+    /// Full identity of the retained parent validated while acquiring this lock.
+    pub(crate) const fn parent_identity(&self) -> WindowsFileIdentity {
+        self.parent_identity
+    }
 }
 
 /// Acquire a caller-selected persistent lock entry under an existing parent.
@@ -907,8 +919,13 @@ pub fn acquire_existing_parent_lock_bound(
         })?;
     let path = PathBuf::from(name.as_os_str());
     validate_parent_handle_windows(parent, &path)?;
+    let parent_identity = file_identity(parent.as_handle().as_raw_handle())
+        .map_err(|source| existing_io("stat bound persistent lock parent", &path, source))?;
     let guard = acquire_lock_in_parent_windows(parent, &name, &path, timeout, poll_interval)?;
-    Ok(BoundParentLock { _guard: guard })
+    Ok(BoundParentLock {
+        _guard: guard,
+        parent_identity,
+    })
 }
 
 #[cfg(windows)]

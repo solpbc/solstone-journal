@@ -36,11 +36,12 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use super::{
-    ATOMIC_CANDIDATE_MARKER, DetailedAtomicError, DetailedAtomicOutcome, TEMP_SEQUENCE,
-    detailed_error, pause_at, publication_candidate_name,
+    ATOMIC_CANDIDATE_MARKER, BoundAtomicPublishError, DetailedAtomicError, DetailedAtomicOutcome,
+    TEMP_SEQUENCE, detailed_error, pause_at, publication_candidate_name,
 };
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
 use crate::windows_ntcreate::nt_create_relative;
+use crate::windows_sync_dir::WindowsFlatDirectory;
 
 const MAX_PUBLICATION_ATTEMPTS: usize = 4;
 const PUBLICATION_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -87,10 +88,31 @@ pub(super) fn atomic_replace_detailed(
 
     let (parent, parent_identity) = open_parent_no_follow(parent_path)
         .map_err(|source| detailed_error(path, "open parent", source))?;
-    let initial_destination = inspect_relative_destination(&parent, destination_name)
+    publish_relative(
+        path,
+        parent_path,
+        &parent,
+        parent_identity,
+        destination_name,
+        contents,
+        mode,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_relative(
+    path: &Path,
+    parent_path: &Path,
+    parent: &OwnedHandle,
+    parent_identity: WindowsFileIdentity,
+    destination_name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<DetailedAtomicOutcome, DetailedAtomicError> {
+    let initial_destination = inspect_relative_destination(parent, destination_name)
         .map_err(|source| detailed_error(path, "inspect destination", source))?;
     checkpoint("temp-create").map_err(|source| detailed_error(path, "create stage", source))?;
-    let (stage_name, mut stage_writer) = allocate_stage(&parent, destination_name)
+    let (stage_name, mut stage_writer) = allocate_stage(parent, destination_name)
         .map_err(|source| detailed_error(path, "create stage", source))?;
     let stage_identity = match validate_regular_handle(stage_writer.as_raw_handle())
         .and_then(|()| file_identity(stage_writer.as_raw_handle()))
@@ -126,7 +148,7 @@ pub(super) fn atomic_replace_detailed(
         drop(stage_writer);
         return Err(cleanup_stage_error(
             path,
-            &parent,
+            parent,
             &stage_name,
             stage_identity,
             "prepare stage",
@@ -137,7 +159,7 @@ pub(super) fn atomic_replace_detailed(
     checkpoint("close").map_err(|source| {
         cleanup_stage_error(
             path,
-            &parent,
+            parent,
             &stage_name,
             stage_identity,
             "close stage",
@@ -147,10 +169,10 @@ pub(super) fn atomic_replace_detailed(
     pause_at("close");
 
     let stage =
-        open_stage_for_publication(&parent, &stage_name, stage_identity).map_err(|source| {
+        open_stage_for_publication(parent, &stage_name, stage_identity).map_err(|source| {
             cleanup_stage_error(
                 path,
-                &parent,
+                parent,
                 &stage_name,
                 stage_identity,
                 "reopen stage",
@@ -174,7 +196,7 @@ pub(super) fn atomic_replace_detailed(
             .expect("stage remains live until publication");
         if let Err(source) = revalidate_before_publication(
             parent_path,
-            &parent,
+            parent,
             parent_identity,
             stage_handle,
             &stage_name,
@@ -213,7 +235,7 @@ pub(super) fn atomic_replace_detailed(
     drop(stage.take());
 
     if let Err(observation) =
-        observe_published_destination(&parent, destination_name, stage_identity, contents)
+        observe_published_destination(parent, destination_name, stage_identity, contents)
     {
         return Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
             observation,
@@ -230,6 +252,55 @@ pub(super) fn atomic_replace_detailed(
             sync_error: None,
         }),
     }
+}
+
+/// Publish beneath a parent that was retained by the caller's persistent alias lock.
+///
+/// The same retained parent remains load-bearing through staging, rereads, and
+/// destination checks after both identity admissions succeed.
+pub(super) fn atomic_replace_detailed_bound(
+    parent: &WindowsFlatDirectory,
+    expected_parent: WindowsFileIdentity,
+    destination_name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<DetailedAtomicOutcome, BoundAtomicPublishError> {
+    if parent.revalidate_bound().is_err() || parent.identity() != expected_parent {
+        return Err(BoundAtomicPublishError::NamespaceChanged);
+    }
+    let fresh_parent = open_parent_no_follow(parent.diagnostic_path())
+        .map_err(|_| BoundAtomicPublishError::NamespaceChanged)?;
+    if fresh_parent.1 != expected_parent {
+        return Err(BoundAtomicPublishError::NamespaceChanged);
+    }
+    let destination_name = normal_name(Some(destination_name)).ok_or_else(|| {
+        BoundAtomicPublishError::Atomic(detailed_error(
+            &parent.diagnostic_path().join(destination_name),
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        ))
+    })?;
+    let path = parent.diagnostic_path().join(destination_name);
+    if mode > 0o777 {
+        return Err(BoundAtomicPublishError::Atomic(detailed_error(
+            &path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        )));
+    }
+    publish_relative(
+        &path,
+        parent.diagnostic_path(),
+        parent.handle(),
+        expected_parent,
+        destination_name,
+        contents,
+        mode,
+    )
+    .map_err(BoundAtomicPublishError::Atomic)
 }
 
 fn normal_name(value: Option<&OsStr>) -> Option<&OsStr> {
