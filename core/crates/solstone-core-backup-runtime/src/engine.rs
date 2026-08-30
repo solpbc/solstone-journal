@@ -9,14 +9,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use solstone_core_backup::{
-    Destination, assemble_backend_env, get_backup_config, record_backup_result,
-    record_prune_result, record_restore_result, record_verification_result,
+    BackupKeys, Destination, HostedBinding, assemble_backend_env, format_recovery_key_display,
+    get_backup_config, record_backup_result, record_prune_result, record_restore_result,
+    record_verification_result,
 };
 
 use crate::hosted_runtime::{
-    HttpTransport, RuntimeResolution, hosted_append_only_session, hosted_session, resolve_runtime,
+    HttpTransport, RuntimeResolution, fetch_hosted_credentials, hosted_append_only_session,
+    hosted_session, resolve_runtime,
 };
 use crate::runner::{ToolRunner, reason_for_returncode, run_restic, select_summary};
 
@@ -207,6 +209,27 @@ struct Runtime {
     global_options: Vec<String>,
 }
 
+struct AdmittedBackupRun {
+    resolved_journal: PathBuf,
+    timeout_seconds: u64,
+    keys: BackupKeys,
+    mode: AdmittedBackupMode,
+}
+
+enum AdmittedBackupMode {
+    Byo { destination: Destination },
+    Operated { binding: HostedBinding },
+}
+
+enum BackupAdmissionTerminal {
+    Skip,
+    Unresolved,
+    Error {
+        record_journal: PathBuf,
+        reason: &'static str,
+    },
+}
+
 fn value_env(destination: &Destination) -> Option<BTreeMap<String, Option<String>>> {
     assemble_backend_env(destination).ok().map(|env| {
         env.into_iter()
@@ -325,45 +348,150 @@ fn backup_args(resolved_journal: &Path) -> Vec<String> {
 
 fn resolve_backup_journal(journal: &Path) -> std::io::Result<PathBuf> {
     #[cfg(test)]
-    run_before_backup_path_resolution_hook();
-    fs::canonicalize(journal)
+    BACKUP_PATH_RESOLUTION_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
+    let resolved = fs::canonicalize(journal)?;
+    if !fs::metadata(&resolved)?.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "backup journal must be a directory",
+        ));
+    }
+    Ok(resolved)
+}
+
+fn keys_from_backup_config(config: &Map<String, Value>) -> Result<Option<BackupKeys>, ()> {
+    match (config.get("daily_key"), config.get("recovery_key")) {
+        (Some(Value::Null) | None, _) | (_, Some(Value::Null) | None) => Ok(None),
+        (Some(Value::String(daily_key)), Some(Value::String(recovery_key))) => {
+            format_recovery_key_display(recovery_key).map_err(|_| ())?;
+            Ok(Some(BackupKeys {
+                daily_key: daily_key.clone(),
+                recovery_key: recovery_key.clone(),
+            }))
+        }
+        _ => Err(()),
+    }
+}
+
+fn destination_from_backup_config(config: &Map<String, Value>) -> Option<Destination> {
+    let destination = config.get("destination")?.as_object()?;
+    let repository = destination.get("repository")?.as_str()?;
+    let backend = destination.get("backend")?.as_str()?;
+    let credentials = match destination.get("credentials") {
+        None => Map::new(),
+        Some(Value::Object(credentials)) => credentials.clone(),
+        Some(_) => return None,
+    };
+    Some(Destination {
+        repository: repository.to_owned(),
+        backend: backend.to_owned(),
+        credentials,
+    })
+}
+
+fn backup_timeout_seconds(config: &Map<String, Value>) -> u64 {
+    config
+        .get("last_backup")
+        .and_then(Value::as_object)
+        .filter(|last| {
+            last.get("status") == Some(&Value::String("ok".into()))
+                && last
+                    .get("snapshot_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| !id.is_empty())
+        })
+        .map_or(INITIAL_BACKUP_TIMEOUT_SECONDS, |_| BACKUP_TIMEOUT_SECONDS)
+}
+
+fn prepare_backup_run(journal: &Path) -> Result<AdmittedBackupRun, BackupAdmissionTerminal> {
+    let resolved_journal =
+        resolve_backup_journal(journal).map_err(|_| BackupAdmissionTerminal::Unresolved)?;
+    #[cfg(test)]
+    run_on_backup_journal_resolved_hook();
+
+    let config =
+        get_backup_config(&resolved_journal).map_err(|_| BackupAdmissionTerminal::Error {
+            record_journal: resolved_journal.clone(),
+            reason: "broker_error",
+        })?;
+    if config.get("enabled") != Some(&Value::Bool(true)) {
+        return Err(BackupAdmissionTerminal::Skip);
+    }
+    let Some(keys) =
+        keys_from_backup_config(&config).map_err(|_| BackupAdmissionTerminal::Error {
+            record_journal: resolved_journal.clone(),
+            reason: "broker_error",
+        })?
+    else {
+        return Err(BackupAdmissionTerminal::Skip);
+    };
+    let mode = if config.get("mode") == Some(&Value::String("operated".into())) {
+        let Some(binding) = solstone_core_backup::load_hosted_binding(&resolved_journal) else {
+            return Err(BackupAdmissionTerminal::Skip);
+        };
+        AdmittedBackupMode::Operated { binding }
+    } else {
+        let Some(destination) = destination_from_backup_config(&config) else {
+            return Err(BackupAdmissionTerminal::Skip);
+        };
+        AdmittedBackupMode::Byo { destination }
+    };
+    Ok(AdmittedBackupRun {
+        resolved_journal,
+        timeout_seconds: backup_timeout_seconds(&config),
+        keys,
+        mode,
+    })
 }
 
 #[cfg(test)]
 thread_local! {
-    static BEFORE_BACKUP_PATH_RESOLUTION: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
+    static ON_BACKUP_JOURNAL_RESOLVED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
         std::cell::RefCell::new(None)
+    };
+    static BACKUP_PATH_RESOLUTION_ATTEMPTS: std::cell::Cell<u32> = const {
+        std::cell::Cell::new(0)
     };
 }
 
 #[cfg(test)]
-fn run_before_backup_path_resolution_hook() {
-    let hook = BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| slot.borrow_mut().take());
+fn run_on_backup_journal_resolved_hook() {
+    let hook = ON_BACKUP_JOURNAL_RESOLVED.with(|slot| slot.borrow_mut().take());
     if let Some(hook) = hook {
         hook();
     }
 }
 
 #[cfg(test)]
-fn run_with_backup_path_resolution_hook<T>(
+fn run_with_backup_journal_resolved_hook<T>(
     hook: impl FnOnce() + 'static,
     op: impl FnOnce() -> T,
 ) -> T {
-    BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| {
+    ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
         assert!(
             slot.borrow().is_none(),
-            "backup path resolution hook is already active"
+            "backup journal resolved hook is already active"
         );
         *slot.borrow_mut() = Some(Box::new(hook));
     });
     let result = op();
-    BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| {
+    ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
         assert!(
             slot.borrow().is_none(),
-            "backup path resolution hook was not reached"
+            "backup journal resolved hook was not reached"
         );
     });
     result
+}
+
+#[cfg(test)]
+fn reset_backup_path_resolution_attempts() {
+    BACKUP_PATH_RESOLUTION_ATTEMPTS.with(|attempts| attempts.set(0));
+}
+
+#[cfg(test)]
+fn backup_path_resolution_attempts() -> u32 {
+    BACKUP_PATH_RESOLUTION_ATTEMPTS.with(std::cell::Cell::get)
 }
 fn snapshot_id(value: Option<&Value>) -> Option<String> {
     select_summary(value?)
@@ -423,74 +551,82 @@ fn record_verify(journal: &Path, clock: &dyn Clock, result: &VerificationResult)
     );
 }
 
-pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult {
-    let runtime = match runtime(journal, services, "backup", true) {
-        Ok(None) => {
-            return BackupResult {
-                status: "skipped".into(),
-                snapshot_id: None,
-                error_reason: None,
-            };
-        }
-        Ok(Some(runtime)) => runtime,
-        Err(reason) => {
-            let result = BackupResult {
-                status: "error".into(),
-                snapshot_id: None,
-                error_reason: Some(reason),
-            };
-            record_backup(journal, services.clock, &result);
-            return result;
-        }
+fn consume_admitted_backup_run(
+    admitted: AdmittedBackupRun,
+    services: &BackupServices<'_>,
+) -> BackupResult {
+    let AdmittedBackupRun {
+        resolved_journal,
+        timeout_seconds,
+        keys,
+        mode,
+    } = admitted;
+    let runtime = match mode {
+        AdmittedBackupMode::Byo { destination } => value_env(&destination)
+            .map(|backend_env| Runtime {
+                destination,
+                password: keys.daily_key,
+                backend_env,
+                global_options: vec![],
+            })
+            .ok_or_else(|| "failed".to_owned()),
+        AdmittedBackupMode::Operated { binding } => (|| {
+            let credentials =
+                fetch_hosted_credentials(services.http, &binding, "operated", services.version)
+                    .map_err(|error| error.reason_code.to_owned())?;
+            let rclone = services
+                .rclone_path
+                .ok_or_else(|| "rclone_unavailable".to_owned())?;
+            let session = hosted_append_only_session(&binding, &credentials, rclone)
+                .map_err(|_| "rclone_unavailable")?;
+            Ok(Runtime {
+                destination: session.destination,
+                password: keys.daily_key,
+                backend_env: session
+                    .backend_env
+                    .into_iter()
+                    .map(|(key, value)| (key, Some(value)))
+                    .collect(),
+                global_options: session.global_options,
+            })
+        })(),
     };
-    let resolved_journal = match resolve_backup_journal(journal) {
-        Ok(path) => path,
-        Err(_) => return record_backup_error(journal, services.clock, "journal_path_unresolved"),
-    };
-    unlock(services, &runtime);
-    let timeout = get_backup_config(&resolved_journal)
-        .ok()
-        .and_then(|config| {
-            config
-                .get("last_backup")
-                .and_then(Value::as_object)
-                .cloned()
-        })
-        .filter(|last| {
-            last.get("status") == Some(&Value::String("ok".into()))
-                && last
-                    .get("snapshot_id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| !id.is_empty())
-        })
-        .map_or(INITIAL_BACKUP_TIMEOUT_SECONDS, |_| BACKUP_TIMEOUT_SECONDS);
-    let output = restic(
-        services,
-        &runtime,
-        backup_args(&resolved_journal),
-        true,
-        timeout,
-        None,
-    );
-    let result = match output {
-        Ok(output) => {
-            let id = snapshot_id(output.json.as_ref());
-            if output.returncode == 0 && id.is_some() {
-                BackupResult {
-                    status: "ok".into(),
-                    snapshot_id: id,
-                    error_reason: None,
-                }
-            } else {
-                BackupResult {
-                    status: "error".into(),
-                    snapshot_id: if output.returncode == 3 { id } else { None },
-                    error_reason: Some(if output.returncode == 0 {
-                        "unknown".into()
+    let result = match runtime {
+        Ok(runtime) => {
+            unlock(services, &runtime);
+            match restic(
+                services,
+                &runtime,
+                backup_args(&resolved_journal),
+                true,
+                timeout_seconds,
+                None,
+            ) {
+                Ok(output) => {
+                    let id = snapshot_id(output.json.as_ref());
+                    if output.returncode == 0 && id.is_some() {
+                        BackupResult {
+                            status: "ok".into(),
+                            snapshot_id: id,
+                            error_reason: None,
+                        }
                     } else {
-                        reason_for_returncode(output.returncode).into()
-                    }),
+                        BackupResult {
+                            status: "error".into(),
+                            snapshot_id: if output.returncode == 3 { id } else { None },
+                            error_reason: Some(if output.returncode == 0 {
+                                "unknown".into()
+                            } else {
+                                reason_for_returncode(output.returncode).into()
+                            }),
+                        }
+                    }
                 }
+                Err(reason) => BackupResult {
+                    status: "error".into(),
+                    snapshot_id: None,
+                    error_reason: Some(reason),
+                },
             }
         }
         Err(reason) => BackupResult {
@@ -501,6 +637,26 @@ pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult
     };
     record_backup(&resolved_journal, services.clock, &result);
     result
+}
+
+pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult {
+    match prepare_backup_run(journal) {
+        Ok(admitted) => consume_admitted_backup_run(admitted, services),
+        Err(BackupAdmissionTerminal::Skip) => BackupResult {
+            status: "skipped".into(),
+            snapshot_id: None,
+            error_reason: None,
+        },
+        Err(BackupAdmissionTerminal::Unresolved) => BackupResult {
+            status: "error".into(),
+            snapshot_id: None,
+            error_reason: Some("journal_path_unresolved".into()),
+        },
+        Err(BackupAdmissionTerminal::Error {
+            record_journal,
+            reason,
+        }) => record_backup_error(&record_journal, services.clock, reason),
+    }
 }
 
 pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
@@ -812,9 +968,30 @@ mod tests {
     use super::*;
     use crate::hosted_runtime::{HttpError, HttpRequest, HttpResponse};
     use crate::runner::{ToolOutput, ToolRequest};
-    use std::cell::RefCell;
-    use std::collections::VecDeque;
+    use std::cell::{Cell, RefCell};
+    use std::collections::{BTreeMap, VecDeque};
     use std::io;
+    use std::rc::Rc;
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Duration;
+
+    static CURRENT_DIRECTORY: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    struct CurrentDirectoryGuard(PathBuf);
+
+    impl CurrentDirectoryGuard {
+        fn change_to(path: &Path) -> Self {
+            let original = std::env::current_dir().expect("working directory reads");
+            std::env::set_current_dir(path).expect("working directory sets");
+            Self(original)
+        }
+    }
+
+    impl Drop for CurrentDirectoryGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
 
     struct Script {
         outputs: RefCell<VecDeque<ToolOutput>>,
@@ -832,24 +1009,37 @@ mod tests {
             Ok(self.outputs.borrow_mut().pop_front().expect("output"))
         }
     }
-    struct HookedScript {
+    struct ObservedScript {
         outputs: RefCell<VecDeque<ToolOutput>>,
-        commands: RefCell<Vec<Vec<String>>>,
+        requests: RefCell<Vec<ObservedRequest>>,
         after_unlock: RefCell<Option<Box<dyn FnOnce()>>>,
     }
-    impl ToolRunner for HookedScript {
+    struct ObservedRequest {
+        argv: Vec<String>,
+        env: BTreeMap<String, String>,
+        timeout: Option<Duration>,
+    }
+    impl ToolRunner for ObservedScript {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-            let is_unlock = request
-                .argv
-                .first()
-                .is_some_and(|argument| argument == "unlock");
-            self.commands.borrow_mut().push(
-                request
+            let is_unlock = request.argv.iter().any(|argument| argument == "unlock");
+            self.requests.borrow_mut().push(ObservedRequest {
+                argv: request
                     .argv
                     .iter()
                     .map(|value| value.to_string_lossy().into_owned())
                     .collect(),
-            );
+                env: request
+                    .env
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            key.to_string_lossy().into_owned(),
+                            value.to_string_lossy().into_owned(),
+                        )
+                    })
+                    .collect(),
+                timeout: request.timeout,
+            });
             if is_unlock && let Some(hook) = self.after_unlock.borrow_mut().take() {
                 hook();
             }
@@ -862,10 +1052,41 @@ mod tests {
             panic!("BYO must not fetch broker credentials")
         }
     }
+    struct PanicHttp;
+    impl HttpTransport for PanicHttp {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            panic!("HTTP must not be reached")
+        }
+    }
+    struct PanicRunner;
+    impl ToolRunner for PanicRunner {
+        fn run(&self, _: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            panic!("runner must not be reached")
+        }
+    }
+    struct ScriptedHttp {
+        responses: RefCell<VecDeque<Result<HttpResponse, HttpError>>>,
+        requests: RefCell<Vec<HttpRequest>>,
+    }
+    impl HttpTransport for ScriptedHttp {
+        fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            self.requests.borrow_mut().push(request.clone());
+            self.responses.borrow_mut().pop_front().expect("response")
+        }
+    }
     struct FixedClock;
     impl Clock for FixedClock {
         fn now_unix(&self) -> i64 {
             50
+        }
+        fn iso_week(&self) -> u8 {
+            7
+        }
+    }
+    struct MutableClock(Rc<Cell<i64>>);
+    impl Clock for MutableClock {
+        fn now_unix(&self) -> i64 {
+            self.0.get()
         }
         fn iso_week(&self) -> u8 {
             7
@@ -912,8 +1133,8 @@ mod tests {
     }
     fn services<'a>(
         runner: &'a dyn ToolRunner,
-        http: &'a Http,
-        clock: &'a FixedClock,
+        http: &'a dyn HttpTransport,
+        clock: &'a dyn Clock,
         maintenance: &'a Maintenance,
     ) -> BackupServices<'a> {
         BackupServices {
@@ -925,6 +1146,58 @@ mod tests {
             version: "test",
             journal_maintenance: maintenance,
         }
+    }
+    fn valid_backup_section(destination: Value) -> Value {
+        json!({
+            "enabled": true,
+            "mode": "byo",
+            "daily_key": "daily",
+            "recovery_key": "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+            "destination": destination,
+        })
+    }
+    fn valid_destination() -> Value {
+        json!({
+            "repository": "s3:repo",
+            "backend": "s3",
+            "credentials": {"access_key_id": "access", "secret_access_key": "secret"},
+        })
+    }
+    fn write_backup_section(journal: &Path, backup: Value) {
+        let path = journal.join("config/journal.json");
+        fs::create_dir_all(path.parent().expect("config parent")).expect("config parent creates");
+        fs::write(
+            path,
+            serde_json::to_vec(&json!({"backup": backup})).expect("config encodes"),
+        )
+        .expect("config writes");
+    }
+    fn hosted_binding(endpoint: &str) -> HostedBinding {
+        HostedBinding {
+            broker_endpoint: endpoint.into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "prefix".into(),
+            broker_token: "token".into(),
+        }
+    }
+    fn credentials_response() -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&serde_json::json!({
+                "access_key_id": "access",
+                "secret_access_key": "secret",
+                "session_token": "session",
+                "endpoint": "https://s3.example",
+                "expires_at": "later",
+            }))
+            .expect("credentials encode"),
+        }
+    }
+    fn assert_one_resolution_attempt() {
+        assert_eq!(backup_path_resolution_attempts(), 1);
     }
     #[test]
     fn excludes_are_exact_and_keep_durable_health() {
@@ -964,6 +1237,7 @@ mod tests {
     #[test]
     fn backup_unlocks_unconditionally_then_records_snapshot_success() {
         let journal = configured_journal();
+        reset_backup_path_resolution_attempts();
         let runner = Script {
             outputs: RefCell::new(VecDeque::from([
                 output(11, ""),
@@ -1000,10 +1274,12 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["--exclude", "health"])
         );
+        assert_one_resolution_attempt();
     }
     #[test]
     fn backup_argv_uses_one_resolved_path_for_source_and_endpoint_exclusion() {
         let journal = configured_journal();
+        reset_backup_path_resolution_attempts();
         let runner = Script {
             outputs: RefCell::new(VecDeque::from([
                 output(11, ""),
@@ -1048,6 +1324,7 @@ mod tests {
                 .any(|pair| pair == ["--exclude", "mcp-endpoint"]),
             "only the top-level absolute endpoint path may be excluded"
         );
+        assert_one_resolution_attempt();
     }
 
     #[cfg(unix)]
@@ -1062,50 +1339,35 @@ mod tests {
         let replacement = tempfile::tempdir().expect("replacement journal creates");
         let replacement_path = replacement.path().to_path_buf();
         let callback_link = link.clone();
-        let runner = HookedScript {
+        let runner = Script {
             outputs: RefCell::new(VecDeque::from([
                 output(11, ""),
                 output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
             ])),
             commands: RefCell::new(vec![]),
-            after_unlock: RefCell::new(Some(Box::new(move || {
-                fs::remove_file(&callback_link).expect("original journal link removes");
-                symlink(&replacement_path, &callback_link).expect("journal link retargets");
-            }))),
         };
         let http = Http;
         let clock = FixedClock;
         let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
 
-        assert_eq!(
-            run_backup(&link, &services(&runner, &http, &clock, &maintenance)).status,
-            "ok"
+        let result = run_with_backup_journal_resolved_hook(
+            move || {
+                fs::remove_file(&callback_link).expect("original journal link removes");
+                symlink(&replacement_path, &callback_link).expect("journal link retargets");
+            },
+            || run_backup(&link, &services(&runner, &http, &clock, &maintenance)),
         );
+
+        assert_eq!(result.status, "ok");
         let original = fs::canonicalize(source.path()).expect("source journal resolves");
         assert_eq!(runner.commands.borrow()[1], json_backup_args(&original));
+        assert_one_resolution_attempt();
     }
 
     #[cfg(unix)]
     #[test]
     fn backup_argv_keeps_a_relative_operand_bound_after_the_working_directory_changes() {
-        use std::sync::{LazyLock, Mutex};
-
-        static CURRENT_DIRECTORY: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-        struct CurrentDirectoryGuard(PathBuf);
-        impl CurrentDirectoryGuard {
-            fn change_to(path: &Path) -> Self {
-                let original = std::env::current_dir().expect("working directory reads");
-                std::env::set_current_dir(path).expect("working directory sets");
-                Self(original)
-            }
-        }
-        impl Drop for CurrentDirectoryGuard {
-            fn drop(&mut self) {
-                let _ = std::env::set_current_dir(&self.0);
-            }
-        }
-
         let _lock = CURRENT_DIRECTORY
             .lock()
             .expect("working directory lock holds");
@@ -1116,30 +1378,34 @@ mod tests {
         let other = sandbox.path().join("other");
         fs::create_dir(&other).expect("other directory creates");
         let _directory = CurrentDirectoryGuard::change_to(sandbox.path());
-        let runner = HookedScript {
+        let runner = Script {
             outputs: RefCell::new(VecDeque::from([
                 output(11, ""),
                 output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
             ])),
             commands: RefCell::new(vec![]),
-            after_unlock: RefCell::new(Some(Box::new(move || {
-                std::env::set_current_dir(&other).expect("working directory changes mid-run");
-            }))),
         };
         let http = Http;
         let clock = FixedClock;
         let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
 
-        assert_eq!(
-            run_backup(
-                Path::new("journal"),
-                &services(&runner, &http, &clock, &maintenance)
-            )
-            .status,
-            "ok"
+        let result = run_with_backup_journal_resolved_hook(
+            move || {
+                std::env::set_current_dir(&other).expect("working directory changes mid-run");
+            },
+            || {
+                run_backup(
+                    Path::new("journal"),
+                    &services(&runner, &http, &clock, &maintenance),
+                )
+            },
         );
+
+        assert_eq!(result.status, "ok");
         let resolved = fs::canonicalize(&journal).expect("journal resolves");
         assert_eq!(runner.commands.borrow()[1], json_backup_args(&resolved));
+        assert_one_resolution_attempt();
     }
 
     #[cfg(unix)]
@@ -1147,60 +1413,820 @@ mod tests {
     fn enabled_journal_path_resolution_failure_does_not_invoke_the_runner() {
         use std::os::unix::fs::symlink;
 
-        let source = configured_journal();
         let sandbox = tempfile::tempdir().expect("test sandbox creates");
         let link = sandbox.path().join("journal-link");
-        symlink(source.path(), &link).expect("journal link creates");
-        let callback_link = link.clone();
-        let runner = Script {
-            outputs: RefCell::new(VecDeque::new()),
-            commands: RefCell::new(vec![]),
-        };
-        let http = Http;
+        symlink("missing-journal", &link).expect("dangling journal link creates");
+        let runner = PanicRunner;
+        let http = PanicHttp;
         let clock = FixedClock;
         let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
 
-        let result = run_with_backup_path_resolution_hook(
-            move || {
-                fs::remove_file(&callback_link).expect("journal link removes");
-                symlink("missing-journal", &callback_link).expect("dangling journal link creates");
-            },
-            || run_backup(&link, &services(&runner, &http, &clock, &maintenance)),
-        );
+        let result = run_backup(&link, &services(&runner, &http, &clock, &maintenance));
 
         assert_eq!(result.status, "error");
         assert_eq!(
             result.error_reason.as_deref(),
             Some("journal_path_unresolved")
         );
-        assert!(runner.commands.borrow().is_empty());
-        // The dangling journal path cannot receive a durable record, so this fixture cannot
-        // independently observe the recorder call.
+        assert!(
+            !sandbox.path().join("missing-journal").exists(),
+            "a dangling journal path must not create its missing target"
+        );
+        assert_one_resolution_attempt();
     }
 
     #[test]
-    fn disabled_backup_skips_before_journal_path_resolution() {
+    fn disabled_backup_resolves_journal_before_skipping() {
         let journal = tempfile::tempdir().expect("test journal creates");
-        let runner = Script {
-            outputs: RefCell::new(VecDeque::new()),
-            commands: RefCell::new(vec![]),
-        };
-        let http = Http;
+        let runner = PanicRunner;
+        let http = PanicHttp;
         let clock = FixedClock;
         let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
+
+        let result = run_with_backup_journal_resolved_hook(
+            || {},
+            || {
+                run_backup(
+                    journal.path(),
+                    &services(&runner, &http, &clock, &maintenance),
+                )
+            },
+        );
+
+        assert_eq!(result.status, "skipped");
+        assert_eq!(result.error_reason, None);
+        assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn unresolved_relative_and_absolute_journals_do_not_reach_runtime_dependencies() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let _directory = CurrentDirectoryGuard::change_to(sandbox.path());
+        let absolute_missing = sandbox.path().join("missing");
+        let relative_missing = Path::new("missing-relative");
+        let runner = PanicRunner;
+        let http = PanicHttp;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        for journal in [&absolute_missing, relative_missing] {
+            reset_backup_path_resolution_attempts();
+            let result = run_backup(journal, &services(&runner, &http, &clock, &maintenance));
+            assert_eq!(result.status, "error");
+            assert_eq!(
+                result.error_reason.as_deref(),
+                Some("journal_path_unresolved")
+            );
+            assert_one_resolution_attempt();
+            assert!(
+                !absolute_missing.exists(),
+                "an unresolved absolute journal must not gain config artifacts"
+            );
+        }
+        assert!(
+            !relative_missing.exists(),
+            "an unresolved relative journal must not gain config artifacts"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_directory_journal_roots_are_rejected_before_runtime_dependencies() {
+        use std::os::unix::net::UnixListener;
+        use std::process::Command;
+
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let regular = sandbox.path().join("regular");
+        fs::write(&regular, b"not a journal").expect("regular file writes");
+        let fifo = sandbox.path().join("fifo");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .expect("mkfifo starts")
+                .success(),
+            "mkfifo succeeds"
+        );
+        let socket = sandbox.path().join("socket");
+        let _listener = UnixListener::bind(&socket).expect("socket binds");
+        let runner = PanicRunner;
+        let http = PanicHttp;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        for journal in [&regular, &fifo, &socket] {
+            reset_backup_path_resolution_attempts();
+            let result = run_backup(journal, &services(&runner, &http, &clock, &maintenance));
+            assert_eq!(result.status, "error");
+            assert_eq!(
+                result.error_reason.as_deref(),
+                Some("journal_path_unresolved")
+            );
+            assert_one_resolution_attempt();
+        }
+        assert!(
+            !sandbox.path().join("config").exists(),
+            "a non-directory journal root must not create sibling config artifacts"
+        );
+    }
+
+    #[test]
+    fn admission_skip_boundaries_do_not_reach_runtime_dependencies() {
+        let mut missing_daily = valid_backup_section(valid_destination());
+        missing_daily
+            .as_object_mut()
+            .expect("backup object")
+            .remove("daily_key");
+        let mut missing_binding = valid_backup_section(valid_destination());
+        missing_binding["mode"] = Value::String("operated".into());
+        let mut missing_destination = valid_backup_section(valid_destination());
+        missing_destination
+            .as_object_mut()
+            .expect("backup object")
+            .remove("destination");
+        let cases = vec![
+            ("disabled", serde_json::json!({"enabled": false})),
+            ("missing_daily_key", missing_daily),
+            ("missing_operated_binding", missing_binding),
+            ("missing_destination", missing_destination),
+            (
+                "non_object_destination",
+                valid_backup_section(Value::String("no".into())),
+            ),
+            (
+                "non_string_repository",
+                valid_backup_section(serde_json::json!({
+                    "repository": 7,
+                    "backend": "s3",
+                    "credentials": {},
+                })),
+            ),
+            (
+                "non_string_backend",
+                valid_backup_section(serde_json::json!({
+                    "repository": "repo",
+                    "backend": 7,
+                    "credentials": {},
+                })),
+            ),
+            (
+                "null_credentials",
+                valid_backup_section(serde_json::json!({
+                    "repository": "repo",
+                    "backend": "s3",
+                    "credentials": null,
+                })),
+            ),
+            (
+                "scalar_credentials",
+                valid_backup_section(serde_json::json!({
+                    "repository": "repo",
+                    "backend": "s3",
+                    "credentials": "oops",
+                })),
+            ),
+        ];
+
+        for (name, backup) in cases {
+            let journal = tempfile::tempdir().expect("test journal creates");
+            write_backup_section(journal.path(), backup);
+            let runner = PanicRunner;
+            let http = PanicHttp;
+            let clock = FixedClock;
+            let maintenance = Maintenance;
+            reset_backup_path_resolution_attempts();
+
+            let result = run_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance),
+            );
+
+            assert_eq!(result.status, "skipped", "{name}");
+            assert_eq!(result.error_reason, None, "{name}");
+            assert_one_resolution_attempt();
+        }
+    }
+
+    #[test]
+    fn omitted_byo_credentials_are_admitted_then_fail_without_runner() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        write_backup_section(
+            journal.path(),
+            valid_backup_section(serde_json::json!({
+                "repository": "s3:repo",
+                "backend": "s3",
+            })),
+        );
+        let runner = PanicRunner;
+        let http = PanicHttp;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
 
         let result = run_backup(
             journal.path(),
             &services(&runner, &http, &clock, &maintenance),
         );
 
-        assert_eq!(result.status, "skipped");
-        assert_eq!(result.error_reason, None);
-        assert!(runner.commands.borrow().is_empty());
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("failed"));
+        assert_one_resolution_attempt();
+        assert_eq!(
+            solstone_core_backup::get_backup_config(journal.path()).expect("state reads")["last_backup"]
+                ["error_reason"],
+            "failed"
+        );
+    }
+
+    #[test]
+    fn corrupt_or_unreadable_config_returns_broker_error_without_runner() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let config = journal.path().join("config/journal.json");
+        fs::create_dir_all(config.parent().expect("config parent")).expect("config parent creates");
+        fs::write(&config, b"{not json").expect("corrupt config writes");
+        let before_bytes = fs::read(&config).expect("config reads");
+        let before_metadata = fs::metadata(&config).expect("metadata reads");
+        let runner = PanicRunner;
+        let http = PanicHttp;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
+
+        let result = run_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("broker_error"));
+        assert_one_resolution_attempt();
+        assert_eq!(fs::read(&config).expect("config rereads"), before_bytes);
+        let after_metadata = fs::metadata(&config).expect("metadata rereads");
+        assert_eq!(after_metadata.len(), before_metadata.len());
+        assert_eq!(
+            after_metadata.permissions().readonly(),
+            before_metadata.permissions().readonly()
+        );
+
+        let unreadable = tempfile::tempdir().expect("unreadable journal creates");
+        fs::create_dir_all(unreadable.path().join("config/journal.json"))
+            .expect("config path directory creates");
+        reset_backup_path_resolution_attempts();
+        let result = run_backup(
+            unreadable.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("broker_error"));
+        assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn malformed_keys_return_broker_error_and_record_at_the_resolved_journal() {
+        let cases = [
+            (
+                "daily_type",
+                Value::Number(7.into()),
+                Value::String(
+                    "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ".into(),
+                ),
+            ),
+            (
+                "recovery_type",
+                Value::String("daily".into()),
+                Value::Number(7.into()),
+            ),
+            (
+                "recovery_short",
+                Value::String("daily".into()),
+                Value::String("short".into()),
+            ),
+            (
+                "recovery_invalid_character",
+                Value::String("daily".into()),
+                Value::String("!".repeat(64)),
+            ),
+        ];
+        for (name, daily_key, recovery_key) in cases {
+            let journal = tempfile::tempdir().expect("test journal creates");
+            let mut backup = valid_backup_section(valid_destination());
+            backup["daily_key"] = daily_key;
+            backup["recovery_key"] = recovery_key;
+            write_backup_section(journal.path(), backup);
+            let runner = PanicRunner;
+            let http = PanicHttp;
+            let clock = FixedClock;
+            let maintenance = Maintenance;
+            reset_backup_path_resolution_attempts();
+
+            let result = run_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance),
+            );
+
+            assert_eq!(result.status, "error", "{name}");
+            assert_eq!(
+                result.error_reason.as_deref(),
+                Some("broker_error"),
+                "{name}"
+            );
+            assert_one_resolution_attempt();
+            assert_eq!(
+                solstone_core_backup::get_backup_config(journal.path()).expect("state reads")["last_backup"]
+                    ["error_reason"],
+                "broker_error",
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn valid_operated_backup_reaches_broker_and_runner() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let mut backup = valid_backup_section(valid_destination());
+        backup["mode"] = Value::String("operated".into());
+        write_backup_section(journal.path(), backup);
+        solstone_core_backup::save_hosted_binding(
+            journal.path(),
+            &hosted_binding("https://broker"),
+        )
+        .expect("binding writes");
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = ScriptedHttp {
+            responses: RefCell::new(VecDeque::from([Ok(credentials_response())])),
+            requests: RefCell::new(vec![]),
+        };
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.rclone_path = Some(Path::new("/fixture/bin/rclone"));
+        reset_backup_path_resolution_attempts();
+
+        let result = run_backup(journal.path(), &services);
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(http.requests.borrow().len(), 1);
+        assert_eq!(runner.commands.borrow()[1][0], "-o");
+        assert_one_resolution_attempt();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn admitted_operated_run_stays_bound_to_original_alias_after_retargets() {
+        use std::os::unix::fs::symlink;
+
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        let source = tempfile::tempdir().expect("source journal creates");
+        let mut source_backup = valid_backup_section(valid_destination());
+        source_backup["mode"] = Value::String("operated".into());
+        source_backup["last_backup"] = serde_json::json!({"status": "ok", "snapshot_id": "old"});
+        write_backup_section(source.path(), source_backup);
+        solstone_core_backup::save_hosted_binding(
+            source.path(),
+            &hosted_binding("https://source-broker"),
+        )
+        .expect("source binding writes");
+        let replacement = tempfile::tempdir().expect("replacement journal creates");
+        write_backup_section(replacement.path(), serde_json::json!({"enabled": false}));
+        let later = tempfile::tempdir().expect("later journal creates");
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let alias = sandbox.path().join("journal");
+        symlink(source.path(), &alias).expect("alias creates");
+        let replacement_path = replacement.path().to_path_buf();
+        let later_path = later.path().to_path_buf();
+        let hook_alias = alias.clone();
+        let after_unlock_alias = alias.clone();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            requests: RefCell::new(vec![]),
+            after_unlock: RefCell::new(Some(Box::new(move || {
+                fs::remove_file(&after_unlock_alias).expect("retargeted alias removes");
+                symlink(&later_path, &after_unlock_alias).expect("later alias creates");
+                std::env::set_current_dir("/").expect("working directory changes");
+            }))),
+        };
+        let http = ScriptedHttp {
+            responses: RefCell::new(VecDeque::from([Ok(credentials_response())])),
+            requests: RefCell::new(vec![]),
+        };
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.rclone_path = Some(Path::new("/fixture/bin/rclone"));
+        let _directory = CurrentDirectoryGuard::change_to(sandbox.path());
+        reset_backup_path_resolution_attempts();
+
+        let result = run_with_backup_journal_resolved_hook(
+            move || {
+                fs::remove_file(&hook_alias).expect("source alias removes");
+                symlink(&replacement_path, &hook_alias).expect("replacement alias creates");
+            },
+            || run_backup(Path::new("journal"), &services),
+        );
+
+        assert_eq!(result.status, "ok");
+        let source_path = fs::canonicalize(source.path()).expect("source resolves");
+        let requests = runner.requests.borrow();
+        assert_eq!(requests.len(), 2);
+        let backup_index = requests[1]
+            .argv
+            .iter()
+            .position(|argument| argument == "backup")
+            .expect("backup argument present");
+        assert_eq!(
+            &requests[1].argv[backup_index..],
+            json_backup_args(&source_path).as_slice()
+        );
+        assert_eq!(
+            requests[1].timeout,
+            Some(Duration::from_secs(BACKUP_TIMEOUT_SECONDS))
+        );
+        assert_eq!(
+            requests[1].env.get("RCLONE_CONFIG_SPB_ACCESS_KEY_ID"),
+            Some(&"access".to_owned())
+        );
+        assert_eq!(
+            http.requests.borrow()[0].url,
+            "https://source-broker/backup/credentials"
+        );
+        assert_eq!(
+            solstone_core_backup::get_backup_config(source.path()).expect("source state reads")["last_backup"]
+                ["snapshot_id"],
+            "snap"
+        );
+        let replacement_raw: Value = serde_json::from_slice(
+            &fs::read(replacement.path().join("config/journal.json"))
+                .expect("replacement config reads"),
+        )
+        .expect("replacement config parses");
+        assert!(replacement_raw["backup"].get("last_backup").is_none());
+        assert_one_resolution_attempt();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn operated_credential_failure_after_alias_retarget_records_only_original_journal() {
+        use std::os::unix::fs::symlink;
+
+        let source = tempfile::tempdir().expect("source journal creates");
+        let mut source_backup = valid_backup_section(valid_destination());
+        source_backup["mode"] = Value::String("operated".into());
+        write_backup_section(source.path(), source_backup);
+        solstone_core_backup::save_hosted_binding(
+            source.path(),
+            &hosted_binding("https://source-broker"),
+        )
+        .expect("source binding writes");
+        let replacement = tempfile::tempdir().expect("replacement journal creates");
+        write_backup_section(replacement.path(), serde_json::json!({"enabled": false}));
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let alias = sandbox.path().join("journal");
+        symlink(source.path(), &alias).expect("alias creates");
+        let replacement_path = replacement.path().to_path_buf();
+        let hook_alias = alias.clone();
+        let runner = PanicRunner;
+        let http = ScriptedHttp {
+            responses: RefCell::new(VecDeque::from([Err(HttpError::Unreachable)])),
+            requests: RefCell::new(vec![]),
+        };
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.rclone_path = Some(Path::new("/fixture/bin/rclone"));
+        reset_backup_path_resolution_attempts();
+
+        let result = run_with_backup_journal_resolved_hook(
+            move || {
+                fs::remove_file(&hook_alias).expect("source alias removes");
+                symlink(&replacement_path, &hook_alias).expect("replacement alias creates");
+            },
+            || run_backup(&alias, &services),
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("broker_unreachable"));
+        assert_eq!(
+            http.requests.borrow()[0].url,
+            "https://source-broker/backup/credentials"
+        );
+        assert_eq!(
+            solstone_core_backup::get_backup_config(source.path()).expect("source state reads")["last_backup"]
+                ["error_reason"],
+            "broker_unreachable"
+        );
+        let replacement_raw: Value = serde_json::from_slice(
+            &fs::read(replacement.path().join("config/journal.json"))
+                .expect("replacement config reads"),
+        )
+        .expect("replacement config parses");
+        assert!(replacement_raw["backup"].get("last_backup").is_none());
+        assert_one_resolution_attempt();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runner_failure_after_alias_retarget_records_only_original_journal() {
+        use std::os::unix::fs::symlink;
+
+        let source = configured_journal();
+        let replacement = tempfile::tempdir().expect("replacement journal creates");
+        write_backup_section(replacement.path(), serde_json::json!({"enabled": false}));
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let alias = sandbox.path().join("journal");
+        symlink(source.path(), &alias).expect("alias creates");
+        let replacement_path = replacement.path().to_path_buf();
+        let hook_alias = alias.clone();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([output(11, ""), output(1, "")])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
+
+        let result = run_with_backup_journal_resolved_hook(
+            move || {
+                fs::remove_file(&hook_alias).expect("source alias removes");
+                symlink(&replacement_path, &hook_alias).expect("replacement alias creates");
+            },
+            || run_backup(&alias, &services(&runner, &http, &clock, &maintenance)),
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("failed"));
+        let source_path = fs::canonicalize(source.path()).expect("source resolves");
+        assert_eq!(runner.commands.borrow()[1], json_backup_args(&source_path));
+        assert_eq!(
+            solstone_core_backup::get_backup_config(source.path()).expect("source state reads")["last_backup"]
+                ["error_reason"],
+            "failed"
+        );
+        let replacement_raw: Value = serde_json::from_slice(
+            &fs::read(replacement.path().join("config/journal.json"))
+                .expect("replacement config reads"),
+        )
+        .expect("replacement config parses");
+        assert!(replacement_raw["backup"].get("last_backup").is_none());
+        assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn insufficient_or_unsupported_byo_destination_fails_without_restic() {
+        let cases = [
+            (
+                "insufficient",
+                serde_json::json!({
+                    "repository": "s3:repo",
+                    "backend": "s3",
+                    "credentials": {"access_key_id": "access"},
+                }),
+            ),
+            (
+                "empty",
+                serde_json::json!({
+                    "repository": "s3:repo",
+                    "backend": "s3",
+                    "credentials": {},
+                }),
+            ),
+            (
+                "unsupported",
+                serde_json::json!({
+                    "repository": "wat:repo",
+                    "backend": "wat",
+                    "credentials": {},
+                }),
+            ),
+        ];
+        for (name, destination) in cases {
+            let journal = tempfile::tempdir().expect("test journal creates");
+            write_backup_section(journal.path(), valid_backup_section(destination));
+            let runner = PanicRunner;
+            let http = PanicHttp;
+            let clock = FixedClock;
+            let maintenance = Maintenance;
+            reset_backup_path_resolution_attempts();
+
+            let result = run_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance),
+            );
+
+            assert_eq!(result.status, "error", "{name}");
+            assert_eq!(result.error_reason.as_deref(), Some("failed"), "{name}");
+            assert_one_resolution_attempt();
+        }
+    }
+
+    #[test]
+    fn admitted_backup_uses_one_snapshot_until_a_fresh_run() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let config = journal.path().join("config/journal.json");
+        fs::create_dir_all(config.parent().expect("config parent")).expect("config parent creates");
+        fs::write(
+            &config,
+            serde_json::to_vec(&serde_json::json!({
+                "outside": {"keep": true},
+                "backup": valid_backup_section(valid_destination()),
+            }))
+            .expect("config encodes"),
+        )
+        .expect("config writes");
+        solstone_core_backup::save_hosted_binding(
+            journal.path(),
+            &hosted_binding("https://before"),
+        )
+        .expect("initial binding writes");
+        let journal_path = journal.path().to_path_buf();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            requests: RefCell::new(vec![]),
+            after_unlock: RefCell::new(Some(Box::new(move || {
+                let mut replacement = valid_backup_section(serde_json::json!({
+                    "repository": "b2:repo",
+                    "backend": "b2",
+                    "credentials": {"account_id": "next", "account_key": "next"},
+                }));
+                replacement["enabled"] = Value::Bool(false);
+                replacement["mode"] = Value::String("operated".into());
+                replacement["daily_key"] = Value::String("next-daily".into());
+                replacement["recovery_key"] = Value::String(
+                    "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ".into(),
+                );
+                replacement["last_backup"] = serde_json::json!({
+                    "status": "ok",
+                    "snapshot_id": "next",
+                });
+                let config = journal_path.join("config/journal.json");
+                fs::write(
+                    config,
+                    serde_json::to_vec(&serde_json::json!({
+                        "outside": {"keep": true},
+                        "backup": replacement,
+                    }))
+                    .expect("replacement config encodes"),
+                )
+                .expect("replacement config writes");
+                solstone_core_backup::save_hosted_binding(
+                    &journal_path,
+                    &hosted_binding("https://after"),
+                )
+                .expect("replacement binding writes");
+            }))),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
+
+        let result = run_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(
+            runner.requests.borrow()[1].timeout,
+            Some(Duration::from_secs(INITIAL_BACKUP_TIMEOUT_SECONDS))
+        );
+        let raw: Value = serde_json::from_slice(&fs::read(&config).expect("config reads"))
+            .expect("config parses");
+        assert_eq!(raw["outside"]["keep"], true);
+        assert_eq!(raw["backup"]["enabled"], false);
+        assert_eq!(raw["backup"]["last_backup"]["snapshot_id"], "snap");
+        assert_one_resolution_attempt();
+
+        let fresh_runner = PanicRunner;
+        let fresh_http = PanicHttp;
+        reset_backup_path_resolution_attempts();
+        let fresh = run_backup(
+            journal.path(),
+            &services(&fresh_runner, &fresh_http, &clock, &maintenance),
+        );
+        assert_eq!(fresh.status, "skipped");
+        assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn backup_records_with_the_clock_value_at_consumption_time() {
+        let journal = configured_journal();
+        let clock_value = Rc::new(Cell::new(50));
+        let callback_clock = Rc::clone(&clock_value);
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            requests: RefCell::new(vec![]),
+            after_unlock: RefCell::new(Some(Box::new(move || callback_clock.set(99)))),
+        };
+        let http = Http;
+        let clock = MutableClock(clock_value);
+        let maintenance = Maintenance;
+        reset_backup_path_resolution_attempts();
+
+        let result = run_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(
+            solstone_core_backup::get_backup_config(journal.path()).expect("state reads")["last_backup"]
+                ["time"],
+            99
+        );
+        assert_one_resolution_attempt();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn record_uses_consumption_time_and_lock_failures_preserve_runner_results() {
+        use std::os::unix::fs::symlink;
+
+        for (returncode, stdout, status, reason) in [
+            (
+                0,
+                "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}",
+                "ok",
+                None,
+            ),
+            (1, "", "error", Some("failed")),
+        ] {
+            let journal = tempfile::tempdir().expect("test journal creates");
+            let config = journal.path().join("config/journal.json");
+            fs::create_dir_all(config.parent().expect("config parent"))
+                .expect("config parent creates");
+            fs::write(
+                &config,
+                serde_json::to_vec(&serde_json::json!({
+                    "outside": "keep",
+                    "backup": valid_backup_section(valid_destination()),
+                }))
+                .expect("config encodes"),
+            )
+            .expect("config writes");
+            let before = fs::read(&config).expect("config reads");
+            let clock_value = Rc::new(Cell::new(50));
+            let callback_clock = Rc::clone(&clock_value);
+            let lock = journal.path().join("config/journal.json.lock");
+            let sentinel = journal.path().join("sentinel");
+            fs::write(&sentinel, b"sentinel").expect("sentinel writes");
+            let runner = ObservedScript {
+                outputs: RefCell::new(VecDeque::from([output(11, ""), output(returncode, stdout)])),
+                requests: RefCell::new(vec![]),
+                after_unlock: RefCell::new(Some(Box::new(move || {
+                    callback_clock.set(99);
+                    symlink(&sentinel, &lock).expect("lock sentinel links");
+                }))),
+            };
+            let http = Http;
+            let clock = MutableClock(clock_value);
+            let maintenance = Maintenance;
+            reset_backup_path_resolution_attempts();
+
+            let result = run_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance),
+            );
+
+            assert_eq!(result.status, status);
+            assert_eq!(result.error_reason.as_deref(), reason);
+            assert_eq!(clock.0.get(), 99);
+            assert_eq!(fs::read(&config).expect("config rereads"), before);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&fs::read(&config).expect("config rereads"))
+                    .expect("config parses")["outside"],
+                "keep"
+            );
+            assert_eq!(runner.requests.borrow().len(), 2);
+            assert_one_resolution_attempt();
+        }
     }
     #[test]
     fn absent_restic_path_records_existing_unavailable_reason_without_runner_call() {
         let journal = configured_journal();
+        reset_backup_path_resolution_attempts();
         let runner = Script {
             outputs: RefCell::new(VecDeque::new()),
             commands: RefCell::new(vec![]),
@@ -1216,6 +2242,7 @@ mod tests {
         assert_eq!(result.status, "error");
         assert_eq!(result.error_reason.as_deref(), Some("restic_unavailable"));
         assert!(runner.commands.borrow().is_empty());
+        assert_one_resolution_attempt();
     }
     #[test]
     fn verification_replaces_even_a_later_last_ok_and_clears_on_error() {
