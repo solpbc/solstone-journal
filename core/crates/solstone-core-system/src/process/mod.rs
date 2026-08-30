@@ -56,6 +56,9 @@ pub use platform::{
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use platform::{
     windows_filetime_value_from_raw_for_test,
+    windows_job_duplicate_handle_negative_control_for_test,
+    windows_job_process_no_inheritance_premise_for_test,
+    windows_job_process_owner_receipt_for_test,
     windows_launch_environment_preparation_receipt_for_test,
     windows_launch_path_preparation_receipt_for_test,
 };

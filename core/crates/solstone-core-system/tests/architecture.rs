@@ -35,10 +35,15 @@ const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
 const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
 const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
+const PROCESS_WINDOWS_HANDLE: &str = include_str!("../src/process/windows/handle.rs");
 const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
+const PROCESS_WINDOWS_JOB: &str = include_str!("../src/process/windows/job.rs");
+const PROCESS_WINDOWS_JOB_PROCESS: &str = include_str!("../src/process/windows/job_process.rs");
 const SYSTEM_MANIFEST: &str = include_str!("../Cargo.toml");
 const PROCESS_WINDOWS_RESOLVE: &str = include_str!("../src/process/windows/resolve.rs");
 const PROCESS_WINDOWS_PATH_LIST: &str = include_str!("../src/process/windows/path_list.rs");
+const PROCESS_WINDOWS_PIPES: &str = include_str!("../src/process/windows/pipes.rs");
+const PROCESS_WINDOWS_STARTUP_INFO: &str = include_str!("../src/process/windows/startup_info.rs");
 const PROCESS_WINDOWS_USER_PATH: &str = include_str!("../src/process/windows/user_path.rs");
 const PROCESS_WINDOWS_COMMAND_LINE: &str = include_str!("../src/process/windows/command_line.rs");
 const PROCESS_WINDOWS_ENVIRONMENT: &str = include_str!("../src/process/windows/environment.rs");
@@ -293,9 +298,14 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             .collect()
     );
     let windows_process_modules = [
+        ("handle", PROCESS_WINDOWS_HANDLE),
         ("identity", PROCESS_WINDOWS_IDENTITY),
+        ("job", PROCESS_WINDOWS_JOB),
+        ("job_process", PROCESS_WINDOWS_JOB_PROCESS),
         ("resolve", PROCESS_WINDOWS_RESOLVE),
         ("path_list", PROCESS_WINDOWS_PATH_LIST),
+        ("pipes", PROCESS_WINDOWS_PIPES),
+        ("startup_info", PROCESS_WINDOWS_STARTUP_INFO),
         ("user_path", PROCESS_WINDOWS_USER_PATH),
         ("command_line", PROCESS_WINDOWS_COMMAND_LINE),
         ("environment", PROCESS_WINDOWS_ENVIRONMENT),
@@ -461,9 +471,14 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
     for (name, source) in [
         ("common", PROCESS_COMMON),
         ("windows facade", PROCESS_WINDOWS),
+        ("windows handle", PROCESS_WINDOWS_HANDLE),
         ("windows identity", PROCESS_WINDOWS_IDENTITY),
+        ("windows job", PROCESS_WINDOWS_JOB),
+        ("windows Job process", PROCESS_WINDOWS_JOB_PROCESS),
         ("windows resolve", PROCESS_WINDOWS_RESOLVE),
         ("windows path list", PROCESS_WINDOWS_PATH_LIST),
+        ("windows pipes", PROCESS_WINDOWS_PIPES),
+        ("windows startup info", PROCESS_WINDOWS_STARTUP_INFO),
         ("windows user path", PROCESS_WINDOWS_USER_PATH),
         ("windows command line", PROCESS_WINDOWS_COMMAND_LINE),
         ("windows environment", PROCESS_WINDOWS_ENVIRONMENT),
@@ -645,5 +660,117 @@ fn ac31_windows_launch_preparation_has_no_process_lifecycle_or_lossy_text_edges(
         }
     }
 
-    assert!(SYSTEM_MANIFEST.contains(r#"features = ["Win32_System_SystemInformation"]"#));
+    assert!(SYSTEM_MANIFEST.contains(
+        r#"features = ["Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_System_Pipes"]"#
+    ));
+}
+
+#[test]
+fn ac38_windows_job_process_has_one_atomic_create_process_call_site() {
+    let production = PROCESS_WINDOWS_JOB_PROCESS
+        .split_once("#[cfg(all(windows, feature = \"test-hooks\"))]")
+        .map_or(PROCESS_WINDOWS_JOB_PROCESS, |(production, _)| production);
+    assert_eq!(production.matches("CreateProcessW(").count(), 1);
+    assert!(production.contains("EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT"));
+}
+
+#[test]
+fn ac39_windows_startup_info_separates_one_job_from_three_child_handles() {
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("job_list: Box<[RawWindowsHandle; 1]>"));
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("handle_list: Box<[RawWindowsHandle; 3]>"));
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("update_job_list"));
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("update_handle_list"));
+    assert!(PROCESS_WINDOWS_STARTUP_INFO.contains("never to the inheritable handles"));
+}
+
+#[test]
+fn ac40_windows_hard_stop_retains_the_job_handle_until_owner_drop() {
+    let (_, hard_stop) = PROCESS_WINDOWS_JOB_PROCESS
+        .split_once("fn hard_stop_with")
+        .expect("hard-stop implementation");
+    let hard_stop = hard_stop
+        .split_once("#[cfg(windows)]\n    pub(super) fn observe_member")
+        .map_or(hard_stop, |(implementation, _)| implementation);
+    assert!(hard_stop.contains("jobs.terminate(self.job()?"));
+    assert!(!hard_stop.contains("self.job.take()"));
+    assert!(!hard_stop.contains(".close()"));
+}
+
+#[test]
+fn ac41_windows_job_production_path_bans_uncontained_launch_shortcuts() {
+    let job_process_production = PROCESS_WINDOWS_JOB_PROCESS
+        .split_once("#[cfg(all(windows, feature = \"test-hooks\"))]")
+        .map_or(PROCESS_WINDOWS_JOB_PROCESS, |(production, _)| production);
+    let all_production = [
+        PROCESS_WINDOWS_HANDLE
+            .split_once("mod tests")
+            .map_or(PROCESS_WINDOWS_HANDLE, |(production, _)| production),
+        PROCESS_WINDOWS_JOB
+            .split_once("mod tests")
+            .map_or(PROCESS_WINDOWS_JOB, |(production, _)| production),
+        PROCESS_WINDOWS_PIPES
+            .split_once("mod tests")
+            .map_or(PROCESS_WINDOWS_PIPES, |(production, _)| production),
+        PROCESS_WINDOWS_STARTUP_INFO
+            .split_once("mod tests")
+            .map_or(PROCESS_WINDOWS_STARTUP_INFO, |(production, _)| production),
+        job_process_production,
+    ];
+    for source in all_production {
+        for banned in [
+            "AssignProcessToJobObject",
+            "CREATE_SUSPENDED",
+            "std::process::Child",
+            "GenerateConsoleCtrlEvent",
+            "PostMessageW",
+            "SendMessageW",
+            "DuplicateHandle",
+        ] {
+            assert!(
+                !source.contains(banned),
+                "production source contains {banned}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ac42_windows_root_identity_reads_process_times_without_restart_descriptions() {
+    assert!(PROCESS_WINDOWS_JOB_PROCESS.contains("GetProcessTimes"));
+    assert!(PROCESS_WINDOWS_JOB_PROCESS.contains("ProcessBirth::windows"));
+    assert!(!PROCESS_WINDOWS_JOB_PROCESS.contains("describe_exit"));
+}
+
+#[test]
+fn ac43_windows_duplicate_job_handle_is_a_single_test_hook_negative_control() {
+    assert_eq!(
+        PROCESS_WINDOWS_JOB_PROCESS
+            .matches("DuplicateHandle(")
+            .count(),
+        1
+    );
+    assert!(PROCESS_WINDOWS_JOB_PROCESS.contains(
+        "pub(super) fn windows_job_duplicate_handle_negative_control_for_test() -> Result<(), String>"
+    ));
+    assert!(PROCESS_WINDOWS_JOB_PROCESS.contains("#[cfg(all(windows, feature = \"test-hooks\"))]"));
+}
+
+#[test]
+fn ac44_windows_job_test_hooks_are_private_primitive_receipts_with_public_reexports() {
+    for hook in [
+        "windows_job_process_no_inheritance_premise_for_test",
+        "windows_job_process_owner_receipt_for_test",
+        "windows_job_duplicate_handle_negative_control_for_test",
+    ] {
+        assert!(PROCESS_WINDOWS.contains(hook));
+        assert!(PROCESS_MOD.contains(hook));
+    }
+    assert!(PROCESS_WINDOWS.contains("#[cfg(all(windows, feature = \"test-hooks\"))]"));
+}
+
+#[test]
+fn ac45_windows_job_creation_never_grants_breakaway() {
+    assert!(PROCESS_WINDOWS_JOB.contains("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"));
+    assert!(!PROCESS_WINDOWS_JOB.contains("JOB_OBJECT_LIMIT_BREAKAWAY_OK"));
+    assert!(!PROCESS_WINDOWS_JOB.contains("JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK"));
 }

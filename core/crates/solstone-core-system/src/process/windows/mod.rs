@@ -27,13 +27,23 @@ mod command_line;
 #[cfg(any(windows, test))]
 mod environment;
 #[cfg(any(windows, test))]
+mod handle;
+#[cfg(any(windows, test))]
 mod identity;
+#[cfg(any(windows, test))]
+mod job;
+#[cfg(any(windows, test))]
+mod job_process;
 #[cfg(any(windows, test))]
 mod launch_spec;
 #[cfg(any(windows, test))]
 mod path_list;
 #[cfg(any(windows, test))]
+mod pipes;
+#[cfg(any(windows, test))]
 mod resolve;
+#[cfg(any(windows, test))]
+mod startup_info;
 #[cfg(any(windows, test))]
 mod user_path;
 
@@ -191,6 +201,21 @@ pub fn windows_launch_path_preparation_receipt_for_test() -> Result<(), String> 
         );
     }
     Ok(())
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_job_process_no_inheritance_premise_for_test() -> Result<(), String> {
+    job_process::windows_job_process_no_inheritance_premise_for_test()
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_job_process_owner_receipt_for_test() -> Result<(), String> {
+    job_process::windows_job_process_owner_receipt_for_test()
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_job_duplicate_handle_negative_control_for_test() -> Result<(), String> {
+    job_process::windows_job_duplicate_handle_negative_control_for_test()
 }
 
 #[cfg(not(unix))]
