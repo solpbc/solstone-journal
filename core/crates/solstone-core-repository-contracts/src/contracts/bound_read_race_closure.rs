@@ -26,10 +26,15 @@ fn read_repo_file(relative: &str) -> String {
 }
 
 fn production_source(source: &str) -> &str {
+    for marker in [
+        "\n#[cfg(test)]\nmod tests",
+        "\n#[cfg(all(test, unix))]\nmod bound_tests",
+    ] {
+        if let Some((production, _)) = source.split_once(marker) {
+            return production;
+        }
+    }
     source
-        .split_once("\n#[cfg(test)]\nmod tests")
-        .map(|(production, _)| production)
-        .unwrap_or(source)
 }
 
 fn parse_manifest(relative: &str) -> DocumentMut {

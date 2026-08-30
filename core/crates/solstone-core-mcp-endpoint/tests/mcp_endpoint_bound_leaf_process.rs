@@ -4,7 +4,6 @@
 #![cfg(unix)]
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use nix::sys::stat::Mode;
@@ -78,9 +77,12 @@ fn bootstrap_rejects_regular_certificate_substitution_after_open() {
     let certificate = root.path().join("link/ca/cert.pem");
     let aside = root.path().join("link/ca/cert.pem.aside");
     let replacement = root.path().join("link/ca/replacement.pem");
+    let original_permissions = fs::metadata(&certificate)
+        .expect("certificate metadata reads")
+        .permissions();
     fs::write(&replacement, b"replacement").expect("replacement writes");
-    fs::set_permissions(&replacement, fs::Permissions::from_mode(0o644))
-        .expect("replacement mode sets");
+    fs::set_permissions(&replacement, original_permissions)
+        .expect("replacement mode matches original");
     let observed_replacement = certificate.clone();
     let (result, fired) = run_with_two_bound_read_barriers(
         BoundReadPrimitive::Read,
