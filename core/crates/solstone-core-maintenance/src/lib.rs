@@ -595,13 +595,39 @@ mod resolution_tests {
     };
     use solstone_core_backup_runtime::{
         HttpTransport, ToolInstallDirs, ToolOutput, ToolRequest, ToolRunner,
+        backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
+        install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
+        reset_backup_path_resolution_attempts,
     };
     use std::cell::{Cell, RefCell};
     use std::ffi::OsString;
     use std::fs;
     use std::io;
+    #[cfg(unix)]
+    use std::os::unix::fs::{PermissionsExt, symlink};
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
+    use std::rc::Rc;
+    use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    static CURRENT_DIRECTORY: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    struct CurrentDirectoryGuard(PathBuf);
+
+    impl CurrentDirectoryGuard {
+        fn change_to(path: &Path) -> Self {
+            let original = std::env::current_dir().expect("working directory reads");
+            std::env::set_current_dir(path).expect("working directory sets");
+            Self(original)
+        }
+    }
+
+    impl Drop for CurrentDirectoryGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
 
     struct RecordingRunner {
         programs: RefCell<Vec<OsString>>,
@@ -801,7 +827,14 @@ mod resolution_tests {
             .map(str::to_owned)
     }
 
-    fn operated_journal() -> tempfile::TempDir {
+    fn operated_journal_configured(
+        broker_endpoint: &str,
+        account_id: &str,
+        instance_id: &str,
+        bucket: &str,
+        prefix: &str,
+        broker_token: &str,
+    ) -> tempfile::TempDir {
         let journal = tempfile::tempdir().unwrap();
         set_mode(journal.path(), "operated").unwrap();
         set_enabled(journal.path(), true).unwrap();
@@ -809,33 +842,49 @@ mod resolution_tests {
         save_hosted_binding(
             journal.path(),
             &HostedBinding {
-                broker_endpoint: "https://broker.example.invalid".into(),
-                account_id: "account".into(),
-                instance_id: "instance".into(),
-                bucket: "bucket".into(),
-                prefix: "prefix".into(),
-                broker_token: "token".into(),
+                broker_endpoint: broker_endpoint.into(),
+                account_id: account_id.into(),
+                instance_id: instance_id.into(),
+                bucket: bucket.into(),
+                prefix: prefix.into(),
+                broker_token: broker_token.into(),
             },
         )
         .unwrap();
         journal
     }
 
-    fn byo_journal() -> tempfile::TempDir {
+    fn operated_journal() -> tempfile::TempDir {
+        operated_journal_configured(
+            "https://broker.example.invalid",
+            "account",
+            "instance",
+            "bucket",
+            "prefix",
+            "token",
+        )
+    }
+
+    fn byo_journal_configured(
+        repository: &str,
+        backend: &str,
+        access_key: &str,
+        secret_key: &str,
+    ) -> tempfile::TempDir {
         let journal = tempfile::tempdir().unwrap();
         set_destination(
             journal.path(),
             &Destination {
-                repository: "s3:bucket/prefix".to_owned(),
-                backend: "s3".to_owned(),
+                repository: repository.to_owned(),
+                backend: backend.to_owned(),
                 credentials: serde_json::Map::from_iter([
                     (
                         "access_key_id".to_owned(),
-                        Value::String("access".to_owned()),
+                        Value::String(access_key.to_owned()),
                     ),
                     (
                         "secret_access_key".to_owned(),
-                        Value::String("secret".to_owned()),
+                        Value::String(secret_key.to_owned()),
                     ),
                 ]),
             },
@@ -844,6 +893,85 @@ mod resolution_tests {
         generate_and_store_keys(journal.path()).unwrap();
         set_enabled(journal.path(), true).unwrap();
         journal
+    }
+
+    fn byo_journal() -> tempfile::TempDir {
+        byo_journal_configured("s3:bucket/prefix", "s3", "access", "secret")
+    }
+
+    fn journal_config_bytes(journal: &Path) -> Vec<u8> {
+        fs::read(journal.join("config/journal.json")).expect("journal config reads")
+    }
+
+    fn assert_alias_resolved_once() {
+        assert_eq!(backup_path_resolution_attempts(), 1);
+        assert!(!backup_journal_resolved_hook_armed());
+    }
+
+    #[cfg(unix)]
+    fn install_alias_retarget(
+        alias: PathBuf,
+        replacement: PathBuf,
+        next_directory: PathBuf,
+        after_retarget: impl FnOnce() + 'static,
+    ) {
+        install_backup_journal_resolved_hook(move || {
+            fs::remove_file(&alias).expect("source alias removes");
+            symlink(&replacement, &alias).expect("replacement alias creates");
+            std::env::set_current_dir(&next_directory)
+                .expect("working directory changes after admission");
+            after_retarget();
+        });
+    }
+
+    #[cfg(unix)]
+    struct ReadOnlyDirectoryGuard {
+        path: PathBuf,
+        original_permissions: fs::Permissions,
+    }
+
+    #[cfg(unix)]
+    impl ReadOnlyDirectoryGuard {
+        fn make_read_only(path: &Path) -> Self {
+            let original_permissions = fs::metadata(path)
+                .expect("config directory metadata reads")
+                .permissions();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o555))
+                .expect("config directory becomes read-only");
+            Self {
+                path: path.to_path_buf(),
+                original_permissions,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ReadOnlyDirectoryGuard {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.path, self.original_permissions.clone());
+        }
+    }
+
+    fn assert_restic_unavailable_output(output: &CliRun) {
+        assert_eq!(output.stdout, "backup: error reason=restic_unavailable\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+    }
+
+    fn assert_rclone_unavailable_output(output: &CliRun) {
+        assert_eq!(output.stdout, "backup: error reason=rclone_unavailable\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+    }
+
+    fn assert_no_backup_execution(runner: &RecordingRunner) {
+        assert!(
+            runner
+                .argvs
+                .borrow()
+                .iter()
+                .all(|argv| argv.first().map(String::as_str) != Some("backup"))
+        );
     }
 
     fn configure_offload(journal: &Path) {
@@ -1034,6 +1162,545 @@ mod resolution_tests {
             Some(expected_rclone.to_string_lossy().as_ref())
         );
         assert!(broker.calls.get() > 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_resolves_relative_byo_alias_once_and_keeps_admitted_mode() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = byo_journal_configured(
+            "s3:source-bucket/source-prefix",
+            "s3",
+            "source-access",
+            "source-secret",
+        );
+        let journal_b = operated_journal_configured(
+            "https://replacement-broker.example.invalid",
+            "replacement-account",
+            "replacement-instance",
+            "replacement-bucket",
+            "replacement-prefix",
+            "replacement-token",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let expected_restic = write_ready_restic(restic_dir.path());
+        let journal_a_path = journal_a.path().to_path_buf();
+        let runner = RecordingRunner::with_on_first_call(move || {
+            set_mode(&journal_a_path, "operated").expect("source mode flips");
+        });
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+
+        assert_eq!(output.stdout, "backup: ok snapshot_id=snap\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+        assert!(
+            runner
+                .programs
+                .borrow()
+                .iter()
+                .all(|program| program == expected_restic.as_os_str())
+        );
+        assert!(rclone_program(&runner.argvs.borrow()).is_none());
+        assert_eq!(last_backup_status(journal_a.path()).as_deref(), Some("ok"));
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_resolves_relative_operated_alias_once_and_keeps_admitted_mode() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = operated_journal_configured(
+            "https://source-broker.example.invalid",
+            "source-account",
+            "source-instance",
+            "source-bucket",
+            "source-prefix",
+            "source-token",
+        );
+        let journal_b = byo_journal_configured(
+            "s3:replacement-bucket/replacement-prefix",
+            "s3",
+            "replacement-access",
+            "replacement-secret",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let rclone_dir = tempfile::tempdir().expect("rclone directory creates");
+        write_ready_restic(restic_dir.path());
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let journal_a_path = journal_a.path().to_path_buf();
+        let runner = RecordingRunner::with_on_first_call(move || {
+            set_mode(&journal_a_path, "byo").expect("source mode flips");
+        });
+        let broker = BrokerHttp::new();
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &PanicDownload,
+            &broker,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+
+        assert_eq!(output.stdout, "backup: ok snapshot_id=snap\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(
+            rclone_program(&runner.argvs.borrow()).as_deref(),
+            Some(expected_rclone.to_string_lossy().as_ref())
+        );
+        assert_eq!(broker.calls.get(), 1);
+        assert_eq!(last_backup_status(journal_a.path()).as_deref(), Some("ok"));
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_records_restic_unavailable_at_resolved_alias_once() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = byo_journal_configured(
+            "s3:source-bucket/source-prefix",
+            "s3",
+            "source-access",
+            "source-secret",
+        );
+        let journal_b = operated_journal_configured(
+            "https://replacement-broker.example.invalid",
+            "replacement-account",
+            "replacement-instance",
+            "replacement-bucket",
+            "replacement-prefix",
+            "replacement-token",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &downloader,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+
+        assert_restic_unavailable_output(&output);
+        assert_eq!(
+            last_backup_reason(journal_a.path()).as_deref(),
+            Some("restic_unavailable")
+        );
+        assert_eq!(
+            last_backup_status(journal_a.path()).as_deref(),
+            Some("error")
+        );
+        assert!(downloader.calls.get() > 0);
+        assert!(runner.programs.borrow().is_empty());
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_records_rclone_unavailable_at_resolved_alias_once() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = operated_journal_configured(
+            "https://source-broker.example.invalid",
+            "source-account",
+            "source-instance",
+            "source-bucket",
+            "source-prefix",
+            "source-token",
+        );
+        let journal_b = byo_journal_configured(
+            "s3:replacement-bucket/replacement-prefix",
+            "s3",
+            "replacement-access",
+            "replacement-secret",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let rclone_dir = tempfile::tempdir().expect("rclone directory creates");
+        write_ready_restic(restic_dir.path());
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &downloader,
+            &UnusedHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+
+        assert_rclone_unavailable_output(&output);
+        assert_eq!(
+            last_backup_reason(journal_a.path()).as_deref(),
+            Some("rclone_unavailable")
+        );
+        assert_eq!(
+            last_backup_status(journal_a.path()).as_deref(),
+            Some("error")
+        );
+        assert!(downloader.calls.get() > 0);
+        assert_no_backup_execution(&runner);
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_restic_unavailable_ignores_record_mutation_failure() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = byo_journal_configured(
+            "s3:source-bucket/source-prefix",
+            "s3",
+            "source-access",
+            "source-secret",
+        );
+        let journal_b = operated_journal_configured(
+            "https://replacement-broker.example.invalid",
+            "replacement-account",
+            "replacement-instance",
+            "replacement-bucket",
+            "replacement-prefix",
+            "replacement-token",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let read_only_config = Rc::new(RefCell::new(None));
+        let held_read_only_config = Rc::clone(&read_only_config);
+        let config_directory = journal_a.path().join("config");
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            move || {
+                *held_read_only_config.borrow_mut() =
+                    Some(ReadOnlyDirectoryGuard::make_read_only(&config_directory));
+            },
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &downloader,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+
+        assert_restic_unavailable_output(&output);
+        assert!(downloader.calls.get() > 0);
+        assert!(runner.programs.borrow().is_empty());
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+        drop(read_only_config.borrow_mut().take());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_rclone_unavailable_ignores_record_mutation_failure() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = operated_journal_configured(
+            "https://source-broker.example.invalid",
+            "source-account",
+            "source-instance",
+            "source-bucket",
+            "source-prefix",
+            "source-token",
+        );
+        let journal_b = byo_journal_configured(
+            "s3:replacement-bucket/replacement-prefix",
+            "s3",
+            "replacement-access",
+            "replacement-secret",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let restic_dir = tempfile::tempdir().expect("restic directory creates");
+        let rclone_dir = tempfile::tempdir().expect("rclone directory creates");
+        write_ready_restic(restic_dir.path());
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let read_only_config = Rc::new(RefCell::new(None));
+        let held_read_only_config = Rc::clone(&read_only_config);
+        let config_directory = journal_a.path().join("config");
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            move || {
+                *held_read_only_config.borrow_mut() =
+                    Some(ReadOnlyDirectoryGuard::make_read_only(&config_directory));
+            },
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &downloader,
+            &UnusedHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+
+        assert_rclone_unavailable_output(&output);
+        assert!(downloader.calls.get() > 0);
+        assert_no_backup_execution(&runner);
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+        drop(read_only_config.borrow_mut().take());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_skip_resolves_relative_alias_once() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = tempfile::tempdir().expect("unconfigured journal creates");
+        let journal_b = byo_journal_configured(
+            "s3:replacement-bucket/replacement-prefix",
+            "s3",
+            "replacement-access",
+            "replacement-secret",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let runner = RecordingRunner::new();
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+
+        assert_eq!(output.stdout, "backup: skipped\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+        assert!(runner.programs.borrow().is_empty());
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_unresolved_relative_alias_attempts_once() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = byo_journal_configured(
+            "s3:source-bucket/source-prefix",
+            "s3",
+            "source-access",
+            "source-secret",
+        );
+        let missing_source = journal_a.path().to_path_buf();
+        journal_a.close().expect("source journal removes");
+        let journal_b = operated_journal_configured(
+            "https://replacement-broker.example.invalid",
+            "replacement-account",
+            "replacement-instance",
+            "replacement-bucket",
+            "replacement-prefix",
+            "replacement-token",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let alias = neutral.path().join("alias");
+        symlink(&missing_source, &alias).expect("dangling source alias creates");
+        let runner = RecordingRunner::new();
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+
+        assert_eq!(
+            output.stdout,
+            "backup: error reason=journal_path_unresolved\n"
+        );
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+        assert!(runner.programs.borrow().is_empty());
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_run_admission_config_error_resolves_relative_alias_once() {
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        reset_backup_path_resolution_attempts();
+        reset_backup_journal_resolved_hook();
+
+        let neutral = tempfile::tempdir().expect("neutral directory creates");
+        let journal_a = tempfile::tempdir().expect("malformed journal creates");
+        fs::create_dir_all(journal_a.path().join("config")).expect("config directory creates");
+        fs::write(journal_a.path().join("config/journal.json"), b"{")
+            .expect("malformed config writes");
+        let journal_b = byo_journal_configured(
+            "s3:replacement-bucket/replacement-prefix",
+            "s3",
+            "replacement-access",
+            "replacement-secret",
+        );
+        let replacement_before = journal_config_bytes(journal_b.path());
+        let source_before = journal_config_bytes(journal_a.path());
+        let alias = neutral.path().join("alias");
+        symlink(journal_a.path(), &alias).expect("source alias creates");
+        let runner = RecordingRunner::new();
+        let _directory = CurrentDirectoryGuard::change_to(neutral.path());
+        install_alias_retarget(
+            alias,
+            journal_b.path().to_path_buf(),
+            journal_b.path().to_path_buf(),
+            || {},
+        );
+
+        let output = run_cli_with_deps(
+            &args(&["run", "backup:run"]),
+            Path::new("alias"),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+
+        assert_eq!(output.stdout, "backup: error reason=broker_error\n");
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit_code, 0);
+        assert!(runner.programs.borrow().is_empty());
+        assert_alias_resolved_once();
+        assert_eq!(journal_config_bytes(journal_a.path()), source_before);
+        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
     }
 
     #[test]
@@ -1342,6 +2009,77 @@ mod resolution_tests {
             };
             assert_eq!(output.stdout, "backup: ok snapshot_id=snap\n");
             assert_eq!(output.exit_code, 0);
+        }
+    }
+
+    #[test]
+    fn injected_service_entry_points_render_backup_run_admission_terminals_without_tools() {
+        for (terminal, expected) in [
+            ("skip", "backup: skipped\n"),
+            (
+                "unresolved",
+                "backup: error reason=journal_path_unresolved\n",
+            ),
+            ("config-error", "backup: error reason=broker_error\n"),
+        ] {
+            for entry_point in ["backup", "services", "all"] {
+                let journal = tempfile::tempdir().expect("terminal journal creates");
+                let journal_path = match terminal {
+                    "skip" => journal.path().to_path_buf(),
+                    "unresolved" => journal.path().join("missing"),
+                    "config-error" => {
+                        fs::create_dir_all(journal.path().join("config"))
+                            .expect("config directory creates");
+                        fs::write(journal.path().join("config/journal.json"), b"{")
+                            .expect("malformed config writes");
+                        journal.path().to_path_buf()
+                    }
+                    _ => unreachable!("fixed terminal"),
+                };
+                let runner = RecordingRunner::new();
+                let http = UnusedHttp;
+                let clock = ProductionClock;
+                let maintenance = NativeJournalMaintenance;
+                let backup_services = BackupServices {
+                    runner: &runner,
+                    http: &http,
+                    clock: &clock,
+                    restic_path: Some(Path::new("/fixture/bin/restic")),
+                    rclone_path: None,
+                    version: "test",
+                    journal_maintenance: &maintenance,
+                };
+                let services = MaintenanceServices::new(crate::registry::routines());
+                let run_args = args(&["run", "backup:run"]);
+                let output = match entry_point {
+                    "backup" => {
+                        run_cli_with_backup(&run_args, &journal_path, &services, &backup_services)
+                    }
+                    "services" => run_cli_with_services(
+                        &run_args,
+                        &journal_path,
+                        &services,
+                        Some(&backup_services),
+                        None,
+                    ),
+                    "all" => run_cli_with_all_services(
+                        &run_args,
+                        &journal_path,
+                        &services,
+                        Some(&backup_services),
+                        None,
+                        None,
+                    ),
+                    _ => unreachable!("fixed entry point"),
+                };
+                assert_eq!(output.stdout, expected, "{terminal}/{entry_point}");
+                assert_eq!(output.stderr, "", "{terminal}/{entry_point}");
+                assert_eq!(output.exit_code, 0, "{terminal}/{entry_point}");
+                assert!(
+                    runner.programs.borrow().is_empty(),
+                    "{terminal}/{entry_point}"
+                );
+            }
         }
     }
 }
