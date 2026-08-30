@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -310,12 +311,59 @@ fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
         None,
     );
 }
-fn backup_args(journal: &Path) -> Vec<String> {
-    let mut args = vec!["backup".into(), journal.display().to_string()];
+fn backup_args(resolved_journal: &Path) -> Vec<String> {
+    let mut args = vec!["backup".into(), resolved_journal.display().to_string()];
     for excluded in BACKUP_EXCLUDES {
         args.extend(["--exclude".into(), excluded.into()]);
     }
+    args.extend([
+        "--exclude".into(),
+        resolved_journal.join("mcp-endpoint").display().to_string(),
+    ]);
     args
+}
+
+fn resolve_backup_journal(journal: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(test)]
+    run_before_backup_path_resolution_hook();
+    fs::canonicalize(journal)
+}
+
+#[cfg(test)]
+thread_local! {
+    static BEFORE_BACKUP_PATH_RESOLUTION: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn run_before_backup_path_resolution_hook() {
+    let hook = BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| slot.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(test)]
+fn run_with_backup_path_resolution_hook<T>(
+    hook: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> T {
+    BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| {
+        assert!(
+            slot.borrow().is_none(),
+            "backup path resolution hook is already active"
+        );
+        *slot.borrow_mut() = Some(Box::new(hook));
+    });
+    let result = op();
+    BEFORE_BACKUP_PATH_RESOLUTION.with(|slot| {
+        assert!(
+            slot.borrow().is_none(),
+            "backup path resolution hook was not reached"
+        );
+    });
+    result
 }
 fn snapshot_id(value: Option<&Value>) -> Option<String> {
     select_summary(value?)
@@ -395,8 +443,12 @@ pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult
             return result;
         }
     };
+    let resolved_journal = match resolve_backup_journal(journal) {
+        Ok(path) => path,
+        Err(_) => return record_backup_error(journal, services.clock, "journal_path_unresolved"),
+    };
     unlock(services, &runtime);
-    let timeout = get_backup_config(journal)
+    let timeout = get_backup_config(&resolved_journal)
         .ok()
         .and_then(|config| {
             config
@@ -415,7 +467,7 @@ pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult
     let output = restic(
         services,
         &runtime,
-        backup_args(journal),
+        backup_args(&resolved_journal),
         true,
         timeout,
         None,
@@ -447,7 +499,7 @@ pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult
             error_reason: Some(reason),
         },
     };
-    record_backup(journal, services.clock, &result);
+    record_backup(&resolved_journal, services.clock, &result);
     result
 }
 
@@ -780,6 +832,30 @@ mod tests {
             Ok(self.outputs.borrow_mut().pop_front().expect("output"))
         }
     }
+    struct HookedScript {
+        outputs: RefCell<VecDeque<ToolOutput>>,
+        commands: RefCell<Vec<Vec<String>>>,
+        after_unlock: RefCell<Option<Box<dyn FnOnce()>>>,
+    }
+    impl ToolRunner for HookedScript {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            let is_unlock = request
+                .argv
+                .first()
+                .is_some_and(|argument| argument == "unlock");
+            self.commands.borrow_mut().push(
+                request
+                    .argv
+                    .iter()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .collect(),
+            );
+            if is_unlock && let Some(hook) = self.after_unlock.borrow_mut().take() {
+                hook();
+            }
+            Ok(self.outputs.borrow_mut().pop_front().expect("output"))
+        }
+    }
     struct Http;
     impl HttpTransport for Http {
         fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
@@ -811,8 +887,12 @@ mod tests {
             stderr: vec![],
         }
     }
-    fn configured_journal() -> tempfile::TempDir {
-        let journal = tempfile::tempdir().unwrap();
+    fn json_backup_args(resolved_journal: &Path) -> Vec<String> {
+        let mut args = backup_args(resolved_journal);
+        args.push("--json".into());
+        args
+    }
+    fn configure_journal(journal: &Path) {
         let destination = Destination {
             repository: "s3:repo".into(),
             backend: "s3".into(),
@@ -821,13 +901,17 @@ mod tests {
                 .unwrap()
                 .clone(),
         };
-        solstone_core_backup::set_destination(journal.path(), &destination).unwrap();
-        solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
-        solstone_core_backup::set_enabled(journal.path(), true).unwrap();
+        solstone_core_backup::set_destination(journal, &destination).unwrap();
+        solstone_core_backup::generate_and_store_keys(journal).unwrap();
+        solstone_core_backup::set_enabled(journal, true).unwrap();
+    }
+    fn configured_journal() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        configure_journal(journal.path());
         journal
     }
     fn services<'a>(
-        runner: &'a Script,
+        runner: &'a dyn ToolRunner,
         http: &'a Http,
         clock: &'a FixedClock,
         maintenance: &'a Maintenance,
@@ -916,6 +1000,201 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["--exclude", "health"])
         );
+    }
+    #[test]
+    fn backup_argv_uses_one_resolved_path_for_source_and_endpoint_exclusion() {
+        let journal = configured_journal();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            run_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "ok"
+        );
+
+        let resolved = fs::canonicalize(journal.path()).expect("configured journal resolves");
+        let commands = runner.commands.borrow();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0], ["unlock"]);
+        assert_eq!(commands[1], json_backup_args(&resolved));
+        assert_eq!(commands[1][1], resolved.display().to_string());
+        assert_eq!(
+            commands[1]
+                .windows(2)
+                .find(|pair| pair[0] == "--exclude" && pair[1].ends_with("/mcp-endpoint")),
+            Some(
+                [
+                    "--exclude".to_owned(),
+                    resolved.join("mcp-endpoint").display().to_string()
+                ]
+                .as_slice()
+            )
+        );
+        assert!(
+            !commands[1]
+                .windows(2)
+                .any(|pair| pair == ["--exclude", "mcp-endpoint"]),
+            "only the top-level absolute endpoint path may be excluded"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_argv_keeps_a_symlink_operand_bound_to_its_original_resolution() {
+        use std::os::unix::fs::symlink;
+
+        let source = configured_journal();
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let link = sandbox.path().join("journal-link");
+        symlink(source.path(), &link).expect("journal link creates");
+        let replacement = tempfile::tempdir().expect("replacement journal creates");
+        let replacement_path = replacement.path().to_path_buf();
+        let callback_link = link.clone();
+        let runner = HookedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            commands: RefCell::new(vec![]),
+            after_unlock: RefCell::new(Some(Box::new(move || {
+                fs::remove_file(&callback_link).expect("original journal link removes");
+                symlink(&replacement_path, &callback_link).expect("journal link retargets");
+            }))),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            run_backup(&link, &services(&runner, &http, &clock, &maintenance)).status,
+            "ok"
+        );
+        let original = fs::canonicalize(source.path()).expect("source journal resolves");
+        assert_eq!(runner.commands.borrow()[1], json_backup_args(&original));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_argv_keeps_a_relative_operand_bound_after_the_working_directory_changes() {
+        use std::sync::{LazyLock, Mutex};
+
+        static CURRENT_DIRECTORY: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+        struct CurrentDirectoryGuard(PathBuf);
+        impl CurrentDirectoryGuard {
+            fn change_to(path: &Path) -> Self {
+                let original = std::env::current_dir().expect("working directory reads");
+                std::env::set_current_dir(path).expect("working directory sets");
+                Self(original)
+            }
+        }
+        impl Drop for CurrentDirectoryGuard {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let journal = sandbox.path().join("journal");
+        fs::create_dir(&journal).expect("journal directory creates");
+        configure_journal(&journal);
+        let other = sandbox.path().join("other");
+        fs::create_dir(&other).expect("other directory creates");
+        let _directory = CurrentDirectoryGuard::change_to(sandbox.path());
+        let runner = HookedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(11, ""),
+                output(0, "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}"),
+            ])),
+            commands: RefCell::new(vec![]),
+            after_unlock: RefCell::new(Some(Box::new(move || {
+                std::env::set_current_dir(&other).expect("working directory changes mid-run");
+            }))),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            run_backup(
+                Path::new("journal"),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "ok"
+        );
+        let resolved = fs::canonicalize(&journal).expect("journal resolves");
+        assert_eq!(runner.commands.borrow()[1], json_backup_args(&resolved));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn enabled_journal_path_resolution_failure_does_not_invoke_the_runner() {
+        use std::os::unix::fs::symlink;
+
+        let source = configured_journal();
+        let sandbox = tempfile::tempdir().expect("test sandbox creates");
+        let link = sandbox.path().join("journal-link");
+        symlink(source.path(), &link).expect("journal link creates");
+        let callback_link = link.clone();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        let result = run_with_backup_path_resolution_hook(
+            move || {
+                fs::remove_file(&callback_link).expect("journal link removes");
+                symlink("missing-journal", &callback_link).expect("dangling journal link creates");
+            },
+            || run_backup(&link, &services(&runner, &http, &clock, &maintenance)),
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(
+            result.error_reason.as_deref(),
+            Some("journal_path_unresolved")
+        );
+        assert!(runner.commands.borrow().is_empty());
+    }
+
+    #[test]
+    fn disabled_backup_skips_before_journal_path_resolution() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+
+        let result = run_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_eq!(result.status, "skipped");
+        assert_eq!(result.error_reason, None);
+        assert!(runner.commands.borrow().is_empty());
     }
     #[test]
     fn absent_restic_path_records_existing_unavailable_reason_without_runner_call() {

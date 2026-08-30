@@ -32,6 +32,7 @@ pub(crate) const PORTABLE_DENY: &[&str] = &[
     // authored top-level tree prunes — trailing slash is our shape
     "config/",
     "link/",
+    "mcp-endpoint/",
     "tokens/",
     "awareness/",
     "apps/",
@@ -154,6 +155,7 @@ mod tests {
         assert_eq!(deny_top_level("config"), DenyAction::TreePrune);
         assert_eq!(deny_top_level("apps"), DenyAction::TreePrune);
         assert_eq!(deny_top_level("backup"), DenyAction::TreePrune);
+        assert_eq!(deny_top_level("mcp-endpoint"), DenyAction::TreePrune);
         assert_eq!(deny_top_level("solstone"), DenyAction::TreePrune);
         assert_eq!(deny_top_level("chronicle"), DenyAction::Include);
         assert_eq!(deny_top_level("identity"), DenyAction::Include);
@@ -162,6 +164,9 @@ mod tests {
         assert!(!deny_member("chronicle/foo/apps/x"));
         assert!(deny_member("apps/observer/x.json"));
         assert!(deny_member("config/journal.json"));
+        assert!(deny_member("mcp-endpoint/pop.ed25519.pk8"));
+        assert!(deny_member("mcp-endpoint/.create.lock"));
+        assert!(!deny_member("chronicle/mcp-endpoint/keep.bin"));
     }
 
     #[test]

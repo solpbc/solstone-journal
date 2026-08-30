@@ -321,6 +321,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `solstone-core-ingest-resolve` (`write_ingest_manifest`) |
 | Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
 | Native pairing nonces (`link/nonces.json`) | `core/crates/solstone-core-sol-link/` |
+| MCP endpoint owner identity + durable PoP key (`mcp-endpoint/**`) | `core/crates/solstone-core-mcp-endpoint/` |
 | Chronicle day content (`chronicle/YYYYMMDD/**`) | The capturing module (observer, importer) per its declared outputs |
 | Index (SQLite, `indexer/*`) | `solstone/think/indexer/*` |
 | Observer registry and sync history (`apps/observer/observers/*.json`, `apps/observer/observers/*/hist/*.jsonl`) | `solstone/apps/observer/utils.py` |

@@ -4,6 +4,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use toml_edit::{DocumentMut, Item, Table};
+
+const ENDPOINT_DEPENDENCY: &str = "dep:solstone-core-mcp-endpoint";
+const ENDPOINT_FEATURE: &str = "journal-mcp-endpoint";
+
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -68,43 +73,83 @@ fn count_occurrences(files: &[PathBuf], needle: &str) -> usize {
         .sum()
 }
 
+fn feature_table(document: &DocumentMut) -> Option<&Table> {
+    document.get("features").and_then(Item::as_table)
+}
+
+fn feature_members(table: &Table, feature: &str) -> Option<Vec<String>> {
+    table.get(feature).and_then(Item::as_array).map(|array| {
+        array
+            .iter()
+            .filter_map(|member| member.as_str().map(str::to_owned))
+            .collect()
+    })
+}
+
+fn feature_reference_violations(
+    manifest: &Path,
+    document: &DocumentMut,
+    root_manifest: &Path,
+) -> Vec<String> {
+    let Some(features) = feature_table(document) else {
+        return Vec::new();
+    };
+    let mut violations = Vec::new();
+    for (feature, value) in features.iter() {
+        let Some(members) = value.as_array() else {
+            continue;
+        };
+        for member in members.iter().filter_map(toml_edit::Value::as_str) {
+            if member == ENDPOINT_FEATURE {
+                violations.push(format!(
+                    "{} feature {feature:?} aggregates {ENDPOINT_FEATURE}",
+                    manifest.display()
+                ));
+            }
+            if member == ENDPOINT_DEPENDENCY
+                && !(manifest == root_manifest && feature == ENDPOINT_FEATURE)
+            {
+                violations.push(format!(
+                    "{} feature {feature:?} activates {ENDPOINT_DEPENDENCY}",
+                    manifest.display()
+                ));
+            }
+        }
+    }
+    violations
+}
+
 #[test]
 fn mcp_endpoint_gate_is_single_pure_default_off_config_surface() {
     let root = repository_root();
     let manifests = crate_manifests(&root);
-    let feature = "journal-mcp-endpoint";
     let expected_manifest = root.join("core/crates/solstone-core/Cargo.toml");
-    let mut feature_manifests = Vec::new();
-    let mut feature_count = 0;
+    let root_text = fs::read_to_string(&expected_manifest).expect("root manifest reads");
+    let root_document = root_text
+        .parse::<DocumentMut>()
+        .expect("root manifest is valid TOML");
+    let root_features = feature_table(&root_document).expect("root manifest has feature table");
+    assert_eq!(
+        feature_members(root_features, ENDPOINT_FEATURE),
+        Some(vec![ENDPOINT_DEPENDENCY.to_owned()]),
+        "the guarded root feature must activate only its optional dependency"
+    );
+    // Cargo's omitted default feature means an empty default set and is safe.
+    assert!(
+        !root_features.contains_key("default"),
+        "an omitted default feature remains the pure default-off shape"
+    );
 
     for manifest in &manifests {
         let text = fs::read_to_string(manifest).expect("crate manifest reads");
-        let occurrences = text.matches(feature).count();
-        if occurrences != 0 {
-            feature_manifests.push(manifest.clone());
-            feature_count += occurrences;
-        }
-
-        let mut remaining = text.as_str();
-        while let Some(start) = remaining.find("default = [") {
-            remaining = &remaining[start..];
-            let end = remaining
-                .find(']')
-                .expect("default feature array is closed");
-            assert!(
-                !remaining[..=end].contains(feature),
-                "default feature array in {} must not enable {feature}",
-                manifest.display()
-            );
-            remaining = &remaining[end + 1..];
-        }
+        let document = text
+            .parse::<DocumentMut>()
+            .unwrap_or_else(|error| panic!("parse {}: {error}", manifest.display()));
+        assert!(
+            feature_reference_violations(manifest, &document, &expected_manifest).is_empty(),
+            "MCP endpoint must not be aggregated by another feature: {manifest:?}"
+        );
     }
-
-    assert_eq!(
-        feature_count, 1,
-        "{feature} must occur in one crate manifest"
-    );
-    assert_eq!(feature_manifests, vec![expected_manifest]);
 
     let sources = source_files(&root);
     let expected_module = root.join("core/crates/solstone-core-journal-config/src/mcp_endpoint.rs");
@@ -134,5 +179,45 @@ fn mcp_endpoint_gate_is_single_pure_default_off_config_surface() {
             .matches("mcp_endpoint::")
             .count(),
         1
+    );
+}
+
+#[test]
+fn feature_scan_rejects_non_default_aggregates_and_handles_real_feature_tables() {
+    let root = repository_root();
+    let root_manifest = root.join("core/crates/solstone-core/Cargo.toml");
+    let injected = "[features]\nfull = [\"journal-mcp-endpoint\"]\n";
+    let document = injected
+        .parse::<DocumentMut>()
+        .expect("synthetic manifest parses");
+    let violations =
+        feature_reference_violations(Path::new("synthetic/Cargo.toml"), &document, &root_manifest);
+    assert_eq!(violations.len(), 1);
+    assert!(violations[0].contains("full"));
+
+    let sol_link_manifest = root.join("core/crates/solstone-core-sol-link/Cargo.toml");
+    let sol_link_text = fs::read_to_string(&sol_link_manifest).expect("sol-link manifest reads");
+    let sol_link = sol_link_text
+        .parse::<DocumentMut>()
+        .expect("sol-link manifest is valid TOML");
+    let host = feature_members(
+        feature_table(&sol_link).expect("sol-link has feature table"),
+        "host",
+    )
+    .expect("sol-link host feature is an array");
+    assert!(host.len() > 1, "host is a real nonempty aggregate feature");
+    assert!(feature_reference_violations(&sol_link_manifest, &sol_link, &root_manifest).is_empty());
+
+    let absent_default = "[features]\nhost = [\"dep:example\"]\n";
+    let document = absent_default
+        .parse::<DocumentMut>()
+        .expect("synthetic default-free manifest parses");
+    assert!(
+        feature_reference_violations(
+            Path::new("default-free/Cargo.toml"),
+            &document,
+            &root_manifest
+        )
+        .is_empty()
     );
 }

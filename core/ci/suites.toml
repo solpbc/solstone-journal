@@ -968,6 +968,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-mcp-endpoint"
+package = "solstone-core-mcp-endpoint"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-model-pricing"
 package = "solstone-core-model-pricing"
 set = "component"

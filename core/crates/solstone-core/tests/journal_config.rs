@@ -32,19 +32,56 @@ fn write(root: &Path, relative: &str, contents: &[u8]) {
     fs::write(path, contents).expect("write test file");
 }
 
-fn snapshot_directory(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-    fn visit(root: &Path, directory: &Path, snapshot: &mut Vec<(PathBuf, Vec<u8>)>) {
-        for entry in fs::read_dir(directory).expect("snapshot directory reads") {
-            let path = entry.expect("snapshot entry reads").path();
-            if path.is_dir() {
+#[derive(Debug, Eq, PartialEq)]
+enum SnapshotEntry {
+    Directory { mode: u32 },
+    File { bytes: Vec<u8>, mode: u32 },
+    Symlink { target: PathBuf, mode: u32 },
+    Other { mode: u32 },
+}
+
+#[cfg(unix)]
+fn snapshot_mode(metadata: &fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    metadata.permissions().mode()
+}
+
+#[cfg(not(unix))]
+fn snapshot_mode(_: &fs::Metadata) -> u32 {
+    0
+}
+
+fn snapshot_directory(root: &Path) -> Vec<(PathBuf, SnapshotEntry)> {
+    fn visit(root: &Path, path: &Path, snapshot: &mut Vec<(PathBuf, SnapshotEntry)>) {
+        let metadata = fs::symlink_metadata(path).expect("snapshot entry metadata");
+        let relative = path
+            .strip_prefix(root)
+            .expect("snapshot path is below root")
+            .to_path_buf();
+        let mode = snapshot_mode(&metadata);
+        let file_type = metadata.file_type();
+        let entry = if file_type.is_dir() {
+            SnapshotEntry::Directory { mode }
+        } else if file_type.is_file() {
+            SnapshotEntry::File {
+                bytes: fs::read(path).expect("snapshot file reads"),
+                mode,
+            }
+        } else if file_type.is_symlink() {
+            SnapshotEntry::Symlink {
+                target: fs::read_link(path).expect("snapshot symlink reads"),
+                mode,
+            }
+        } else {
+            SnapshotEntry::Other { mode }
+        };
+        snapshot.push((relative, entry));
+
+        if file_type.is_dir() {
+            for entry in fs::read_dir(path).expect("snapshot directory reads") {
+                let path = entry.expect("snapshot entry reads").path();
                 visit(root, &path, snapshot);
-            } else if path.is_file() {
-                snapshot.push((
-                    path.strip_prefix(root)
-                        .expect("snapshot path is below root")
-                        .to_path_buf(),
-                    fs::read(path).expect("snapshot file reads"),
-                ));
             }
         }
     }

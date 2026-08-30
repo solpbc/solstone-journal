@@ -1051,3 +1051,120 @@ fn stale_stage_files_are_ignored_and_remain_non_authoritative() {
     assert_eq!(fs::read(&stage).expect("stage rereads"), before);
     assert!(endpoint.join("pop.ed25519.pk8").is_file());
 }
+
+fn captured_diagnostic(value: &(impl std::fmt::Display + std::fmt::Debug)) -> String {
+    format!("display={value}; debug={value:?}")
+}
+
+fn assert_canaries_are_redacted(
+    result: Result<Option<crate::McpEndpointOwnerContext>, McpEndpointBootstrapError>,
+    canaries: &[&str],
+) {
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("fixture must refuse bootstrap"),
+    };
+    let rendered = captured_diagnostic(&error);
+    for canary in canaries {
+        assert!(
+            !rendered.contains(canary),
+            "bootstrap diagnostics must redact {canary:?}: {rendered:?}"
+        );
+    }
+}
+
+#[test]
+fn sensitive_inputs_never_reach_mcp_endpoint_diagnostics_or_public_context() {
+    const HOME_LABEL: &str = "CANARY-HOME-LABEL-9f4540";
+    const INSTANCE_ID: &str = "CANARY-INSTANCE-ID-588d5a";
+    const KEY_BYTES: &str = "CANARY-KEY-BYTES-0c1824";
+    const PATH_COMPONENT: &str = "CANARY-PATH-COMPONENT-40d8ce";
+    let canaries = [HOME_LABEL, INSTANCE_ID, KEY_BYTES, PATH_COMPONENT];
+
+    let sandbox = TempDir::new().expect("test sandbox creates");
+    let malformed_identity = sandbox.path().join(PATH_COMPONENT);
+    fs::create_dir(&malformed_identity).expect("canary journal directory creates");
+    write_enabled_config(&malformed_identity);
+    write_identity(&malformed_identity, StateLayout::Primary);
+    fs::write(
+        malformed_identity.join("link/state.json"),
+        format!(r#"{{"instance_id":"{INSTANCE_ID}","home_label":"{HOME_LABEL}"}}"#),
+    )
+    .expect("canary state writes");
+    assert_canaries_are_redacted(
+        bootstrap_mcp_endpoint_owner_identity(&malformed_identity),
+        &canaries,
+    );
+
+    let corrupt_key = TempDir::new().expect("test root creates");
+    write_enabled_config(corrupt_key.path());
+    write_identity(corrupt_key.path(), StateLayout::Primary);
+    let endpoint = prepare_endpoint_directory(corrupt_key.path());
+    write_private_file(&endpoint.join("pop.ed25519.pk8"), KEY_BYTES.as_bytes());
+    assert_canaries_are_redacted(
+        bootstrap_mcp_endpoint_owner_identity(corrupt_key.path()),
+        &canaries,
+    );
+
+    let toctou = TempDir::new().expect("test root creates");
+    write_enabled_config(toctou.path());
+    write_identity(toctou.path(), StateLayout::Primary);
+    let endpoint = prepare_endpoint_directory(toctou.path());
+    let aside = endpoint.with_extension("aside");
+    let callback_endpoint = endpoint.clone();
+    let callback_aside = aside.clone();
+    let (result, fired) = run_with_owner_barrier(
+        OwnerBootstrapPrimitive::DirectoryBindingCheckBeforeLock,
+        1,
+        move || {
+            fs::rename(&callback_endpoint, &callback_aside).expect("endpoint moves aside");
+            fs::create_dir(&callback_endpoint).expect("replacement endpoint creates");
+            set_mode(&callback_endpoint, 0o700);
+        },
+        || bootstrap_mcp_endpoint_owner_identity(toctou.path()),
+    );
+    assert!(fired);
+    assert_canaries_are_redacted(result, &canaries);
+
+    let success = TempDir::new().expect("test root creates");
+    write_enabled_config(success.path());
+    write_identity(success.path(), StateLayout::Primary);
+    let context = bootstrap_context(success.path());
+    assert_eq!(context.test_verifying_key_bytes().len(), 32);
+    // The public type has no Display, Debug, or accessor implementation. The
+    // compile-fail doctests on McpEndpointOwnerContext pin that caller boundary.
+
+    struct SyntheticDiagnostic(&'static str);
+    impl std::fmt::Display for SyntheticDiagnostic {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.0)
+        }
+    }
+    impl std::fmt::Debug for SyntheticDiagnostic {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.0)
+        }
+    }
+    let control = "synthetic-diagnostic-capture-control";
+    assert!(captured_diagnostic(&SyntheticDiagnostic(control)).contains(control));
+}
+
+#[test]
+fn production_source_has_no_logging_or_printing_surface() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let production_files = [
+        source.join("lib.rs"),
+        source.join("unix.rs"),
+        source.join("test_seam.rs"),
+    ];
+    for path in production_files {
+        let text = fs::read_to_string(&path).expect("production source reads");
+        for prohibited in ["println!", "eprintln!", "log::", "tracing::"] {
+            assert!(
+                !text.contains(prohibited),
+                "{} must not expose {prohibited}",
+                path.display()
+            );
+        }
+    }
+}

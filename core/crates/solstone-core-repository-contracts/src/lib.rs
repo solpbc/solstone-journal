@@ -70,6 +70,9 @@ mod service_legacy_gate_purity;
 #[path = "contracts/settings_devices_python_web_cut.rs"]
 mod settings_devices_python_web_cut;
 #[cfg(test)]
+#[path = "contracts/spl_source_coherence.rs"]
+mod spl_source_coherence;
+#[cfg(test)]
 #[path = "contracts/stats_dispatch_audit.rs"]
 mod stats_dispatch_audit;
 #[cfg(test)]
