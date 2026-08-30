@@ -284,6 +284,21 @@ fn make_ci_full_serializes_workspace_tests_that_compete_for_host_resources() {
         target_body(&makefile, "check-rust-doc").contains("--doc"),
         "the doctest leg must select Rust documentation tests explicitly"
     );
+    let doctest = target_body(&makefile, "check-rust-doc");
+    assert!(
+        doctest.contains("-p solstone-core-backup-runtime")
+            && doctest.contains("--exclude solstone-core-backup-runtime"),
+        "backup-runtime default-feature compile-fail docs must run outside workspace feature unification"
+    );
+}
+
+#[test]
+fn make_normalizes_the_temporary_root_to_its_physical_spelling() {
+    let makefile = makefile_text(&repo_root());
+    assert!(
+        makefile.contains("export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)"),
+        "Make entry points must not mix macOS /var and /private/var spellings"
+    );
 }
 
 #[test]
