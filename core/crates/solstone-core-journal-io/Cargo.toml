@@ -40,6 +40,11 @@ name = "journal_io_lock_component"
 path = "tests/journal_io_lock_component.rs"
 required-features = ["test-hooks"]
 
+[[test]]
+name = "bound_read_socket_boundaries"
+path = "tests/bound_read_socket_boundaries.rs"
+required-features = ["test-hooks"]
+
 # Cloud Files registration is irreconcilable process-global sync-root setup and
 # must not run concurrently with any other test touching that namespace.
 [[test]]

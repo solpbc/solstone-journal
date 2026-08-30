@@ -229,7 +229,6 @@ mod bound_tests {
         run_with_two_bound_read_barriers,
     };
     use std::fs;
-    use std::os::unix::net::UnixListener;
 
     use super::{ConfigLoadError, read_journal_config, read_journal_config_bound};
     use crate::test_support::TempDir;
@@ -297,24 +296,7 @@ mod bound_tests {
     }
 
     #[test]
-    fn bound_reader_rejects_config_substitution_and_removal_races() {
-        let socket = TempDir::new();
-        write_config(socket.path(), br#"{"origin":"original"}"#);
-        let socket_path = socket.path().join("config/journal.json");
-        let admitted = JournalRoot::open(socket.path()).unwrap();
-        let (result, fired) = run_with_bound_read_barrier(
-            BoundReadPrimitive::Open,
-            1,
-            move || {
-                fs::remove_file(&socket_path).unwrap();
-                let listener = UnixListener::bind(&socket_path).unwrap();
-                drop(listener);
-            },
-            || read_journal_config_bound(&admitted),
-        );
-        assert!(fired);
-        assert!(matches!(result, Err(ConfigLoadError::Corrupt { .. })));
-
+    fn bound_reader_rejects_config_removal_during_read() {
         let removed = TempDir::new();
         write_config(removed.path(), br#"{"origin":"original"}"#);
         let removed_path = removed.path().join("config/journal.json");

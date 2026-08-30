@@ -89,6 +89,10 @@ required-features = ["host"]
 name = "sol_link_publish_crash"
 required-features = ["host", "test-hooks"]
 
+[[test]]
+name = "committed_bound_socket_boundaries"
+required-features = ["host", "test-hooks"]
+
 # `getifaddrs` requires one audited unsafe syscall boundary; keep the exception
 # local to that function instead of relaxing the workspace-wide hard forbid.
 [lints.rust]

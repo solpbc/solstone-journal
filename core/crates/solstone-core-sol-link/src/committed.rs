@@ -445,8 +445,6 @@ fn parse_state(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    #[cfg(unix)]
-    use std::os::unix::net::UnixListener;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -744,94 +742,6 @@ mod tests {
         let path = load_committed_identity(&original).expect("path identity loads");
         assert_eq!(bound.instance_id(), original_id);
         assert_eq!(path.instance_id(), replacement_id);
-    }
-
-    #[cfg(unix)]
-    fn assert_bound_socket_leaf_is_rejected(
-        root: &Path,
-        leaf: PathBuf,
-        open_ordinal: usize,
-        expected: &'static str,
-    ) {
-        let admitted = JournalRoot::open(root).expect("journal root admits");
-        let (result, fired) = run_with_bound_read_barrier(
-            BoundReadPrimitive::Open,
-            open_ordinal,
-            move || {
-                fs::remove_file(&leaf).expect("committed leaf removes");
-                let listener = UnixListener::bind(&leaf).expect("socket binds");
-                drop(listener);
-            },
-            || load_committed_identity_bound(&admitted),
-        );
-        assert!(fired, "bound leaf barrier fires");
-        let error = match result {
-            Ok(_) => panic!("socket substitution must reject"),
-            Err(error) => error,
-        };
-        assert_eq!(committed_error_kind(&error), expected);
-        assert!(
-            !root.join("mcp-endpoint").exists(),
-            "link reader cannot create endpoint state"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bound_reader_rejects_socket_substitution_for_all_committed_leaves() {
-        let certificate = TempDir::new();
-        let ca = generate_ca().expect("test CA generates");
-        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
-        write_identity(certificate.path(), &ca, &python_state(&instance_id), false);
-        assert_bound_socket_leaf_is_rejected(
-            certificate.path(),
-            certificate.path().join("link/ca/cert.pem"),
-            1,
-            "certificate-read",
-        );
-
-        let private_key = TempDir::new();
-        let ca = generate_ca().expect("test CA generates");
-        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
-        write_identity(private_key.path(), &ca, &python_state(&instance_id), false);
-        assert_bound_socket_leaf_is_rejected(
-            private_key.path(),
-            private_key.path().join("link/ca/private.pem"),
-            2,
-            "private-key-read",
-        );
-
-        let primary_state = TempDir::new();
-        let ca = generate_ca().expect("test CA generates");
-        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
-        write_identity(
-            primary_state.path(),
-            &ca,
-            &python_state(&instance_id),
-            false,
-        );
-        assert_bound_socket_leaf_is_rejected(
-            primary_state.path(),
-            primary_state.path().join("link/state.json"),
-            3,
-            "state-read",
-        );
-
-        let fallback_state = TempDir::new();
-        let ca = generate_ca().expect("test CA generates");
-        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
-        write_identity(
-            fallback_state.path(),
-            &ca,
-            &python_state(&instance_id),
-            true,
-        );
-        assert_bound_socket_leaf_is_rejected(
-            fallback_state.path(),
-            fallback_state.path().join("link/ca/state.json"),
-            3,
-            "state-read",
-        );
     }
 
     #[cfg(unix)]

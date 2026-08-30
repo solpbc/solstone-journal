@@ -503,7 +503,6 @@ fn io_error(path: &Path, source: io::Error) -> ReadError {
 mod tests {
     use std::ffi::OsStr;
     use std::fs;
-    use std::os::unix::net::UnixListener;
     use std::sync::{Mutex, Once, OnceLock};
 
     use log::{Level, LevelFilter, Log, Metadata, Record};
@@ -676,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn read_bytes_bound_rejects_initial_nonregular_entries_without_opening() {
+    fn read_bytes_bound_rejects_initial_fifo_without_opening() {
         let fifo = TempDir::new();
         mkfifo(&fifo.path().join("record"), Mode::from_bits_truncate(0o600)).expect("FIFO creates");
         let directory = open_bound_directory(fifo.path());
@@ -686,17 +685,6 @@ mod tests {
             });
         assert!(result.is_err());
         assert!(!open_attempted, "initial FIFO must not reach open");
-
-        let socket = TempDir::new();
-        let listener = UnixListener::bind(socket.path().join("record")).expect("socket binds");
-        let directory = open_bound_directory(socket.path());
-        let (result, open_attempted) =
-            run_with_bound_read_fault(BoundReadPrimitive::Open, 1, Errno::EIO as i32, || {
-                read_bound(&directory)
-            });
-        assert!(result.is_err());
-        assert!(!open_attempted, "initial socket must not reach open");
-        drop(listener);
     }
 
     #[cfg(target_os = "linux")]
@@ -724,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn read_bytes_bound_rejects_fifo_socket_and_removal_before_open() {
+    fn read_bytes_bound_rejects_fifo_and_removal_before_open() {
         let fifo = TempDir::new();
         write_record(fifo.path(), b"original");
         let fifo_path = fifo.path().join("record");
@@ -735,23 +723,6 @@ mod tests {
             move || {
                 fs::remove_file(&fifo_path).expect("record removes");
                 mkfifo(&fifo_path, Mode::from_bits_truncate(0o600)).expect("FIFO creates");
-            },
-            || read_bound(&directory),
-        );
-        assert!(fired);
-        assert!(result.is_err());
-
-        let socket = TempDir::new();
-        write_record(socket.path(), b"original");
-        let socket_path = socket.path().join("record");
-        let directory = open_bound_directory(socket.path());
-        let (result, fired) = run_with_bound_read_barrier(
-            BoundReadPrimitive::Open,
-            1,
-            move || {
-                fs::remove_file(&socket_path).expect("record removes");
-                let listener = UnixListener::bind(&socket_path).expect("socket binds");
-                drop(listener);
             },
             || read_bound(&directory),
         );
