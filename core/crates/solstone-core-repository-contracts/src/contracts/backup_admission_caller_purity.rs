@@ -1,143 +1,241 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-const BACKUP_CLI_LIB: &str = include_str!("../../../solstone-core-backup-cli/src/lib.rs");
-const MAINTENANCE_LIB: &str = include_str!("../../../solstone-core-maintenance/src/lib.rs");
-const MAINTENANCE_BACKUP_BODY: &str =
-    include_str!("../../../solstone-core-maintenance/src/bodies/backup.rs");
+use std::fs;
+use std::path::{Path, PathBuf};
 
-fn is_identifier_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
+#[derive(Default)]
+struct ForbiddenIdentVisitor {
+    hits: Vec<String>,
 }
 
-/// True if `source` calls `symbol(...)` directly, module-qualified, fully-qualified,
-/// or through a `use ... symbol as alias;` import alias.
-fn source_calls_forbidden_symbol(source: &str, symbol: &str) -> bool {
-    if calls_identifier(source, symbol) {
-        return true;
-    }
-    import_aliases(source, symbol)
-        .iter()
-        .any(|alias| calls_identifier(source, alias))
-}
-
-/// True if `source` contains a call-shaped occurrence of the bare identifier `name`:
-/// not preceded by an identifier byte, followed (after optional whitespace) by `(`.
-fn calls_identifier(source: &str, name: &str) -> bool {
-    let bytes = source.as_bytes();
-    let needle = name.as_bytes();
-    let mut start = 0;
-    while let Some(offset) = source[start..].find(name) {
-        let index = start + offset;
-        let before_ok = index == 0 || !is_identifier_byte(bytes[index - 1]);
-        let after = index + needle.len();
-        let after_ok = !bytes
-            .get(after)
-            .is_some_and(|&byte| is_identifier_byte(byte));
-        if before_ok && after_ok && source[after..].trim_start().starts_with('(') {
-            return true;
+impl<'ast> syn::visit::Visit<'ast> for ForbiddenIdentVisitor {
+    fn visit_ident(&mut self, ident: &'ast syn::Ident) {
+        let raw = ident.to_string();
+        let normalized = raw.strip_prefix("r#").unwrap_or(&raw);
+        if normalized == "run_backup" || normalized == "record_backup_error" {
+            self.hits.push(normalized.to_owned());
         }
-        start = index + 1;
     }
-    false
 }
 
-/// Extract every alias `symbol` is imported under via `use ...::symbol as alias;`.
-fn import_aliases(source: &str, symbol: &str) -> Vec<String> {
-    let mut aliases = Vec::new();
-    for statement in source.split(';') {
-        let trimmed = statement.trim();
-        if !trimmed
-            .lines()
-            .any(|line| line.trim_start().starts_with("use "))
+fn forbidden_hits_in_source(source: &str) -> Vec<String> {
+    let file =
+        syn::parse_file(source).unwrap_or_else(|error| panic!("parse fixture source: {error}"));
+    let mut visitor = ForbiddenIdentVisitor::default();
+    syn::visit::visit_file(&mut visitor, &file);
+    visitor.hits
+}
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("core crate has repository parent")
+        .to_path_buf()
+}
+
+fn collect_source_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("production source directory reads") {
+        let path = entry.expect("production source entry reads").path();
+        if path.is_dir() {
+            collect_source_files(&path, files);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs")
+            && path.file_name().and_then(|name| name.to_str()) != Some("tests.rs")
         {
-            continue;
-        }
-        let Some(symbol_at) = trimmed.find(symbol) else {
-            continue;
-        };
-        let bytes = trimmed.as_bytes();
-        let before_ok = symbol_at == 0 || !is_identifier_byte(bytes[symbol_at - 1]);
-        let after = symbol_at + symbol.len();
-        let after_ok = !bytes
-            .get(after)
-            .is_some_and(|&byte| is_identifier_byte(byte));
-        if !before_ok || !after_ok {
-            continue;
-        }
-        let rest = trimmed[after..].trim_start();
-        let Some(rest) = rest.strip_prefix("as") else {
-            continue;
-        };
-        if !rest.chars().next().is_some_and(char::is_whitespace) {
-            continue;
-        }
-        let alias = rest
-            .trim_start()
-            .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-            .next()
-            .unwrap_or_default();
-        if !alias.is_empty() {
-            aliases.push(alias.to_owned());
+            files.push(path);
         }
     }
-    aliases
 }
 
-#[test]
-fn detects_bare_forbidden_call() {
-    assert!(source_calls_forbidden_symbol(
-        "record_backup_error(journal, clock, reason)",
-        "record_backup_error"
-    ));
-}
-
-#[test]
-fn detects_module_qualified_forbidden_call() {
-    assert!(source_calls_forbidden_symbol(
-        "engine::run_backup(journal, services)",
-        "run_backup"
-    ));
-}
-
-#[test]
-fn detects_fully_qualified_forbidden_call() {
-    assert!(source_calls_forbidden_symbol(
-        "solstone_core_backup_runtime::record_backup_error(a, b, c)",
-        "record_backup_error"
-    ));
-}
-
-#[test]
-fn detects_import_alias_forbidden_call() {
-    assert!(source_calls_forbidden_symbol(
-        "use solstone_core_backup_runtime::run_backup as legacy_run;\nlet x = legacy_run(journal, services);",
-        "run_backup"
-    ));
-}
-
-#[test]
-fn ignores_unrelated_and_near_miss_calls() {
-    let source = "resolve_tools(&capability, runner, downloader, dirs);\ncapability.execute(&services);\nbackup_run_result(result);";
-    assert!(!source_calls_forbidden_symbol(source, "run_backup"));
-    assert!(!source_calls_forbidden_symbol(
-        source,
-        "record_backup_error"
-    ));
-}
-
-#[test]
-fn backup_entry_crates_do_not_call_legacy_backup_runtime_entrypoints() {
-    for (name, source) in [
-        ("backup-cli lib.rs", BACKUP_CLI_LIB),
-        ("maintenance lib.rs", MAINTENANCE_LIB),
-        ("maintenance bodies/backup.rs", MAINTENANCE_BACKUP_BODY),
-    ] {
-        for symbol in ["run_backup", "record_backup_error"] {
-            assert!(
-                !source_calls_forbidden_symbol(source, symbol),
-                "{name} calls forbidden legacy backup-runtime entrypoint {symbol}"
-            );
-        }
+fn load_production_root(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
+    if !root.is_dir() {
+        return Err(format!(
+            "production root does not exist or is not a directory: {}",
+            root.display()
+        ));
     }
+    let mut files = Vec::new();
+    collect_source_files(root, &mut files);
+    if files.is_empty() {
+        return Err(format!(
+            "production root contains no .rs files: {}",
+            root.display()
+        ));
+    }
+    files.sort();
+    Ok(files
+        .into_iter()
+        .map(|path| {
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            (path, source)
+        })
+        .collect())
+}
+
+fn load_all_roots(roots: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
+    let mut sources = Vec::new();
+    for root in roots {
+        sources.extend(load_production_root(root)?);
+    }
+    Ok(sources)
+}
+
+#[test]
+fn detects_bare_forbidden_identifier() {
+    assert!(!forbidden_hits_in_source("fn probe() { run_backup(journal, services); }").is_empty());
+}
+
+#[test]
+fn detects_module_qualified_forbidden_identifier() {
+    assert!(
+        !forbidden_hits_in_source("fn probe() { engine::run_backup(journal, services); }")
+            .is_empty()
+    );
+}
+
+#[test]
+fn detects_fully_qualified_forbidden_identifier() {
+    assert!(
+        !forbidden_hits_in_source(
+            "fn probe() { solstone_core_backup_runtime::run_backup(journal, services); }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn detects_import_aliased_forbidden_identifier() {
+    assert!(
+        !forbidden_hits_in_source(
+            "use solstone_core_backup_runtime::run_backup as legacy;\nfn probe() { legacy(journal, services); }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn detects_let_bound_qualified_forbidden_identifier() {
+    assert!(
+        !forbidden_hits_in_source(
+            "fn probe() { let legacy = solstone_core_backup_runtime::run_backup; legacy(journal, services); }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn detects_parenthesized_import_alias_forbidden_identifier() {
+    assert!(
+        !forbidden_hits_in_source(
+            "use solstone_core_backup_runtime::run_backup as legacy;\nfn probe() { (legacy)(journal, services); }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn detects_raw_direct_run_backup_identifier() {
+    assert_eq!(
+        forbidden_hits_in_source("fn probe() { r#run_backup(journal, services); }"),
+        ["run_backup"]
+    );
+}
+
+#[test]
+fn detects_raw_direct_record_backup_error_identifier() {
+    assert_eq!(
+        forbidden_hits_in_source("fn probe() { r#record_backup_error(journal, clock, reason); }"),
+        ["record_backup_error"]
+    );
+}
+
+#[test]
+fn detects_raw_qualified_run_backup_identifier() {
+    assert_eq!(
+        forbidden_hits_in_source(
+            "fn probe() { solstone_core_backup_runtime::r#run_backup(journal, services); }"
+        ),
+        ["run_backup"]
+    );
+}
+
+#[test]
+fn detects_raw_qualified_record_backup_error_identifier() {
+    assert_eq!(
+        forbidden_hits_in_source(
+            "fn probe() { solstone_core_backup_runtime::r#record_backup_error(journal, clock, reason); }"
+        ),
+        ["record_backup_error"]
+    );
+}
+
+#[test]
+fn ignores_unrelated_and_near_miss_identifiers() {
+    let source = "fn probe() {\n    resolve_tools(&capability, runner, downloader, dirs);\n    capability.execute(&services);\n    backup_run_result(result);\n}";
+    assert!(forbidden_hits_in_source(source).is_empty());
+}
+
+#[test]
+fn discovers_forbidden_identifier_in_nested_source_file() {
+    let root = tempfile::tempdir().expect("fixture root creates");
+    let nested = root.path().join("sub/dir");
+    fs::create_dir_all(&nested).expect("nested fixture directory creates");
+    fs::write(
+        nested.join("nested.rs"),
+        "fn probe() { solstone_core_backup_runtime::run_backup(journal, services); }",
+    )
+    .expect("nested fixture writes");
+
+    let files = load_production_root(root.path()).expect("nested source root loads");
+    let hits: Vec<_> = files
+        .iter()
+        .flat_map(|(_, source)| forbidden_hits_in_source(source))
+        .collect();
+    assert_eq!(hits, ["run_backup"]);
+}
+
+#[test]
+fn rejects_empty_production_root() {
+    let root = tempfile::tempdir().expect("empty fixture root creates");
+    assert!(load_production_root(root.path()).is_err());
+}
+
+#[test]
+fn rejects_missing_production_root() {
+    let parent = tempfile::tempdir().expect("fixture parent creates");
+    let missing = parent.path().join("missing");
+    assert!(load_production_root(&missing).is_err());
+}
+
+#[test]
+fn mixed_roots_fail_for_the_empty_root() {
+    let parent = tempfile::tempdir().expect("fixture parent creates");
+    let populated = parent.path().join("populated");
+    fs::create_dir_all(&populated).expect("populated root creates");
+    fs::write(populated.join("lib.rs"), "fn harmless() {}").expect("harmless fixture writes");
+    let empty = parent.path().join("empty");
+    fs::create_dir_all(&empty).expect("empty root creates");
+
+    let error = load_all_roots(&[populated, empty.clone()]).expect_err("empty root rejects");
+    assert!(error.contains(&empty.display().to_string()));
+}
+
+#[test]
+fn backup_entry_crates_contain_no_legacy_backup_runtime_identifiers() {
+    let root = repository_root();
+    let sources = load_all_roots(&[
+        root.join("core/crates/solstone-core-backup-cli/src"),
+        root.join("core/crates/solstone-core-maintenance/src"),
+    ])
+    .unwrap_or_else(|error| panic!("load production backup entry sources: {error}"));
+    let hits: Vec<_> = sources
+        .iter()
+        .flat_map(|(_, source)| forbidden_hits_in_source(source))
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "backup entry production sources contain forbidden legacy identifiers: {hits:?}"
+    );
 }
