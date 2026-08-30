@@ -32,7 +32,8 @@ needed input into a temporary directory such as `tempfile::TempDir`.
 
 ## Running Tests
 
-- `make test` runs the Rust workspace tests only
+- `make test` runs selected Rust library/binary unit harnesses and reports its
+  source-derived omission boundary
 - `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests
 - Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane:
   formatting, the CI-topology contract, library/binary Clippy checks, and

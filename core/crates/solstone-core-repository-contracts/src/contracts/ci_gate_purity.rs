@@ -349,6 +349,44 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
 }
 
 #[test]
+fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let test = target_body(&makefile, "test");
+    assert!(test.contains("check-rust-unit"));
+    assert!(test.contains("report-rust-code-evidence"));
+    assert!(test.find("check-rust-unit") < test.find("report-rust-code-evidence"));
+    for forbidden in ["check-rust-test", "ci-full"] {
+        assert!(!test.contains(forbidden));
+    }
+    let ci = target_body(&makefile, "ci-under-poison");
+    assert!(ci.contains("$(MAKE) check-rust-unit"));
+    assert!(
+        ci.contains("report-rust-code-evidence") && ci.contains("RUST_CODE_EVIDENCE_CONTEXT=ci")
+    );
+    let report = target_body(&makefile, "report-rust-code-evidence");
+    for required in [
+        "$(RUST_ROUTINE_EXCLUDES)",
+        "$(RUST_HOST_EXCLUDES)",
+        "$(filter-out",
+    ] {
+        assert!(report.contains(required));
+    }
+    assert!(
+        makefile.contains("RUST_CODE_EVIDENCE_CONTEXT")
+            && makefile.contains("RUST_CODE_EVIDENCE_VALID")
+    );
+    assert!(
+        report.contains("$(RUST_CODE_EVIDENCE_CLIPPY)")
+            && report.contains("RUST_CODE_EVIDENCE_VALID")
+    );
+    assert!(!report.contains("solstone-core-"));
+    let workspace =
+        fs::read_to_string(root.join("core/Cargo.toml")).expect("read workspace Cargo manifest");
+    assert!(!workspace_members(&workspace).is_empty());
+}
+
+#[test]
 fn routine_slow_exclusions_are_exact_and_default_in_the_full_gate() {
     let makefile = makefile_text(&repo_root());
     let routine = makefile
