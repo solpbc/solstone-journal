@@ -160,7 +160,7 @@ pub use readers::read_bytes_bound;
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use readers::{
     BoundReadPrimitive, run_with_bound_read_barrier, run_with_bound_read_fault,
-    run_with_two_bound_read_barriers,
+    run_with_bound_read_fault_trace, run_with_two_bound_read_barriers,
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,

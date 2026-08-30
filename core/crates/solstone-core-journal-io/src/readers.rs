@@ -125,6 +125,41 @@ pub fn run_with_bound_read_fault<T>(
     (result, state.fault_consumed)
 }
 
+/// Run `op` with one injected errno and return its attempted checkpoint trace.
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub fn run_with_bound_read_fault_trace<T>(
+    primitive: BoundReadPrimitive,
+    ordinal: usize,
+    raw_errno: i32,
+    op: impl FnOnce() -> T,
+) -> (T, Vec<BoundReadPrimitive>) {
+    BOUND_READ_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound read trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundReadTraceState {
+            attempted: Vec::new(),
+            fault: Some(BoundReadFault {
+                primitive,
+                ordinal,
+                error: Errno::from_raw(raw_errno),
+            }),
+            fault_consumed: false,
+            barriers: Vec::new(),
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_READ_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound read trace remains active")
+    });
+    (result, state.attempted)
+}
+
 /// Run `op` with one deterministic bound-read barrier callback.
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_bound_read_barrier<T>(
@@ -801,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn read_bytes_bound_faults_fail_at_each_checkpoint() {
+    fn read_bytes_bound_fault_traces_match_protocol_prefixes() {
         let primitives = [
             BoundReadPrimitive::InitialNameObserve,
             BoundReadPrimitive::Open,
@@ -811,16 +846,22 @@ mod tests {
             BoundReadPrimitive::FinalNameObserve,
         ];
         for raw_errno in [Errno::EIO as i32, Errno::EACCES as i32] {
-            for primitive in primitives {
+            for (index, primitive) in primitives.iter().copied().enumerate() {
                 let temporary = TempDir::new();
                 write_record(temporary.path(), b"original");
                 let directory = open_bound_directory(temporary.path());
-                let (result, consumed) =
-                    run_with_bound_read_fault(primitive, 1, raw_errno, || read_bound(&directory));
-                assert!(consumed, "{primitive:?} fault was not consumed");
+                let (result, attempted) =
+                    run_with_bound_read_fault_trace(primitive, 1, raw_errno, || {
+                        read_bound(&directory)
+                    });
                 assert!(
                     result.is_err(),
                     "{primitive:?} fault unexpectedly read bytes"
+                );
+                assert_eq!(
+                    attempted,
+                    primitives[..=index].to_vec(),
+                    "{primitive:?} trace did not end at its injected checkpoint"
                 );
             }
         }

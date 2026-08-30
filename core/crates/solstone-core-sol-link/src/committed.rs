@@ -451,8 +451,7 @@ mod tests {
 
     #[cfg(unix)]
     use solstone_core_journal_io::{
-        BoundReadPrimitive, JournalRoot, run_with_bound_read_barrier,
-        run_with_two_bound_read_barriers,
+        BoundReadPrimitive, JournalRoot, run_with_two_bound_read_barriers,
     };
     use x509_parser::pem::parse_x509_pem;
 
