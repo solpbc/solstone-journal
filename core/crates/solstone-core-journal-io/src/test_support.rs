@@ -24,6 +24,7 @@ impl TempDir {
             std::process::id()
         ));
         fs::create_dir(&path).unwrap();
+        let path = fs::canonicalize(path).unwrap();
         Self { path }
     }
 

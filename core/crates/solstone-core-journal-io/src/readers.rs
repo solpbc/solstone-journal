@@ -543,7 +543,9 @@ mod tests {
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nix::errno::Errno;
     use nix::fcntl::{AT_FDCWD, OFlag, openat};
-    use nix::sys::stat::{Mode, SFlag, makedev, mknod};
+    use nix::sys::stat::Mode;
+    #[cfg(target_os = "linux")]
+    use nix::sys::stat::{SFlag, makedev, mknod};
     use nix::unistd::mkfifo;
 
     use super::*;
