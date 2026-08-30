@@ -3,7 +3,7 @@
 
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::os::fd::AsFd;
 use std::path::Path;
 
@@ -30,7 +30,8 @@ const CREATE_LOCK: &str = ".create.lock";
 const POP_KEY: &str = "pop.ed25519.pk8";
 const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
-const MAX_PKCS8_BYTES: u64 = 513;
+const MAX_POP_PKCS8_DER_BYTES: u64 = 512;
+const POP_PKCS8_READ_LIMIT: u64 = MAX_POP_PKCS8_DER_BYTES + 1;
 
 const DIRECTORY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
@@ -56,7 +57,6 @@ struct EndpointDirectory {
 }
 
 struct LoadedKey {
-    keypair: Ed25519KeyPair,
     identity: FileIdentity,
     bytes: Vec<u8>,
 }
@@ -100,25 +100,30 @@ pub(super) fn bootstrap(
         .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
     let lock = Flock::lock(lock, FlockArg::LockExclusive)
         .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
+    validate_named_regular_binding(
+        &endpoint.file,
+        OsStr::new(CREATE_LOCK),
+        &lock,
+        owner,
+        OwnerBootstrapPrimitive::LockBindingAfterAcquire,
+    )
+    .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
 
     let loaded = load_or_generate_key(&endpoint.file, owner)
         .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
-    drop(lock);
-
-    finalize_key(&endpoint.file, owner, loaded.identity, &loaded.bytes)
-        .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
-    revalidate_root_binding(&root).map_err(|_| McpEndpointBootstrapError::Endpoint)?;
-    ensure_named_handle_binding(
+    let keypair = finalize_key(
         &root,
-        OsStr::new(ENDPOINT_DIRECTORY),
         &endpoint.file,
-        OwnerBootstrapPrimitive::DirectoryBindingCheckBeforeSuccess,
+        &lock,
+        owner,
+        loaded.identity,
+        &loaded.bytes,
     )
     .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
     Ok(Some(McpEndpointOwnerContext {
         _private: (),
         committed,
-        _keypair: loaded.keypair,
+        _keypair: keypair,
     }))
 }
 
@@ -245,7 +250,7 @@ fn generate_and_publish_key(parent: &File, owner: u32) -> io::Result<LoadedKey> 
             if source.kind() == io::ErrorKind::AlreadyExists
                 || source.raw_os_error() == Some(nix::libc::EEXIST) =>
         {
-            load_existing_key(parent, owner)?.ok_or_else(identity_changed)
+            Err(identity_changed())
         }
         Err(_) => Err(invalid_entry()),
     }
@@ -276,20 +281,21 @@ fn load_existing_key(parent: &File, owner: u32) -> io::Result<Option<LoadedKey>>
         return Err(identity_changed());
     }
     checkpoint(OwnerBootstrapPrimitive::KeyDecode)?;
-    let keypair = Ed25519KeyPair::from_pkcs8(&bytes).map_err(|_| invalid_entry())?;
+    Ed25519KeyPair::from_pkcs8(&bytes).map_err(|_| invalid_entry())?;
     Ok(Some(LoadedKey {
-        keypair,
         identity: identity(&restat),
         bytes,
     }))
 }
 
 fn finalize_key(
+    root: &JournalRoot,
     parent: &File,
+    lock: &File,
     owner: u32,
     expected: FileIdentity,
     expected_bytes: &[u8],
-) -> io::Result<()> {
+) -> io::Result<Ed25519KeyPair> {
     checkpoint(OwnerBootstrapPrimitive::FinalKeyOpen)?;
     let fd =
         openat(parent, OsStr::new(POP_KEY), FILE_OPEN_FLAGS, Mode::empty()).map_err(errno_error)?;
@@ -299,18 +305,109 @@ fn finalize_key(
     if identity(&stat) != expected || !is_exact_regular(&stat, owner, FILE_MODE) {
         return Err(identity_changed());
     }
-    if key_size(&stat)? > MAX_PKCS8_BYTES {
+    if key_size(&stat)? > MAX_POP_PKCS8_DER_BYTES {
         return Err(invalid_entry());
     }
+    validate_named_regular_binding(
+        parent,
+        OsStr::new(POP_KEY),
+        &file,
+        owner,
+        OwnerBootstrapPrimitive::FinalKeyInitialNameBinding,
+    )?;
     checkpoint(OwnerBootstrapPrimitive::FinalKeyContentCompare)?;
     let bytes = read_pkcs8_bounded(&mut file)?;
     if bytes != expected_bytes {
         return Err(identity_changed());
     }
+    Ed25519KeyPair::from_pkcs8(&bytes).map_err(|_| invalid_entry())?;
     checkpoint(OwnerBootstrapPrimitive::FinalKeyFsync)?;
     fsync(&file).map_err(errno_error)?;
     checkpoint(OwnerBootstrapPrimitive::FinalDirectoryFsync)?;
-    fsync(parent).map_err(errno_error)
+    fsync(parent).map_err(errno_error)?;
+
+    validate_named_regular_binding(
+        parent,
+        OsStr::new(CREATE_LOCK),
+        lock,
+        owner,
+        OwnerBootstrapPrimitive::FinalLockBinding,
+    )?;
+    checkpoint(OwnerBootstrapPrimitive::FinalDirectoryRestat)?;
+    let directory_stat = fstat(parent).map_err(errno_error)?;
+    if !is_exact_directory(&directory_stat, owner, DIRECTORY_MODE) {
+        return Err(identity_changed());
+    }
+    checkpoint(OwnerBootstrapPrimitive::FinalKeyAuthorityRestat)?;
+    let final_stat = fstat(&file).map_err(errno_error)?;
+    if identity(&final_stat) != expected
+        || !is_exact_regular(&final_stat, owner, FILE_MODE)
+        || key_size(&final_stat)? > MAX_POP_PKCS8_DER_BYTES
+    {
+        return Err(identity_changed());
+    }
+    validate_named_regular_binding(
+        parent,
+        OsStr::new(POP_KEY),
+        &file,
+        owner,
+        OwnerBootstrapPrimitive::FinalKeyNameBinding,
+    )?;
+    checkpoint(OwnerBootstrapPrimitive::FinalRootRevalidate)?;
+    revalidate_root_binding(root)?;
+    validate_named_directory_binding(
+        root,
+        OsStr::new(ENDPOINT_DIRECTORY),
+        parent,
+        owner,
+        OwnerBootstrapPrimitive::DirectoryBindingCheckBeforeSuccess,
+    )?;
+
+    checkpoint(OwnerBootstrapPrimitive::FinalKeySeek)?;
+    file.seek(SeekFrom::Start(0))?;
+    checkpoint(OwnerBootstrapPrimitive::FinalKeyRead)?;
+    let bytes = read_pkcs8_bounded(&mut file)?;
+    if bytes != expected_bytes {
+        return Err(identity_changed());
+    }
+    checkpoint(OwnerBootstrapPrimitive::FinalKeyDecode)?;
+    Ed25519KeyPair::from_pkcs8(&bytes).map_err(|_| invalid_entry())
+}
+
+fn validate_named_regular_binding(
+    parent: &impl AsFd,
+    name: &OsStr,
+    retained: &File,
+    owner: u32,
+    primitive: OwnerBootstrapPrimitive,
+) -> io::Result<()> {
+    let named = probe(parent, name, primitive)?.ok_or_else(identity_changed)?;
+    let retained = fstat(retained).map_err(errno_error)?;
+    if identity(&named) != identity(&retained)
+        || !is_exact_regular(&named, owner, FILE_MODE)
+        || !is_exact_regular(&retained, owner, FILE_MODE)
+    {
+        return Err(identity_changed());
+    }
+    Ok(())
+}
+
+fn validate_named_directory_binding(
+    parent: &impl AsFd,
+    name: &OsStr,
+    retained: &File,
+    owner: u32,
+    primitive: OwnerBootstrapPrimitive,
+) -> io::Result<()> {
+    let named = probe(parent, name, primitive)?.ok_or_else(identity_changed)?;
+    let retained = fstat(retained).map_err(errno_error)?;
+    if identity(&named) != identity(&retained)
+        || !is_exact_directory(&named, owner, DIRECTORY_MODE)
+        || !is_exact_directory(&retained, owner, DIRECTORY_MODE)
+    {
+        return Err(identity_changed());
+    }
+    Ok(())
 }
 
 fn ensure_named_handle_binding(
@@ -357,12 +454,15 @@ fn probe(
 
 fn read_pkcs8_bounded(file: &mut File) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    file.take(MAX_PKCS8_BYTES).read_to_end(&mut bytes)?;
+    file.take(POP_PKCS8_READ_LIMIT).read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).map_err(|_| invalid_entry())? > MAX_POP_PKCS8_DER_BYTES {
+        return Err(invalid_entry());
+    }
     Ok(bytes)
 }
 
 fn validate_key_stat(stat: &FileStat, owner: u32) -> io::Result<()> {
-    if !is_exact_regular(stat, owner, FILE_MODE) || key_size(stat)? > MAX_PKCS8_BYTES {
+    if !is_exact_regular(stat, owner, FILE_MODE) || key_size(stat)? > MAX_POP_PKCS8_DER_BYTES {
         return Err(invalid_entry());
     }
     Ok(())
@@ -373,7 +473,7 @@ pub(crate) fn same_key_metadata(left: &FileStat, right: &FileStat, owner: u32) -
         && is_exact_regular(left, owner, FILE_MODE)
         && is_exact_regular(right, owner, FILE_MODE)
         && key_size(left).ok() == key_size(right).ok()
-        && key_size(right).is_ok_and(|size| size <= MAX_PKCS8_BYTES)
+        && key_size(right).is_ok_and(|size| size <= MAX_POP_PKCS8_DER_BYTES)
 }
 
 fn key_size(stat: &FileStat) -> io::Result<u64> {
@@ -448,6 +548,7 @@ enum OwnerBootstrapPrimitive {
     LockFchmod,
     LockFstat,
     LockAcquire,
+    LockBindingAfterAcquire,
     KeyPrecheckStat,
     KeyOpen,
     KeyFstat,
@@ -458,8 +559,17 @@ enum OwnerBootstrapPrimitive {
     KeyPublish,
     FinalKeyOpen,
     FinalKeyRestat,
+    FinalKeyInitialNameBinding,
     FinalKeyContentCompare,
     FinalKeyFsync,
     FinalDirectoryFsync,
+    FinalLockBinding,
+    FinalDirectoryRestat,
+    FinalKeyAuthorityRestat,
+    FinalKeyNameBinding,
+    FinalRootRevalidate,
     DirectoryBindingCheckBeforeSuccess,
+    FinalKeySeek,
+    FinalKeyRead,
+    FinalKeyDecode,
 }
