@@ -596,15 +596,18 @@ mod resolution_tests {
     use solstone_core_backup_runtime::{
         HttpTransport, ToolInstallDirs, ToolOutput, ToolRequest, ToolRunner,
         backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
-        install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
-        reset_backup_path_resolution_attempts,
+        backup_record_failure_hook_armed, backup_record_failure_hook_consumed_target,
+        backup_tool_resolution_started_hook_armed, install_backup_journal_resolved_hook,
+        install_backup_record_failure_hook, install_backup_tool_resolution_started_hook,
+        reset_backup_journal_resolved_hook, reset_backup_path_resolution_attempts,
+        reset_backup_record_failure_hook, reset_backup_tool_resolution_started_hook,
     };
     use std::cell::{Cell, RefCell};
     use std::ffi::OsString;
     use std::fs;
     use std::io;
     #[cfg(unix)]
-    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::fs::{MetadataExt, symlink};
     use std::path::{Path, PathBuf};
     #[cfg(unix)]
     use std::rc::Rc;
@@ -925,30 +928,71 @@ mod resolution_tests {
     }
 
     #[cfg(unix)]
-    struct ReadOnlyDirectoryGuard {
-        path: PathBuf,
-        original_permissions: fs::Permissions,
+    fn install_tool_resolution_alias_retarget(
+        alias: PathBuf,
+        replacement: PathBuf,
+        next_directory: PathBuf,
+        after_retarget: impl FnOnce(&Path) + 'static,
+    ) {
+        install_backup_tool_resolution_started_hook(move |resolved_journal| {
+            fs::remove_file(&alias).expect("source alias removes");
+            symlink(&replacement, &alias).expect("replacement alias creates");
+            std::env::set_current_dir(&next_directory)
+                .expect("working directory changes after tool resolution starts");
+            after_retarget(resolved_journal);
+        });
     }
 
     #[cfg(unix)]
-    impl ReadOnlyDirectoryGuard {
-        fn make_read_only(path: &Path) -> Self {
-            let original_permissions = fs::metadata(path)
-                .expect("config directory metadata reads")
-                .permissions();
-            fs::set_permissions(path, fs::Permissions::from_mode(0o555))
-                .expect("config directory becomes read-only");
-            Self {
-                path: path.to_path_buf(),
-                original_permissions,
-            }
+    #[derive(Debug, PartialEq, Eq)]
+    struct FileMetadataSnapshot {
+        device: u64,
+        inode: u64,
+        file_type: fs::FileType,
+        mode: u32,
+        len: u64,
+        mtime: i64,
+    }
+
+    #[cfg(unix)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct ConfigStateSnapshot {
+        journal_config_bytes: Vec<u8>,
+        directory: FileMetadataSnapshot,
+        entries: Vec<(String, FileMetadataSnapshot)>,
+    }
+
+    #[cfg(unix)]
+    fn file_metadata_snapshot(path: &Path) -> FileMetadataSnapshot {
+        let metadata = fs::symlink_metadata(path).expect("config metadata reads");
+        FileMetadataSnapshot {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            file_type: metadata.file_type(),
+            mode: metadata.mode(),
+            len: metadata.len(),
+            mtime: metadata.mtime(),
         }
     }
 
     #[cfg(unix)]
-    impl Drop for ReadOnlyDirectoryGuard {
-        fn drop(&mut self) {
-            let _ = fs::set_permissions(&self.path, self.original_permissions.clone());
+    fn config_state_snapshot(journal: &Path) -> ConfigStateSnapshot {
+        let config = journal.join("config");
+        let mut entries: Vec<_> = fs::read_dir(&config)
+            .expect("config directory reads")
+            .map(|entry| {
+                let entry = entry.expect("config entry reads");
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    file_metadata_snapshot(&entry.path()),
+                )
+            })
+            .collect();
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        ConfigStateSnapshot {
+            journal_config_bytes: journal_config_bytes(journal),
+            directory: file_metadata_snapshot(&config),
+            entries,
         }
     }
 
@@ -1434,6 +1478,8 @@ mod resolution_tests {
             .expect("working directory lock holds");
         reset_backup_path_resolution_attempts();
         reset_backup_journal_resolved_hook();
+        reset_backup_tool_resolution_started_hook();
+        reset_backup_record_failure_hook();
 
         let neutral = tempfile::tempdir().expect("neutral directory creates");
         let journal_a = byo_journal_configured(
@@ -1450,7 +1496,7 @@ mod resolution_tests {
             "replacement-prefix",
             "replacement-token",
         );
-        let replacement_before = journal_config_bytes(journal_b.path());
+        let canonical_a = fs::canonicalize(journal_a.path()).expect("source journal resolves");
         let alias = neutral.path().join("alias");
         symlink(journal_a.path(), &alias).expect("source alias creates");
         let restic_dir = tempfile::tempdir().expect("restic directory creates");
@@ -1458,17 +1504,26 @@ mod resolution_tests {
         let downloader = FailingDownload {
             calls: Cell::new(0),
         };
-        let read_only_config = Rc::new(RefCell::new(None));
-        let held_read_only_config = Rc::clone(&read_only_config);
-        let config_directory = journal_a.path().join("config");
+        let checkpoint_calls = Rc::new(Cell::new(0));
+        let hook_calls = Rc::clone(&checkpoint_calls);
+        let snapshots = Rc::new(RefCell::new(None));
+        let hook_snapshots = Rc::clone(&snapshots);
+        let source_path = journal_a.path().to_path_buf();
+        let replacement_path = journal_b.path().to_path_buf();
+        let hook_canonical_a = canonical_a.clone();
         let _directory = CurrentDirectoryGuard::change_to(neutral.path());
-        install_alias_retarget(
+        install_backup_record_failure_hook(canonical_a.clone());
+        install_tool_resolution_alias_retarget(
             alias,
             journal_b.path().to_path_buf(),
             journal_b.path().to_path_buf(),
-            move || {
-                *held_read_only_config.borrow_mut() =
-                    Some(ReadOnlyDirectoryGuard::make_read_only(&config_directory));
+            move |resolved_journal| {
+                assert_eq!(resolved_journal, hook_canonical_a.as_path());
+                hook_calls.set(hook_calls.get() + 1);
+                *hook_snapshots.borrow_mut() = Some((
+                    config_state_snapshot(&source_path),
+                    config_state_snapshot(&replacement_path),
+                ));
             },
         );
 
@@ -1485,8 +1540,22 @@ mod resolution_tests {
         assert!(downloader.calls.get() > 0);
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
-        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
-        drop(read_only_config.borrow_mut().take());
+        assert_eq!(checkpoint_calls.get(), 1);
+        assert!(!backup_tool_resolution_started_hook_armed());
+        assert!(!backup_record_failure_hook_armed());
+        assert_eq!(
+            backup_record_failure_hook_consumed_target().as_deref(),
+            Some(canonical_a.as_path())
+        );
+        let (source_before, replacement_before) = snapshots
+            .borrow_mut()
+            .take()
+            .expect("tool-resolution snapshots capture");
+        assert_eq!(config_state_snapshot(journal_a.path()), source_before);
+        assert_eq!(config_state_snapshot(journal_b.path()), replacement_before);
+        reset_backup_record_failure_hook();
+        reset_backup_tool_resolution_started_hook();
+        reset_backup_journal_resolved_hook();
     }
 
     #[cfg(unix)]
@@ -1497,6 +1566,8 @@ mod resolution_tests {
             .expect("working directory lock holds");
         reset_backup_path_resolution_attempts();
         reset_backup_journal_resolved_hook();
+        reset_backup_tool_resolution_started_hook();
+        reset_backup_record_failure_hook();
 
         let neutral = tempfile::tempdir().expect("neutral directory creates");
         let journal_a = operated_journal_configured(
@@ -1513,7 +1584,7 @@ mod resolution_tests {
             "replacement-access",
             "replacement-secret",
         );
-        let replacement_before = journal_config_bytes(journal_b.path());
+        let canonical_a = fs::canonicalize(journal_a.path()).expect("source journal resolves");
         let alias = neutral.path().join("alias");
         symlink(journal_a.path(), &alias).expect("source alias creates");
         let restic_dir = tempfile::tempdir().expect("restic directory creates");
@@ -1523,17 +1594,26 @@ mod resolution_tests {
         let downloader = FailingDownload {
             calls: Cell::new(0),
         };
-        let read_only_config = Rc::new(RefCell::new(None));
-        let held_read_only_config = Rc::clone(&read_only_config);
-        let config_directory = journal_a.path().join("config");
+        let checkpoint_calls = Rc::new(Cell::new(0));
+        let hook_calls = Rc::clone(&checkpoint_calls);
+        let snapshots = Rc::new(RefCell::new(None));
+        let hook_snapshots = Rc::clone(&snapshots);
+        let source_path = journal_a.path().to_path_buf();
+        let replacement_path = journal_b.path().to_path_buf();
+        let hook_canonical_a = canonical_a.clone();
         let _directory = CurrentDirectoryGuard::change_to(neutral.path());
-        install_alias_retarget(
+        install_backup_record_failure_hook(canonical_a.clone());
+        install_tool_resolution_alias_retarget(
             alias,
             journal_b.path().to_path_buf(),
             journal_b.path().to_path_buf(),
-            move || {
-                *held_read_only_config.borrow_mut() =
-                    Some(ReadOnlyDirectoryGuard::make_read_only(&config_directory));
+            move |resolved_journal| {
+                assert_eq!(resolved_journal, hook_canonical_a.as_path());
+                hook_calls.set(hook_calls.get() + 1);
+                *hook_snapshots.borrow_mut() = Some((
+                    config_state_snapshot(&source_path),
+                    config_state_snapshot(&replacement_path),
+                ));
             },
         );
 
@@ -1550,8 +1630,22 @@ mod resolution_tests {
         assert!(downloader.calls.get() > 0);
         assert_no_backup_execution(&runner);
         assert_alias_resolved_once();
-        assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
-        drop(read_only_config.borrow_mut().take());
+        assert_eq!(checkpoint_calls.get(), 1);
+        assert!(!backup_tool_resolution_started_hook_armed());
+        assert!(!backup_record_failure_hook_armed());
+        assert_eq!(
+            backup_record_failure_hook_consumed_target().as_deref(),
+            Some(canonical_a.as_path())
+        );
+        let (source_before, replacement_before) = snapshots
+            .borrow_mut()
+            .take()
+            .expect("tool-resolution snapshots capture");
+        assert_eq!(config_state_snapshot(journal_a.path()), source_before);
+        assert_eq!(config_state_snapshot(journal_b.path()), replacement_before);
+        reset_backup_record_failure_hook();
+        reset_backup_tool_resolution_started_hook();
+        reset_backup_journal_resolved_hook();
     }
 
     #[cfg(unix)]
