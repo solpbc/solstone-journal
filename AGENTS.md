@@ -1,26 +1,6 @@
 # solstone Developer Guide
 
-This file is the **developer guide** for the solstone repository. Read it before writing code.
-
-> ⚠️ **§7 has not caught up with the Rust conversion, and §7 is the section this guide calls required
-> reading.** The Python under `solstone/` was removed from `main`; the directory now holds only the
-> `detect_created` spec. The Swift helper lives next to `solstone-core-transcribe`.
-> `authority.toml` lives under `core/native-sol/`. `scripts/`
-> still holds working tooling. But **§7's L2 table names a write-owning module per domain, and every one of
-> the 64 Python modules it names is gone** — not most of them, all of them. Its crate rows do still
-> resolve and are the current owners, so read that table for the domains and their rules, and trust its
-> `core/crates/` entries over its `.py` ones.
->
-> The directories in §2 all still exist; what has moved is what lives in them. Treat any `solstone/**.py`
-> path anywhere below as where a responsibility used to live — **and assume nothing annotates it for
-> you**, including in §1's reading list. Its current home is a crate under `core/crates/`, and the
-> reliable way to find it is to search `core/crates/` for the behavior rather than to follow a path from
-> this document. `docs/PORTING.md` is the remaining Rust workspace rules.
->
-> Most of a hundred-odd repository paths cited below no longer resolve, and nearly all of those are in
-> §7. ⛔ **No exact count is given here on purpose**: this tree moved twice under a reviewer measuring
-> it, so a frozen number would be wrong within hours and would read as authority it does not have.
-> Count it yourself if you need it.
+This file is the **developer guide** for the solstone-journal repository. Read it before writing code. The Rust conversion is closed: there is no Python reference implementation and no Python product code remains in this repository. Every write path lives in a crate under `core/crates/`.
 
 Audience:
 
@@ -38,7 +18,7 @@ Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
 2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` and `journal` are separate native Rust executables with different authority.
-3. ⛔ **`solstone/think/top.py` is gone** — it was the interactive TUI, and reading it was the "oh, this is how it connects" moment because it tied callosum, supervisor, and service status together in one vantage point. Nothing has replaced it as a single reading target; the equivalent orientation is now spread across the callosum, supervisor, and system crates under `core/crates/`.
+3. **For system orientation** — there is no single file or TUI that ties callosum, supervisor, and service status together in one read. The closest thing is `journal top` (`core/crates/solstone-core-top/`), a live rendered view of supervised services. For the underlying wiring, read the callosum, supervisor, and system crates under `core/crates/` (`solstone-core-callosum`, the supervisor module in `solstone-core`, `solstone-core-system`).
 4. **The area you're about to touch:**
    - User-visible feature or `solstone call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
    - Think pipeline → the matching crate under `core/crates/solstone-core-*`.
@@ -56,36 +36,36 @@ Read, in order, when you enter the repo for a coding task:
 | `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
 | `core/crates/solstone-core-{ingest,transcribe,describe}/` | Multimodal capture — ingest, transcribe, describe, sense | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
 | `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
-| `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md` |
+| `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md`, `docs/CONVEY-FRONTEND.md` |
 | `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `solstone call <app>` verb, a UI surface | `docs/APPS.md` |
-| `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`solstone`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
+| `core/payload/solstone/talent/` | The shipped payload's talent tree: AI talent configs (markdown prompts) + installed router skills (`solstone`, `journal`); app fragments feed generated router references. This is the checkout's stand-in for the installed `share/` prefix — see `core/payload/README.md` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, workspace rules | `docs/PORTING.md` |
-| `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
+| `scripts/` | Repo maintenance scripts, most still Python. Reached by `make install-checks`, never by `make ci`; several are hygiene/inventory checkers over the Rust tree (native-sol architecture, root contract, journal access rejection inventory), not remnants of a deleted implementation | tooling that guards the codebase | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tools/journal_device_sim/` | Dependency-free linked-device fixture simulator; native `solstone link` remains the PL/SPL and identity boundary | composed ingest, reconciliation, recovery, and field-journal validation through a disposable receiver | `tools/journal_device_sim/README.md` |
-| `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
-| `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
-| `docs/` | All longform documentation | reference lookups; never your first stop | §10 below |
+| `tests/` | `tests/fixtures/journal/` mock journal. Rust tests live beside their crates under `core/crates/*/tests/`; there is no separate top-level Python test tree | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
+| `tests/js/` | Three JavaScript harness files (`modal_layer_harness.js`, `shell_boot_menu_harness.js`, `speakers_deeplink_harness.js`) left over from the Python-era browser test tree. Nothing in the current Makefile, scripts, or Rust harnesses invokes them — they are orphaned, not a live testing surface. Treat as a cleanup candidate, not a pattern to add to | you're deciding whether to add a JS test here — don't, until something actually runs this directory again | — |
+| `docs/` | All longform documentation | reference lookups; never your first stop | §11 below |
 | `journal/` | The live journal (user data). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `core/crates/` or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
 
-Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `tmp/`, `observers/`, `routines/`, `skills/` — not active coder surfaces.
+Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `tmp/`, `observers/`, `routines/`, `skills/` — not active coder surfaces. `solstone/` is not a coder surface either: it now holds exactly three files (`solstone/apps/devices/ingest.schema.json`, `solstone/think/detect_created.md`, `solstone/think/detect_created.schema.json`) and no product code.
 
 ## 3. Mental model
 
 **The pipeline:** `observe` (capture) → JSON transcripts in `journal/chronicle/YYYYMMDD/` → `think` (analyze) → SQLite index + derived artifacts → `convey` (web UI) and `solstone call` CLIs.
 
-**Think is the center.** observe feeds it raw material; convey + apps render its outputs; talent prompts + cortex run AI against it; indexer makes it searchable. A change in `solstone/think/` usually ripples outward.
+**Think is the center.** observe feeds it raw material; convey + apps render its outputs; talent prompts + cortex run AI against it; indexer makes it searchable. A change in the think-layer crates usually ripples outward.
 
 **Key concepts, priority-ordered:**
 
 - **Journal** — the on-disk record rooted at `journal/` in the repo. Every day is a `journal/chronicle/YYYYMMDD/` directory. Segments (timestamped capture windows) are anchored to creation/modification time, not content "about" time. `solstone-core-journal::resolve_journal_path` is the resolver. Source-checkout installs inherit `SOLSTONE_JOURNAL` from the managed wrapper at `~/.local/bin/solstone`; a tree install puts `solstone` and `journal` on PATH (see `INSTALL.md`). Tests and sandboxes set the env explicitly. Application code must not set it itself. See `docs/environment.md`.
-- **Talents** — AI processors (markdown prompt + optional Python post-hook). Each has a config in `core/payload/solstone/talent/<name>.md` with frontmatter that declares hooks, priority, model, and output. Cortex spawns them as subprocesses.
+- **Talents** — AI processors (markdown prompt + a closed set of typed Rust hook stages, never an arbitrary plugin). Each has a config in `core/payload/solstone/talent/<name>.md` with frontmatter that declares hooks, priority, model, and output. Cortex spawns them as subprocesses.
 - **Callosum** — Unix-socket JSON message bus at `journal/health/callosum.sock` on Unix, with an authenticated Windows named-pipe transport derived from the same endpoint. Its Windows boundary protects cross-user/cross-identity and remote-network access, not malware already running as the same user/SID. Real-time event distribution across services (`tract` + `event` + payload). If components need to talk asynchronously, they talk through callosum.
 - **Cortex** — process manager for talent runs. Listens on callosum (`tract="cortex"`, `event="request"`), resolves the sibling `solstone-core` binary and spawns it with `__talent-worker`, writes `<talent>/<ts>_active.jsonl` then renames to `<talent>/<ts>.jsonl` on completion, broadcasts all events back through callosum. Read `docs/CORTEX.md` before modifying talent execution.
-- **Facets** — project/context scopes (`work`, `personal`, …). Group related entities, activities, and relationships. Facet data lives under `journal/facets/<facet>/`.
-- **Entities** — tracked people / projects / tools. Extracted from transcripts and accumulated across time. Canonical records in `journal/entities/<slug>/entity.json`.
+- **Facets** — project/context scopes (`work`, `personal`, …). Group related entities, activities, and relationships. Facet data lives under `journal/facets/<facet>/`, fully owned by `core/crates/solstone-core-facets/`.
+- **Entities** — tracked people / projects / tools. Extracted from transcripts and accumulated across time. Canonical records in `journal/entities/<slug>/entity.json`, owned by `core/crates/solstone-core-entity/`.
 - **Activities** — scheduled or observed "things that happen" (meetings, deadlines, anticipated events). Per-facet JSONL at `journal/facets/<facet>/activities/<day>.jsonl`. Sources: `anticipated` (from `core/payload/solstone/talent/schedule.md`), `user` (manual), `cogitate` (talent-inferred).
-- **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op.
-- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`.
+- **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op. Ownership is split: `solstone-core-indexer-store` owns the schema, connection, and writes; `solstone-core-indexer` computes what to persist (discovery, edges, entity search, metadata) and calls into indexer-store; `solstone-core-indexer-query` is read-only.
+- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`. A supervised service is retried indefinitely with backoff rather than permanently given up on; there is no give-up state.
 
 ## 4. The solstone CLI
 
@@ -110,43 +90,39 @@ Verified against `Makefile`. Grouped by use.
 
 | Target | When to use |
 |--------|-------------|
-| `make install` | First setup and whenever `pyproject.toml` or `uv.lock` changes. Creates `.venv/`, syncs deps, runs `make skills`. |
-| `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. (`make install` depends on this; rarely run alone.) |
-| `make update` | Upgrade all deps to latest, regenerate `uv.lock`. Expect test churn. |
+| `make install` | **Retired.** Install the journal from the distribution tree; develop against this checkout with Cargo directly. |
+| `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. |
+| `make update` | Upgrade all deps to latest, regenerate `uv.lock` (the remaining `scripts/` Python tooling's own dependencies — not a product dependency set). |
 | `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
 | `make clean` | Remove build artifacts, caches, and the skill symlink dirs (`journal/.agents/`, `journal/.claude/`). Does not touch `.venv/`. Before `cargo clean`, refuses if a live process has an open file, mapping, cwd, or executable under this checkout's `RUST_TARGET_DIR` (`core/target`, or `CARGO_TARGET_DIR` if set) and prints blocker pids+paths. Override with `CLEAN_FORCE=1`. |
-| `make clean-install` | Runs `clean` first (same live-use refuse / `CLEAN_FORCE=1`), then deletes `.venv/` and `.installed`, then exits 1 as retired. Recreate a Python tooling venv with `uv sync --group dev` only if a remaining script still needs it. |
+| `make clean-install` | Runs `clean` first (same live-use refuse / `CLEAN_FORCE=1`), then deletes `.venv/` and `.installed`, then exits 1 as retired. |
 
 ### Run the stack
 
 | Target | When to use |
 |--------|-------------|
 | `make dev` | Start the full stack (supervisor + callosum + sense + cortex + convey) against `tests/fixtures/journal/`, no observers, no daily processing. Primary inner-loop for UI work. Ctrl-C to stop. |
-| `make sandbox` | Ephemeral background sandbox: copies fixtures to a temp journal, starts supervisor in the background, waits for readiness, writes `.sandbox.pid` / `.sandbox.journal`. Pair with verify targets below. Always follow with `make sandbox-stop`. |
+| `make sandbox` | Ephemeral background sandbox: copies fixtures to a temp journal, starts supervisor in the background, waits for readiness, writes `.sandbox.pid` / `.sandbox.journal`. Always follow with `make sandbox-stop`. |
 | `make sandbox-stop` | Terminate the backgrounded sandbox and clean up state files. |
 
 ### Format, lint, test
 
 | Target | When to use |
 |--------|-------------|
-| `make` / `make all` / `make build` | Build the native Rust workspace, excluding the three host-native helper packages during the conversion freeze. |
+| `make` / `make all` / `make build` | Build the native Rust workspace, excluding the three host-native ONNX-linked helper packages (`solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, `solstone-core-vad-analyze`). |
 | `make build-sandbox-processing` | Opt in to build the two native processing helpers and their shared runtime bundle into the effective Cargo target directory. |
-| `make check-rust-sandbox-processing-build` | Verify an existing processing bundle and both helpers’ loader-independent startup; it never builds or repairs. |
+| `make check-rust-sandbox-processing-build` | Verify an existing processing bundle and both helpers' loader-independent startup; it never builds or repairs. |
 | `make format` | Format the Rust workspace with Cargo fmt; modifies Rust source. |
 | `make format-check` | Cargo fmt dry-run (`cargo fmt --all -- --check`); one of the Rust-only CI checks. |
-| `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the three host-native helper packages covered by the default `onnx-host-tests` full-gate leg. |
+| `make test` | Alias for `make check-rust-test`: every Cargo test target for the whole workspace (unit tests, Cargo integration-test binaries, and doctests together), excluding only the three ONNX-linked packages above. This is **not** scoped to unit harnesses — it is the broadest developer-facing test command short of `ci-full`, and it is correspondingly the slowest one you'd run routinely. |
 | `make check-journal-device-sim` | Standard-library tests for the repository-local Python device simulator; no journal, external network, credentials, or product runtime. |
-| `make test-cov` / `test-integration` / `test-performance` / `test-app` / `test-only` / `coverage` / `watch` | Gone with the Python suite. Use `make ci` or `make ci-full`. |
-| `make ci` | Efficient Rust-only routine gate: formatting, topology validation, library/binary Clippy, and serialized library/binary unit tests. It does not run Cargo integration-test targets or heavyweight native/platform/policy legs. |
-| `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
-| `WIN_REMOTE_HOST=user@host make win-host-ci` | Transfer an exact, source-bound snapshot to the configured Windows build host and run the first native MSVC journal substrate gate. A pass covers builds of `solstone-core-journal` and `solstone-core-journal-config` plus the config crate's unit tests; the success line lists the Windows behavior this gate has not run. |
-| `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
-| `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
+| `make ci` | The routine code-landing gate: formatting, CI-topology validation, library/binary Clippy, and serialized library/binary unit tests (`--lib --bins` only — no Cargo integration-test target is compiled or run here). Four library harnesses — `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe` — are additionally omitted from the unit run and instead run as default package suites in `make ci-full`; their code is still linted and compiled here, just not executed. Together with the three ONNX-linked packages, that is **seven** crates whose tests never execute in `make ci` — see the [Makefile](Makefile)'s `RUST_HOST_EXCLUDES`/`RUST_ROUTINE_EXCLUDES` definitions for the exact, current list; don't hand-copy a crate name list into other docs, it drifts. |
+| `make ci-full` | Registry-driven (`core/ci/suites.toml`) full operator gate. It runs every selected entry independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt under `target/ci-receipts/`. Covers the seven crates `make ci` excludes, MSRV, all-target Clippy, doctests, dependency policy, and native runtime/helper/Apple-platform legs. Requires a clean Git worktree (the receipt is bound to the starting revision) and a prior `make ci-full-prep`. Run it on the exact final-tree SHA, never on an in-progress diff. |
+| `WIN_REMOTE_HOST=user@host make win-host-ci` | Transfer an exact, source-bound snapshot to the configured Windows build host and run the first native MSVC journal substrate gate. It builds `solstone-core-journal`, `solstone-core-journal-config`, `solstone-core-journal-io`, `solstone-core-system`, and `solstone-core-win-owner-rail`; runs journal-config, journal-io (library, lock-component, detailed-atomic-publication), and the required journal library tests; then proves NTFS and ReFS publication, managed-log reference, and stale-heartbeat cleanup through separate native receipt children, plus the mandatory ordinary-owner inventory control. The final `JOURNAL_WIN_HOST_CI_VERIFIED` line reports each of those as `executed/pass`; Cloud Files sync-root registration is the one leg that stays opt-in and reads `skipped` unless `JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=1`. |
+| `make verify` | Alias for `make ci`. |
+| `make install-checks` | Directly runnable preflight chain over the remaining Python-era hygiene scripts (formatting, several `check-native-sol-*` architecture/inventory checks, journal-format-contract, dependency-policy) plus the Rust gates; no longer called by `ci` or `verify`. Several of its own listed steps are dead scaffolding for checks that were removed — a blank banner line with nothing following it means that particular check no longer exists, not that it silently passed. |
 
-During the Rust-conversion freeze, use the narrowest applicable
-`make check-rust-*` target, then efficient `make ci` for routine validation.
-An operator runs `make ci-full` on the exact final-tree SHA for full host
-evidence. These paths are enforced by the
+Use the narrowest applicable `make check-rust-*` target for a focused change (see below), then `make ci` before commit for routine validation. Run `make ci-full` on the exact final-tree SHA before merge or release for full host evidence. These paths are enforced by the
 [`ci_gate_purity` contract tests](core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs).
 The native Windows rail is operator-run and deliberately separate from
 `ci-full`. `make win-host-ci` refuses untracked, non-ignored files, binds the
@@ -154,8 +130,6 @@ transferred Git snapshot to the workspace lockfile digest, and reports success
 only after the remote checkout acknowledges both values. Treat the runner's explicit
 not-run list as the evidence boundary; a transport pass is not filesystem,
 Callosum, packaging, install, signing, or smoke evidence.
-The focused Python Make targets are frozen; run the Python suite directly when
-it is needed.
 Do not rerun an unchanged failure merely to seek green.
 
 ⚠ On Fedora, bare `cargo build`, `cargo test`, or `cargo clippy` can die in
@@ -180,7 +154,13 @@ targets have the same cost. Preserve black-box tests when the process boundary
 is the behavior; the goal is fewer binaries, not relabeling integration tests.
 
 - Put same-crate behavior tests in `#[cfg(test)]` modules beside the owning
-  code. Put public API and process contracts in the narrowest owning leaf crate
+  code. **Cargo's target classification (`--lib`/`--bins` vs. a `--test` binary)
+  is a build-cost decision, not a claim about validation scope.** A `#[cfg(test)]`
+  module runs under `make ci`'s unit leg regardless of what it actually exercises —
+  if it spawns a process, crosses callosum or an HTTP boundary, touches the real
+  filesystem beyond a temp directory, or drives a multi-step workflow, it is
+  broader validation evidence than a unit test, even though `make ci` runs it.
+  Put public API and process contracts in the narrowest owning leaf crate
   unless the behavior genuinely belongs to the aggregate `solstone-core`
   composition boundary.
 - Add cases to an existing grouped domain harness; if none fits, create one.
@@ -207,11 +187,6 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
   skipped, so run affected platform lanes on their supported hosts. Separately
   run `make check-rust-race` for concurrency-sensitive supervisor changes.
 
-### Verification against a running sandbox
-
-| Target | When to use |
-|--------|-------------|
-
 ### Service management (systemd / launchd)
 
 `journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
@@ -225,36 +200,34 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 | Target | When to use |
 |--------|-------------|
 | `make pre-commit` | Install pre-commit hooks (optional). |
-| `make versions` | Print versions of Python, uv, and key deps. Diagnostic. |
+| `make versions` | Print versions of Python, uv, and key deps (the remaining `scripts/` tooling's own environment, not a product dependency). Diagnostic. |
 
 ### Release and transparency
 
-The Python wheel/release targets and `scripts/release.sh` are gone. See
-[`docs/PORTING.md`](docs/PORTING.md) and
+See [`docs/PORTING.md`](docs/PORTING.md) and
 [`docs/release-evidence-contract.md`](docs/release-evidence-contract.md).
 
 ### Don't use
 
 | Target | Why not |
 |--------|---------|
-| `make uninstall` | Disabled by design. Use `journal service uninstall`, `solstone skills uninstall`, and `python -m solstone.think.install_guard uninstall` for installed user artifacts, or `make clean-install` to rebuild the local dev env. |
+| `make uninstall` | Disabled by design. Use `journal service uninstall`, `solstone skills uninstall`, or `make clean-install` to rebuild the local dev env. |
 
 ## 6. Testing quickstart
 
-- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, topology validation, library/binary Clippy, and library/binary unit tests. `make ci-full` is the selectable, registry-driven final-tree gate; prepare it with `make ci-full-prep`.
-- **Python suite:** ⚠ **there is none.** The pytest tree, `tests/conftest.py`, and the marked integration/performance/release suites were all removed with the Python reference cut. `tests/` now holds only the fixture journal at `tests/fixtures/journal/`. Live product verification still uses `make sandbox`.
-- **API baselines:** ⚠ **`make verify-api`, `make update-api-baselines` and `make verify-schemathesis` are gone**, because each drove a deleted Python file. Nothing checks SPA/API response baselines or fuzzes the OpenAPI contract today.
-- **After editing `solstone/convey/` or `solstone/apps/`:** run `journal down && journal up` to fully restart the stack.
+- **Test hierarchy, narrowest to broadest:** start with `cargo test --manifest-path core/Cargo.toml -p <crate> --lib` (or the affected `--test <harness>`) for the area you're touching. `make test` is the full non-ONNX workspace sweep — broader than unit evidence, see §5. `make ci` is the routine code-landing gate — formatting, topology, Clippy, and the unit leg only, with a seven-crate execution omission (§5). `make ci-full` is the final-tree operator gate covering everything else, including integration targets and the omitted crates' own suites.
+- **There is no Python product test suite.** Rust tests live beside their crates under `core/crates/*/tests/` and in `#[cfg(test)]` modules. `tests/` holds only the fixture journal (`tests/fixtures/journal/`) and three orphaned JS harness files under `tests/js/` that nothing currently invokes (§2).
+- **After editing `solstone/convey/` or `solstone/apps/`:** these paths no longer exist — convey and app code lives under `core/crates/solstone-core-convey-shell/` and the matching `*-web` crates. Run `journal down && journal up` to fully restart the stack after a native change.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
-- **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing — cut a release, rename a label, graduate a shipped changelog entry — turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it. (A `[Unreleased]`-pinned changelog test was exactly this anti-pattern — its pass condition required the release process to *not* run; removed 2026-05-30.)
+- **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing — cut a release, rename a label, graduate a shipped changelog entry — turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it.
 
 Full depth: `docs/testing.md`.
 
 ## 7. Layer hygiene — required reading (L1–L9)
 
-**Why this lives here.** A codebase-wide audit in April 2026 found 14 layer-hygiene violations in `solstone/think/` and `solstone/apps/`. Infrastructure modules (indexer, importers, schedulers) were silently writing domain state; CLI read-verbs were mutating; get-prefixed functions were creating records on miss. These invariants encode the rules the audit distilled, so the same landmines don't get re-planted. They're inlined here because a one-click-away invariant is a routinely-skipped invariant.
+**Why this lives here.** A codebase-wide audit in April 2026 found 14 layer-hygiene violations in the Python think/apps trees that predated the Rust conversion. Infrastructure modules (indexer, importers, schedulers) were silently writing domain state; CLI read-verbs were mutating; get-prefixed functions were creating records on miss. These invariants encode the rules the audit distilled, so the same landmines don't get re-planted in the Rust crates. They're inlined here because a one-click-away invariant is a routinely-skipped invariant.
 
-⚠ **These invariants currently have NO automated enforcement.** The low-bar grep checker was `scripts/check_layer_hygiene.py`, which read the Python tree the reference cut deleted; it was removed rather than left as a check that could only pass vacuously. The rules below still bind — they are now held by review, and by the Rust type and module boundaries, rather than by a gate.
+⚠ **L1/L2 domain-boundary discipline has no automated grep check today.** The old low-bar checker, `scripts/check_layer_hygiene.py`, read the Python tree the conversion deleted; it was removed rather than left passing vacuously. L1/L2 are held by review and by Rust module/crate boundaries, not by a gate. **L8 is the exception** — see below.
 
 ### L1 — Layer boundaries are load-bearing
 
@@ -262,74 +235,81 @@ Each module family has a declared responsibility. Infrastructure modules (indexe
 
 ### L2 — Domain write ownership
 
-Each domain has exactly **one** write-owning module (or one tightly-scoped family of modules). No other module may call `atomic_write`, `json.dump`, `open("w")`, `Path.write_text`, `unlink`, `rmtree`, etc. on that domain's on-disk state.
+Each domain has exactly **one** write-owning module (or one tightly-scoped family of modules), or is called out below as split by operation type, or as a currently-real gap with no writer at all. No module may write another domain's on-disk state.
+
+Verified directly against source, not against this table's own history — a stale row here is worse than no row. Where a domain has genuinely lost its writer since the Python cutover, it is marked as a gap rather than assigned a plausible-sounding crate; do not "fix" a gap row by inventing an owner.
 
 | Domain | Write-owning module(s) |
 |--------|------------------------|
-| Entities (`entities/*/entity.json`) | `solstone/think/entities/journal.py` + `solstone/think/entities/relationships.py` + `solstone/think/entities/saving.py` + `solstone/think/entities/merge.py` |
-| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. The Python transport, the entity-merge module, and the `scripts/entity_corpus.py` fixture-oracle builder were all removed with the reference cut; `core/fixtures/` still holds the vectors it produced. Those oracles are frozen pins — see [`core/fixtures/FROZEN.md`](core/fixtures/FROZEN.md). |
-| Entity history content (`entities/*/history/{events,prepared,private}/**`) | `solstone/think/entities/history.py` is the sole writer of history events, prepared staging, and private merge payloads. Whole-entity deletion by entity owners removes `history/` only as part of removing `entities/<id>/`. |
-| Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`. |
-| Speaker discovery clusters (`awareness/discovery_clusters.json`, `awareness/discovery_clusters.resolved.json`) | `core/crates/solstone-core-convey-shell/` (`speakers_discovery_write.rs`) |
-| Speaker candidate pool (`awareness/speaker_candidates.json`) | `solstone/apps/speakers/candidate_tracker.py` |
-| Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve identify`. |
-| Speaker backfill operation ledger (`speakers/backfill-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve backfill`. |
-| Support portal operation ledger and local fingerprint key (`apps/support/portal/operations/*.json`, `apps/support/portal/operation-fingerprint.key`) | `solstone/apps/support/operations.py` |
-| Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `solstone/think/entities/ambiguities.py` |
-| Entity merge candidates (`entities/review-candidates.jsonl`) | `solstone/think/entities/review_candidates.py` |
-| Facet review candidates (`facets/review-candidates.jsonl`) | `solstone/think/facet_review_candidates.py` |
-| Speaker review candidates (`speakers/review-candidates.jsonl`) | `solstone/think/speaker_review_candidates.py` |
-| Speaker candidate-pair review candidates (`speakers/candidate-pair-review-candidates.jsonl`) | `solstone/think/speaker_candidate_pair_review_candidates.py` |
-| Speaker discovery cluster dismissals (`speakers/cluster-dismissals.jsonl`) | `solstone/think/speaker_cluster_dismissals.py` |
-| Speaker keep-separate assertions (`speakers/keep-separate.jsonl`) | `solstone/think/speaker_keep_separate.py` |
-| Facets (`facets/*/facet.json`, `facets/*/relationships/`) | `solstone/think/facets.py` + `core/crates/solstone-core-facets/` for native Settings writes + `solstone/apps/facets/*` (if/when created) |
-| Observations (`observations.jsonl`) | `solstone/think/entities/observations.py` |
-| Activities (`facets/*/activities/*.jsonl`) | `solstone/think/activities.py` + `core/crates/solstone-core-facets/` for native Settings writes |
-| Activity records (`facets/*/activities/{day}.jsonl`) | `core/crates/solstone-core-facets/src/store/activity_records.rs` |
-| Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `solstone/apps/utils.py` + `core/crates/solstone-core-facets/` for native Settings writes |
-| Facet newsletters (`facets/*/news/*.md`) | `core/crates/solstone-core-facets/src/store/news.rs` |
+| Entities (`entities/*/entity.json`) | `core/crates/solstone-core-entity/` (`store/write.rs`, `store/create.rs`, `store/merge.rs`, `store/lifecycle.rs`) |
+| Entity voiceprints (`entities/*/voiceprints.npz`) | `core/crates/solstone-core-entity/src/store/voiceprints.rs` (`save_voiceprints_batch`), called by `core/crates/solstone-core-speaker-resolve/` |
+| Entity owner-centroid (`entities/*/owner_centroid.npz`) | `core/crates/solstone-core-speaker-resolve/src/owner_centroid.rs` (a different crate from the voiceprints write above; don't conflate the two files) |
+| Entity history content (`entities/*/history/{events,prepared,private}/**`) | `core/crates/solstone-core-entity/` (`store/write.rs`, `store/history.rs`, `store/merge.rs`, `store/merge_payload.rs`, `store/undo.rs`) |
+| Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/src/owner_candidate.rs` |
+| Speaker discovery clusters (`awareness/discovery_clusters.json`) | `core/crates/solstone-core-convey-shell/src/speakers_discovery_write.rs` (`write_discovery_cache`) |
+| Speaker discovery clusters, resolved (`awareness/discovery_clusters.resolved.json`) | `core/crates/solstone-core-speaker-resolve/src/identify_forward_phases.rs` (`replace_resolved_clusters`), a **different crate** from the unresolved file above despite sharing a directory. `solstone-core-entity`'s merge path only deletes/rolls back the unresolved file during an entity merge; it does not write either. |
+| Speaker candidate pool (`awareness/speaker_candidates.json`) | `core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs` |
+| Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/identify_operations.rs` |
+| Speaker backfill operation ledger (`speakers/backfill-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/backfill_operations.rs` |
+| Support portal operation ledger and local fingerprint key (`apps/support/portal/operations/*.json`, `apps/support/portal/operation-fingerprint.key`) | `core/crates/solstone-core-support-portal/src/ledger.rs` |
+| Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `core/crates/solstone-core-entity/src/store/write.rs` (`record_ambiguity_observation`, `record_ambiguity_choice`, `mutate_ambiguities`) |
+| Entity merge candidates (`entities/review-candidates.jsonl`) | `core/crates/solstone-core-entity/src/store/review_candidates.rs` |
+| Facet review candidates (`facets/review-candidates.jsonl`) | `core/crates/solstone-core-facets/src/store/review_candidates.rs` |
+| Speaker review candidates (`speakers/review-candidates.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/speaker_review_candidates.rs` |
+| Speaker candidate-pair review candidates (`speakers/candidate-pair-review-candidates.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/speaker_candidate_pair_review_candidates.rs` |
+| Speaker discovery cluster dismissals (`speakers/cluster-dismissals.jsonl`) | `core/crates/solstone-core-convey-shell/src/speakers_discovery_write.rs` (same crate as the discovery-cluster write above, not speaker-resolve) |
+| Speaker keep-separate assertions (`speakers/keep-separate.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/keep_separate.rs` |
+| Facets (`facets/*/facet.json`, `facets/*/relationships/`) | `core/crates/solstone-core-facets/src/store/write.rs` — full lifecycle: create/update/mute/delete/rename plus relationship link/detach. A second, legitimate producer, `core/crates/solstone-core-import-web/src/facet_ingest.rs`, writes `facet.json` directly for bulk journal-archive import/sync, a different flow (bulk import vs. interactive) rather than competing ownership. |
+| Observations (`observations.jsonl`) | Ordinary record/append: `core/crates/solstone-core-facets/src/store/observations.rs`. Cross-entity merge/undo relocation: `core/crates/solstone-core-entity/src/store/{merge,undo}.rs`. Split by operation type, not drift. |
+| Activity definitions (`facets/*/activities.jsonl`) | `core/crates/solstone-core-facets/src/store/activities.rs` |
+| Activity records (`facets/*/activities/{day}.jsonl`) | `core/crates/solstone-core-facets/src/store/activity_records.rs` (a sibling module to activity definitions above, same crate) |
+| Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `core/crates/solstone-core-facets/src/action_log.rs` (`append_action_log`, `append_action_log_for_day`) |
+| Facet newsletters (`facets/*/news/*.md`) | `core/crates/solstone-core-facets/src/store/news.rs` (`write_news_file`), called by the CLI (`journal news`) and the auto-generated newsletter talent |
 | Entity talent outcome sidecars (`chronicle/**/<seg>/talents/detection_outcome.json`, `facets/*/entities/*_{observer,review}_outcome.json`) | `core/crates/solstone-core-talent-runtime/src/entities/{detection,observer,review}.rs` |
-| Timeline (`chronicle/<day>/timeline.json`, `chronicle/**/<seg>/timeline.json`, root `timeline.json`) | `solstone/apps/timeline/maintenance.py` + `solstone/apps/timeline/talent/segment_summary.py` + `core/crates/solstone-core-maintenance/src/bodies/timeline.rs` |
-| Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `solstone/think/sense_splitter.py` |
-| `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Primary, automatic: sense re-entry via `should_reenter_analysis_output` in `solstone/observe/processing_record.py` — a record-less screen output is re-attempted and the handler *determines* the verdict. Operator bulk tool: `solstone/think/backfill_processing_records.py`, which *stamps a guessed* `state=empty` and is CLI-only, for marker-less, chunk-less legacy fleets; it declines anything carrying a marker or an existing record (`SKIP_MARKER` / `SKIP_HAS_RECORD`, unchanged). |
-| Awareness (`awareness/current.json`, `awareness/YYYYMMDD.jsonl`) | `solstone/think/awareness.py` |
-| Awareness activity state (`awareness/activity_state.json`) | `solstone/think/thinking.py` |
-| Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `solstone/think/identity.py` |
-| Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `solstone/think/day_accumulator.py` |
-| Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `solstone/think/talent_provenance.py` |
-| Config (`config/journal.json`) | `solstone/think/journal_config.py` |
-| Schedules (`config/schedules.json`) | `solstone/think/schedule_config.py` + `core/crates/solstone-core-system/src/schedule/config.rs` (`mutate_schedule_entries` / `set_schedule_metadata`) |
-| Push devices (`config/push-registry.json`) | `core/crates/solstone-core-push/` |
-| Local inference operational telemetry (`health/local-inference/YYYYMMDD.jsonl`) | `solstone/think/providers/local_admission.py` |
-| Direct-door operational record (`health/direct-door.json`) | `core/crates/solstone-core-system/` (`direct_door.rs`) via `publish_direct_door` / `withhold_direct_door`. `solstone-core-convey-shell` and `solstone-core/src/supervisor/runtime.rs` are callers only; they must not write this path directly. |
-| Hosted service parent-loss coordination (`health/parent-loss/**`) | `core/crates/solstone-core-system/src/lifecycle/parent_loss_ledger.rs` owns the active pointer, sealed ledgers, and generation records; `parent_loss_admission.rs` owns isolated per-launch admission drops and per-service witness drops; `parent_loss_coordinator.rs` is the sole terminal adjudicator. |
-| Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `core/crates/solstone-core-brain/` via `solstone-core brain <verb>`; `solstone/think/providers/brain_state.py` is transport only |
-| Provider install status records and proof cache (`health/providers/{local,parakeet}.json`, `health/providers/{local,parakeet}.proof-cache.json`) | `solstone/think/providers/install_state.py` + `solstone/think/providers/artifact_proof.py` |
-| Provider install leases (`health/providers/{local,parakeet}.lease`) | `solstone/think/providers/install_lease.py` |
-| Provider runtime health and retry-token records (`health/providers/runtime/{local,parakeet}.json`, `health/providers/runtime/{local,parakeet}.retry-token.json`, `health/providers/runtime/{local,parakeet}.operation.lock`) | `solstone/think/providers/runtime_health.py` |
-| Native speakers-analyze install generation (`health/speakers-analyze/install-generation.json`, `health/speakers-analyze/install-generation.lock`) | `core/crates/solstone-core-transcribe/` via `speakers_installation.rs` |
+| Timeline (`chronicle/<day>/timeline.json`, `chronicle/**/<seg>/timeline.json`, root `timeline.json`) | `core/crates/solstone-core-maintenance/src/bodies/timeline.rs` (sole code-owner for all three variants) (`rollup_day`, `rollup_master`, `write_segment_timeline`). `solstone-core-talent-runtime`'s `timeline:segment_summary` talent stage calls into this same primitive; it is an orchestration caller, not a separate writer |
+| Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_sense_outputs`, `write_change`) |
+| `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Shared judgment/vocabulary only (not itself a writer): `core/crates/solstone-core-processing-record/`. Per-handler header writes: `core/crates/solstone-core-transcribe/`, `core/crates/solstone-core-describe/`, `core/crates/solstone-core-depict/`. Bulk repair CLI: `journal backfill-processing-records` (`core/crates/solstone-core-backfill-cli/`) |
+| Awareness (`awareness/current.json`, `awareness/YYYYMMDD.jsonl`) | `core/crates/solstone-core-facets/src/store/awareness.rs` |
+| Awareness activity state (`awareness/activity_state.json`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`persist_activity_state`). The state machine itself lives in `solstone-core-system::activity_state`, but that module only models the state; it never writes the file. |
+| Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `core/crates/solstone-core-identity/src/store.rs` |
+| Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `core/crates/solstone-core-talent-runtime/src/writers.rs` (`append_day_record`, via the closed `WriteIntent::DayAccumulator` contract; see L8) |
+| Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_activity_provenance`) |
+| Config (`config/journal.json`) | `core/crates/solstone-core-journal-config-write/` (`config.rs::mutate_journal_config`, `commit.rs`). `solstone-core-journal-config` (no `-write` suffix) is read/schema-only, a deliberate two-crate split rather than drift. |
+| Schedules (`config/schedules.json`) | `core/crates/solstone-core-system/src/schedule/config.rs` (`mutate_schedule_entries`, `set_schedule_metadata`) |
+| Push devices (`config/push-registry.json`) | `core/crates/solstone-core-push/src/store.rs` |
+| Local inference operational telemetry (`health/local-inference/YYYYMMDD.jsonl`) | **No current writer — a real gap, not a doc error.** The only call site (`record_local_inference`, invoked from the Python `run_cogitate`'s cleanup path) was deleted with the rest of the Python tree, and nothing replaced it in Rust. `docs/conversion/strands.md` records an earlier disposition to retain the artifact and not restore a writer, but that disposition predates the Python deletion that actually zeroed out every writer; treat the current state as "nothing writes this file," full stop, rather than re-deriving a Rust owner. |
+| Direct-door operational record (`health/direct-door.json`) | `core/crates/solstone-core-system/src/direct_door.rs` (`publish_direct_door` / `withhold_direct_door`). `solstone-core-convey-shell` and the supervisor in `solstone-core` are callers only. |
+| Hosted service parent-loss coordination (`health/parent-loss/**`) | `core/crates/solstone-core-system/src/lifecycle/parent_loss_ledger.rs` owns the active pointer, sealed ledgers, and generation records; `parent_loss_admission.rs` owns isolated per-launch admission drops and per-service witness drops; `parent_loss_coordinator.rs` is the sole terminal adjudicator |
+| Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `core/crates/solstone-core-brain/src/writer.rs` (the crate's own doc comment names it "the single native write authority" for `health/brain.json`) |
+| Provider install status records (`health/providers/{local,parakeet}.json`) | `core/crates/solstone-core-local/src/install/status.rs` (`write_status`) |
+| Provider install proof cache (`health/providers/{local,parakeet}.proof-cache.json`) | **No current writer — a real gap.** The Python `artifact_proof.py` module was deleted with no Rust replacement; nothing in `core/crates` writes this path today. |
+| Provider install leases (`health/providers/{local,parakeet}.lease`) | `core/crates/solstone-core-local/src/install/lease.rs` |
+| Provider runtime health and retry-token records (`health/providers/runtime/{local,parakeet}.json`, `.retry-token.json`, `.operation.lock`) | Primary: `core/crates/solstone-core-system/src/provider_runtime/store.rs` (`FileRuntimeStore`). A second call path, `core/crates/solstone-core-brain/src/runtime_health.rs` (`request_runtime_retry`), also writes `.retry-token.json` directly. This looks like two independent writers to the same file rather than a documented split; confirm intent (internal supervisor vs. user-initiated retry, or genuine duplication) before treating either as sole owner. |
+| Native speakers-analyze install generation (`health/speakers-analyze/install-generation.json`, `.lock`) | `core/crates/solstone-core-transcribe/src/speakers_installation.rs` (`enter_speakers_analyze_generation`) |
 | Provider artifact manifests (`cache/providers/**/.solstone-provider-manifest.json`) | `core/crates/solstone-core-local/src/install/manifest.rs` |
-| nvattest appraiser cache (`cache/providers/nvattest/**`) | `solstone/think/providers/nvattest_install.py` |
-| Media offload ledger (`health/offload/<YYYYMMDD>.jsonl`) | `solstone/think/offload_ledger.py` + `core/crates/solstone-core-offload/` during native migration; the retained Python writer stays reachable through the Flask backup app until it is retired |
-| Pruning-run audit (`health/pruning-runs/<YYYYMMDD>.jsonl`) | `solstone/think/pruning_audit.py` owns `journal_logs` and `raw_media`; `core/crates/solstone-core-offload/` owns `raw_media_offload` — both append to this shared audit file |
-| Parakeet server placement record (`health/parakeet-cpp.placement`) | `solstone/think/providers/parakeet_server.py` |
-| Hosted backup binding (`backup/hosted/binding.json`) | `solstone/think/backup/hosted.py` |
-| Convey config (`config/convey.json`) | `solstone/convey/config.py` + `solstone/think/facets.py` |
-| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `update_speaker_labels`. |
-| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `remap_speaker_corrections_for_entity_merge` and `apply_entity_merge_segment_inverse`. |
-| Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `solstone-core-segment` (`advance_unbound_stream` / `advance_bound_stream`); observer prune repairs a survivor's predecessor pointers locally |
-| Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `solstone-core-ingest-resolve` (`write_ingest_manifest`) |
-| Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
-| Native pairing nonces (`link/nonces.json`) | `core/crates/solstone-core-sol-link/` |
-| MCP endpoint owner identity + durable PoP key (`mcp-endpoint/**`) | `core/crates/solstone-core-mcp-endpoint/` |
+| nvattest appraiser cache (`cache/providers/nvattest/**`) | **No current writer — a real gap.** `solstone-core-spp-ratls` and `solstone-core-spp-attest` only read/appraise an already-installed binary at this path; the install/download path from the deleted `nvattest_install.py` was never ported. |
+| Media offload ledger (`health/offload/<YYYYMMDD>.jsonl`) | `core/crates/solstone-core-offload/src/ledger.rs` (`append_offload_event`) |
+| Pruning-run audit (`health/pruning-runs/<YYYYMMDD>.jsonl`) | `raw_media_offload`-kind entries: `core/crates/solstone-core-offload/src/pruning_audit.rs`. The `journal_logs`-kind half that used to record chronicle-health-log pruning has **no current writer**: `core/crates/solstone-core-retention/` only deletes old rows from this file under its own retention policy; it never appends a new audit line for a log-pruning run. |
+| Parakeet server placement record (`health/parakeet-cpp.placement`) | **No current writer — a real gap.** `core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs` only reads this file (as "supervisor-published"); the placement decision itself (`solstone-core-system::provider_runtime::placement`) is computed in memory and is never persisted anywhere. |
+| Hosted backup binding (`backup/hosted/binding.json`) | `core/crates/solstone-core-backup/src/hosted.rs` (`save_hosted_binding`), called from several orchestrators (`-backup-runtime`, `-backup-cli`, `-backup-web`, `-offload::restore`): one low-level writer, several legitimate callers |
+| Convey config (`config/convey.json`) | `core/crates/solstone-core-convey-config/src/navigation.rs` |
+| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-id/src/labels.rs` (`write_full_labels`, `write_stub_labels`, `patch_labels`, `restore_label_rows`) (the lower-level crate that owns the file constant and every write function). `solstone-core-speaker-resolve` calls into it as an orchestration layer; it does not own the write itself. |
+| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-id/src/corrections.rs` (`append_correction`, same split as speaker labels above) |
+| Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `core/crates/solstone-core-segment` (`advance_unbound_stream` / `advance_bound_stream`); observer prune repairs a survivor's predecessor pointers locally |
+| Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `core/crates/solstone-core-ingest-resolve` (`write_ingest_manifest`) |
+| Link CA and client authorization state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/state.json`, `link/authorized_clients.json`) | `core/crates/solstone-core-sol-link/src/establish.rs` (CA, staging, state) and `.../src/ledger.rs` (`authorized_clients.json`). `solstone-core-convey-shell` only reads via `read_authorized_clients`. |
+| Link account token file (`link/tokens/account.json`) | **No current writer, by design.** `core/crates/solstone-core-spl/src/link_state_files.rs`'s own module doc states it is read-only access to the local SPL link identity/service-token files and "never creates, updates, or retains their contents." |
+| Link TOTP state (`link/totp.json`) | **No current writer at all.** No crate in `core/crates` references this path; the only remaining mention anywhere is a doc citing the deleted Python auth module. Do not assume TOTP state is maintained today. |
+| Native pairing nonces (`link/nonces.json`) | `core/crates/solstone-core-sol-link/src/pairing/nonces.rs` |
+| MCP endpoint owner identity and durable PoP key (`mcp-endpoint/**`) | `core/crates/solstone-core-mcp-endpoint/` (`lib.rs::bootstrap_mcp_endpoint_owner_identity`, `unix.rs`) |
 | Chronicle day content (`chronicle/YYYYMMDD/**`) | The capturing module (observer, importer) per its declared outputs |
-| Index (SQLite, `indexer/*`) | `solstone/think/indexer/*` |
-| Observer registry and sync history (`apps/observer/observers/*.json`, `apps/observer/observers/*/hist/*.jsonl`) | `solstone/apps/observer/utils.py` |
-| Import ingest/resolve staging (`imports/**`, excluding native body state and `imports/oura.json`) | `solstone/apps/import/ingest.py` + `solstone/apps/import/resolve.py` + `solstone/apps/import/facet_ingest.py` + `solstone/apps/import/journal_sources.py` — HTTP-ingest + resolve staging state, plus the remote-ingest bundle under `imports/<id>/`. `journal_sources.py` owns only its `create_state_directory` `imports/` initializers; its source registry is app-storage. Non-body import-bundle and sync-cursor content under `imports/<id>/` and `imports/<backend>.json` is written by `solstone/think/importers/{utils,cli,shared,sync}.py` (local/CLI import flows + sync cursor), and `solstone/think/importers/plaud.py` installs streamed imported audio onto `imports/<id>/<name>` via journal_io's `install_file` primitive, as importer declared outputs (L7). |
-| Body import state (`imports/health-dedupe.sqlite`, `imports/oura.json`, Oura token fields under `config/journal.json`, `imports/_approvals/**`, native `imports/body-*` bundles with manifests, envelopes, normalized shards, ledgers, and approved raw assets) | `core/crates/solstone-core-body-{ingest,source,store,rebuild}/` via `solstone-core body <verb>` owns Apple and Oura reads, Oura network/token/cursor mutation through the native journal-config CAS door, approval enforcement, publication, dedupe, and rebuild. `solstone/think/body_native.py` is process transport only; the retained Python Apple/Oura readers are read-only detect/preview parsers and must not write body state. Creation of `_approvals/**` remains a separately approved setup action. |
-| Operational-log/cache pruning and root task-log compaction — deletion/compaction only, across the dated allowlist (`chronicle/<day>/health/*.{log,jsonl}`, top-level `talents/<talent>/<epoch_ms>.jsonl` run logs + `talents/<YYYYMMDD>.jsonl` day indexes, `tokens/`, `health/local-inference/`, `awareness/`, `config/actions/`, `facets/*/logs/`, `apps/observer/observers/*/hist/`, `.cache/cogitate-history/`) plus root `task_log.txt` epoch lines older than the same retention window | `solstone/think/retention_executor.py` loads configuration, short-circuits disabled retention, and adapts receipts; `core/crates/solstone-core-retention` + `core/crates/solstone-core-retention-cli` plan, remove, and compact this domain. No Python code writes this domain anymore. |
+| Index (SQLite, `indexer/*`) | Schema, connection, and writes: `core/crates/solstone-core-indexer-store/`. What to persist (discovery, edges, entity search, metadata): computed by `core/crates/solstone-core-indexer/`, which calls into indexer-store. Query surface: `core/crates/solstone-core-indexer-query/` is read-only. |
+| Observer registry and sync history (`apps/observer/observers/*.json`, `apps/observer/observers/*/hist/*.jsonl`) | **No current writer — a real, known gap.** Confirmed by explicit tests in `solstone-core-ingest` and `solstone-core-doctor` that assert this directory does not exist after ingest/cleanup. Do not attribute this to whichever crate happens to be nearby; nothing currently writes a registry or history record here. |
+| Import ingest/resolve staging (`imports/**`, excluding native body state and `imports/oura.json`) | `core/crates/solstone-core-import/src/{publish.rs,staging.rs}`. `solstone-core-import-web` (web-triggered flow) and the CLI/local-sync path are orchestration callers; `solstone-core-import-sources` (format parsers) and `solstone-core-import-host` (ffmpeg adapters) feed data in without writing `imports/` paths directly. |
+| Body import state (`imports/health-dedupe.sqlite`, `imports/oura.json`, Oura token fields under `config/journal.json`, `imports/_approvals/**`, native `imports/body-*` bundles with manifests, envelopes, normalized shards, ledgers, and approved raw assets) | `core/crates/solstone-core-body-{ingest,source,store,rebuild}/` via `solstone-core body <verb>` |
+| Operational-log/cache pruning and root task-log compaction — deletion/compaction only, across the dated allowlist | `core/crates/solstone-core-retention/src/logs.rs` (`CLASSES`: `chronicle_health_logs`, `talent_run_logs`, `talent_day_index`, `cogitate_history_cache`, `tokens`, `local_inference`, `awareness_logs`, `config_actions`, `facet_logs`, `pruning_runs`; `COMPACTABLE`: `root_task_log`, `retention_log`), consumed by `core/crates/solstone-core-retention-cli/`. **This table has no row for `apps/observer/observers/*/hist/`** — consistent with that path having no writer at all right now (nothing to prune), but a fact worth knowing before anyone restores a writer there: it will not be pruned until this class table is updated too. |
 
-If you're about to write to a domain from a module not in this table, stop and route through the owner.
+If you're about to write to a domain from a module not in this table, stop and route through the owner. If your change means a row above is now wrong, fix the row in the same commit — don't leave the next reader to rediscover it the way this rebuild had to.
 
 **Native `solstone call <app> <verb>` handlers keep the HTTP boundary.** Each
 journal-data command is declared by an app-local native authority and reaches the
@@ -348,8 +328,11 @@ A read-verb function must not mutate on-disk state. No exceptions for caches. No
 
 If a function needs create-on-miss semantics, split it:
 
-```python
-entity = load_entity(eid) or create_entity(eid, ...)
+```rust
+let entity = match load_entity(eid)? {
+    Some(existing) => existing,
+    None => create_entity(eid, /* ... */)?,
+};
 ```
 
 This makes the write visible at every call site.
@@ -375,11 +358,11 @@ An indexer's job is to build indexes from source-of-truth data. Indexers may not
 
 ### L7 — Importers only write to imports/
 
-Importers write source material to `imports/` and the raw-content areas of `chronicle/`. They may not create or modify entities, facets, observations, or other cross-cutting state. If an importer needs to create an entity for deduplication, it calls a domain-owned `seed_entity()` function in `solstone/think/entities/` that surfaces the write explicitly.
+Importers write source material to `imports/` and the raw-content areas of `chronicle/`. They may not create or modify entities, facets, observations, or other cross-cutting state. If an importer needs to create an entity for deduplication, it calls a domain-owned `seed_entity()`-equivalent in `core/crates/solstone-core-entity/` that surfaces the write explicitly.
 
 ### L8 — Hooks have declared outputs
 
-Post-processing hooks (`solstone/think/hooks.py`, `solstone/talent/*.py` hook functions) declare every path they will write in their frontmatter. The hook runner validates that all actual writes match the declaration. Writes outside the declared set fail loudly — raise at runtime; assert in tests.
+Talent hook stages declare every write they can perform, and the runtime enforces this **at compile time**, not by convention. `core/crates/solstone-core-talent-runtime/src/contract.rs` defines a closed `StageId` enum and a `CommitFn` type whose own doc comment states the design directly: "Closed, static hook-stage contract. The runtime is not a plugin host." Every possible write is a variant of the `WriteIntent` enum in `core/crates/solstone-core-talent-runtime/src/writers.rs` (`DayAccumulator`, `Story`, `DailySchedule`, `Participation`, `Schedule`, `FacetNewsletter`, `EntityDetection`, `EntitiesReview`, and the rest); a write that isn't modeled as a `WriteIntent` variant cannot be committed, because there is no code path that would accept it. This is a stronger version of the old Python contract (frontmatter declared paths, a runtime hook validated them at runtime): the write surface is closed and enumerated in source, checked by the compiler, rather than declared in prose and checked after the fact.
 
 ### L9 — Event handlers are idempotent
 
@@ -399,7 +382,7 @@ The rules above govern *where* code lives. The rules below govern *how* code beh
   ```
 
   (`//` for JavaScript.) Markdown, text, and prompt files don't need it.
-- **Fail loudly, not silently.** Raise specific exceptions with clear messages; use the `logging` module, not `print`. Validate inputs at module boundaries. A silent swallow in production costs days of forensics — an error at the boundary is free.
+- **Fail loudly, not silently.** Raise specific errors with clear messages; log through the crate's own tracing/logging setup, not ad hoc printing. Validate inputs at module boundaries. A silent swallow in production costs days of forensics — an error at the boundary is free.
 - **Trust internal code.** Don't add defensive validation for things internal callers can't violate. Validate at system boundaries (user input, external APIs, imported files) — not between modules you control.
 
 Generic software principles (DRY, KISS, YAGNI, single responsibility, small focused commits) apply; see `docs/coding-standards.md` for the full list.
@@ -407,7 +390,7 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 ## 9. File headers, naming, dependencies
 
 - **SPDX header** as above — mandatory on source code files.
-- **Naming:** modules / functions / variables `snake_case`; classes `PascalCase`; constants `UPPER_SNAKE_CASE`; private members `_leading_underscore`. Full table in `docs/coding-standards.md`.
+- **Naming:** modules / functions / variables `snake_case`; types `PascalCase`; constants `UPPER_SNAKE_CASE`. Full table in `docs/coding-standards.md`.
 - **Dependencies:** workspace crates inherit from `core/Cargo.toml`. `make install` is retired.
 
 ## 10. Commit hygiene
@@ -430,16 +413,19 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/GENERATE.md` | The `generate` contract — the record vocabulary for asking the model boundary for one completion, its two framings, and the invariants it guarantees. Read before writing anything that calls a model, or that consumes a completion's outcome. |
 | `docs/CALLOSUM.md` | Adding a new tract/event, debugging message flow |
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
+| `docs/CONVEY-FRONTEND.md` | Binding client-side conventions for any Convey workspace, shell chrome, or shared client helper — static shell + per-app workspace architecture, the `/api/shell` contract |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
 | `docs/SOLCLI.md` | Adding a new `solstone <cmd>` or `solstone call <app> <verb>` |
 | `docs/PORTING.md` | Rust workspace rules: edition, iOS canary, native-dep proof |
+| `docs/conversion/README.md` | The architectural map (plates, strands, cables) underlying the Rust workspace — read for "why is it shaped this way," not "how do I port X" (there's nothing left to port) |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
-| `docs/PROVIDERS.md` | Three-lane provider architecture: active-brain resolution, local/BYO/confidential lanes, and honest no-fallback failure semantics |
+| `docs/PROVIDERS.md` | The provider architecture: one active-brain resolver, four dispatch lanes (three cloud vendors plus local, where local also covers arbitrary OpenAI-compatible endpoints and confidential processing), and honest no-fallback failure semantics |
 | `docs/testing.md` | Test structure, fixtures, debugging test isolation |
 | `docs/environment.md` | Journal path resolution, managed-wrapper behavior, service install details, and `SOLSTONE_JOURNAL` rules |
 | `docs/CHANNEL_ADAPTERS.md` | Release channel adapter config, scrub-gate expectations, and operator-safe placeholders |
 | `docs/release-evidence-contract.md` | **Required before changing the retained release ledger schema registry** — why such a change breaks already-cut candidates, what `schema_version` does and does not tolerate here, and the frozen-fixture rule |
 | `docs/journal-format-contract-maintenance.md` | Changing a committed journal at-rest format (observer ingest envelopes, `stream.json`, `audio.jsonl`, `screen.jsonl`) — schema floor vs producer-local requirements, and which relaxations are safe |
+| `docs/JOURNAL_FILESYSTEM_CONTRACT.md` | The shared vocabulary for a journal root, its identity, entry kinds, and refusals — not a generic VFS |
 | `docs/coding-standards.md` | Full naming conventions, ruff config, dep-management details — reference for everything not promoted into this file |
 | `docs/project-structure.md` | Canonical directory layout; resolving "where does this file go" debates |
 | `docs/DOCTOR.md` | Diagnostics and debugging a running system |
