@@ -190,7 +190,7 @@ pub use windows_lock::{
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_managed_log_test_hooks::{
-    exercise_windows_managed_log_reference_substrate, hold_old_managed_log_alias_then_publish,
+    exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
     publish_test_managed_log_alias, root_test_managed_log_alias_name,
     try_test_managed_log_alias_lock,
 };

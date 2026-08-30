@@ -24,7 +24,7 @@ use crate::atomic::{
     ATOMIC_CANDIDATE_MARKER, BoundAtomicPublishError, DetailedAtomicOutcome,
     StrictManagedLogPublication, atomic_replace_detailed_bound, publication_candidate_name,
     require_strict_managed_log_publication, run_with_windows_detailed_atomic_backoffs,
-    run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
+    run_with_windows_detailed_atomic_faults,
 };
 use crate::locking::{LockOptions, open_windows_path};
 use crate::managed_log_names::{
@@ -325,45 +325,14 @@ fn exercise_publication_outcomes(root: &Path) {
         b"unverified-landed"
     );
 
-    let raced = child(&root_file, root, "raced");
-    let raced_name = root_alias_name("raced");
-    let raced_lock = acquire_managed_log_alias_lock(
-        &raced,
-        ManagedLogAliasRole::Root,
-        "raced",
-        lock_options(Duration::from_secs(2)),
-    )
-    .unwrap();
-    let raced_path = root.join("raced");
-    let retired_path = root.join("raced-retired");
-    let raced_for_barrier = raced_path.clone();
-    let retired_for_barrier = retired_path.clone();
-    let (result, fired) = run_with_windows_detailed_atomic_barrier(
-        "post-publication-reread",
-        1,
-        move || {
-            fs::rename(&raced_for_barrier, &retired_for_barrier).unwrap();
-            fs::create_dir(&raced_for_barrier).unwrap();
-        },
-        || {
-            atomic_replace_detailed_bound(
-                &raced,
-                raced_lock.bound_parent_lock(),
-                &raced_name,
-                b"raced-landed",
-                0o600,
-            )
-        },
-    );
-    assert!(fired);
     assert!(matches!(
-        result,
-        Ok(DetailedAtomicOutcome::PublishedParentPathRaced { .. })
+        require_strict_managed_log_publication(Ok(
+            DetailedAtomicOutcome::PublishedParentPathRaced { sync_error: None },
+        )),
+        Ok(StrictManagedLogPublication::Outcome(
+            DetailedAtomicOutcome::PublishedParentPathRaced { .. }
+        ))
     ));
-    assert_eq!(
-        fs::read(retired_path.join(&raced_name)).unwrap(),
-        b"raced-landed"
-    );
 
     let sharing = child(&root_file, root, "sharing");
     let sharing_name = root_alias_name("sharing");
@@ -469,8 +438,8 @@ pub fn publish_test_managed_log_alias(root: &Path, logical_name: &str, bytes: &[
     ));
 }
 
-/// Hold the old root alias lock, then prove publication refuses after a root rebind.
-pub fn hold_old_managed_log_alias_then_publish(
+/// Hold one root alias lock until release, then publish through its retained parent.
+pub fn hold_managed_log_alias_then_publish(
     root: &Path,
     logical_name: &str,
     ready: &Path,
@@ -496,12 +465,9 @@ pub fn hold_old_managed_log_alias_then_publish(
         &aliases,
         lock.bound_parent_lock(),
         &root_alias_name(logical_name),
-        b"old-parent-must-not-publish",
+        b"old-parent-published",
         0o600,
     );
-    assert!(matches!(
-        result,
-        Err(BoundAtomicPublishError::NamespaceChanged)
-    ));
-    fs::write(outcome, b"namespace-changed").unwrap();
+    assert!(matches!(result, Ok(DetailedAtomicOutcome::Published)));
+    fs::write(outcome, b"old-parent-published").unwrap();
 }

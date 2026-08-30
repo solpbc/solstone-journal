@@ -22,7 +22,7 @@ use solstone_core_journal_io::atomic::{
 };
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, exercise_windows_managed_log_reference_substrate,
-    hold_old_managed_log_alias_then_publish, publish_test_managed_log_alias,
+    hold_managed_log_alias_then_publish, publish_test_managed_log_alias,
     root_test_managed_log_alias_name, try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
@@ -818,13 +818,20 @@ fn managed_log_reference_receipt(root: &Path) {
 
     let aliases = process_root.join("aliases");
     let retired = process_root.join("aliases-retired");
-    fs::rename(&aliases, &retired).unwrap();
-    fs::create_dir(&aliases).unwrap();
-    publish_test_managed_log_alias(&process_root, logical_name, b"fresh-parent-published");
+    let rename_error = fs::rename(&aliases, &retired).unwrap_err();
+    assert_eq!(
+        rename_error.raw_os_error(),
+        Some(ERROR_ACCESS_DENIED as i32),
+        "Windows did not fail closed while the persistent child lock was live"
+    );
     fs::write(&release, b"release").unwrap();
     let status = child.wait().unwrap();
     assert!(status.success(), "split-lock child failed: {status}");
-    assert_eq!(fs::read(&outcome).unwrap(), b"namespace-changed");
+    assert_eq!(fs::read(&outcome).unwrap(), b"old-parent-published");
+
+    fs::rename(&aliases, &retired).unwrap();
+    fs::create_dir(&aliases).unwrap();
+    publish_test_managed_log_alias(&process_root, logical_name, b"fresh-parent-published");
 
     let alias_name = root_test_managed_log_alias_name(logical_name);
     assert_eq!(
@@ -832,8 +839,8 @@ fn managed_log_reference_receipt(root: &Path) {
         b"fresh-parent-published"
     );
     assert!(
-        !retired.join(&alias_name).exists(),
-        "the old retained parent accepted a mixed publication"
+        fs::read(retired.join(&alias_name)).unwrap() == b"old-parent-published",
+        "the retained parent did not contain exactly the child's publication"
     );
     assert!(
         fs::read_dir(&retired).unwrap().any(|entry| entry
@@ -856,7 +863,7 @@ fn managed_log_reference_receipt(root: &Path) {
 #[test]
 #[ignore = "invoked only as a child by the managed-log native receipt"]
 fn managed_log_split_lock_child() {
-    hold_old_managed_log_alias_then_publish(
+    hold_managed_log_alias_then_publish(
         &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_ROOT").unwrap()),
         &std::env::var("SOLSTONE_MANAGED_LOG_CHILD_NAME").unwrap(),
         &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_READY").unwrap()),
