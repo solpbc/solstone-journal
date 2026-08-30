@@ -52,6 +52,37 @@ enum DestinationState {
     Present(WindowsFileIdentity),
 }
 
+#[derive(Debug)]
+enum ParentNamespaceChange {
+    RetainedIdentity,
+    Pathname,
+}
+
+impl std::fmt::Display for ParentNamespaceChange {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RetainedIdentity => {
+                formatter.write_str("bound parent identity changed before publication")
+            }
+            Self::Pathname => formatter.write_str("parent pathname changed before publication"),
+        }
+    }
+}
+
+impl std::error::Error for ParentNamespaceChange {}
+
+fn parent_namespace_changed_error(change: ParentNamespaceChange) -> io::Error {
+    io::Error::other(change)
+}
+
+fn is_parent_namespace_change(error: &DetailedAtomicError) -> bool {
+    error
+        .source
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<ParentNamespaceChange>())
+        .is_some()
+}
+
 /// Atomically replace one regular destination beneath an existing real parent.
 pub(super) fn atomic_replace_detailed(
     path: &Path,
@@ -300,7 +331,13 @@ pub(super) fn atomic_replace_detailed_bound(
         contents,
         mode,
     )
-    .map_err(BoundAtomicPublishError::Atomic)
+    .map_err(|error| {
+        if is_parent_namespace_change(&error) {
+            BoundAtomicPublishError::NamespaceChanged
+        } else {
+            BoundAtomicPublishError::Atomic(error)
+        }
+    })
 }
 
 fn normal_name(value: Option<&OsStr>) -> Option<&OsStr> {
@@ -418,14 +455,14 @@ fn revalidate_before_publication(
 ) -> io::Result<()> {
     validate_directory_handle(parent.as_raw_handle())?;
     if file_identity(parent.as_raw_handle())? != parent_identity {
-        return Err(io::Error::other(
-            "bound parent identity changed before publication",
+        return Err(parent_namespace_changed_error(
+            ParentNamespaceChange::RetainedIdentity,
         ));
     }
     let (_, current_parent) = open_parent_no_follow(parent_path)?;
     if current_parent != parent_identity {
-        return Err(io::Error::other(
-            "parent pathname changed before publication",
+        return Err(parent_namespace_changed_error(
+            ParentNamespaceChange::Pathname,
         ));
     }
     validate_regular_handle(stage.as_raw_handle())?;
@@ -511,6 +548,7 @@ fn observe_published_destination(
             "published destination bytes changed before verification",
         ));
     }
+    checkpoint("post-publication-reread")?;
     Ok(())
 }
 
@@ -916,4 +954,234 @@ fn pause_at_terminal_move_receipt(_parent_path: &Path, _stage_name: &OsStr) {}
 #[cfg(not(any(test, feature = "test-hooks")))]
 fn checkpoint(_step: &'static str) -> io::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::os::windows::io::AsHandle;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
+        FILE_READ_ATTRIBUTES, FILE_TRAVERSE, OPEN_EXISTING,
+    };
+
+    use super::{
+        run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
+    };
+    use crate::atomic::{
+        BoundAtomicPublishError, DetailedAtomicOutcome, atomic_replace_detailed_bound,
+    };
+    use crate::locking::{acquire_existing_parent_lock_bound, open_windows_path};
+    use crate::test_support::TempDir;
+    use crate::windows_sync_dir::{
+        WindowsFlatDirectory, create_or_open_windows_flat_directory_bound,
+    };
+
+    const LOCK_NAME: &str = "!solstone-ml-l-r-bound-test.lock";
+    const DESTINATION_NAME: &str = "!solstone-ml-r-bound-test.ref";
+    const PUBLISHED_BYTES: &[u8] = b"bound pointer record";
+
+    fn root_handle(path: &Path) -> std::fs::File {
+        open_windows_path(
+            path,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap()
+    }
+
+    fn bound_parent_fixture() -> (
+        TempDir,
+        WindowsFlatDirectory,
+        crate::locking::BoundParentLock,
+        PathBuf,
+    ) {
+        let temporary = TempDir::new();
+        let root = root_handle(temporary.path());
+        let parent_path = temporary.path().join("aliases");
+        let parent = create_or_open_windows_flat_directory_bound(
+            &root,
+            OsStr::new("aliases"),
+            temporary.path(),
+        )
+        .unwrap();
+        let lock = acquire_existing_parent_lock_bound(
+            &parent,
+            OsStr::new(LOCK_NAME),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        (temporary, parent, lock, parent_path)
+    }
+
+    fn assert_directory_contains_only(directory: &Path, names: &[&str]) {
+        let mut found = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        found.sort();
+        let mut expected = names
+            .iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>();
+        expected.sort();
+        assert_eq!(
+            found,
+            expected,
+            "unexpected entries in {}",
+            directory.display()
+        );
+    }
+
+    #[test]
+    fn bound_publication_uses_retained_parent_and_publishes_bytes() {
+        let (_temporary, parent, lock, parent_path) = bound_parent_fixture();
+
+        let result = atomic_replace_detailed_bound(
+            &parent,
+            &lock,
+            OsStr::new(DESTINATION_NAME),
+            PUBLISHED_BYTES,
+            0o600,
+        );
+
+        assert!(matches!(result, Ok(DetailedAtomicOutcome::Published)));
+        assert_eq!(
+            fs::read(parent_path.join(DESTINATION_NAME)).unwrap(),
+            PUBLISHED_BYTES
+        );
+    }
+
+    #[test]
+    fn bound_publication_refuses_a_parent_rebind_before_staging() {
+        let (_temporary, parent, lock, parent_path) = bound_parent_fixture();
+        let retired_parent = parent_path.with_extension("retired");
+        fs::rename(&parent_path, &retired_parent).unwrap();
+        fs::create_dir(&parent_path).unwrap();
+
+        let result = atomic_replace_detailed_bound(
+            &parent,
+            &lock,
+            OsStr::new(DESTINATION_NAME),
+            PUBLISHED_BYTES,
+            0o600,
+        );
+
+        assert!(matches!(
+            result,
+            Err(BoundAtomicPublishError::NamespaceChanged)
+        ));
+        assert_directory_contains_only(&parent_path, &[]);
+        assert_directory_contains_only(&retired_parent, &[LOCK_NAME]);
+    }
+
+    #[test]
+    fn bound_publication_maps_mid_publish_parent_rebind_to_namespace_changed() {
+        let (_temporary, parent, lock, parent_path) = bound_parent_fixture();
+        let retired_parent = parent_path.with_extension("retired");
+        let parent_to_replace = parent_path.clone();
+        let retired_for_barrier = retired_parent.clone();
+        let (result, fired) = run_with_windows_detailed_atomic_barrier(
+            "close",
+            1,
+            move || {
+                fs::rename(&parent_to_replace, &retired_for_barrier).unwrap();
+                fs::create_dir(&parent_to_replace).unwrap();
+            },
+            || {
+                atomic_replace_detailed_bound(
+                    &parent,
+                    &lock,
+                    OsStr::new(DESTINATION_NAME),
+                    PUBLISHED_BYTES,
+                    0o600,
+                )
+            },
+        );
+
+        assert!(fired, "mid-publication parent replacement did not run");
+        assert!(matches!(
+            result,
+            Err(BoundAtomicPublishError::NamespaceChanged)
+        ));
+        assert_directory_contains_only(&parent_path, &[]);
+        assert_directory_contains_only(&retired_parent, &[LOCK_NAME]);
+    }
+
+    #[test]
+    fn bound_publication_reports_unverified_after_a_landed_move_and_failed_reread() {
+        let (_temporary, parent, lock, parent_path) = bound_parent_fixture();
+        let (result, attempted, real_moves) = run_with_windows_detailed_atomic_faults(
+            [(
+                "post-publication-observation",
+                1,
+                ERROR_ACCESS_DENIED as i32,
+            )],
+            || {
+                atomic_replace_detailed_bound(
+                    &parent,
+                    &lock,
+                    OsStr::new(DESTINATION_NAME),
+                    PUBLISHED_BYTES,
+                    0o600,
+                )
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Ok(DetailedAtomicOutcome::PublishedParentPathUnverified { .. })
+        ));
+        assert_eq!(real_moves, 1, "the terminal move must have landed");
+        assert!(attempted.contains(&"post-publication-observation"));
+        assert_eq!(
+            fs::read(parent_path.join(DESTINATION_NAME)).unwrap(),
+            PUBLISHED_BYTES,
+            "an unverified result must still prove the landed replacement"
+        );
+    }
+
+    #[test]
+    fn bound_publication_reports_raced_after_successful_reread_and_fresh_rebind_failure() {
+        let (_temporary, parent, lock, parent_path) = bound_parent_fixture();
+        let retired_parent = parent_path.with_extension("retired");
+        let parent_to_replace = parent_path.clone();
+        let retired_for_barrier = retired_parent.clone();
+        let (result, fired) = run_with_windows_detailed_atomic_barrier(
+            "post-publication-reread",
+            1,
+            move || {
+                fs::rename(&parent_to_replace, &retired_for_barrier).unwrap();
+                fs::create_dir(&parent_to_replace).unwrap();
+            },
+            || {
+                atomic_replace_detailed_bound(
+                    &parent,
+                    &lock,
+                    OsStr::new(DESTINATION_NAME),
+                    PUBLISHED_BYTES,
+                    0o600,
+                )
+            },
+        );
+
+        assert!(fired, "post-reread parent replacement did not run");
+        assert!(matches!(
+            result,
+            Ok(DetailedAtomicOutcome::PublishedParentPathRaced { .. })
+        ));
+        assert_eq!(
+            fs::read(retired_parent.join(DESTINATION_NAME)).unwrap(),
+            PUBLISHED_BYTES,
+            "a raced result must preserve the replacement observed through the retained handle"
+        );
+        assert_directory_contains_only(&parent_path, &[]);
+    }
 }

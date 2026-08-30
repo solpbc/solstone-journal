@@ -166,14 +166,31 @@ mod tests {
     fn all_reserved_role_names_are_cartesian_disjoint_under_windows_case_folding() {
         let fixture =
             include_str!("../tests/fixtures/windows-compare-string-ordinal-ascii-corpus-260823.md");
-        let mut values = fixture
+        let mut values = BTreeSet::new();
+        for mapping in fixture
             .split("```")
             .nth(1)
             .expect("fixture has a mapping code block")
             .split(',')
-            .filter_map(|mapping| mapping.split_once(':').map(|(value, _)| value))
-            .map(str::to_owned)
-            .collect::<BTreeSet<_>>();
+        {
+            let (value, variant) = mapping
+                .split_once(':')
+                .expect("fixture mappings contain one scalar variant");
+            values.insert(value.to_owned());
+            let scalar = u32::from_str_radix(
+                variant
+                    .trim()
+                    .strip_prefix("U+")
+                    .expect("fixture variants are Unicode scalar values"),
+                16,
+            )
+            .expect("fixture variant is hexadecimal");
+            values.insert(
+                char::from_u32(scalar)
+                    .expect("fixture variant is a Unicode scalar value")
+                    .to_string(),
+            );
+        }
         values.extend(
             [
                 "maintenance:<task>",

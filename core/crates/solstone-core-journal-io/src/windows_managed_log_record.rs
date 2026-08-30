@@ -463,6 +463,33 @@ mod tests {
     }
 
     #[test]
+    fn strict_parser_rejects_all_invalid_record_fields_and_identity_shapes() {
+        let oversized = vec![b' '; MAX_MANAGED_LOG_RECORD_BYTES + 1];
+        assert!(matches!(
+            ManagedLogRecord::parse(&oversized),
+            Err(ManagedLogRecordError::TooLarge { .. })
+        ));
+
+        for invalid in [
+            r#"{"version":0,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":2,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":0,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"2026082x","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"CON","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"trailing. ","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"0000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"000000000000000g","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001","file_id":"00000000000000000000000000000001"}}"#,
+            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001","extra":1}}"#,
+        ] {
+            assert!(
+                ManagedLogRecord::parse(invalid.as_bytes()).is_err(),
+                "parser accepted invalid record: {invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn generation_admission_requires_exact_next_record() {
         let first = ManagedLogRecord::new(
             1,

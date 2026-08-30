@@ -31,6 +31,20 @@ pub(crate) struct ResolvedManagedLog {
     pub(crate) file: File,
 }
 
+fn require_record_identity(
+    record: &ManagedLogRecord,
+    canonical_name: &OsStr,
+    observed: WindowsFileIdentity,
+) -> Result<(), ManagedLogResolveError> {
+    if observed != record.canonical_identity() {
+        return Err(ManagedLogOpenError::IdentityMismatch {
+            name: canonical_name.to_os_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Resolve exactly one root alias and retain the verified canonical reader.
 pub(crate) fn resolve_managed_log_record<F>(
     alias_parent: &WindowsFlatDirectory,
@@ -56,6 +70,7 @@ where
     let canonical_name = canonical_payload_name(record.reference(), record.name());
     let opened =
         open_canonical_for_read(&day_health, &canonical_name, record.canonical_identity())?;
+    require_record_identity(&record, &canonical_name, opened.identity())?;
     Ok(ResolvedManagedLog {
         identity: opened.identity(),
         file: opened.into_file(),
@@ -251,6 +266,33 @@ mod tests {
         assert!(matches!(
             result,
             Err(ManagedLogResolveError::AliasRecordMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn resolver_requires_the_full_file_id_when_the_folded_projection_matches() {
+        let expected =
+            WindowsFileIdentity::from_parts(7, [1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]);
+        let substitution =
+            WindowsFileIdentity::from_parts(7, [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(expected.folded_file_id(), substitution.folded_file_id());
+        assert_ne!(expected, substitution);
+        let record = ManagedLogRecord::new(
+            1,
+            "20260829".into(),
+            "writer".into(),
+            "stream".into(),
+            expected,
+        )
+        .unwrap();
+        let canonical_name = canonical_payload_name(record.reference(), record.name());
+
+        assert!(require_record_identity(&record, &canonical_name, expected).is_ok());
+        assert!(matches!(
+            require_record_identity(&record, &canonical_name, substitution),
+            Err(ManagedLogResolveError::Open(
+                ManagedLogOpenError::IdentityMismatch { .. }
+            ))
         ));
     }
 }
