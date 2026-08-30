@@ -74,6 +74,8 @@ del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed"
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
+call :run_receipt "NTFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_managed_log_reference_receipt" "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE" "NTFS" || exit /b 1
+call :run_receipt "ReFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "refs_managed_log_reference_receipt" "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE" "ReFS" || exit /b 1
 call :run_receipt "NTFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "ntfs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP" "NTFS" || exit /b 1
 call :run_receipt "ReFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "refs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP" "ReFS" || exit /b 1
 echo === cargo test --locked (journal-io library) ===
@@ -99,7 +101,7 @@ echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
 echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
-echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; mandatory NTFS and ReFS publication and stale-heartbeat receipt markers were emitted and validated from their child logs ===
+echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; mandatory NTFS and ReFS publication, managed-log reference, and stale-heartbeat receipt markers were emitted and validated from their child logs ===
 exit /b 0
 
 :ordinary_owner_failed

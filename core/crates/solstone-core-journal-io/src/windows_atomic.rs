@@ -960,7 +960,6 @@ fn checkpoint(_step: &'static str) -> io::Result<()> {
 mod tests {
     use std::ffi::OsStr;
     use std::fs;
-    use std::os::windows::io::AsHandle;
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 

@@ -1502,6 +1502,10 @@ emit_receipts() {
   printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
   printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
   printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS'
+  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM=NTFS'
+  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE=executed/pass'
+  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM=ReFS'
   printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
   printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS'
   printf '%s\n' 'JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
@@ -1593,6 +1597,8 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
     for selector in [
         "ntfs_publication_receipt",
         "refs_publication_receipt",
+        "ntfs_managed_log_reference_receipt",
+        "refs_managed_log_reference_receipt",
         "ntfs_stale_heartbeat_cleanup_receipt",
         "refs_stale_heartbeat_cleanup_receipt",
     ] {
@@ -1604,6 +1610,8 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
     for marker in [
         "JOURNAL_WIN_CI_NTFS_PUBLICATION",
         "JOURNAL_WIN_CI_REFS_PUBLICATION",
+        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE",
+        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE",
         "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
         "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP",
     ] {

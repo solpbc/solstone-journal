@@ -196,6 +196,8 @@ require_native_receipt() {
 }
 require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
+require_native_receipt JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE NTFS
+require_native_receipt JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP ReFS
 head_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { count++ } END { print count + 0 }')

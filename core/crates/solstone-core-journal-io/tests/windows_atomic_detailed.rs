@@ -15,11 +15,15 @@ use std::process::{Child, Command, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use solstone_core_journal_io::DetailedAtomicOutcome;
 use solstone_core_journal_io::atomic::{
     atomic_replace_detailed, run_with_windows_detailed_atomic_backoffs,
     run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
     run_with_windows_detailed_atomic_faults_and_barrier,
+};
+use solstone_core_journal_io::{
+    DetailedAtomicOutcome, exercise_windows_managed_log_reference_substrate,
+    hold_old_managed_log_alias_then_publish, publish_test_managed_log_alias,
+    root_test_managed_log_alias_name, try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_DISK_FULL, ERROR_INVALID_FUNCTION, ERROR_LOCK_VIOLATION,
@@ -770,6 +774,121 @@ fn refs_publication_receipt() {
     publication_receipt(temporary.path());
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass");
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS");
+}
+
+fn managed_log_reference_receipt(root: &Path) {
+    let single_process = root.join("single-process");
+    fs::create_dir(&single_process).unwrap();
+    exercise_windows_managed_log_reference_substrate(&single_process);
+
+    let process_root = root.join("process-boundary");
+    fs::create_dir(&process_root).unwrap();
+    let ready = process_root.join("old-parent-ready");
+    let release = process_root.join("release-old-parent");
+    let outcome = process_root.join("old-parent-outcome");
+    let logical_name = "shared-process-alias";
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "managed_log_split_lock_child",
+            "--nocapture",
+        ])
+        .env("SOLSTONE_MANAGED_LOG_CHILD_ROOT", &process_root)
+        .env("SOLSTONE_MANAGED_LOG_CHILD_NAME", logical_name)
+        .env("SOLSTONE_MANAGED_LOG_CHILD_READY", &ready)
+        .env("SOLSTONE_MANAGED_LOG_CHILD_RELEASE", &release)
+        .env("SOLSTONE_MANAGED_LOG_CHILD_OUTCOME", &outcome)
+        .spawn()
+        .unwrap();
+    wait_for_marker(&ready, "ready");
+
+    assert!(
+        !try_test_managed_log_alias_lock(&process_root, logical_name, Duration::from_millis(150),),
+        "a second process acquired the same persistent alias lock"
+    );
+    assert!(
+        try_test_managed_log_alias_lock(
+            &process_root,
+            "independent-process-alias",
+            Duration::from_millis(150),
+        ),
+        "an independent alias was blocked by a global lock"
+    );
+
+    let aliases = process_root.join("aliases");
+    let retired = process_root.join("aliases-retired");
+    fs::rename(&aliases, &retired).unwrap();
+    fs::create_dir(&aliases).unwrap();
+    publish_test_managed_log_alias(&process_root, logical_name, b"fresh-parent-published");
+    fs::write(&release, b"release").unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success(), "split-lock child failed: {status}");
+    assert_eq!(fs::read(&outcome).unwrap(), b"namespace-changed");
+
+    let alias_name = root_test_managed_log_alias_name(logical_name);
+    assert_eq!(
+        fs::read(aliases.join(&alias_name)).unwrap(),
+        b"fresh-parent-published"
+    );
+    assert!(
+        !retired.join(&alias_name).exists(),
+        "the old retained parent accepted a mixed publication"
+    );
+    assert!(
+        fs::read_dir(&retired).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".lock")),
+        "the old parent did not retain its persistent alias lock"
+    );
+    assert!(
+        fs::read_dir(&aliases).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".lock")),
+        "the fresh parent did not retain its persistent alias lock"
+    );
+}
+
+#[test]
+#[ignore = "invoked only as a child by the managed-log native receipt"]
+fn managed_log_split_lock_child() {
+    hold_old_managed_log_alias_then_publish(
+        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_ROOT").unwrap()),
+        &std::env::var("SOLSTONE_MANAGED_LOG_CHILD_NAME").unwrap(),
+        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_READY").unwrap()),
+        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_RELEASE").unwrap()),
+        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_OUTCOME").unwrap()),
+    );
+}
+
+#[test]
+#[ignore = "requires a native NTFS filesystem"]
+fn ntfs_managed_log_reference_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
+    managed_log_reference_receipt(root.path());
+    println!("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE=executed/pass");
+    println!("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM=NTFS");
+}
+
+#[test]
+#[ignore = "requires the native ReFS fixture selected by win-ci.cmd"]
+fn refs_managed_log_reference_receipt() {
+    let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
+        .map(PathBuf::from)
+        .expect("ReFS managed-log receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
+    assert_eq!(filesystem_name(&root).unwrap(), "ReFS");
+    let temporary = tempfile::Builder::new()
+        .prefix("solstone-refs-managed-log-reference-")
+        .tempdir_in(&root)
+        .unwrap();
+    managed_log_reference_receipt(temporary.path());
+    println!("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE=executed/pass");
+    println!("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM=ReFS");
 }
 
 fn file_identity(path: &Path) -> (u64, [u8; 16]) {
