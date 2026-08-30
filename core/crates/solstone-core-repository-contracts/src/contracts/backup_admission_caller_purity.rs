@@ -9,13 +9,36 @@ struct ForbiddenIdentVisitor {
     hits: Vec<String>,
 }
 
-impl<'ast> syn::visit::Visit<'ast> for ForbiddenIdentVisitor {
-    fn visit_ident(&mut self, ident: &'ast syn::Ident) {
-        let raw = ident.to_string();
-        let normalized = raw.strip_prefix("r#").unwrap_or(&raw);
+impl ForbiddenIdentVisitor {
+    fn record_forbidden_identifier(&mut self, raw: &str) {
+        let normalized = raw.strip_prefix("r#").unwrap_or(raw);
         if normalized == "run_backup" || normalized == "record_backup_error" {
             self.hits.push(normalized.to_owned());
         }
+    }
+
+    fn visit_opaque_token_stream(&mut self, tokens: proc_macro2::TokenStream) {
+        for token in tokens {
+            match token {
+                proc_macro2::TokenTree::Ident(ident) => {
+                    self.record_forbidden_identifier(&ident.to_string());
+                }
+                proc_macro2::TokenTree::Group(group) => {
+                    self.visit_opaque_token_stream(group.stream());
+                }
+                proc_macro2::TokenTree::Literal(_) | proc_macro2::TokenTree::Punct(_) => {}
+            }
+        }
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for ForbiddenIdentVisitor {
+    fn visit_ident(&mut self, ident: &'ast syn::Ident) {
+        self.record_forbidden_identifier(&ident.to_string());
+    }
+
+    fn visit_token_stream(&mut self, tokens: &'ast proc_macro2::TokenStream) {
+        self.visit_opaque_token_stream(tokens.clone());
     }
 }
 
@@ -40,9 +63,7 @@ fn collect_source_files(directory: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.expect("production source entry reads").path();
         if path.is_dir() {
             collect_source_files(&path, files);
-        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs")
-            && path.file_name().and_then(|name| name.to_str()) != Some("tests.rs")
-        {
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
             files.push(path);
         }
     }
@@ -172,6 +193,62 @@ fn detects_raw_qualified_record_backup_error_identifier() {
 }
 
 #[test]
+fn detects_forbidden_identifier_in_unexpanded_macro_rules_body() {
+    assert_eq!(
+        forbidden_hits_in_source("macro_rules! probe { () => { run_backup }; }"),
+        ["run_backup"]
+    );
+}
+
+#[test]
+fn detects_forbidden_identifier_in_macro_argument_token_stream() {
+    assert_eq!(
+        forbidden_hits_in_source("fn probe() { some_macro!(record_backup_error); }"),
+        ["record_backup_error"]
+    );
+}
+
+#[test]
+fn detects_raw_forbidden_identifier_in_nested_macro_group() {
+    assert_eq!(
+        forbidden_hits_in_source("fn probe() { some_macro!({ nested!(r#run_backup) }); }"),
+        ["run_backup"]
+    );
+}
+
+#[test]
+fn detects_forbidden_identifier_in_attribute_meta_tokens() {
+    assert_eq!(
+        forbidden_hits_in_source("#[probe(run_backup)]\nfn probe() {}"),
+        ["run_backup"]
+    );
+}
+
+#[test]
+fn detects_raw_forbidden_identifier_in_nested_attribute_meta_tokens() {
+    assert_eq!(
+        forbidden_hits_in_source("#[probe(nested(r#record_backup_error))]\nfn probe() {}"),
+        ["record_backup_error"]
+    );
+}
+
+#[test]
+fn ignores_unrelated_macro_token_stream() {
+    assert!(
+        forbidden_hits_in_source("fn probe() { some_macro!({ unrelated_identifier }); }")
+            .is_empty()
+    );
+}
+
+#[test]
+fn ignores_unrelated_attribute_meta_tokens() {
+    assert!(
+        forbidden_hits_in_source("#[probe(nested(unrelated_identifier))]\nfn probe() {}")
+            .is_empty()
+    );
+}
+
+#[test]
 fn ignores_unrelated_and_near_miss_identifiers() {
     let source = "fn probe() {\n    resolve_tools(&capability, runner, downloader, dirs);\n    capability.execute(&services);\n    backup_run_result(result);\n}";
     assert!(forbidden_hits_in_source(source).is_empty());
@@ -187,6 +264,26 @@ fn discovers_forbidden_identifier_in_nested_source_file() {
         "fn probe() { solstone_core_backup_runtime::run_backup(journal, services); }",
     )
     .expect("nested fixture writes");
+
+    let files = load_production_root(root.path()).expect("nested source root loads");
+    let hits: Vec<_> = files
+        .iter()
+        .flat_map(|(_, source)| forbidden_hits_in_source(source))
+        .collect();
+    assert_eq!(hits, ["run_backup"]);
+}
+
+#[test]
+fn discovers_forbidden_identifier_in_nested_tests_rs_source_file() {
+    let root = tempfile::tempdir().expect("fixture root creates");
+    let nested = root.path().join("sub/dir");
+    fs::create_dir_all(&nested).expect("nested fixture directory creates");
+    fs::write(
+        nested.join("tests.rs"),
+        "fn probe() { solstone_core_backup_runtime::run_backup(journal, services); }",
+    )
+    .expect("tests fixture writes");
+    fs::write(nested.join("harmless.rs"), "fn harmless() {}").expect("harmless fixture writes");
 
     let files = load_production_root(root.path()).expect("nested source root loads");
     let hits: Vec<_> = files

@@ -4476,6 +4476,7 @@ name = "solstone-core-repository-contracts"
 version = "2.0.0"
 dependencies = [
  "nix",
+ "proc-macro2",
  "quote",
  "serde",
  "serde_json",
