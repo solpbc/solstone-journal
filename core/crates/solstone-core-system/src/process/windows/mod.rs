@@ -3,11 +3,16 @@
 
 //! Conservative no-owned-process facade for non-Unix targets.
 
+#[cfg(not(unix))]
 use std::fmt;
+#[cfg(not(unix))]
 use std::io;
+#[cfg(not(unix))]
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output};
+#[cfg(not(unix))]
 use std::time::{Duration, Instant};
 
+#[cfg(not(unix))]
 use super::{
     BoxedTerminateFn, CommandLaunchRequest, DescendantObservationFailure,
     DescendantTerminationOutcome, Disposition, HostedLaunchProvenance, InspectResult,
@@ -229,8 +234,10 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
 
 /// No Windows-owned process can exist until a later implementation supplies
 /// a birth-bound containment primitive.
+#[cfg(not(unix))]
 pub enum ManagedProcess {}
 
+#[cfg(not(unix))]
 impl ManagedProcess {
     pub fn spawn(_cmd: Vec<String>, _options: SpawnOptions) -> Result<Self, SpawnError> {
         require_managed_process_capability()
@@ -310,14 +317,17 @@ impl ManagedProcess {
     }
 }
 
+#[cfg(not(unix))]
 pub enum LaunchAuthority {}
 
+#[cfg(not(unix))]
 impl fmt::Debug for LaunchAuthority {
     fn fmt(&self, _formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {}
     }
 }
 
+#[cfg(not(unix))]
 impl LaunchAuthority {
     pub fn pid(&self) -> u32 {
         match *self {}
@@ -395,6 +405,7 @@ impl LaunchAuthority {
     }
 }
 
+#[cfg(not(unix))]
 pub fn launch<F>(
     _disposition: Disposition,
     _spawn: F,
@@ -408,6 +419,7 @@ where
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_managed<F>(
     _disposition: Disposition,
     _spawn: F,
@@ -420,6 +432,7 @@ where
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_with<F, Cap, Conf>(
     _disposition: Disposition,
     _spawn: F,
@@ -437,6 +450,7 @@ where
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_managed_with<F, Cap>(
     _disposition: Disposition,
     _spawn: F,
@@ -451,6 +465,7 @@ where
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_command(
     _disposition: Disposition,
     _request: CommandLaunchRequest,
@@ -461,6 +476,7 @@ pub fn launch_command(
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_command_hosted(
     _disposition: Disposition,
     _request: CommandLaunchRequest,
@@ -472,6 +488,7 @@ pub fn launch_command_hosted(
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_managed_request(
     _disposition: Disposition,
     _request: ManagedLaunchRequest,
@@ -481,6 +498,7 @@ pub fn launch_managed_request(
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn launch_managed_hosted(
     _disposition: Disposition,
     _request: ManagedLaunchRequest,
@@ -491,6 +509,7 @@ pub fn launch_managed_hosted(
     unreachable!("non-Unix managed-process capability unexpectedly available")
 }
 
+#[cfg(not(unix))]
 pub fn terminate_descendants_exact<F>(
     _root: ProcessInstance,
     _owner_uid: u32,
@@ -505,6 +524,7 @@ where
     Err(DescendantObservationFailure::CensusIncomplete)
 }
 
+#[cfg(not(unix))]
 pub fn terminate(
     _child: &mut Child,
     _timeout: Duration,
@@ -512,6 +532,7 @@ pub fn terminate(
     Err(TerminationError::DescendantCoverageUnavailable)
 }
 
+#[cfg(not(unix))]
 pub fn terminate_exact_instance(
     _child: &mut Child,
     _expected: ProcessInstance,
@@ -521,6 +542,7 @@ pub fn terminate_exact_instance(
     Err(TerminationError::DescendantCoverageUnavailable)
 }
 
+#[cfg(not(unix))]
 pub fn signal_exact_instance(
     _expected: ProcessInstance,
     _signal: SignalKind,
@@ -529,4 +551,5 @@ pub fn signal_exact_instance(
     Err(TerminationError::DescendantCoverageUnavailable)
 }
 
+#[cfg(not(unix))]
 pub fn apply_parent_death_kill(_command: &mut Command) {}

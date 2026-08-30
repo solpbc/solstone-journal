@@ -25,6 +25,7 @@ pub(super) enum WindowsEnvironmentError {
     OrdinalComparison,
     #[error("Windows inherited environment lookup failed: {0}")]
     InheritedEnvironment(String),
+    #[cfg(windows)]
     #[error("Windows wide-string encoding failed: {0}")]
     WideEncoding(String),
 }
