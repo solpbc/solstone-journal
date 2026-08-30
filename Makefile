@@ -629,11 +629,33 @@ check-rust-clippy-full:
 	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
 
 # Routine validation runs only in-process unit harnesses from workspace library
-# and binary targets. Cargo integration-test targets remain part of clippy's
-# static compilation above and run only in the explicit full gate below.
+# and binary targets. This --lib --bins Clippy invocation does not select Cargo
+# integration-test targets. `make ci` uses this Clippy command, while both
+# public code commands use the unit target below; full validation selects its
+# own registered evidence.
 check-rust-unit:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
+
+.PHONY: report-rust-code-evidence
+RUST_CODE_EVIDENCE_CONTEXT ?=
+ifeq ($(RUST_CODE_EVIDENCE_CONTEXT),ci)
+RUST_CODE_EVIDENCE_VALID := 1
+RUST_CODE_EVIDENCE_CLIPPY := Clippy ran but unit tests did not: $(filter-out --exclude $(RUST_HOST_EXCLUDES),$(RUST_ROUTINE_EXCLUDES))
+else ifeq ($(RUST_CODE_EVIDENCE_CONTEXT),test)
+RUST_CODE_EVIDENCE_VALID := 1
+RUST_CODE_EVIDENCE_CLIPPY := Routine Clippy did not run under this command.
+else
+RUST_CODE_EVIDENCE_VALID := 0
+RUST_CODE_EVIDENCE_CLIPPY :=
+endif
+report-rust-code-evidence:
+	@test "$(RUST_CODE_EVIDENCE_VALID)" = 1 || { echo "report-rust-code-evidence is internal; run 'make test' or 'make ci'" >&2; exit 2; }
+	@echo "Code evidence ran the selected library/binary unit harnesses."
+	@echo "Not unit-executed (RUST_ROUTINE_EXCLUDES): $(filter-out --exclude,$(RUST_ROUTINE_EXCLUDES))"
+	@echo "$(RUST_CODE_EVIDENCE_CLIPPY)"
+	@echo "Neither routine Clippy nor unit tests ran because native ONNX Runtime linkage is full-gate-only: $(filter-out --exclude,$(RUST_HOST_EXCLUDES))"
+	@echo "Not run: Cargo integration targets, doctests, native/runtime/platform, dependency-policy, package/release, and other ci-full registry evidence."
 
 check-rust-doc:
 	@$(REQUIRE_CARGO)
@@ -1183,7 +1205,9 @@ RUFF := $(VENV_BIN)/ruff
 format-check:
 	cargo fmt --manifest-path $(RUST_MANIFEST) --all -- --check
 
-test: check-rust-test
+test:
+	@$(MAKE) --no-print-directory check-rust-unit
+	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=test report-rust-code-evidence
 
 check-journal-device-sim:
 	python3 -m unittest discover -s tools/journal_device_sim/tests -p 'test_*.py' -v
@@ -1425,8 +1449,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
-	@echo "Efficient CI checks passed (format, library/binary static compilation, and library/binary unit tests)."
-	@echo "Run 'make ci-full' from an operator final-tree session for the canonical host gate."
+	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
 ci-full:
 ifneq ($(strip $(HOPPER_LID)),)

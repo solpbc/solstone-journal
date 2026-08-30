@@ -125,9 +125,9 @@ make ci
 make ci-full              # full operator final-tree gate
 ```
 
-During the Rust-conversion freeze, `make test` runs the Rust workspace tests,
-excluding the three host-native helper packages. The [Makefile](Makefile) is
-authoritative: `make ci` is the efficient routine gate with formatting,
+`make test` runs the selected Rust library/binary unit harnesses and prints its
+source-derived omission boundary. The [Makefile](Makefile) is authoritative:
+`make ci` is the efficient routine gate with formatting,
 topology validation, library/binary Clippy, and
 serialized library/binary unit tests. It does not run Cargo integration-test
 targets or heavyweight native, platform, and policy legs. An operator runs the
