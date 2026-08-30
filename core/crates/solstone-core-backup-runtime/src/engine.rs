@@ -347,7 +347,7 @@ fn backup_args(resolved_journal: &Path) -> Vec<String> {
 }
 
 fn resolve_backup_journal(journal: &Path) -> std::io::Result<PathBuf> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     BACKUP_PATH_RESOLUTION_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
     let resolved = fs::canonicalize(journal)?;
     if !fs::metadata(&resolved)?.is_dir() {
@@ -449,6 +449,10 @@ thread_local! {
     static ON_BACKUP_JOURNAL_RESOLVED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
         std::cell::RefCell::new(None)
     };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
     static BACKUP_PATH_RESOLUTION_ATTEMPTS: std::cell::Cell<u32> = const {
         std::cell::Cell::new(0)
     };
@@ -484,13 +488,15 @@ fn run_with_backup_journal_resolved_hook<T>(
     result
 }
 
-#[cfg(test)]
-fn reset_backup_path_resolution_attempts() {
+/// Test-only instrumentation: reset the per-thread `resolve_backup_journal` attempt count.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn reset_backup_path_resolution_attempts() {
     BACKUP_PATH_RESOLUTION_ATTEMPTS.with(|attempts| attempts.set(0));
 }
 
-#[cfg(test)]
-fn backup_path_resolution_attempts() -> u32 {
+/// Test-only instrumentation: read the per-thread `resolve_backup_journal` attempt count.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn backup_path_resolution_attempts() -> u32 {
     BACKUP_PATH_RESOLUTION_ATTEMPTS.with(std::cell::Cell::get)
 }
 fn snapshot_id(value: Option<&Value>) -> Option<String> {
@@ -1494,46 +1500,10 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn non_directory_journal_roots_are_rejected_before_runtime_dependencies() {
-        use std::os::unix::net::UnixListener;
-        use std::process::Command;
-
-        let sandbox = tempfile::tempdir().expect("test sandbox creates");
-        let regular = sandbox.path().join("regular");
-        fs::write(&regular, b"not a journal").expect("regular file writes");
-        let fifo = sandbox.path().join("fifo");
-        assert!(
-            Command::new("mkfifo")
-                .arg(&fifo)
-                .status()
-                .expect("mkfifo starts")
-                .success(),
-            "mkfifo succeeds"
-        );
-        let socket = sandbox.path().join("socket");
-        let _listener = UnixListener::bind(&socket).expect("socket binds");
-        let runner = PanicRunner;
-        let http = PanicHttp;
-        let clock = FixedClock;
-        let maintenance = Maintenance;
-
-        for journal in [&regular, &fifo, &socket] {
-            reset_backup_path_resolution_attempts();
-            let result = run_backup(journal, &services(&runner, &http, &clock, &maintenance));
-            assert_eq!(result.status, "error");
-            assert_eq!(
-                result.error_reason.as_deref(),
-                Some("journal_path_unresolved")
-            );
-            assert_one_resolution_attempt();
-        }
-        assert!(
-            !sandbox.path().join("config").exists(),
-            "a non-directory journal root must not create sibling config artifacts"
-        );
-    }
+    // Regression coverage for non-directory journal roots (regular file, FIFO, Unix
+    // socket) lives in `tests/backup_runtime_process.rs` — binding a Unix socket trips
+    // the routine unit harness's hard-boundary ("network") topology check, so that case
+    // runs in the crate's `test-hooks`-gated integration harness instead.
 
     #[test]
     fn admission_skip_boundaries_do_not_reach_runtime_dependencies() {

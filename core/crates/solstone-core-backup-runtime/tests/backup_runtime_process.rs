@@ -5,7 +5,9 @@ use std::fs;
 use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
 use std::path::Path;
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -13,7 +15,15 @@ use std::time::{Duration, Instant};
 use nix::errno::Errno;
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
-use solstone_core_backup_runtime::{SystemToolRunner, run_restic};
+use solstone_core_backup_runtime::engine::{
+    backup_path_resolution_attempts, reset_backup_path_resolution_attempts,
+};
+use solstone_core_backup_runtime::hosted_runtime::HttpError;
+use solstone_core_backup_runtime::{
+    BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
+    JournalMaintenanceError, SystemToolRunner, ToolOutput, ToolRequest, ToolRunner, run_backup,
+    run_restic,
+};
 
 const OUTER_DEADLINE: Duration = Duration::from_secs(2);
 
@@ -160,4 +170,88 @@ fn natural_exit_terminates_orphaned_descendant() {
         );
         wait_until_dead(read_pid(&pidfile));
     });
+}
+
+struct PanicHttp;
+impl HttpTransport for PanicHttp {
+    fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        panic!("HTTP must not be reached")
+    }
+}
+
+struct PanicRunner;
+impl ToolRunner for PanicRunner {
+    fn run(&self, _: &ToolRequest<'_>) -> std::io::Result<ToolOutput> {
+        panic!("runner must not be reached")
+    }
+}
+
+struct FixedClock;
+impl Clock for FixedClock {
+    fn now_unix(&self) -> i64 {
+        50
+    }
+    fn iso_week(&self) -> u8 {
+        7
+    }
+}
+
+struct Maintenance;
+impl JournalMaintenance for Maintenance {
+    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+        Ok(())
+    }
+    fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+        Ok(())
+    }
+}
+
+/// Binds a real Unix socket, so this lives in the `test-hooks` integration harness
+/// rather than `engine.rs`'s inline unit tests, which the routine `make ci` unit
+/// harness must stay free of hard-boundary (network) resources.
+#[test]
+fn non_directory_journal_roots_are_rejected_before_runtime_dependencies() {
+    let sandbox = tempfile::tempdir().expect("test sandbox creates");
+    let regular = sandbox.path().join("regular");
+    fs::write(&regular, b"not a journal").expect("regular file writes");
+    let fifo = sandbox.path().join("fifo");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo starts")
+            .success(),
+        "mkfifo succeeds"
+    );
+    let socket = sandbox.path().join("socket");
+    let _listener = UnixListener::bind(&socket).expect("socket binds");
+
+    let runner = PanicRunner;
+    let http = PanicHttp;
+    let clock = FixedClock;
+    let maintenance = Maintenance;
+    let services = BackupServices {
+        runner: &runner,
+        http: &http,
+        clock: &clock,
+        restic_path: Some(Path::new("/fixture/bin/restic")),
+        rclone_path: None,
+        version: "test",
+        journal_maintenance: &maintenance,
+    };
+
+    for journal in [&regular, &fifo, &socket] {
+        reset_backup_path_resolution_attempts();
+        let result = run_backup(journal, &services);
+        assert_eq!(result.status, "error");
+        assert_eq!(
+            result.error_reason.as_deref(),
+            Some("journal_path_unresolved")
+        );
+        assert_eq!(backup_path_resolution_attempts(), 1);
+    }
+    assert!(
+        !sandbox.path().join("config").exists(),
+        "a non-directory journal root must not create sibling config artifacts"
+    );
 }
