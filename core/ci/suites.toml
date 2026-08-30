@@ -3056,32 +3056,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-journal-config::bound_config_socket_boundary"
-package = "solstone-core-journal-config"
-target = "bound_config_socket_boundary"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-journal-io::bound_read_socket_boundaries"
-package = "solstone-core-journal-io"
-target = "bound_read_socket_boundaries"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-journal-io::journal_io_lock_component"
 package = "solstone-core-journal-io"
 target = "journal_io_lock_component"
@@ -3164,7 +3138,7 @@ id = "solstone-core-mcp-endpoint::mcp_endpoint_bound_leaf_process"
 package = "solstone-core-mcp-endpoint"
 target = "mcp_endpoint_bound_leaf_process"
 set = "component"
-areas = ["trust"]
+areas = ["journal", "trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
@@ -3549,19 +3523,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-sol-link::committed_bound_socket_boundaries"
-package = "solstone-core-sol-link"
-target = "committed_bound_socket_boundaries"
-set = "component"
-areas = ["trust"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = ["host", "test-hooks"]
 runtime = "none"
 
 [[suites]]

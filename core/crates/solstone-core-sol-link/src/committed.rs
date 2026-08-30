@@ -450,9 +450,9 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(unix)]
-    use solstone_core_journal_io::{
-        BoundReadPrimitive, JournalRoot, run_with_two_bound_read_barriers,
-    };
+    use solstone_core_journal_io::JournalRoot;
+    #[cfg(all(unix, feature = "test-hooks"))]
+    use solstone_core_journal_io::{BoundReadPrimitive, run_with_two_bound_read_barriers};
     use x509_parser::pem::parse_x509_pem;
 
     #[cfg(unix)]
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(path.instance_id(), replacement_id);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "test-hooks"))]
     #[test]
     fn bound_reader_rejects_regular_certificate_replacement_after_open() {
         let root = TempDir::new();

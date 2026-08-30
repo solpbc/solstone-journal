@@ -18,6 +18,7 @@ const JOURNAL_IO: &str = "solstone-core-journal-io";
 const JOURNAL_IO_TEST_HOOKS: &str = "solstone-core-journal-io/test-hooks";
 const SOL_LINK: &str = "solstone-core-sol-link";
 const SOL_LINK_TEST_HOOKS: &str = "solstone-core-sol-link/test-hooks";
+const MCP_ENDPOINT: &str = "solstone-core-mcp-endpoint";
 const OPTIONAL_JOURNAL_IO_TEST_HOOKS: &str = "solstone-core-journal-io?/test-hooks";
 const PROTOCOL: [&str; 6] = [
     "InitialNameObserve",
@@ -185,14 +186,7 @@ fn production_file(source: &str) -> Result<File, String> {
 fn production_items(items: Vec<SynItem>) -> Result<Vec<SynItem>, String> {
     let mut production = Vec::new();
     for mut item in items {
-        let test_named_module = matches!(
-            &item,
-            SynItem::Mod(module) if module.ident == "tests" || module.ident == "bound_tests"
-        );
-        if test_named_module
-            || test_item(item_attributes(&item))?
-            || !production_item_enabled(item_attributes(&item))?
-        {
+        if test_item(item_attributes(&item))? || !production_item_enabled(item_attributes(&item))? {
             continue;
         }
         if let SynItem::Mod(module) = &mut item
@@ -302,41 +296,152 @@ struct StructuralCall {
 }
 
 struct CallVisitor<'a> {
-    function: &'a str,
     targets: &'a [&'a str],
+    aliases: BTreeMap<String, String>,
+    context: Vec<String>,
     calls: Vec<StructuralCall>,
+    errors: Vec<String>,
 }
 
 impl<'ast> Visit<'ast> for CallVisitor<'_> {
-    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
-        if let Some(callee) = expression_name(&call.func)
-            && self.targets.iter().any(|target| *target == callee)
+    fn visit_item_fn(&mut self, function: &'ast ItemFn) {
+        self.context.push(function.sig.ident.to_string());
+        syn::visit::visit_item_fn(self, function);
+        self.context.pop();
+    }
+
+    fn visit_impl_item_fn(&mut self, function: &'ast syn::ImplItemFn) {
+        self.context.push(function.sig.ident.to_string());
+        syn::visit::visit_impl_item_fn(self, function);
+        self.context.pop();
+    }
+
+    fn visit_trait_item_fn(&mut self, function: &'ast syn::TraitItemFn) {
+        self.context.push(function.sig.ident.to_string());
+        syn::visit::visit_trait_item_fn(self, function);
+        self.context.pop();
+    }
+
+    fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
+        self.context.push(format!("const {}", item.ident));
+        syn::visit::visit_item_const(self, item);
+        self.context.pop();
+    }
+
+    fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
+        self.context.push(format!("static {}", item.ident));
+        syn::visit::visit_item_static(self, item);
+        self.context.pop();
+    }
+
+    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+        collect_target_aliases(&item.tree, self.targets, &mut self.aliases);
+        syn::visit::visit_item_use(self, item);
+    }
+
+    fn visit_macro(&mut self, item: &'ast syn::Macro) {
+        if self
+            .targets
+            .iter()
+            .any(|target| tokens_contain_ident(item.tokens.clone(), target))
         {
-            self.calls.push(StructuralCall {
-                function: self.function.to_owned(),
-                callee,
-                first_argument: call.args.first().and_then(expression_identifier),
-                filename: call.args.iter().nth(1).and_then(os_str_literal),
-            });
+            self.errors.push(format!(
+                "unclassified target-bearing production macro in {}",
+                self.context.last().map(String::as_str).unwrap_or("item")
+            ));
+        }
+        syn::visit::visit_macro(self, item);
+    }
+
+    fn visit_attribute(&mut self, attribute: &'ast Attribute) {
+        let tokens = attribute.meta.to_token_stream();
+        if self
+            .targets
+            .iter()
+            .any(|target| tokens_contain_ident(tokens.clone(), target))
+        {
+            self.errors.push(format!(
+                "unclassified target-bearing production attribute in {}",
+                self.context.last().map(String::as_str).unwrap_or("item")
+            ));
+        }
+        syn::visit::visit_attribute(self, attribute);
+    }
+
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        if let Some(name) = expression_name(&call.func) {
+            let callee = if self.targets.iter().any(|target| *target == name) {
+                Some(name)
+            } else {
+                self.aliases.get(&name).cloned()
+            };
+            if let Some(callee) = callee {
+                self.calls.push(StructuralCall {
+                    function: self
+                        .context
+                        .last()
+                        .cloned()
+                        .unwrap_or_else(|| "item".to_owned()),
+                    callee,
+                    first_argument: call.args.first().and_then(expression_identifier),
+                    filename: call.args.iter().nth(1).and_then(os_str_literal),
+                });
+            }
         }
         syn::visit::visit_expr_call(self, call);
     }
 }
 
-fn calls_in_production(file: &File, targets: &[&str]) -> Vec<StructuralCall> {
-    production_functions(file)
-        .into_iter()
-        .flat_map(|function| {
-            let name = function.sig.ident.to_string();
-            let mut visitor = CallVisitor {
-                function: &name,
-                targets,
-                calls: Vec::new(),
-            };
-            visitor.visit_block(&function.block);
-            visitor.calls
-        })
-        .collect()
+fn collect_target_aliases(
+    tree: &syn::UseTree,
+    targets: &[&str],
+    aliases: &mut BTreeMap<String, String>,
+) {
+    match tree {
+        syn::UseTree::Name(name) => {
+            let value = name.ident.to_string();
+            if targets.iter().any(|target| *target == value) {
+                aliases.insert(value.clone(), value);
+            }
+        }
+        syn::UseTree::Rename(rename) => {
+            let source = rename.ident.to_string();
+            if targets.iter().any(|target| *target == source) {
+                aliases.insert(rename.rename.to_string(), source);
+            }
+        }
+        syn::UseTree::Path(path) => collect_target_aliases(&path.tree, targets, aliases),
+        syn::UseTree::Group(group) => {
+            for tree in &group.items {
+                collect_target_aliases(tree, targets, aliases);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
+fn tokens_contain_ident(tokens: proc_macro2::TokenStream, target: &str) -> bool {
+    tokens.into_iter().any(|token| match token {
+        proc_macro2::TokenTree::Ident(ident) => ident == target,
+        proc_macro2::TokenTree::Group(group) => tokens_contain_ident(group.stream(), target),
+        _ => false,
+    })
+}
+
+fn calls_in_production(file: &File, targets: &[&str]) -> Result<Vec<StructuralCall>, String> {
+    let mut visitor = CallVisitor {
+        targets,
+        aliases: BTreeMap::new(),
+        context: Vec::new(),
+        calls: Vec::new(),
+        errors: Vec::new(),
+    };
+    visitor.visit_file(file);
+    if visitor.errors.is_empty() {
+        Ok(visitor.calls)
+    } else {
+        Err(visitor.errors.join("; "))
+    }
 }
 
 fn checkpoint(call: &syn::ExprCall) -> Option<&'static str> {
@@ -477,6 +582,316 @@ fn is_enoent_none_arm(matched: &syn::ExprMatch) -> bool {
     })
 }
 
+fn compact(tokens: &impl ToTokens) -> String {
+    tokens
+        .to_token_stream()
+        .to_string()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
+}
+
+fn local_parts(statement: &Stmt) -> Option<(String, &Expr)> {
+    let Stmt::Local(local) = statement else {
+        return None;
+    };
+    let syn::Pat::Ident(binding) = &local.pat else {
+        return None;
+    };
+    Some((
+        binding.ident.to_string(),
+        local.init.as_ref()?.expr.as_ref(),
+    ))
+}
+
+fn statement_expression(statement: &Stmt) -> Option<&Expr> {
+    let Stmt::Expr(expression, _) = statement else {
+        return None;
+    };
+    Some(expression)
+}
+
+#[derive(Clone, Debug)]
+struct OperationCall {
+    callee: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct MethodCall {
+    method: String,
+    receiver: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Default)]
+struct OperationVisitor {
+    calls: Vec<OperationCall>,
+    methods: Vec<MethodCall>,
+}
+
+impl<'ast> Visit<'ast> for OperationVisitor {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        self.calls.push(OperationCall {
+            callee: compact(&call.func),
+            arguments: call.args.iter().map(compact).collect(),
+        });
+        syn::visit::visit_expr_call(self, call);
+    }
+
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        self.methods.push(MethodCall {
+            method: call.method.to_string(),
+            receiver: compact(&call.receiver),
+            arguments: call.args.iter().map(compact).collect(),
+        });
+        syn::visit::visit_expr_method_call(self, call);
+    }
+}
+
+fn operation_calls(tokens: &impl ToTokens) -> OperationVisitor {
+    let parsed: Expr = syn::parse2(tokens.to_token_stream())
+        .unwrap_or_else(|error| panic!("operation expression reparses: {error}"));
+    let mut visitor = OperationVisitor::default();
+    visitor.visit_expr(&parsed);
+    visitor
+}
+
+fn calls_named<'a>(operations: &'a OperationVisitor, name: &str) -> Vec<&'a OperationCall> {
+    operations
+        .calls
+        .iter()
+        .filter(|call| call.callee.split("::").last() == Some(name))
+        .collect()
+}
+
+fn exact_call(
+    expression: &Expr,
+    name: &str,
+    arguments: &[String],
+    stage: &str,
+) -> Result<(), String> {
+    let operations = operation_calls(expression);
+    let calls = calls_named(&operations, name);
+    if calls.len() != 1 || calls[0].arguments != arguments {
+        return Err(format!(
+            "{stage} needs one {name} call with {arguments:?}, found {calls:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn direct_call<'ast>(expression: &'ast Expr, name: &str) -> Option<&'ast syn::ExprCall> {
+    let Expr::Call(call) = without_wrappers(expression) else {
+        return None;
+    };
+    (expression_name(&call.func).as_deref() == Some(name)).then_some(call)
+}
+
+fn require_direct_call(
+    statement: &Stmt,
+    name: &str,
+    arguments: &[String],
+    stage: &str,
+) -> Result<(), String> {
+    let expression = statement_expression(statement)
+        .ok_or_else(|| format!("{stage} must be an expression statement"))?;
+    let call = direct_call(expression, name)
+        .ok_or_else(|| format!("{stage} must directly call {name}"))?;
+    let found: Vec<_> = call.args.iter().map(compact).collect();
+    if found != arguments {
+        return Err(format!(
+            "{stage} {name} arguments are {found:?}, not {arguments:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn bit_or_terms(expression: &Expr, terms: &mut Vec<String>) -> Result<(), String> {
+    match without_wrappers(expression) {
+        Expr::Binary(binary) if matches!(binary.op, syn::BinOp::BitOr(_)) => {
+            bit_or_terms(&binary.left, terms)?;
+            bit_or_terms(&binary.right, terms)
+        }
+        Expr::Path(path) => {
+            let Some(last) = path.path.segments.last() else {
+                return Err("empty open-flag path".to_owned());
+            };
+            terms.push(last.ident.to_string());
+            Ok(())
+        }
+        other => Err(format!(
+            "open flags contain an unclassified expression {}",
+            compact(other)
+        )),
+    }
+}
+
+fn validate_nofollow_fstatat(
+    expression: &Expr,
+    directory: &str,
+    name: &str,
+    stage: &str,
+) -> Result<(), String> {
+    exact_call(
+        expression,
+        "fstatat",
+        &[
+            directory.to_owned(),
+            name.to_owned(),
+            "AtFlags::AT_SYMLINK_NOFOLLOW".to_owned(),
+        ],
+        stage,
+    )
+}
+
+fn validate_openat(expression: &Expr, directory: &str, name: &str) -> Result<(), String> {
+    let operations = operation_calls(expression);
+    let calls = calls_named(&operations, "openat");
+    if calls.len() != 1 || calls[0].arguments.len() != 4 {
+        return Err(format!(
+            "Open needs one four-argument openat, found {calls:?}"
+        ));
+    }
+    let call = calls[0];
+    if call.arguments[0] != directory || call.arguments[1] != name {
+        return Err("openat must use the bound directory and name".to_owned());
+    }
+    let flags: Expr =
+        syn::parse_str(&call.arguments[2]).map_err(|error| format!("parse open flags: {error}"))?;
+    let mut terms = Vec::new();
+    bit_or_terms(&flags, &mut terms)?;
+    let found: BTreeSet<_> = terms.iter().map(String::as_str).collect();
+    let expected = BTreeSet::from(["O_RDONLY", "O_NONBLOCK", "O_NOFOLLOW", "O_CLOEXEC"]);
+    if terms.len() != 4 || found != expected {
+        return Err(format!(
+            "openat flags must be exactly O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC, found {terms:?}"
+        ));
+    }
+    if call.arguments[3] != "Mode::empty()" {
+        return Err("openat mode must be Mode::empty()".to_owned());
+    }
+    Ok(())
+}
+
+fn closure_argument_name(pattern: &syn::Pat) -> Option<String> {
+    match pattern {
+        syn::Pat::Ident(binding) => Some(binding.ident.to_string()),
+        syn::Pat::Type(typed) => closure_argument_name(&typed.pat),
+        _ => None,
+    }
+}
+
+fn validate_require_regular(expression: &Expr) -> Result<(), String> {
+    let Expr::Closure(closure) = without_wrappers(expression) else {
+        return Err("require_regular must remain a closure".to_owned());
+    };
+    let status = closure
+        .inputs
+        .first()
+        .and_then(closure_argument_name)
+        .ok_or_else(|| "require_regular needs one status argument".to_owned())?;
+    if closure.inputs.len() != 1 {
+        return Err("require_regular needs exactly one argument".to_owned());
+    }
+    let expected =
+        format!("SFlag::from_bits_truncate({status}.st_mode)&SFlag::S_IFMT==SFlag::S_IFREG");
+    let Expr::Block(block) = without_wrappers(&closure.body) else {
+        return Err("require_regular body must be a block".to_owned());
+    };
+    let [Stmt::Expr(Expr::If(conditional), _)] = block.block.stmts.as_slice() else {
+        return Err("require_regular must be one explicit if/else".to_owned());
+    };
+    if compact(&conditional.cond) != expected {
+        return Err("require_regular must test status mode for S_IFREG".to_owned());
+    }
+    if conditional.else_branch.is_none()
+        || !compact(&conditional.then_branch).contains("Ok(())")
+        || !compact(
+            conditional
+                .else_branch
+                .as_ref()
+                .expect("else exists")
+                .1
+                .as_ref(),
+        )
+        .contains("Err(")
+    {
+        return Err("require_regular must return Ok only for regular files".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_same_identity(expression: &Expr) -> Result<(), String> {
+    let Expr::Closure(closure) = without_wrappers(expression) else {
+        return Err("same_identity must remain a closure".to_owned());
+    };
+    if closure.inputs.len() != 2 {
+        return Err("same_identity needs status and expected arguments".to_owned());
+    }
+    let status = closure_argument_name(&closure.inputs[0])
+        .ok_or_else(|| "same_identity status binding is unclassified".to_owned())?;
+    let expected = closure_argument_name(&closure.inputs[1])
+        .ok_or_else(|| "same_identity expected binding is unclassified".to_owned())?;
+    let required = format!("({status}.st_dev,{status}.st_ino)=={expected}");
+    if compact(&closure.body) != required {
+        return Err("same_identity must compare status (dev, ino) to expected".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_identity_guard(
+    statement: &Stmt,
+    helper: &str,
+    status: &str,
+    expected: &str,
+    stage: &str,
+) -> Result<(), String> {
+    let Some(Expr::If(conditional)) = statement_expression(statement) else {
+        return Err(format!("{stage} identity check must be a top-level if"));
+    };
+    if conditional.else_branch.is_some() {
+        return Err(format!(
+            "{stage} identity failure may not have an else path"
+        ));
+    }
+    let Expr::Unary(unary) = without_wrappers(&conditional.cond) else {
+        return Err(format!("{stage} identity condition must reject inequality"));
+    };
+    if !matches!(unary.op, syn::UnOp::Not(_)) {
+        return Err(format!("{stage} identity condition must be negated"));
+    }
+    let call = direct_call(&unary.expr, helper)
+        .ok_or_else(|| format!("{stage} identity guard must call {helper}"))?;
+    let arguments: Vec<_> = call.args.iter().map(compact).collect();
+    if arguments != [format!("&{status}"), expected.to_owned()] {
+        return Err(format!(
+            "{stage} identity guard uses {arguments:?}, not {status}/{expected}"
+        ));
+    }
+    let [Stmt::Expr(Expr::Return(returned), _)] = conditional.then_branch.stmts.as_slice() else {
+        return Err(format!("{stage} identity mismatch must return immediately"));
+    };
+    let Some(result) = returned.expr.as_deref() else {
+        return Err(format!("{stage} identity mismatch must return Err"));
+    };
+    if direct_call(result, "Err").is_none() {
+        return Err(format!("{stage} identity mismatch must return Err"));
+    }
+    Ok(())
+}
+
+fn validate_expected_identity(expression: &Expr, initial: &str) -> Result<(), String> {
+    let Expr::Tuple(tuple) = without_wrappers(expression) else {
+        return Err("expected identity must be a (dev, ino) tuple".to_owned());
+    };
+    let fields: Vec<_> = tuple.elems.iter().map(compact).collect();
+    if fields != [format!("{initial}.st_dev"), format!("{initial}.st_ino")] {
+        return Err("expected identity must capture initial (dev, ino)".to_owned());
+    }
+    Ok(())
+}
+
 fn analyze_bound_read(function: &ItemFn) -> Result<(), String> {
     let top: Vec<_> = function
         .block
@@ -551,6 +966,263 @@ fn analyze_bound_read(function: &ItemFn) -> Result<(), String> {
     if success_position <= top.last().expect("six checkpoints").0 {
         return Err("Ok(Some(...)) must follow FinalNameObserve".to_owned());
     }
+
+    let statements = &function.block.stmts;
+    if statements.len() != 29 {
+        return Err(format!(
+            "bound reader must remain one classified 29-statement linear protocol, found {}",
+            statements.len()
+        ));
+    }
+    let checkpoint_positions: Vec<_> = top.iter().map(|(index, _)| *index).collect();
+    if checkpoint_positions != [6, 10, 12, 18, 20, 24] {
+        return Err(format!(
+            "authoritative operations no longer occupy the linear protocol: {checkpoint_positions:?}"
+        ));
+    }
+
+    let arguments: Vec<_> = function
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|argument| match argument {
+            syn::FnArg::Typed(typed) => closure_argument_name(&typed.pat),
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+    if arguments.len() != 2 {
+        return Err("bound reader needs exactly directory and name arguments".to_owned());
+    }
+    let directory = &arguments[0];
+    let name = &arguments[1];
+
+    for statement in statements {
+        if let Some((binding, _)) = local_parts(statement)
+            && matches!(
+                binding.as_str(),
+                "openat" | "fstatat" | "fstat" | "read_to_end"
+            )
+        {
+            return Err(format!("operation name {binding} may not be shadowed"));
+        }
+    }
+
+    let (path, path_expression) = local_parts(&statements[2])
+        .ok_or_else(|| "protocol must bind the display path first".to_owned())?;
+    if compact(path_expression) != format!("Path::new({name})") {
+        return Err("display path must derive from the bound name".to_owned());
+    }
+    let (checkpoint_error, checkpoint_expression) = local_parts(&statements[3])
+        .ok_or_else(|| "protocol must bind checkpoint_error".to_owned())?;
+    let Expr::Closure(checkpoint_closure) = without_wrappers(checkpoint_expression) else {
+        return Err("checkpoint_error must remain a closure".to_owned());
+    };
+    let primitive = checkpoint_closure
+        .inputs
+        .first()
+        .and_then(closure_argument_name)
+        .ok_or_else(|| "checkpoint_error primitive is unclassified".to_owned())?;
+    if checkpoint_closure.inputs.len() != 1 {
+        return Err("checkpoint_error needs one primitive".to_owned());
+    }
+    exact_call(
+        &checkpoint_closure.body,
+        "checkpoint",
+        std::slice::from_ref(&primitive),
+        "checkpoint_error",
+    )?;
+    if !compact(&checkpoint_closure.body).contains(&format!("io_error({path},")) {
+        return Err("checkpoint errors must remain attributed to the bound path".to_owned());
+    }
+
+    let (require_regular, require_regular_expression) = local_parts(&statements[4])
+        .ok_or_else(|| "protocol must bind require_regular".to_owned())?;
+    validate_require_regular(require_regular_expression)?;
+    let (same_identity, same_identity_expression) =
+        local_parts(&statements[5]).ok_or_else(|| "protocol must bind same_identity".to_owned())?;
+    validate_same_identity(same_identity_expression)?;
+
+    for (index, primitive) in [
+        (6, "InitialNameObserve"),
+        (10, "Open"),
+        (12, "OpenedHandleObserve"),
+        (18, "Read"),
+        (20, "FinalHandleObserve"),
+        (24, "FinalNameObserve"),
+    ] {
+        require_direct_call(
+            &statements[index],
+            &checkpoint_error,
+            &[format!("BoundReadPrimitive::{primitive}")],
+            primitive,
+        )?;
+    }
+
+    let (initial, initial_expression) = local_parts(&statements[7])
+        .ok_or_else(|| "InitialNameObserve must bind initial status".to_owned())?;
+    let Expr::Match(initial_match) = without_wrappers(initial_expression) else {
+        return Err("initial fstatat must explicitly classify ENOENT".to_owned());
+    };
+    validate_nofollow_fstatat(&initial_match.expr, directory, name, "initial observation")?;
+    if !is_enoent_none_arm(initial_match) {
+        return Err("only the initial ENOENT arm may return Ok(None)".to_owned());
+    }
+    require_direct_call(
+        &statements[8],
+        &require_regular,
+        &[format!("&{initial}")],
+        "initial regular-file check",
+    )?;
+    let (expected, expected_expression) = local_parts(&statements[9])
+        .ok_or_else(|| "protocol must capture expected identity".to_owned())?;
+    validate_expected_identity(expected_expression, &initial)?;
+
+    let (descriptor, open_expression) =
+        local_parts(&statements[11]).ok_or_else(|| "Open must bind a descriptor".to_owned())?;
+    let Expr::Match(open_match) = without_wrappers(open_expression) else {
+        return Err("openat must explicitly map failure to Err".to_owned());
+    };
+    validate_openat(&open_match.expr, directory, name)?;
+
+    let (opened, opened_expression) = local_parts(&statements[13])
+        .ok_or_else(|| "OpenedHandleObserve must bind opened status".to_owned())?;
+    exact_call(
+        opened_expression,
+        "fstat",
+        &[format!("&{descriptor}")],
+        "opened-handle observation",
+    )?;
+    require_direct_call(
+        &statements[14],
+        &require_regular,
+        &[format!("&{opened}")],
+        "opened-handle regular-file check",
+    )?;
+    validate_identity_guard(
+        &statements[15],
+        &same_identity,
+        &opened,
+        &expected,
+        "opened-handle",
+    )?;
+
+    let (file, file_expression) = local_parts(&statements[16])
+        .ok_or_else(|| "opened descriptor must become a File".to_owned())?;
+    let file_operations = operation_calls(file_expression);
+    let from_calls = calls_named(&file_operations, "from");
+    if from_calls.len() != 1
+        || from_calls[0].callee != "std::fs::File::from"
+        || from_calls[0].arguments != [descriptor.clone()]
+    {
+        return Err("File must consume the opened descriptor exactly once".to_owned());
+    }
+    let (bytes, bytes_expression) = local_parts(&statements[17])
+        .ok_or_else(|| "protocol must bind the returned byte buffer".to_owned())?;
+    if compact(bytes_expression) != "Vec::new()" {
+        return Err("returned byte buffer must start empty".to_owned());
+    }
+    let read_expression = statement_expression(&statements[19])
+        .ok_or_else(|| "Read must be followed by a descriptor method call".to_owned())?;
+    let read_operations = operation_calls(read_expression);
+    let reads: Vec<_> = read_operations
+        .methods
+        .iter()
+        .filter(|call| call.method == "read_to_end")
+        .collect();
+    if reads.len() != 1
+        || reads[0].receiver != *file
+        || reads[0].arguments != [format!("&mut{bytes}")]
+    {
+        return Err("Read must fill the returned buffer through the opened File".to_owned());
+    }
+
+    let (final_handle, final_handle_expression) = local_parts(&statements[21])
+        .ok_or_else(|| "FinalHandleObserve must bind final handle status".to_owned())?;
+    exact_call(
+        final_handle_expression,
+        "fstat",
+        &[format!("&{file}")],
+        "final-handle observation",
+    )?;
+    require_direct_call(
+        &statements[22],
+        &require_regular,
+        &[format!("&{final_handle}")],
+        "final-handle regular-file check",
+    )?;
+    validate_identity_guard(
+        &statements[23],
+        &same_identity,
+        &final_handle,
+        &expected,
+        "final-handle",
+    )?;
+
+    let (final_name, final_name_expression) = local_parts(&statements[25])
+        .ok_or_else(|| "FinalNameObserve must bind final name status".to_owned())?;
+    validate_nofollow_fstatat(
+        final_name_expression,
+        directory,
+        name,
+        "final-name observation",
+    )?;
+    require_direct_call(
+        &statements[26],
+        &require_regular,
+        &[format!("&{final_name}")],
+        "final-name regular-file check",
+    )?;
+    validate_identity_guard(
+        &statements[27],
+        &same_identity,
+        &final_name,
+        &expected,
+        "final-name",
+    )?;
+
+    let success = statement_expression(&statements[28])
+        .ok_or_else(|| "protocol must end in Ok(Some(bytes))".to_owned())?;
+    if compact(success) != format!("Ok(Some({bytes}))") {
+        return Err("protocol must return only the descriptor-filled bytes".to_owned());
+    }
+
+    let mut whole = OperationVisitor::default();
+    whole.visit_block(&function.block);
+    for (operation, expected_count) in [("openat", 1), ("fstatat", 2), ("fstat", 2)] {
+        let count = calls_named(&whole, operation).len();
+        if count != expected_count {
+            return Err(format!(
+                "protocol needs exactly {expected_count} live {operation} calls, found {count}"
+            ));
+        }
+    }
+    let path_reads = whole
+        .calls
+        .iter()
+        .filter(|call| {
+            matches!(
+                call.callee.as_str(),
+                "fs::read"
+                    | "std::fs::read"
+                    | "fs::read_to_string"
+                    | "std::fs::read_to_string"
+                    | "File::open"
+                    | "std::fs::File::open"
+            )
+        })
+        .count();
+    if path_reads != 0 {
+        return Err("path-based reread or second open is forbidden".to_owned());
+    }
+    if whole
+        .methods
+        .iter()
+        .filter(|call| call.method == "read_to_end")
+        .count()
+        != 1
+    {
+        return Err("protocol needs exactly one descriptor read".to_owned());
+    }
     Ok(())
 }
 
@@ -582,6 +1254,25 @@ fn assert_rejected(name: &str, function: &ItemFn, reason: &str) {
         error.contains(reason),
         "{name} rejected for the wrong reason: {error}"
     );
+}
+
+fn mutate_token_occurrence(
+    function: &ItemFn,
+    from: &str,
+    to: &str,
+    occurrence: usize,
+    expected_count: usize,
+) -> ItemFn {
+    let mut source = function.to_token_stream().to_string();
+    let positions: Vec<_> = source.match_indices(from).map(|(index, _)| index).collect();
+    assert_eq!(
+        positions.len(),
+        expected_count,
+        "fixture target {from:?} occurs exactly {expected_count} times in {source}"
+    );
+    let position = positions[occurrence];
+    source.replace_range(position..position + from.len(), to);
+    syn::parse_str(&source).unwrap_or_else(|error| panic!("mutated fixture reparses: {error}"))
 }
 
 #[derive(Clone, Debug)]
@@ -1042,6 +1733,10 @@ fn assert_no_hooks(closure: &Closure, build: &str) {
         !closure.has(SOL_LINK, "test-hooks"),
         "{build} activates {SOL_LINK_TEST_HOOKS}"
     );
+    assert!(
+        !closure.has(MCP_ENDPOINT, "test-hooks"),
+        "{build} activates {MCP_ENDPOINT}/test-hooks"
+    );
 }
 
 fn expected_leaves() -> BTreeSet<String> {
@@ -1066,8 +1761,12 @@ fn resolved_leaves() -> BTreeSet<String> {
         "core/crates/solstone-core-sol-link/src/committed.rs",
     ))
     .unwrap_or_else(|error| panic!("classify sol-link source: {error}"));
-    let mut raw = calls_in_production(&config, &["read_bytes_bound"]);
-    raw.extend(calls_in_production(&committed, &["read_bytes_bound"]));
+    let mut raw = calls_in_production(&config, &["read_bytes_bound"])
+        .expect("journal-config target calls classify");
+    raw.extend(
+        calls_in_production(&committed, &["read_bytes_bound"])
+            .expect("sol-link target calls classify"),
+    );
     assert_eq!(
         raw.len(),
         3,
@@ -1096,7 +1795,8 @@ fn resolved_leaves() -> BTreeSet<String> {
     let wrappers = calls_in_production(
         &committed,
         &["read_required_bound_file", "read_optional_bound_string"],
-    );
+    )
+    .expect("wrapper calls classify");
     assert_eq!(
         wrappers.len(),
         4,
@@ -1188,9 +1888,444 @@ fn test_table<'a>(document: &'a DocumentMut, name: &str) -> &'a Table {
         .unwrap_or_else(|| panic!("{name} test target exists"))
 }
 
+fn enum_variants(file: &File, name: &str) -> Result<BTreeSet<String>, String> {
+    let enumeration = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Enum(enumeration) if enumeration.ident == name => Some(enumeration),
+            _ => None,
+        })
+        .ok_or_else(|| format!("enum {name} exists"))?;
+    Ok(enumeration
+        .variants
+        .iter()
+        .map(|variant| variant.ident.to_string())
+        .collect())
+}
+
+fn function_tokens(file: &File, name: &str) -> Result<String, String> {
+    file.items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Fn(function) if function.sig.ident == name => Some(compact(function)),
+            _ => None,
+        })
+        .ok_or_else(|| format!("function {name} exists"))
+}
+
+fn macro_tokens(file: &File, name: &str) -> Result<String, String> {
+    file.items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Macro(item) if item.ident.as_ref().is_some_and(|ident| ident == name) => {
+                Some(compact(&item.mac.tokens))
+            }
+            _ => None,
+        })
+        .ok_or_else(|| format!("macro {name} exists"))
+}
+
+fn path_ident(expression: &Expr) -> Option<String> {
+    let Expr::Path(path) = without_wrappers(expression) else {
+        return None;
+    };
+    path.path
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
+}
+
+fn process_row_macro(expression: &Expr) -> Result<(String, String, String), String> {
+    let Expr::Macro(expression) = expression else {
+        return Err(format!(
+            "matrix row is not a macro: {}",
+            compact(expression)
+        ));
+    };
+    let category = expression
+        .mac
+        .path
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
+        .ok_or_else(|| "matrix macro has no name".to_owned())?;
+    let arguments = Punctuated::<Expr, Token![,]>::parse_terminated
+        .parse2(expression.mac.tokens.clone())
+        .map_err(|error| format!("parse {category} row: {error}"))?;
+    if arguments.len() != 3 {
+        return Err(format!("{category} row needs id, race, and leaf"));
+    }
+    let race = path_ident(&arguments[1]).ok_or_else(|| "row race is not an ident".to_owned())?;
+    let leaf = path_ident(&arguments[2]).ok_or_else(|| "row leaf is not an ident".to_owned())?;
+    Ok((category, race, leaf))
+}
+
+fn analyze_process_matrix(source: &str) -> Result<(), String> {
+    let file = syn::parse_file(source).map_err(|error| format!("parse process target: {error}"))?;
+    let races = BTreeSet::from([
+        "FifoSubstitutionBeforeOpen".to_owned(),
+        "UnixSocketSubstitutionBeforeOpen".to_owned(),
+        "RegularReplacementBeforeOpen".to_owned(),
+        "DisappearanceBeforeOpen".to_owned(),
+        "RegularReplacementAfterOpen".to_owned(),
+        "DisappearanceAfterOpen".to_owned(),
+    ]);
+    if enum_variants(&file, "RaceClass")? != races {
+        return Err(
+            "RaceClass must be exactly six filesystem races including Unix socket".to_owned(),
+        );
+    }
+    let donors = BTreeSet::from([
+        "InitialFifo".to_owned(),
+        "InitialSocket".to_owned(),
+        "FifoSubstitution".to_owned(),
+        "SocketSubstitution".to_owned(),
+        "DisappearanceBeforeOpen".to_owned(),
+        "RegularReplacementBeforeOpen".to_owned(),
+        "DisappearanceAfterOpen".to_owned(),
+        "RegularReplacementAfterOpen".to_owned(),
+    ]);
+    if enum_variants(&file, "Donor")? != donors {
+        return Err("Donor must contain exactly eight adversarial raw-reader rows".to_owned());
+    }
+    if enum_variants(&file, "Control")?
+        != BTreeSet::from(["Missing".to_owned(), "Unchanged".to_owned()])
+    {
+        return Err("Control must contain exactly missing and unchanged".to_owned());
+    }
+
+    let rows = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Const(item) if item.ident == "ROWS" => Some(item),
+            _ => None,
+        })
+        .ok_or_else(|| "ROWS const exists".to_owned())?;
+    let syn::Type::Array(row_type) = rows.ty.as_ref() else {
+        return Err("ROWS must have an exact array type".to_owned());
+    };
+    if compact(&row_type.len) != "70" {
+        return Err("ROWS type denominator must be 70".to_owned());
+    }
+    let Expr::Array(array) = rows.expr.as_ref() else {
+        return Err("ROWS must be an array literal".to_owned());
+    };
+    if array.elems.len() != 70 {
+        return Err("ROWS literal denominator must be 70".to_owned());
+    }
+    let fixed = [
+        "RowKind::Donor(Donor::InitialFifo)",
+        "RowKind::Donor(Donor::InitialSocket)",
+        "RowKind::Donor(Donor::FifoSubstitution)",
+        "RowKind::Donor(Donor::SocketSubstitution)",
+        "RowKind::Donor(Donor::DisappearanceBeforeOpen)",
+        "RowKind::Donor(Donor::RegularReplacementBeforeOpen)",
+        "RowKind::Donor(Donor::DisappearanceAfterOpen)",
+        "RowKind::Donor(Donor::RegularReplacementAfterOpen)",
+        "RowKind::Control(Control::Missing)",
+        "RowKind::Control(Control::Unchanged)",
+    ];
+    for (index, expected) in fixed.iter().enumerate() {
+        if !compact(&array.elems[index]).contains(expected) {
+            return Err(format!("matrix row {index} must be {expected}"));
+        }
+    }
+
+    let leaves = [
+        "ConfigJournalJson",
+        "CaCertificatePem",
+        "CaPrivatePem",
+        "LinkStatePrimary",
+        "CaStateFallback",
+    ];
+    let cross_product: BTreeSet<_> = races
+        .iter()
+        .flat_map(|race| leaves.iter().map(move |leaf| format!("{race}/{leaf}")))
+        .collect();
+    let mut direct = BTreeSet::new();
+    let mut endpoint = BTreeSet::new();
+    for expression in array.elems.iter().skip(10) {
+        let (category, race, leaf) = process_row_macro(expression)?;
+        let value = format!("{race}/{leaf}");
+        let inserted = match category.as_str() {
+            "direct" => direct.insert(value),
+            "endpoint" => endpoint.insert(value),
+            _ => return Err(format!("unexpected matrix category {category}")),
+        };
+        if !inserted {
+            return Err(format!("duplicate {category} matrix row {race}/{leaf}"));
+        }
+    }
+    if direct != cross_product || endpoint != cross_product {
+        return Err(
+            "direct and endpoint rows must each be the exact five-leaf/six-race cross product"
+                .to_owned(),
+        );
+    }
+
+    let direct_macro = macro_tokens(&file, "direct")?;
+    for required in [
+        "kind:RowKind::Direct",
+        "race:RaceClass::$race",
+        "leaf:Leaf::$leaf",
+    ] {
+        if !direct_macro.contains(required) {
+            return Err(format!("direct macro must preserve {required}"));
+        }
+    }
+    let endpoint_macro = macro_tokens(&file, "endpoint")?;
+    for required in [
+        "kind:RowKind::EndpointTwin",
+        "race:RaceClass::$race",
+        "leaf:Leaf::$leaf",
+    ] {
+        if !endpoint_macro.contains(required) {
+            return Err(format!("endpoint macro must preserve {required}"));
+        }
+    }
+
+    let dispatch = function_tokens(&file, "execute_row")?;
+    for required in [
+        "RowKind::Donor(donor)=>execute_donor(donor)",
+        "RowKind::Control(control)=>execute_control(control)",
+        "RowKind::Direct{leaf,race}=>execute_direct(leaf,race)",
+        "RowKind::EndpointTwin{leaf,race}=>execute_endpoint(leaf,race)",
+    ] {
+        if !dispatch.contains(required) {
+            return Err(format!("row dispatch must preserve {required}"));
+        }
+    }
+    let race_dispatch = function_tokens(&file, "exercise_race")?;
+    let socket = race_dispatch
+        .split("RaceClass::UnixSocketSubstitutionBeforeOpen=>")
+        .nth(1)
+        .and_then(|tail| tail.split("RaceClass::").next())
+        .ok_or_else(|| "Unix-socket race arm exists".to_owned())?;
+    if !socket.contains("run_with_bound_read_barrier")
+        || !socket.contains("BoundReadPrimitive::Open")
+        || !socket.contains("replace_with_socket(&target)")
+        || socket.contains("run_with_bound_read_fault")
+        || socket.contains("mkfifo")
+    {
+        return Err(
+            "Unix-socket race arm must install a socket at the intended Open barrier".to_owned(),
+        );
+    }
+
+    let direct_ordinals = function_tokens(&file, "direct_ordinal")?;
+    for required in [
+        "Leaf::ConfigJournalJson|Leaf::CaCertificatePem=>1",
+        "Leaf::CaPrivatePem=>2",
+        "Leaf::LinkStatePrimary|Leaf::CaStateFallback=>3",
+    ] {
+        if !direct_ordinals.contains(required) {
+            return Err(format!("direct ordinal map must preserve {required}"));
+        }
+    }
+    let endpoint_ordinals = function_tokens(&file, "endpoint_ordinal")?;
+    for required in [
+        "Leaf::ConfigJournalJson=>1",
+        "Leaf::CaCertificatePem=>2",
+        "Leaf::CaPrivatePem=>3",
+        "Leaf::LinkStatePrimary|Leaf::CaStateFallback=>4",
+    ] {
+        if !endpoint_ordinals.contains(required) {
+            return Err(format!("endpoint ordinal map must preserve {required}"));
+        }
+    }
+
+    let timeout = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Const(item) if item.ident == "ROW_TIMEOUT" => Some(compact(&item.expr)),
+            _ => None,
+        })
+        .ok_or_else(|| "ROW_TIMEOUT exists".to_owned())?;
+    if timeout != "Duration::from_secs(5)" {
+        return Err("row timeout must be exactly five seconds".to_owned());
+    }
+    let detached = function_tokens(&file, "run_detached")?;
+    for required in [
+        "receiver.recv_timeout(ROW_TIMEOUT)",
+        "Ok(result)=>matchworker.join()",
+        "Err(mpsc::RecvTimeoutError::Timeout)=>{drop(worker);",
+        "Err(mpsc::RecvTimeoutError::Disconnected)=>{drop(worker);",
+    ] {
+        if !detached.contains(required) {
+            return Err(format!("bounded worker lifecycle must preserve {required}"));
+        }
+    }
+    if function_tokens(
+        &file,
+        "initial_device_control_is_outside_the_70_row_denominator",
+    )?
+    .is_empty()
+    {
+        return Err("separate optional-device control exists".to_owned());
+    }
+    let linux_device_import = file
+        .items
+        .iter()
+        .find(|item| {
+            matches!(item, SynItem::Use(_))
+                && compact(item).contains("makedev")
+                && compact(item).contains("mknod")
+        })
+        .ok_or_else(|| "Linux-only device fixture import exists".to_owned())?;
+    let expected_device_cfg = "#[cfg(target_os=\"linux\")]";
+    if !compact(linux_device_import).starts_with(expected_device_cfg) {
+        return Err("device-fixture imports must remain Linux-only".to_owned());
+    }
+    Ok(())
+}
+
+fn replace_source_once(source: &str, from: &str, to: &str) -> String {
+    assert_eq!(
+        source.matches(from).count(),
+        1,
+        "source mutation target {from:?} occurs once"
+    );
+    source.replacen(from, to, 1)
+}
+
+fn test_names(document: &DocumentMut) -> BTreeSet<String> {
+    document
+        .get("test")
+        .and_then(Item::as_array_of_tables)
+        .into_iter()
+        .flatten()
+        .filter_map(|table| table.get("name").and_then(Item::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn table_strings(table: &Table, field: &str) -> Vec<String> {
+    table
+        .get(field)
+        .and_then(Item::as_array)
+        .unwrap_or_else(|| panic!("{field} array exists"))
+        .iter()
+        .filter_map(toml_edit::Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
 #[test]
 fn bound_read_callers_cover_the_five_committed_leaf_paths() {
     assert_eq!(resolved_leaves(), expected_leaves());
+}
+
+#[test]
+fn bound_read_process_matrix_has_exact_runtime_semantics() {
+    let source = read_repo_file(
+        "core/crates/solstone-core-mcp-endpoint/tests/mcp_endpoint_bound_leaf_process.rs",
+    );
+    analyze_process_matrix(&source).expect("70-row process matrix remains exact");
+
+    let duplicate_fifo = replace_source_once(
+        &source,
+        "\"direct-unix-socket-before-open-config\",\n        UnixSocketSubstitutionBeforeOpen",
+        "\"direct-unix-socket-before-open-config\",\n        FifoSubstitutionBeforeOpen",
+    );
+    assert!(
+        analyze_process_matrix(&duplicate_fifo).is_err(),
+        "Unix-socket row diverted to FIFO must reject"
+    );
+
+    let diverted_dispatch = replace_source_once(
+        &source,
+        "RowKind::Direct { leaf, race } => execute_direct(leaf, race),",
+        "RowKind::Direct { leaf, race } => execute_endpoint(leaf, race),",
+    );
+    assert!(
+        analyze_process_matrix(&diverted_dispatch).is_err(),
+        "direct rows dispatched as endpoints must reject"
+    );
+
+    let wrong_ordinal = replace_source_once(
+        &source,
+        "Leaf::CaPrivatePem => 2,",
+        "Leaf::CaPrivatePem => 1,",
+    );
+    assert!(
+        analyze_process_matrix(&wrong_ordinal).is_err(),
+        "wrong direct leaf ordinal must reject"
+    );
+
+    let unbounded = replace_source_once(
+        &source,
+        "const ROW_TIMEOUT: Duration = Duration::from_secs(5);",
+        "const ROW_TIMEOUT: Duration = Duration::from_secs(6);",
+    );
+    assert!(
+        analyze_process_matrix(&unbounded).is_err(),
+        "changed timeout must reject"
+    );
+}
+
+#[test]
+fn bound_read_process_target_is_the_single_registered_boundary_suite() {
+    for retired in [
+        "core/crates/solstone-core-journal-config/tests/bound_config_socket_boundary.rs",
+        "core/crates/solstone-core-journal-io/tests/bound_read_socket_boundaries.rs",
+        "core/crates/solstone-core-sol-link/tests/committed_bound_socket_boundaries.rs",
+    ] {
+        assert!(
+            !repository_root().join(retired).exists(),
+            "retired duplicate target {retired} stays absent"
+        );
+    }
+    let journal_io = parse_manifest("core/crates/solstone-core-journal-io/Cargo.toml");
+    assert!(!test_names(&journal_io).contains("bound_read_socket_boundaries"));
+    let sol_link = parse_manifest("core/crates/solstone-core-sol-link/Cargo.toml");
+    assert!(!test_names(&sol_link).contains("committed_bound_socket_boundaries"));
+
+    let suites = parse_manifest("core/ci/suites.toml");
+    let suite_tables = suites
+        .get("suites")
+        .and_then(Item::as_array_of_tables)
+        .expect("suite registry is an array of tables");
+    for legacy in [
+        "solstone-core-journal-config::bound_config_socket_boundary",
+        "solstone-core-journal-io::bound_read_socket_boundaries",
+        "solstone-core-sol-link::committed_bound_socket_boundaries",
+    ] {
+        assert!(
+            !suite_tables
+                .iter()
+                .any(|table| table.get("id").and_then(Item::as_str) == Some(legacy)),
+            "legacy suite {legacy} stays absent"
+        );
+    }
+    let process: Vec<_> = suite_tables
+        .iter()
+        .filter(|table| {
+            table.get("id").and_then(Item::as_str)
+                == Some("solstone-core-mcp-endpoint::mcp_endpoint_bound_leaf_process")
+        })
+        .collect();
+    assert_eq!(process.len(), 1, "one process suite remains registered");
+    let process = process[0];
+    for (field, expected) in [
+        ("package", "solstone-core-mcp-endpoint"),
+        ("target", "mcp_endpoint_bound_leaf_process"),
+        ("set", "component"),
+        ("timeout", "standard"),
+        ("runtime", "none"),
+    ] {
+        assert_eq!(process.get(field).and_then(Item::as_str), Some(expected));
+    }
+    assert_eq!(table_strings(process, "areas"), ["journal", "trust"]);
+    assert_eq!(table_strings(process, "platforms"), ["linux", "macos"]);
+    assert_eq!(table_strings(process, "prerequisites"), ["cargo-cache"]);
+    assert_eq!(table_strings(process, "required_features"), ["test-hooks"]);
+    assert_eq!(
+        process.get("default_full").and_then(Item::as_bool),
+        Some(true)
+    );
 }
 
 #[test]
@@ -1323,6 +2458,144 @@ fn bound_reader_protocol_rejects_comment_and_dead_code_decoys() {
 }
 
 #[test]
+fn bound_reader_protocol_rejects_operation_and_dataflow_mutations() {
+    let reader = canonical_bound_reader();
+
+    let without_nonblock = mutate_token_occurrence(&reader, "OFlag :: O_NONBLOCK | ", "", 0, 1);
+    assert_rejected(
+        "open without O_NONBLOCK",
+        &without_nonblock,
+        "openat flags must be exactly",
+    );
+
+    for flag in ["O_RDONLY", "O_NOFOLLOW", "O_CLOEXEC"] {
+        let fixture = mutate_token_occurrence(
+            &reader,
+            &format!("OFlag :: {flag}"),
+            "OFlag :: O_DIRECTORY",
+            0,
+            1,
+        );
+        assert_rejected(
+            &format!("open without {flag}"),
+            &fixture,
+            "openat flags must be exactly",
+        );
+    }
+
+    for occurrence in 0..2 {
+        let fixture = mutate_token_occurrence(
+            &reader,
+            "AtFlags :: AT_SYMLINK_NOFOLLOW",
+            "AtFlags :: empty ()",
+            occurrence,
+            2,
+        );
+        assert_rejected(
+            &format!("fstatat without nofollow {occurrence}"),
+            &fixture,
+            if occurrence == 0 {
+                "initial observation"
+            } else {
+                "final-name observation"
+            },
+        );
+    }
+
+    let permissive_regular =
+        mutate_token_occurrence(&reader, "== SFlag :: S_IFREG", "!= SFlag :: S_IFREG", 0, 1);
+    assert_rejected(
+        "permissive regular helper",
+        &permissive_regular,
+        "require_regular must test",
+    );
+
+    let dev_only_identity = mutate_token_occurrence(
+        &reader,
+        "(status . st_dev , status . st_ino) == expected",
+        "status . st_dev == expected . 0",
+        0,
+        1,
+    );
+    assert_rejected(
+        "dev-only identity helper",
+        &dev_only_identity,
+        "same_identity must compare",
+    );
+
+    let wrong_open_name = mutate_token_occurrence(
+        &reader,
+        "openat (directory , name ,",
+        "openat (directory , path ,",
+        0,
+        1,
+    );
+    assert_rejected(
+        "openat wrong name",
+        &wrong_open_name,
+        "bound directory and name",
+    );
+
+    let wrong_opened_handle =
+        mutate_token_occurrence(&reader, "fstat (& fd)", "fstat (directory)", 0, 1);
+    assert_rejected(
+        "opened fstat wrong descriptor",
+        &wrong_opened_handle,
+        "opened-handle observation",
+    );
+
+    let tautological_opened_identity = mutate_token_occurrence(
+        &reader,
+        "same_identity (& opened , expected)",
+        "same_identity (& opened , (opened . st_dev , opened . st_ino))",
+        0,
+        1,
+    );
+    assert_rejected(
+        "opened identity diverted",
+        &tautological_opened_identity,
+        "opened-handle identity guard",
+    );
+
+    let mut alternate_bytes = reader.clone();
+    alternate_bytes.block.stmts[28] = Stmt::Expr(syn::parse_quote!(Ok(Some(Vec::new()))), None);
+    assert_rejected(
+        "alternate returned bytes",
+        &reparse(&alternate_bytes),
+        "descriptor-filled bytes",
+    );
+
+    let mut path_reread = reader.clone();
+    path_reread
+        .block
+        .stmts
+        .insert(28, syn::parse_quote!(let _again = std::fs::read(path)?;));
+    assert_rejected(
+        "path reread",
+        &reparse(&path_reread),
+        "29-statement linear protocol",
+    );
+}
+
+#[test]
+fn bound_reader_protocol_accepts_semantic_local_renaming() {
+    let reader = canonical_bound_reader();
+    let mut source = reader.to_token_stream().to_string();
+    for (from, to) in [
+        ("initial", "first_status"),
+        ("expected", "bound_identity"),
+        ("opened", "opened_status"),
+        ("final_handle", "last_handle_status"),
+        ("final_name", "last_name_status"),
+        ("bytes", "contents"),
+    ] {
+        source = source.replace(from, to);
+    }
+    let renamed: ItemFn = syn::parse_str(&source).expect("renamed reader reparses");
+    analyze_bound_read(&renamed).expect("semantic identifier renaming remains accepted");
+}
+
+#[test]
 fn production_classifier_discovers_post_test_module_callers() {
     let file = production_file(
         "#[cfg(test)] mod tests { fn fixture() { read_bytes_bound(directory, name); } }\n\
@@ -1330,7 +2603,7 @@ fn production_classifier_discovers_post_test_module_callers() {
     )
     .expect("fixture classifies");
     assert_eq!(
-        calls_in_production(&file, &["read_bytes_bound"]),
+        calls_in_production(&file, &["read_bytes_bound"]).expect("calls classify"),
         [StructuralCall {
             function: "after_tests".to_owned(),
             callee: "read_bytes_bound".to_owned(),
@@ -1341,22 +2614,56 @@ fn production_classifier_discovers_post_test_module_callers() {
 }
 
 #[test]
-fn production_classifier_excludes_test_and_macro_token_callers() {
+fn production_classifier_excludes_tests_and_fails_closed_on_macro_callers() {
     let test_file = production_file(
         "#[cfg(test)] mod tests { fn fixture() { read_bytes_bound(directory, name); } }",
     )
     .expect("test fixture classifies");
     assert!(
-        calls_in_production(&test_file, &["read_bytes_bound"]).is_empty(),
+        calls_in_production(&test_file, &["read_bytes_bound"])
+            .expect("test-only calls classify")
+            .is_empty(),
         "in-test caller must be excluded"
     );
     let macro_file =
         production_file("fn fixture() { some_macro!(read_bytes_bound(directory, name)); }")
             .expect("macro fixture classifies");
+    let macro_error = calls_in_production(&macro_file, &["read_bytes_bound"])
+        .expect_err("production target-bearing macro must fail closed");
+    assert!(macro_error.contains("target-bearing production macro"));
+}
+
+#[test]
+fn production_classifier_visits_named_modules_aliases_and_executable_bodies() {
+    let file = production_file(
+        "use crate::read_bytes_bound as rb;
+         mod tests { pub fn production_named_tests_module() { read_bytes_bound(directory, name); } }
+         struct Reader;
+         impl Reader { fn method() { rb(directory, name); } }
+         trait DefaultRead { fn method() { read_bytes_bound(directory, name); } }
+         const CONST_READ: fn() = || { read_bytes_bound(directory, name); };
+         static STATIC_READ: fn() = || { read_bytes_bound(directory, name); };
+         fn nested() {
+             let closure = || read_bytes_bound(directory, name);
+             let future = async { read_bytes_bound(directory, name); };
+         }
+         #[cfg(test)] mod excluded { fn fixture() { read_bytes_bound(directory, name); } }",
+    )
+    .expect("body-shape fixture classifies");
+    let calls =
+        calls_in_production(&file, &["read_bytes_bound"]).expect("all production bodies classify");
+    assert_eq!(calls.len(), 7, "every enabled executable body is visited");
     assert!(
-        calls_in_production(&macro_file, &["read_bytes_bound"]).is_empty(),
-        "macro token text is not a direct ExprCall"
+        calls.iter().all(|call| call.callee == "read_bytes_bound"),
+        "aliased calls resolve to the canonical target"
     );
+
+    let attribute_file =
+        production_file("#[contract(read_bytes_bound(directory, name))] fn fixture() {}")
+            .expect("attribute fixture parses");
+    let attribute_error = calls_in_production(&attribute_file, &["read_bytes_bound"])
+        .expect_err("target-bearing production attribute must fail closed");
+    assert!(attribute_error.contains("target-bearing production attribute"));
 }
 
 #[test]
@@ -1405,6 +2712,43 @@ fn bound_read_feature_closures_and_leaf_process_target_remain_narrow() {
     assert_eq!(
         feature_members(&sol_link, "test-hooks"),
         Some(vec![OPTIONAL_JOURNAL_IO_TEST_HOOKS.to_owned()])
+    );
+    let committed = syn::parse_file(&read_repo_file(
+        "core/crates/solstone-core-sol-link/src/committed.rs",
+    ))
+    .expect("committed source parses");
+    let test_items = committed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SynItem::Mod(module) if module.ident == "tests" => {
+                module.content.as_ref().map(|(_, items)| items)
+            }
+            _ => None,
+        })
+        .expect("committed test module is inline");
+    let hook_import = test_items
+        .iter()
+        .find(|item| {
+            matches!(item, SynItem::Use(_))
+                && compact(item).contains("run_with_two_bound_read_barriers")
+        })
+        .expect("hook-only committed import exists");
+    assert!(
+        !production_item_enabled(item_attributes(hook_import))
+            .expect("hook import cfg classifies without test-hooks"),
+        "ordinary Unix package tests must not compile hook-only imports"
+    );
+    let hook_test = test_items
+        .iter()
+        .find(|item| {
+            matches!(item, SynItem::Fn(function) if function.sig.ident == "bound_reader_rejects_regular_certificate_replacement_after_open")
+        })
+        .expect("hook-only committed unit test exists");
+    assert!(
+        !production_item_enabled(item_attributes(hook_test))
+            .expect("hook test cfg classifies without test-hooks"),
+        "ordinary Unix package tests must exclude the hook-only test"
     );
 
     let journal_config = parse_manifest("core/crates/solstone-core-journal-config/Cargo.toml");

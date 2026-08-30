@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, OFlag, openat};
-use nix::sys::stat::{Mode, SFlag, makedev, mknod};
+use nix::sys::stat::Mode;
+#[cfg(target_os = "linux")]
+use nix::sys::stat::{SFlag, makedev, mknod};
 use nix::unistd::mkfifo;
 use solstone_core_journal_config::{ConfigLoadError, read_journal_config_bound};
 use solstone_core_journal_io::{
@@ -41,26 +43,29 @@ enum Leaf {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RaceClass {
     FifoSubstitutionBeforeOpen,
+    UnixSocketSubstitutionBeforeOpen,
     RegularReplacementBeforeOpen,
     DisappearanceBeforeOpen,
     RegularReplacementAfterOpen,
     DisappearanceAfterOpen,
-    OpenFaultEio,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Donor {
+    InitialFifo,
     InitialSocket,
+    FifoSubstitution,
     SocketSubstitution,
-    ConfigSocketSubstitution,
-    LinkSocketSubstitution(Leaf),
-    DeviceControlIfAvailable,
+    DisappearanceBeforeOpen,
+    RegularReplacementBeforeOpen,
+    DisappearanceAfterOpen,
+    RegularReplacementAfterOpen,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Control {
-    ConfigAbsent,
-    CommittedIdentityUnchanged,
+    Missing,
+    Unchanged,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,44 +108,44 @@ macro_rules! endpoint {
 
 const ROWS: [Row; 70] = [
     Row {
-        id: "donor-raw-initial-socket",
+        id: "donor-initial-fifo",
+        kind: RowKind::Donor(Donor::InitialFifo),
+    },
+    Row {
+        id: "donor-initial-unix-socket",
         kind: RowKind::Donor(Donor::InitialSocket),
     },
     Row {
-        id: "donor-raw-socket-substitution-before-open",
+        id: "donor-fifo-substitution-before-open",
+        kind: RowKind::Donor(Donor::FifoSubstitution),
+    },
+    Row {
+        id: "donor-unix-socket-substitution-before-open",
         kind: RowKind::Donor(Donor::SocketSubstitution),
     },
     Row {
-        id: "donor-config-socket-substitution-before-open",
-        kind: RowKind::Donor(Donor::ConfigSocketSubstitution),
+        id: "donor-disappearance-before-open",
+        kind: RowKind::Donor(Donor::DisappearanceBeforeOpen),
     },
     Row {
-        id: "donor-link-certificate-socket-substitution-before-open",
-        kind: RowKind::Donor(Donor::LinkSocketSubstitution(Leaf::CaCertificatePem)),
+        id: "donor-regular-replacement-before-open",
+        kind: RowKind::Donor(Donor::RegularReplacementBeforeOpen),
     },
     Row {
-        id: "donor-link-private-key-socket-substitution-before-open",
-        kind: RowKind::Donor(Donor::LinkSocketSubstitution(Leaf::CaPrivatePem)),
+        id: "donor-disappearance-after-open",
+        kind: RowKind::Donor(Donor::DisappearanceAfterOpen),
     },
     Row {
-        id: "donor-link-primary-state-socket-substitution-before-open",
-        kind: RowKind::Donor(Donor::LinkSocketSubstitution(Leaf::LinkStatePrimary)),
+        id: "donor-regular-replacement-after-open",
+        kind: RowKind::Donor(Donor::RegularReplacementAfterOpen),
     },
     Row {
-        id: "donor-link-fallback-state-socket-substitution-before-open",
-        kind: RowKind::Donor(Donor::LinkSocketSubstitution(Leaf::CaStateFallback)),
+        id: "control-missing",
+        kind: RowKind::Control(Control::Missing),
     },
     Row {
-        id: "donor-config-initial-device-if-available",
-        kind: RowKind::Donor(Donor::DeviceControlIfAvailable),
-    },
-    Row {
-        id: "control-config-absent",
-        kind: RowKind::Control(Control::ConfigAbsent),
-    },
-    Row {
-        id: "control-committed-identity-unchanged-bytes",
-        kind: RowKind::Control(Control::CommittedIdentityUnchanged),
+        id: "control-unchanged-bytes",
+        kind: RowKind::Control(Control::Unchanged),
     },
     direct!(
         "direct-fifo-before-open-config",
@@ -267,21 +272,29 @@ const ROWS: [Row; 70] = [
         DisappearanceAfterOpen,
         CaStateFallback
     ),
-    direct!("direct-open-eio-config", OpenFaultEio, ConfigJournalJson),
     direct!(
-        "direct-open-eio-certificate",
-        OpenFaultEio,
+        "direct-unix-socket-before-open-config",
+        UnixSocketSubstitutionBeforeOpen,
+        ConfigJournalJson
+    ),
+    direct!(
+        "direct-unix-socket-before-open-certificate",
+        UnixSocketSubstitutionBeforeOpen,
         CaCertificatePem
     ),
-    direct!("direct-open-eio-private-key", OpenFaultEio, CaPrivatePem),
     direct!(
-        "direct-open-eio-primary-state",
-        OpenFaultEio,
+        "direct-unix-socket-before-open-private-key",
+        UnixSocketSubstitutionBeforeOpen,
+        CaPrivatePem
+    ),
+    direct!(
+        "direct-unix-socket-before-open-primary-state",
+        UnixSocketSubstitutionBeforeOpen,
         LinkStatePrimary
     ),
     direct!(
-        "direct-open-eio-fallback-state",
-        OpenFaultEio,
+        "direct-unix-socket-before-open-fallback-state",
+        UnixSocketSubstitutionBeforeOpen,
         CaStateFallback
     ),
     endpoint!(
@@ -409,21 +422,29 @@ const ROWS: [Row; 70] = [
         DisappearanceAfterOpen,
         CaStateFallback
     ),
-    endpoint!("endpoint-open-eio-config", OpenFaultEio, ConfigJournalJson),
     endpoint!(
-        "endpoint-open-eio-certificate",
-        OpenFaultEio,
+        "endpoint-unix-socket-before-open-config",
+        UnixSocketSubstitutionBeforeOpen,
+        ConfigJournalJson
+    ),
+    endpoint!(
+        "endpoint-unix-socket-before-open-certificate",
+        UnixSocketSubstitutionBeforeOpen,
         CaCertificatePem
     ),
-    endpoint!("endpoint-open-eio-private-key", OpenFaultEio, CaPrivatePem),
     endpoint!(
-        "endpoint-open-eio-primary-state",
-        OpenFaultEio,
+        "endpoint-unix-socket-before-open-private-key",
+        UnixSocketSubstitutionBeforeOpen,
+        CaPrivatePem
+    ),
+    endpoint!(
+        "endpoint-unix-socket-before-open-primary-state",
+        UnixSocketSubstitutionBeforeOpen,
         LinkStatePrimary
     ),
     endpoint!(
-        "endpoint-open-eio-fallback-state",
-        OpenFaultEio,
+        "endpoint-unix-socket-before-open-fallback-state",
+        UnixSocketSubstitutionBeforeOpen,
         CaStateFallback
     ),
 ];
@@ -431,22 +452,40 @@ const ROWS: [Row; 70] = [
 #[test]
 fn bound_read_leaf_process_rows() {
     assert_eq!(ROWS.len(), 70, "the process target owns all 70 rows");
+    let mut categories = [0_usize; 4];
     for row in ROWS {
+        categories[match row.kind {
+            RowKind::Donor(_) => 0,
+            RowKind::Control(_) => 1,
+            RowKind::Direct { .. } => 2,
+            RowKind::EndpointTwin { .. } => 3,
+        }] += 1;
         run_detached(row).unwrap_or_else(|error| panic!("{}: {error}", row.id));
     }
-    println!("verified {} logical bound-read process rows", ROWS.len());
+    assert_eq!(categories, [8, 2, 30, 30]);
+    println!(
+        "verified bound-read rows: donors=8 controls=2 direct=30 endpoint=30 total={}",
+        ROWS.len()
+    );
 }
 
 fn run_detached(row: Row) -> Result<(), String> {
     let (sender, receiver) = mpsc::sync_channel(1);
-    let _detached = thread::spawn(move || {
+    let worker = thread::spawn(move || {
         let result = execute_row(row);
         let _ = sender.send(result);
     });
     match receiver.recv_timeout(ROW_TIMEOUT) {
-        Ok(result) => result,
-        Err(mpsc::RecvTimeoutError::Timeout) => Err("row timed out after five seconds".to_owned()),
+        Ok(result) => match worker.join() {
+            Ok(()) => result,
+            Err(_) => Err("row worker panicked after reporting a result".to_owned()),
+        },
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            drop(worker);
+            Err("row timed out after five seconds".to_owned())
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
+            drop(worker);
             Err("row worker panicked before reporting a result".to_owned())
         }
     }
@@ -463,37 +502,58 @@ fn execute_row(row: Row) -> Result<(), String> {
 
 fn execute_donor(donor: Donor) -> Result<(), String> {
     match donor {
+        Donor::InitialFifo => donor_initial_fifo(),
         Donor::InitialSocket => donor_initial_socket(),
-        Donor::SocketSubstitution => donor_socket_substitution(),
-        Donor::ConfigSocketSubstitution => donor_config_socket_substitution(),
-        Donor::LinkSocketSubstitution(leaf) => donor_link_socket_substitution(leaf),
-        Donor::DeviceControlIfAvailable => donor_device_control_if_available(),
+        Donor::FifoSubstitution => donor_race(RaceClass::FifoSubstitutionBeforeOpen),
+        Donor::SocketSubstitution => donor_race(RaceClass::UnixSocketSubstitutionBeforeOpen),
+        Donor::DisappearanceBeforeOpen => donor_race(RaceClass::DisappearanceBeforeOpen),
+        Donor::RegularReplacementBeforeOpen => donor_race(RaceClass::RegularReplacementBeforeOpen),
+        Donor::DisappearanceAfterOpen => donor_race(RaceClass::DisappearanceAfterOpen),
+        Donor::RegularReplacementAfterOpen => donor_race(RaceClass::RegularReplacementAfterOpen),
     }
 }
 
 fn execute_control(control: Control) -> Result<(), String> {
     match control {
-        Control::ConfigAbsent => {
+        Control::Missing => {
             let root = tempfile::TempDir::new().map_err(|error| error.to_string())?;
-            let admitted = open_root(root.path())?;
-            let read = read_journal_config_bound(&admitted).map_err(config_error)?;
-            if read.present || read.config.is_some() || read.sha256.is_some() {
-                return Err("missing config did not remain absent".to_owned());
+            let directory = open_directory(root.path())?;
+            if read_bytes_bound(&directory, OsStr::new("record"))
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Err("missing raw record did not remain absent".to_owned());
             }
             assert_no_endpoint(root.path())
         }
-        Control::CommittedIdentityUnchanged => {
-            let root = prepared_root(Leaf::CaCertificatePem)?;
-            let expected = fs::read(root.path().join("link/ca/cert.pem"))
+        Control::Unchanged => {
+            let root = tempfile::TempDir::new().map_err(|error| error.to_string())?;
+            let expected = b"unchanged donor bytes";
+            fs::write(root.path().join("record"), expected).map_err(|error| error.to_string())?;
+            let directory = open_directory(root.path())?;
+            let observed = read_bytes_bound(&directory, OsStr::new("record"))
                 .map_err(|error| error.to_string())?;
-            let admitted = open_root(root.path())?;
-            let identity = load_committed_identity_bound(&admitted).map_err(link_error)?;
-            if identity.certificate_pem() != expected {
-                return Err("unchanged certificate bytes did not round-trip".to_owned());
+            if observed.as_deref() != Some(expected.as_slice()) {
+                return Err("unchanged raw record did not round-trip byte-exactly".to_owned());
             }
             assert_no_endpoint(root.path())
         }
     }
+}
+
+fn donor_initial_fifo() -> Result<(), String> {
+    let root = tempfile::TempDir::new().map_err(|error| error.to_string())?;
+    let path = root.path().join("record");
+    mkfifo(&path, Mode::from_bits_truncate(0o600)).map_err(|error| error.to_string())?;
+    let directory = open_directory(root.path())?;
+    let (result, open_attempted) =
+        run_with_bound_read_fault(BoundReadPrimitive::Open, 1, Errno::EIO as i32, || {
+            read_bytes_bound(&directory, OsStr::new("record"))
+        });
+    if result.is_ok() || open_attempted {
+        return Err("initial FIFO reached open or was accepted".to_owned());
+    }
+    assert_no_endpoint(root.path())
 }
 
 fn donor_initial_socket() -> Result<(), String> {
@@ -512,68 +572,34 @@ fn donor_initial_socket() -> Result<(), String> {
     assert_no_endpoint(root.path())
 }
 
-fn donor_socket_substitution() -> Result<(), String> {
+fn donor_race(race: RaceClass) -> Result<(), String> {
     let root = tempfile::TempDir::new().map_err(|error| error.to_string())?;
     let path = root.path().join("record");
     fs::write(&path, b"original").map_err(|error| error.to_string())?;
     let directory = open_directory(root.path())?;
-    let (result, fired) = run_with_bound_read_barrier(
-        BoundReadPrimitive::Open,
-        1,
-        move || {
-            fs::remove_file(&path).expect("record removes");
-            let listener = UnixListener::bind(&path).expect("socket binds");
-            drop(listener);
-        },
-        || read_bytes_bound(&directory, OsStr::new("record")),
-    );
-    if result.is_ok() || !fired {
-        return Err("socket substitution before open was accepted".to_owned());
-    }
+    exercise_race(race, path, 1, || {
+        match read_bytes_bound(&directory, OsStr::new("record")) {
+            Err(_) => Ok(()),
+            Ok(other) => Err(format!("adversarial donor returned {other:?}")),
+        }
+    })?;
     assert_no_endpoint(root.path())
 }
 
-fn donor_config_socket_substitution() -> Result<(), String> {
-    let root = prepared_root(Leaf::ConfigJournalJson)?;
-    let target = leaf_path(root.path(), Leaf::ConfigJournalJson);
-    let admitted = open_root(root.path())?;
-    let (result, fired) = run_with_bound_read_barrier(
-        BoundReadPrimitive::Open,
-        1,
-        move || replace_with_socket(&target),
-        || invoke_direct(&admitted, Leaf::ConfigJournalJson),
-    );
-    if !fired {
-        return Err("config socket barrier did not fire".to_owned());
+#[test]
+fn initial_device_control_is_outside_the_70_row_denominator() {
+    if donor_device_control_if_available().expect("optional initial-device control") {
+        println!("executed optional initial-device control outside 70-row denominator");
+    } else {
+        println!("optional initial-device control unavailable outside 70-row denominator");
     }
-    result?;
-    assert_no_endpoint(root.path())
 }
 
-fn donor_link_socket_substitution(leaf: Leaf) -> Result<(), String> {
-    let root = prepared_root(leaf)?;
-    assert_state_precedence(root.path(), leaf)?;
-    let target = leaf_path(root.path(), leaf);
-    let admitted = open_root(root.path())?;
-    let (result, fired) = run_with_bound_read_barrier(
-        BoundReadPrimitive::Open,
-        direct_ordinal(leaf),
-        move || replace_with_socket(&target),
-        || invoke_direct(&admitted, leaf),
-    );
-    if !fired {
-        return Err("link socket barrier did not fire".to_owned());
-    }
-    result?;
-    assert_no_endpoint(root.path())
-}
-
-fn donor_device_control_if_available() -> Result<(), String> {
+fn donor_device_control_if_available() -> Result<bool, String> {
     #[cfg(target_os = "linux")]
     {
-        let root = prepared_root(Leaf::ConfigJournalJson)?;
-        let target = leaf_path(root.path(), Leaf::ConfigJournalJson);
-        fs::remove_file(&target).map_err(|error| error.to_string())?;
+        let root = tempfile::TempDir::new().map_err(|error| error.to_string())?;
+        let target = root.path().join("record");
         match mknod(
             &target,
             SFlag::S_IFCHR,
@@ -581,22 +607,23 @@ fn donor_device_control_if_available() -> Result<(), String> {
             makedev(1, 3),
         ) {
             Ok(()) => {}
-            Err(Errno::EPERM | Errno::EACCES) => return Ok(()),
+            Err(Errno::EPERM | Errno::EACCES) => return Ok(false),
             Err(error) => return Err(format!("device fixture creates: {error}")),
         }
-        let admitted = open_root(root.path())?;
+        let directory = open_directory(root.path())?;
         let (result, open_attempted) =
             run_with_bound_read_fault(BoundReadPrimitive::Open, 1, Errno::EIO as i32, || {
-                invoke_direct(&admitted, Leaf::ConfigJournalJson)
+                read_bytes_bound(&directory, OsStr::new("record"))
             });
-        if result.is_err() || open_attempted {
+        if result.is_ok() || open_attempted {
             return Err("initial device did not reject before open".to_owned());
         }
-        assert_no_endpoint(root.path())
+        assert_no_endpoint(root.path())?;
+        Ok(true)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -642,6 +669,18 @@ fn exercise_race(
             );
             if !fired {
                 return Err("FIFO barrier did not fire".to_owned());
+            }
+            result
+        }
+        RaceClass::UnixSocketSubstitutionBeforeOpen => {
+            let (result, fired) = run_with_bound_read_barrier(
+                BoundReadPrimitive::Open,
+                ordinal,
+                move || replace_with_socket(&target),
+                operation,
+            );
+            if !fired {
+                return Err("Unix-socket barrier did not fire".to_owned());
             }
             result
         }
@@ -700,18 +739,6 @@ fn exercise_race(
             );
             if !fired {
                 return Err("disappearance-after-open barrier did not fire".to_owned());
-            }
-            result
-        }
-        RaceClass::OpenFaultEio => {
-            let (result, consumed) = run_with_bound_read_fault(
-                BoundReadPrimitive::Open,
-                ordinal,
-                Errno::EIO as i32,
-                operation,
-            );
-            if !consumed {
-                return Err("open fault was not consumed".to_owned());
             }
             result
         }
@@ -889,10 +916,6 @@ fn replace_with_socket(path: &Path) {
     fs::remove_file(path).expect("leaf removes");
     let listener = UnixListener::bind(path).expect("socket binds");
     drop(listener);
-}
-
-fn config_error(error: ConfigLoadError) -> String {
-    error.to_string()
 }
 
 fn link_error(error: CommittedIdentityError) -> String {
