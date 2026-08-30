@@ -29,5 +29,12 @@ solstone-core-sol-link = { workspace = true, features = ["host"] }
 serde.workspace = true
 tempfile = "3.24.0"
 
+# This opt-in target exercises the public bootstrap boundary with process-global
+# thread-local read hooks that cannot be represented by the regular unit target.
+[[test]]
+name = "mcp_endpoint_bound_leaf_process"
+path = "tests/mcp_endpoint_bound_leaf_process.rs"
+required-features = ["test-hooks"]
+
 [lints]
 workspace = true
