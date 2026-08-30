@@ -59,6 +59,10 @@ mod mcp_endpoint_exclusion_coherence;
 #[cfg(test)]
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
+
+#[cfg(test)]
+#[path = "contracts/bound_read_race_closure.rs"]
+mod bound_read_race_closure;
 #[cfg(test)]
 #[path = "contracts/mcp_endpoint_production_source_purity.rs"]
 mod mcp_endpoint_production_source_purity;

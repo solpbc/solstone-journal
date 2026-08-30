@@ -224,9 +224,12 @@ pub(crate) fn install_read_source(source: Rc<dyn ReadSource>) -> ReadSourceGuard
 
 #[cfg(all(test, unix))]
 mod bound_tests {
+    use solstone_core_journal_io::{
+        BoundReadPrimitive, JournalRoot, run_with_bound_read_barrier,
+        run_with_two_bound_read_barriers,
+    };
     use std::fs;
-
-    use solstone_core_journal_io::JournalRoot;
+    use std::os::unix::net::UnixListener;
 
     use super::{ConfigLoadError, read_journal_config, read_journal_config_bound};
     use crate::test_support::TempDir;
@@ -291,5 +294,63 @@ mod bound_tests {
         let path = read_journal_config(&original).unwrap();
         assert_eq!(bound.config.as_ref().unwrap()["origin"], "original");
         assert_eq!(path.config.as_ref().unwrap()["origin"], "replacement");
+    }
+
+    #[test]
+    fn bound_reader_rejects_config_substitution_and_removal_races() {
+        let socket = TempDir::new();
+        write_config(socket.path(), br#"{"origin":"original"}"#);
+        let socket_path = socket.path().join("config/journal.json");
+        let admitted = JournalRoot::open(socket.path()).unwrap();
+        let (result, fired) = run_with_bound_read_barrier(
+            BoundReadPrimitive::Open,
+            1,
+            move || {
+                fs::remove_file(&socket_path).unwrap();
+                let listener = UnixListener::bind(&socket_path).unwrap();
+                drop(listener);
+            },
+            || read_journal_config_bound(&admitted),
+        );
+        assert!(fired);
+        assert!(matches!(result, Err(ConfigLoadError::Corrupt { .. })));
+
+        let removed = TempDir::new();
+        write_config(removed.path(), br#"{"origin":"original"}"#);
+        let removed_path = removed.path().join("config/journal.json");
+        let admitted = JournalRoot::open(removed.path()).unwrap();
+        let (result, fired) = run_with_bound_read_barrier(
+            BoundReadPrimitive::Read,
+            1,
+            move || fs::remove_file(&removed_path).unwrap(),
+            || read_journal_config_bound(&admitted),
+        );
+        assert!(fired);
+        assert!(matches!(result, Err(ConfigLoadError::Corrupt { .. })));
+    }
+
+    #[test]
+    fn bound_reader_rejects_config_regular_file_replacement_after_open() {
+        let temporary = TempDir::new();
+        write_config(temporary.path(), br#"{"origin":"original"}"#);
+        let target = temporary.path().join("config/journal.json");
+        let aside = temporary.path().join("config/journal.json.aside");
+        let replacement = temporary.path().join("config/replacement.json");
+        fs::write(&replacement, br#"{"origin":"replacement"}"#).unwrap();
+        let admitted = JournalRoot::open(temporary.path()).unwrap();
+        let (result, fired) = run_with_two_bound_read_barriers(
+            BoundReadPrimitive::Read,
+            1,
+            move || {
+                fs::rename(&target, &aside).unwrap();
+                fs::rename(&replacement, &target).unwrap();
+            },
+            BoundReadPrimitive::FinalNameObserve,
+            1,
+            || {},
+            || read_journal_config_bound(&admitted),
+        );
+        assert_eq!(fired, 2);
+        assert!(matches!(result, Err(ConfigLoadError::Corrupt { .. })));
     }
 }

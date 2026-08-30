@@ -17,5 +17,8 @@ whoami.workspace = true
 [target.'cfg(unix)'.dependencies]
 solstone-core-journal-io.workspace = true
 
+[target.'cfg(unix)'.dev-dependencies]
+solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
+
 [lints]
 workspace = true
