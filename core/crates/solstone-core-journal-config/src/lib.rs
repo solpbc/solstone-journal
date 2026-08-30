@@ -29,6 +29,8 @@ pub use notification_labels::{
     SYSTEM_NOTIFICATIONS, SYSTEM_NOTIFICATIONS_LINUX, SYSTEM_NOTIFICATIONS_MACOS,
 };
 pub use path::get_journal_config_path;
+#[cfg(unix)]
+pub use read::read_journal_config_bound;
 pub use read::{
     ConfigLoadError, JournalConfigMutationBase, JournalConfigRead, load_mutation_base,
     read_journal_config,

@@ -4226,6 +4226,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-journal",
+ "solstone-core-journal-io",
  "whoami",
 ]
 

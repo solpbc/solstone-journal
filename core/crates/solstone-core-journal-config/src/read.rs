@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::error::Error;
+#[cfg(unix)]
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -9,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use solstone_core_journal_io::{JournalRoot, open_flat_directory_bound, read_bytes_bound};
 
 use crate::{get_journal_config_path, materialized_defaults};
 
@@ -81,6 +85,26 @@ pub fn read_journal_config(journal_path: &Path) -> Result<JournalConfigRead, Con
     read_config_path(&get_journal_config_path(journal_path))
 }
 
+/// Read a journal configuration through an already-admitted journal root.
+///
+/// The retained root descriptor is the source authority. Its canonical path is
+/// used only to preserve diagnostic paths in [`ConfigLoadError`].
+#[cfg(unix)]
+pub fn read_journal_config_bound(root: &JournalRoot) -> Result<JournalConfigRead, ConfigLoadError> {
+    let config_path = root.canonical_path().join("config/journal.json");
+    root.revalidate()
+        .map_err(|source| corrupt(&config_path, source))?;
+    let Some(config_directory) =
+        open_flat_directory_bound(root, OsStr::new("config"), root.canonical_path())
+            .map_err(|source| corrupt(&config_path, source))?
+    else {
+        return parse_config_bytes(&config_path, None);
+    };
+    let bytes = read_bytes_bound(&config_directory, OsStr::new("journal.json"))
+        .map_err(|source| corrupt(&config_path, source))?;
+    parse_config_bytes(&config_path, bytes)
+}
+
 /// Load the single-read config basis used by the journal-I/O mutation owner.
 pub fn load_mutation_base(
     journal_path: &Path,
@@ -100,15 +124,23 @@ pub fn load_mutation_base(
 
 fn read_config_path(path: &Path) -> Result<JournalConfigRead, ConfigLoadError> {
     let bytes = match read_bytes(path) {
-        Ok(bytes) => bytes,
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {
-            return Ok(JournalConfigRead {
-                present: false,
-                sha256: None,
-                config: None,
-            });
-        }
+        Ok(bytes) => Some(bytes),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => None,
         Err(source) => return Err(corrupt(path, source)),
+    };
+    parse_config_bytes(path, bytes)
+}
+
+fn parse_config_bytes(
+    path: &Path,
+    bytes: Option<Vec<u8>>,
+) -> Result<JournalConfigRead, ConfigLoadError> {
+    let Some(bytes) = bytes else {
+        return Ok(JournalConfigRead {
+            present: false,
+            sha256: None,
+            config: None,
+        });
     };
     let sha256 = format!("sha256:{:x}", Sha256::digest(&bytes));
     let value = serde_json::from_slice::<Value>(&bytes).map_err(|source| corrupt(path, source))?;
@@ -188,4 +220,76 @@ impl Drop for ReadSourceGuard {
 pub(crate) fn install_read_source(source: Rc<dyn ReadSource>) -> ReadSourceGuard {
     let previous = TEST_READ_SOURCE.with(|current| current.replace(Some(source)));
     ReadSourceGuard { previous }
+}
+
+#[cfg(all(test, unix))]
+mod bound_tests {
+    use std::fs;
+
+    use solstone_core_journal_io::JournalRoot;
+
+    use super::{ConfigLoadError, read_journal_config, read_journal_config_bound};
+    use crate::test_support::TempDir;
+
+    fn write_config(root: &std::path::Path, bytes: &[u8]) {
+        let config = root.join("config");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(config.join("journal.json"), bytes).unwrap();
+    }
+
+    fn assert_path_and_bound_match(root: &std::path::Path) {
+        let path_result = read_journal_config(root);
+        let admitted = JournalRoot::open(root).unwrap();
+        let bound_result = read_journal_config_bound(&admitted);
+        match (path_result, bound_result) {
+            (Ok(path_read), Ok(bound_read)) => assert_eq!(bound_read, path_read),
+            (Err(ConfigLoadError::Corrupt { .. }), Err(ConfigLoadError::Corrupt { .. })) => {}
+            (path, bound) => {
+                panic!("path and bound reads diverged: path={path:?}, bound={bound:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn bound_reader_matches_path_reader_for_config_states() {
+        let missing_directory = TempDir::new();
+        assert_path_and_bound_match(missing_directory.path());
+
+        let missing_file = TempDir::new();
+        fs::create_dir(missing_file.path().join("config")).unwrap();
+        assert_path_and_bound_match(missing_file.path());
+
+        let enabled = TempDir::new();
+        write_config(enabled.path(), br#"{"mcp_endpoint":{"enabled":true}}"#);
+        assert_path_and_bound_match(enabled.path());
+
+        let absent = TempDir::new();
+        write_config(absent.path(), br#"{"identity":{"name":"Ada"}}"#);
+        assert_path_and_bound_match(absent.path());
+
+        let malformed = TempDir::new();
+        write_config(malformed.path(), b"{");
+        assert_path_and_bound_match(malformed.path());
+    }
+
+    #[test]
+    fn bound_reader_keeps_the_admitted_root_after_a_path_swap() {
+        let temporary = TempDir::new();
+        let original = temporary.path().join("original");
+        let replacement = temporary.path().join("replacement");
+        let moved = temporary.path().join("moved");
+        fs::create_dir(&original).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        write_config(&original, br#"{"origin":"original"}"#);
+        write_config(&replacement, br#"{"origin":"replacement"}"#);
+
+        let admitted = JournalRoot::open(&original).unwrap();
+        fs::rename(&original, &moved).unwrap();
+        fs::rename(&replacement, &original).unwrap();
+
+        let bound = read_journal_config_bound(&admitted).unwrap();
+        let path = read_journal_config(&original).unwrap();
+        assert_eq!(bound.config.as_ref().unwrap()["origin"], "original");
+        assert_eq!(path.config.as_ref().unwrap()["origin"], "replacement");
+    }
 }

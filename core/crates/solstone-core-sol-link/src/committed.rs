@@ -8,11 +8,17 @@
 //! layout without entering the provisioning flow or writing journal state.
 
 use std::error::Error;
+#[cfg(unix)]
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use solstone_core_journal_io::{
+    FlatDirectory, JournalRoot, ReadError, open_flat_directory_bound, read_bytes_bound,
+};
 use x509_parser::pem::parse_x509_pem;
 
 use crate::ca::{CaError, LocalCa, jid_from_spki, load_ca};
@@ -171,6 +177,91 @@ pub fn load_committed_identity(
             source,
         }
     })?;
+    finish_committed_identity(certificate_path, certificate_pem, private_key_pem, || {
+        read_state(&link)
+    })
+}
+
+/// Load existing committed link identity material through an admitted journal root.
+///
+/// The retained root descriptor is the source authority. Its canonical path is
+/// used only for diagnostics in [`CommittedIdentityError`].
+#[cfg(unix)]
+pub fn load_committed_identity_bound(
+    root: &JournalRoot,
+) -> Result<CommittedIdentity, CommittedIdentityError> {
+    let link_path = root.canonical_path().join("link");
+    let certificate_path = link_path.join("ca/cert.pem");
+    let private_key_path = link_path.join("ca/private.pem");
+    root.revalidate()
+        .map_err(|source| CommittedIdentityError::CertificateRead {
+            path: certificate_path.clone(),
+            source: io::Error::other(source),
+        })?;
+    let link = match open_flat_directory_bound(root, OsStr::new("link"), root.canonical_path()) {
+        Ok(Some(directory)) => directory,
+        Ok(None) => {
+            return Err(CommittedIdentityError::CertificateRead {
+                path: certificate_path,
+                source: missing_file_error(),
+            });
+        }
+        Err(source) => {
+            return Err(CommittedIdentityError::CertificateRead {
+                path: certificate_path,
+                source: io::Error::other(source),
+            });
+        }
+    };
+    let ca_path = link_path.join("ca");
+    let ca = match open_flat_directory_bound(&link, OsStr::new("ca"), &link_path) {
+        Ok(Some(directory)) => directory,
+        Ok(None) => {
+            return Err(CommittedIdentityError::CertificateRead {
+                path: certificate_path,
+                source: missing_file_error(),
+            });
+        }
+        Err(source) => {
+            return Err(CommittedIdentityError::CertificateRead {
+                path: certificate_path,
+                source: io::Error::other(source),
+            });
+        }
+    };
+    let certificate_pem =
+        read_required_bound_file(&ca, OsStr::new("cert.pem")).map_err(|source| {
+            CommittedIdentityError::CertificateRead {
+                path: certificate_path.clone(),
+                source,
+            }
+        })?;
+    let private_key_bytes =
+        read_required_bound_file(&ca, OsStr::new("private.pem")).map_err(|source| {
+            CommittedIdentityError::PrivateKeyRead {
+                path: private_key_path.clone(),
+                source,
+            }
+        })?;
+    let private_key_pem = String::from_utf8(private_key_bytes).map_err(|source| {
+        CommittedIdentityError::PrivateKeyRead {
+            path: private_key_path.clone(),
+            source: io::Error::new(io::ErrorKind::InvalidData, source),
+        }
+    })?;
+    let primary_state_path = link_path.join("state.json");
+    let fallback_state_path = ca_path.join("state.json");
+    finish_committed_identity(certificate_path, certificate_pem, private_key_pem, || {
+        read_state_bound(&link, &ca, primary_state_path, fallback_state_path)
+    })
+}
+
+fn finish_committed_identity(
+    certificate_path: PathBuf,
+    certificate_pem: Vec<u8>,
+    private_key_pem: String,
+    read_state: impl FnOnce() -> Result<(PathBuf, CommittedState), CommittedIdentityError>,
+) -> Result<CommittedIdentity, CommittedIdentityError> {
     let certificate_pem_text = std::str::from_utf8(&certificate_pem).map_err(|_| {
         CommittedIdentityError::CertificatePem {
             path: certificate_path.clone(),
@@ -187,7 +278,7 @@ pub fn load_committed_identity(
         }
     })?;
 
-    let (state_path, state) = read_state(&link)?;
+    let (state_path, state) = read_state()?;
     let expected_instance_id =
         jid_from_spki(ca.spki_der()).map_err(|source| CommittedIdentityError::Ca {
             certificate_path: certificate_path.clone(),
@@ -217,23 +308,97 @@ struct CommittedState {
 
 fn read_state(link: &Path) -> Result<(PathBuf, CommittedState), CommittedIdentityError> {
     let primary = link.join("state.json");
-    match fs::read_to_string(&primary) {
-        Ok(contents) => parse_state(primary, &contents),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {
-            let fallback = link.join("ca/state.json");
-            let contents = fs::read_to_string(&fallback).map_err(|source| {
-                CommittedIdentityError::StateRead {
-                    path: fallback.clone(),
-                    source,
-                }
-            })?;
-            parse_state(fallback, &contents)
-        }
+    let fallback = link.join("ca/state.json");
+    let primary_read_path = primary.clone();
+    let fallback_read_path = fallback.clone();
+    read_state_from(
+        primary,
+        fallback,
+        move || read_optional_string_path(&primary_read_path),
+        move || read_optional_string_path(&fallback_read_path),
+    )
+}
+
+fn read_state_from(
+    primary_path: PathBuf,
+    fallback_path: PathBuf,
+    read_primary: impl FnOnce() -> Result<Option<String>, io::Error>,
+    read_fallback: impl FnOnce() -> Result<Option<String>, io::Error>,
+) -> Result<(PathBuf, CommittedState), CommittedIdentityError> {
+    match read_primary() {
+        Ok(Some(contents)) => parse_state(primary_path, &contents),
+        Ok(None) => match read_fallback() {
+            Ok(Some(contents)) => parse_state(fallback_path, &contents),
+            Ok(None) => Err(CommittedIdentityError::StateRead {
+                path: fallback_path,
+                source: missing_file_error(),
+            }),
+            Err(source) => Err(CommittedIdentityError::StateRead {
+                path: fallback_path,
+                source,
+            }),
+        },
         Err(source) => Err(CommittedIdentityError::StateRead {
-            path: primary,
+            path: primary_path,
             source,
         }),
     }
+}
+
+fn read_optional_string_path(path: &Path) -> Result<Option<String>, io::Error> {
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(source),
+    }
+}
+
+#[cfg(unix)]
+fn read_state_bound(
+    link: &FlatDirectory,
+    ca: &FlatDirectory,
+    primary_path: PathBuf,
+    fallback_path: PathBuf,
+) -> Result<(PathBuf, CommittedState), CommittedIdentityError> {
+    read_state_from(
+        primary_path,
+        fallback_path,
+        || read_optional_bound_string(link, OsStr::new("state.json")),
+        || read_optional_bound_string(ca, OsStr::new("state.json")),
+    )
+}
+
+#[cfg(unix)]
+fn read_required_bound_file(directory: &FlatDirectory, name: &OsStr) -> Result<Vec<u8>, io::Error> {
+    read_bytes_bound(directory, name)
+        .map_err(bound_read_error)?
+        .ok_or_else(missing_file_error)
+}
+
+#[cfg(unix)]
+fn read_optional_bound_string(
+    directory: &FlatDirectory,
+    name: &OsStr,
+) -> Result<Option<String>, io::Error> {
+    read_bytes_bound(directory, name)
+        .map_err(bound_read_error)?
+        .map(|bytes| {
+            String::from_utf8(bytes)
+                .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))
+        })
+        .transpose()
+}
+
+#[cfg(unix)]
+fn bound_read_error(error: ReadError) -> io::Error {
+    match error {
+        ReadError::Io { source, .. } => source,
+        other => io::Error::other(other),
+    }
+}
+
+fn missing_file_error() -> io::Error {
+    io::Error::from(io::ErrorKind::NotFound)
 }
 
 fn parse_state(
@@ -284,8 +449,12 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(unix)]
+    use solstone_core_journal_io::JournalRoot;
     use x509_parser::pem::parse_x509_pem;
 
+    #[cfg(unix)]
+    use super::load_committed_identity_bound;
     use super::{CommittedIdentityError, load_committed_identity};
     use crate::ca::{generate_ca, jid_from_spki};
 
@@ -426,6 +595,150 @@ mod tests {
             fs::read(root.path().join("link/ca/cert.pem")).expect("certificate rereads"),
             before
         );
+    }
+
+    #[cfg(unix)]
+    fn assert_bound_matches_path(root: &Path) {
+        let path_identity = load_committed_identity(root).expect("path identity loads");
+        let admitted = JournalRoot::open(root).expect("journal root admits");
+        let bound_identity =
+            load_committed_identity_bound(&admitted).expect("bound identity loads");
+
+        assert_eq!(
+            bound_identity.certificate_pem(),
+            path_identity.certificate_pem()
+        );
+        assert_eq!(
+            bound_identity.certificate_der(),
+            path_identity.certificate_der()
+        );
+        assert_eq!(bound_identity.home_label(), path_identity.home_label());
+        assert_eq!(bound_identity.instance_id(), path_identity.instance_id());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_reader_matches_path_reader_for_committed_state_layouts() {
+        let primary = TempDir::new();
+        let ca = generate_ca().expect("test CA generates");
+        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
+        write_identity(primary.path(), &ca, &python_state(&instance_id), false);
+        assert_bound_matches_path(primary.path());
+
+        let fallback = TempDir::new();
+        let ca = generate_ca().expect("test CA generates");
+        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
+        write_identity(fallback.path(), &ca, &python_state(&instance_id), true);
+        assert_bound_matches_path(fallback.path());
+
+        let both = TempDir::new();
+        let ca = generate_ca().expect("test CA generates");
+        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
+        write_identity(both.path(), &ca, &python_state(&instance_id), false);
+        fs::write(
+            both.path().join("link/ca/state.json"),
+            format!(r#"{{"instance_id":"{instance_id}","home_label":"Native Fallback"}}"#),
+        )
+        .expect("fallback state writes");
+        assert_bound_matches_path(both.path());
+        let admitted = JournalRoot::open(both.path()).expect("journal root admits");
+        assert_eq!(
+            load_committed_identity_bound(&admitted)
+                .expect("bound identity loads")
+                .home_label(),
+            "Python Home"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_reader_matches_path_reader_failures() {
+        let missing = TempDir::new();
+        assert_failure_variants_match(missing.path());
+
+        let incomplete = TempDir::new();
+        fs::create_dir_all(incomplete.path().join("link/ca")).expect("CA directory creates");
+        assert_failure_variants_match(incomplete.path());
+
+        let malformed = TempDir::new();
+        let ca = generate_ca().expect("test CA generates");
+        let instance_id = jid_from_spki(ca.spki_der()).expect("JID derives");
+        write_identity(malformed.path(), &ca, &python_state(&instance_id), false);
+        fs::write(malformed.path().join("link/state.json"), b"{").expect("state overwrites");
+        assert_failure_variants_match(malformed.path());
+
+        let mismatched = TempDir::new();
+        let ca = generate_ca().expect("test CA generates");
+        write_identity(
+            mismatched.path(),
+            &ca,
+            r#"{"instance_id":"wrong","home_label":"Python Home"}"#,
+            false,
+        );
+        assert_failure_variants_match(mismatched.path());
+    }
+
+    #[cfg(unix)]
+    fn assert_failure_variants_match(root: &Path) {
+        let path_error = match load_committed_identity(root) {
+            Ok(_) => panic!("path identity must fail"),
+            Err(error) => error,
+        };
+        let admitted = JournalRoot::open(root).expect("journal root admits");
+        let bound_error = match load_committed_identity_bound(&admitted) {
+            Ok(_) => panic!("bound identity must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            committed_error_kind(&bound_error),
+            committed_error_kind(&path_error)
+        );
+    }
+
+    #[cfg(unix)]
+    fn committed_error_kind(error: &CommittedIdentityError) -> &'static str {
+        match error {
+            CommittedIdentityError::CertificateRead { .. } => "certificate-read",
+            CommittedIdentityError::PrivateKeyRead { .. } => "private-key-read",
+            CommittedIdentityError::CertificatePem { .. } => "certificate-pem",
+            CommittedIdentityError::Ca { .. } => "ca",
+            CommittedIdentityError::StateRead { .. } => "state-read",
+            CommittedIdentityError::StateMalformed { .. } => "state-malformed",
+            CommittedIdentityError::StateInstanceMismatch { .. } => "state-instance-mismatch",
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_reader_keeps_the_admitted_root_after_a_path_swap() {
+        let temporary = TempDir::new();
+        let original = temporary.path().join("original");
+        let replacement = temporary.path().join("replacement");
+        let moved = temporary.path().join("moved");
+        fs::create_dir(&original).expect("original directory creates");
+        fs::create_dir(&replacement).expect("replacement directory creates");
+
+        let original_ca = generate_ca().expect("original CA generates");
+        let original_id = jid_from_spki(original_ca.spki_der()).expect("original JID derives");
+        write_identity(&original, &original_ca, &python_state(&original_id), false);
+        let replacement_ca = generate_ca().expect("replacement CA generates");
+        let replacement_id =
+            jid_from_spki(replacement_ca.spki_der()).expect("replacement JID derives");
+        write_identity(
+            &replacement,
+            &replacement_ca,
+            &python_state(&replacement_id),
+            false,
+        );
+
+        let admitted = JournalRoot::open(&original).expect("journal root admits");
+        fs::rename(&original, &moved).expect("original moves");
+        fs::rename(&replacement, &original).expect("replacement installs");
+
+        let bound = load_committed_identity_bound(&admitted).expect("bound identity loads");
+        let path = load_committed_identity(&original).expect("path identity loads");
+        assert_eq!(bound.instance_id(), original_id);
+        assert_eq!(path.instance_id(), replacement_id);
     }
 
     fn directory_tree(root: &Path) -> Vec<PathBuf> {

@@ -58,6 +58,8 @@ pub enum BoundPublicationPrimitive {
     Rename,
     /// Syncing the bound parent directory after publication.
     ParentSync,
+    /// Removing a stage name after it has been linked into its final name.
+    StageUnlink,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -688,11 +690,15 @@ pub fn write_bytes_exclusive_bound(
         );
         return Err(io_error(path, errno_io(source)));
     }
-    let _ = unlinkat(
+    let stage_path = Path::new(stage_name.as_os_str());
+    checkpoint(BoundPublicationPrimitive::StageUnlink)
+        .map_err(|source| io_error(stage_path, source))?;
+    unlinkat(
         directory,
         stage_name.as_os_str(),
         UnlinkatFlags::NoRemoveDir,
-    );
+    )
+    .map_err(|source| io_error(stage_path, errno_io(source)))?;
     fsync(directory).map_err(|source| io_error(path, errno_io(source)))?;
     Ok(())
 }
@@ -1717,6 +1723,32 @@ mod tests {
             fs::read(temporary.path().join("record.bin")).unwrap(),
             b"payload"
         );
+    }
+
+    #[test]
+    fn write_bytes_exclusive_bound_reports_post_link_stage_unlink_failure() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+
+        let (result, fault_consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::StageUnlink,
+            1,
+            Errno::EIO as i32,
+            || write_bytes_exclusive_bound(&directory, OsStr::new("record.bin"), b"payload", 0o600),
+        );
+
+        assert!(fault_consumed, "stage-unlink fault was not consumed");
+        assert!(matches!(result, Err(AtomicWriteError::Io { .. })));
+        assert_eq!(
+            fs::read(temporary.path().join("record.bin")).unwrap(),
+            b"payload"
+        );
+        let stale_stages: Vec<_> = fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.as_encoded_bytes().starts_with(b".tmp_"))
+            .collect();
+        assert_eq!(stale_stages.len(), 1);
     }
 
     #[test]

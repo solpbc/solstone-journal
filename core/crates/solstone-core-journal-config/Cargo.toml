@@ -14,5 +14,8 @@ sha2.workspace = true
 solstone-core-journal.workspace = true
 whoami.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+solstone-core-journal-io.workspace = true
+
 [lints]
 workspace = true
