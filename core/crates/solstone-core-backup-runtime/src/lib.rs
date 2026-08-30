@@ -43,8 +43,9 @@ pub use engine::{
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use engine::{
-    backup_journal_resolved_hook_armed, install_backup_journal_resolved_hook,
-    reset_backup_journal_resolved_hook,
+    backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
+    install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
+    reset_backup_path_resolution_attempts,
 };
 pub use hosted_runtime::{
     BROKER_TIMEOUT_SECONDS, HostedCredentials, HostedCredsUnavailable, HostedResticSession,
