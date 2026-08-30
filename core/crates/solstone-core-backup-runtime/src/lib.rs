@@ -44,8 +44,11 @@ pub use engine::{
 #[doc(hidden)]
 pub use engine::{
     backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
-    install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
-    reset_backup_path_resolution_attempts,
+    backup_record_failure_hook_armed, backup_record_failure_hook_consumed_target,
+    backup_tool_resolution_started_hook_armed, install_backup_journal_resolved_hook,
+    install_backup_record_failure_hook, install_backup_tool_resolution_started_hook,
+    reset_backup_journal_resolved_hook, reset_backup_path_resolution_attempts,
+    reset_backup_record_failure_hook, reset_backup_tool_resolution_started_hook,
 };
 pub use hosted_runtime::{
     BROKER_TIMEOUT_SECONDS, HostedCredentials, HostedCredsUnavailable, HostedResticSession,

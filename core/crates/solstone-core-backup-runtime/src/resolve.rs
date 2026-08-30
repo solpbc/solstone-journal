@@ -7,6 +7,8 @@ use serde_json::Value;
 use solstone_core_artifact_download::ByteDownload;
 use solstone_core_backup::get_backup_config;
 
+#[cfg(any(test, feature = "test-hooks"))]
+use crate::engine::run_backup_tool_resolution_started_hook;
 use crate::engine::{AdmittedBackupMode, AdmittedCapability, ClosedToolError};
 use crate::install::ensure_restic;
 use crate::rclone_install::ensure_rclone;
@@ -33,6 +35,8 @@ pub fn resolve_tools(
     downloader: &dyn ByteDownload,
     dirs: ToolInstallDirs<'_>,
 ) -> Result<ResolvedTools, ClosedToolError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    run_backup_tool_resolution_started_hook(&capability.resolved_journal);
     let restic_path = ensure_restic(runner, false, dirs.restic, downloader)
         .map_err(|_| ClosedToolError::ResticUnavailable)?;
     let rclone_path = match &capability.mode {
@@ -85,6 +89,11 @@ fn journal_is_operated(journal: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::engine::{Clock, prepare, reset_backup_path_resolution_attempts};
+    #[cfg(feature = "test-hooks")]
+    use crate::engine::{
+        backup_tool_resolution_started_hook_armed, install_backup_tool_resolution_started_hook,
+        reset_backup_tool_resolution_started_hook,
+    };
     use crate::rclone_install::{RCLONE_SCHEMA_VERSION, RCLONE_TOOL, RCLONE_VERSION};
     use crate::readiness::{
         RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path, file_sha256,
@@ -93,8 +102,12 @@ mod tests {
     use crate::runner::{ToolOutput, ToolRequest};
     use solstone_core_artifact_download::ByteDownloadError;
     use std::cell::Cell;
+    #[cfg(feature = "test-hooks")]
+    use std::cell::RefCell;
     use std::fs;
     use std::io;
+    #[cfg(feature = "test-hooks")]
+    use std::rc::Rc;
     use std::time::Duration;
 
     struct ReadyRunner;
@@ -412,6 +425,39 @@ mod tests {
         assert_eq!(tools.restic_path, expected);
         assert_eq!(tools.rclone_path, None);
         assert!(matches!(&capability.mode, AdmittedBackupMode::Byo { .. }));
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn tool_resolution_started_hook_receives_the_admitted_journal_once() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let journal = configured_byo_journal();
+        let expected = fs::canonicalize(journal.path()).unwrap();
+        let clock = FixedClock;
+        let capability = prepare(journal.path(), &clock).unwrap();
+        let calls = Rc::new(Cell::new(0));
+        let observed = Rc::new(RefCell::new(None));
+        let hook_calls = Rc::clone(&calls);
+        let hook_observed = Rc::clone(&observed);
+        reset_backup_tool_resolution_started_hook();
+        install_backup_tool_resolution_started_hook(move |resolved_journal| {
+            hook_calls.set(hook_calls.get() + 1);
+            *hook_observed.borrow_mut() = Some(resolved_journal.to_path_buf());
+        });
+
+        resolve_tools(
+            &capability,
+            &ReadyRunner,
+            &PanicDownload,
+            dirs(restic_dir.path(), None),
+        )
+        .unwrap();
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(observed.borrow().as_deref(), Some(expected.as_path()));
+        assert!(!backup_tool_resolution_started_hook_armed());
+        reset_backup_tool_resolution_started_hook();
     }
 
     #[test]

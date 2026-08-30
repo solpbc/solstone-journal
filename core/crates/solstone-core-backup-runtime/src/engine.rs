@@ -670,9 +670,33 @@ thread_local! {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
+type BackupToolResolutionStartedHook = Box<dyn FnOnce(&Path)>;
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static ON_BACKUP_TOOL_RESOLUTION_STARTED: std::cell::RefCell<Option<BackupToolResolutionStartedHook>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static BACKUP_PATH_RESOLUTION_ATTEMPTS: std::cell::Cell<u32> = const {
         std::cell::Cell::new(0)
+    };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static BACKUP_RECORD_FAILURE_TARGET: std::cell::RefCell<Option<PathBuf>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static BACKUP_RECORD_FAILURE_CONSUMED_TARGET: std::cell::RefCell<Option<PathBuf>> = const {
+        std::cell::RefCell::new(None)
     };
 }
 
@@ -682,6 +706,32 @@ fn run_on_backup_journal_resolved_hook() {
     if let Some(hook) = hook {
         hook();
     }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn run_backup_tool_resolution_started_hook(resolved_journal: &Path) {
+    let hook = ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| slot.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook(resolved_journal);
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn arm_backup_tool_resolution_started_hook(hook: impl FnOnce(&Path) + 'static) {
+    ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| {
+        assert!(
+            slot.borrow().is_none(),
+            "backup tool resolution started hook is already active"
+        );
+        *slot.borrow_mut() = Some(Box::new(hook));
+    });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn clear_backup_tool_resolution_started_hook() {
+    ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| {
+        slot.borrow_mut().take();
+    });
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -698,6 +748,48 @@ fn arm_backup_journal_resolved_hook(hook: impl FnOnce() + 'static) {
 #[cfg(any(test, feature = "test-hooks"))]
 fn clear_backup_journal_resolved_hook() {
     ON_BACKUP_JOURNAL_RESOLVED.with(|slot| {
+        slot.borrow_mut().take();
+    });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn arm_backup_record_failure_hook(expected_target: PathBuf) {
+    BACKUP_RECORD_FAILURE_TARGET.with(|slot| {
+        assert!(
+            slot.borrow().is_none(),
+            "backup record failure hook is already active"
+        );
+        *slot.borrow_mut() = Some(expected_target);
+    });
+    BACKUP_RECORD_FAILURE_CONSUMED_TARGET.with(|slot| {
+        slot.borrow_mut().take();
+    });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn run_backup_record_failure_hook(journal: &Path) -> bool {
+    let expected_target = BACKUP_RECORD_FAILURE_TARGET.with(|slot| slot.borrow_mut().take());
+    let Some(expected_target) = expected_target else {
+        return false;
+    };
+    assert!(
+        journal == expected_target,
+        "backup record failure hook target mismatch: expected {}, actual {}",
+        expected_target.display(),
+        journal.display()
+    );
+    BACKUP_RECORD_FAILURE_CONSUMED_TARGET.with(|slot| {
+        *slot.borrow_mut() = Some(journal.to_path_buf());
+    });
+    true
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn clear_backup_record_failure_hook() {
+    BACKUP_RECORD_FAILURE_TARGET.with(|slot| {
+        slot.borrow_mut().take();
+    });
+    BACKUP_RECORD_FAILURE_CONSUMED_TARGET.with(|slot| {
         slot.borrow_mut().take();
     });
 }
@@ -742,6 +834,55 @@ pub fn backup_journal_resolved_hook_armed() -> bool {
     ON_BACKUP_JOURNAL_RESOLVED.with(|slot| slot.borrow().is_some())
 }
 
+/// Test-only instrumentation: arm a one-shot callback at tool-resolution entry.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn install_backup_tool_resolution_started_hook(hook: impl FnOnce(&Path) + 'static) {
+    arm_backup_tool_resolution_started_hook(hook);
+}
+
+/// Test-only instrumentation: discard any armed tool-resolution callback.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn reset_backup_tool_resolution_started_hook() {
+    clear_backup_tool_resolution_started_hook();
+}
+
+/// Test-only instrumentation: report whether this thread has an armed tool-resolution callback.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn backup_tool_resolution_started_hook_armed() -> bool {
+    ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| slot.borrow().is_some())
+}
+
+/// Test-only instrumentation: arm a one-shot backup-record failure seam.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn install_backup_record_failure_hook(expected_target: PathBuf) {
+    arm_backup_record_failure_hook(expected_target);
+}
+
+/// Test-only instrumentation: discard backup-record failure seam state.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn reset_backup_record_failure_hook() {
+    clear_backup_record_failure_hook();
+}
+
+/// Test-only instrumentation: report whether this thread has an armed backup-record seam.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn backup_record_failure_hook_armed() -> bool {
+    BACKUP_RECORD_FAILURE_TARGET.with(|slot| slot.borrow().is_some())
+}
+
+/// Test-only instrumentation: read the target consumed by the backup-record seam.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn backup_record_failure_hook_consumed_target() -> Option<PathBuf> {
+    BACKUP_RECORD_FAILURE_CONSUMED_TARGET.with(|slot| slot.borrow().clone())
+}
+
 /// Test-only instrumentation: reset the per-thread `resolve_backup_journal` attempt count.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn reset_backup_path_resolution_attempts() {
@@ -761,6 +902,10 @@ fn snapshot_id(value: Option<&Value>) -> Option<String> {
         .map(str::to_owned)
 }
 fn record_backup(journal: &Path, clock: &dyn Clock, result: &BackupResult) {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if run_backup_record_failure_hook(journal) {
+        return;
+    }
     let _ = record_backup_result(
         journal,
         &result.status,
@@ -2370,6 +2515,88 @@ mod tests {
             replacement_before
         );
         assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn record_backup_without_failure_hook_records_normally() {
+        let journal = configured_journal();
+        let clock = FixedClock;
+        let result = BackupResult {
+            status: "error".into(),
+            snapshot_id: None,
+            error_reason: Some("restic_unavailable".into()),
+        };
+
+        record_backup(journal.path(), &clock, &result);
+
+        let config =
+            solstone_core_backup::get_backup_config(journal.path()).expect("backup config reads");
+        assert_eq!(config["last_backup"]["status"], "error");
+        assert_eq!(config["last_backup"]["error_reason"], "restic_unavailable");
+    }
+
+    #[test]
+    fn backup_record_failure_hook_rejects_wrong_target_and_normal_recording_recovers() {
+        let expected = configured_journal();
+        let actual = configured_journal();
+        let clock = FixedClock;
+        let result = BackupResult {
+            status: "error".into(),
+            snapshot_id: None,
+            error_reason: Some("restic_unavailable".into()),
+        };
+        arm_backup_record_failure_hook(expected.path().to_path_buf());
+
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            record_backup(actual.path(), &clock, &result);
+        }))
+        .expect_err("wrong record target rejects");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("panic message is text");
+        assert!(message.contains("backup record failure hook target mismatch"));
+        assert!(message.contains(&expected.path().display().to_string()));
+        assert!(message.contains(&actual.path().display().to_string()));
+
+        clear_backup_record_failure_hook();
+        record_backup(actual.path(), &clock, &result);
+        let config =
+            solstone_core_backup::get_backup_config(actual.path()).expect("backup config reads");
+        assert_eq!(config["last_backup"]["status"], "error");
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn backup_record_failure_hook_is_one_shot_and_resettable() {
+        let journal = configured_journal();
+        let clock = FixedClock;
+        let result = BackupResult {
+            status: "error".into(),
+            snapshot_id: None,
+            error_reason: Some("restic_unavailable".into()),
+        };
+        reset_backup_record_failure_hook();
+        install_backup_record_failure_hook(journal.path().to_path_buf());
+
+        record_backup(journal.path(), &clock, &result);
+
+        assert!(!backup_record_failure_hook_armed());
+        assert_eq!(
+            backup_record_failure_hook_consumed_target().as_deref(),
+            Some(journal.path())
+        );
+        record_backup(journal.path(), &clock, &result);
+        let config =
+            solstone_core_backup::get_backup_config(journal.path()).expect("backup config reads");
+        assert_eq!(config["last_backup"]["status"], "error");
+
+        install_backup_record_failure_hook(journal.path().to_path_buf());
+        assert!(backup_record_failure_hook_armed());
+        reset_backup_record_failure_hook();
+        assert!(!backup_record_failure_hook_armed());
+        assert_eq!(backup_record_failure_hook_consumed_target(), None);
     }
 
     #[cfg(unix)]
