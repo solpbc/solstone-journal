@@ -194,6 +194,19 @@ require_native_receipt() {
     exit 1
   fi
 }
+require_platform_receipt() {
+  receipt_key=$1
+  pass_line="$receipt_key=executed/pass"
+  key_count=$(printf '%s\n' "$normalized_output" | awk -v key="$receipt_key" 'index($0, key "=") == 1 { count++ } END { print count + 0 }')
+  pass_count=$(printf '%s\n' "$normalized_output" | awk -v expected="$pass_line" '$0 == expected { count++ } END { print count + 0 }')
+  pass_position=$(printf '%s\n' "$normalized_output" | awk -v expected="$pass_line" '$0 == expected { print NR }')
+  if [ "$key_count" -ne 1 ] || [ "$pass_count" -ne 1 ] || [ "$pass_position" -ge "$ok_line" ]; then
+    echo "ERROR: win-host-ci: $receipt_key requires exactly one source-originated pass marker before JOURNAL_WIN_CI_OK" >&2
+    exit 1
+  fi
+}
+require_platform_receipt JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION
+require_platform_receipt JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION
 require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE NTFS
@@ -289,4 +302,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed ntfs_publication=executed/pass refs_publication=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

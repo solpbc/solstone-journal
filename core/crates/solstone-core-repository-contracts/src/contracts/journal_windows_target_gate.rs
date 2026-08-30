@@ -178,3 +178,63 @@ fn windows_crosscheck_has_no_journal_archive_exclusion() {
         exclusion.get("package").and_then(Item::as_str) != Some("solstone-core-journal-archive")
     }));
 }
+
+#[test]
+fn native_launch_preparation_receipts_are_source_bound_and_exactly_once() {
+    let win_ci = read_repo_file("scripts/win-ci.cmd");
+    let host = read_repo_file("scripts/win-host-ci.sh");
+    let receipt =
+        read_repo_file("core/crates/solstone-core-system/tests/windows_lifecycle_receipt.rs");
+
+    for (selector, marker) in [
+        (
+            "windows_launch_environment_preparation_receipt",
+            "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
+        ),
+        (
+            "windows_launch_path_preparation_receipt",
+            "JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION",
+        ),
+    ] {
+        let invocation = format!(
+            "call :run_platform_receipt \"Windows launch {} preparation\" \"solstone-core-system\" \"windows_lifecycle_receipt\" \"{selector}\" \"{marker}\"",
+            if selector.contains("environment") {
+                "environment"
+            } else {
+                "path"
+            }
+        );
+        assert_eq!(
+            win_ci.matches(&invocation).count(),
+            1,
+            "win-ci must run {selector} exactly once through the marker-validating receipt helper"
+        );
+        assert_eq!(
+            receipt.matches(&format!("{marker}=executed/pass")).count(),
+            1,
+            "the source receipt must emit one canonical {marker} pass marker"
+        );
+        assert_eq!(
+            host.matches(&format!("require_platform_receipt {marker}"))
+                .count(),
+            1,
+            "the host must require {marker} exactly once"
+        );
+    }
+
+    let source_binding = win_ci
+        .find("call :verify_source_binding || exit /b 1")
+        .expect("win-ci verifies the transferred source before receipts");
+    let first_receipt = win_ci
+        .find("call :run_platform_receipt")
+        .expect("win-ci runs launch-preparation receipts");
+    let final_binding = win_ci
+        .rfind("call :verify_source_binding || exit /b 1")
+        .expect("win-ci re-verifies the transferred source after receipts");
+    let acknowledgement = win_ci
+        .find("=== JOURNAL_WIN_CI_OK:")
+        .expect("win-ci emits its final acknowledgement");
+    assert!(source_binding < first_receipt);
+    assert!(first_receipt < final_binding);
+    assert!(final_binding < acknowledgement);
+}

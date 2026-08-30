@@ -72,6 +72,8 @@ if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS%"=="0" goto :ordinary_owner_f
 "%JOURNAL_WIN_CI_OWNER_RAIL%" cleanup --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_failed
 del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed"
+call :run_platform_receipt "Windows launch environment preparation" "solstone-core-system" "windows_lifecycle_receipt" "windows_launch_environment_preparation_receipt" "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION" || exit /b 1
+call :run_platform_receipt "Windows launch path preparation" "solstone-core-system" "windows_lifecycle_receipt" "windows_launch_path_preparation_receipt" "JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION" || exit /b 1
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
 call :run_receipt "NTFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_managed_log_reference_receipt" "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE" "NTFS" || exit /b 1
@@ -101,7 +103,7 @@ echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
 echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
-echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; mandatory NTFS and ReFS publication, managed-log reference, and stale-heartbeat receipt markers were emitted and validated from their child logs ===
+echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; launch preparation plus mandatory NTFS and ReFS publication, managed-log reference, and stale-heartbeat receipt markers were emitted and validated from their child logs ===
 exit /b 0
 
 :ordinary_owner_failed
@@ -111,6 +113,23 @@ exit /b 1
 
 :ordinary_owner_cleanup_failed
 goto :ordinary_owner_failed
+
+:run_platform_receipt
+set "JOURNAL_WIN_CI_PLATFORM_LABEL=%~1"
+set "JOURNAL_WIN_CI_PLATFORM_PACKAGE=%~2"
+set "JOURNAL_WIN_CI_PLATFORM_TARGET=%~3"
+set "JOURNAL_WIN_CI_PLATFORM_SELECTOR=%~4"
+set "JOURNAL_WIN_CI_PLATFORM_MARKER=%~5"
+echo === cargo test --locked %JOURNAL_WIN_CI_PLATFORM_LABEL% native receipt ===
+set "JOURNAL_WIN_CI_PLATFORM_LOG=core\target\journal-win-ci-platform-receipt-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p %JOURNAL_WIN_CI_PLATFORM_PACKAGE% --test %JOURNAL_WIN_CI_PLATFORM_TARGET% --features test-hooks -- --ignored --exact %JOURNAL_WIN_CI_PLATFORM_SELECTOR% --nocapture > "%JOURNAL_WIN_CI_PLATFORM_LOG%" 2>&1
+set "JOURNAL_WIN_CI_PLATFORM_STATUS=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_PLATFORM_LOG%"
+if not "%JOURNAL_WIN_CI_PLATFORM_STATUS%"=="0" exit /b 1
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_PLATFORM_LOG); $marker = [regex]::Escape($env:JOURNAL_WIN_CI_PLATFORM_MARKER); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_PLATFORM_MARKER + '=executed/pass'); if ([regex]::Matches($text, '(?m)^' + $marker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_PLATFORM_LABEL% receipt did not emit exactly one source-originated pass marker & exit /b 1 )
+del /q "%JOURNAL_WIN_CI_PLATFORM_LOG%" >nul 2>&1
+exit /b 0
 
 :run_receipt
 set "JOURNAL_WIN_CI_RECEIPT_LABEL=%~1"

@@ -37,6 +37,157 @@ pub(crate) use identity::current_windows_process_instance;
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use identity::windows_filetime_value_from_raw_for_test;
 
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_launch_environment_preparation_receipt_for_test() -> Result<(), String> {
+    use std::cmp::Ordering;
+    use std::collections::BTreeMap;
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    use environment::{
+        SystemInheritedWindowsEnvironment, SystemWindowsOrdinalCompare, SystemWindowsWideEncoder,
+        WindowsOrdinalCompare, WindowsWideEncoder, prepare_environment,
+    };
+
+    let lone_surrogate = OsString::from_wide(&[0xd800]);
+    let encoder = SystemWindowsWideEncoder;
+    let encoded = encoder
+        .encode_wide(lone_surrogate.as_os_str())
+        .map_err(|error| error.to_string())?;
+    if encoded != [0xd800] {
+        return Err("production OsString encoding did not preserve a lone surrogate".to_owned());
+    }
+
+    let ordinal = SystemWindowsOrdinalCompare;
+    let upper = "\u{00c5}ngstr\u{00f6}m".encode_utf16().collect::<Vec<_>>();
+    let lower = "\u{00e5}ngstr\u{00f6}m".encode_utf16().collect::<Vec<_>>();
+    if ordinal
+        .compare_ignore_case(&upper, &lower)
+        .map_err(|error| error.to_string())?
+        != Ordering::Equal
+    {
+        return Err("CompareStringOrdinal did not fold a non-ASCII case pair".to_owned());
+    }
+
+    let key = OsString::from("SOLSTONE_LONE_SURROGATE_RECEIPT");
+    let key_wide = key.encode_wide().collect::<Vec<_>>();
+    let mut overrides = BTreeMap::new();
+    overrides.insert(key, lone_surrogate);
+    let plan = prepare_environment(
+        &overrides,
+        &ordinal,
+        &SystemInheritedWindowsEnvironment,
+        &encoder,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut expected = key_wide;
+    expected.extend([b'=' as u16, 0xd800, 0]);
+    if !plan
+        .block
+        .windows(expected.len())
+        .any(|window| window == expected)
+    {
+        return Err("production environment block lost the lone surrogate override".to_owned());
+    }
+    Ok(())
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_launch_path_preparation_receipt_for_test() -> Result<(), String> {
+    use std::collections::BTreeMap;
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStrExt;
+
+    use environment::{
+        SystemInheritedWindowsEnvironment, SystemWindowsOrdinalCompare, SystemWindowsWideEncoder,
+    };
+    use launch_spec::{WindowsLaunchAdapters, prepare_windows_launch_spec};
+    use resolve::{
+        SystemWindowsCandidateProbe, SystemWindowsDirectoryLookup, WindowsCandidateProbe,
+    };
+    use user_path::{SystemWindowsFullPathName, WindowsFullPathName, get_long_path};
+
+    let split = path_list::split_windows_paths(
+        &r#"C:\one;"C:\two;three";C:\four"#.encode_utf16().collect::<Vec<_>>(),
+    );
+    let expected_split = [r"C:\one", r"C:\two;three", r"C:\four"]
+        .map(|value| value.encode_utf16().collect::<Vec<_>>());
+    if split != expected_split {
+        return Err("production Windows PATH parser mishandled a quoted semicolon".to_owned());
+    }
+
+    let full_path = SystemWindowsFullPathName;
+    let long_relative = format!("{}tool.exe", r"segment\".repeat(40));
+    let terminated = long_relative
+        .encode_utf16()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let expanded = full_path
+        .get_full_path_name(&terminated)
+        .map_err(|error| error.to_string())?;
+    if expanded.len() <= 260 {
+        return Err("GetFullPathNameW receipt did not exercise buffer growth".to_owned());
+    }
+    let user_path =
+        get_long_path(terminated, false, &full_path).map_err(|error| error.to_string())?;
+    let verbatim_prefix = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+    if !user_path.starts_with(&verbatim_prefix) {
+        return Err("long Windows user path did not receive a verbatim prefix".to_owned());
+    }
+
+    let current_exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    let current_exe_wide = current_exe
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let probe = SystemWindowsCandidateProbe;
+    if !probe
+        .program_exists(&current_exe_wide)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("GetFileAttributesW did not observe the running executable".to_owned());
+    }
+    let missing = current_exe.with_extension(format!("u2-missing-{}", std::process::id()));
+    let missing_wide = missing
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    if probe
+        .program_exists(&missing_wide)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("GetFileAttributesW receipt's absent control unexpectedly exists".to_owned());
+    }
+
+    let adapters = WindowsLaunchAdapters {
+        probe: &probe,
+        directories: &SystemWindowsDirectoryLookup,
+        ordinal: &SystemWindowsOrdinalCompare,
+        inherited_environment: &SystemInheritedWindowsEnvironment,
+        wide_encoder: &SystemWindowsWideEncoder,
+    };
+    let command = vec!["cmd".to_owned(), "quoted argument".to_owned()];
+    let spec = prepare_windows_launch_spec(
+        &command,
+        &BTreeMap::<OsString, OsString>::new(),
+        &adapters,
+        &full_path,
+    )
+    .map_err(|error| error.to_string())?;
+    if spec.application_name().units().last() != Some(&0)
+        || spec.application_name().units_len() < "cmd.exe\0".encode_utf16().count()
+        || spec.command_line().units().last() != Some(&0)
+        || !spec.environment().units().ends_with(&[0, 0])
+    {
+        return Err(
+            "production PATH resolution did not return complete owned launch buffers".to_owned(),
+        );
+    }
+    Ok(())
+}
+
 #[cfg(not(unix))]
 impl ProcessInstanceSource for SystemProcessInstanceSource {
     fn inspect(&self, _pid: u32) -> InspectResult {

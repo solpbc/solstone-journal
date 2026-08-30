@@ -19,7 +19,11 @@ use solstone_core_system::lifecycle::{
     run_with_windows_lifecycle_deletion_attempt_witness,
     run_with_windows_lifecycle_deletion_failure, supervisor_liveness, v2_heartbeat_filename,
 };
-use solstone_core_system::process::windows_filetime_value_from_raw_for_test;
+use solstone_core_system::process::{
+    windows_filetime_value_from_raw_for_test,
+    windows_launch_environment_preparation_receipt_for_test,
+    windows_launch_path_preparation_receipt_for_test,
+};
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
@@ -596,4 +600,20 @@ fn refs_stale_heartbeat_cleanup_receipt() {
     stale_heartbeat_cleanup_receipt(temporary.path());
     println!("JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP=executed/pass");
     println!("JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=ReFS");
+}
+
+#[test]
+#[ignore = "requires native Windows UTF-16 and ordinal APIs"]
+fn windows_launch_environment_preparation_receipt() {
+    windows_launch_environment_preparation_receipt_for_test()
+        .expect("exercise production Windows environment preparation");
+    println!("JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION=executed/pass");
+}
+
+#[test]
+#[ignore = "requires native Windows path APIs"]
+fn windows_launch_path_preparation_receipt() {
+    windows_launch_path_preparation_receipt_for_test()
+        .expect("exercise production Windows path preparation");
+    println!("JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass");
 }
