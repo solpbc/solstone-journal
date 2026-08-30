@@ -402,6 +402,20 @@ pub(crate) enum AdmittedBackupMode {
 
 #[derive(Debug)]
 /// Tool-resolution failure closed to restic or rclone unavailability.
+///
+/// The vocabulary is externally exhaustive:
+///
+/// ```
+/// use solstone_core_backup_runtime::ClosedToolError;
+///
+/// fn reason(error: ClosedToolError) -> &'static str {
+///     match error {
+///         ClosedToolError::ResticUnavailable => "restic_unavailable",
+///         ClosedToolError::RcloneUnavailable => "rclone_unavailable",
+///     }
+/// }
+/// # assert_eq!(reason(ClosedToolError::ResticUnavailable), "restic_unavailable");
+/// ```
 pub enum ClosedToolError {
     ResticUnavailable,
     RcloneUnavailable,
@@ -2316,6 +2330,9 @@ mod tests {
     fn capability_tool_error_records_at_original_alias_without_reresolution() {
         use std::os::unix::fs::symlink;
 
+        let _lock = CURRENT_DIRECTORY
+            .lock()
+            .expect("working directory lock holds");
         let source = configured_journal();
         let replacement = tempfile::tempdir().expect("replacement journal creates");
         write_backup_section(replacement.path(), serde_json::json!({"enabled": false}));
@@ -2325,6 +2342,7 @@ mod tests {
         let replacement_path = replacement.path().to_path_buf();
         let hook_alias = alias.clone();
         let clock = FixedClock;
+        let _directory = CurrentDirectoryGuard::change_to(sandbox.path());
         reset_backup_path_resolution_attempts();
 
         let capability = run_with_backup_journal_resolved_hook(
@@ -2332,8 +2350,9 @@ mod tests {
                 fs::remove_file(&hook_alias).expect("source alias removes");
                 symlink(&replacement_path, &hook_alias).expect("replacement alias creates");
             },
-            || prepare(&alias, &clock).expect("backup admits"),
+            || prepare(Path::new("journal"), &clock).expect("backup admits"),
         );
+        std::env::set_current_dir("/").expect("working directory changes after admission");
         let replacement_before = fs::read(replacement.path().join("config/journal.json"))
             .expect("replacement config reads");
         let result = capability.record_tool_error(&clock, ClosedToolError::ResticUnavailable);

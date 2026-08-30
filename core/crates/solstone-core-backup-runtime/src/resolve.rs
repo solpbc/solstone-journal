@@ -118,6 +118,17 @@ mod tests {
         }
     }
 
+    struct CountingReadyRunner {
+        calls: Cell<u32>,
+    }
+
+    impl ToolRunner for CountingReadyRunner {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            self.calls.set(self.calls.get() + 1);
+            ReadyRunner.run(request)
+        }
+    }
+
     struct PanicDownload;
 
     impl ByteDownload for PanicDownload {
@@ -127,6 +138,10 @@ mod tests {
     }
 
     struct FailingDownload {
+        calls: Cell<u32>,
+    }
+
+    struct CountingDownload {
         calls: Cell<u32>,
     }
 
@@ -143,6 +158,13 @@ mod tests {
     }
 
     impl ByteDownload for FailingDownload {
+        fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
+            self.calls.set(self.calls.get() + 1);
+            Err(ByteDownloadError::Transport)
+        }
+    }
+
+    impl ByteDownload for CountingDownload {
         fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
             self.calls.set(self.calls.get() + 1);
             Err(ByteDownloadError::Transport)
@@ -438,6 +460,31 @@ mod tests {
     }
 
     #[test]
+    fn operated_capability_still_resolves_rclone_after_config_changes_to_byo() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let journal = configured_byo_journal();
+        let clock = FixedClock;
+        let capability = operated_capability(journal.path(), &clock);
+        solstone_core_backup::set_mode(journal.path(), "byo").unwrap();
+
+        let tools = resolve_tools(
+            &capability,
+            &ReadyRunner,
+            &PanicDownload,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        )
+        .unwrap();
+
+        assert_eq!(
+            tools.rclone_path.as_deref(),
+            Some(expected_rclone.as_path())
+        );
+    }
+
+    #[test]
     fn capability_tool_resolution_maps_restic_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
         let journal = configured_byo_journal();
@@ -486,34 +533,55 @@ mod tests {
     #[test]
     fn dropping_capability_after_tool_resolution_leaves_state_unchanged() {
         let restic_dir = tempfile::tempdir().unwrap();
-        let binary = write_ready_restic(restic_dir.path());
-        let sentinel = sentinel_path(restic_dir.path());
+        let restic_binary = write_ready_restic(restic_dir.path());
+        let restic_sentinel = sentinel_path(restic_dir.path());
+        let rclone_dir = tempfile::tempdir().unwrap();
+        let rclone_binary = write_ready_rclone(rclone_dir.path());
+        let rclone_sentinel = rclone_dir.path().join(".install-complete");
         let journal = configured_byo_journal();
         let config = journal.path().join("config/journal.json");
-        let config_before = fs::read(&config).unwrap();
-        let binary_before = fs::read(&binary).unwrap();
-        let sentinel_before = fs::read(&sentinel).unwrap();
         let clock = FixedClock;
+        let runner = CountingReadyRunner {
+            calls: Cell::new(0),
+        };
+        let downloader = CountingDownload {
+            calls: Cell::new(0),
+        };
         reset_backup_path_resolution_attempts();
-        let capability = prepare(journal.path(), &clock).unwrap();
+        let capability = operated_capability(journal.path(), &clock);
         let tools = resolve_tools(
             &capability,
-            &ReadyRunner,
-            &PanicDownload,
-            dirs(restic_dir.path(), None),
+            &runner,
+            &downloader,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
         )
         .unwrap();
+        let config_before = fs::read(&config).unwrap();
+        let restic_binary_before = fs::read(&restic_binary).unwrap();
+        let restic_sentinel_before = fs::read(&restic_sentinel).unwrap();
+        let rclone_binary_before = fs::read(&rclone_binary).unwrap();
+        let rclone_sentinel_before = fs::read(&rclone_sentinel).unwrap();
+        let runner_calls = runner.calls.get();
+        let downloader_calls = downloader.calls.get();
 
         drop(capability);
         assert_eq!(fs::read(&config).unwrap(), config_before);
-        assert_eq!(fs::read(&binary).unwrap(), binary_before);
-        assert_eq!(fs::read(&sentinel).unwrap(), sentinel_before);
+        assert_eq!(fs::read(&restic_binary).unwrap(), restic_binary_before);
+        assert_eq!(fs::read(&restic_sentinel).unwrap(), restic_sentinel_before);
+        assert_eq!(fs::read(&rclone_binary).unwrap(), rclone_binary_before);
+        assert_eq!(fs::read(&rclone_sentinel).unwrap(), rclone_sentinel_before);
+        assert_eq!(runner.calls.get(), runner_calls);
+        assert_eq!(downloader.calls.get(), downloader_calls);
         assert_eq!(crate::engine::backup_path_resolution_attempts(), 1);
 
         drop(tools);
         assert_eq!(fs::read(&config).unwrap(), config_before);
-        assert_eq!(fs::read(&binary).unwrap(), binary_before);
-        assert_eq!(fs::read(&sentinel).unwrap(), sentinel_before);
+        assert_eq!(fs::read(&restic_binary).unwrap(), restic_binary_before);
+        assert_eq!(fs::read(&restic_sentinel).unwrap(), restic_sentinel_before);
+        assert_eq!(fs::read(&rclone_binary).unwrap(), rclone_binary_before);
+        assert_eq!(fs::read(&rclone_sentinel).unwrap(), rclone_sentinel_before);
+        assert_eq!(runner.calls.get(), runner_calls);
+        assert_eq!(downloader.calls.get(), downloader_calls);
         assert_eq!(crate::engine::backup_path_resolution_attempts(), 1);
     }
 }
