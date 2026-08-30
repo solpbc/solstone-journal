@@ -7,6 +7,9 @@ mod payload_inventory;
 pub mod windows_crosscheck;
 
 #[cfg(test)]
+#[path = "contracts/backup_admission_caller_purity.rs"]
+mod backup_admission_caller_purity;
+#[cfg(test)]
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]

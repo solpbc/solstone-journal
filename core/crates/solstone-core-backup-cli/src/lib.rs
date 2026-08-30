@@ -21,9 +21,9 @@ use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance,
     NativeRestoreRecorder, PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome,
     RestoreRecorder, RotationResult, SystemToolRunner, TeardownResult, ToolInstallDirs, ToolRunner,
-    UreqHttpTransport, ensure_restic, publish_restore_outcome, record_backup_error,
-    resolve_operational_tools, restore_journal, rotate_recovery_key, run_backup, run_prune,
-    teardown_backup, validate_destination,
+    UreqHttpTransport, ensure_restic, prepare, publish_restore_outcome, resolve_operational_tools,
+    resolve_tools, restore_journal, rotate_recovery_key, run_prune, teardown_backup,
+    validate_destination,
 };
 use solstone_core_offload::{
     OffloadResult, RestoreResult as OffloadRestoreResult, build_offload_status,
@@ -87,6 +87,9 @@ fn run_cli_with_deps(
         version: env!("CARGO_PKG_VERSION"),
         journal_maintenance: &maintenance,
     };
+    if is_bare_backup_run(args) {
+        return run_admitted_backup(journal, &clock, runner, downloader, dirs, placeholder);
+    }
     match classify_tool_resolution(args) {
         None => run_cli_with(args, journal, &placeholder, recorder),
         Some(append_only) => {
@@ -114,7 +117,6 @@ fn format_resolution_error(
 ) -> CliRun {
     let args = normalize_global_flags(args);
     match args.first().map(String::as_str) {
-        Some("run") => backup_run_result(record_backup_error(journal, clock, reason)),
         Some("prune") => backup_prune_result(PruneResult {
             status: "error".into(),
             error_reason: Some(reason.to_owned()),
@@ -187,6 +189,14 @@ fn format_resolution_error(
     }
 }
 
+fn is_bare_backup_run(args: &[String]) -> bool {
+    let args = normalize_global_flags(args);
+    if has_help(&args) {
+        return false;
+    }
+    matches!(args.split_first(), Some((command, rest)) if command == "run" && no_positionals(rest))
+}
+
 /// Keep in sync with the `run_cli_with` match below. `Some(append_only)` means
 /// this argv reaches an operational restic/rclone verb and must resolve pinned
 /// tools first.
@@ -197,7 +207,6 @@ fn classify_tool_resolution(args: &[String]) -> Option<bool> {
     }
     let (command, rest) = args.split_first()?;
     match command.as_str() {
-        "run" if no_positionals(rest) => Some(true),
         "prune" if no_positionals(rest) => Some(false),
         "restore" => restore_options(rest).map(|_| false),
         "recovery-key" => {
@@ -269,7 +278,6 @@ fn run_cli_with(
         "destination" => destination_command(rest, journal, services),
         "recovery-key" => recovery_key_command(rest, journal, services),
         "enable" if no_positionals(rest) => enable(journal, services),
-        "run" if no_positionals(rest) => backup_run(journal, services),
         "prune" if no_positionals(rest) => backup_prune(journal, services),
         "offload" => offload_command(rest, journal, services),
         "off" => off_command(rest, journal, services),
@@ -939,8 +947,28 @@ fn offload_restore_json(result: &OffloadRestoreResult) -> Value {
     })
 }
 
-fn backup_run(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    backup_run_result(run_backup(journal, services))
+fn run_admitted_backup(
+    journal: &Path,
+    clock: &dyn Clock,
+    runner: &dyn ToolRunner,
+    downloader: &dyn ByteDownload,
+    dirs: ToolInstallDirs<'_>,
+    placeholder: BackupServices<'_>,
+) -> CliRun {
+    match prepare(journal, clock) {
+        Ok(capability) => match resolve_tools(&capability, runner, downloader, dirs) {
+            Ok(tools) => {
+                let services = BackupServices {
+                    restic_path: Some(&tools.restic_path),
+                    rclone_path: tools.rclone_path.as_deref(),
+                    ..placeholder
+                };
+                backup_run_result(capability.execute(&services))
+            }
+            Err(tool_error) => backup_run_result(capability.record_tool_error(clock, tool_error)),
+        },
+        Err(result) => backup_run_result(result),
+    }
 }
 
 fn backup_run_result(result: BackupResult) -> CliRun {
@@ -1537,7 +1565,7 @@ mod tests {
     }
 
     #[test]
-    fn four_subcommands_reach_their_unconfigured_runtime_bodies() {
+    fn three_subcommands_reach_their_unconfigured_runtime_bodies() {
         let journal = tempfile::tempdir().unwrap();
         let runner = UnusedRunner;
         let http = UnusedHttp;
@@ -1546,10 +1574,6 @@ mod tests {
         let services = unconfigured_services(&runner, &http, &clock, &maintenance);
 
         for (args, expected) in [
-            (
-                vec!["run".into()],
-                "Backup skipped (not enabled or not configured).\n",
-            ),
             (
                 vec!["prune".into()],
                 "Prune skipped (not enabled or not configured).\n",
@@ -2455,6 +2479,7 @@ mod resolution_tests {
     struct RecordingRunner {
         programs: RefCell<Vec<OsString>>,
         argvs: RefCell<Vec<Vec<String>>>,
+        on_first_call: RefCell<Option<Box<dyn FnOnce()>>>,
     }
 
     impl RecordingRunner {
@@ -2462,12 +2487,24 @@ mod resolution_tests {
             Self {
                 programs: RefCell::new(vec![]),
                 argvs: RefCell::new(vec![]),
+                on_first_call: RefCell::new(None),
+            }
+        }
+
+        fn with_on_first_call(callback: impl FnOnce() + 'static) -> Self {
+            Self {
+                programs: RefCell::new(vec![]),
+                argvs: RefCell::new(vec![]),
+                on_first_call: RefCell::new(Some(Box::new(callback))),
             }
         }
     }
 
     impl ToolRunner for RecordingRunner {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if let Some(callback) = self.on_first_call.borrow_mut().take() {
+                callback();
+            }
             self.programs.borrow_mut().push(request.program.clone());
             self.argvs.borrow_mut().push(
                 request
@@ -2523,10 +2560,21 @@ mod resolution_tests {
         }
     }
 
-    struct BrokerHttp;
+    struct BrokerHttp {
+        calls: Cell<u32>,
+    }
+
+    impl BrokerHttp {
+        fn new() -> Self {
+            Self {
+                calls: Cell::new(0),
+            }
+        }
+    }
 
     impl HttpTransport for BrokerHttp {
         fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            self.calls.set(self.calls.get() + 1);
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
@@ -2646,6 +2694,31 @@ mod resolution_tests {
         journal
     }
 
+    fn byo_journal() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        set_destination(
+            journal.path(),
+            &Destination {
+                repository: "s3:bucket/prefix".to_owned(),
+                backend: "s3".to_owned(),
+                credentials: serde_json::Map::from_iter([
+                    (
+                        "access_key_id".to_owned(),
+                        Value::String("access".to_owned()),
+                    ),
+                    (
+                        "secret_access_key".to_owned(),
+                        Value::String("secret".to_owned()),
+                    ),
+                ]),
+            },
+        )
+        .unwrap();
+        generate_and_store_keys(journal.path()).unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        journal
+    }
+
     fn configure_offload(journal: &Path) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2699,7 +2772,7 @@ mod resolution_tests {
         let expected = write_ready_restic(restic_dir.path());
         let decoy = decoy_dir.path().join("restic");
         fs::write(&decoy, b"decoy").unwrap();
-        let journal = tempfile::tempdir().unwrap();
+        let journal = byo_journal();
         let runner = RecordingRunner::new();
         run_cli_with_deps(
             &args(&["run"]),
@@ -2715,7 +2788,7 @@ mod resolution_tests {
     #[test]
     fn ac3_backup_run_persists_restic_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
-        let journal = tempfile::tempdir().unwrap();
+        let journal = byo_journal();
         record_backup_result(journal.path(), "ok", json!(1), json!("prior"), Value::Null).unwrap();
         let runner = RecordingRunner::new();
         let downloader = FailingDownload {
@@ -2740,6 +2813,200 @@ mod resolution_tests {
         assert!(runner.programs.borrow().is_empty());
     }
 
+    #[test]
+    fn backup_run_success_twin_byo_and_operated() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let expected_restic = write_ready_restic(restic_dir.path());
+        let byo = byo_journal();
+        let byo_runner = RecordingRunner::new();
+        let byo_output = run_cli_with_deps(
+            &args(&["run"]),
+            byo.path(),
+            &byo_runner,
+            &PanicDownload,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_eq!(byo_output.stdout, "Backup complete (snapshot snap).\n");
+        assert_eq!(byo_output.exit_code, 0);
+        assert!(
+            byo_runner
+                .programs
+                .borrow()
+                .iter()
+                .any(|program| program == expected_restic.as_os_str())
+        );
+        assert!(rclone_program(&byo_runner.argvs.borrow()).is_none());
+
+        let rclone_dir = tempfile::tempdir().unwrap();
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let operated = operated_journal();
+        let operated_runner = RecordingRunner::new();
+        let broker = BrokerHttp::new();
+        let operated_output = run_cli_with_deps(
+            &args(&["run"]),
+            operated.path(),
+            &operated_runner,
+            &PanicDownload,
+            &broker,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        assert_eq!(operated_output.stdout, "Backup complete (snapshot snap).\n");
+        assert_eq!(operated_output.exit_code, 0);
+        assert_eq!(
+            rclone_program(&operated_runner.argvs.borrow()).as_deref(),
+            Some(expected_rclone.to_string_lossy().as_ref())
+        );
+        assert!(broker.calls.get() > 0);
+    }
+
+    #[test]
+    fn backup_run_pins_admitted_byo_mode_despite_config_flip_to_operated_during_resolution() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let journal = byo_journal();
+        let journal_path = journal.path().to_path_buf();
+        let runner = RecordingRunner::with_on_first_call(move || {
+            set_mode(&journal_path, "operated").unwrap();
+        });
+        let output = run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_eq!(output.stdout, "Backup complete (snapshot snap).\n");
+        assert!(rclone_program(&runner.argvs.borrow()).is_none());
+    }
+
+    #[test]
+    fn backup_run_pins_admitted_operated_mode_despite_config_flip_to_byo_during_resolution() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let journal = operated_journal();
+        let journal_path = journal.path().to_path_buf();
+        let runner = RecordingRunner::with_on_first_call(move || {
+            set_mode(&journal_path, "byo").unwrap();
+        });
+        let broker = BrokerHttp::new();
+        let output = run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &broker,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        assert_eq!(output.stdout, "Backup complete (snapshot snap).\n");
+        assert_eq!(
+            rclone_program(&runner.argvs.borrow()).as_deref(),
+            Some(expected_rclone.to_string_lossy().as_ref())
+        );
+        assert!(broker.calls.get() > 0);
+    }
+
+    #[test]
+    fn backup_run_admission_terminals_do_not_resolve_tools() {
+        let runner = RecordingRunner::new();
+        let skipped_journal = tempfile::tempdir().unwrap();
+        let skipped = run_cli_with_deps(
+            &args(&["run"]),
+            skipped_journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+        assert_eq!(
+            skipped.stdout,
+            "Backup skipped (not enabled or not configured).\n"
+        );
+        assert_eq!(skipped.exit_code, 0);
+        assert!(runner.programs.borrow().is_empty());
+
+        let runner = RecordingRunner::new();
+        let unresolved_journal = tempfile::tempdir().unwrap();
+        let unresolved = run_cli_with_deps(
+            &args(&["run"]),
+            &unresolved_journal.path().join("missing"),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+        assert_eq!(
+            unresolved.stderr,
+            "Error: Backup failed: journal_path_unresolved.\n"
+        );
+        assert_eq!(unresolved.exit_code, 1);
+        assert!(runner.programs.borrow().is_empty());
+
+        let runner = RecordingRunner::new();
+        let config_error_journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(config_error_journal.path().join("config")).unwrap();
+        fs::write(
+            config_error_journal.path().join("config/journal.json"),
+            b"{",
+        )
+        .unwrap();
+        let config_error = run_cli_with_deps(
+            &args(&["run"]),
+            config_error_journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+        assert_eq!(config_error.stderr, "Error: Backup failed: broker_error.\n");
+        assert_eq!(config_error.exit_code, 1);
+        assert!(runner.programs.borrow().is_empty());
+    }
+
+    #[test]
+    fn run_cli_with_deps_excludes_invalid_and_help_forms_from_capability_path() {
+        let journal = tempfile::tempdir().unwrap();
+        for (args, expected_exit, help) in [
+            (args(&["run", "extra"]), 2, false),
+            (args(&["run", "-h"]), 0, true),
+            (args(&["run", "--help"]), 0, true),
+        ] {
+            let runner = RecordingRunner::new();
+            let clock = ProductionClock;
+            let maintenance = NativeJournalMaintenance;
+            let placeholder = BackupServices {
+                runner: &runner,
+                http: &UnusedHttp,
+                clock: &clock,
+                restic_path: None,
+                rclone_path: None,
+                version: env!("CARGO_PKG_VERSION"),
+                journal_maintenance: &maintenance,
+            };
+            let expected =
+                super::run_cli_with(&args, journal.path(), &placeholder, &NativeRestoreRecorder);
+            let output = run_cli_with_deps(
+                &args,
+                journal.path(),
+                &runner,
+                &PanicDownload,
+                &UnusedHttp,
+                ToolInstallDirs::default(),
+            );
+            assert_eq!(output, expected);
+            assert_eq!(output.exit_code, expected_exit);
+            if help {
+                assert_eq!(output.stdout, USAGE);
+            } else {
+                assert!(output.stderr.starts_with(USAGE));
+            }
+            assert!(runner.programs.borrow().is_empty());
+        }
+    }
+
     // Fixture is pre-installed: ensure_rclone's zip verification checks RCLONE_ZIP_SHA256, a real published-release checksum no offline fixture can satisfy, so this proves the resolved path is wired into the spawn, not the install cycle itself.
     #[test]
     fn ac4_operated_run_passes_absolute_rclone_program() {
@@ -2757,7 +3024,7 @@ mod resolution_tests {
             journal.path(),
             &runner,
             &PanicDownload,
-            &BrokerHttp,
+            &BrokerHttp::new(),
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         let program = rclone_program(&runner.argvs.borrow()).expect("rclone.program");
@@ -2784,7 +3051,7 @@ mod resolution_tests {
             journal.path(),
             &runner,
             &PanicDownload,
-            &BrokerHttp,
+            &BrokerHttp::new(),
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         let program = rclone_program(&runner.argvs.borrow()).expect("rclone.program");
@@ -2809,7 +3076,7 @@ mod resolution_tests {
             journal.path(),
             &runner,
             &downloader,
-            &BrokerHttp,
+            &BrokerHttp::new(),
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         assert_eq!(output.exit_code, 1);
@@ -2844,7 +3111,6 @@ mod resolution_tests {
         fs::write(&decoy, b"decoy").unwrap();
         let journal = tempfile::tempdir().unwrap();
         for argv in [
-            args(&["run"]),
             args(&["prune"]),
             args(&["restore"]),
             args(&["recovery-key", "rotate"]),
@@ -2879,7 +3145,7 @@ mod resolution_tests {
             journal.path(),
             &runner,
             &PanicDownload,
-            &BrokerHttp,
+            &BrokerHttp::new(),
             dirs(restic_dir.path(), None),
         );
         assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
@@ -2918,7 +3184,7 @@ mod resolution_tests {
             journal.path(),
             &runner,
             &PanicDownload,
-            &BrokerHttp,
+            &BrokerHttp::new(),
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         assert!(rclone_program(&runner.argvs.borrow()).is_some());

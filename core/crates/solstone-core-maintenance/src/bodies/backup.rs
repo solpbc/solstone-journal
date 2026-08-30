@@ -6,8 +6,7 @@
 use std::path::Path;
 
 use solstone_core_backup_runtime::{
-    BackupResult, BackupServices, PruneResult, VerificationResult, run_backup, run_prune,
-    run_verification,
+    BackupResult, BackupServices, PruneResult, VerificationResult, run_prune, run_verification,
 };
 use solstone_core_offload::{format_offload_result, run_offload};
 
@@ -20,7 +19,6 @@ pub(crate) fn run(
     services: &BackupServices<'_>,
 ) -> CliRun {
     match id {
-        "backup:run" if args.is_empty() => backup_run(journal, services),
         "backup:prune" if args.is_empty() => backup_prune(journal, services),
         "backup:verify" if args.is_empty() => backup_verify(journal, services),
         "backup:offload" => backup_offload(args, journal, services),
@@ -28,11 +26,7 @@ pub(crate) fn run(
     }
 }
 
-fn backup_run(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    backup_run_result(run_backup(journal, services))
-}
-
-fn backup_run_result(result: BackupResult) -> CliRun {
+pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
     let line = match result.status.as_str() {
         "ok" => format!(
             "backup: ok snapshot_id={}",
@@ -223,41 +217,6 @@ mod tests {
             stdout: stdout.to_vec(),
             stderr: Vec::new(),
         }
-    }
-
-    #[test]
-    fn backup_run_uses_injected_services_for_success_and_failure() {
-        let journal = configured_journal();
-        let http = UnusedHttp;
-        let clock = FixedClock;
-        let hooks = UnusedRestoreHooks;
-        let success_runner = FixtureRunner(RefCell::new(VecDeque::from([
-            output(0, b""),
-            output(
-                0,
-                b"{\"message_type\":\"summary\",\"snapshot_id\":\"snap-1\"}\n",
-            ),
-        ])));
-        let result = run(
-            "backup:run",
-            &[],
-            journal.path(),
-            &services(&success_runner, &http, &clock, &hooks),
-        );
-        assert_eq!(result.stdout, "backup: ok snapshot_id=snap-1\n");
-
-        let failed_runner = FixtureRunner(RefCell::new(VecDeque::from([
-            output(0, b""),
-            output(1, b""),
-        ])));
-        let result = run(
-            "backup:run",
-            &[],
-            journal.path(),
-            &services(&failed_runner, &http, &clock, &hooks),
-        );
-        assert_eq!(result.stdout, "backup: error reason=failed\n");
-        assert_eq!(result.exit_code, 0);
     }
 
     #[test]
