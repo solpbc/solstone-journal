@@ -104,10 +104,10 @@ fn search_paths(
     child_path: Option<&[u16]>,
     parent_path: Option<&[u16]>,
 ) -> Option<Vec<u16>> {
-    if let Some(paths) = child_path {
-        if let Some(found) = search_path_list(paths, program, has_extension, probe, full_path) {
-            return Some(found);
-        }
+    if let Some(paths) = child_path
+        && let Some(found) = search_path_list(paths, program, has_extension, probe, full_path)
+    {
+        return Some(found);
     }
 
     for directory in [
@@ -415,8 +415,8 @@ mod tests {
             probe,
             directories,
             full_path,
-            child_path.map(|path| wide(path)).as_deref(),
-            parent_path.map(|path| wide(path)).as_deref(),
+            child_path.map(wide).as_deref(),
+            parent_path.map(wide).as_deref(),
         )
     }
 

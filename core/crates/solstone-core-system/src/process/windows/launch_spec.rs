@@ -107,6 +107,7 @@ impl WideEnvironmentBlock {
         self.units.as_ptr()
     }
 
+    #[cfg(windows)]
     pub(super) fn units_len(&self) -> usize {
         self.units.len()
     }
@@ -217,13 +218,10 @@ mod tests {
     use std::ffi::{OsStr, OsString};
 
     use super::super::environment::{
-        WindowsEnvironmentError, WindowsEnvironmentSourceResult, WindowsOrdinalResult,
-        WindowsWideResult,
+        WindowsEnvironmentSourceResult, WindowsOrdinalResult, WindowsWideResult,
     };
-    use super::super::resolve::{
-        WindowsDirectoryError, WindowsDirectoryResult, WindowsProbeError, WindowsProbeResult,
-    };
-    use super::super::user_path::{WindowsFullPathError, WindowsFullPathResult};
+    use super::super::resolve::{WindowsDirectoryResult, WindowsProbeResult};
+    use super::super::user_path::WindowsFullPathResult;
     use super::*;
 
     struct FakeProbe {

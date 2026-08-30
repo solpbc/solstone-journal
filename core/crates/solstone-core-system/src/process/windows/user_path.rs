@@ -143,7 +143,7 @@ pub(super) fn from_wide_to_user_path(
 ///
 /// Derived from Rust 1.97.1 `sys/path/windows.rs::get_long_path`.
 pub(super) fn get_long_path(
-    mut path: Vec<u16>,
+    path: Vec<u16>,
     prefer_verbatim: bool,
     full_path: &impl WindowsFullPathName,
 ) -> WindowsFullPathResult<Vec<u16>> {
