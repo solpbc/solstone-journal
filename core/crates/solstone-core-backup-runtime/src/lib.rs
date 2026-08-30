@@ -34,11 +34,11 @@ pub mod teardown;
 
 pub use destination::{DestinationStatus, validate_destination};
 pub use engine::{
-    ARCHIVE_TAG, ArchiveCheckResult, ArchiveFileVerdict, BACKUP_EXCLUDES, BackupResult,
-    BackupServices, Clock, JournalMaintenance, JournalMaintenanceError, NativeJournalMaintenance,
-    NativeRestoreRecorder, PruneResult, RestoreRecorder, VerificationResult,
-    check_archive_snapshot_files, record_backup_error, run_archive_backup, run_backup, run_prune,
-    run_verification,
+    ARCHIVE_TAG, AdmittedCapability, ArchiveCheckResult, ArchiveFileVerdict, BACKUP_EXCLUDES,
+    BackupResult, BackupServices, Clock, ClosedToolError, JournalMaintenance,
+    JournalMaintenanceError, NativeJournalMaintenance, NativeRestoreRecorder, PruneResult,
+    RestoreRecorder, VerificationResult, check_archive_snapshot_files, prepare,
+    record_backup_error, run_archive_backup, run_backup, run_prune, run_verification,
 };
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
@@ -60,7 +60,7 @@ pub use readiness::{
 pub use repo::{
     ResticKeyError, add_recovery_key, capture_current_key_id, init_repository, remove_key,
 };
-pub use resolve::{ResolvedTools, ToolInstallDirs, resolve_operational_tools};
+pub use resolve::{ResolvedTools, ToolInstallDirs, resolve_operational_tools, resolve_tools};
 pub use restore::{RestoreDraft, RestoreOutcome, publish_restore_outcome, restore_journal};
 pub use rotation::{RotationResult, rotate_recovery_key};
 pub use runner::{
