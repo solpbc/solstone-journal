@@ -552,6 +552,7 @@ mod composed_tests {
         assert_eq!(run(&["sync"]).exit_code, 0);
 
         for (id, witness, expected_exit) in [
+            ("backup:run", "backup: skipped", 0),
             ("backup:prune", "backup prune:", 0),
             ("backup:verify", "backup verify:", 0),
             ("backup:offload", "backup offload:", 0),
@@ -1297,5 +1298,50 @@ mod resolution_tests {
             ToolInstallDirs::default(),
         );
         assert!(runner.programs.borrow().is_empty());
+    }
+
+    #[test]
+    fn injected_service_entry_points_execute_backup_run() {
+        for entry_point in ["backup", "services", "all"] {
+            let journal = byo_journal();
+            let runner = RecordingRunner::new();
+            let http = UnusedHttp;
+            let clock = ProductionClock;
+            let maintenance = NativeJournalMaintenance;
+            let backup_services = BackupServices {
+                runner: &runner,
+                http: &http,
+                clock: &clock,
+                restic_path: Some(Path::new("/fixture/bin/restic")),
+                rclone_path: None,
+                version: "test",
+                journal_maintenance: &maintenance,
+            };
+            let services = MaintenanceServices::new(crate::registry::routines());
+            let run_args = args(&["run", "backup:run"]);
+            let output = match entry_point {
+                "backup" => {
+                    run_cli_with_backup(&run_args, journal.path(), &services, &backup_services)
+                }
+                "services" => run_cli_with_services(
+                    &run_args,
+                    journal.path(),
+                    &services,
+                    Some(&backup_services),
+                    None,
+                ),
+                "all" => run_cli_with_all_services(
+                    &run_args,
+                    journal.path(),
+                    &services,
+                    Some(&backup_services),
+                    None,
+                    None,
+                ),
+                _ => unreachable!("fixed entry point"),
+            };
+            assert_eq!(output.stdout, "backup: ok snapshot_id=snap\n");
+            assert_eq!(output.exit_code, 0);
+        }
     }
 }

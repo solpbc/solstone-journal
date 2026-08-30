@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use solstone_core_backup_runtime::{
-    BackupResult, BackupServices, PruneResult, VerificationResult, run_prune, run_verification,
+    BackupResult, BackupServices, PruneResult, VerificationResult, prepare, run_prune,
+    run_verification,
 };
 use solstone_core_offload::{format_offload_result, run_offload};
 
@@ -19,6 +20,12 @@ pub(crate) fn run(
     services: &BackupServices<'_>,
 ) -> CliRun {
     match id {
+        "backup:run" if args.is_empty() => {
+            backup_run_result(match prepare(journal, services.clock) {
+                Ok(capability) => capability.execute(services),
+                Err(result) => result,
+            })
+        }
         "backup:prune" if args.is_empty() => backup_prune(journal, services),
         "backup:verify" if args.is_empty() => backup_verify(journal, services),
         "backup:offload" => backup_offload(args, journal, services),
@@ -275,6 +282,49 @@ mod tests {
             )
             .stdout,
             "backup verify: error reason=integrity_failed\n"
+        );
+    }
+
+    #[test]
+    fn backup_run_uses_admission_result_and_rejects_arguments() {
+        let journal = configured_journal();
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let hooks = UnusedRestoreHooks;
+        let success_runner = FixtureRunner(RefCell::new(VecDeque::from([
+            output(0, b""),
+            output(
+                0,
+                b"{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}\n",
+            ),
+        ])));
+        let success = run(
+            "backup:run",
+            &[],
+            journal.path(),
+            &services(&success_runner, &http, &clock, &hooks),
+        );
+        assert_eq!(success.stdout, "backup: ok snapshot_id=snap\n");
+        assert_eq!(success.exit_code, 0);
+
+        let skipped_journal = tempfile::tempdir().expect("unconfigured journal");
+        let skipped_runner = FixtureRunner(RefCell::new(VecDeque::new()));
+        let skipped_services = services(&skipped_runner, &http, &clock, &hooks);
+        let skipped = run("backup:run", &[], skipped_journal.path(), &skipped_services);
+        assert_eq!(skipped.stdout, "backup: skipped\n");
+        assert_eq!(skipped.exit_code, 0);
+
+        let invalid = run(
+            "backup:run",
+            &["unexpected".to_owned()],
+            skipped_journal.path(),
+            &skipped_services,
+        );
+        assert_eq!(invalid.exit_code, 2);
+        assert!(
+            invalid
+                .stderr
+                .starts_with("usage: journal maintenance run backup:run [-h]")
         );
     }
 
