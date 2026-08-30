@@ -1,6 +1,12 @@
 # solstone Makefile
 # Rust-native AI-driven desktop journaling toolkit
 
+# Keep temporary paths in their physical spelling. macOS exposes /var as a
+# symlink to /private/var; mixing the two spellings makes safety checks treat
+# run-owned fixtures as symlink traversal and makes path assertions disagree
+# about identical files.
+export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
+
 .PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
@@ -640,7 +646,11 @@ report-rust-code-evidence:
 
 check-rust-doc:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --doc --locked -- --test-threads=1
+	# The backup-runtime docs prove that test hooks are absent from its default
+	# feature closure. Run that crate alone so workspace feature unification via
+	# backup-cli/maintenance cannot make the compile-fail examples false-red.
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-backup-runtime --doc --locked -- --test-threads=1
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --exclude solstone-core-backup-runtime --doc --locked -- --test-threads=1
 
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --offline --
