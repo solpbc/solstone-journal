@@ -10,7 +10,6 @@ use thiserror::Error;
 
 const NUL: u16 = 0;
 const EQUALS: u16 = b'=' as u16;
-const COLON: u16 = b':' as u16;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub(super) enum WindowsEnvironmentError {
@@ -137,7 +136,7 @@ fn validate_key(key: &[u16], caller_override: bool) -> Result<(), WindowsEnviron
         return Err(WindowsEnvironmentError::EmptyKey);
     }
     if key[0] == EQUALS {
-        if caller_override || !is_drive_current_directory_key(key) {
+        if caller_override || !is_inherited_pseudo_key(key) {
             return Err(WindowsEnvironmentError::InvalidKey);
         }
         return Ok(());
@@ -148,12 +147,11 @@ fn validate_key(key: &[u16], caller_override: bool) -> Result<(), WindowsEnviron
     Ok(())
 }
 
-fn is_drive_current_directory_key(key: &[u16]) -> bool {
-    matches!(key, [EQUALS, drive, COLON] if is_ascii_alpha(*drive))
-}
-
-fn is_ascii_alpha(unit: u16) -> bool {
-    (b'A' as u16..=b'Z' as u16).contains(&unit) || (b'a' as u16..=b'z' as u16).contains(&unit)
+fn is_inherited_pseudo_key(key: &[u16]) -> bool {
+    // `std::env::vars_os` preserves every Windows environment entry whose key starts with `=`,
+    // including drive-current-directory keys (`=C:`) and cmd.exe keys such as `=ExitCode`.
+    // They are inherited OS state, not a caller-injection seam; caller overrides remain rejected.
+    matches!(key, [EQUALS, rest @ ..] if !rest.is_empty() && !rest.contains(&EQUALS))
 }
 
 fn keys_equal(
@@ -423,10 +421,11 @@ mod tests {
     }
 
     #[test]
-    fn inherited_environment_merges_ordinally_and_preserves_empty_values_and_drive_keys() {
+    fn inherited_environment_merges_ordinally_and_preserves_empty_values_and_pseudo_keys() {
         let (ordinal, mut inherited, encoder) = setup();
         inherited.entries = vec![
             (OsString::from("=C:"), OsString::from(r"C:\work")),
+            (OsString::from("=ExitCode"), OsString::from("00000000")),
             (OsString::from("zeta"), OsString::new()),
             (OsString::from("Alpha"), OsString::from("one")),
         ];
@@ -437,6 +436,7 @@ mod tests {
             block_entries(&plan.block),
             vec![
                 "=C:=C:\\work".encode_utf16().collect::<Vec<_>>(),
+                "=ExitCode=00000000".encode_utf16().collect::<Vec<_>>(),
                 "Alpha=one".encode_utf16().collect::<Vec<_>>(),
                 "beta=two".encode_utf16().collect::<Vec<_>>(),
                 "zeta=".encode_utf16().collect::<Vec<_>>(),
@@ -471,6 +471,7 @@ mod tests {
         for (key, value, expected) in [
             ("", "value", WindowsEnvironmentError::EmptyKey),
             ("=C:", "value", WindowsEnvironmentError::InvalidKey),
+            ("=ExitCode", "value", WindowsEnvironmentError::InvalidKey),
             ("bad=key", "value", WindowsEnvironmentError::InvalidKey),
             ("nul\0key", "value", WindowsEnvironmentError::InteriorNul),
             ("key", "nul\0value", WindowsEnvironmentError::InteriorNul),
