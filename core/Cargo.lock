@@ -4322,6 +4322,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-mcp-endpoint"
+version = "2.0.0"
+dependencies = [
+ "nix",
+ "ring",
+ "serde",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-sol-link",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-model-pricing"
 version = "2.0.0"
 

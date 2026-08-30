@@ -65,6 +65,7 @@ members = [
     "crates/solstone-core-sol-client",
     "crates/solstone-core-sol-client-cli",
     "crates/solstone-core-sol-link",
+    "crates/solstone-core-mcp-endpoint",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-convey-shell",
     "crates/solstone-core-model-pricing",
@@ -220,6 +221,7 @@ solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
 solstone-core-skill-state = { path = "crates/solstone-core-skill-state" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
+solstone-core-mcp-endpoint = { path = "crates/solstone-core-mcp-endpoint" }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
 solstone-core-model-pricing = { path = "crates/solstone-core-model-pricing" }
@@ -364,6 +366,7 @@ unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem", "x509-parser"] }
+ring = "0.17.14"
 rustix = { version = "1.1.4", features = ["fs", "termios"] }
 rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
