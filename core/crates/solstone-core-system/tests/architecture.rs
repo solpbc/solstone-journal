@@ -36,6 +36,13 @@ const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
 const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
 const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
+const SYSTEM_MANIFEST: &str = include_str!("../Cargo.toml");
+const PROCESS_WINDOWS_RESOLVE: &str = include_str!("../src/process/windows/resolve.rs");
+const PROCESS_WINDOWS_PATH_LIST: &str = include_str!("../src/process/windows/path_list.rs");
+const PROCESS_WINDOWS_USER_PATH: &str = include_str!("../src/process/windows/user_path.rs");
+const PROCESS_WINDOWS_COMMAND_LINE: &str = include_str!("../src/process/windows/command_line.rs");
+const PROCESS_WINDOWS_ENVIRONMENT: &str = include_str!("../src/process/windows/environment.rs");
+const PROCESS_WINDOWS_LAUNCH_SPEC: &str = include_str!("../src/process/windows/launch_spec.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
@@ -198,7 +205,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("observation", OBSERVATION),
         ("restart", RESTART),
         ("platform", PROCESS_UNIX),
-        ("windows_identity_tests", PROCESS_WINDOWS_IDENTITY),
+        ("windows_tests", PROCESS_WINDOWS),
     ];
     let unix_process_modules = [
         ("authority", AUTHORITY),
@@ -281,6 +288,22 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert_eq!(
         declared_modules(PROVIDER_RUNTIME),
         provider_runtime_modules
+            .iter()
+            .map(|(name, _)| *name)
+            .collect()
+    );
+    let windows_process_modules = [
+        ("identity", PROCESS_WINDOWS_IDENTITY),
+        ("resolve", PROCESS_WINDOWS_RESOLVE),
+        ("path_list", PROCESS_WINDOWS_PATH_LIST),
+        ("user_path", PROCESS_WINDOWS_USER_PATH),
+        ("command_line", PROCESS_WINDOWS_COMMAND_LINE),
+        ("environment", PROCESS_WINDOWS_ENVIRONMENT),
+        ("launch_spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+    ];
+    assert_eq!(
+        declared_modules(PROCESS_WINDOWS),
+        windows_process_modules
             .iter()
             .map(|(name, _)| *name)
             .collect()
@@ -439,6 +462,12 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         ("common", PROCESS_COMMON),
         ("windows facade", PROCESS_WINDOWS),
         ("windows identity", PROCESS_WINDOWS_IDENTITY),
+        ("windows resolve", PROCESS_WINDOWS_RESOLVE),
+        ("windows path list", PROCESS_WINDOWS_PATH_LIST),
+        ("windows user path", PROCESS_WINDOWS_USER_PATH),
+        ("windows command line", PROCESS_WINDOWS_COMMAND_LINE),
+        ("windows environment", PROCESS_WINDOWS_ENVIRONMENT),
+        ("windows launch spec", PROCESS_WINDOWS_LAUNCH_SPEC),
     ] {
         assert!(!source.contains("nix::"), "{name} must not name nix");
         assert!(
@@ -532,4 +561,89 @@ fn ac30_parent_loss_chain_is_unix_only_and_hosted_service_kind_is_portable() {
         !LIFECYCLE_PARENT_LOSS_LEDGER.contains("pub enum HostedServiceKind"),
         "HostedServiceKind must not move back into the Unix-only ledger"
     );
+}
+
+#[test]
+fn ac31_windows_launch_preparation_has_no_process_lifecycle_or_lossy_text_edges() {
+    let production_sources = [
+        ("resolve", PROCESS_WINDOWS_RESOLVE),
+        ("path_list", PROCESS_WINDOWS_PATH_LIST),
+        ("user_path", PROCESS_WINDOWS_USER_PATH),
+        ("command_line", PROCESS_WINDOWS_COMMAND_LINE),
+        ("environment", PROCESS_WINDOWS_ENVIRONMENT),
+        ("launch_spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+    ]
+    .map(|(name, source)| {
+        (
+            name,
+            source
+                .split_once("mod tests")
+                .map_or(source, |(production, _)| production),
+        )
+    });
+
+    for (name, production) in production_sources {
+        for token in [
+            "CreateProcessW(",
+            "CreateProcessA(",
+            "ShellExecute",
+            "WinExec",
+            ".spawn(",
+            "Command::new(",
+        ] {
+            assert!(
+                !production.contains(token),
+                "{name} must not create a process via {token}"
+            );
+        }
+        for token in [
+            "CreateJobObject",
+            "AssignProcessToJobObject",
+            "SetInformationJobObject",
+            "TerminateJobObject",
+        ] {
+            assert!(
+                !production.contains(token),
+                "{name} must not touch a Job object via {token}"
+            );
+        }
+        for token in ["CreatePipe", "CreateNamedPipe"] {
+            assert!(
+                !production.contains(token),
+                "{name} must not create a pipe via {token}"
+            );
+        }
+        for token in [
+            "SetHandleInformation",
+            "UpdateProcThreadAttribute",
+            "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+            "bInheritHandles",
+            "DuplicateHandle",
+            "HANDLE_FLAG_INHERIT",
+        ] {
+            assert!(
+                !production.contains(token),
+                "{name} must not touch handle inheritance via {token}"
+            );
+        }
+        for token in ["to_string_lossy", ".to_str()", "into_string("] {
+            assert!(
+                !production.contains(token),
+                "{name} must not lossily convert a wide string via {token}"
+            );
+        }
+        for token in [
+            "std::process::Child",
+            "CommandLaunchRequest",
+            "ManagedProcess",
+            "LaunchAuthority",
+        ] {
+            assert!(
+                !production.contains(token),
+                "{name} must not reference owned-process authority via {token}"
+            );
+        }
+    }
+
+    assert!(SYSTEM_MANIFEST.contains(r#"features = ["Win32_System_SystemInformation"]"#));
 }

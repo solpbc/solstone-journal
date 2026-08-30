@@ -13,8 +13,8 @@ mod platform;
 mod platform;
 mod restart;
 #[cfg(all(unix, test))]
-#[path = "windows/identity.rs"]
-mod windows_identity_tests;
+#[path = "windows/mod.rs"]
+mod windows_tests;
 
 #[cfg(unix)]
 use std::process::ExitStatus;

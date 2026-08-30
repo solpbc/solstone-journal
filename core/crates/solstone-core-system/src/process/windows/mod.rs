@@ -18,13 +18,26 @@ use super::{
 };
 
 #[cfg(any(windows, test))]
+mod command_line;
+#[cfg(any(windows, test))]
+mod environment;
+#[cfg(any(windows, test))]
 mod identity;
+#[cfg(any(windows, test))]
+mod launch_spec;
+#[cfg(any(windows, test))]
+mod path_list;
+#[cfg(any(windows, test))]
+mod resolve;
+#[cfg(any(windows, test))]
+mod user_path;
 
 #[cfg(windows)]
 pub(crate) use identity::current_windows_process_instance;
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use identity::windows_filetime_value_from_raw_for_test;
 
+#[cfg(not(unix))]
 impl ProcessInstanceSource for SystemProcessInstanceSource {
     fn inspect(&self, _pid: u32) -> InspectResult {
         #[cfg(target_os = "ios")]
