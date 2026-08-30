@@ -397,15 +397,15 @@ pub(crate) fn is_regular(stat: &FileStat) -> bool {
 }
 
 pub(crate) fn is_exact_directory(stat: &FileStat, owner: u32, required_mode: u32) -> bool {
-    is_directory(stat) && stat.st_uid == owner && permission_bits(stat) == required_mode
+    is_directory(stat) && stat.st_uid == owner && permission_bits(stat) == mode(required_mode)
 }
 
 pub(crate) fn is_exact_regular(stat: &FileStat, owner: u32, required_mode: u32) -> bool {
-    is_regular(stat) && stat.st_uid == owner && permission_bits(stat) == required_mode
+    is_regular(stat) && stat.st_uid == owner && permission_bits(stat) == mode(required_mode)
 }
 
-fn permission_bits(stat: &FileStat) -> u32 {
-    stat.st_mode & 0o777
+fn permission_bits(stat: &FileStat) -> Mode {
+    Mode::from_bits_truncate(stat.st_mode) & mode(0o777)
 }
 
 fn mode(bits: u32) -> Mode {
