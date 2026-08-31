@@ -25,6 +25,35 @@ pub(crate) fn nt_create_relative(
     disposition: u32,
     options: u32,
 ) -> io::Result<OwnedHandle> {
+    nt_create_relative_with_attributes(
+        parent,
+        name,
+        desired_access,
+        disposition,
+        options,
+        OBJ_CASE_INSENSITIVE,
+    )
+}
+
+/// Open or create one native-name child using an exact-case object-name match.
+pub(crate) fn nt_create_relative_exact(
+    parent: RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<OwnedHandle> {
+    nt_create_relative_with_attributes(parent, name, desired_access, disposition, options, 0)
+}
+
+fn nt_create_relative_with_attributes(
+    parent: RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+    object_attributes: u32,
+) -> io::Result<OwnedHandle> {
     let wide = name.encode_wide().collect::<Vec<_>>();
     let byte_length = wide
         .len()
@@ -40,7 +69,7 @@ pub(crate) fn nt_create_relative(
         Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
         RootDirectory: parent,
         ObjectName: &mut object_name,
-        Attributes: OBJ_CASE_INSENSITIVE,
+        Attributes: object_attributes,
         SecurityDescriptor: std::ptr::null(),
         SecurityQualityOfService: std::ptr::null(),
     };

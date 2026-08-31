@@ -8,6 +8,7 @@ use std::path::{Component, Path};
 
 use serde_json::Value;
 
+pub(crate) mod census;
 mod lock;
 mod namespace;
 #[cfg(unix)]
@@ -15,6 +16,17 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub use census::census_cortex_namespace_with_test_timing;
+pub use census::{
+    CortexCensus, CortexCensusError, CortexCensusLeaf, CortexLifecycleProjections,
+    CortexTalentCensus, census_cortex_namespace, parse_cortex_lifecycle_name,
+};
+#[cfg(feature = "test-hooks")]
+pub use census::{
+    CortexCensusPrimitive, run_with_cortex_census_barrier, run_with_cortex_census_fault,
+};
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use lock::acquire_cortex_namespace_lock_with_test_timing;

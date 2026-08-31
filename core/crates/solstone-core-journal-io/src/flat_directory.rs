@@ -269,6 +269,104 @@ pub fn list_flat_directory(
     Ok(Some(entries))
 }
 
+pub(crate) struct NativeListed {
+    pub entry: FlatDirectoryEntry,
+    pub directory: Option<FlatDirectory>,
+}
+
+pub(crate) fn list_native_entries(
+    directory: &FlatDirectory,
+    maximum: usize,
+    retain_directories: bool,
+    after_enumeration: crate::cortex_use::census::CortexCensusPrimitive,
+    before_directory_open: Option<crate::cortex_use::census::CortexCensusPrimitive>,
+    enumeration_stage: crate::cortex_use::census::CortexCensusStage,
+) -> Result<Option<Vec<NativeListed>>, crate::cortex_use::census::CortexCensusError> {
+    use crate::cortex_use::census::{CortexCensusStage, checkpoint, map_listing};
+    directory
+        .revalidate()
+        .map_err(|error| map_listing(enumeration_stage, error))?;
+    let mut opened = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+        .map_err(|error| {
+            map_listing(
+                enumeration_stage,
+                errno_error(
+                    "open flat directory for listing",
+                    directory.diagnostic_path().to_path_buf(),
+                    error,
+                ),
+            )
+        })?;
+    let mut names = Vec::new();
+    for listed in opened.iter() {
+        let listed = listed.map_err(|error| {
+            map_listing(
+                enumeration_stage,
+                errno_error(
+                    "iterate flat directory",
+                    directory.diagnostic_path().to_path_buf(),
+                    error,
+                ),
+            )
+        })?;
+        let bytes = listed.file_name().to_bytes();
+        if matches!(bytes, b"." | b"..") {
+            continue;
+        }
+        names.push(OsString::from_vec(bytes.to_vec()));
+    }
+    if names.len() > maximum {
+        return Ok(None);
+    }
+    checkpoint(after_enumeration)?;
+    names.sort_unstable_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    let mut entries = Vec::new();
+    for name in names {
+        let path = directory.diagnostic_entry(&name);
+        let entry = stat_entry(directory, &name)
+            .map_err(|error| map_listing(enumeration_stage, error))?
+            .ok_or_else(|| {
+                map_listing(
+                    enumeration_stage,
+                    FlatDirectoryError::EnumerationChanged { path: path.clone() },
+                )
+            })?;
+        let child = if retain_directories && entry.kind == JournalEntryKind::Directory {
+            if let Some(primitive) = before_directory_open {
+                checkpoint(primitive)?;
+            }
+            let opened = open_verified_child_directory(directory, &name, &path)
+                .map_err(|error| map_listing(CortexCensusStage::TalentOpen, error))?;
+            let Some((fd, identity)) = opened else {
+                return Err(map_listing(
+                    CortexCensusStage::TalentOpen,
+                    FlatDirectoryError::EnumerationChanged { path: path.clone() },
+                ));
+            };
+            if identity
+                != crate::journal_root::ObjectIdentity::from_device_inode(entry.device, entry.inode)
+            {
+                return Err(map_listing(
+                    CortexCensusStage::TalentOpen,
+                    FlatDirectoryError::IdentityChanged { path: path.clone() },
+                ));
+            }
+            Some(FlatDirectory {
+                directory: fd,
+                identity,
+                diagnostic_path: path,
+            })
+        } else {
+            None
+        };
+        entries.push(NativeListed {
+            entry,
+            directory: child,
+        });
+    }
+    Ok(Some(entries))
+}
+
 /// Read one direct regular file while proving stable metadata and exact bytes.
 pub fn read_observed_file(
     directory: &FlatDirectory,
