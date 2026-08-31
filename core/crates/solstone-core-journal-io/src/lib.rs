@@ -32,6 +32,7 @@ pub mod journal_root;
 pub mod lease;
 #[cfg(any(unix, windows))]
 pub mod locking;
+mod managed_log_field_admission;
 mod managed_log_lock_boundary;
 mod managed_log_names;
 pub mod name_admission;
@@ -196,6 +197,7 @@ pub use windows_lock::{
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_managed_log_test_hooks::{
+    exercise_windows_managed_log_logical_coordinates,
     exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
     publish_test_managed_log_alias, root_test_managed_log_alias_name,
     try_test_managed_log_alias_lock,
