@@ -4334,6 +4334,7 @@ dependencies = [
  "proc-macro2",
  "rcgen",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "solstone-core-journal-config",
@@ -4341,6 +4342,9 @@ dependencies = [
  "solstone-core-sol-link",
  "syn 2.0.119",
  "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]

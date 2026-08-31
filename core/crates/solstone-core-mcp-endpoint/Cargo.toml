@@ -25,10 +25,14 @@ chrono.workspace = true
 nix = { workspace = true, features = ["dir", "fs", "user"] }
 rcgen.workspace = true
 ring.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+webpki-roots = "1.0.9"
 
 [dev-dependencies]
 proc-macro2 = "1.0.107"

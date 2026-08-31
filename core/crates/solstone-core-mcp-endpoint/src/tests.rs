@@ -1610,8 +1610,34 @@ struct FilesystemAliases {
     has_forbidden_glob_import: bool,
 }
 
+struct PatternBindingVisitor<'target> {
+    target: &'target str,
+    found: bool,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for PatternBindingVisitor<'_> {
+    fn visit_pat_ident(&mut self, node: &'ast syn::PatIdent) {
+        if normalized_ident(&node.ident) == self.target {
+            self.found = true;
+        }
+        syn::visit::visit_pat_ident(self, node);
+    }
+}
+
+fn pattern_binds_ident(pattern: &syn::Pat, target: &str) -> bool {
+    let mut visitor = PatternBindingVisitor {
+        target,
+        found: false,
+    };
+    syn::visit::Visit::visit_pat(&mut visitor, pattern);
+    visitor.found
+}
+
 struct DiagnosticSyntaxVisitor {
     allow_fixture_file_writes: bool,
+    allow_account_protocol_writes: bool,
+    in_account_protocol_write: bool,
+    account_protocol_writer_shadowed: bool,
     in_test_scope: bool,
     filesystem_module_aliases: std::collections::BTreeSet<String>,
     filesystem_write_aliases: std::collections::BTreeSet<String>,
@@ -1621,9 +1647,16 @@ struct DiagnosticSyntaxVisitor {
 }
 
 impl DiagnosticSyntaxVisitor {
-    fn new(allow_fixture_file_writes: bool, aliases: FilesystemAliases) -> Self {
+    fn new(
+        allow_fixture_file_writes: bool,
+        allow_account_protocol_writes: bool,
+        aliases: FilesystemAliases,
+    ) -> Self {
         Self {
             allow_fixture_file_writes,
+            allow_account_protocol_writes,
+            in_account_protocol_write: false,
+            account_protocol_writer_shadowed: false,
             in_test_scope: false,
             filesystem_module_aliases: aliases.module_aliases,
             filesystem_write_aliases: aliases.write_aliases,
@@ -1640,6 +1673,24 @@ impl DiagnosticSyntaxVisitor {
     fn writes_allowed(&self) -> bool {
         self.allow_fixture_file_writes || self.in_test_scope
     }
+
+    fn account_protocol_write_allowed(&self, node: &syn::ExprMethodCall) -> bool {
+        self.allow_account_protocol_writes
+            && self.in_account_protocol_write
+            && !self.account_protocol_writer_shadowed
+            && matches!(
+                normalized_ident(&node.method).as_str(),
+                "write" | "write_all"
+            )
+            && matches!(node.receiver.as_ref(), syn::Expr::Path(path) if path.path.is_ident("writer"))
+    }
+
+    fn reject_account_protocol_writer_shadow(&mut self, pattern: &syn::Pat) {
+        if self.in_account_protocol_write && pattern_binds_ident(pattern, "writer") {
+            self.account_protocol_writer_shadowed = true;
+            push_unique(&mut self.violations, "account protocol writer is shadowed");
+        }
+    }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
@@ -1652,9 +1703,16 @@ impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
 
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
         let prior = self.in_test_scope;
+        let prior_account_protocol_write = self.in_account_protocol_write;
+        let prior_account_protocol_writer_shadowed = self.account_protocol_writer_shadowed;
         self.in_test_scope |= is_cfg_test(&node.attrs);
+        self.in_account_protocol_write = self.allow_account_protocol_writes
+            && normalized_ident(&node.sig.ident) == "write_account_request";
+        self.account_protocol_writer_shadowed = false;
         syn::visit::visit_item_fn(self, node);
         self.in_test_scope = prior;
+        self.in_account_protocol_write = prior_account_protocol_write;
+        self.account_protocol_writer_shadowed = prior_account_protocol_writer_shadowed;
     }
 
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
@@ -1779,6 +1837,7 @@ impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if !self.writes_allowed()
+            && !self.account_protocol_write_allowed(node)
             && matches!(
                 normalized_ident(&node.method).as_str(),
                 "write" | "write_all" | "write_fmt"
@@ -1787,6 +1846,33 @@ impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
             push_unique(&mut self.violations, "direct write method");
         }
         syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_local(&mut self, node: &'ast syn::Local) {
+        self.reject_account_protocol_writer_shadow(&node.pat);
+        syn::visit::visit_local(self, node);
+    }
+
+    fn visit_expr_closure(&mut self, node: &'ast syn::ExprClosure) {
+        for input in &node.inputs {
+            self.reject_account_protocol_writer_shadow(input);
+        }
+        syn::visit::visit_expr_closure(self, node);
+    }
+
+    fn visit_expr_for_loop(&mut self, node: &'ast syn::ExprForLoop) {
+        self.reject_account_protocol_writer_shadow(&node.pat);
+        syn::visit::visit_expr_for_loop(self, node);
+    }
+
+    fn visit_expr_let(&mut self, node: &'ast syn::ExprLet) {
+        self.reject_account_protocol_writer_shadow(&node.pat);
+        syn::visit::visit_expr_let(self, node);
+    }
+
+    fn visit_arm(&mut self, node: &'ast syn::Arm) {
+        self.reject_account_protocol_writer_shadow(&node.pat);
+        syn::visit::visit_arm(self, node);
     }
 
     fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
@@ -2233,7 +2319,10 @@ fn collect_response_functions(
                     && is_private
                     && matches!(
                         normalized_ident(&function.sig.ident).as_str(),
-                        "parse_account_registration_response" | "validate_account_registration"
+                        "parse_account_registration_response"
+                            | "validate_account_registration"
+                            | "request_account_registration"
+                            | "run_fixed_account_attempt"
                     );
                 inspect_response_function(
                     &function.sig,
@@ -2433,8 +2522,11 @@ fn syntax_detector_violations(
 fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec<&'static str> {
     let mut aliases = FilesystemModuleAliasCollector::default();
     syn::visit::Visit::visit_file(&mut aliases, file);
-    let mut visitor =
-        DiagnosticSyntaxVisitor::new(path == root.join("tests.rs"), aliases.resolve());
+    let mut visitor = DiagnosticSyntaxVisitor::new(
+        path == root.join("tests.rs"),
+        path == root.join("account_wire.rs"),
+        aliases.resolve(),
+    );
     syn::visit::Visit::visit_file(&mut visitor, file);
     visitor.violations
 }
@@ -2623,6 +2715,40 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         );
         fs::remove_file(path).expect("synthetic source control removes");
     }
+
+    let account_wire = root.path().join("account_wire.rs");
+    fs::write(
+        &account_wire,
+        "fn persistence(writer: Writer) { writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic account-wire source writes");
+    assert!(
+        !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "only the exact account protocol writer function may write a request"
+    );
+    fs::remove_file(&account_wire).expect("synthetic account-wire control removes");
+
+    fs::write(
+        &account_wire,
+        "async fn write_account_request(writer: Writer) { fn persistence(writer: Writer) { writer.write_all(b\"x\"); } let _ = writer; }",
+    )
+    .expect("synthetic nested account-wire source writes");
+    assert!(
+        !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "the account protocol writer exemption may not flow into nested functions"
+    );
+    fs::remove_file(&account_wire).expect("synthetic nested account-wire control removes");
+
+    fs::write(
+        &account_wire,
+        "async fn write_account_request(writer: Writer) { let mut writer = storage(); writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic shadowed account-wire source writes");
+    assert!(
+        !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "the account protocol writer parameter may not be shadowed"
+    );
+    fs::remove_file(account_wire).expect("synthetic shadowed account-wire control removes");
 
     fs::write(
         nested.join("clean.rs"),

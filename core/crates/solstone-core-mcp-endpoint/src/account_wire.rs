@@ -4,12 +4,21 @@
 //! Compact account-registration wire construction from an admitted owner.
 
 use std::fmt;
+use std::io;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use chrono::{DateTime, SecondsFormat, Utc};
 use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair as _};
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, RootCertStore};
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::watch;
+use tokio_rustls::TlsConnector;
 
 use crate::McpEndpointOwnerContext;
 
@@ -305,6 +314,12 @@ const JWT_SIGNATURE_BYTES: usize = 64;
 const JWT_SKEW_SECONDS: i64 = 60;
 const JWT_MIN_TTL_SECONDS: i64 = 600;
 const JWT_MAX_TTL_SECONDS: i64 = 900;
+const ACCOUNT_ORIGIN_HOST: &str = "services.solstone.app";
+const ACCOUNT_ORIGIN_PORT: u16 = 443;
+const ACCOUNT_REGISTRATION_PATH: &str = "/reach/mcp/bridge-token";
+const ACCOUNT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
+const ACCOUNT_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const HTTP_HEADER_MAX_BYTES: usize = 32_768;
 const V1_DENIED_IPV4_RANGES: &[(std::net::Ipv4Addr, std::net::Ipv4Addr)] = &[
     (
         std::net::Ipv4Addr::new(0, 0, 0, 0),
@@ -550,6 +565,46 @@ impl fmt::Display for McpAccountRegistrationError {
 
 impl std::error::Error for McpAccountRegistrationError {}
 
+/// A failed fixed-origin account-registration attempt.
+///
+/// Every variant is deliberately payload-free. In particular, it must never
+/// expose account assertions, response tokens, hostnames, addresses, or TLS
+/// verification details through diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum McpAccountError {
+    Cancelled,
+    Deadline,
+    Clock,
+    Request,
+    Resolve,
+    Connect,
+    Tls,
+    HttpWrite,
+    HttpRead,
+    HttpFraming,
+    Response,
+}
+
+impl fmt::Display for McpAccountError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Cancelled => "MCP account registration was cancelled",
+            Self::Deadline => "MCP account registration exceeded its deadline",
+            Self::Clock => "MCP account registration clock is unavailable",
+            Self::Request => "MCP account registration request could not be built",
+            Self::Resolve => "MCP account registration origin could not be resolved",
+            Self::Connect => "MCP account registration origin could not be connected",
+            Self::Tls => "MCP account registration TLS connection failed",
+            Self::HttpWrite => "MCP account registration request write failed",
+            Self::HttpRead => "MCP account registration response read failed",
+            Self::HttpFraming => "MCP account registration response framing is invalid",
+            Self::Response => "MCP account registration response is invalid",
+        })
+    }
+}
+
+impl std::error::Error for McpAccountError {}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RegistrationJwtHeader {
@@ -648,6 +703,549 @@ fn parse_account_registration_response(
         bridge_id: response.bridge_id,
         bridge_address,
     })
+}
+
+/// Perform exactly one cancellable registration request to the account origin.
+///
+/// This stays private to the account-wire unit: only later same-crate
+/// reachability orchestration may carry the resulting opaque registration.
+#[allow(dead_code)]
+async fn request_account_registration(
+    owner: &McpEndpointOwnerContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<McpAccountRegistration, McpAccountError> {
+    let mut io = TokioAccountAttemptIo;
+    run_fixed_account_attempt(owner, shutdown, &mut io, &SystemAccountClock).await
+}
+
+trait AccountAttemptIo {
+    type Socket;
+    type Connection: AsyncRead + AsyncWrite + Unpin;
+
+    async fn resolve(&mut self) -> io::Result<Vec<SocketAddr>>;
+    async fn connect(&mut self, address: SocketAddr) -> io::Result<Self::Socket>;
+    async fn tls(&mut self, socket: Self::Socket) -> io::Result<Self::Connection>;
+}
+
+trait AccountClock {
+    fn monotonic_now(&self) -> Instant;
+    fn wall_now(&self) -> i64;
+}
+
+struct SystemAccountClock;
+
+impl AccountClock for SystemAccountClock {
+    fn monotonic_now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn wall_now(&self) -> i64 {
+        Utc::now().timestamp()
+    }
+}
+
+struct TokioAccountAttemptIo;
+
+impl AccountAttemptIo for TokioAccountAttemptIo {
+    type Socket = tokio::net::TcpStream;
+    type Connection = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
+
+    async fn resolve(&mut self) -> io::Result<Vec<SocketAddr>> {
+        tokio::net::lookup_host((ACCOUNT_ORIGIN_HOST, ACCOUNT_ORIGIN_PORT))
+            .await
+            .map(Iterator::collect)
+    }
+
+    async fn connect(&mut self, address: SocketAddr) -> io::Result<Self::Socket> {
+        tokio::net::TcpStream::connect(address).await
+    }
+
+    async fn tls(&mut self, socket: Self::Socket) -> io::Result<Self::Connection> {
+        let server_name = ServerName::try_from(ACCOUNT_ORIGIN_HOST.to_owned())
+            .map_err(|_| io::Error::other("fixed account server name is invalid"))?;
+        let config = account_tls_config()
+            .map_err(|_| io::Error::other("fixed account TLS configuration is unavailable"))?;
+        TlsConnector::from(config)
+            .connect(server_name, socket)
+            .await
+    }
+}
+
+async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
+    owner: &McpEndpointOwnerContext,
+    shutdown: &mut watch::Receiver<bool>,
+    io: &mut I,
+    clock: &C,
+) -> Result<McpAccountRegistration, McpAccountError> {
+    if account_shutdown_requested(shutdown) {
+        return Err(McpAccountError::Cancelled);
+    }
+    let deadline = clock.monotonic_now() + ACCOUNT_ATTEMPT_TIMEOUT;
+    let wall_start = clock.wall_now();
+    let request = build_account_registration_request(owner, wall_start)
+        .map_err(|_| McpAccountError::Request)?;
+    let addresses = await_account_phase(shutdown, deadline, clock, io.resolve())
+        .await
+        .map_err(|error| match error {
+            McpAccountError::Cancelled | McpAccountError::Deadline => error,
+            _ => McpAccountError::Resolve,
+        })?;
+    let connect_deadline = deadline.min(clock.monotonic_now() + ACCOUNT_CONNECT_TIMEOUT);
+    let mut socket = None;
+    let mut attempted_address = false;
+    for address in addresses {
+        attempted_address = true;
+        match await_account_phase(shutdown, connect_deadline, clock, io.connect(address)).await {
+            Ok(connected) => {
+                socket = Some(connected);
+                break;
+            }
+            Err(error @ (McpAccountError::Cancelled | McpAccountError::Deadline)) => {
+                return Err(error);
+            }
+            Err(_) => continue,
+        }
+    }
+    if !attempted_address {
+        return Err(McpAccountError::Resolve);
+    }
+    let socket = socket.ok_or(McpAccountError::Connect)?;
+    let tls = await_account_phase(shutdown, deadline, clock, io.tls(socket))
+        .await
+        .map_err(|error| match error {
+            McpAccountError::Cancelled | McpAccountError::Deadline => error,
+            _ => McpAccountError::Tls,
+        })?;
+    let (mut reader, mut writer) = tokio::io::split(tls);
+    write_account_request(&mut writer, request.body_bytes(), shutdown, deadline, clock).await?;
+    let response = read_account_response(&mut reader, shutdown, deadline, clock).await?;
+    account_deadline_remaining(clock, deadline)?;
+    let wall_end = clock.wall_now();
+    let wire =
+        parse_account_registration_response(response.status, &response.headers, &response.body)
+            .map_err(|_| McpAccountError::Response)?;
+    validate_account_registration(wire, owner, wall_start, wall_end)
+        .map_err(|_| McpAccountError::Response)
+}
+
+fn account_tls_config() -> Result<Arc<ClientConfig>, McpAccountError> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let mut config = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .map_err(|_| McpAccountError::Tls)?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Ok(Arc::new(config))
+}
+
+fn account_shutdown_requested(shutdown: &watch::Receiver<bool>) -> bool {
+    *shutdown.borrow() || shutdown.has_changed().is_err()
+}
+
+fn account_deadline_remaining<C: AccountClock>(
+    clock: &C,
+    deadline: Instant,
+) -> Result<Duration, McpAccountError> {
+    deadline
+        .checked_duration_since(clock.monotonic_now())
+        .ok_or(McpAccountError::Deadline)
+}
+
+async fn await_account_phase<T, F, C>(
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+    future: F,
+) -> Result<T, McpAccountError>
+where
+    F: std::future::Future<Output = std::io::Result<T>>,
+    C: AccountClock,
+{
+    tokio::pin!(future);
+    loop {
+        if account_shutdown_requested(shutdown) {
+            return Err(McpAccountError::Cancelled);
+        }
+        let remaining = account_deadline_remaining(clock, deadline)?;
+        tokio::select! {
+            biased;
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow_and_update() {
+                    return Err(McpAccountError::Cancelled);
+                }
+            }
+            result = tokio::time::timeout(remaining, &mut future) => {
+                let value = result
+                    .map_err(|_| McpAccountError::Deadline)?
+                    .map_err(|_| McpAccountError::HttpRead)?;
+                account_deadline_remaining(clock, deadline)?;
+                return Ok(value);
+            }
+        }
+    }
+}
+
+async fn write_account_request<W: AsyncWrite + Unpin, C: AccountClock>(
+    writer: &mut W,
+    body: &[u8],
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<(), McpAccountError> {
+    let head = format!(
+        "POST {ACCOUNT_REGISTRATION_PATH} HTTP/1.1\r\nHost: {ACCOUNT_ORIGIN_HOST}\r\nContent-Type: application/json\r\nAccept: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    await_account_phase(shutdown, deadline, clock, writer.write_all(head.as_bytes()))
+        .await
+        .map_err(|error| match error {
+            McpAccountError::Cancelled | McpAccountError::Deadline => error,
+            _ => McpAccountError::HttpWrite,
+        })?;
+    await_account_phase(shutdown, deadline, clock, writer.write_all(body))
+        .await
+        .map_err(|error| match error {
+            McpAccountError::Cancelled | McpAccountError::Deadline => error,
+            _ => McpAccountError::HttpWrite,
+        })?;
+    await_account_phase(shutdown, deadline, clock, writer.flush())
+        .await
+        .map_err(|error| match error {
+            McpAccountError::Cancelled | McpAccountError::Deadline => error,
+            _ => McpAccountError::HttpWrite,
+        })
+}
+
+struct AccountHttpResponse {
+    status: u16,
+    headers: AccountHttpHeaders,
+    body: Vec<u8>,
+}
+
+type AccountHttpHeaders = Vec<(Vec<u8>, Vec<u8>)>;
+
+enum AccountHttpBodyFraming {
+    ContentLength(usize),
+    Chunked,
+}
+
+async fn read_account_response<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<AccountHttpResponse, McpAccountError> {
+    let head = read_http_head(reader, shutdown, deadline, clock).await?;
+    let (status, headers, framing) = parse_http_head(&head)?;
+    let body = match framing {
+        AccountHttpBodyFraming::ContentLength(length) => {
+            read_http_bytes(reader, length, shutdown, deadline, clock).await?
+        }
+        AccountHttpBodyFraming::Chunked => {
+            read_chunked_http_body(reader, shutdown, deadline, clock).await?
+        }
+    };
+    ensure_http_eof(reader, shutdown, deadline, clock).await?;
+    Ok(AccountHttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+async fn read_http_head<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<Vec<u8>, McpAccountError> {
+    let mut head = Vec::with_capacity(HTTP_HEADER_MAX_BYTES);
+    loop {
+        if head.len() == HTTP_HEADER_MAX_BYTES {
+            return Err(McpAccountError::HttpFraming);
+        }
+        head.push(read_http_byte(reader, shutdown, deadline, clock).await?);
+        if head.ends_with(b"\r\n\r\n") {
+            return Ok(head);
+        }
+    }
+}
+
+async fn read_http_byte<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<u8, McpAccountError> {
+    let mut byte = [0_u8; 1];
+    match await_account_phase(shutdown, deadline, clock, reader.read(&mut byte)).await? {
+        0 => Err(McpAccountError::HttpRead),
+        1 => Ok(byte[0]),
+        _ => unreachable!("one-byte read cannot exceed its buffer"),
+    }
+}
+
+async fn read_http_bytes<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    length: usize,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<Vec<u8>, McpAccountError> {
+    if length > RESPONSE_BODY_MAX_BYTES {
+        return Err(McpAccountError::HttpFraming);
+    }
+    let mut body = Vec::with_capacity(length);
+    for _ in 0..length {
+        body.push(read_http_byte(reader, shutdown, deadline, clock).await?);
+    }
+    Ok(body)
+}
+
+async fn read_chunked_http_body<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<Vec<u8>, McpAccountError> {
+    let mut body = Vec::with_capacity(RESPONSE_BODY_MAX_BYTES);
+    loop {
+        let line = read_http_line(reader, shutdown, deadline, HTTP_HEADER_MAX_BYTES, clock).await?;
+        let size_text = parse_chunk_size_and_extensions(&line)?;
+        if size_text.is_empty() || !size_text.iter().all(u8::is_ascii_hexdigit) {
+            return Err(McpAccountError::HttpFraming);
+        }
+        let chunk_len = usize::from_str_radix(
+            std::str::from_utf8(size_text).map_err(|_| McpAccountError::HttpFraming)?,
+            16,
+        )
+        .map_err(|_| McpAccountError::HttpFraming)?;
+        if chunk_len > RESPONSE_BODY_MAX_BYTES.saturating_sub(body.len()) {
+            return Err(McpAccountError::HttpFraming);
+        }
+        if chunk_len == 0 {
+            loop {
+                let trailer =
+                    read_http_line(reader, shutdown, deadline, HTTP_HEADER_MAX_BYTES, clock)
+                        .await?;
+                if trailer.is_empty() {
+                    return Ok(body);
+                }
+                parse_http_field_line(&trailer)?;
+            }
+        }
+        body.extend(read_http_bytes(reader, chunk_len, shutdown, deadline, clock).await?);
+        if read_http_byte(reader, shutdown, deadline, clock).await? != b'\r'
+            || read_http_byte(reader, shutdown, deadline, clock).await? != b'\n'
+        {
+            return Err(McpAccountError::HttpFraming);
+        }
+    }
+}
+
+async fn read_http_line<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    limit: usize,
+    clock: &C,
+) -> Result<Vec<u8>, McpAccountError> {
+    let mut line = Vec::new();
+    loop {
+        if line.len() == limit {
+            return Err(McpAccountError::HttpFraming);
+        }
+        let byte = read_http_byte(reader, shutdown, deadline, clock).await?;
+        line.push(byte);
+        if line.ends_with(b"\r\n") {
+            line.truncate(line.len() - 2);
+            return Ok(line);
+        }
+        if byte == b'\n' {
+            return Err(McpAccountError::HttpFraming);
+        }
+    }
+}
+
+async fn ensure_http_eof<R: AsyncRead + Unpin, C: AccountClock>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    clock: &C,
+) -> Result<(), McpAccountError> {
+    let mut byte = [0_u8; 1];
+    match await_account_phase(shutdown, deadline, clock, reader.read(&mut byte)).await? {
+        0 => Ok(()),
+        _ => Err(McpAccountError::HttpFraming),
+    }
+}
+
+fn parse_http_head(
+    head: &[u8],
+) -> Result<(u16, AccountHttpHeaders, AccountHttpBodyFraming), McpAccountError> {
+    let content = head
+        .strip_suffix(b"\r\n")
+        .ok_or(McpAccountError::HttpFraming)?;
+    let mut lines = content.split(|byte| *byte == b'\n');
+    let status_line = lines.next().ok_or(McpAccountError::HttpFraming)?;
+    let status_line = status_line
+        .strip_suffix(b"\r")
+        .ok_or(McpAccountError::HttpFraming)?;
+    let status = parse_http_status(status_line)?;
+    if (100..200).contains(&status) {
+        return Err(McpAccountError::HttpFraming);
+    }
+    let mut headers = Vec::new();
+    let mut content_length = None;
+    let mut chunked = false;
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let line = line
+            .strip_suffix(b"\r")
+            .ok_or(McpAccountError::HttpFraming)?;
+        let (name, value) = parse_http_field_line(line)?;
+        if name.eq_ignore_ascii_case(b"content-length") {
+            if content_length
+                .replace(parse_content_length(trim_http_ows(value))?)
+                .is_some()
+            {
+                return Err(McpAccountError::HttpFraming);
+            }
+        } else if name.eq_ignore_ascii_case(b"transfer-encoding") {
+            if chunked || !trim_http_ows(value).eq_ignore_ascii_case(b"chunked") {
+                return Err(McpAccountError::HttpFraming);
+            }
+            chunked = true;
+        } else if name.eq_ignore_ascii_case(b"content-encoding") {
+            return Err(McpAccountError::HttpFraming);
+        }
+        headers.push((name.to_vec(), value.to_vec()));
+    }
+    let framing = match (content_length, chunked) {
+        (Some(_), true) | (None, false) => return Err(McpAccountError::HttpFraming),
+        (Some(length), false) => AccountHttpBodyFraming::ContentLength(length),
+        (None, true) => AccountHttpBodyFraming::Chunked,
+    };
+    Ok((status, headers, framing))
+}
+
+fn parse_chunk_size_and_extensions(line: &[u8]) -> Result<&[u8], McpAccountError> {
+    let mut segments = line.split(|byte| *byte == b';');
+    let size = segments.next().unwrap_or_default();
+    if size.is_empty() || !size.iter().all(u8::is_ascii_hexdigit) {
+        return Err(McpAccountError::HttpFraming);
+    }
+    for extension in segments {
+        parse_chunk_extension(extension)?;
+    }
+    Ok(size)
+}
+
+fn parse_chunk_extension(extension: &[u8]) -> Result<(), McpAccountError> {
+    let (name, value) = match extension.iter().position(|byte| *byte == b'=') {
+        Some(separator) => (&extension[..separator], Some(&extension[separator + 1..])),
+        None => (extension, None),
+    };
+    if name.is_empty() || !name.iter().all(is_http_token_byte) {
+        return Err(McpAccountError::HttpFraming);
+    }
+    if let Some(value) = value
+        && (value.is_empty()
+            || (!value.iter().all(is_http_token_byte) && !is_http_quoted_string(value)))
+    {
+        return Err(McpAccountError::HttpFraming);
+    }
+    Ok(())
+}
+
+fn is_http_quoted_string(value: &[u8]) -> bool {
+    if value.len() < 2 || value.first() != Some(&b'"') || value.last() != Some(&b'"') {
+        return false;
+    }
+    let mut escaped = false;
+    for byte in &value[1..value.len() - 1] {
+        if escaped {
+            if *byte < 0x20 || *byte == 0x7f {
+                return false;
+            }
+            escaped = false;
+        } else if *byte == b'\\' {
+            escaped = true;
+        } else if *byte == b'"' || !matches!(*byte, 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e) {
+            return false;
+        }
+    }
+    !escaped
+}
+
+fn parse_http_field_line(line: &[u8]) -> Result<(&[u8], &[u8]), McpAccountError> {
+    if line.is_empty() || line.starts_with(b" ") || line.starts_with(b"\t") {
+        return Err(McpAccountError::HttpFraming);
+    }
+    let separator = line
+        .iter()
+        .position(|byte| *byte == b':')
+        .ok_or(McpAccountError::HttpFraming)?;
+    let (name, value) = (&line[..separator], &line[separator + 1..]);
+    if name.is_empty()
+        || !name.iter().all(is_http_token_byte)
+        || value
+            .iter()
+            .any(|byte| (*byte < 0x20 && *byte != b'\t') || *byte == 0x7f)
+    {
+        return Err(McpAccountError::HttpFraming);
+    }
+    Ok((name, value))
+}
+
+fn parse_http_status(line: &[u8]) -> Result<u16, McpAccountError> {
+    let code = line
+        .strip_prefix(b"HTTP/1.1 ")
+        .and_then(|rest| rest.get(..3))
+        .filter(|code| code.iter().all(u8::is_ascii_digit))
+        .ok_or(McpAccountError::HttpFraming)?;
+    if line.len() > 12 && line[12] != b' ' {
+        return Err(McpAccountError::HttpFraming);
+    }
+    std::str::from_utf8(code)
+        .ok()
+        .and_then(|code| code.parse().ok())
+        .ok_or(McpAccountError::HttpFraming)
+}
+
+fn parse_content_length(value: &[u8]) -> Result<usize, McpAccountError> {
+    if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+        return Err(McpAccountError::HttpFraming);
+    }
+    let value = std::str::from_utf8(value).map_err(|_| McpAccountError::HttpFraming)?;
+    value.parse().map_err(|_| McpAccountError::HttpFraming)
+}
+
+fn trim_http_ows(value: &[u8]) -> &[u8] {
+    let start = value
+        .iter()
+        .position(|byte| !matches!(*byte, b' ' | b'\t'))
+        .unwrap_or(value.len());
+    let value = &value[start..];
+    let end = value
+        .iter()
+        .rposition(|byte| !matches!(*byte, b' ' | b'\t'))
+        .map_or(0, |index| index + 1);
+    &value[..end]
+}
+
+fn is_http_token_byte(byte: &u8) -> bool {
+    matches!(
+        *byte,
+        b'!' | b'#'..=b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
+            | b'0'..=b'9'
+            | b'A'..=b'Z'
+            | b'a'..=b'z'
+    )
 }
 
 /// Turn one sealed response wire into the sole opaque registration authority.
@@ -978,10 +1576,15 @@ fn is_v1_denied_ipv4(address: std::net::Ipv4Addr) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::collections::VecDeque;
     use std::fs;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::os::unix::fs::PermissionsExt as _;
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::Path;
+    use std::rc::Rc;
+    use std::task::Poll;
 
     use base64::Engine as _;
     use ring::digest;
@@ -990,6 +1593,7 @@ mod tests {
         ECDSA_P256_SHA256_FIXED, Ed25519KeyPair, KeyPair as _, UnparsedPublicKey,
     };
     use tempfile::TempDir;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
     use super::*;
     use crate::bootstrap_mcp_endpoint_owner_identity;
@@ -999,6 +1603,321 @@ mod tests {
         0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
         0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
     ];
+
+    #[derive(Clone)]
+    struct TestAccountClock {
+        start: Instant,
+        monotonic: Rc<Cell<Instant>>,
+        wall: Rc<Cell<i64>>,
+    }
+
+    impl TestAccountClock {
+        fn new(wall: i64) -> Self {
+            let start = Instant::now();
+            Self {
+                start,
+                monotonic: Rc::new(Cell::new(start)),
+                wall: Rc::new(Cell::new(wall)),
+            }
+        }
+
+        fn set_elapsed(&self, elapsed: Duration) {
+            self.monotonic.set(self.start + elapsed);
+        }
+    }
+
+    impl AccountClock for TestAccountClock {
+        fn monotonic_now(&self) -> Instant {
+            self.monotonic.get()
+        }
+
+        fn wall_now(&self) -> i64 {
+            self.wall.get()
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum AccountAttemptPhase {
+        Resolve,
+        Connect,
+        Tls,
+        RequestHead,
+        RequestBody,
+        RequestFlush,
+        ResponseHead,
+        ResponseBody,
+        ResponseEof,
+    }
+
+    enum AccountAttemptPlan {
+        Complete,
+        Fail,
+        Advance(Duration),
+        CancelAndStall(watch::Sender<bool>),
+        CloseAndStall(Option<watch::Sender<bool>>),
+    }
+
+    struct TestAccountConnectionState {
+        clock: TestAccountClock,
+        response: Vec<u8>,
+        response_head_end: usize,
+        response_offset: usize,
+        request: Vec<u8>,
+        writes: usize,
+        active_phase: Option<AccountAttemptPhase>,
+        plans: VecDeque<(AccountAttemptPhase, AccountAttemptPlan)>,
+        trace: Rc<std::cell::RefCell<Vec<AccountAttemptPhase>>>,
+        dropped: bool,
+    }
+
+    struct TestAccountConnection {
+        state: Rc<std::cell::RefCell<TestAccountConnectionState>>,
+    }
+
+    impl TestAccountConnectionState {
+        fn phase_poll(&mut self, phase: AccountAttemptPhase) -> Poll<io::Result<()>> {
+            if self.active_phase == Some(phase) {
+                return Poll::Ready(Ok(()));
+            }
+            self.active_phase = Some(phase);
+            self.trace.borrow_mut().push(phase);
+            let plan = self
+                .plans
+                .front()
+                .is_some_and(|(planned, _)| *planned == phase)
+                .then(|| {
+                    self.plans
+                        .pop_front()
+                        .expect("matching connection plan exists")
+                        .1
+                })
+                .unwrap_or(AccountAttemptPlan::Complete);
+            match plan {
+                AccountAttemptPlan::Complete => Poll::Ready(Ok(())),
+                AccountAttemptPlan::Fail => {
+                    Poll::Ready(Err(io::Error::other("injected account I/O failure")))
+                }
+                AccountAttemptPlan::Advance(elapsed) => {
+                    self.clock.set_elapsed(elapsed);
+                    Poll::Ready(Ok(()))
+                }
+                AccountAttemptPlan::CancelAndStall(sender) => {
+                    sender
+                        .send(true)
+                        .expect("account cancellation receiver remains live");
+                    Poll::Pending
+                }
+                AccountAttemptPlan::CloseAndStall(mut sender) => {
+                    drop(sender.take());
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    impl Drop for TestAccountConnection {
+        fn drop(&mut self) {
+            self.state.borrow_mut().dropped = true;
+        }
+    }
+
+    impl AsyncRead for TestAccountConnection {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+            buffer: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let mut state = self.state.borrow_mut();
+            let phase = if state.response_offset < state.response_head_end {
+                AccountAttemptPhase::ResponseHead
+            } else if state.response_offset < state.response.len() {
+                AccountAttemptPhase::ResponseBody
+            } else {
+                AccountAttemptPhase::ResponseEof
+            };
+            match state.phase_poll(phase) {
+                Poll::Ready(Ok(())) => {}
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => return Poll::Pending,
+            }
+            if state.response_offset == state.response.len() {
+                return Poll::Ready(Ok(()));
+            }
+            let available = &state.response[state.response_offset..];
+            let count = available.len().min(buffer.remaining());
+            buffer.put_slice(&available[..count]);
+            state.response_offset += count;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for TestAccountConnection {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut state = self.state.borrow_mut();
+            let phase = if state.writes == 0 {
+                AccountAttemptPhase::RequestHead
+            } else {
+                AccountAttemptPhase::RequestBody
+            };
+            match state.phase_poll(phase) {
+                Poll::Ready(Ok(())) => {}
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => return Poll::Pending,
+            }
+            state.request.extend_from_slice(bytes);
+            state.writes += 1;
+            Poll::Ready(Ok(bytes.len()))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            self.state
+                .borrow_mut()
+                .phase_poll(AccountAttemptPhase::RequestFlush)
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct TestAccountAttemptIo {
+        clock: TestAccountClock,
+        response: Vec<u8>,
+        addresses: Vec<SocketAddr>,
+        resolve: AccountAttemptPlan,
+        connects: VecDeque<AccountAttemptPlan>,
+        tls: AccountAttemptPlan,
+        connection_plans: VecDeque<(AccountAttemptPhase, AccountAttemptPlan)>,
+        trace: Vec<AccountAttemptPhase>,
+        connection: Option<Rc<std::cell::RefCell<TestAccountConnectionState>>>,
+    }
+
+    impl TestAccountAttemptIo {
+        fn success(clock: TestAccountClock, response: Vec<u8>) -> Self {
+            Self {
+                clock,
+                response,
+                addresses: vec![SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 9)),
+                    ACCOUNT_ORIGIN_PORT,
+                )],
+                resolve: AccountAttemptPlan::Complete,
+                connects: VecDeque::from([AccountAttemptPlan::Complete]),
+                tls: AccountAttemptPlan::Complete,
+                connection_plans: VecDeque::new(),
+                trace: Vec::new(),
+                connection: None,
+            }
+        }
+
+        async fn run_plan(
+            &mut self,
+            phase: AccountAttemptPhase,
+            plan: AccountAttemptPlan,
+        ) -> io::Result<()> {
+            self.trace.push(phase);
+            match plan {
+                AccountAttemptPlan::Complete => Ok(()),
+                AccountAttemptPlan::Fail => Err(io::Error::other("injected account phase failure")),
+                AccountAttemptPlan::Advance(elapsed) => {
+                    self.clock.set_elapsed(elapsed);
+                    Ok(())
+                }
+                AccountAttemptPlan::CancelAndStall(sender) => {
+                    sender
+                        .send(true)
+                        .expect("account cancellation receiver remains live");
+                    std::future::pending().await
+                }
+                AccountAttemptPlan::CloseAndStall(mut sender) => {
+                    drop(sender.take());
+                    std::future::pending().await
+                }
+            }
+        }
+
+        fn request_bytes(&self) -> Vec<u8> {
+            self.connection
+                .as_ref()
+                .expect("test connection remains owned")
+                .borrow()
+                .request
+                .clone()
+        }
+
+        fn connection_trace(&self) -> Vec<AccountAttemptPhase> {
+            self.connection
+                .as_ref()
+                .expect("test connection remains owned")
+                .borrow()
+                .trace
+                .borrow()
+                .clone()
+        }
+
+        fn connection_dropped(&self) -> bool {
+            self.connection
+                .as_ref()
+                .expect("test connection remains owned")
+                .borrow()
+                .dropped
+        }
+    }
+
+    impl AccountAttemptIo for TestAccountAttemptIo {
+        type Socket = ();
+        type Connection = TestAccountConnection;
+
+        async fn resolve(&mut self) -> io::Result<Vec<SocketAddr>> {
+            let plan = std::mem::replace(&mut self.resolve, AccountAttemptPlan::Complete);
+            self.run_plan(AccountAttemptPhase::Resolve, plan).await?;
+            Ok(self.addresses.clone())
+        }
+
+        async fn connect(&mut self, _address: SocketAddr) -> io::Result<Self::Socket> {
+            let plan = self
+                .connects
+                .pop_front()
+                .unwrap_or(AccountAttemptPlan::Fail);
+            self.run_plan(AccountAttemptPhase::Connect, plan).await?;
+            Ok(())
+        }
+
+        async fn tls(&mut self, _socket: Self::Socket) -> io::Result<Self::Connection> {
+            let plan = std::mem::replace(&mut self.tls, AccountAttemptPlan::Complete);
+            self.run_plan(AccountAttemptPhase::Tls, plan).await?;
+            let response_head_end = self
+                .response
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("test response has a complete header")
+                + 4;
+            let state = Rc::new(std::cell::RefCell::new(TestAccountConnectionState {
+                clock: self.clock.clone(),
+                response: self.response.clone(),
+                response_head_end,
+                response_offset: 0,
+                request: Vec::new(),
+                writes: 0,
+                active_phase: None,
+                plans: std::mem::take(&mut self.connection_plans),
+                trace: Rc::new(std::cell::RefCell::new(Vec::new())),
+                dropped: false,
+            }));
+            self.connection = Some(state.clone());
+            Ok(TestAccountConnection { state })
+        }
+    }
 
     #[test]
     fn fixture_provenance_is_pinned() {
@@ -2787,6 +3706,34 @@ mod tests {
         }
     }
 
+    fn account_http_registration_response(owner: &McpEndpointOwnerContext) -> Vec<u8> {
+        let wire = valid_registration_wire(
+            owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        let body = serde_json::to_vec(&serde_json::json!({
+            "token": wire.token,
+            "token_type": "Bearer",
+            "expires_in": wire.expires_in,
+            "expires_at": wire.expires_at,
+            "instance_id": wire.instance_id,
+            "hostname": wire.hostname,
+            "bridge_id": wire.bridge_id,
+            "bridge_addresses": [wire.bridge_address],
+        }))
+        .expect("test response serializes");
+        [
+            format!(
+                "HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nContent-Length: {}\r\n\r\n",
+                body.len()
+            )
+            .into_bytes(),
+            body,
+        ]
+        .concat()
+    }
+
     fn assert_registration_error(
         result: Result<McpAccountRegistration, McpAccountRegistrationError>,
         expected: McpAccountRegistrationError,
@@ -3259,6 +4206,475 @@ mod tests {
             bridge_id: wire.bridge_id.clone(),
             bridge_address: wire.bridge_address.clone(),
         }
+    }
+
+    fn account_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("account test runtime creates")
+    }
+
+    #[test]
+    fn injected_account_attempt_completes_one_fixed_post_and_returns_registration() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let mut io = TestAccountAttemptIo::success(
+            clock.clone(),
+            account_http_registration_response(&owner),
+        );
+        let (_sender, mut shutdown) = watch::channel(false);
+        let runtime = account_runtime();
+        let registration = runtime
+            .block_on(run_fixed_account_attempt(
+                &owner,
+                &mut shutdown,
+                &mut io,
+                &clock,
+            ))
+            .expect("injected fixed account attempt succeeds");
+        assert_eq!(registration.hostname, "aaaqeaye.solstone.me");
+        assert_eq!(
+            io.trace,
+            vec![
+                AccountAttemptPhase::Resolve,
+                AccountAttemptPhase::Connect,
+                AccountAttemptPhase::Tls,
+            ]
+        );
+        let request = io.request_bytes();
+        let (head, body) = request.split_at(
+            request
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("request has one complete header")
+                + 4,
+        );
+        assert_eq!(
+            head,
+            format!(
+                "POST {ACCOUNT_REGISTRATION_PATH} HTTP/1.1\r\nHost: {ACCOUNT_ORIGIN_HOST}\r\nContent-Type: application/json\r\nAccept: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len(),
+            )
+            .as_bytes(),
+        );
+        let body: serde_json::Value = serde_json::from_slice(body).expect("request JSON parses");
+        assert_eq!(body["instance_id"], owner.committed.instance_id());
+        assert_eq!(body["cnf_jwk"]["kty"], "OKP");
+        assert_eq!(body["cnf_jwk"]["crv"], "Ed25519");
+    }
+
+    #[test]
+    fn injected_account_attempt_cancellation_stops_at_the_active_phase() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        for close_sender in [false, true] {
+            let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+            let mut io = TestAccountAttemptIo::success(
+                clock.clone(),
+                account_http_registration_response(&owner),
+            );
+            let (sender, mut shutdown) = watch::channel(false);
+            io.resolve = if close_sender {
+                AccountAttemptPlan::CloseAndStall(Some(sender))
+            } else {
+                AccountAttemptPlan::CancelAndStall(sender)
+            };
+            let result = account_runtime().block_on(run_fixed_account_attempt(
+                &owner,
+                &mut shutdown,
+                &mut io,
+                &clock,
+            ));
+            assert!(matches!(result, Err(McpAccountError::Cancelled)));
+            assert_eq!(io.trace, vec![AccountAttemptPhase::Resolve]);
+            assert!(
+                io.connection.is_none(),
+                "no connection survives cancellation"
+            );
+        }
+    }
+
+    #[test]
+    fn injected_connect_and_tls_barriers_cancel_before_any_request() {
+        for later_candidate in [false, true] {
+            for close_sender in [false, true] {
+                let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+                let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+                let mut io = TestAccountAttemptIo::success(
+                    clock.clone(),
+                    account_http_registration_response(&owner),
+                );
+                io.addresses.push(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+                    ACCOUNT_ORIGIN_PORT,
+                ));
+                let (sender, mut shutdown) = watch::channel(false);
+                let cancellation = if close_sender {
+                    AccountAttemptPlan::CloseAndStall(Some(sender))
+                } else {
+                    AccountAttemptPlan::CancelAndStall(sender)
+                };
+                io.connects = if later_candidate {
+                    VecDeque::from([AccountAttemptPlan::Fail, cancellation])
+                } else {
+                    VecDeque::from([cancellation, AccountAttemptPlan::Complete])
+                };
+                let runtime = account_runtime();
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        Duration::from_secs(1),
+                        run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                    )
+                    .await
+                });
+                assert!(matches!(result, Ok(Err(McpAccountError::Cancelled))));
+                assert_eq!(io.trace.last(), Some(&AccountAttemptPhase::Connect));
+                assert!(
+                    io.connection.is_none(),
+                    "no TLS connection survives connect cancellation"
+                );
+            }
+        }
+
+        for close_sender in [false, true] {
+            let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+            let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+            let mut io = TestAccountAttemptIo::success(
+                clock.clone(),
+                account_http_registration_response(&owner),
+            );
+            let (sender, mut shutdown) = watch::channel(false);
+            io.tls = if close_sender {
+                AccountAttemptPlan::CloseAndStall(Some(sender))
+            } else {
+                AccountAttemptPlan::CancelAndStall(sender)
+            };
+            let runtime = account_runtime();
+            let result = runtime.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_secs(1),
+                    run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                )
+                .await
+            });
+            assert!(matches!(result, Ok(Err(McpAccountError::Cancelled))));
+            assert_eq!(io.trace.last(), Some(&AccountAttemptPhase::Tls));
+            assert!(
+                io.connection.is_none(),
+                "no request follows TLS cancellation"
+            );
+        }
+    }
+
+    #[test]
+    fn injected_account_io_barriers_cancel_and_drop_without_later_phase_work() {
+        for phase in [
+            AccountAttemptPhase::RequestHead,
+            AccountAttemptPhase::RequestBody,
+            AccountAttemptPhase::RequestFlush,
+            AccountAttemptPhase::ResponseHead,
+            AccountAttemptPhase::ResponseBody,
+            AccountAttemptPhase::ResponseEof,
+        ] {
+            for close_sender in [false, true] {
+                let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+                let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+                let mut io = TestAccountAttemptIo::success(
+                    clock.clone(),
+                    account_http_registration_response(&owner),
+                );
+                let (sender, mut shutdown) = watch::channel(false);
+                io.connection_plans.push_back((
+                    phase,
+                    if close_sender {
+                        AccountAttemptPlan::CloseAndStall(Some(sender))
+                    } else {
+                        AccountAttemptPlan::CancelAndStall(sender)
+                    },
+                ));
+                let runtime = account_runtime();
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        Duration::from_secs(1),
+                        run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                    )
+                    .await
+                });
+                assert!(matches!(result, Ok(Err(McpAccountError::Cancelled))));
+                let trace = io.connection_trace();
+                assert_eq!(trace.last(), Some(&phase));
+                assert!(io.connection_dropped(), "connection drops on {phase:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn injected_account_attempt_retries_only_pre_request_addresses() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let mut io = TestAccountAttemptIo::success(
+            clock.clone(),
+            account_http_registration_response(&owner),
+        );
+        io.addresses.push(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            ACCOUNT_ORIGIN_PORT,
+        ));
+        io.connects = VecDeque::from([AccountAttemptPlan::Fail, AccountAttemptPlan::Complete]);
+        let (_sender, mut shutdown) = watch::channel(false);
+        let runtime = account_runtime();
+        assert!(
+            runtime
+                .block_on(run_fixed_account_attempt(
+                    &owner,
+                    &mut shutdown,
+                    &mut io,
+                    &clock,
+                ))
+                .is_ok()
+        );
+        assert_eq!(
+            io.trace,
+            vec![
+                AccountAttemptPhase::Resolve,
+                AccountAttemptPhase::Connect,
+                AccountAttemptPhase::Connect,
+                AccountAttemptPhase::Tls,
+            ]
+        );
+        let request = io.request_bytes();
+        assert_eq!(
+            request
+                .windows(b"POST ".len())
+                .filter(|window| *window == b"POST ")
+                .count(),
+            1,
+            "only the connected address receives a request"
+        );
+    }
+
+    #[test]
+    fn injected_account_attempt_never_retries_after_tls_or_shared_deadline_failure() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let mut tls_failure = TestAccountAttemptIo::success(
+            clock.clone(),
+            account_http_registration_response(&owner),
+        );
+        tls_failure.addresses.push(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            ACCOUNT_ORIGIN_PORT,
+        ));
+        tls_failure.tls = AccountAttemptPlan::Fail;
+        let (_sender, mut shutdown) = watch::channel(false);
+        assert!(matches!(
+            account_runtime().block_on(run_fixed_account_attempt(
+                &owner,
+                &mut shutdown,
+                &mut tls_failure,
+                &clock,
+            )),
+            Err(McpAccountError::Tls)
+        ));
+        assert_eq!(
+            tls_failure.trace,
+            vec![
+                AccountAttemptPhase::Resolve,
+                AccountAttemptPhase::Connect,
+                AccountAttemptPhase::Tls,
+            ]
+        );
+
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let mut deadline = TestAccountAttemptIo::success(
+            clock.clone(),
+            account_http_registration_response(&owner),
+        );
+        deadline.resolve =
+            AccountAttemptPlan::Advance(ACCOUNT_ATTEMPT_TIMEOUT + Duration::from_millis(1));
+        let (_sender, mut shutdown) = watch::channel(false);
+        assert!(matches!(
+            account_runtime().block_on(run_fixed_account_attempt(
+                &owner,
+                &mut shutdown,
+                &mut deadline,
+                &clock,
+            )),
+            Err(McpAccountError::Deadline)
+        ));
+        assert_eq!(deadline.trace, vec![AccountAttemptPhase::Resolve]);
+
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let attempt_deadline = clock.monotonic_now() + ACCOUNT_ATTEMPT_TIMEOUT;
+        clock.set_elapsed(ACCOUNT_ATTEMPT_TIMEOUT);
+        assert_eq!(
+            account_deadline_remaining(&clock, attempt_deadline),
+            Ok(Duration::ZERO),
+            "completion at the exact deadline remains admissible"
+        );
+        clock.set_elapsed(ACCOUNT_ATTEMPT_TIMEOUT + Duration::from_nanos(1));
+        assert!(matches!(
+            account_deadline_remaining(&clock, attempt_deadline),
+            Err(McpAccountError::Deadline)
+        ));
+    }
+
+    #[test]
+    fn injected_clock_caps_tcp_candidates_across_one_three_second_window() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let mut io = TestAccountAttemptIo::success(
+            clock.clone(),
+            account_http_registration_response(&owner),
+        );
+        io.addresses.push(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            ACCOUNT_ORIGIN_PORT,
+        ));
+        io.connects = VecDeque::from([
+            AccountAttemptPlan::Advance(ACCOUNT_CONNECT_TIMEOUT + Duration::from_nanos(1)),
+            AccountAttemptPlan::Complete,
+        ]);
+        let (_sender, mut shutdown) = watch::channel(false);
+        assert!(matches!(
+            account_runtime().block_on(run_fixed_account_attempt(
+                &owner,
+                &mut shutdown,
+                &mut io,
+                &clock,
+            )),
+            Err(McpAccountError::Deadline)
+        ));
+        assert_eq!(
+            io.trace,
+            vec![AccountAttemptPhase::Resolve, AccountAttemptPhase::Connect],
+            "the second candidate never receives a separate three-second budget"
+        );
+    }
+
+    #[test]
+    fn account_http_request_has_one_fixed_origin_and_minimal_http11_headers() {
+        let emitted = account_runtime().block_on(async {
+            let (mut writer, mut reader) = tokio::io::duplex(4_096);
+            let (_sender, mut shutdown) = watch::channel(false);
+            write_account_request(
+                &mut writer,
+                br#"{"fixture":true}"#,
+                &mut shutdown,
+                Instant::now() + Duration::from_secs(1),
+                &SystemAccountClock,
+            )
+            .await
+            .expect("fixed request writes");
+            drop(writer);
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await.expect("request reads");
+            bytes
+        });
+        assert_eq!(
+            emitted,
+            b"POST /reach/mcp/bridge-token HTTP/1.1\r\nHost: services.solstone.app\r\nContent-Type: application/json\r\nAccept: application/json\r\nCache-Control: no-store\r\nContent-Length: 16\r\nConnection: close\r\n\r\n{\"fixture\":true}"
+        );
+    }
+
+    #[test]
+    fn account_http_framing_rejects_ambiguity_upgrade_and_content_encoding() {
+        for head in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .as_slice(),
+            b"HTTP/1.1 101 Switching Protocols\r\nContent-Length: 0\r\n\r\n".as_slice(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Encoding: gzip\r\n\r\n".as_slice(),
+            b"HTTP/1.1 200X\r\nContent-Length: 2\r\n\r\n".as_slice(),
+        ] {
+            assert!(matches!(
+                parse_http_head(head),
+                Err(McpAccountError::HttpFraming)
+            ));
+        }
+    }
+
+    #[test]
+    fn account_http_framing_rejects_malformed_chunk_extensions_and_trailers() {
+        for extension in [
+            b"1;".as_slice(),
+            b"1;=value",
+            b"1;name=",
+            b"1;name=bad value",
+        ] {
+            assert!(matches!(
+                parse_chunk_size_and_extensions(extension),
+                Err(McpAccountError::HttpFraming)
+            ));
+        }
+        assert_eq!(
+            parse_chunk_size_and_extensions(b"A;name=value;quoted=\"two words\"")
+                .expect("well-formed chunk extensions parse"),
+            b"A"
+        );
+        for trailer in [
+            b" leading: value".as_slice(),
+            b"no-colon".as_slice(),
+            b"bad space: value".as_slice(),
+            b"name: value\x01".as_slice(),
+        ] {
+            assert!(matches!(
+                parse_http_field_line(trailer),
+                Err(McpAccountError::HttpFraming)
+            ));
+        }
+        assert!(parse_http_field_line(b"X-Trace: bounded\tvalue").is_ok());
+    }
+
+    #[test]
+    fn account_http_reader_accepts_one_bounded_fixture_response_then_requires_eof() {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(fixture_bytes()).expect("fixture JSON");
+        let body = serde_json::to_vec(&fixture["response"]["body"]).expect("body serializes");
+        let response = account_runtime().block_on(async {
+            let (mut server, mut client) = tokio::io::duplex(128 * 1024);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nContent-Length: {}\r\n\r\n",
+                body.len()
+            );
+            server
+                .write_all(response.as_bytes())
+                .await
+                .expect("head writes");
+            server.write_all(&body).await.expect("body writes");
+            drop(server);
+            let (_sender, mut shutdown) = watch::channel(false);
+            read_account_response(
+                &mut client,
+                &mut shutdown,
+                Instant::now() + Duration::from_secs(1),
+                &SystemAccountClock,
+            )
+            .await
+            .expect("bounded response reads")
+        });
+        let wire =
+            parse_account_registration_response(response.status, &response.headers, &response.body)
+                .expect("fixture parser receives exact bounded fields");
+        assert_eq!(wire.hostname, "aaaqeaye.solstone.me");
+        assert_eq!(wire.bridge_address, "20.186.92.169");
+    }
+
+    #[test]
+    fn account_attempt_cancels_before_request_signing_or_network_work() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let (sender, mut shutdown) = watch::channel(true);
+        assert!(matches!(
+            account_runtime().block_on(request_account_registration(&owner, &mut shutdown)),
+            Err(McpAccountError::Cancelled)
+        ));
+        drop(sender);
+
+        let (_sender, mut shutdown) = watch::channel(false);
+        drop(_sender);
+        assert!(matches!(
+            account_runtime().block_on(request_account_registration(&owner, &mut shutdown)),
+            Err(McpAccountError::Cancelled)
+        ));
     }
 
     #[test]
