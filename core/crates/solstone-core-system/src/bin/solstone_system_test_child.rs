@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-#[cfg(unix)]
-use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
 use solstone_core_system::lifecycle::{SupervisorLifecycle, WriterId};
+#[cfg(unix)]
+use solstone_core_system::lifecycle::{
+    acknowledge_hosted_child_admission, arm_parent_loss_coordinator_termination_guard,
+};
 use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
 
 fn writer_id() -> WriterId {
@@ -37,6 +39,14 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        #[cfg(unix)]
+        "parent-loss-termination-guard" => {
+            let ready_path = args.next().expect("ready path");
+            arm_parent_loss_coordinator_termination_guard()
+                .expect("arm parent-loss termination guard");
+            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
         #[cfg(windows)]
         "exit-code" => {
             let code = args

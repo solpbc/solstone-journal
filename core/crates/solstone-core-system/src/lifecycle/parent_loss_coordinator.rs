@@ -47,6 +47,16 @@ const ADMISSION_SEAL_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const BOOTSTRAP_SCHEMA: u32 = 1;
 const FILE_MODE: u32 = 0o600;
 
+/// Keep the independent terminal authority alive when a service manager sends
+/// SIGTERM to the supervisor's whole control group. The coordinator exits on
+/// its own after it has observed the supervisor and every admitted service
+/// retire; the service manager's bounded SIGKILL remains the final backstop.
+pub fn arm_parent_loss_coordinator_termination_guard() -> io::Result<()> {
+    let mut signals = nix::sys::signal::SigSet::empty();
+    signals.add(nix::sys::signal::Signal::SIGTERM);
+    signals.thread_block().map_err(io::Error::other)
+}
+
 /// Inputs supplied by the supervisor during its private bootstrap exchange.
 #[derive(Clone, Debug)]
 pub struct CoordinatorBootstrap {
