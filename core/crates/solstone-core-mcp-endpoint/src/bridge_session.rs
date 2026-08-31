@@ -17,7 +17,7 @@ use chrono::Utc;
 use ring::rand::{SecureRandom as _, SystemRandom};
 use spl_core::frame::{Frame, RECOMMENDED_CHUNK};
 use spl_core::mux::INITIAL_WINDOW;
-use spl_home::{MuxAcceptor, MuxEvent, MuxLimits, MuxOutput, ResetReason};
+use spl_home::{HomeError, MuxAcceptor, MuxEvent, MuxLimits, MuxOutput, ResetReason};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -1035,6 +1035,31 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                 pending_writes.insert(stream_id, bytes);
                 ready.push_back(stream_id);
             }
+            Err(HomeError::Closed) => {
+                let Ok(output) = acceptor.reset(stream_id, ResetReason::Cancel) else {
+                    return false;
+                };
+                if !write_output(
+                    output,
+                    control_open,
+                    streams,
+                    accepts,
+                    command_tx,
+                    command_wakers,
+                    control_events,
+                    writer,
+                )
+                .await
+                {
+                    return false;
+                }
+                if let Some(stream) = streams.remove(&stream_id) {
+                    stream.state.release_write(bytes.len());
+                    stream.state.state.store(STREAM_RESET, Ordering::Release);
+                    let _ = stream.tx.try_send(StreamSignal::Reset);
+                }
+                closing.remove(&stream_id);
+            }
             Err(_) => return false,
         }
     }
@@ -1260,6 +1285,87 @@ mod tests {
         );
         assert!(pending_writes.is_empty());
         assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn closed_public_stream_discards_a_racing_staged_write_without_ending_the_carrier() {
+        let mut acceptor = MuxAcceptor::new(MuxLimits::default()).expect("default limits work");
+        let (accept_tx, mut accept_rx) = mpsc::channel(PUBLIC_STREAM_CAPACITY);
+        let (command_tx, _command_rx) = mpsc::channel(DRIVER_COMMAND_CAPACITY);
+        let command_wakers = Arc::new(CommandWakers {
+            entries: Mutex::new(Vec::new()),
+        });
+        let (mut writer, _reader) = tokio::io::duplex(1024);
+        let mut control_open = false;
+        let mut streams = HashMap::new();
+        let mut control_events = VecDeque::new();
+
+        for stream_id in [CONTROL_STREAM_ID, 3] {
+            let output = acceptor
+                .feed(
+                    &Frame::new(stream_id, FLAG_OPEN, Vec::new())
+                        .encode()
+                        .unwrap(),
+                )
+                .expect("peer open parses");
+            assert!(
+                write_output(
+                    output,
+                    &mut control_open,
+                    &mut streams,
+                    &accept_tx,
+                    &command_tx,
+                    &command_wakers,
+                    &mut control_events,
+                    &mut writer,
+                )
+                .await
+            );
+        }
+        let public = accept_rx.try_recv().expect("stream three is accepted");
+        assert_eq!(public.id, 3);
+
+        let output = acceptor.close_write(3).expect("stream three can close");
+        assert!(
+            write_output(
+                output,
+                &mut control_open,
+                &mut streams,
+                &accept_tx,
+                &command_tx,
+                &command_wakers,
+                &mut control_events,
+                &mut writer,
+            )
+            .await
+        );
+        let state = Arc::clone(&streams.get(&3).expect("driver tracks stream three").state);
+        let waker = Waker::noop();
+        assert_eq!(state.reserve_write(1, waker), 1);
+        let mut pending_writes = HashMap::from([(3, vec![7])]);
+        let mut ready = VecDeque::from([3]);
+        let mut closing = HashSet::new();
+
+        assert!(
+            flush_ready(
+                &mut acceptor,
+                &mut streams,
+                &mut pending_writes,
+                &mut ready,
+                &mut closing,
+                &mut control_open,
+                &accept_tx,
+                &command_tx,
+                &command_wakers,
+                &mut control_events,
+                &mut writer,
+            )
+            .await
+        );
+        assert!(pending_writes.is_empty());
+        assert!(!streams.contains_key(&3));
+        assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
+        assert_eq!(state.state.load(Ordering::Acquire), STREAM_RESET);
     }
 
     #[tokio::test]
