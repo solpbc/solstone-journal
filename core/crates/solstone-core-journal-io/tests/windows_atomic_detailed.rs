@@ -776,6 +776,13 @@ fn exercise_cortex_use_receipt(root: &Path) {
         CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
     );
 
+    let nonregular = talent.join("directory_active.jsonl");
+    fs::create_dir(&nonregular).unwrap();
+    assert_eq!(
+        read_cortex_use_request(&talent, nonregular.file_name().unwrap()),
+        CortexUseCandidateRead::Refused(CortexUseRefusal::CandidateNonregular)
+    );
+
     fs::write(talent.join("one.jsonl"), b"completed\n").unwrap();
     assert_eq!(
         check_cortex_use_destination(&talent, &request),

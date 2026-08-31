@@ -64,6 +64,60 @@ fn make_ci_full_never_executes_forbidden_interpreters() {
 }
 
 #[test]
+fn make_ci_full_explicit_cloud_selector_invokes_only_cloud_runner_once() {
+    let temp = TempDir::new("ci-full-cloud-selector");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(root, system, arch.trim());
+
+    let shims = root.join("shims");
+    let cloud_log = root.join("cloud.log");
+    let cargo_log = root.join("cargo.log");
+    fs::create_dir(&shims).expect("create cloud-selector shim directory");
+    write_executable(
+        &shims.join("extro-cloud-ci"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLOUD_LOG\"\n",
+    );
+    write_recording_cargo_shim(&shims.join("cargo"));
+
+    let mut command = Command::new("make");
+    command
+        .arg("ci-full")
+        .current_dir(root)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CLOUD_LOG", &cloud_log)
+        .env("SOLSTONE_CI_CARGO_LOG", &cargo_log);
+    isolate_local_ci_fixture(&mut command);
+    command.env("SOLSTONE_CI_CLOUD", "1");
+    let output = command
+        .output()
+        .expect("run explicit cloud-selector fixture");
+    assert!(
+        output.status.success(),
+        "make ci-full explicit cloud selector failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&cloud_log).expect("cloud runner invocation log"),
+        format!("run --source {}\n", root.display())
+    );
+    assert!(!cargo_log.exists(), "explicit cloud selector invoked Cargo");
+}
+
+#[test]
 fn make_clean_reclaims_default_and_configured_cargo_targets() {
     let temp = TempDir::new("make-clean-cargo-targets");
     let root = &temp.path;
@@ -198,6 +252,7 @@ fn ci_entrypoints_override_hostile_cargo_disk_settings() {
                 .env("CARGO_TARGET_DIR", &target)
                 .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
                 .env("SOLSTONE_CI_CARGO_ENV_LOG", &environment_log);
+            seed_and_isolate_local_ci_fixture(&mut command);
             match channel {
                 OverrideChannel::Environment => {
                     command
@@ -1579,12 +1634,260 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-fn write_native_receipt_ssh_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 17] = [
+    (
+        "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
+        "executed/pass",
+    ),
+    ("JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE",
+        "executed/pass",
+    ),
+    ("JOURNAL_WIN_CI_JOB_PROCESS_OWNER", "executed/pass"),
+    ("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE", "executed/pass"),
+    ("JOURNAL_WIN_CI_NTFS_PUBLICATION", "executed/pass"),
+    ("JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM", "NTFS"),
+    ("JOURNAL_WIN_CI_REFS_PUBLICATION", "executed/pass"),
+    ("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM", "ReFS"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_NTFS", "executed/pass"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM", "NTFS"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_REFS", "executed/pass"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM", "ReFS"),
+    ("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "NTFS",
+    ),
+    ("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
+const VALID_NATIVE_RECEIPT_TAIL: [(&str, &str); 4] = [
+    (
+        "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
+#[derive(Clone, Debug)]
+struct NativeReceiptScenario {
+    name: String,
+    before_acknowledgement: Vec<String>,
+    after_acknowledgement: Vec<String>,
+    expected_diagnostic_key: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CortexReceiptMutation {
+    Omit,
+    Duplicate,
+    Replace(&'static str),
+    MoveAfterAcknowledgement,
+}
+
+fn valid_native_receipts() -> Vec<String> {
+    VALID_NATIVE_RECEIPTS
+        .into_iter()
+        .chain(VALID_NATIVE_RECEIPT_TAIL)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect()
+}
+
+fn cortex_receipt_scenario(
+    name: &str,
+    key: &'static str,
+    diagnostic_key: &'static str,
+    mutation: CortexReceiptMutation,
+) -> NativeReceiptScenario {
+    let valid = valid_native_receipts();
+    let prefix = format!("{key}=");
+    let index = valid
+        .iter()
+        .position(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("valid receipt stream missing {key}"));
+    assert_eq!(
+        valid
+            .iter()
+            .filter(|line| line.starts_with(&prefix))
+            .count(),
+        1,
+        "valid receipt stream must contain exactly one {key}"
+    );
+    let original = valid[index].clone();
+    let mut before = valid.clone();
+    let mut after = Vec::new();
+    match mutation {
+        CortexReceiptMutation::Omit => {
+            before.remove(index);
+            let mut restored = before.clone();
+            restored.insert(index, original);
+            assert_eq!(restored, valid, "omit scenario changed another receipt");
+        }
+        CortexReceiptMutation::Duplicate => {
+            before.insert(index + 1, original.clone());
+            let mut restored = before.clone();
+            assert_eq!(restored.remove(index + 1), original);
+            assert_eq!(
+                restored, valid,
+                "duplicate scenario changed another receipt"
+            );
+        }
+        CortexReceiptMutation::Replace(replacement) => {
+            before[index] = format!("{key}={replacement}");
+            assert_eq!(
+                before
+                    .iter()
+                    .zip(&valid)
+                    .filter(|(left, right)| left != right)
+                    .count(),
+                1,
+                "replacement scenario changed more than one receipt"
+            );
+        }
+        CortexReceiptMutation::MoveAfterAcknowledgement => {
+            after.push(before.remove(index));
+            assert_eq!(after, vec![original.clone()]);
+            let mut restored = before.clone();
+            restored.insert(index, after[0].clone());
+            assert_eq!(restored, valid, "ordering scenario changed another receipt");
+        }
+    }
+    NativeReceiptScenario {
+        name: name.to_owned(),
+        before_acknowledgement: before,
+        after_acknowledgement: after,
+        expected_diagnostic_key: Some(diagnostic_key),
+    }
+}
+
+fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
+    let valid = valid_native_receipts();
+    let mut scenarios = vec![
+        NativeReceiptScenario {
+            name: "valid".into(),
+            before_acknowledgement: valid.clone(),
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "missing".into(),
+            before_acknowledgement: valid[..7].to_vec(),
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "duplicate".into(),
+            before_acknowledgement: {
+                let mut receipts = valid.clone();
+                receipts.push("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass".into());
+                receipts
+            },
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "filesystem-extra".into(),
+            before_acknowledgement: {
+                let mut receipts = valid.clone();
+                receipts.push("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=NTFS".into());
+                receipts
+            },
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "post".into(),
+            before_acknowledgement: Vec::new(),
+            after_acknowledgement: valid,
+            expected_diagnostic_key: None,
+        },
+    ];
+    for (short, key, diagnostic_key, wrong_value) in [
+        (
+            "ntfs-execution",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "fixture-invalid",
+        ),
+        (
+            "ntfs-filesystem",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "ReFS",
+        ),
+        (
+            "refs-execution",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "fixture-invalid",
+        ),
+        (
+            "refs-filesystem",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "NTFS",
+        ),
+    ] {
+        scenarios.extend([
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-omit"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Omit,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-duplicate"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Duplicate,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-wrong-value"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Replace(wrong_value),
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-post"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::MoveAfterAcknowledgement,
+            ),
+        ]);
+    }
+    scenarios
+}
+
+fn shell_receipt_lines(lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("printf '%s\\n' '{line}'\n"))
+        .collect()
+}
+
+fn write_native_receipt_ssh_shim(
+    temp: &TempDir,
+    scenario: &NativeReceiptScenario,
+) -> (PathBuf, PathBuf) {
     let shim = temp.path.join(".git/native-receipt-ssh-shim");
     let log = temp.path.join(".git/native-receipt-ssh.log");
-    write_executable(
-        &shim,
-        r#"#!/bin/sh
+    let script = r#"#!/bin/sh
 set -eu
 printf '%s\n' "$*" >> "$SOLSTONE_SSH_LOG"
 snapshot_sha=$(sed -n 's/^  "commit": "\([0-9a-f]*\)",$/\1/p' target/win-host-ci-source-binding.json)
@@ -1598,53 +1901,19 @@ printf 'JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%s\n' "$cargo_lock_sha256"
 printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$cloud"
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed'
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed'
-emit_receipts() {
-  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_PROCESS_OWNER=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM=ReFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=ReFS'
-}
-case "${SOLSTONE_SSH_SCENARIO:-valid}" in
-  valid) emit_receipts ;;
-  missing)
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS'
-    ;;
-  duplicate)
-    emit_receipts
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-    ;;
-  filesystem-extra)
-    emit_receipts
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=NTFS'
-    ;;
-  post)
-    printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
-    emit_receipts
-    exit 0
-    ;;
-  *) exit 97 ;;
-esac
+__BEFORE_ACKNOWLEDGEMENT__
 printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
-"#,
+__AFTER_ACKNOWLEDGEMENT__
+"#
+    .replace(
+        "__BEFORE_ACKNOWLEDGEMENT__\n",
+        &shell_receipt_lines(&scenario.before_acknowledgement),
+    )
+    .replace(
+        "__AFTER_ACKNOWLEDGEMENT__\n",
+        &shell_receipt_lines(&scenario.after_acknowledgement),
     );
+    write_executable(&shim, &script);
     (shim, log)
 }
 
@@ -1654,7 +1923,6 @@ fn run_native_receipt_driver(
     scp_log: &Path,
     ssh: &Path,
     ssh_log: &Path,
-    scenario: &str,
 ) -> std::process::Output {
     Command::new("sh")
         .arg("scripts/win-host-ci.sh")
@@ -1664,7 +1932,6 @@ fn run_native_receipt_driver(
         .env("SSH", ssh)
         .env("SOLSTONE_SCP_LOG", scp_log)
         .env("SOLSTONE_SSH_LOG", ssh_log)
-        .env("SOLSTONE_SSH_SCENARIO", scenario)
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
         .env("PATH", fixture_path(&temp.path.join("scripts")))
@@ -1674,19 +1941,28 @@ fn run_native_receipt_driver(
 
 #[test]
 fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
-    for scenario in ["valid", "missing", "duplicate", "filesystem-extra", "post"] {
-        let temp = windows_transport_fixture(&format!("windows-native-receipt-{scenario}"));
+    for scenario in native_receipt_scenarios() {
+        let temp = windows_transport_fixture(&format!("windows-native-receipt-{}", scenario.name));
         let (scp, scp_log) = write_transport_scp_shim(&temp);
-        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp);
-        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, scenario);
+        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &scenario);
+        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log);
         assert_eq!(
             output.status.success(),
-            scenario == "valid",
-            "receipt scenario {scenario} had unexpected result:\nstdout:\n{}\nstderr:\n{}",
+            scenario.name == "valid",
+            "receipt scenario {} had unexpected result:\nstdout:\n{}\nstderr:\n{}",
+            scenario.name,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        if scenario == "valid" {
+        if let Some(key) = scenario.expected_diagnostic_key {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(key),
+                "receipt scenario {} failed for the wrong marker:\n{}",
+                scenario.name,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        if scenario.name == "valid" {
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(stdout.contains("JOURNAL_WIN_HOST_CI_VERIFIED"));
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
