@@ -4340,6 +4340,8 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
+ "spl-core",
+ "spl-home",
  "syn 2.0.119",
  "tempfile",
  "tokio",

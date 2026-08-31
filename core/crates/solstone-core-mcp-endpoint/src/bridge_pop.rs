@@ -62,6 +62,13 @@ struct ChallengeResponse<'a> {
     signature: &'a str,
 }
 
+#[derive(Serialize)]
+struct RenewalResponse<'a> {
+    token: &'a str,
+    hostname: &'a str,
+    signature: &'a str,
+}
+
 /// The checked bridge challenge, deliberately without token or hostname data.
 pub(crate) struct McpBridgeChallenge {
     nonce: [u8; BRIDGE_NONCE_BYTES],
@@ -122,6 +129,29 @@ pub(crate) fn proof_response_frame(
     })
 }
 
+/// Produce the complete successor-token proof response for one checked renewal.
+pub(crate) fn renewal_response_frame(
+    token: &str,
+    hostname: &str,
+    keypair: &Ed25519KeyPair,
+    challenge: &McpBridgeChallenge,
+) -> Result<Vec<u8>, McpBridgePopError> {
+    let mut signed = Vec::with_capacity(BRIDGE_NONCE_BYTES + challenge.bridge_id.len() + 8);
+    signed.extend_from_slice(&challenge.nonce);
+    signed.extend_from_slice(challenge.bridge_id.as_bytes());
+    signed.extend_from_slice(&challenge.timestamp.to_be_bytes());
+    let signature = keypair.sign(&signed);
+    if signature.as_ref().len() != ED25519_SIGNATURE_BYTES {
+        return Err(McpBridgePopError::Signature);
+    }
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.as_ref());
+    frame_json(&RenewalResponse {
+        token,
+        hostname,
+        signature: &encoded,
+    })
+}
+
 fn frame_json<T: Serialize>(value: &T) -> Result<Vec<u8>, McpBridgePopError> {
     let body = serde_json::to_vec(value).map_err(|_| McpBridgePopError::Json)?;
     if body.len() > BRIDGE_CONTROL_MAX_BYTES {
@@ -162,7 +192,11 @@ fn decode_canonical_nonce(value: &str) -> Result<[u8; BRIDGE_NONCE_BYTES], McpBr
 
 #[cfg(test)]
 mod tests {
-    use super::{McpBridgePopError, initial_registration_frame, parse_challenge_frame};
+    use super::{
+        McpBridgePopError, initial_registration_frame, parse_challenge_frame,
+        renewal_response_frame,
+    };
+    use ring::signature::Ed25519KeyPair;
 
     const HOSTNAME: &str = "aaaqeaye.solstone.me";
     const BRIDGE_ID: &str = "bridge-fixture";
@@ -177,6 +211,17 @@ mod tests {
             .to_vec();
         frame.extend_from_slice(body);
         frame
+    }
+
+    fn decode_hex(input: &str) -> Vec<u8> {
+        input
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                u8::from_str_radix(std::str::from_utf8(pair).expect("fixture is UTF-8"), 16)
+                    .expect("fixture hex decodes")
+            })
+            .collect()
     }
 
     #[test]
@@ -240,5 +285,27 @@ mod tests {
             parse_challenge_frame(&valid, BRIDGE_ID, ISSUED_AT, EXPIRES_AT, EXPIRES_AT),
             Err(McpBridgePopError::Expired)
         ));
+    }
+
+    #[test]
+    fn renewal_response_is_the_pinned_raw_corpus_literal() {
+        let challenge = parse_challenge_frame(
+            &challenge_frame(
+                br#"{"nonce":"AAECAwQFBgcICQoLDA0ODw","bridge_id":"bridge-fixture","timestamp":1700000000}"#,
+            ),
+            BRIDGE_ID,
+            ISSUED_AT,
+            EXPIRES_AT,
+            ISSUED_AT,
+        )
+        .expect("fixture challenge validates");
+        let keypair = Ed25519KeyPair::from_seed_unchecked(&[19; 32]).expect("fixture key");
+        let actual = renewal_response_frame("fixture-successor", HOSTNAME, &keypair, &challenge)
+            .expect("fixture renewal serializes");
+        let expected = decode_hex(
+            "000000a47b22746f6b656e223a22666978747572652d737563636573736f72222c22686f73746e616d65223a2261616171656179652e736f6c73746f6e652e6d65222c227369676e6174757265223a22376c5236716d38307769716b5a767465434639354672497734416b5a315950387a5f424379553836597330416f41466b6365304a6a77714d776d74586855646d7576367473744b5073446b2d69724c6d337a41704177227d",
+        );
+        assert_eq!(actual, expected);
+        assert!(CORPUS.contains("renewal-frame-hex"));
     }
 }

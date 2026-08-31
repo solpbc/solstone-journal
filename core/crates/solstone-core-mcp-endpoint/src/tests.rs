@@ -2468,7 +2468,10 @@ fn response_function_violations(file: &syn::File) -> Vec<&'static str> {
         }
         if function.visible
             && tainted.contains(&function.name)
-            && function.name != "establish_mcp_bridge_carrier"
+            && !matches!(
+                function.name.as_str(),
+                "establish_mcp_bridge_carrier" | "refresh_mcp_bridge_authority"
+            )
         {
             push_unique(
                 &mut violations,
@@ -2533,11 +2536,15 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
     syn::visit::Visit::visit_file(&mut aliases, file);
     let mut visitor = DiagnosticSyntaxVisitor::new(
         path == root.join("tests.rs"),
-        path == root.join("account_wire.rs") || path == root.join("bridge_carrier.rs"),
+        path == root.join("account_wire.rs")
+            || path == root.join("bridge_carrier.rs")
+            || path == root.join("bridge_session.rs"),
         if path == root.join("account_wire.rs") {
             Some("write_account_request")
         } else if path == root.join("bridge_carrier.rs") {
             Some("write_bridge_control")
+        } else if path == root.join("bridge_session.rs") {
+            Some("write_mux_frames")
         } else {
             None
         },
@@ -2775,6 +2782,27 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         "a bridge source file may not use another writer name as an egress exemption"
     );
     fs::remove_file(&carrier).expect("synthetic bridge control writer removes");
+
+    let session = root.path().join("bridge_session.rs");
+    fs::write(
+        &session,
+        "async fn write_mux_frames(writer: Writer) { writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic bridge mux writer writes");
+    assert!(
+        syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "only the exact bridge mux writer may write framed bytes"
+    );
+    fs::write(
+        &session,
+        "async fn persistence(writer: Writer) { writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic bridge mux writer mutation writes");
+    assert!(
+        !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "a bridge mux source file may not use another writer name as an egress exemption"
+    );
+    fs::remove_file(&session).expect("synthetic bridge mux writer removes");
 
     fs::write(
         &account_wire,

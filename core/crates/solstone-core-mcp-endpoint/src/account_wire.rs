@@ -741,8 +741,35 @@ pub(crate) async fn establish_mcp_bridge_carrier(
         registration.issued_at,
         registration.expires_at,
     );
-    establish_initial_bridge_carrier(authority, &owner.keypair, shutdown, Utc::now().timestamp())
+    establish_initial_bridge_carrier(
+        authority,
+        &owner.keypair,
+        owner.renewal_owner(),
+        shutdown,
+        Utc::now().timestamp(),
+    )
+    .await
+}
+
+/// Fetch one fresh, fully validated in-memory authority for an existing session.
+///
+/// The caller receives only the crate-private sealed authority; no token or
+/// account response component becomes an endpoint API.
+pub(crate) async fn refresh_mcp_bridge_authority(
+    owner: &McpEndpointOwnerContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<BridgeAuthority, McpBridgeCarrierError> {
+    let registration = request_account_registration(owner, shutdown)
         .await
+        .map_err(|_| McpBridgeCarrierError::Account)?;
+    Ok(BridgeAuthority::new(
+        registration.token,
+        registration.hostname,
+        registration.bridge_id,
+        registration.bridge_address,
+        registration.issued_at,
+        registration.expires_at,
+    ))
 }
 
 trait AccountAttemptIo {

@@ -21,9 +21,10 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
+use crate::McpEndpointOwnerContext;
 use crate::bridge_pop::{
     BRIDGE_CONTROL_MAX_BYTES, McpBridgePopError, initial_registration_frame, parse_challenge_frame,
-    proof_response_frame,
+    proof_response_frame, renewal_response_frame,
 };
 
 /// Bound, memory-only authority passed from the account transition to the
@@ -35,6 +36,70 @@ pub(crate) struct BridgeAuthority {
     bridge_address: String,
     issued_at: i64,
     expires_at: i64,
+}
+
+/// Fixed non-secret bindings shared by every authority in one carrier session.
+#[derive(Clone)]
+pub(crate) struct BridgeBinding {
+    hostname: String,
+    bridge_id: String,
+    bridge_address: String,
+}
+
+impl BridgeAuthority {
+    pub(crate) fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+
+    pub(crate) fn renewal_matches(&self, successor: &Self) -> bool {
+        successor.hostname == self.hostname
+            && successor.bridge_id == self.bridge_id
+            && successor.bridge_address == self.bridge_address
+            && successor.expires_at > self.expires_at
+    }
+
+    pub(crate) fn binding(&self) -> BridgeBinding {
+        BridgeBinding {
+            hostname: self.hostname.clone(),
+            bridge_id: self.bridge_id.clone(),
+            bridge_address: self.bridge_address.clone(),
+        }
+    }
+
+    pub(crate) fn renewal_response(
+        &self,
+        successor: &Self,
+        keypair: &Ed25519KeyPair,
+        challenge_frame: &[u8],
+        wall_now: i64,
+    ) -> Result<Vec<u8>, McpBridgeCarrierError> {
+        if !self.renewal_matches(successor) {
+            return Err(McpBridgeCarrierError::Pop);
+        }
+        let challenge = parse_challenge_frame(
+            challenge_frame,
+            &self.bridge_id,
+            self.issued_at,
+            self.expires_at,
+            wall_now,
+        )
+        .map_err(map_pop_error)?;
+        renewal_response_frame(&successor.token, &successor.hostname, keypair, &challenge)
+            .map_err(map_pop_error)
+    }
+}
+
+impl BridgeBinding {
+    pub(crate) fn accepts_successor(
+        &self,
+        successor: &BridgeAuthority,
+        current_expiry: i64,
+    ) -> bool {
+        successor.hostname == self.hostname
+            && successor.bridge_id == self.bridge_id
+            && successor.bridge_address == self.bridge_address
+            && successor.expires_at > current_expiry
+    }
 }
 
 impl BridgeAuthority {
@@ -110,17 +175,22 @@ const BRIDGE_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const BRIDGE_TLS_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// An authenticated carrier whose socket, authority, and key material remain opaque.
-pub struct McpBridgeCarrier {
+pub(crate) struct McpBridgeCarrier {
     carrier: TlsStream<TcpStream>,
+    authority: BridgeAuthority,
+    renewal_owner: McpEndpointOwnerContext,
+    shutdown: watch::Receiver<bool>,
 }
 
 impl McpBridgeCarrier {
-    /// Close this one bridge carrier without exposing its transport.
-    pub async fn shutdown(mut self) -> Result<(), McpBridgeCarrierError> {
-        self.carrier
-            .shutdown()
-            .await
-            .map_err(|_| McpBridgeCarrierError::Io)
+    /// Start the bounded SPL session over this already authenticated carrier.
+    pub(crate) fn into_session(self) -> Result<crate::McpBridgeSession, McpBridgeCarrierError> {
+        crate::bridge_session::start_bridge_session(
+            self.carrier,
+            self.authority,
+            self.renewal_owner,
+            self.shutdown,
+        )
     }
 }
 
@@ -128,6 +198,7 @@ impl McpBridgeCarrier {
 pub(crate) async fn establish_initial_bridge_carrier(
     authority: BridgeAuthority,
     keypair: &Ed25519KeyPair,
+    renewal_owner: McpEndpointOwnerContext,
     shutdown: &mut watch::Receiver<bool>,
     wall_now: i64,
 ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
@@ -179,7 +250,12 @@ pub(crate) async fn establish_initial_bridge_carrier(
         prove_initial_bridge_control(&mut carrier, &authority, keypair, wall_now),
     )
     .await?;
-    Ok(McpBridgeCarrier { carrier })
+    Ok(McpBridgeCarrier {
+        carrier,
+        authority,
+        renewal_owner,
+        shutdown: shutdown.clone(),
+    })
 }
 
 fn bridge_tls_config() -> Result<Arc<ClientConfig>, McpBridgeCarrierError> {

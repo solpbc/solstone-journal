@@ -122,8 +122,8 @@ pub(super) fn bootstrap(
     .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
     Ok(Some(McpEndpointOwnerContext {
         _private: (),
-        committed,
-        keypair,
+        committed: std::sync::Arc::new(committed),
+        keypair: std::sync::Arc::new(keypair),
     }))
 }
 

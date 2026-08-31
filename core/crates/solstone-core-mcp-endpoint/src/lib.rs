@@ -12,6 +12,8 @@ use std::fmt;
 use std::path::Path;
 
 #[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
 use tokio::sync::watch;
 
 #[cfg(not(unix))]
@@ -24,6 +26,8 @@ mod account_wire;
 mod bridge_carrier;
 #[cfg(unix)]
 mod bridge_pop;
+#[cfg(unix)]
+mod bridge_session;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix))]
@@ -32,7 +36,9 @@ mod tests;
 mod unix;
 
 #[cfg(unix)]
-pub use bridge_carrier::{McpBridgeCarrier, McpBridgeCarrierError};
+pub use bridge_carrier::McpBridgeCarrierError;
+#[cfg(unix)]
+pub use bridge_session::{McpBridgeSession, McpPublicStream};
 
 /// Bootstrap the committed owner identity and durable Ed25519 proof-of-possession key.
 ///
@@ -166,9 +172,9 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 pub struct McpEndpointOwnerContext {
     _private: (),
     #[cfg(unix)]
-    committed: solstone_core_sol_link::committed::CommittedIdentity,
+    committed: Arc<solstone_core_sol_link::committed::CommittedIdentity>,
     #[cfg(unix)]
-    keypair: ring::signature::Ed25519KeyPair,
+    keypair: Arc<ring::signature::Ed25519KeyPair>,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -190,8 +196,22 @@ impl McpEndpointOwnerContext {
     pub async fn connect_mcp_bridge(
         &self,
         shutdown: &mut watch::Receiver<bool>,
-    ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, shutdown).await
+    ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
+        account_wire::establish_mcp_bridge_carrier(self, shutdown)
+            .await?
+            .into_session()
+    }
+
+    pub(crate) fn renewal_owner(&self) -> Self {
+        Self {
+            _private: (),
+            committed: Arc::clone(&self.committed),
+            keypair: Arc::clone(&self.keypair),
+        }
+    }
+
+    pub(crate) fn proof_keypair(&self) -> Arc<ring::signature::Ed25519KeyPair> {
+        Arc::clone(&self.keypair)
     }
 }
 
