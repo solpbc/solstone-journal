@@ -16,7 +16,10 @@ use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, Instant, sleep, timeout, timeout_at};
 
-use crate::{McpBridgeCarrierError, McpBridgeSession, McpEndpointOwnerContext, McpPublicStream};
+use crate::{
+    McpBridgeCarrierError, McpBridgeSession, McpEndpointOwnerContext, McpEndpointTlsService,
+    McpPublicStream,
+};
 
 const PUBLIC_STREAM_TASK_LIMIT: usize = 255;
 const LOOPBACK_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -60,16 +63,55 @@ pub(crate) async fn run(
     }
 }
 
-/// Forward the already authenticated session paired with a TLS service.
+/// Forward the initial paired session and recover later carriers only when
+/// their account authority still names that exact TLS service.
 ///
-/// This is intentionally separate from [`run`]: the native service owns the
-/// initial tunnel and must not authenticate a second generation after the
-/// hostname-bound TLS service has been constructed.
-pub(crate) async fn run_session(
-    session: McpBridgeSession,
+/// This retains the listener and its certificate state through an ordinary
+/// lease or transport loss. A reconnect cannot silently switch to a different
+/// public hostname: the carrier is checked against `tls` before it can expose
+/// a stream.
+pub(crate) async fn run_bound_session(
+    owner: McpEndpointOwnerContext,
+    tls: Arc<McpEndpointTlsService>,
+    initial_session: McpBridgeSession,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), McpBridgeCarrierError> {
-    forward_generation(session, shutdown).await
+    let mut backoff_cap_seconds = 1_u64;
+    let mut next_session = Some(initial_session);
+    loop {
+        if shutdown_requested(shutdown) {
+            return Ok(());
+        }
+        let session = match next_session.take() {
+            Some(session) => session,
+            None => {
+                match owner
+                    .connect_mcp_bridge_for_tls(tls.as_ref(), shutdown)
+                    .await
+                {
+                    Ok(session) => session,
+                    Err(McpBridgeCarrierError::Cancelled) if shutdown_requested(shutdown) => {
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        wait_for_retry(shutdown, backoff_cap_seconds).await;
+                        backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
+                        continue;
+                    }
+                }
+            }
+        };
+        let connected_at = Instant::now();
+        let _ = forward_generation(session, shutdown).await;
+        if shutdown_requested(shutdown) {
+            return Ok(());
+        }
+        if connected_at.elapsed() >= CONNECTED_BACKOFF_RESET_AFTER {
+            backoff_cap_seconds = 1;
+        }
+        wait_for_retry(shutdown, backoff_cap_seconds).await;
+        backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
+    }
 }
 
 async fn forward_generation(

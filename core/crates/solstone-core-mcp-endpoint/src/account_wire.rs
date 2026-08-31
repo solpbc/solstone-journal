@@ -20,10 +20,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
 
-use crate::McpEndpointOwnerContext;
 use crate::bridge_carrier::{
     BridgeAuthority, McpBridgeCarrier, McpBridgeCarrierError, establish_initial_bridge_carrier,
 };
+use crate::{McpEndpointOwnerContext, McpEndpointTlsService};
 
 const ASSERTION_CAP_BYTES: usize = 8_192;
 const REQUEST_CAP_BYTES: usize = 16_384;
@@ -728,21 +728,14 @@ async fn request_account_registration(
 /// a token/key/hostname accessor to the rest of the product.
 pub(crate) async fn establish_mcp_bridge_carrier(
     owner: &McpEndpointOwnerContext,
+    expected_tls: Option<&McpEndpointTlsService>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
     let registration = request_account_registration(owner, shutdown)
         .await
         .map_err(|_| McpBridgeCarrierError::Account)?;
-    let authority = BridgeAuthority::new(
-        registration.token,
-        registration.hostname,
-        registration.bridge_id,
-        registration.bridge_address,
-        registration.issued_at,
-        registration.expires_at,
-    );
     establish_initial_bridge_carrier(
-        authority,
+        registration_into_authority_for_tls(registration, expected_tls)?,
         &owner.keypair,
         owner.renewal_owner(),
         shutdown,
@@ -762,14 +755,28 @@ pub(crate) async fn refresh_mcp_bridge_authority(
     let registration = request_account_registration(owner, shutdown)
         .await
         .map_err(|_| McpBridgeCarrierError::Account)?;
-    Ok(BridgeAuthority::new(
+    Ok(registration_into_authority(registration))
+}
+
+fn registration_into_authority(registration: McpAccountRegistration) -> BridgeAuthority {
+    BridgeAuthority::new(
         registration.token,
         registration.hostname,
         registration.bridge_id,
         registration.bridge_address,
         registration.issued_at,
         registration.expires_at,
-    ))
+    )
+}
+
+fn registration_into_authority_for_tls(
+    registration: McpAccountRegistration,
+    expected_tls: Option<&McpEndpointTlsService>,
+) -> Result<BridgeAuthority, McpBridgeCarrierError> {
+    if expected_tls.is_some_and(|tls| !tls.matches_authorized_hostname(&registration.hostname)) {
+        return Err(McpBridgeCarrierError::Pop);
+    }
+    Ok(registration_into_authority(registration))
 }
 
 trait AccountAttemptIo {
@@ -3311,6 +3318,33 @@ mod tests {
                 ExpectedResponseError::TokenType,
             );
         }
+    }
+
+    #[test]
+    fn replacement_authority_must_match_tls_before_control_connect() {
+        let tls = crate::McpEndpointTlsService::empty_for_test("aaaqeaye.solstone.me".to_owned());
+        let mismatched = McpAccountRegistration {
+            token: String::from("fixture-token"),
+            hostname: String::from("bbbbbbbb.solstone.me"),
+            bridge_id: String::from("bridge-fixture"),
+            bridge_address: String::from("192.0.2.9"),
+            issued_at: 1_700_000_000,
+            expires_at: 1_700_000_600,
+        };
+        assert!(matches!(
+            registration_into_authority_for_tls(mismatched, Some(&tls)),
+            Err(McpBridgeCarrierError::Pop)
+        ));
+
+        let matched = McpAccountRegistration {
+            token: String::from("fixture-token"),
+            hostname: String::from("aaaqeaye.solstone.me"),
+            bridge_id: String::from("bridge-fixture"),
+            bridge_address: String::from("192.0.2.9"),
+            issued_at: 1_700_000_000,
+            expires_at: 1_700_000_600,
+        };
+        assert!(registration_into_authority_for_tls(matched, Some(&tls)).is_ok());
     }
 
     #[test]

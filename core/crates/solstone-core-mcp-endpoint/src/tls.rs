@@ -167,6 +167,13 @@ impl McpEndpointTlsService {
         Ok(service)
     }
 
+    /// Whether a newly authenticated bridge authority names this service's
+    /// exact certificate hostname. This stays crate-private so callers cannot
+    /// inspect or select the hostname themselves.
+    pub(crate) fn matches_authorized_hostname(&self, hostname: &str) -> bool {
+        is_exact_authorized_hostname(hostname, &self.resolver.hostname)
+    }
+
     fn empty(
         hostname: String,
         store: Option<Arc<CertificateStateStore>>,
@@ -315,7 +322,7 @@ impl McpEndpointTlsService {
     }
 
     #[cfg(all(test, not(feature = "full-tests")))]
-    fn empty_for_test(hostname: String) -> Self {
+    pub(crate) fn empty_for_test(hostname: String) -> Self {
         Self::empty(hostname, None, false)
     }
 
@@ -1048,6 +1055,14 @@ mod tests {
             config.alpn_protocols,
             vec![ACME_TLS_ALPN.to_vec(), HTTP11_ALPN.to_vec()]
         );
+    }
+
+    #[test]
+    fn reconnect_authority_must_match_the_existing_tls_hostname() {
+        let service = McpEndpointTlsService::empty_for_test(HOSTNAME.to_owned());
+        assert!(service.matches_authorized_hostname(HOSTNAME));
+        assert!(!service.matches_authorized_hostname("other.solstone.me"));
+        assert!(!service.matches_authorized_hostname("AB12CD34.solstone.me"));
     }
 
     #[test]

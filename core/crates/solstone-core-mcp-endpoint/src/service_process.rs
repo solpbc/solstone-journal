@@ -175,10 +175,17 @@ async fn run_endpoint_topology(
         .map_err(|_| McpServiceError::Listener)
     });
     let mut forwarder_shutdown = shutdown_receive.clone();
+    let forwarder_tls = Arc::clone(&tls);
+    let forwarder_owner = owner.renewal_owner();
     tasks.spawn(async move {
-        crate::bridge_forwarder::run_session(forwarder_session, &mut forwarder_shutdown)
-            .await
-            .map_err(|_| McpServiceError::Forwarder)
+        crate::bridge_forwarder::run_bound_session(
+            forwarder_owner,
+            forwarder_tls,
+            forwarder_session,
+            &mut forwarder_shutdown,
+        )
+        .await
+        .map_err(|_| McpServiceError::Forwarder)
     });
     let renewal_tls = Arc::clone(&tls);
     let mut renewal_shutdown = shutdown_receive.clone();

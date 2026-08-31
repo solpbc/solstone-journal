@@ -7,7 +7,8 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use solstone_core_indexer_query::{
-    IndexAccessError, Order, SearchRequest, SearchResponse, search as search_index,
+    CompileOutcome, CountsResponse, IndexAccessError, Order, SearchRequest, SearchResponse,
+    compile_query, search as search_index,
 };
 
 use super::ToolError;
@@ -25,7 +26,9 @@ pub(crate) struct ValidatedSearch {
 #[serde(deny_unknown_fields)]
 struct SearchParams {
     query: String,
+    #[serde(default = "default_limit")]
     limit: usize,
+    #[serde(default)]
     offset: usize,
     #[serde(default)]
     day: Option<String>,
@@ -49,11 +52,16 @@ struct SearchParams {
     order: Option<Order>,
 }
 
+const fn default_limit() -> usize {
+    10
+}
+
 pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolError> {
     let params = params.cloned().ok_or(ToolError::InvalidInput)?;
     let params =
         serde_json::from_value::<SearchParams>(params).map_err(|_| ToolError::InvalidInput)?;
-    if params.query.len() > MAX_QUERY_BYTES
+    if params.query.is_empty()
+        || params.query.len() > MAX_QUERY_BYTES
         || !(1..=MAX_LIMIT).contains(&params.limit)
         || params.offset > MAX_OFFSET
     {
@@ -83,9 +91,33 @@ pub(crate) fn execute(
     request: &ValidatedSearch,
     now: DateTime<Utc>,
 ) -> Result<Value, ToolError> {
-    let response =
-        search_index(journal_root, &request.request, now.date_naive()).map_err(map_index_error)?;
-    serialize_response(response)
+    match search_index(journal_root, &request.request, now.date_naive()) {
+        Ok(response) => serialize_response(response),
+        Err(IndexAccessError::Empty { .. }) => empty_index_response(request, now),
+        Err(error) => Err(map_index_error(error)),
+    }
+}
+
+fn empty_index_response(request: &ValidatedSearch, now: DateTime<Utc>) -> Result<Value, ToolError> {
+    let compilation = compile_query(&request.request.query, now.date_naive());
+    let counts = request.request.counts.then(CountsResponse::default);
+    let result = SearchResponse {
+        results: Vec::new(),
+        order: match compilation.outcome {
+            CompileOutcome::Compiled { .. } => Order::Relevance,
+            CompileOutcome::NoInput
+            | CompileOutcome::FiltersOnly
+            | CompileOutcome::NoTokenizableTerm => Order::Recency,
+        },
+        relaxed: false,
+        total: counts.as_ref().map(|value| value.total),
+        counts,
+        reason: matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm)
+            .then(|| "not_tokenizable".to_owned()),
+        cleaned_query: compilation.temporal.remaining_text,
+        degraded: None,
+    };
+    serialize_response(result)
 }
 
 fn serialize_response(response: SearchResponse) -> Result<Value, ToolError> {
@@ -111,11 +143,14 @@ mod tests {
         SearchResponse,
     };
 
-    use super::{serialize_response, validate};
+    use super::{empty_index_response, serialize_response, validate};
     use crate::tools::ToolError;
 
     #[test]
     fn validation_keeps_only_bounded_declared_search_fields() {
+        let defaulted = validate(Some(&json!({"query": "needle"}))).unwrap();
+        assert_eq!(defaulted.request.limit, 10);
+        assert_eq!(defaulted.request.offset, 0);
         assert!(
             validate(Some(&json!({
                 "query": "needle",
@@ -128,6 +163,7 @@ mod tests {
             .is_ok()
         );
         for value in [
+            json!({"query": "", "limit": 1, "offset": 0}),
             json!({"query": "x", "limit": 0, "offset": 0}),
             json!({"query": "x", "limit": 101, "offset": 0}),
             json!({"query": "x", "limit": 1, "offset": 10_001}),
@@ -196,5 +232,24 @@ mod tests {
         assert_eq!(result["degraded"]["kind"], "building");
         assert_eq!(result["counts"]["degraded"]["kind"], "building");
         assert_eq!(result["results"][0]["metadata"]["path"], "notes/jose.txt");
+    }
+
+    #[test]
+    fn empty_derived_index_is_an_ordinary_zero_result_search_response() {
+        let request =
+            validate(Some(&json!({"query": "needle", "counts": true}))).expect("query is valid");
+        let result = empty_index_response(
+            &request,
+            chrono::DateTime::parse_from_rfc3339("2026-08-31T12:00:00Z")
+                .unwrap()
+                .to_utc(),
+        )
+        .expect("empty index serializes as a result");
+        assert_eq!(result["results"], json!([]));
+        assert_eq!(result["order"], "relevance");
+        assert_eq!(result["total"], 0);
+        assert_eq!(result["counts"]["total"], 0);
+        assert_eq!(result["cleaned_query"], "needle");
+        assert!(result.get("reason").is_none());
     }
 }

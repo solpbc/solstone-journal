@@ -1225,6 +1225,7 @@ mod tests {
         let late = open_transaction(&store, &client_id, "192.0.2.10");
         let issued = store.complete_pairing(&expiring, &pairing.code).unwrap();
         set_now(start.timestamp() + AUTH_CODE_TTL_SECS + 1);
+        const { assert!(AUTH_CODE_TTL_SECS + 1 < PENDING_TRANSACTION_TTL_SECS) };
         assert!(matches!(
             store.redeem_authorization_code(
                 &issued.code,

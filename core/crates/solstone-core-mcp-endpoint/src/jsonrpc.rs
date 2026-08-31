@@ -164,9 +164,55 @@ pub(crate) fn initialize_result() -> Value {
 pub(crate) fn tools_list_result() -> Value {
     json!({
         "tools": [
-            { "name": "search", "annotations": { "readOnlyHint": true } },
-            { "name": "fetch", "annotations": { "readOnlyHint": true } }
+            {
+                "name": "search",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "query": { "type": "string", "minLength": 1 },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                        "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+                        "day": { "type": "string" },
+                        "day_from": { "type": "string" },
+                        "day_to": { "type": "string" },
+                        "facet": { "type": "string" },
+                        "agent": { "type": "string" },
+                        "stream": { "type": "string" },
+                        "time_bucket": { "type": "string" },
+                        "relax": { "type": "boolean", "default": false },
+                        "counts": { "type": "boolean", "default": false },
+                        "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
+                    },
+                    "required": ["query"]
+                },
+                "annotations": { "readOnlyHint": true }
+            },
+            {
+                "name": "fetch",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": { "id": { "type": "string", "minLength": 3 } },
+                    "required": ["id"]
+                },
+                "annotations": { "readOnlyHint": true }
+            }
         ]
+    })
+}
+
+/// Render a successful tool result in the MCP `CallToolResult` shape.
+///
+/// `content` is required by MCP clients, including when the machine-readable
+/// response is also available in `structuredContent`. Keeping both forms lets
+/// a client display the response while consuming its typed JSON without
+/// inferring a response type from a journal-specific object.
+pub(crate) fn tool_result(value: Value) -> Value {
+    let text = value.to_string();
+    json!({
+        "content": [{ "type": "text", "text": text }],
+        "structuredContent": value,
     })
 }
 
@@ -213,7 +259,7 @@ mod tests {
 
     use super::{
         JsonRpcResponse, McpMethod, ToolName, classify_method, initialize_result, parse_request,
-        tools_list_result,
+        tool_result, tools_list_result,
     };
 
     fn error_code(response: &JsonRpcResponse) -> i32 {
@@ -263,8 +309,40 @@ mod tests {
             result,
             json!({
                 "tools": [
-                    { "name": "search", "annotations": { "readOnlyHint": true } },
-                    { "name": "fetch", "annotations": { "readOnlyHint": true } }
+                    {
+                        "name": "search",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "query": { "type": "string", "minLength": 1 },
+                                "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                                "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+                                "day": { "type": "string" },
+                                "day_from": { "type": "string" },
+                                "day_to": { "type": "string" },
+                                "facet": { "type": "string" },
+                                "agent": { "type": "string" },
+                                "stream": { "type": "string" },
+                                "time_bucket": { "type": "string" },
+                                "relax": { "type": "boolean", "default": false },
+                                "counts": { "type": "boolean", "default": false },
+                                "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
+                            },
+                            "required": ["query"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    },
+                    {
+                        "name": "fetch",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": { "id": { "type": "string", "minLength": 3 } },
+                            "required": ["id"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    }
                 ]
             })
         );
@@ -299,5 +377,17 @@ mod tests {
             .unwrap()
         );
         assert_eq!(initialize_result()["capabilities"], json!({ "tools": {} }));
+    }
+
+    #[test]
+    fn successful_tool_result_has_required_content_and_machine_readable_json() {
+        let payload = json!({"results": [], "total": 0});
+        assert_eq!(
+            tool_result(payload.clone()),
+            json!({
+                "content": [{"type": "text", "text": "{\"results\":[],\"total\":0}"}],
+                "structuredContent": payload,
+            })
+        );
     }
 }
