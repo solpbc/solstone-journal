@@ -620,6 +620,12 @@ pub const PROBE_RECEIPT_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-
 pub const PROBE_MARKER_PREFIX: &str = "solstone-onlogon-probe:";
 pub const ACE_MUTATION_MASK: u32 =
     0x0001_0000 | 0x0004_0000 | 0x0008_0000 | 0x1000_0000 | 0x4000_0000;
+pub const TASK_CREATION_CREATE: i32 = 2;
+pub const TASK_CREATION_CREATE_OR_UPDATE: i32 = 6;
+
+pub fn com_register_flag() -> i32 {
+    TASK_CREATION_CREATE_OR_UPDATE
+}
 
 pub fn probe_marker(nonce: &str) -> String {
     format!("{PROBE_MARKER_PREFIX}{nonce}")
@@ -876,6 +882,12 @@ pub struct ProbeXmlSection {
     pub definition: ProbeStage,
     pub priority: ProbePriorityView,
     pub cleanup: ProbeStage,
+    #[serde(default)]
+    pub create_argv: Vec<String>,
+    #[serde(default)]
+    pub query_argv: Vec<String>,
+    #[serde(default)]
+    pub definition_sha256: String,
 }
 
 impl ProbeXmlSection {
@@ -885,6 +897,9 @@ impl ProbeXmlSection {
             definition: ProbeStage::skipped(),
             priority: ProbePriority::Unavailable.into(),
             cleanup: ProbeStage::skipped(),
+            create_argv: Vec::new(),
+            query_argv: Vec::new(),
+            definition_sha256: String::new(),
         }
     }
 }
@@ -920,6 +935,10 @@ pub struct ProbeComSection {
     pub definition: ProbeStage,
     pub priority: ProbePriorityView,
     pub cleanup: ProbeStage,
+    #[serde(default)]
+    pub register_flag: i32,
+    #[serde(default)]
+    pub call_sequence: Vec<String>,
 }
 
 impl ProbeComSection {
@@ -931,6 +950,8 @@ impl ProbeComSection {
             definition: ProbeStage::skipped(),
             priority: ProbePriority::Unavailable.into(),
             cleanup: ProbeStage::skipped(),
+            register_flag: 0,
+            call_sequence: Vec::new(),
         }
     }
 }
@@ -1136,7 +1157,7 @@ pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
     }
     let xml_verified = xml_created && report.xml.definition.status == ProbeStageStatus::Passed;
     let com_verified = com_created && report.com.definition.status == ProbeStageStatus::Passed;
-    if xml_verified || com_verified {
+    if xml_verified && com_verified {
         return ProbeOutcome::VerifiedRegistration;
     }
     let xml_refused =
@@ -1161,12 +1182,20 @@ fn create_stage_blocks_refusal(stage: &ProbeStage) -> bool {
     ) && stage.resolution_action != Some(ProbeResolutionAction::TreatAsRefused)
 }
 
+pub fn priority_from_raw_value(value: i32) -> ProbePriority {
+    if (0..=10).contains(&value) {
+        ProbePriority::Present(value)
+    } else {
+        ProbePriority::Malformed
+    }
+}
+
 pub fn priority_from_xml_text(value: Option<&str>) -> ProbePriority {
     let Some(text) = value.map(str::trim).filter(|text| !text.is_empty()) else {
         return ProbePriority::Unavailable;
     };
     match text.parse::<i32>() {
-        Ok(priority) if (0..=10).contains(&priority) => ProbePriority::Present(priority),
+        Ok(priority) => priority_from_raw_value(priority),
         _ => ProbePriority::Malformed,
     }
 }
@@ -1264,7 +1293,7 @@ pub fn render_probe_task_xml(definition: &ProbeTaskDefinition) -> String {
         ProbePriority::Unavailable | ProbePriority::Malformed => String::new(),
     };
     format!(
-        "<Task>{description}<Triggers><LogonTrigger><UserId>{}</UserId></LogonTrigger></Triggers><Principals><Principal><UserId>{}</UserId><LogonType>{}</LogonType>{run_level}</Principal></Principals>{priority}<Actions><Exec><Command>{}</Command><Arguments>{}</Arguments>{working_directory}</Exec></Actions></Task>",
+        r#"<?xml version="1.0" encoding="UTF-8"?><Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task" version="1.2">{description}<Triggers><LogonTrigger><UserId>{}</UserId></LogonTrigger></Triggers><Principals><Principal><UserId>{}</UserId><LogonType>{}</LogonType>{run_level}</Principal></Principals>{priority}<Actions><Exec><Command>{}</Command><Arguments>{}</Arguments>{working_directory}</Exec></Actions></Task>"#,
         xml_escape(&definition.trigger_user_id),
         xml_escape(&definition.principal_sid),
         xml_escape(&definition.logon_type),
@@ -1931,6 +1960,25 @@ mod tests {
     }
 
     #[test]
+    fn render_probe_task_xml_emits_task_namespace_and_schema_version() {
+        let xml = render_probe_task_xml(&probe_definition());
+        assert!(xml.starts_with(r#"<?xml version="1.0" encoding="UTF-8"?>"#));
+        assert!(xml.contains(
+            r#"<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task" version="1.2">"#
+        ));
+        assert!(xml.ends_with("</Task>"));
+    }
+
+    #[test]
+    fn render_probe_task_xml_omits_priority_when_unspecified() {
+        let mut definition = probe_definition();
+        definition.priority = ProbePriority::Unavailable;
+        let xml = render_probe_task_xml(&definition);
+        assert!(!xml.contains("<Priority>"));
+        assert!(!xml.contains("<Settings>"));
+    }
+
+    #[test]
     fn probe_xml_parser_rejects_non_logon_trigger() {
         let xml = render_probe_task_xml(&probe_definition())
             .replacen("<LogonTrigger>", "<TimeTrigger>", 1)
@@ -2100,6 +2148,15 @@ mod tests {
             parse_probe_task_xml(&xml).expect("parses").priority,
             ProbePriority::Malformed
         );
+    }
+
+    #[test]
+    fn priority_from_raw_value_accepts_scheduler_range() {
+        assert_eq!(priority_from_raw_value(0), ProbePriority::Present(0));
+        assert_eq!(priority_from_raw_value(7), ProbePriority::Present(7));
+        assert_eq!(priority_from_raw_value(10), ProbePriority::Present(10));
+        assert_eq!(priority_from_raw_value(-1), ProbePriority::Malformed);
+        assert_eq!(priority_from_raw_value(11), ProbePriority::Malformed);
     }
 
     #[test]
@@ -2307,6 +2364,9 @@ mod tests {
         report.xml.definition = ProbeStage::passed();
         report.xml.cleanup = ProbeStage::passed();
         report.xml.priority = ProbePriority::Present(7).into();
+        report.xml.create_argv =
+            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        report.xml.definition_sha256 = "abc123".to_owned();
         report.com.folder_create = ProbeStage::passed();
         report.com.folder_acl.status = ProbeStageStatus::Passed;
         report.com.folder_acl.ordinary_mutation = Some(false);
@@ -2314,10 +2374,19 @@ mod tests {
         report.com.register = ProbeStage::passed();
         report.com.definition = ProbeStage::passed();
         report.com.cleanup = ProbeStage::passed();
+        report.com.register_flag = com_register_flag();
+        report.com.call_sequence = vec![
+            "ITaskService::Connect".to_owned(),
+            "ITaskFolder::RegisterTaskDefinition".to_owned(),
+        ];
         report.outcome = select_probe_outcome(&report);
         let json = serialize_outcome(&report);
         assert_eq!(json["outcome"], "verified-registration");
         assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert_eq!(json["xml"]["create_argv"][0], "/Create");
+        assert_eq!(json["xml"]["definition_sha256"], "abc123");
+        assert_eq!(json["com"]["register_flag"], com_register_flag());
+        assert_eq!(json["com"]["call_sequence"][0], "ITaskService::Connect");
         assert!(probe_exits_successfully(&report));
     }
 
@@ -2381,6 +2450,14 @@ mod tests {
     }
 
     #[test]
+    fn com_register_flag_is_create_or_update() {
+        assert_eq!(com_register_flag(), TASK_CREATION_CREATE_OR_UPDATE);
+        assert_eq!(com_register_flag(), 6);
+        assert_ne!(com_register_flag(), TASK_CREATION_CREATE);
+        assert_ne!(com_register_flag(), 2);
+    }
+
+    #[test]
     fn select_outcome_collision_is_not_verified() {
         let mut report = base_probe_report(default_token_passed());
         report.xml.create = ProbeStage::failed(
@@ -2393,6 +2470,47 @@ mod tests {
         );
         report.outcome = select_probe_outcome(&report);
         assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_single_route_verified_is_not_verified() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.xml.priority = ProbePriority::Present(7).into();
+        report.xml.create_argv =
+            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        report.xml.definition_sha256 = "def456".to_owned();
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["xml"]["create"]["status"], "passed");
+        assert_eq!(json["xml"]["definition"]["status"], "passed");
+        assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert_eq!(json["xml"]["priority"]["value"], 7);
+        assert_eq!(json["xml"]["create_argv"][0], "/Create");
+        assert_eq!(json["xml"]["definition_sha256"], "def456");
+        assert_eq!(json["com"]["register"]["status"], "skipped");
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_xml_inspect_failure_blocks_refusal() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::failed(
+            probe_error("implementation parse failure"),
+            ProbeResolutionAction::InspectDefinition,
+        );
+        report.com.folder_create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
         assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
         assert!(!probe_exits_successfully(&report));
     }
