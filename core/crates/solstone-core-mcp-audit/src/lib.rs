@@ -107,47 +107,84 @@ pub fn write_interaction_record(
     agent_identity: &str,
     tool_name: ToolName,
 ) -> Result<AuditCoordinates, AuditWriteError> {
+    write_interaction_record_with_before_publish(
+        journal_root,
+        now,
+        agent_identity,
+        tool_name,
+        || {},
+    )
+}
+
+fn write_interaction_record_with_before_publish<F>(
+    journal_root: &Path,
+    now: DateTime<Utc>,
+    agent_identity: &str,
+    tool_name: ToolName,
+    mut before_publish: F,
+) -> Result<AuditCoordinates, AuditWriteError>
+where
+    F: FnMut(),
+{
     let day = now.date_naive();
     let day_key = day.format("%Y%m%d").to_string();
     let day_directory =
         day_path(journal_root, Some(&day_key), true).map_err(AuditWriteError::DayPath)?;
     let stream_directory = day_directory.join(STREAM);
-    let candidate = format!("{}_1", now.format("%H%M%S"));
-    let segment = find_available_segment(&stream_directory, &candidate, MAX_SEGMENT_ATTEMPTS)
-        .map_err(AuditWriteError::SegmentAllocation)?
-        .ok_or(AuditWriteError::NoAvailableSegment)?;
-    let segment_directory = segment_path(journal_root, &day_key, &segment, STREAM, true)
-        .map_err(AuditWriteError::SegmentPath)?;
     let record = InteractionRecord {
         agent_identity: agent_identity.to_owned(),
         timestamp: now,
         tool_name,
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
-    write_bytes_exclusive(
-        segment_directory.join(INTERACTION_FILE),
-        &contents,
-        AtomicWriteOptions::default(),
-    )
-    .map_err(AuditWriteError::AtomicWrite)?;
+    let mut candidate = format!("{}_1", now.format("%H%M%S"));
 
-    Ok(AuditCoordinates {
-        day,
-        stream: STREAM.to_owned(),
-        segment,
-    })
+    for _ in 0..MAX_SEGMENT_ATTEMPTS {
+        let segment = find_available_segment(&stream_directory, &candidate, MAX_SEGMENT_ATTEMPTS)
+            .map_err(AuditWriteError::SegmentAllocation)?
+            .ok_or(AuditWriteError::NoAvailableSegment)?;
+        let segment_directory = segment_path(journal_root, &day_key, &segment, STREAM, true)
+            .map_err(AuditWriteError::SegmentPath)?;
+        before_publish();
+        match write_bytes_exclusive(
+            segment_directory.join(INTERACTION_FILE),
+            &contents,
+            AtomicWriteOptions::default(),
+        ) {
+            Ok(()) => {
+                return Ok(AuditCoordinates {
+                    day,
+                    stream: STREAM.to_owned(),
+                    segment,
+                });
+            }
+            Err(AtomicWriteError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                candidate = segment;
+            }
+            Err(error) => return Err(AuditWriteError::AtomicWrite(error)),
+        }
+    }
+
+    Err(AuditWriteError::NoAvailableSegment)
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     use chrono::{TimeZone, Utc};
     use serde_json::json;
 
-    use super::{InteractionRecord, ToolName, write_interaction_record};
+    use super::{
+        INTERACTION_FILE, InteractionRecord, ToolName, write_interaction_record,
+        write_interaction_record_with_before_publish,
+    };
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -203,5 +240,79 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_interactions_retry_an_exclusive_write_collision() {
+        let root = Arc::new(journal_root());
+        let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
+        let selected = Arc::new(Barrier::new(2));
+        let selections = Arc::new(AtomicUsize::new(0));
+
+        let first = {
+            let root = Arc::clone(&root);
+            let selected = Arc::clone(&selected);
+            let selections = Arc::clone(&selections);
+            thread::spawn(move || {
+                write_interaction_record_with_before_publish(
+                    &root,
+                    now,
+                    "first-agent",
+                    ToolName::Search,
+                    move || {
+                        if selections.fetch_add(1, Ordering::SeqCst) < 2 {
+                            selected.wait();
+                        }
+                    },
+                )
+                .expect("first concurrent record publishes")
+            })
+        };
+        let second = {
+            let root = Arc::clone(&root);
+            let selected = Arc::clone(&selected);
+            let selections = Arc::clone(&selections);
+            thread::spawn(move || {
+                write_interaction_record_with_before_publish(
+                    &root,
+                    now,
+                    "second-agent",
+                    ToolName::Fetch,
+                    move || {
+                        if selections.fetch_add(1, Ordering::SeqCst) < 2 {
+                            selected.wait();
+                        }
+                    },
+                )
+                .expect("second concurrent record publishes")
+            })
+        };
+
+        let first = first.join().expect("first concurrent writer joins");
+        let second = second.join().expect("second concurrent writer joins");
+        assert_ne!(first.segment, second.segment);
+        for (coordinates, agent_identity, tool_name) in [
+            (first, "first-agent", "search"),
+            (second, "second-agent", "fetch"),
+        ] {
+            let record = fs::read_to_string(
+                root.join("chronicle")
+                    .join(coordinates.day.format("%Y%m%d").to_string())
+                    .join(coordinates.stream)
+                    .join(coordinates.segment)
+                    .join(INTERACTION_FILE),
+            )
+            .expect("concurrent record exists");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&record).expect("record is JSON"),
+                json!({
+                    "agent_identity": agent_identity,
+                    "timestamp": "2026-08-31T12:34:56Z",
+                    "tool_name": tool_name,
+                })
+            );
+        }
+
+        fs::remove_dir_all(root.as_ref()).unwrap();
     }
 }
