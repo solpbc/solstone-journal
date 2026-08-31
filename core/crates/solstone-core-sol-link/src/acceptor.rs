@@ -87,7 +87,7 @@ where
     .map_err(io::Error::other)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::time::Duration;
 

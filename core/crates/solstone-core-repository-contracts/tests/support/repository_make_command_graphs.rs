@@ -80,7 +80,7 @@ fn write_native_cargo_shim(path: &Path) {
 #include <stdlib.h>
 #include <string.h>
 int main(int argc, char **argv) {
-    FILE *args = fopen(getenv("SOLSTONE_CARGO_ARGV"), "wb");
+    FILE *args = fopen(getenv("SOLSTONE_CARGO_ARGV"), "ab");
     for (int i = 1; i < argc; i++) fwrite(argv[i], 1, strlen(argv[i]) + 1, args);
     fclose(args);
     FILE *env = fopen(getenv("SOLSTONE_CARGO_ENV"), "w");
@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
     }
     write_executable(
         path,
-        "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${ORT_PREFER_DYNAMIC_LINK-}\" \"${ORT_LIB_PATH-}\" \"${DYLD_LIBRARY_PATH-}\" \"${LD_LIBRARY_PATH-}\" > \"$SOLSTONE_CARGO_ENV\"\n",
+        "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" >> \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${ORT_PREFER_DYNAMIC_LINK-}\" \"${ORT_LIB_PATH-}\" \"${DYLD_LIBRARY_PATH-}\" \"${LD_LIBRARY_PATH-}\" > \"$SOLSTONE_CARGO_ENV\"\n",
     );
 }
 

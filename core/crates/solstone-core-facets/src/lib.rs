@@ -67,29 +67,31 @@ pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod connections_horizon_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_exclusion_fixture_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_fixture_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_move_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod fixture_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod observation_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod relationship_scans_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod review_candidate_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod speculative_facets_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod store_tests;
+#[cfg(all(test, not(feature = "full-tests")))]
+mod unit_tests;

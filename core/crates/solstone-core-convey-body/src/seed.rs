@@ -471,7 +471,7 @@ fn write_json(path: PathBuf, value: &Value) -> Result<(), BodySeedError> {
 const SYNTHETIC_DAY_SUMMARY_SEGMENT: &str = "000000_300";
 const DAY_SUMMARY_FILE: &str = "day_summary_transcript.md";
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

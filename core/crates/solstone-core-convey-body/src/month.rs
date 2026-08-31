@@ -202,7 +202,7 @@ fn is_month(value: &str) -> bool {
         && bytes[5..].iter().all(|byte| byte.is_ascii_digit())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

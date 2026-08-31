@@ -334,7 +334,7 @@ fn python_bool(value: Option<&serde_json::Value>) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

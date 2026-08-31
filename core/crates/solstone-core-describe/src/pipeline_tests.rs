@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, feature = "full-tests"))]
+
 //! Private, in-process coverage for describe pipeline semantics.
 //!
 //! The `cli` integration harness retains the native decode, masking, detector,

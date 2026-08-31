@@ -134,11 +134,12 @@ targets or heavyweight native, platform, and policy legs. An operator runs the
 selectable, registry-driven `make ci-full` gate on the exact final-tree SHA
 after `make ci-full-prep`.
 
-⚠ **There is no Python test suite.** It was removed with the Python reference tree,
-along with the `make test-*` targets that drove it. Run focused Rust tests directly:
+⚠ **There is no Python test suite.** It was removed with the Python reference tree, along with the `make test-*` targets that drove it. Run focused Rust tests directly. In the four behavior-classified packages, a default-feature `--lib`/`--bins` selection contains only routine same-crate evidence; run the matching classified full-test and full-Clippy Make targets for broader `full-tests` same-crate evidence. For example:
 
 ```bash
-cargo test --manifest-path core/Cargo.toml -p solstone-core-facets
+cargo test --manifest-path core/Cargo.toml -p solstone-core-facets --lib
+make check-rust-classified-full-tests-facets
+make check-rust-classified-full-clippy-facets
 ```
 
 ⚠ **`make verify-api` and `make verify-schemathesis` are also gone**, because each drove

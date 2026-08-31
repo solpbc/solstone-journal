@@ -1062,7 +1062,7 @@ fn rfc3339_utc(timestamp: OffsetDateTime) -> String {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     #[cfg(unix)]

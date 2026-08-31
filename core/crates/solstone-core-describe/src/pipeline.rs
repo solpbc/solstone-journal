@@ -909,7 +909,7 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use serde_json::json;
 
@@ -933,6 +933,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "pipeline_tests.rs"]
 mod pipeline_tests;

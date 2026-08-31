@@ -205,7 +205,7 @@ fn fold_stats(path: &Path) -> Result<HealthDedupeStats, HealthDedupeStatsError> 
     Ok(stats)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

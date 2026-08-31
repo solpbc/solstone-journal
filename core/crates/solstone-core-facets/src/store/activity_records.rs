@@ -456,7 +456,7 @@ fn id(record: &ActivityRecord) -> &str {
     record.get("id").and_then(Value::as_str).unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
 

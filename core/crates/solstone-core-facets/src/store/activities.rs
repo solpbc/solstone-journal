@@ -267,7 +267,7 @@ fn write_content_file(
         .map_err(FacetWriteError::ContentWrite)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod migration_tests {
     use super::*;
     use tempfile::tempdir;

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, feature = "full-tests"))]
+
 use serde_json::json;
 
 use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
 use crate::{
-    FacetRelationshipRecord, enrich_relationship_with_journal, load_all_facet_relationships,
+    FacetRelationshipRecord, load_all_facet_relationships,
     load_all_facet_relationships_across_facets, scan_facet_relationships,
 };
 
@@ -85,48 +87,5 @@ fn across_facets_keys_shared_relationship_directories_by_resolved_journal_entity
             ),
         ]
         .into()
-    );
-}
-
-#[test]
-fn enrichment_without_journal_identity_promotes_entity_id() {
-    assert_eq!(
-        enrich_relationship_with_journal(
-            &json!({"entity_id":"fallback-id","description":"facet data"}),
-            None,
-        ),
-        json!({"id":"fallback-id","description":"facet data"})
-    );
-}
-
-#[test]
-fn enrichment_overlays_present_journal_identity_fields() {
-    assert_eq!(
-        enrich_relationship_with_journal(
-            &json!({
-                "entity_id":"old-id",
-                "description":"facet data",
-                "aka":["relationship alias"],
-                "is_principal":false,
-                "blocked":false,
-            }),
-            Some(&json!({
-                "id":"current-id",
-                "name":"Current Name",
-                "type":"person",
-                "aka":["journal alias"],
-                "is_principal":true,
-                "blocked":true,
-            })),
-        ),
-        json!({
-            "id":"current-id",
-            "name":"Current Name",
-            "type":"person",
-            "aka":["journal alias"],
-            "is_principal":true,
-            "blocked":true,
-            "description":"facet data",
-        })
     );
 }

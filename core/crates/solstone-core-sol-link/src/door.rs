@@ -254,7 +254,7 @@ fn authorization_unavailable_error() -> RustlsError {
     RustlsError::InvalidCertificate(CertificateError::Other(OtherError(source)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::PathBuf;

@@ -320,7 +320,7 @@ fn timestamp_age_ms(timestamp: &str, now_ms: i64) -> Option<i64> {
     Some(now_ms.saturating_sub(timestamp_ms))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

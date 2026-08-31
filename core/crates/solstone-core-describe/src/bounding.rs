@@ -26,7 +26,7 @@ pub fn bound_extraction_markdown(text: &str) -> String {
     sanitized
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{EXTRACTION_BOUND_MARKER, MAX_EXTRACTION_CHARS, bound_extraction_markdown};
 

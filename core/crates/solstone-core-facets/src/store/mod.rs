@@ -48,7 +48,7 @@ pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
     save_detected_entity, update_detected_entity, upsert_detection_segment,
 };
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
 pub use detected_entity_activity::{
     iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
@@ -88,7 +88,7 @@ pub use observations::{
     read_facet_entity_observations, record_observation_ops, resolve_observation_entity_dir,
     save_observations, write_facet_entity_observations,
 };
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) use observations::{retry_add_for_test, retry_record_for_test};
 pub use recent_names::{
     extract_spoken_names, is_speakable, load_all_attached_entities, load_recent_entity_names,

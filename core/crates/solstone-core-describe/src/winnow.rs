@@ -104,7 +104,7 @@ pub fn winnow(
     (verdicts, state.counters())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{HashedFrame, WinnowConfig, WinnowVerdict, winnow};
 

@@ -601,6 +601,30 @@ fn validate_host_excludes(repo: &Path) -> Result<(), String> {
     }
 }
 
+fn classified_full_test_packages(repo: &Path) -> Result<BTreeSet<String>, String> {
+    let makefile = fs::read_to_string(repo.join("Makefile")).map_err(|error| {
+        format!("read Makefile for RUST_CLASSIFIED_FULL_TEST_PACKAGES: {error}")
+    })?;
+    let declaration = makefile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
+        .ok_or_else(|| {
+            "Makefile has no exact RUST_CLASSIFIED_FULL_TEST_PACKAGES declaration".to_owned()
+        })?;
+    let words = declaration.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() {
+        return Err("RUST_CLASSIFIED_FULL_TEST_PACKAGES must not be empty".to_owned());
+    }
+    let packages = words
+        .iter()
+        .map(|package| (*package).to_owned())
+        .collect::<BTreeSet<_>>();
+    if packages.len() != words.len() {
+        return Err("RUST_CLASSIFIED_FULL_TEST_PACKAGES must be unique".to_owned());
+    }
+    Ok(packages)
+}
+
 fn parse_toml(path: &Path) -> Result<toml_edit::DocumentMut, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("read manifest {}: {error}", path.display()))?;
@@ -634,6 +658,7 @@ fn automatic_test_names(tests_dir: &Path) -> Result<Vec<String>, String> {
 }
 
 pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> {
+    let classified_packages = classified_full_test_packages(repo)?;
     let workspace_path = repo.join("core/Cargo.toml");
     let workspace = parse_toml(&workspace_path)?;
     let members = workspace
@@ -673,6 +698,10 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
                 .map_err(|error| format!("read Rust source {}: {error}", file.display()))?;
             let syntax = syn::parse_file(&text)
                 .map_err(|error| format!("parse Rust source {}: {error}", file.display()))?;
+            let classified_package = classified_packages.contains(package);
+            if classified_package && has_exact_classified_full_tests_cfg(&syntax.attrs) {
+                continue;
+            }
             let file_is_test = file.components().any(|part| part.as_os_str() == "tests")
                 || file
                     .file_stem()
@@ -681,6 +710,7 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
             let mut visitor = RiskVisitor {
                 package,
                 relative: &relative,
+                classified_package,
                 test_scope: file_is_test,
                 module_path: Vec::new(),
                 process_command_aliases: vec![BTreeSet::new()],
@@ -730,6 +760,7 @@ fn rust_files(root: &Path) -> Result<Vec<PathBuf>, String> {
 struct RiskVisitor<'a> {
     package: &'a str,
     relative: &'a str,
+    classified_package: bool,
     test_scope: bool,
     module_path: Vec<String>,
     process_command_aliases: Vec<BTreeSet<String>>,
@@ -774,6 +805,9 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
     }
 
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        if self.classified_package && has_exact_classified_full_tests_cfg(&node.attrs) {
+            return;
+        }
         let prior = self.test_scope;
         self.test_scope = prior || has_test_cfg(&node.attrs) || node.ident == "tests";
         self.module_path.push(node.ident.to_string());
@@ -1086,6 +1120,19 @@ fn has_test_cfg(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
+fn has_exact_classified_full_tests_cfg(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        attr.path().is_ident("cfg")
+            && attr
+                .meta
+                .to_token_stream()
+                .to_string()
+                .split_whitespace()
+                .collect::<String>()
+                == "cfg(all(test,feature=\"full-tests\"))"
+    })
+}
+
 fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
     &[("network", &[]), ("process", &[]), ("native", &[])]
 }
@@ -1106,7 +1153,7 @@ mod tests {
         .expect("workspace");
         fs::write(
             temp.path().join("Makefile"),
-            "RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze\n",
+            "RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze\nRUST_CLASSIFIED_FULL_TEST_PACKAGES := a\n",
         )
         .expect("Makefile");
         fs::write(
@@ -1376,5 +1423,87 @@ mod tests {
         )
         .expect("shrink lib");
         assert_eq!(validate_boundary(temp.path()), Ok(()));
+    }
+
+    #[test]
+    fn routine_boundary_exempts_only_exact_classified_scope_in_authorized_packages() {
+        let (temp, _registry) = fixture();
+        let src = temp.path().join("core/crates/a/src");
+        fs::write(
+            src.join("lib.rs"),
+            r#"#[cfg(all(test, feature = "full-tests"))]
+            mod broad_tests {
+                #[test] fn launches_process() { std::process::Command::new("cargo"); }
+            }
+            #[cfg(all(test, not(feature = "full-tests")))]
+            mod routine_tests { #[test] fn pure() { assert_eq!(2 + 2, 4); } }
+"#,
+        )
+        .expect("classified inline module");
+        fs::write(
+            src.join("external_tests.rs"),
+            r#"#![cfg(all(test, feature = "full-tests"))]
+            #[test] fn opens_socket() { let _ = std::net::TcpListener::bind("127.0.0.1:0"); }
+"#,
+        )
+        .expect("classified external file");
+        assert_eq!(validate_boundary(temp.path()), Ok(()));
+
+        fs::write(
+            src.join("external_tests.rs"),
+            r#"#[test] fn opens_socket() { let _ = std::net::TcpListener::bind("127.0.0.1:0"); }
+"#,
+        )
+        .expect("remove external file cfg");
+        let errors = validate_boundary(temp.path()).expect_err("missing inner cfg must red");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("external_tests.rs"))
+        );
+        fs::write(src.join("external_tests.rs"), "#[test] fn pure() {}\n")
+            .expect("restore pure external file");
+
+        fs::write(
+            src.join("lib.rs"),
+            r#"#[cfg(all(test, feature = "full-tests", feature = "host"))]
+            mod broad_tests {
+                #[test] fn launches_process() { std::process::Command::new("cargo"); }
+            }
+"#,
+        )
+        .expect("combine platform and classification cfg");
+        assert!(
+            validate_boundary(temp.path()).is_err(),
+            "a combined lookalike cfg must not receive the exact exemption"
+        );
+        fs::write(
+            src.join("lib.rs"),
+            "#[cfg(test)] mod tests { #[test] fn pure() {} }\n",
+        )
+        .expect("restore authorized package to pure scope");
+
+        fs::write(
+            temp.path().join("core/Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n",
+        )
+        .expect("add fifth package");
+        fs::create_dir_all(temp.path().join("core/crates/b/src")).expect("fifth package src");
+        fs::write(
+            temp.path().join("core/crates/b/Cargo.toml"),
+            "[package]\nname = \"b\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+        )
+        .expect("fifth package manifest");
+        fs::write(
+            temp.path().join("core/crates/b/src/lib.rs"),
+            r#"#[cfg(all(test, feature = "full-tests"))]
+            mod broad_tests {
+                #[test] fn launches_process() { std::process::Command::new("cargo"); }
+            }
+"#,
+        )
+        .expect("fifth package lookalike");
+        let errors = validate_boundary(temp.path()).expect_err("fifth package must red");
+        assert!(errors.iter().any(|error| error.contains("b::")));
     }
 }

@@ -102,7 +102,7 @@ fn cfg_predicate(meta: &Meta) -> Result<bool, String> {
             let Lit::Str(feature) = &literal.lit else {
                 return Err("cfg feature value is not a string literal".to_owned());
             };
-            if feature.value() == "test-hooks" {
+            if matches!(feature.value().as_str(), "test-hooks" | "full-tests") {
                 Ok(false)
             } else {
                 Err(format!(

@@ -162,7 +162,7 @@ impl Drop for TempDir {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
 

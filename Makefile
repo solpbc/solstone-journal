@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -36,7 +36,9 @@ CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)
 # Make, and hostile caller assignments cannot silently recreate incremental or
 # workspace debuginfo output. The built-in dev profile name stays unchanged,
 # preserving the existing debug/ paths and cross-step reuse.
-CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
+	check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe \
+	check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe
 ifneq ($(strip $(filter $(CI_CARGO_ENV_TARGETS),$(MAKECMDGOALS))),)
 export CARGO_INCREMENTAL CARGO_PROFILE_DEV_DEBUG
 endif
@@ -48,20 +50,19 @@ SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
 WINDOWS_TARGET := x86_64-pc-windows-msvc
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
-# These four library harnesses are intentionally full-gate suites: each was
-# measured above ten seconds and already has an explicit registry entry. Keep
-# routine Clippy broad, but leave their execution to ci-full.
-RUST_ROUTINE_EXCLUDES := $(RUST_HOST_EXCLUDES) --exclude solstone-core-sol-link --exclude solstone-core-convey-body --exclude solstone-core-facets --exclude solstone-core-describe
+# Routine library/binary execution excludes only packages whose host-native
+# linkage cannot enter the code gate. The four behavior-classified packages
+# keep deterministic same-crate evidence on default features and put broader
+# product tests behind their non-default full-tests feature.
+RUST_ROUTINE_EXCLUDES := $(RUST_HOST_EXCLUDES)
+RUST_CLASSIFIED_FULL_TEST_PACKAGES := solstone-core-sol-link solstone-core-convey-body solstone-core-facets solstone-core-describe
 
 # Every crate RUST_HOST_EXCLUDES removes from the workspace test selection is
 # named here, and check-rust-onnx-test runs it. They are excluded because they
 # link the pinned host ONNX Runtime, which a plain workspace `cargo test`
-# cannot resolve -- but excluding them from the SELECTION also excluded them
-# from the GATE. Measured 2026-08-11 on this tree: check-rust-test runs 4,411
-# tests and NOT ONE of the 33 in solstone-core-speakers-analyze (26) and
-# solstone-core-speakers-onnx (7) was among them, while
-# check-rust-vad-analyze-test covered only the third crate. Tests nobody runs
-# are worse than no tests, because they read as coverage.
+# cannot resolve. check-rust-test therefore excludes exactly those host-native
+# packages from its workspace command, then calls the four classified feature
+# targets so both routine and broader same-crate evidence stay explicit.
 # ci_gate_purity::every_host_excluded_crate_is_tested_by_a_ci_target keeps the
 # two lists in step: adding a fourth --exclude without adding it here reds.
 ONNX_HOST_TEST_PACKAGES := -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze
@@ -110,7 +111,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # script needs these args to find limits.h. Leaving install off this list made
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and install itself must carry it too.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-rust-release-manifest audit ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-rust-release-manifest audit ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
@@ -317,6 +318,8 @@ UV_OPTIONAL_GOALS := \
 	preflight install \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
+	check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe \
+	check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe \
 	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
 	require-win-remote-host sync-win-host win-host-ci \
 	check-rust-vad-analyze-test build-sandbox-processing check-rust-sandbox-processing-build check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
@@ -613,7 +616,32 @@ check-rust-clippy:
 
 check-rust-clippy-full:
 	@$(REQUIRE_CARGO)
-	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
+	@status=0; \
+	if cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings; then :; else status=$$?; fi; \
+	for target in \
+		check-rust-classified-full-clippy-sol-link \
+		check-rust-classified-full-clippy-convey-body \
+		check-rust-classified-full-clippy-facets \
+		check-rust-classified-full-clippy-describe; do \
+		if make --no-print-directory "$$target"; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
+	done; \
+	exit "$$status"
+
+check-rust-classified-full-clippy-sol-link:
+	@$(REQUIRE_CARGO)
+	cargo clippy --manifest-path $(RUST_MANIFEST) -p solstone-core-sol-link --features full-tests,test-hooks --all-targets --locked -- -D warnings
+
+check-rust-classified-full-clippy-convey-body:
+	@$(REQUIRE_CARGO)
+	cargo clippy --manifest-path $(RUST_MANIFEST) -p solstone-core-convey-body --features full-tests --all-targets --locked -- -D warnings
+
+check-rust-classified-full-clippy-facets:
+	@$(REQUIRE_CARGO)
+	cargo clippy --manifest-path $(RUST_MANIFEST) -p solstone-core-facets --features full-tests --all-targets --locked -- -D warnings
+
+check-rust-classified-full-clippy-describe:
+	@$(REQUIRE_CARGO)
+	cargo clippy --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features full-tests --all-targets --locked -- -D warnings
 
 # Routine validation runs only in-process unit harnesses from workspace library
 # and binary targets. This --lib --bins Clippy invocation does not select Cargo
@@ -628,20 +656,16 @@ check-rust-unit:
 RUST_CODE_EVIDENCE_CONTEXT ?=
 ifeq ($(RUST_CODE_EVIDENCE_CONTEXT),ci)
 RUST_CODE_EVIDENCE_VALID := 1
-RUST_CODE_EVIDENCE_CLIPPY := Clippy ran but unit tests did not: $(filter-out --exclude $(RUST_HOST_EXCLUDES),$(RUST_ROUTINE_EXCLUDES))
 else ifeq ($(RUST_CODE_EVIDENCE_CONTEXT),test)
 RUST_CODE_EVIDENCE_VALID := 1
-RUST_CODE_EVIDENCE_CLIPPY := Routine Clippy did not run under this command.
 else
 RUST_CODE_EVIDENCE_VALID := 0
-RUST_CODE_EVIDENCE_CLIPPY :=
 endif
 report-rust-code-evidence:
 	@test "$(RUST_CODE_EVIDENCE_VALID)" = 1 || { echo "report-rust-code-evidence is internal; run 'make test' or 'make ci'" >&2; exit 2; }
 	@echo "Code evidence ran the selected library/binary unit harnesses."
-	@echo "Not unit-executed (RUST_ROUTINE_EXCLUDES): $(filter-out --exclude,$(RUST_ROUTINE_EXCLUDES))"
-	@echo "$(RUST_CODE_EVIDENCE_CLIPPY)"
-	@echo "Neither routine Clippy nor unit tests ran because native ONNX Runtime linkage is full-gate-only: $(filter-out --exclude,$(RUST_HOST_EXCLUDES))"
+	@echo "Not unit-executed because native ONNX Runtime linkage is full-gate-only (RUST_ROUTINE_EXCLUDES): $(filter-out --exclude,$(RUST_ROUTINE_EXCLUDES))"
+	@echo "Not run by this command; classified same-crate product tests use package-specific feature routes that are default in ci-full and also preserve check-rust-test: $(RUST_CLASSIFIED_FULL_TEST_PACKAGES)"
 	@echo "Not run: Cargo integration targets, doctests, native/runtime/platform, dependency-policy, package/release, and other ci-full registry evidence."
 
 check-rust-doc:
@@ -786,11 +810,31 @@ check-rust-registry-package:
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
+	@$(MAKE) --no-print-directory check-rust-classified-full-tests-sol-link
+	@$(MAKE) --no-print-directory check-rust-classified-full-tests-convey-body
+	@$(MAKE) --no-print-directory check-rust-classified-full-tests-facets
+	@$(MAKE) --no-print-directory check-rust-classified-full-tests-describe
+
+check-rust-classified-full-tests-sol-link:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-sol-link --features full-tests,test-hooks --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
+
+check-rust-classified-full-tests-convey-body:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-convey-body --features full-tests --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
+
+check-rust-classified-full-tests-facets:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-facets --features full-tests --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
+
+check-rust-classified-full-tests-describe:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features full-tests --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
 
 check-rust-describe-cli-stubs:
 	@$(REQUIRE_CARGO)
 	@set -eu; \
-		if output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --lib --test cli --locked -- --test-threads=1 2>&1)"; then \
+		if output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; then \
 			cargo_status=0; \
 		else \
 			cargo_status=$$?; \
@@ -885,14 +929,12 @@ check-rust-race: build
 		echo "check-rust-race: GREEN ($$green of $(RUST_RACE_RUNS) run(s))"; \
 	fi
 
-# macOS is a core platform with parity to Linux as an acceptance criterion
-# This is deliberately native to the macOS SDK host:
-# Linux cross-compilation could not build the workspace's Darwin C dependencies
-# and the former four-package include list omitted both new crates and tests.
-# `--workspace --all-targets --no-run` makes every current and future member,
-# including its test targets, part of the gate by default. There are no crate
-# exclusions; a source that does not compile on macOS is work, not an excuse to
-# narrow the gate.
+# macOS is a core platform with parity to Linux as an acceptance criterion.
+# This is deliberately native to the macOS SDK host. The unfiltered default-
+# feature workspace command compiles every current and future member and target;
+# four feature-enabled follow-ons compile the classified same-crate product-test
+# source that default features intentionally omit. There are no crate exclusions;
+# a source that does not compile on macOS is work, not an excuse to narrow the gate.
 check-rust-macos:
 	@set -eu; \
 	if [ "$(HOST_SYSTEM)" = "Linux" ] && [ -n "$(ONNX_RUNTIME_HOST_TARGET)" ]; then \
@@ -906,7 +948,11 @@ check-rust-macos:
 	fi; \
 	$(REQUIRE_CARGO); \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \
-	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --locked
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --locked; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml -p solstone-core-sol-link --features full-tests,test-hooks --lib --bins --no-run --locked; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml -p solstone-core-convey-body --features full-tests --lib --bins --no-run --locked; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml -p solstone-core-facets --features full-tests --lib --bins --no-run --locked; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml -p solstone-core-describe --features full-tests --lib --bins --no-run --locked
 
 # Linux cross-check of the Windows Rust cfg seam. Native C/C++ roots and
 # sibling-owned backends are named in a self-expiring exclusion ledger; every

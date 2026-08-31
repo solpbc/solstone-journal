@@ -53,7 +53,7 @@ impl LocalCa {
 }
 
 pub struct IssuedClientCertificate {
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     certificate: Certificate,
     pem: String,
     cid: String,
@@ -84,7 +84,7 @@ impl IssuedClientCertificate {
         &self.cid
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     fn certificate(&self) -> &Certificate {
         &self.certificate
     }
@@ -181,7 +181,7 @@ pub fn sign_csr(
         spl_core::ca::sha256_hex(certificate.der().as_ref())
     );
     Ok(IssuedClientCertificate {
-        #[cfg(test)]
+        #[cfg(all(test, not(feature = "full-tests")))]
         certificate,
         pem,
         cid,
@@ -331,7 +331,7 @@ fn validate_ca_certificate(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use rcgen::{CertificateParams, DnType, KeyPair, SanType};
 

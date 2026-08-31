@@ -450,6 +450,50 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
                     "--all-targets",
                     "--no-run",
                     "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-sol-link",
+                    "--features",
+                    "full-tests,test-hooks",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-convey-body",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-facets",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-describe",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
                 ]
             );
             let recorded_env = fs::read_to_string(&env_log).expect("read Cargo env log");
@@ -467,6 +511,63 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
                 "DYLD loader path was not composed correctly:\n{recorded_env}"
             );
         }
+    }
+}
+
+#[test]
+fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
+    let temp = TempDir::new("classified-full-clippy-aggregation");
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(&temp.path, system, arch.trim());
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create Clippy shim directory");
+    write_executable(
+        &shims.join("cargo"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLIPPY_LOG\"\ncase \"$*\" in\n  *'--workspace'*) exit 23 ;;\n  *'-p solstone-core-sol-link '*) exit 24 ;;\nesac\n",
+    );
+    let log = temp.path.join("clippy.log");
+    let output = Command::new("make")
+        .arg("check-rust-clippy-full")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CLIPPY_LOG", &log)
+        .output()
+        .expect("run classified full Clippy fixture");
+    assert!(
+        !output.status.success(),
+        "aggregate Clippy masked child failures"
+    );
+    let calls = fs::read_to_string(log).expect("read classified Clippy calls");
+    let calls = calls.lines().collect::<Vec<_>>();
+    assert_eq!(
+        calls.len(),
+        5,
+        "full Clippy stopped before all scopes: {calls:?}"
+    );
+    assert!(calls[0].contains("--workspace"));
+    for (call, package) in calls[1..].iter().zip([
+        "solstone-core-sol-link",
+        "solstone-core-convey-body",
+        "solstone-core-facets",
+        "solstone-core-describe",
+    ]) {
+        assert!(
+            call.contains(&format!("-p {package}")),
+            "wrong Clippy child order: {call}"
+        );
+        assert!(call.contains("--all-targets") && call.contains("-D warnings"));
     }
 }
 

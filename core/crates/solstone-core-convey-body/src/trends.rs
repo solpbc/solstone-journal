@@ -818,7 +818,7 @@ pub(crate) fn round_even(value: f64, digits: u32) -> f64 {
     rounded / factor
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::sync::atomic::{AtomicU64, AtomicUsize};

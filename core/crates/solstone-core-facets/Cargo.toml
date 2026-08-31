@@ -21,6 +21,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 
 [features]
+full-tests = []
 test-hooks = []
 
 [dev-dependencies]

@@ -450,7 +450,7 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
     )))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

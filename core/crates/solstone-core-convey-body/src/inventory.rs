@@ -238,7 +238,7 @@ fn normalized_months_label(months: &[String]) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

@@ -126,7 +126,7 @@ fn torn_or_rebuilding(
     Ok(BodyStoreHealthVerdict::Torn(torn_reason))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

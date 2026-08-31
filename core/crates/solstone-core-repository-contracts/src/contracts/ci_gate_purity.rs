@@ -134,6 +134,122 @@ fn target_body<'a>(makefile: &'a str, target: &str) -> &'a str {
     &rest[..end]
 }
 
+fn make_assignment_block(makefile: &str, name: &str) -> String {
+    let prefix = format!("{name} :=");
+    let mut lines = makefile.lines();
+    while let Some(line) = lines.next() {
+        if line.starts_with(&prefix) {
+            let mut assignment = line.to_owned();
+            let mut continued = line.trim_end().ends_with('\\');
+            while continued {
+                let next = lines.next().expect("continued Make assignment");
+                assignment.push('\n');
+                assignment.push_str(next);
+                continued = next.trim_end().ends_with('\\');
+            }
+            return assignment;
+        }
+    }
+    panic!("Makefile assignment {name} must exist")
+}
+
+fn rust_source_files(root: &Path) -> Vec<PathBuf> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).expect("read Rust source directory") {
+            let path = entry.expect("read Rust source entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClassifiedTestScope {
+    Unclassified,
+    Routine,
+    Full,
+}
+
+fn normalized_meta(attr: &syn::Attribute) -> String {
+    use quote::ToTokens as _;
+    attr.meta
+        .to_token_stream()
+        .to_string()
+        .split_whitespace()
+        .collect()
+}
+
+fn classified_scope(attrs: &[syn::Attribute]) -> Option<ClassifiedTestScope> {
+    attrs.iter().find_map(|attr| {
+        let meta = normalized_meta(attr);
+        if meta == "cfg(all(test,not(feature=\"full-tests\")))" {
+            Some(ClassifiedTestScope::Routine)
+        } else if meta == "cfg(all(test,feature=\"full-tests\"))" {
+            Some(ClassifiedTestScope::Full)
+        } else {
+            None
+        }
+    })
+}
+
+fn is_test_function(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        attr.path().is_ident("test")
+            || attr
+                .path()
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "test")
+    })
+}
+
+fn count_classified_items(
+    items: &[syn::Item],
+    inherited: ClassifiedTestScope,
+    counts: &mut [usize; 3],
+) {
+    for item in items {
+        match item {
+            syn::Item::Mod(module) => {
+                let scope = classified_scope(&module.attrs).unwrap_or(inherited);
+                if let Some((_, items)) = &module.content {
+                    count_classified_items(items, scope, counts);
+                }
+            }
+            syn::Item::Fn(function) if is_test_function(&function.attrs) => match inherited {
+                ClassifiedTestScope::Unclassified => counts[0] += 1,
+                ClassifiedTestScope::Routine => counts[1] += 1,
+                ClassifiedTestScope::Full => counts[2] += 1,
+            },
+            _ => {}
+        }
+    }
+}
+
+fn classified_test_counts(path: &Path) -> [usize; 3] {
+    let text = fs::read_to_string(path).expect("read classified Rust source");
+    let syntax = syn::parse_file(&text).expect("parse classified Rust source");
+    let inherited = classified_scope(&syntax.attrs).unwrap_or(ClassifiedTestScope::Unclassified);
+    let mut counts = [0; 3];
+    count_classified_items(&syntax.items, inherited, &mut counts);
+    counts
+}
+
+fn test_annotation_count(path: &Path) -> usize {
+    let text = fs::read_to_string(path).expect("read integration target");
+    let syntax = syn::parse_file(&text).expect("parse integration target");
+    let mut counts = [0; 3];
+    count_classified_items(&syntax.items, ClassifiedTestScope::Routine, &mut counts);
+    counts.into_iter().sum()
+}
+
 #[test]
 fn make_ci_full_checks_dependency_policy_before_the_long_workspace_suite() {
     let root = repo_root();
@@ -382,7 +498,7 @@ fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables
     let report = target_body(&makefile, "report-rust-code-evidence");
     for required in [
         "$(RUST_ROUTINE_EXCLUDES)",
-        "$(RUST_HOST_EXCLUDES)",
+        "$(RUST_CLASSIFIED_FULL_TEST_PACKAGES)",
         "$(filter-out",
     ] {
         assert!(report.contains(required));
@@ -391,10 +507,8 @@ fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables
         makefile.contains("RUST_CODE_EVIDENCE_CONTEXT")
             && makefile.contains("RUST_CODE_EVIDENCE_VALID")
     );
-    assert!(
-        report.contains("$(RUST_CODE_EVIDENCE_CLIPPY)")
-            && report.contains("RUST_CODE_EVIDENCE_VALID")
-    );
+    assert!(report.contains("RUST_CODE_EVIDENCE_VALID"));
+    assert!(!makefile.contains("RUST_CODE_EVIDENCE_CLIPPY"));
     assert!(!report.contains("solstone-core-"));
     let workspace =
         fs::read_to_string(root.join("core/Cargo.toml")).expect("read workspace Cargo manifest");
@@ -402,22 +516,18 @@ fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables
 }
 
 #[test]
-fn routine_slow_exclusions_are_exact_and_default_in_the_full_gate() {
+fn classified_same_crate_packages_are_routine_and_have_package_specific_full_routes() {
     let makefile = makefile_text(&repo_root());
     let routine = makefile
         .lines()
         .find_map(|line| line.strip_prefix("RUST_ROUTINE_EXCLUDES := "))
         .expect("RUST_ROUTINE_EXCLUDES must be defined");
-    assert!(routine.starts_with("$(RUST_HOST_EXCLUDES) "));
-    let excluded = routine
+    assert_eq!(routine, "$(RUST_HOST_EXCLUDES)");
+    let classified = makefile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
+        .expect("RUST_CLASSIFIED_FULL_TEST_PACKAGES must be defined")
         .split_whitespace()
-        .skip(1)
-        .collect::<Vec<_>>()
-        .chunks_exact(2)
-        .map(|pair| {
-            assert_eq!(pair[0], "--exclude");
-            pair[1]
-        })
         .collect::<BTreeSet<_>>();
     let expected = BTreeSet::from([
         "solstone-core-convey-body",
@@ -425,7 +535,7 @@ fn routine_slow_exclusions_are_exact_and_default_in_the_full_gate() {
         "solstone-core-facets",
         "solstone-core-sol-link",
     ]);
-    assert_eq!(excluded, expected, "routine-only exclusions drifted");
+    assert_eq!(classified, expected, "classified package authority drifted");
 
     let registry = ci_registry(&repo_root());
     for package in expected {
@@ -435,10 +545,443 @@ fn routine_slow_exclusions_are_exact_and_default_in_the_full_gate() {
             .find(|suite| suite.package == package)
             .unwrap_or_else(|| panic!("{package} has no full package suite"));
         assert!(
-            suite.default_full,
-            "{package} is excluded from routine CI but not default full"
+            !suite.default_full,
+            "{package} package suite would duplicate its classified full leg"
+        );
+        let expected_target = format!(
+            "check-rust-classified-full-tests-{}",
+            package
+                .strip_prefix("solstone-core-")
+                .expect("package prefix")
+        );
+        let leg = registry
+            .legs
+            .iter()
+            .find(|leg| leg.make_target == expected_target)
+            .unwrap_or_else(|| panic!("{package} has no classified full leg"));
+        assert!(
+            leg.default_full,
+            "{package} classified leg is not default full"
+        );
+        assert_eq!(leg.packages, [package]);
+    }
+}
+
+#[test]
+fn classified_same_crate_topology_is_complete_and_nonduplicating() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let packages = [
+        ("solstone-core-sol-link", "sol-link"),
+        ("solstone-core-convey-body", "convey-body"),
+        ("solstone-core-facets", "facets"),
+        ("solstone-core-describe", "describe"),
+    ];
+    let expected_packages = packages
+        .iter()
+        .map(|(package, _)| (*package).to_owned())
+        .collect::<BTreeSet<_>>();
+    let authority = makefile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
+        .expect("classified package authority")
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !authority.is_empty(),
+        "classified package discovery must be nonzero"
+    );
+    assert_eq!(authority, expected_packages);
+
+    let workspace = fs::read_to_string(root.join("core/Cargo.toml")).expect("workspace manifest");
+    let mut feature_owners = BTreeSet::new();
+    for member in workspace_members(&workspace) {
+        let manifest_path = root.join("core").join(&member).join("Cargo.toml");
+        let manifest = fs::read_to_string(&manifest_path).expect("member manifest");
+        let owner = package_name(&manifest);
+        let mentions = manifest
+            .lines()
+            .filter(|line| line.contains("full-tests"))
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        if !mentions.is_empty() {
+            assert_eq!(mentions, ["full-tests = []"]);
+            assert!(
+                expected_packages.contains(&owner),
+                "unapproved full-tests owner {owner}"
+            );
+            feature_owners.insert(owner);
+        }
+    }
+    assert_eq!(feature_owners, expected_packages);
+
+    let mut source_files = 0;
+    let mut routine_tests = 0;
+    let mut full_tests = 0;
+    for (package, _) in packages {
+        let source_root = root.join("core/crates").join(package).join("src");
+        for path in rust_source_files(&source_root) {
+            let mut counts = classified_test_counts(&path);
+            if path.ends_with("solstone-core-facets/src/unit_tests.rs") {
+                assert_eq!(counts, [2, 0, 0]);
+                let lib = fs::read_to_string(source_root.join("lib.rs")).expect("facets lib");
+                assert!(
+                    lib.contains(
+                        "#[cfg(all(test, not(feature = \"full-tests\")))]\nmod unit_tests;"
+                    )
+                );
+                counts = [0, 2, 0];
+            }
+            if counts.into_iter().sum::<usize>() != 0 {
+                source_files += 1;
+                assert_eq!(counts[0], 0, "unclassified tests in {}", path.display());
+                routine_tests += counts[1];
+                full_tests += counts[2];
+            }
+        }
+    }
+    assert_eq!(source_files, 71, "classified source discovery drifted");
+    assert_eq!(routine_tests, 77, "routine annotation census drifted");
+    assert_eq!(full_tests, 448, "classified full annotation census drifted");
+
+    let mut integration_files = 0;
+    let mut integration_tests = 0;
+    for (package, _) in packages {
+        let tests = root.join("core/crates").join(package).join("tests");
+        if !tests.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(tests).expect("read classified integration directory") {
+            let path = entry.expect("integration entry").path();
+            if path.extension().and_then(|value| value.to_str()) == Some("rs") {
+                integration_files += 1;
+                integration_tests += test_annotation_count(&path);
+            }
+        }
+    }
+    assert_eq!(integration_files, 8, "integration target discovery drifted");
+    assert_eq!(
+        integration_tests, 63,
+        "integration annotation census drifted"
+    );
+    assert_eq!(routine_tests + full_tests + integration_tests, 588);
+
+    let external_full_files = [
+        ("solstone-core-sol-link", "http_tests.rs"),
+        ("solstone-core-convey-body", "corpus_test.rs"),
+        ("solstone-core-facets", "connections_horizon_tests.rs"),
+        (
+            "solstone-core-facets",
+            "detected_entity_exclusion_fixture_tests.rs",
+        ),
+        ("solstone-core-facets", "detected_entity_tests.rs"),
+        ("solstone-core-facets", "facet_entity_fixture_tests.rs"),
+        ("solstone-core-facets", "facet_entity_move_tests.rs"),
+        ("solstone-core-facets", "facet_entity_tests.rs"),
+        ("solstone-core-facets", "fixture_tests.rs"),
+        ("solstone-core-facets", "lifecycle_tests.rs"),
+        ("solstone-core-facets", "observation_tests.rs"),
+        ("solstone-core-facets", "relationship_scans_tests.rs"),
+        ("solstone-core-facets", "review_candidate_tests.rs"),
+        ("solstone-core-facets", "speculative_facets_tests.rs"),
+        ("solstone-core-facets", "store_tests.rs"),
+        ("solstone-core-describe", "pipeline_tests.rs"),
+    ];
+    for (package, file) in external_full_files {
+        let source_root = root.join("core/crates").join(package).join("src");
+        let text = fs::read_to_string(source_root.join(file)).expect("external full source");
+        assert!(
+            text.contains("#![cfg(all(test, feature = \"full-tests\"))]"),
+            "{package}/{file} lost its standalone full-tests boundary"
+        );
+        let module = file.trim_end_matches(".rs");
+        let edge = format!("mod {module};");
+        let linked = rust_source_files(&source_root).into_iter().any(|path| {
+            let owner = fs::read_to_string(path).expect("external module owner");
+            owner.find(&edge).is_some_and(|offset| {
+                owner[..offset]
+                    .rsplit_once("#[cfg(all(test, feature = \"full-tests\"))]")
+                    .is_some_and(|(_, tail)| tail.len() < 100)
+            })
+        });
+        assert!(linked, "{package}/{file} lost its matching module edge");
+    }
+
+    let support_cfg_counts = [
+        (
+            "solstone-core-sol-link/src/ca.rs",
+            "#[cfg(all(test, not(feature = \"full-tests\")))]",
+            4,
+        ),
+        (
+            "solstone-core-convey-body/src/lib.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            1,
+        ),
+        (
+            "solstone-core-convey-body/src/archive.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            6,
+        ),
+        (
+            "solstone-core-facets/src/store/mod.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            2,
+        ),
+        (
+            "solstone-core-facets/src/store/detected_entity_activity.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            2,
+        ),
+        (
+            "solstone-core-facets/src/store/observations.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            2,
+        ),
+        (
+            "solstone-core-facets/src/store/seeding.rs",
+            "#[cfg(all(test, feature = \"full-tests\"))]",
+            7,
+        ),
+    ];
+    for (relative, cfg, expected) in support_cfg_counts {
+        let text = fs::read_to_string(root.join("core/crates").join(relative))
+            .expect("classified support source");
+        assert_eq!(
+            text.matches(cfg).count(),
+            expected,
+            "support cfg drift in {relative}"
         );
     }
+
+    let test_targets =
+        packages.map(|(_, suffix)| format!("check-rust-classified-full-tests-{suffix}"));
+    let clippy_targets =
+        packages.map(|(_, suffix)| format!("check-rust-classified-full-clippy-{suffix}"));
+    let all_targets = test_targets
+        .iter()
+        .chain(clippy_targets.iter())
+        .collect::<Vec<_>>();
+    let phony = makefile
+        .lines()
+        .find(|line| line.starts_with(".PHONY: install "))
+        .expect("primary .PHONY declaration");
+    let cargo_env = make_assignment_block(&makefile, "CI_CARGO_ENV_TARGETS");
+    let uv_optional = make_assignment_block(&makefile, "UV_OPTIONAL_GOALS");
+    let bindgen = makefile
+        .lines()
+        .find(|line| line.contains(": export BINDGEN_EXTRA_CLANG_ARGS :="))
+        .expect("bindgen export target list");
+    for target in all_targets {
+        for (surface, text) in [
+            (".PHONY", phony),
+            ("CI_CARGO_ENV_TARGETS", cargo_env.as_str()),
+            ("UV_OPTIONAL_GOALS", uv_optional.as_str()),
+            ("BINDGEN export", bindgen),
+        ] {
+            assert!(
+                text.split_whitespace().any(|word| word == target),
+                "{surface} lost {target}"
+            );
+        }
+    }
+
+    let check_rust_test = target_body(&makefile, "check-rust-test");
+    let workspace_offset = check_rust_test
+        .find("cargo test ")
+        .expect("workspace test command");
+    for target in &test_targets {
+        let offset = check_rust_test
+            .find(target)
+            .unwrap_or_else(|| panic!("check-rust-test lost {target}"));
+        assert!(offset > workspace_offset);
+    }
+
+    let expected_commands = [
+        (
+            "sol-link",
+            "solstone-core-sol-link",
+            "full-tests,test-hooks",
+        ),
+        ("convey-body", "solstone-core-convey-body", "full-tests"),
+        ("facets", "solstone-core-facets", "full-tests"),
+        ("describe", "solstone-core-describe", "full-tests"),
+    ];
+    for (suffix, package, features) in expected_commands {
+        let test = target_body(
+            &makefile,
+            &format!("check-rust-classified-full-tests-{suffix}"),
+        );
+        for required in [
+            format!("-p {package}"),
+            format!("--features {features}"),
+            "--lib --bins --locked --offline --no-fail-fast -- --test-threads=1".to_owned(),
+        ] {
+            assert!(
+                test.contains(&required),
+                "{suffix} classified test lost {required}"
+            );
+        }
+        let clippy = target_body(
+            &makefile,
+            &format!("check-rust-classified-full-clippy-{suffix}"),
+        );
+        for required in [
+            format!("-p {package}"),
+            format!("--features {features}"),
+            "--all-targets --locked -- -D warnings".to_owned(),
+        ] {
+            assert!(
+                clippy.contains(&required),
+                "{suffix} classified Clippy lost {required}"
+            );
+        }
+    }
+    assert_eq!(
+        makefile
+            .lines()
+            .filter(|line| line.contains("cargo ")
+                && line.contains("--features")
+                && line.contains("full-tests"))
+            .count(),
+        12,
+        "full-tests may activate only on four test, four Clippy, and four macOS edges"
+    );
+
+    let registry = ci_registry(&root);
+    let expected_legs = [
+        (
+            "sol-link",
+            "component",
+            "trust",
+            vec!["cargo-cache"],
+            "slow",
+            None,
+        ),
+        (
+            "convey-body",
+            "component",
+            "services",
+            vec!["cargo-cache"],
+            "slow",
+            Some("local-services"),
+        ),
+        (
+            "facets",
+            "component",
+            "facets",
+            vec!["cargo-cache"],
+            "standard",
+            None,
+        ),
+        (
+            "describe",
+            "native",
+            "media",
+            vec!["cargo-cache", "ffmpeg-toolchain"],
+            "standard",
+            None,
+        ),
+    ];
+    for ((package, suffix), (_, set, area, prereqs, timeout, serial)) in
+        packages.into_iter().zip(expected_legs)
+    {
+        let leg = registry
+            .legs
+            .iter()
+            .find(|leg| leg.id == format!("classified-full-tests-{suffix}"))
+            .expect("classified registry leg");
+        assert_eq!(
+            leg.make_target,
+            format!("check-rust-classified-full-tests-{suffix}")
+        );
+        assert_eq!(leg.set, set);
+        assert_eq!(leg.areas, [area]);
+        assert_eq!(leg.packages, [package]);
+        assert_eq!(leg.platforms, ["linux", "macos"]);
+        assert_eq!(leg.prerequisites, prereqs);
+        assert_eq!(leg.timeout, timeout);
+        assert_eq!(leg.serial_group.as_deref(), serial);
+        assert!(leg.default_full);
+        let suite = registry
+            .package_suites
+            .iter()
+            .find(|suite| suite.package == package)
+            .expect("classified package suite");
+        assert!(!suite.default_full);
+    }
+    assert!(
+        registry
+            .legs
+            .iter()
+            .any(|leg| leg.id == "clippy-full" && leg.default_full)
+    );
+
+    let integration_routes: [(&str, &str, bool, &[&str]); 8] = [
+        (
+            "solstone-core-sol-link",
+            "device_door_identity",
+            true,
+            &["host"],
+        ),
+        ("solstone-core-sol-link", "device_door_tls", true, &["host"]),
+        (
+            "solstone-core-sol-link",
+            "sol_link_publish_crash",
+            true,
+            &["host", "test-hooks"],
+        ),
+        (
+            "solstone-core-sol-link",
+            "sol_link_serving",
+            true,
+            &["host"],
+        ),
+        (
+            "solstone-core-facets",
+            "facet_lock_component",
+            true,
+            &["test-hooks"],
+        ),
+        ("solstone-core-describe", "detect_timeout", true, &[]),
+        (
+            "solstone-core-describe",
+            "native_media_semantics",
+            true,
+            &[],
+        ),
+        ("solstone-core-describe", "cli", false, &["test-stubs"]),
+    ];
+    for (package, target, default_full, features) in integration_routes {
+        let id = format!("{package}::{target}");
+        let suite = registry
+            .suites
+            .iter()
+            .find(|suite| suite.id == id)
+            .unwrap_or_else(|| panic!("classified integration route lost {id}"));
+        assert_eq!(suite.package, package, "integration package drift for {id}");
+        assert_eq!(suite.target, target, "integration target drift for {id}");
+        assert_eq!(
+            suite.default_full, default_full,
+            "integration default route drift for {id}"
+        );
+        assert_eq!(
+            suite.required_features, features,
+            "integration feature route drift for {id}"
+        );
+    }
+
+    let sol_link_src = root.join("core/crates/solstone-core-sol-link/src");
+    let doctests = rust_source_files(&sol_link_src)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).expect("sol-link source"))
+        .map(|text| text.matches("```compile_fail").count())
+        .sum::<usize>();
+    assert_eq!(doctests, 2, "sol-link compile-fail doctest census drifted");
+    assert!(target_body(&makefile, "check-rust-doc").contains(
+        "--workspace $(RUST_HOST_EXCLUDES) --exclude solstone-core-backup-runtime --doc"
+    ));
 }
 
 #[test]
@@ -473,6 +1016,18 @@ fn efficient_ci_statically_checks_only_library_and_binary_targets() {
     assert!(
         full.contains("--all-targets") && full.contains("-- -D warnings"),
         "full CI must retain all-target static compilation"
+    );
+    for suffix in ["sol-link", "convey-body", "facets", "describe"] {
+        let target = format!("check-rust-classified-full-clippy-{suffix}");
+        assert!(full.contains(&target), "full Clippy lost {target}");
+        let body = target_body(&makefile, &target);
+        assert!(body.contains("--all-targets") && body.contains("-- -D warnings"));
+    }
+    assert!(
+        full.contains("status=0")
+            && full.contains("for target in")
+            && full.contains("exit \"$$status\""),
+        "full Clippy must run every classified child and aggregate failure"
     );
 }
 
@@ -534,7 +1089,8 @@ fn routine_ci_is_fail_closed_and_contained_on_linux() {
 
 #[test]
 fn default_full_runs_the_describe_cli_stub_matrix_once() {
-    let registry = ci_registry(&repo_root());
+    let root = repo_root();
+    let registry = ci_registry(&root);
     let leg = registry
         .legs
         .iter()
@@ -556,6 +1112,10 @@ fn default_full_runs_the_describe_cli_stub_matrix_once() {
         !suite.default_full,
         "the describe CLI matrix must not run twice in default full CI"
     );
+    let makefile = makefile_text(&root);
+    let body = target_body(&makefile, "check-rust-describe-cli-stubs");
+    assert!(body.contains("--features test-stubs --test cli"));
+    assert!(!body.contains("--lib"));
 }
 
 #[test]
@@ -666,8 +1226,17 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
             .any(|leg| leg.make_target == "check-rust-macos" && leg.default_full),
         "the default full registry must retain the macOS cfg gate"
     );
+    let cargo = macos
+        .lines()
+        .filter(|line| line.contains("cargo test "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cargo.len(),
+        5,
+        "macOS must compile default scope plus four classified scopes"
+    );
+    let primary = cargo[0];
     for protected in [
-        "cargo test",
         "--manifest-path core/Cargo.toml",
         "--workspace",
         "--all-targets",
@@ -675,15 +1244,33 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         "--locked",
     ] {
         assert!(
-            macos.contains(protected),
+            primary.contains(protected),
             "check-rust-macos lost its cfg-path assertion: {protected}"
         );
     }
     for forbidden in [" -p ", "--exclude", "--lib", "cargo check"] {
         assert!(
-            !macos.contains(forbidden),
-            "check-rust-macos silently narrowed the workspace with {forbidden}"
+            !primary.contains(forbidden),
+            "check-rust-macos silently narrowed its primary workspace command with {forbidden}"
         );
+    }
+    for (line, package, features) in [
+        (cargo[1], "solstone-core-sol-link", "full-tests,test-hooks"),
+        (cargo[2], "solstone-core-convey-body", "full-tests"),
+        (cargo[3], "solstone-core-facets", "full-tests"),
+        (cargo[4], "solstone-core-describe", "full-tests"),
+    ] {
+        for required in [
+            format!("-p {package}"),
+            format!("--features {features}"),
+            "--lib --bins --no-run --locked".to_owned(),
+        ] {
+            assert!(
+                line.contains(&required),
+                "classified macOS compile lost {required}"
+            );
+        }
+        assert!(!line.contains("--workspace") && !line.contains("--all-targets"));
     }
 }
 

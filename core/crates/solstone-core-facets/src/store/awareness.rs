@@ -328,7 +328,7 @@ fn json_options() -> JsonWriteOptions {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
 

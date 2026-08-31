@@ -124,7 +124,8 @@ pub mod test_support {
     }
 }
 
-#[cfg(all(test, feature = "host"))]
+#[cfg(feature = "host")]
+#[cfg(all(test, feature = "full-tests"))]
 mod http_tests;
 
 #[cfg(feature = "client")]
@@ -291,7 +292,7 @@ fn map_relay_control_endpoint(endpoint: RelayControlEndpoint) -> LinkJoinRelayCo
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::sync::{Arc, Mutex};
 

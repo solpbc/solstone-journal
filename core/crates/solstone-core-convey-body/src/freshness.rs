@@ -158,7 +158,7 @@ pub(crate) fn build_source_freshness(
     Ok(json!({"sources": sources, "quiet_lines": quiet_lines, "quiet": !quiet_lines.is_empty()}))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

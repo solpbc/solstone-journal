@@ -391,7 +391,7 @@ fn decode_failed(mut result: DescribeResult) -> DescribeResult {
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod image_tests {
     use image::{ImageBuffer, Rgb};
 

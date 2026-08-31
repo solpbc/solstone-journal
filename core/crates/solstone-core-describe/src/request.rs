@@ -69,7 +69,7 @@ pub fn request(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::render_categories;
 
