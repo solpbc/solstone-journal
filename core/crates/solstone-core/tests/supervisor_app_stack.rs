@@ -208,10 +208,11 @@ async fn collect_remaining_app_start_refs(
 
 fn assert_marker_absent(journal: &TempJournal, service: &str) {
     // macOS scheduling can stretch a single 100ms sleep beyond await_outcome's
-    // 1.1x dilation threshold under the full CI workload. A longer observation
-    // window strengthens the negative proof while amortizing that delay.
+    // 1.1x dilation threshold under the full CI workload. A two-second
+    // observation window strengthens the negative proof while amortizing that
+    // fixed scheduling delay.
     #[cfg(target_os = "macos")]
-    let (interval, iterations) = (Duration::from_millis(100), 10);
+    let (interval, iterations) = (Duration::from_millis(100), 20);
     #[cfg(not(target_os = "macos"))]
     let (interval, iterations) = (Duration::from_millis(5), 100);
     let outcome = await_outcome(
