@@ -619,6 +619,7 @@ pub fn payload_sha256(parts: &[&str]) -> String {
 pub const PROBE_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-probe.v1";
 pub const PROBE_RECEIPT_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-probe-receipt.v1";
 pub const PROBE_MARKER_PREFIX: &str = "solstone-onlogon-probe:";
+pub const PROBE_XML_DECLARATION: &str = r#"<?xml version="1.0" encoding="UTF-16"?>"#;
 pub const ACE_MUTATION_MASK: u32 =
     0x0001_0000 | 0x0004_0000 | 0x0008_0000 | 0x1000_0000 | 0x4000_0000;
 pub const TASK_CREATION_CREATE: i32 = 2;
@@ -959,6 +960,8 @@ pub struct ProbeXmlSection {
     pub submitted_xml: String,
     #[serde(default)]
     pub retrieved_definition: Option<ProbeTaskDefinition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persisted_sha256: Option<String>,
 }
 
 impl ProbeXmlSection {
@@ -974,6 +977,7 @@ impl ProbeXmlSection {
             definition_sha256: String::new(),
             submitted_xml: String::new(),
             retrieved_definition: None,
+            persisted_sha256: None,
         }
     }
 }
@@ -1414,13 +1418,53 @@ pub fn render_probe_task_xml(definition: &ProbeTaskDefinition) -> String {
         ProbePriority::Unavailable | ProbePriority::Malformed => String::new(),
     };
     format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task" version="1.2">{description}<Triggers><LogonTrigger><UserId>{}</UserId></LogonTrigger></Triggers><Principals><Principal><UserId>{}</UserId><LogonType>{}</LogonType>{run_level}</Principal></Principals>{priority}<Actions><Exec><Command>{}</Command><Arguments>{}</Arguments>{working_directory}</Exec></Actions></Task>"#,
+        r#"{PROBE_XML_DECLARATION}<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task" version="1.2">{description}<Triggers><LogonTrigger><UserId>{}</UserId></LogonTrigger></Triggers><Principals><Principal><UserId>{}</UserId><LogonType>{}</LogonType>{run_level}</Principal></Principals>{priority}<Actions><Exec><Command>{}</Command><Arguments>{}</Arguments>{working_directory}</Exec></Actions></Task>"#,
         xml_escape(&definition.trigger_user_id),
         xml_escape(&definition.principal_sid),
         xml_escape(&definition.logon_type),
         xml_escape(&definition.command),
         xml_escape(&definition.arguments),
     )
+}
+
+pub fn encode_probe_xml_utf16le(xml: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(2 + xml.len().saturating_mul(2));
+    bytes.extend_from_slice(&[0xFF, 0xFE]);
+    for unit in xml.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+pub fn decode_probe_xml_utf16le(bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() < 2 {
+        return Err("probe xml missing utf-16le bom".to_owned());
+    }
+    let bom = [bytes[0], bytes[1]];
+    if bom == [0xFE, 0xFF] {
+        return Err("probe xml invalid utf-16le bom".to_owned());
+    }
+    if bom != [0xFF, 0xFE] {
+        return Err("probe xml missing utf-16le bom".to_owned());
+    }
+    let payload = &bytes[2..];
+    if !payload.len().is_multiple_of(2) {
+        return Err("probe xml truncated utf-16le unit".to_owned());
+    }
+    let units = payload
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
+    char::decode_utf16(units)
+        .collect::<Result<String, _>>()
+        .map_err(|_| "probe xml invalid utf-16le surrogate".to_owned())
+}
+
+pub fn verify_persisted_probe_xml(bytes: &[u8], expected_xml: &str) -> Result<String, String> {
+    let decoded = decode_probe_xml_utf16le(bytes)?;
+    if decoded != expected_xml {
+        return Err("probe xml persisted text mismatch".to_owned());
+    }
+    Ok(sha256_hex(bytes))
 }
 
 pub fn verify_probe_task_definition(
@@ -2136,11 +2180,103 @@ mod tests {
     #[test]
     fn render_probe_task_xml_emits_task_namespace_and_schema_version() {
         let xml = render_probe_task_xml(&probe_definition());
-        assert!(xml.starts_with(r#"<?xml version="1.0" encoding="UTF-8"?>"#));
+        assert!(xml.starts_with(PROBE_XML_DECLARATION));
         assert!(xml.contains(
             r#"<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task" version="1.2">"#
         ));
         assert!(xml.ends_with("</Task>"));
+    }
+
+    #[test]
+    fn encode_probe_xml_utf16le_ascii_unit_bytes() {
+        assert_eq!(encode_probe_xml_utf16le("A"), [0xFF, 0xFE, 0x41, 0x00]);
+    }
+
+    #[test]
+    fn encode_decode_probe_xml_utf16le_roundtrips_ascii_bmp_and_astral() {
+        for xml in ["A", "café", "💩"] {
+            let encoded = encode_probe_xml_utf16le(xml);
+            assert_eq!(encoded[..2], [0xFF, 0xFE]);
+            assert_eq!(decode_probe_xml_utf16le(&encoded).expect("decodes"), xml);
+        }
+    }
+
+    #[test]
+    fn decode_probe_xml_utf16le_reports_each_invalid_input() {
+        assert_eq!(
+            decode_probe_xml_utf16le(&[]).unwrap_err(),
+            "probe xml missing utf-16le bom"
+        );
+        assert_eq!(
+            decode_probe_xml_utf16le(&[0xFF]).unwrap_err(),
+            "probe xml missing utf-16le bom"
+        );
+        assert_eq!(
+            decode_probe_xml_utf16le(&[0x41, 0x00]).unwrap_err(),
+            "probe xml missing utf-16le bom"
+        );
+        assert_eq!(
+            decode_probe_xml_utf16le(&[0xFE, 0xFF, 0x41, 0x00]).unwrap_err(),
+            "probe xml invalid utf-16le bom"
+        );
+        assert_eq!(
+            decode_probe_xml_utf16le(&[0xFF, 0xFE, 0x41]).unwrap_err(),
+            "probe xml truncated utf-16le unit"
+        );
+        assert_eq!(
+            decode_probe_xml_utf16le(&[0xFF, 0xFE, 0x00, 0xD8]).unwrap_err(),
+            "probe xml invalid utf-16le surrogate"
+        );
+    }
+
+    #[test]
+    fn verify_persisted_probe_xml_returns_on_disk_digest() {
+        let xml = render_probe_task_xml(&probe_definition());
+        let bytes = encode_probe_xml_utf16le(&xml);
+        assert_eq!(
+            verify_persisted_probe_xml(&bytes, &xml).expect("verifies"),
+            sha256_hex(&bytes)
+        );
+    }
+
+    #[test]
+    fn verify_persisted_probe_xml_rejects_corrupted_body() {
+        let xml = render_probe_task_xml(&probe_definition());
+        let mut bytes = encode_probe_xml_utf16le(&xml);
+        let declaration_bytes = encode_probe_xml_utf16le(PROBE_XML_DECLARATION);
+        assert!(bytes.starts_with(&declaration_bytes));
+        let flip = declaration_bytes.len();
+        bytes[flip] ^= 0x01;
+        assert_eq!(
+            verify_persisted_probe_xml(&bytes, &xml).unwrap_err(),
+            "probe xml persisted text mismatch"
+        );
+    }
+
+    #[test]
+    fn probe_xml_definition_and_persisted_digests_differ() {
+        let xml = render_probe_task_xml(&probe_definition());
+        let persisted = encode_probe_xml_utf16le(&xml);
+        assert_ne!(sha256_hex(xml.as_bytes()), sha256_hex(&persisted));
+    }
+
+    #[test]
+    fn probe_xml_section_persisted_sha256_skips_none_and_defaults_missing() {
+        let json = serde_json::to_value(ProbeXmlSection::skipped()).expect("serializes");
+        assert!(json.get("persisted_sha256").is_none());
+        let restored: ProbeXmlSection =
+            serde_json::from_value(json).expect("deserializes skipped section");
+        assert_eq!(restored.persisted_sha256, None);
+
+        let old = serde_json::json!({
+            "create": { "status": "skipped", "error": null, "resolution_action": null },
+            "definition": { "status": "skipped", "error": null, "resolution_action": null },
+            "priority": { "state": "unavailable", "value": null },
+            "cleanup": { "status": "skipped", "error": null, "resolution_action": null }
+        });
+        let parsed: ProbeXmlSection =
+            serde_json::from_value(old).expect("deserializes pre-field receipt");
+        assert_eq!(parsed.persisted_sha256, None);
     }
 
     #[test]
@@ -2512,6 +2648,28 @@ mod tests {
         let json = serialize_outcome(&report);
         assert_eq!(json["outcome"], "registration-refused");
         assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_xml_persist_failure_without_schtasks_is_not_refused() {
+        let mut report = complete_verified_probe_report();
+        report.xml = ProbeXmlSection::skipped();
+        report.xml.create = ProbeStage::failed(
+            ProbeApiError {
+                space: ProbeApiErrorSpace::Win32,
+                code: 0,
+                diagnostic: "injected create failure".to_owned(),
+            },
+            ProbeResolutionAction::RepairSchedulerAccess,
+        );
+        report.xml.submitted_xml = render_probe_task_xml(&probe_definition());
+        report.xml.definition_sha256 = sha256_hex(report.xml.submitted_xml.as_bytes());
+        report.xml.persisted_sha256 = None;
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert_eq!(report.com.cleanup.status, ProbeStageStatus::Passed);
+        assert!(!probe_exits_successfully(&report));
     }
 
     #[test]
