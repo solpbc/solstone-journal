@@ -76,6 +76,7 @@ pub(crate) struct RegisteredClient {
     pub(crate) client_id: String,
     pub(crate) redirect_uris: Vec<String>,
     pub(crate) client_name: Option<String>,
+    pub(crate) created_at: DateTime<Utc>,
 }
 
 /// Failure while operating the OAuth ledger.
@@ -880,6 +881,7 @@ fn registered_from(client: &StoredClient) -> RegisteredClient {
         client_id: client.client_id.clone(),
         redirect_uris: client.redirect_uris.clone(),
         client_name: client.client_name.clone(),
+        created_at: client.created_at,
     }
 }
 

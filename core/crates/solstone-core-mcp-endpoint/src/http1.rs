@@ -43,6 +43,21 @@ impl HttpRequest {
         }
         Ok(value)
     }
+
+    #[cfg(all(test, not(feature = "full-tests")))]
+    pub(crate) fn from_test_parts(
+        method: HttpMethod,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) -> Self {
+        Self {
+            method,
+            target: String::new(),
+            headers,
+            body,
+            connection_close: false,
+        }
+    }
 }
 
 /// HTTP methods admitted by the MCP endpoint.
@@ -55,13 +70,13 @@ pub(crate) enum HttpMethod {
 
 /// A framed response ready to serialize on an HTTP/1.1 connection.
 pub(crate) struct HttpResponse {
-    status: u16,
+    pub(crate) status: u16,
     reason: &'static str,
-    content_type: Option<&'static str>,
+    pub(crate) content_type: Option<&'static str>,
     pub(crate) body: Vec<u8>,
     pub(crate) session_id: Option<String>,
     pub(crate) close: bool,
-    extra_headers: Vec<(&'static str, String)>,
+    pub(crate) extra_headers: Vec<(&'static str, String)>,
 }
 
 impl HttpResponse {
@@ -106,7 +121,6 @@ impl HttpResponse {
         self
     }
 
-    #[allow(dead_code)]
     pub(crate) fn with_header(mut self, name: &'static str, value: String) -> Self {
         if !value
             .as_bytes()
