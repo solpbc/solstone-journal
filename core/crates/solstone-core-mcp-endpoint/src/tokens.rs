@@ -535,6 +535,14 @@ mod tests {
             store.verify(&created.token),
             Err(TokenStoreError::InvalidToken)
         ));
+        assert!(matches!(
+            store.revoke("ops-agent"),
+            Err(TokenStoreError::NotFound { .. })
+        ));
+        assert!(matches!(
+            store.revoke("missing-agent"),
+            Err(TokenStoreError::NotFound { .. })
+        ));
     }
 
     struct ShortRandom;

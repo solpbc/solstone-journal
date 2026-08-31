@@ -816,6 +816,24 @@ mod tests {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
+        let (status, body, head) =
+            post_json_response_with_headers(client, token, request, headers).await;
+        assert_eq!(status, 200, "MCP request succeeds: {head}");
+        (
+            serde_json::from_slice(&body).expect("successful response is JSON"),
+            head,
+        )
+    }
+
+    async fn post_json_response_with_headers<S>(
+        client: &mut TlsStream<S>,
+        token: &str,
+        request: Value,
+        headers: &[(&str, &str)],
+    ) -> (u16, Vec<u8>, String)
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let body = serde_json::to_vec(&request).expect("fixture JSON request");
         let headers = headers
             .iter()
@@ -846,7 +864,12 @@ mod tests {
             }
         }
         let head = String::from_utf8(head).expect("response headers are text");
-        assert!(head.starts_with("HTTP/1.1 200 OK\r\n"));
+        let status = head
+            .split_whitespace()
+            .nth(1)
+            .expect("response has status")
+            .parse::<u16>()
+            .expect("response status is numeric");
         let length = head
             .lines()
             .find_map(|line| line.strip_prefix("Content-Length: "))
@@ -858,10 +881,7 @@ mod tests {
             .read_exact(&mut body)
             .await
             .expect("client reads response body");
-        (
-            serde_json::from_slice(&body).expect("response is JSON"),
-            head,
-        )
+        (status, body, head)
     }
 
     fn seed_indexed_note(journal: &Path) {
@@ -1296,17 +1316,10 @@ mod tests {
     async fn tool_calls_are_contained_to_the_server_journal_root() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
-        fs::create_dir_all(server.journal.path().join("notes")).expect("fixture notes directory");
-        fs::write(
-            server.journal.path().join("notes/fetch.txt"),
-            "A-only content",
-        )
-        .expect("fixture source content");
+        seed_indexed_note(server.journal.path());
 
         let journal_b = tempfile::tempdir().expect("second fixture journal");
-        fs::create_dir_all(journal_b.path().join("notes")).expect("second notes directory");
-        fs::write(journal_b.path().join("notes/private.txt"), "B-only content")
-            .expect("second source content");
+        seed_indexed_note(journal_b.path());
         let before_b = snapshot_tree(journal_b.path());
 
         let token = server.create_token("containment-agent");
@@ -1318,11 +1331,11 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "search", "arguments": {"query": "📅", "limit": 10, "offset": 0}}
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10, "offset": 0}}
             }),
         )
         .await;
-        assert_eq!(search["result"]["reason"], "not_tokenizable");
+        assert_eq!(search["result"]["results"][0]["id"], "notes/mcp.txt:0");
         let fetch = post_json(
             &mut client,
             &token.token,
@@ -1330,11 +1343,14 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": "fetch", "arguments": {"id": "notes/fetch.txt:7"}}
+                "params": {"name": "fetch", "arguments": {"id": "notes/mcp.txt:0"}}
             }),
         )
         .await;
-        assert_eq!(fetch["error"]["data"]["reason"], "index_absent");
+        assert_eq!(
+            fetch["result"],
+            json!({"content": "MCP fixture search needle"})
+        );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
 
@@ -1355,6 +1371,40 @@ mod tests {
             })
             .count();
         assert_eq!(records, 2);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn revoked_bearer_rejects_an_existing_session_before_tool_dispatch() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_token("revoked-session-agent");
+        let mut client = connect_tls(server.address, client_config).await;
+        let (_, headers) = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        let session = session_id(&headers);
+
+        TokenStore::open(server.journal.path())
+            .revoke("revoked-session-agent")
+            .expect("fixture revokes bearer");
+        let (status, body, _) = post_json_response_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await;
+        assert_eq!(status, 401);
+        assert_eq!(body, b"Bearer token is invalid or revoked");
+        assert!(!server.journal.path().join("chronicle").exists());
+
+        drop(client);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }
