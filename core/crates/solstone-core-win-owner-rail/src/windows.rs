@@ -15,27 +15,27 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use solstone_core_win_owner_rail::{
     ACE_MUTATION_MASK, CONTROL_ID, LEASE_PATH, LeaseInput, LeaseRecord, LeaseState,
-    OnlogonProbeReport, PROBE_SCHEMA, ProbeApiError, ProbeApiErrorSpace, ProbeComSection,
-    ProbeDescriptorSource, ProbeFolderAclStage, ProbeOutcome, ProbePriority, ProbeReceipt,
-    ProbeResolutionAction, ProbeStage, ProbeStageStatus, ProbeTokenGate, ProbeTokenSection,
-    ProbeVerifyInput, ProbeXmlSection, RAIL_ROOT, RailError, ResultRecord, TaskRuntime,
-    TerminalState, TokenAttestation, TokenElevationClass, classify_probe_sid, classify_terminal,
-    classify_token_elevation_type, com_hresult_proves_not_found, com_register_flag,
-    folder_allows_ordinary_mutation, mint_nonce, parse_probe_task_xml, parse_task_runtime_csv,
-    parse_task_xml, priority_from_raw_value, probe_com_folder_path, probe_com_task_name,
-    probe_exits_successfully, probe_marker, probe_token_gate, probe_xml_task_name,
-    recovery_decision, render_probe_task_xml, require_clean_worktree, schtasks_create_argv,
-    schtasks_create_xml_argv, schtasks_delete_argv, schtasks_query_proves_task_absent,
-    schtasks_query_runtime_argv, schtasks_query_xml_argv, schtasks_run_argv, select_probe_outcome,
-    sha256_hex, verify_attestation, verify_probe_task_definition, verify_result,
-    verify_result_binding, verify_task_definition,
+    OnlogonProbeReport, PROBE_SCHEMA, ProbeApiError, ProbeApiErrorSpace, ProbeComConfigEvidence,
+    ProbeComSection, ProbeDescriptorSource, ProbeFolderAclStage, ProbeOutcome, ProbePriority,
+    ProbeReceipt, ProbeResolutionAction, ProbeSchedulerSettingsStage, ProbeStage, ProbeStageStatus,
+    ProbeTaskDefinition, ProbeTokenGate, ProbeTokenSection, ProbeVerifyInput, ProbeXmlSection,
+    RAIL_ROOT, RailError, ResultRecord, TaskRuntime, TerminalState, TokenAttestation,
+    TokenElevationClass, classify_probe_sid, classify_terminal, classify_token_elevation_type,
+    com_hresult_proves_not_found, com_register_flag, folder_allows_ordinary_mutation, mint_nonce,
+    parse_probe_task_xml, parse_task_runtime_csv, parse_task_xml, priority_from_raw_value,
+    probe_com_folder_path, probe_com_task_name, probe_exits_successfully, probe_marker,
+    probe_token_gate, probe_xml_task_name, recovery_decision, render_probe_task_xml,
+    require_clean_worktree, schtasks_create_argv, schtasks_create_xml_argv, schtasks_delete_argv,
+    schtasks_query_proves_task_absent, schtasks_query_runtime_argv, schtasks_query_xml_argv,
+    schtasks_run_argv, select_probe_outcome, sha256_hex, verify_attestation,
+    verify_probe_task_definition, verify_result, verify_result_binding, verify_task_definition,
 };
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
     CoUninitialize,
 };
 use windows::Win32::System::TaskScheduler::{
-    IExecAction, ILogonTrigger, ITaskFolder, ITaskService, TASK_ACTION_EXEC,
+    IExecAction, ILogonTrigger, IRegisteredTask, ITaskFolder, ITaskService, TASK_ACTION_EXEC,
     TASK_LOGON_INTERACTIVE_TOKEN, TASK_RUNLEVEL_LUA, TASK_TRIGGER_LOGON, TaskScheduler,
 };
 use windows::Win32::System::Variant::VARIANT;
@@ -1356,7 +1356,7 @@ fn run_xml_onlogon_route(
     let mut section = ProbeXmlSection::skipped();
     let xml_path = Path::new(scratch).join(format!("onlogon-xml-{nonce}.xml"));
     let xml_path_text = xml_path.to_string_lossy().into_owned();
-    let definition = solstone_core_win_owner_rail::ProbeTaskDefinition {
+    let definition = ProbeTaskDefinition {
         principal_sid: owner_sid.to_owned(),
         logon_type: "InteractiveToken".to_owned(),
         run_level: solstone_core_win_owner_rail::TaskRunLevel::ExplicitLeastPrivilege,
@@ -1368,6 +1368,7 @@ fn run_xml_onlogon_route(
         priority: ProbePriority::Unavailable,
     };
     let xml = render_probe_task_xml(&definition);
+    section.submitted_xml = xml.clone();
     section.definition_sha256 = sha256_hex(xml.as_bytes());
     if let Err(error) = write_probe_xml_file(&xml_path_text, xml.as_bytes()) {
         section.create = ProbeStage::failed(
@@ -1394,15 +1395,18 @@ fn run_xml_onlogon_route(
     }
     section.query_argv = schtasks_query_xml_argv(task_name);
     match query_probe_xml(task_name) {
-        Ok(xml) => apply_retrieved_probe_xml(
-            &xml,
-            owner_sid,
-            exe_path,
-            marker,
-            Some(&mut section.priority),
-            &mut section.definition,
-            true,
-        ),
+        Ok(xml) => {
+            section.retrieved_definition = apply_retrieved_probe_xml(
+                &xml,
+                owner_sid,
+                exe_path,
+                marker,
+                Some(&mut section.priority),
+                &mut section.definition,
+                true,
+            );
+            observe_xml_task_scheduler_settings(task_name, &mut section);
+        }
         Err(error) => {
             section.definition = ProbeStage::inconclusive(
                 schtasks_probe_error(&error),
@@ -1481,7 +1485,8 @@ fn run_com_onlogon_route(
         Ok(result) => {
             section.register = ProbeStage::passed();
             section.priority = result.priority.into();
-            apply_retrieved_probe_xml(
+            section.config_evidence = Some(result.config_evidence);
+            section.retrieved_definition = apply_retrieved_probe_xml(
                 &result.xml,
                 owner_sid,
                 exe_path,
@@ -1531,6 +1536,66 @@ fn create_task_service() -> Result<ITaskService, ProbeApiError> {
             .map_err(|error| com_probe_error(&error, "ITaskService::Connect"))?;
     }
     Ok(service)
+}
+
+fn observe_xml_task_scheduler_settings(task_name: &str, section: &mut ProbeXmlSection) {
+    let _com = match init_com() {
+        Ok(com) => com,
+        Err(error) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::inconclusive(
+                hresult_probe_error(0, &error),
+                ProbeResolutionAction::RepairSchedulerAccess,
+            );
+            return;
+        }
+    };
+    let service = match create_task_service() {
+        Ok(service) => service,
+        Err(error) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::inconclusive(
+                error,
+                ProbeResolutionAction::RepairSchedulerAccess,
+            );
+            return;
+        }
+    };
+    let leaf_name = task_name.rsplit('\\').next().unwrap_or(task_name);
+    // SAFETY: connected ITaskService; XML probe tasks live under \solstone\probe.
+    #[allow(unsafe_code)]
+    let folder = match unsafe { service.GetFolder(&BSTR::from(r"\solstone\probe")) } {
+        Ok(folder) => folder,
+        Err(error) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::inconclusive(
+                com_probe_error(&error, "ITaskService::GetFolder probe"),
+                ProbeResolutionAction::InspectDefinition,
+            );
+            return;
+        }
+    };
+    // SAFETY: folder is the live \solstone\probe folder; leaf_name is the XML task's
+    // last path component, the name GetTask expects relative to that folder.
+    #[allow(unsafe_code)]
+    let registered = match unsafe { folder.GetTask(&BSTR::from(leaf_name)) } {
+        Ok(task) => task,
+        Err(error) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::inconclusive(
+                com_probe_error(&error, "ITaskFolder::GetTask xml probe"),
+                ProbeResolutionAction::InspectDefinition,
+            );
+            return;
+        }
+    };
+    match read_task_settings_priority(&registered) {
+        Ok(priority) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::passed(priority.into());
+        }
+        Err(error) => {
+            section.scheduler_settings = ProbeSchedulerSettingsStage::inconclusive(
+                com_probe_error(&error, "ITaskSettings::Priority"),
+                ProbeResolutionAction::InspectDefinition,
+            );
+        }
+    }
 }
 
 fn ensure_com_parent_folders(service: &ITaskService) -> Result<ITaskFolder, ProbeStage> {
@@ -1584,6 +1649,22 @@ fn create_com_leaf_folder(parent: &ITaskFolder, name: &str) -> Result<ITaskFolde
 struct ComRegisterResult {
     xml: String,
     priority: ProbePriority,
+    config_evidence: ProbeComConfigEvidence,
+}
+
+fn read_task_settings_priority(
+    registered: &IRegisteredTask,
+) -> windows::core::Result<ProbePriority> {
+    let mut priority_value = 0_i32;
+    // SAFETY: registered task is live; Settings::Priority is an out-param getter.
+    #[allow(unsafe_code)]
+    unsafe {
+        registered
+            .Definition()?
+            .Settings()?
+            .Priority(&mut priority_value)?;
+    }
+    Ok(priority_from_raw_value(priority_value))
 }
 
 fn register_com_onlogon_task(
@@ -1594,6 +1675,8 @@ fn register_com_onlogon_task(
     owner_sid: &str,
     call_sequence: &mut Vec<String>,
 ) -> Result<ComRegisterResult, ProbeStage> {
+    let logon_type = TASK_LOGON_INTERACTIVE_TOKEN;
+    let run_level = TASK_RUNLEVEL_LUA;
     // SAFETY: connected service; flags 0 is the documented NewTask reserved value.
     #[allow(unsafe_code)]
     let definition = unsafe { service.NewTask(0) }
@@ -1616,10 +1699,10 @@ fn register_com_onlogon_task(
             .map_err(|error| com_create_stage(&error, "SetUserId"))?;
         call_sequence.push("IPrincipal::SetUserId".to_owned());
         principal
-            .SetLogonType(TASK_LOGON_INTERACTIVE_TOKEN)
+            .SetLogonType(logon_type)
             .map_err(|error| com_create_stage(&error, "SetLogonType"))?;
         principal
-            .SetRunLevel(TASK_RUNLEVEL_LUA)
+            .SetRunLevel(run_level)
             .map_err(|error| com_create_stage(&error, "SetRunLevel"))?;
         let triggers = definition
             .Triggers()
@@ -1668,27 +1751,15 @@ fn register_com_onlogon_task(
             com_register_flag(),
             &empty,
             &empty,
-            TASK_LOGON_INTERACTIVE_TOKEN,
+            logon_type,
             &empty,
         )
     }
     .map_err(|error| com_create_stage(&error, "RegisterTaskDefinition"))?;
     call_sequence.push("ITaskFolder::RegisterTaskDefinition".to_owned());
     let mut priority = ProbePriority::Unavailable;
-    let mut priority_value = 0_i32;
-    // SAFETY: registered task is live; Settings::Priority is an out-param getter.
-    #[allow(unsafe_code)]
-    let native_priority = unsafe {
-        match registered.Definition() {
-            Ok(task_definition) => match task_definition.Settings() {
-                Ok(settings) => settings.Priority(&mut priority_value),
-                Err(error) => Err(error),
-            },
-            Err(error) => Err(error),
-        }
-    };
-    if native_priority.is_ok() {
-        priority = priority_from_raw_value(priority_value);
+    if let Ok(observed) = read_task_settings_priority(&registered) {
+        priority = observed;
         call_sequence.push("ITaskSettings::Priority".to_owned());
     }
     // SAFETY: registered task is live and Xml is the scheduler-owned definition.
@@ -1705,6 +1776,14 @@ fn register_com_onlogon_task(
     Ok(ComRegisterResult {
         xml: xml.to_string(),
         priority,
+        config_evidence: ProbeComConfigEvidence {
+            principal_user_id: owner_sid.to_owned(),
+            trigger_user_id: owner_sid.to_owned(),
+            logon_type: logon_type.0,
+            run_level: run_level.0,
+            action_path: exe_path.to_owned(),
+            marker: marker.to_owned(),
+        },
     })
 }
 
@@ -2107,7 +2186,7 @@ fn apply_retrieved_probe_xml(
     priority: Option<&mut solstone_core_win_owner_rail::ProbePriorityView>,
     definition_stage: &mut ProbeStage,
     schtasks_errors: bool,
-) {
+) -> Option<ProbeTaskDefinition> {
     let inspect_error = |diagnostic: String| {
         if schtasks_errors {
             schtasks_probe_error(&diagnostic)
@@ -2122,7 +2201,7 @@ fn apply_retrieved_probe_xml(
                 inspect_error(display_rail_error(error)),
                 ProbeResolutionAction::InspectDefinition,
             );
-            return;
+            return None;
         }
     };
     if let Some(priority) = priority {
@@ -2136,7 +2215,7 @@ fn apply_retrieved_probe_xml(
                     inspect_error(error),
                     ProbeResolutionAction::InspectDefinition,
                 );
-                return;
+                return Some(definition);
             }
         }
     }
@@ -2148,7 +2227,7 @@ fn apply_retrieved_probe_xml(
                     inspect_error(error),
                     ProbeResolutionAction::InspectDefinition,
                 );
-                return;
+                return Some(definition);
             }
         }
     }
@@ -2168,6 +2247,7 @@ fn apply_retrieved_probe_xml(
             );
         }
     }
+    Some(definition)
 }
 
 fn skip_cleanup_after_create_failure(action: Option<ProbeResolutionAction>) -> bool {

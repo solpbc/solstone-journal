@@ -172,7 +172,8 @@ pub struct TaskDefinition {
     pub working_directory: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TaskRunLevel {
     ExplicitLeastPrivilege,
     ImplicitLeastPrivilege,
@@ -659,7 +660,7 @@ pub fn schtasks_create_xml_argv(task_name: &str, xml_path: &str) -> Vec<String> 
     ]
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProbeTaskDefinition {
     pub principal_sid: String,
     pub logon_type: String,
@@ -672,7 +673,8 @@ pub struct ProbeTaskDefinition {
     pub priority: ProbePriority,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "ProbePriorityView", into = "ProbePriorityView")]
 pub enum ProbePriority {
     Present(i32),
     Unavailable,
@@ -860,6 +862,17 @@ impl From<ProbePriority> for ProbePriorityView {
     }
 }
 
+impl From<ProbePriorityView> for ProbePriority {
+    fn from(view: ProbePriorityView) -> Self {
+        match (view.state, view.value) {
+            (ProbePriorityState::Present, Some(value)) => Self::Present(value),
+            (ProbePriorityState::Present, None) => Self::Malformed,
+            (ProbePriorityState::Unavailable, _) => Self::Unavailable,
+            (ProbePriorityState::Malformed, _) => Self::Malformed,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProbeDescriptorSource {
@@ -877,17 +890,75 @@ pub struct ProbeTokenSection {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeSchedulerSettingsStage {
+    pub status: ProbeStageStatus,
+    pub error: Option<ProbeApiError>,
+    pub resolution_action: Option<ProbeResolutionAction>,
+    pub priority: ProbePriorityView,
+}
+
+impl ProbeSchedulerSettingsStage {
+    pub fn skipped() -> Self {
+        Self {
+            status: ProbeStageStatus::Skipped,
+            error: None,
+            resolution_action: None,
+            priority: ProbePriority::Unavailable.into(),
+        }
+    }
+
+    pub fn passed(priority: ProbePriorityView) -> Self {
+        Self {
+            status: ProbeStageStatus::Passed,
+            error: None,
+            resolution_action: None,
+            priority,
+        }
+    }
+
+    pub fn failed(error: ProbeApiError, action: ProbeResolutionAction) -> Self {
+        Self {
+            status: ProbeStageStatus::Failed,
+            error: Some(error),
+            resolution_action: Some(action),
+            priority: ProbePriority::Unavailable.into(),
+        }
+    }
+
+    pub fn inconclusive(error: ProbeApiError, action: ProbeResolutionAction) -> Self {
+        Self {
+            status: ProbeStageStatus::Inconclusive,
+            error: Some(error),
+            resolution_action: Some(action),
+            priority: ProbePriority::Unavailable.into(),
+        }
+    }
+}
+
+impl Default for ProbeSchedulerSettingsStage {
+    fn default() -> Self {
+        Self::skipped()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProbeXmlSection {
     pub create: ProbeStage,
     pub definition: ProbeStage,
     pub priority: ProbePriorityView,
     pub cleanup: ProbeStage,
     #[serde(default)]
+    pub scheduler_settings: ProbeSchedulerSettingsStage,
+    #[serde(default)]
     pub create_argv: Vec<String>,
     #[serde(default)]
     pub query_argv: Vec<String>,
     #[serde(default)]
     pub definition_sha256: String,
+    #[serde(default)]
+    pub submitted_xml: String,
+    #[serde(default)]
+    pub retrieved_definition: Option<ProbeTaskDefinition>,
 }
 
 impl ProbeXmlSection {
@@ -897,9 +968,12 @@ impl ProbeXmlSection {
             definition: ProbeStage::skipped(),
             priority: ProbePriority::Unavailable.into(),
             cleanup: ProbeStage::skipped(),
+            scheduler_settings: ProbeSchedulerSettingsStage::skipped(),
             create_argv: Vec::new(),
             query_argv: Vec::new(),
             definition_sha256: String::new(),
+            submitted_xml: String::new(),
+            retrieved_definition: None,
         }
     }
 }
@@ -928,6 +1002,16 @@ impl ProbeFolderAclStage {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeComConfigEvidence {
+    pub principal_user_id: String,
+    pub trigger_user_id: String,
+    pub logon_type: i32,
+    pub run_level: i32,
+    pub action_path: String,
+    pub marker: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProbeComSection {
     pub folder_create: ProbeStage,
     pub folder_acl: ProbeFolderAclStage,
@@ -939,6 +1023,10 @@ pub struct ProbeComSection {
     pub register_flag: i32,
     #[serde(default)]
     pub call_sequence: Vec<String>,
+    #[serde(default)]
+    pub config_evidence: Option<ProbeComConfigEvidence>,
+    #[serde(default)]
+    pub retrieved_definition: Option<ProbeTaskDefinition>,
 }
 
 impl ProbeComSection {
@@ -952,6 +1040,8 @@ impl ProbeComSection {
             cleanup: ProbeStage::skipped(),
             register_flag: 0,
             call_sequence: Vec::new(),
+            config_evidence: None,
+            retrieved_definition: None,
         }
     }
 }
@@ -1114,6 +1204,23 @@ pub fn probe_exits_successfully(report: &OnlogonProbeReport) -> bool {
     )
 }
 
+pub fn xml_scheduler_settings_ok(xml: &ProbeXmlSection) -> bool {
+    xml.scheduler_settings.status == ProbeStageStatus::Passed
+        && xml.scheduler_settings.priority.state == ProbePriorityState::Present
+}
+
+pub fn xml_config_evidence_present(xml: &ProbeXmlSection) -> bool {
+    !xml.submitted_xml.is_empty() && xml.retrieved_definition.is_some()
+}
+
+pub fn com_priority_present(com: &ProbeComSection) -> bool {
+    com.priority.state == ProbePriorityState::Present
+}
+
+pub fn com_config_evidence_present(com: &ProbeComSection) -> bool {
+    com.config_evidence.is_some() && com.retrieved_definition.is_some()
+}
+
 pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
     match report.token.elevation_type {
         TokenElevationClass::Full if report.token.stage.status != ProbeStageStatus::Failed => {
@@ -1155,8 +1262,21 @@ pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
     if report.com.folder_acl.status == ProbeStageStatus::Inconclusive {
         return ProbeOutcome::DefinitionUnverified;
     }
-    let xml_verified = xml_created && report.xml.definition.status == ProbeStageStatus::Passed;
-    let com_verified = com_created && report.com.definition.status == ProbeStageStatus::Passed;
+    if xml_created
+        && !(xml_scheduler_settings_ok(&report.xml) && xml_config_evidence_present(&report.xml))
+        || com_created
+            && !(com_priority_present(&report.com) && com_config_evidence_present(&report.com))
+    {
+        return ProbeOutcome::DefinitionUnverified;
+    }
+    let xml_verified = xml_created
+        && report.xml.definition.status == ProbeStageStatus::Passed
+        && xml_scheduler_settings_ok(&report.xml)
+        && xml_config_evidence_present(&report.xml);
+    let com_verified = com_created
+        && report.com.definition.status == ProbeStageStatus::Passed
+        && com_priority_present(&report.com)
+        && com_config_evidence_present(&report.com);
     if xml_verified && com_verified {
         return ProbeOutcome::VerifiedRegistration;
     }
@@ -1943,6 +2063,59 @@ mod tests {
         } else {
             assert!(acl.resolution_action.is_none());
         }
+        let settings = &report.xml.scheduler_settings;
+        if matches!(
+            settings.status,
+            ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+        ) {
+            assert!(settings.resolution_action.is_some());
+        } else {
+            assert!(settings.resolution_action.is_none());
+        }
+    }
+
+    fn probe_com_config_evidence() -> ProbeComConfigEvidence {
+        ProbeComConfigEvidence {
+            principal_user_id: PROBE_SID.to_owned(),
+            trigger_user_id: PROBE_SID.to_owned(),
+            logon_type: 3,
+            run_level: 0,
+            action_path: PROBE_EXE.to_owned(),
+            marker: probe_marker_value(),
+        }
+    }
+
+    fn complete_verified_probe_report() -> OnlogonProbeReport {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.xml.priority = ProbePriority::Present(7).into();
+        report.xml.scheduler_settings =
+            ProbeSchedulerSettingsStage::passed(ProbePriority::Present(7).into());
+        report.xml.create_argv =
+            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        report.xml.definition_sha256 = "abc123".to_owned();
+        report.xml.submitted_xml = render_probe_task_xml(&probe_definition());
+        report.xml.retrieved_definition = Some(probe_definition());
+        report.com.folder_create = ProbeStage::passed();
+        report.com.folder_acl.status = ProbeStageStatus::Passed;
+        report.com.folder_acl.ordinary_mutation = Some(false);
+        report.com.folder_acl.descriptor_source = Some(ProbeDescriptorSource::NamedInfo);
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.com.priority = ProbePriority::Present(7).into();
+        report.com.register_flag = com_register_flag();
+        report.com.call_sequence = vec![
+            "ITaskService::Connect".to_owned(),
+            "ITaskFolder::RegisterTaskDefinition".to_owned(),
+            "ITaskSettings::Priority".to_owned(),
+        ];
+        report.com.config_evidence = Some(probe_com_config_evidence());
+        report.com.retrieved_definition = Some(probe_definition());
+        report.outcome = select_probe_outcome(&report);
+        report
     }
 
     #[test]
@@ -2360,35 +2533,60 @@ mod tests {
 
     #[test]
     fn report_json_verified_registration() {
-        let mut report = base_probe_report(default_token_passed());
-        report.xml.create = ProbeStage::passed();
-        report.xml.definition = ProbeStage::passed();
-        report.xml.cleanup = ProbeStage::passed();
-        report.xml.priority = ProbePriority::Present(7).into();
-        report.xml.create_argv =
-            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
-        report.xml.definition_sha256 = "abc123".to_owned();
-        report.com.folder_create = ProbeStage::passed();
-        report.com.folder_acl.status = ProbeStageStatus::Passed;
-        report.com.folder_acl.ordinary_mutation = Some(false);
-        report.com.folder_acl.descriptor_source = Some(ProbeDescriptorSource::NamedInfo);
-        report.com.register = ProbeStage::passed();
-        report.com.definition = ProbeStage::passed();
-        report.com.cleanup = ProbeStage::passed();
-        report.com.register_flag = com_register_flag();
-        report.com.call_sequence = vec![
-            "ITaskService::Connect".to_owned(),
-            "ITaskFolder::RegisterTaskDefinition".to_owned(),
-        ];
-        report.outcome = select_probe_outcome(&report);
+        let report = complete_verified_probe_report();
         let json = serialize_outcome(&report);
         assert_eq!(json["outcome"], "verified-registration");
         assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert_eq!(json["xml"]["scheduler_settings"]["status"], "passed");
+        assert_eq!(
+            json["xml"]["scheduler_settings"]["priority"]["state"],
+            "present"
+        );
+        assert_eq!(json["xml"]["scheduler_settings"]["priority"]["value"], 7);
         assert_eq!(json["xml"]["create_argv"][0], "/Create");
         assert_eq!(json["xml"]["definition_sha256"], "abc123");
+        assert!(
+            !json["xml"]["submitted_xml"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty()
+        );
+        assert!(json["xml"]["retrieved_definition"].is_object());
+        assert_eq!(json["com"]["priority"]["state"], "present");
         assert_eq!(json["com"]["register_flag"], com_register_flag());
         assert_eq!(json["com"]["call_sequence"][0], "ITaskService::Connect");
+        assert!(json["com"]["config_evidence"].is_object());
+        assert_eq!(
+            json["com"]["config_evidence"]["principal_user_id"],
+            PROBE_SID
+        );
+        assert!(json["com"]["retrieved_definition"].is_object());
         assert!(probe_exits_successfully(&report));
+
+        let mut shortcut = base_probe_report(default_token_passed());
+        shortcut.xml.create = ProbeStage::passed();
+        shortcut.xml.definition = ProbeStage::passed();
+        shortcut.xml.cleanup = ProbeStage::passed();
+        shortcut.xml.priority = ProbePriority::Present(7).into();
+        shortcut.xml.create_argv =
+            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        shortcut.xml.definition_sha256 = "abc123".to_owned();
+        shortcut.com.folder_create = ProbeStage::passed();
+        shortcut.com.folder_acl.status = ProbeStageStatus::Passed;
+        shortcut.com.folder_acl.ordinary_mutation = Some(false);
+        shortcut.com.folder_acl.descriptor_source = Some(ProbeDescriptorSource::NamedInfo);
+        shortcut.com.register = ProbeStage::passed();
+        shortcut.com.definition = ProbeStage::passed();
+        shortcut.com.cleanup = ProbeStage::passed();
+        shortcut.com.register_flag = com_register_flag();
+        shortcut.com.call_sequence = vec![
+            "ITaskService::Connect".to_owned(),
+            "ITaskFolder::RegisterTaskDefinition".to_owned(),
+        ];
+        shortcut.outcome = select_probe_outcome(&shortcut);
+        assert_ne!(shortcut.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(shortcut.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&shortcut));
     }
 
     #[test]
@@ -2477,13 +2675,8 @@ mod tests {
 
     #[test]
     fn select_outcome_single_route_verified_is_not_verified() {
-        let mut report = base_probe_report(default_token_passed());
-        report.xml.create = ProbeStage::passed();
-        report.xml.definition = ProbeStage::passed();
-        report.xml.cleanup = ProbeStage::passed();
-        report.xml.priority = ProbePriority::Present(7).into();
-        report.xml.create_argv =
-            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        let mut report = complete_verified_probe_report();
+        report.com = ProbeComSection::skipped();
         report.xml.definition_sha256 = "def456".to_owned();
         report.outcome = select_probe_outcome(&report);
         assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
@@ -2493,6 +2686,7 @@ mod tests {
         assert_eq!(json["xml"]["definition"]["status"], "passed");
         assert_eq!(json["xml"]["priority"]["state"], "present");
         assert_eq!(json["xml"]["priority"]["value"], 7);
+        assert_eq!(json["xml"]["scheduler_settings"]["status"], "passed");
         assert_eq!(json["xml"]["create_argv"][0], "/Create");
         assert_eq!(json["xml"]["definition_sha256"], "def456");
         assert_eq!(json["com"]["register"]["status"], "skipped");
@@ -2518,19 +2712,17 @@ mod tests {
 
     #[test]
     fn select_outcome_xml_verified_com_refused_is_not_refused() {
-        let mut report = base_probe_report(default_token_passed());
-        report.xml.create = ProbeStage::passed();
-        report.xml.definition = ProbeStage::passed();
-        report.xml.cleanup = ProbeStage::passed();
-        report.xml.priority = ProbePriority::Present(7).into();
-        report.xml.create_argv =
-            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        let mut report = complete_verified_probe_report();
         report.xml.definition_sha256 = "def456".to_owned();
         report.com.folder_create = ProbeStage::passed();
         report.com.register = ProbeStage::failed(
             probe_error("access denied"),
             ProbeResolutionAction::TreatAsRefused,
         );
+        report.com.definition = ProbeStage::skipped();
+        report.com.priority = ProbePriority::Unavailable.into();
+        report.com.config_evidence = None;
+        report.com.retrieved_definition = None;
         report.com.cleanup = ProbeStage::passed();
         report.outcome = select_probe_outcome(&report);
         assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
@@ -2539,6 +2731,7 @@ mod tests {
         let json = serialize_outcome(&report);
         assert_eq!(json["xml"]["definition"]["status"], "passed");
         assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert_eq!(json["xml"]["scheduler_settings"]["status"], "passed");
         assert_eq!(json["xml"]["create_argv"][0], "/Create");
         assert_eq!(json["xml"]["definition_sha256"], "def456");
         assert!(!probe_exits_successfully(&report));
@@ -2546,17 +2739,16 @@ mod tests {
 
     #[test]
     fn select_outcome_com_verified_xml_refused_is_not_refused() {
-        let mut report = base_probe_report(default_token_passed());
+        let mut report = complete_verified_probe_report();
         report.xml.create = ProbeStage::failed(
             probe_error("access denied"),
             ProbeResolutionAction::TreatAsRefused,
         );
+        report.xml.definition = ProbeStage::skipped();
+        report.xml.scheduler_settings = ProbeSchedulerSettingsStage::skipped();
+        report.xml.submitted_xml.clear();
+        report.xml.retrieved_definition = None;
         report.xml.cleanup = ProbeStage::passed();
-        report.com.folder_create = ProbeStage::passed();
-        report.com.register = ProbeStage::passed();
-        report.com.definition = ProbeStage::passed();
-        report.com.cleanup = ProbeStage::passed();
-        report.com.register_flag = com_register_flag();
         report.com.call_sequence = vec!["ITaskService::Connect".to_owned()];
         report.outcome = select_probe_outcome(&report);
         assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
@@ -2564,9 +2756,121 @@ mod tests {
         assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
         let json = serialize_outcome(&report);
         assert_eq!(json["com"]["definition"]["status"], "passed");
+        assert_eq!(json["com"]["priority"]["state"], "present");
         assert_eq!(json["com"]["register_flag"], com_register_flag());
         assert_eq!(json["com"]["call_sequence"][0], "ITaskService::Connect");
+        assert!(json["com"]["config_evidence"].is_object());
         assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_verified_registration_requires_scheduler_settings_and_config_evidence() {
+        let complete = complete_verified_probe_report();
+        assert_eq!(complete.outcome, ProbeOutcome::VerifiedRegistration);
+
+        let assert_unverified = |report: OnlogonProbeReport| {
+            assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+            assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+            assert!(!probe_exits_successfully(&report));
+        };
+
+        let mut report = complete.clone();
+        report.xml.scheduler_settings = ProbeSchedulerSettingsStage::skipped();
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.xml.scheduler_settings =
+            ProbeSchedulerSettingsStage::passed(ProbePriority::Unavailable.into());
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.xml.scheduler_settings =
+            ProbeSchedulerSettingsStage::passed(ProbePriority::Malformed.into());
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.xml.submitted_xml.clear();
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.xml.retrieved_definition = None;
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.com.priority = ProbePriority::Unavailable.into();
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.com.priority = ProbePriority::Malformed.into();
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.com.config_evidence = None;
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+
+        let mut report = complete.clone();
+        report.com.retrieved_definition = None;
+        report.outcome = select_probe_outcome(&report);
+        assert_unverified(report);
+    }
+
+    #[test]
+    fn select_outcome_xml_scheduler_settings_failure_blocks_refusal() {
+        let mut report = complete_verified_probe_report();
+        report.xml.scheduler_settings = ProbeSchedulerSettingsStage::failed(
+            probe_error("GetTask failed"),
+            ProbeResolutionAction::InspectDefinition,
+        );
+        report.com.folder_create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.com.register = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.com.priority = ProbePriority::Unavailable.into();
+        report.com.config_evidence = None;
+        report.com.retrieved_definition = None;
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn probe_task_definition_json_priority_uses_view_shape() {
+        let json = serde_json::to_value(probe_definition()).expect("definition serializes");
+        assert_eq!(json["priority"]["state"], "present");
+        assert_eq!(json["priority"]["value"], 7);
+        assert!(json["priority"].get("Present").is_none());
+        let round_trip: ProbeTaskDefinition =
+            serde_json::from_value(json).expect("definition deserializes");
+        assert_eq!(round_trip, probe_definition());
+    }
+
+    #[test]
+    fn probe_com_config_evidence_json_fields_present() {
+        let evidence = probe_com_config_evidence();
+        let json = serde_json::to_value(&evidence).expect("config evidence serializes");
+        assert_eq!(json["principal_user_id"], PROBE_SID);
+        assert_eq!(json["trigger_user_id"], PROBE_SID);
+        assert_eq!(json["logon_type"], 3);
+        assert_eq!(json["run_level"], 0);
+        assert_eq!(json["action_path"], PROBE_EXE);
+        assert_eq!(json["marker"], probe_marker_value());
+        let round_trip: ProbeComConfigEvidence =
+            serde_json::from_value(json).expect("config evidence deserializes");
+        assert_eq!(round_trip, evidence);
     }
 
     #[test]
@@ -2700,11 +3004,7 @@ mod tests {
 
     #[test]
     fn select_outcome_ordinary_mutation_sets_isolate_folder_acl_action() {
-        let mut report = base_probe_report(default_token_passed());
-        report.xml.create = ProbeStage::passed();
-        report.xml.definition = ProbeStage::passed();
-        report.xml.cleanup = ProbeStage::passed();
-        report.com.folder_create = ProbeStage::passed();
+        let mut report = complete_verified_probe_report();
         report.com.folder_acl = ProbeFolderAclStage {
             status: ProbeStageStatus::Failed,
             error: Some(probe_error("ordinary mutation")),
@@ -2713,9 +3013,6 @@ mod tests {
             sddl: Some("D:(A;;FA;;;BU)".to_owned()),
             ordinary_mutation: Some(true),
         };
-        report.com.register = ProbeStage::passed();
-        report.com.definition = ProbeStage::passed();
-        report.com.cleanup = ProbeStage::passed();
         report.outcome = select_probe_outcome(&report);
         assert_eq!(
             report.com.folder_acl.resolution_action,
