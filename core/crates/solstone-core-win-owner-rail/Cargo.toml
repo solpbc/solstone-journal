@@ -23,3 +23,4 @@ sha2.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
+windows = { workspace = true }

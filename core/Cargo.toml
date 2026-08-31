@@ -353,6 +353,14 @@ whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
 # DLL links on that target. Package MSRV 1.82 is below workspace Rust 1.95;
 # MIT license and the resolved graph are already covered by cargo-deny.
 windows-sys = { version = "=0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Globalization", "Win32_Security", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Shell"] }
+# Task Scheduler 2.0 COM bindings for the win-owner-rail ONLOGON probe only.
+# `windows-sys` 0.61.2 has no Win32_System_TaskScheduler module; this crate
+# supplies ITaskService / ITaskFolder / ILogonTrigger as generated interfaces.
+# Windows-target gated by solstone-core-win-owner-rail, `build = false`, no
+# C/C++ step, system DLL links on that target only. Package MSRV 1.74 is
+# below workspace Rust 1.95; MIT OR Apache-2.0 is already on the cargo-deny
+# allow list and `windows` is not banned. The binary is inventory-denied.
+windows = { version = "=0.61.3", default-features = false, features = ["Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_TaskScheduler"] }
 # IANA timezone for journal-config default materialization. Release-rail lenses:
 # `iana-time-zone` 0.1.65 is MIT OR Apache-2.0 and is already in the lock via
 # health-web and reprocess-cli. `build = false`; package MSRV 1.62.0 is below

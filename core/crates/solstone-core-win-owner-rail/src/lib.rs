@@ -609,6 +609,745 @@ pub fn payload_sha256(parts: &[&str]) -> String {
         .collect()
 }
 
+pub const PROBE_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-probe.v1";
+pub const PROBE_MARKER_PREFIX: &str = "solstone-onlogon-probe:";
+pub const ACE_MUTATION_MASK: u32 =
+    0x0001_0000 | 0x0004_0000 | 0x0008_0000 | 0x1000_0000 | 0x4000_0000;
+
+pub fn probe_marker(nonce: &str) -> String {
+    format!("{PROBE_MARKER_PREFIX}{nonce}")
+}
+
+pub fn probe_xml_task_name(nonce: &str) -> String {
+    format!(
+        r"\solstone\probe\onlogon-xml-{}",
+        nonce.to_ascii_lowercase()
+    )
+}
+
+pub fn probe_com_folder_path(nonce: &str) -> String {
+    format!(
+        r"\solstone\probe\onlogon-com-{}",
+        nonce.to_ascii_lowercase()
+    )
+}
+
+pub fn probe_com_task_name() -> &'static str {
+    "probe"
+}
+
+pub fn schtasks_create_xml_argv(task_name: &str, xml_path: &str) -> Vec<String> {
+    vec![
+        "/Create".to_owned(),
+        "/TN".to_owned(),
+        task_name.to_owned(),
+        "/XML".to_owned(),
+        xml_path.to_owned(),
+    ]
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbeTaskDefinition {
+    pub principal_sid: String,
+    pub logon_type: String,
+    pub run_level: TaskRunLevel,
+    pub command: String,
+    pub arguments: String,
+    pub working_directory: Option<String>,
+    pub description: Option<String>,
+    pub trigger_user_id: String,
+    pub priority: ProbePriority,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProbePriority {
+    Present(i32),
+    Unavailable,
+    Malformed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbeVerifyInput {
+    pub expected_sid: String,
+    pub expected_command: String,
+    pub marker: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TokenElevationClass {
+    Default,
+    Limited,
+    Full,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbeTokenGate {
+    ContinueUnelevated,
+    StopElevated,
+    StopFilteredAdmin,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbeSidClass {
+    Caller,
+    Administrators,
+    LocalSystem,
+    LocalService,
+    NetworkService,
+    OrdinaryGroup,
+    OrdinaryDistinctUser,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbeAclEntry {
+    pub sid: String,
+    pub allow: bool,
+    pub access_mask: u32,
+    pub classification: ProbeSidClass,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeOutcome {
+    ElevatedCreator,
+    FilteredAdministratorCreator,
+    RegistrationRefused,
+    VerifiedRegistration,
+    DefinitionUnverified,
+    CleanupUncertain,
+}
+
+impl fmt::Display for ProbeOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::ElevatedCreator => "elevated-creator",
+            Self::FilteredAdministratorCreator => "filtered-administrator-creator",
+            Self::RegistrationRefused => "registration-refused",
+            Self::VerifiedRegistration => "verified-registration",
+            Self::DefinitionUnverified => "definition-unverified",
+            Self::CleanupUncertain => "cleanup-uncertain",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeStageStatus {
+    Passed,
+    Failed,
+    Inconclusive,
+    Skipped,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeResolutionAction {
+    UseStandardLogon,
+    StopFilteredAdmin,
+    TreatAsRefused,
+    InspectDefinition,
+    RetryFreshNonce,
+    RepairSchedulerAccess,
+    IsolateFolderAcl,
+    ManualCleanup,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeApiErrorSpace {
+    Win32,
+    Hresult,
+    Schtasks,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeApiError {
+    pub space: ProbeApiErrorSpace,
+    pub code: u32,
+    pub diagnostic: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeStage {
+    pub status: ProbeStageStatus,
+    pub error: Option<ProbeApiError>,
+    pub resolution_action: Option<ProbeResolutionAction>,
+}
+
+impl ProbeStage {
+    pub fn passed() -> Self {
+        Self {
+            status: ProbeStageStatus::Passed,
+            error: None,
+            resolution_action: None,
+        }
+    }
+
+    pub fn skipped() -> Self {
+        Self {
+            status: ProbeStageStatus::Skipped,
+            error: None,
+            resolution_action: None,
+        }
+    }
+
+    pub fn failed(error: ProbeApiError, action: ProbeResolutionAction) -> Self {
+        Self {
+            status: ProbeStageStatus::Failed,
+            error: Some(error),
+            resolution_action: Some(action),
+        }
+    }
+
+    pub fn inconclusive(error: ProbeApiError, action: ProbeResolutionAction) -> Self {
+        Self {
+            status: ProbeStageStatus::Inconclusive,
+            error: Some(error),
+            resolution_action: Some(action),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbePriorityState {
+    Present,
+    Unavailable,
+    Malformed,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbePriorityView {
+    pub state: ProbePriorityState,
+    pub value: Option<i32>,
+}
+
+impl From<ProbePriority> for ProbePriorityView {
+    fn from(priority: ProbePriority) -> Self {
+        match priority {
+            ProbePriority::Present(value) => Self {
+                state: ProbePriorityState::Present,
+                value: Some(value),
+            },
+            ProbePriority::Unavailable => Self {
+                state: ProbePriorityState::Unavailable,
+                value: None,
+            },
+            ProbePriority::Malformed => Self {
+                state: ProbePriorityState::Malformed,
+                value: None,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeDescriptorSource {
+    NamedInfo,
+    ComSddl,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeTokenSection {
+    pub elevation_type: TokenElevationClass,
+    pub elevated: bool,
+    pub session: u32,
+    pub owner_sid: String,
+    pub stage: ProbeStage,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeXmlSection {
+    pub create: ProbeStage,
+    pub definition: ProbeStage,
+    pub priority: ProbePriorityView,
+    pub cleanup: ProbeStage,
+}
+
+impl ProbeXmlSection {
+    pub fn skipped() -> Self {
+        Self {
+            create: ProbeStage::skipped(),
+            definition: ProbeStage::skipped(),
+            priority: ProbePriority::Unavailable.into(),
+            cleanup: ProbeStage::skipped(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeFolderAclStage {
+    pub status: ProbeStageStatus,
+    pub error: Option<ProbeApiError>,
+    pub resolution_action: Option<ProbeResolutionAction>,
+    pub descriptor_source: Option<ProbeDescriptorSource>,
+    pub sddl: Option<String>,
+    pub ordinary_mutation: Option<bool>,
+}
+
+impl ProbeFolderAclStage {
+    pub fn skipped() -> Self {
+        Self {
+            status: ProbeStageStatus::Skipped,
+            error: None,
+            resolution_action: None,
+            descriptor_source: None,
+            sddl: None,
+            ordinary_mutation: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeComSection {
+    pub folder_create: ProbeStage,
+    pub folder_acl: ProbeFolderAclStage,
+    pub register: ProbeStage,
+    pub definition: ProbeStage,
+    pub priority: ProbePriorityView,
+    pub cleanup: ProbeStage,
+}
+
+impl ProbeComSection {
+    pub fn skipped() -> Self {
+        Self {
+            folder_create: ProbeStage::skipped(),
+            folder_acl: ProbeFolderAclStage::skipped(),
+            register: ProbeStage::skipped(),
+            definition: ProbeStage::skipped(),
+            priority: ProbePriority::Unavailable.into(),
+            cleanup: ProbeStage::skipped(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OnlogonProbeReport {
+    pub schema: String,
+    pub outcome: ProbeOutcome,
+    pub nonce: String,
+    pub marker: String,
+    pub xml_task_name: String,
+    pub com_folder_path: String,
+    pub token: ProbeTokenSection,
+    pub xml: ProbeXmlSection,
+    pub com: ProbeComSection,
+}
+
+pub fn classify_token_elevation_type(value: i32) -> TokenElevationClass {
+    match value {
+        1 => TokenElevationClass::Default,
+        2 => TokenElevationClass::Full,
+        3 => TokenElevationClass::Limited,
+        _ => TokenElevationClass::Unknown,
+    }
+}
+
+pub fn probe_token_gate(
+    class: TokenElevationClass,
+    token_is_elevated: bool,
+) -> Result<ProbeTokenGate, RailError> {
+    match (class, token_is_elevated) {
+        (TokenElevationClass::Full, true) => Ok(ProbeTokenGate::StopElevated),
+        (TokenElevationClass::Limited, false) => Ok(ProbeTokenGate::StopFilteredAdmin),
+        (TokenElevationClass::Default, false) => Ok(ProbeTokenGate::ContinueUnelevated),
+        (TokenElevationClass::Unknown, _) => Ok(ProbeTokenGate::StopElevated),
+        _ => Err(RailError::new("token-elevation-inconsistent")),
+    }
+}
+
+pub fn classify_probe_sid(sid: &str, caller_sid: &str) -> ProbeSidClass {
+    if sid.eq_ignore_ascii_case(caller_sid) {
+        return ProbeSidClass::Caller;
+    }
+    if sid.eq_ignore_ascii_case("S-1-5-18") {
+        return ProbeSidClass::LocalSystem;
+    }
+    if sid.eq_ignore_ascii_case("S-1-5-19") {
+        return ProbeSidClass::LocalService;
+    }
+    if sid.eq_ignore_ascii_case("S-1-5-20") {
+        return ProbeSidClass::NetworkService;
+    }
+    if sid.eq_ignore_ascii_case("S-1-5-32-544") {
+        return ProbeSidClass::Administrators;
+    }
+    if sid.eq_ignore_ascii_case("S-1-5-32-545")
+        || sid.eq_ignore_ascii_case("S-1-5-11")
+        || sid.eq_ignore_ascii_case("S-1-1-0")
+        || sid.eq_ignore_ascii_case("S-1-5-4")
+        || sid.eq_ignore_ascii_case("S-1-5-32-546")
+        || sid.eq_ignore_ascii_case("S-1-5-32-547")
+    {
+        return ProbeSidClass::OrdinaryGroup;
+    }
+    ProbeSidClass::OrdinaryDistinctUser
+}
+
+pub fn normalize_probe_acl_entries(entries: &[ProbeAclEntry]) -> Vec<ProbeAclEntry> {
+    let mut normalized = entries
+        .iter()
+        .map(|entry| ProbeAclEntry {
+            sid: entry.sid.to_ascii_uppercase(),
+            allow: entry.allow,
+            access_mask: entry.access_mask,
+            classification: entry.classification,
+        })
+        .collect::<Vec<_>>();
+    normalized.sort_by(|left, right| {
+        (left.sid.as_str(), left.allow, left.access_mask).cmp(&(
+            right.sid.as_str(),
+            right.allow,
+            right.access_mask,
+        ))
+    });
+    normalized
+}
+
+pub fn folder_allows_ordinary_mutation(entries: &[ProbeAclEntry]) -> bool {
+    entries.iter().any(|entry| {
+        entry.allow
+            && entry.access_mask & ACE_MUTATION_MASK != 0
+            && matches!(
+                entry.classification,
+                ProbeSidClass::OrdinaryGroup | ProbeSidClass::OrdinaryDistinctUser
+            )
+    })
+}
+
+pub fn stage_requires_resolution_action(stage: &ProbeStage) -> bool {
+    matches!(
+        stage.status,
+        ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+    )
+}
+
+pub fn probe_exits_successfully(report: &OnlogonProbeReport) -> bool {
+    if report.token.stage.status == ProbeStageStatus::Failed {
+        return false;
+    }
+    matches!(
+        report.outcome,
+        ProbeOutcome::VerifiedRegistration
+            | ProbeOutcome::RegistrationRefused
+            | ProbeOutcome::ElevatedCreator
+            | ProbeOutcome::FilteredAdministratorCreator
+    )
+}
+
+pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
+    match report.token.elevation_type {
+        TokenElevationClass::Full if report.token.stage.status != ProbeStageStatus::Failed => {
+            return ProbeOutcome::ElevatedCreator;
+        }
+        TokenElevationClass::Limited if report.token.stage.status != ProbeStageStatus::Failed => {
+            return ProbeOutcome::FilteredAdministratorCreator;
+        }
+        TokenElevationClass::Unknown => return ProbeOutcome::ElevatedCreator,
+        _ => {}
+    }
+    if report.token.stage.status == ProbeStageStatus::Failed {
+        return ProbeOutcome::ElevatedCreator;
+    }
+    if matches!(
+        report.xml.cleanup.status,
+        ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+    ) || matches!(
+        report.com.cleanup.status,
+        ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+    ) {
+        return ProbeOutcome::CleanupUncertain;
+    }
+    let xml_created = report.xml.create.status == ProbeStageStatus::Passed;
+    let com_created = report.com.register.status == ProbeStageStatus::Passed;
+    if xml_created
+        && matches!(
+            report.xml.definition.status,
+            ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+        )
+        || com_created
+            && matches!(
+                report.com.definition.status,
+                ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+            )
+    {
+        return ProbeOutcome::DefinitionUnverified;
+    }
+    if report.com.folder_acl.status == ProbeStageStatus::Inconclusive {
+        return ProbeOutcome::DefinitionUnverified;
+    }
+    let xml_verified = xml_created && report.xml.definition.status == ProbeStageStatus::Passed;
+    let com_verified = com_created && report.com.definition.status == ProbeStageStatus::Passed;
+    if xml_verified || com_verified {
+        return ProbeOutcome::VerifiedRegistration;
+    }
+    let xml_refused =
+        report.xml.create.resolution_action == Some(ProbeResolutionAction::TreatAsRefused);
+    let com_refused = report.com.folder_create.resolution_action
+        == Some(ProbeResolutionAction::TreatAsRefused)
+        || report.com.register.resolution_action == Some(ProbeResolutionAction::TreatAsRefused);
+    if xml_refused || com_refused {
+        return ProbeOutcome::RegistrationRefused;
+    }
+    ProbeOutcome::DefinitionUnverified
+}
+
+pub fn priority_from_xml_text(value: Option<&str>) -> ProbePriority {
+    let Some(text) = value.map(str::trim).filter(|text| !text.is_empty()) else {
+        return ProbePriority::Unavailable;
+    };
+    match text.parse::<i32>() {
+        Ok(priority) if (0..=10).contains(&priority) => ProbePriority::Present(priority),
+        _ => ProbePriority::Malformed,
+    }
+}
+
+pub fn parse_probe_task_xml(xml: &str) -> Result<ProbeTaskDefinition, RailError> {
+    let values = collect_xml_values(xml)?;
+    let one = |suffix: &str, required: bool| -> Result<Option<String>, RailError> {
+        probe_xml_field(&values, suffix, required, false)
+    };
+    let required =
+        |suffix: &str| one(suffix, true)?.ok_or(RailError::new("task-xml-missing-required-field"));
+    let action_children = values
+        .keys()
+        .filter(|key| key.starts_with("Task/Actions/") && key.split('/').count() == 3)
+        .cloned()
+        .collect::<Vec<_>>();
+    if action_children.len() != 1 || action_children[0].as_str() != "Task/Actions/Exec" {
+        return Err(RailError::new("task-xml-action-set-mismatch"));
+    }
+    let trigger_children = values
+        .keys()
+        .filter(|key| key.starts_with("Task/Triggers/") && key.split('/').count() == 3)
+        .cloned()
+        .collect::<Vec<_>>();
+    if trigger_children.len() != 1 || trigger_children[0].as_str() != "Task/Triggers/LogonTrigger" {
+        return Err(RailError::new("task-xml-trigger-set-mismatch"));
+    }
+    let userid_keys = values
+        .keys()
+        .filter(|key| key.rsplit('/').next() == Some("UserId"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let allowed_user_ids = [
+        "Task/Principals/Principal/UserId",
+        "Task/Triggers/LogonTrigger/UserId",
+    ];
+    if userid_keys
+        .iter()
+        .any(|key| !allowed_user_ids.contains(&key.as_str()))
+    {
+        return Err(RailError::new("task-xml-security-field-location-mismatch"));
+    }
+    let run_level = match one("Principals/Principal/RunLevel", false)? {
+        None => TaskRunLevel::ImplicitLeastPrivilege,
+        Some(value) if value.trim() == "LeastPrivilege" => TaskRunLevel::ExplicitLeastPrivilege,
+        Some(_) => return Err(RailError::new("task-run-level-mismatch")),
+    };
+    let principal_sid = probe_xml_field(&values, "Principals/Principal/UserId", true, true)?
+        .ok_or(RailError::new("task-xml-missing-required-field"))?
+        .trim()
+        .to_owned();
+    let trigger_user_id = probe_xml_field(&values, "Triggers/LogonTrigger/UserId", true, true)?
+        .ok_or(RailError::new("task-xml-missing-required-field"))?
+        .trim()
+        .to_owned();
+    Ok(ProbeTaskDefinition {
+        principal_sid,
+        logon_type: required("Principals/Principal/LogonType")?
+            .trim()
+            .to_owned(),
+        run_level,
+        command: required("Actions/Exec/Command")?.trim().to_owned(),
+        arguments: required("Actions/Exec/Arguments")?.trim().to_owned(),
+        working_directory: one("Actions/Exec/WorkingDirectory", false)?,
+        description: one("RegistrationInfo/Description", false)?,
+        trigger_user_id,
+        priority: priority_from_xml_text(one("Settings/Priority", false)?.as_deref()),
+    })
+}
+
+pub fn render_probe_task_xml(definition: &ProbeTaskDefinition) -> String {
+    let description = definition
+        .description
+        .as_deref()
+        .map(|value| {
+            format!(
+                "<RegistrationInfo><Description>{}</Description></RegistrationInfo>",
+                xml_escape(value)
+            )
+        })
+        .unwrap_or_default();
+    let run_level = match definition.run_level {
+        TaskRunLevel::ExplicitLeastPrivilege => "<RunLevel>LeastPrivilege</RunLevel>",
+        TaskRunLevel::ImplicitLeastPrivilege => "",
+    };
+    let working_directory = definition
+        .working_directory
+        .as_deref()
+        .map(|value| format!("<WorkingDirectory>{}</WorkingDirectory>", xml_escape(value)))
+        .unwrap_or_default();
+    let priority = match definition.priority {
+        ProbePriority::Present(value) => {
+            format!("<Settings><Priority>{value}</Priority></Settings>")
+        }
+        ProbePriority::Unavailable | ProbePriority::Malformed => String::new(),
+    };
+    format!(
+        "<Task>{description}<Triggers><LogonTrigger><UserId>{}</UserId></LogonTrigger></Triggers><Principals><Principal><UserId>{}</UserId><LogonType>{}</LogonType>{run_level}</Principal></Principals>{priority}<Actions><Exec><Command>{}</Command><Arguments>{}</Arguments>{working_directory}</Exec></Actions></Task>",
+        xml_escape(&definition.trigger_user_id),
+        xml_escape(&definition.principal_sid),
+        xml_escape(&definition.logon_type),
+        xml_escape(&definition.command),
+        xml_escape(&definition.arguments),
+    )
+}
+
+pub fn verify_probe_task_definition(
+    definition: &ProbeTaskDefinition,
+    expected: &ProbeVerifyInput,
+) -> Result<(), RailError> {
+    if definition.principal_sid != expected.expected_sid {
+        return Err(RailError::new("task-principal-sid-mismatch"));
+    }
+    if definition.trigger_user_id != expected.expected_sid {
+        return Err(RailError::new("task-trigger-sid-mismatch"));
+    }
+    if definition.logon_type != "InteractiveToken" {
+        return Err(RailError::new("task-logon-type-mismatch"));
+    }
+    if normalized_command(&definition.command)? != expected.expected_command {
+        return Err(RailError::new("task-command-or-nonce-mismatch"));
+    }
+    if definition.arguments != expected.marker {
+        return Err(RailError::new("task-command-or-nonce-mismatch"));
+    }
+    match definition.description.as_deref().map(str::trim) {
+        Some(value) if value == expected.marker => Ok(()),
+        None | Some("") => Err(RailError::new("marker-missing")),
+        Some(_) => Err(RailError::new("marker-mismatch")),
+    }
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn collect_xml_values(
+    xml: &str,
+) -> Result<std::collections::BTreeMap<String, Vec<String>>, RailError> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+    let mut stack = Vec::new();
+    let mut values = std::collections::BTreeMap::<String, Vec<String>>::new();
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(tag)) => {
+                stack.push(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+                values
+                    .entry(stack.join("/"))
+                    .or_default()
+                    .push(String::new());
+            }
+            Ok(Event::Empty(tag)) => {
+                let mut key = stack.clone();
+                key.push(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+                values.entry(key.join("/")).or_default().push(String::new());
+            }
+            Ok(Event::End(_)) => {
+                stack.pop();
+            }
+            Ok(Event::Text(text)) => {
+                if stack.is_empty() {
+                    let value = text
+                        .decode()
+                        .map_err(|_| RailError::new("task-xml-invalid-text"))?;
+                    if value.trim().is_empty() {
+                        continue;
+                    }
+                    return Err(RailError::new("task-xml-text-without-element"));
+                }
+                let key = stack.join("/");
+                let value = text
+                    .decode()
+                    .map_err(|_| RailError::new("task-xml-invalid-text"))?;
+                values
+                    .get_mut(&key)
+                    .and_then(|entries| entries.last_mut())
+                    .ok_or(RailError::new("task-xml-text-without-element"))?
+                    .push_str(&value);
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                if stack.is_empty() {
+                    return Err(RailError::new("task-xml-reference-without-element"));
+                }
+                let key = stack.join("/");
+                let name = reference
+                    .decode()
+                    .map_err(|_| RailError::new("task-xml-invalid-reference"))?;
+                let value = match name.as_ref() {
+                    "quot" => "\"",
+                    "apos" => "'",
+                    "lt" => "<",
+                    "gt" => ">",
+                    "amp" => "&",
+                    _ => return Err(RailError::new("task-xml-unknown-reference")),
+                };
+                values
+                    .get_mut(&key)
+                    .and_then(|entries| entries.last_mut())
+                    .ok_or(RailError::new("task-xml-reference-without-element"))?
+                    .push_str(value);
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => return Err(RailError::new("task-xml-malformed")),
+            _ => {}
+        }
+    }
+    Ok(values)
+}
+
+fn probe_xml_field(
+    values: &std::collections::BTreeMap<String, Vec<String>>,
+    suffix: &str,
+    required: bool,
+    skip_location_check: bool,
+) -> Result<Option<String>, RailError> {
+    let canonical = format!("Task/{suffix}");
+    let field = suffix
+        .rsplit('/')
+        .next()
+        .ok_or(RailError::new("task-xml-missing-required-field"))?;
+    if !skip_location_check
+        && values
+            .iter()
+            .filter(|(key, _)| key.rsplit('/').next() == Some(field))
+            .any(|(key, _)| key.as_str() != canonical)
+    {
+        return Err(RailError::new("task-xml-security-field-location-mismatch"));
+    }
+    let entries = values
+        .get(&canonical)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if entries.len() > 1 {
+        return Err(RailError::new("task-xml-duplicate-field"));
+    }
+    match entries.first() {
+        Some(value) => Ok(Some((*value).clone())),
+        None if required => Err(RailError::new("task-xml-missing-required-field")),
+        None => Ok(None),
+    }
+}
+
 fn parse_scheduler_result(value: &str) -> Option<u32> {
     let trimmed = value.trim();
     if let Some(hex) = trimmed.strip_prefix("0x") {
@@ -1002,5 +1741,759 @@ mod tests {
             recovery_decision(Some(&lease), true, false),
             RecoveryDecision::FailClosed
         );
+    }
+
+    const PROBE_SID: &str = "S-1-5-21-100";
+    const PROBE_NONCE: &str = "ABCDEFGH23456789ABCDEFGH23456789";
+    const PROBE_EXE: &str = r"C:\probe.exe";
+
+    fn probe_marker_value() -> String {
+        probe_marker(PROBE_NONCE)
+    }
+
+    fn probe_definition() -> ProbeTaskDefinition {
+        ProbeTaskDefinition {
+            principal_sid: PROBE_SID.to_owned(),
+            logon_type: "InteractiveToken".to_owned(),
+            run_level: TaskRunLevel::ExplicitLeastPrivilege,
+            command: PROBE_EXE.to_owned(),
+            arguments: probe_marker_value(),
+            working_directory: None,
+            description: Some(probe_marker_value()),
+            trigger_user_id: PROBE_SID.to_owned(),
+            priority: ProbePriority::Present(7),
+        }
+    }
+
+    fn probe_verify_input() -> ProbeVerifyInput {
+        ProbeVerifyInput {
+            expected_sid: PROBE_SID.to_owned(),
+            expected_command: PROBE_EXE.to_owned(),
+            marker: probe_marker_value(),
+        }
+    }
+
+    fn probe_error(diagnostic: &str) -> ProbeApiError {
+        ProbeApiError {
+            space: ProbeApiErrorSpace::Win32,
+            code: 5,
+            diagnostic: diagnostic.to_owned(),
+        }
+    }
+
+    fn base_probe_report(token: ProbeTokenSection) -> OnlogonProbeReport {
+        OnlogonProbeReport {
+            schema: PROBE_SCHEMA.to_owned(),
+            outcome: ProbeOutcome::DefinitionUnverified,
+            nonce: PROBE_NONCE.to_owned(),
+            marker: probe_marker_value(),
+            xml_task_name: probe_xml_task_name(PROBE_NONCE),
+            com_folder_path: probe_com_folder_path(PROBE_NONCE),
+            token,
+            xml: ProbeXmlSection::skipped(),
+            com: ProbeComSection::skipped(),
+        }
+    }
+
+    fn default_token_passed() -> ProbeTokenSection {
+        ProbeTokenSection {
+            elevation_type: TokenElevationClass::Default,
+            elevated: false,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::passed(),
+        }
+    }
+
+    fn serialize_outcome(report: &OnlogonProbeReport) -> serde_json::Value {
+        serde_json::to_value(report).expect("report serializes")
+    }
+
+    fn assert_stage_resolution_invariants(report: &OnlogonProbeReport) {
+        let stages = [
+            &report.token.stage,
+            &report.xml.create,
+            &report.xml.definition,
+            &report.xml.cleanup,
+            &report.com.folder_create,
+            &report.com.register,
+            &report.com.definition,
+            &report.com.cleanup,
+        ];
+        for stage in stages {
+            if stage_requires_resolution_action(stage) {
+                assert!(stage.resolution_action.is_some());
+            } else {
+                assert!(stage.resolution_action.is_none());
+            }
+        }
+        let acl = &report.com.folder_acl;
+        if matches!(
+            acl.status,
+            ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+        ) {
+            assert!(acl.resolution_action.is_some());
+        } else {
+            assert!(acl.resolution_action.is_none());
+        }
+    }
+
+    #[test]
+    fn probe_xml_parser_accepts_onlogon_fixture() {
+        let parsed = parse_probe_task_xml(&render_probe_task_xml(&probe_definition()))
+            .expect("parses probe fixture");
+        assert_eq!(parsed.principal_sid, PROBE_SID);
+        assert_eq!(parsed.trigger_user_id, PROBE_SID);
+        assert_eq!(parsed.arguments, probe_marker_value());
+        assert_eq!(
+            parsed.description.as_deref(),
+            Some(probe_marker_value().as_str())
+        );
+        assert_eq!(parsed.priority, ProbePriority::Present(7));
+        assert_eq!(parsed.run_level, TaskRunLevel::ExplicitLeastPrivilege);
+    }
+
+    #[test]
+    fn probe_xml_parser_rejects_non_logon_trigger() {
+        let xml = render_probe_task_xml(&probe_definition())
+            .replacen("<LogonTrigger>", "<TimeTrigger>", 1)
+            .replacen("</LogonTrigger>", "</TimeTrigger>", 1);
+        assert_eq!(
+            parse_probe_task_xml(&xml),
+            Err(RailError::new("task-xml-trigger-set-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_parser_rejects_extra_exec_or_comhandler() {
+        let xml = render_probe_task_xml(&probe_definition()).replacen(
+            "</Exec>",
+            "</Exec><ComHandler><ClassId>x</ClassId></ComHandler>",
+            1,
+        );
+        assert_eq!(
+            parse_probe_task_xml(&xml),
+            Err(RailError::new("task-xml-action-set-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_parser_rejects_userid_outside_principal_or_logon_trigger() {
+        let xml = render_probe_task_xml(&probe_definition()).replacen(
+            "</Task>",
+            "<Unexpected><UserId>wrong</UserId></Unexpected></Task>",
+            1,
+        );
+        assert_eq!(
+            parse_probe_task_xml(&xml),
+            Err(RailError::new("task-xml-security-field-location-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_accepts_bound_marker_and_sids() {
+        assert_eq!(
+            verify_probe_task_definition(&probe_definition(), &probe_verify_input()),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_principal_sid_mismatch() {
+        let mut definition = probe_definition();
+        definition.principal_sid.push('x');
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("task-principal-sid-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_trigger_sid_mismatch() {
+        let mut definition = probe_definition();
+        definition.trigger_user_id.push('x');
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("task-trigger-sid-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_logon_type_not_interactive() {
+        let mut definition = probe_definition();
+        definition.logon_type = "Password".to_owned();
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("task-logon-type-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_run_level_highest() {
+        let xml = render_probe_task_xml(&probe_definition()).replacen(
+            "<RunLevel>LeastPrivilege</RunLevel>",
+            "<RunLevel>HighestAvailable</RunLevel>",
+            1,
+        );
+        assert_eq!(
+            parse_probe_task_xml(&xml),
+            Err(RailError::new("task-run-level-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_command_mismatch() {
+        let mut definition = probe_definition();
+        definition.command.push('x');
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("task-command-or-nonce-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_classifies_missing_description_as_marker_missing() {
+        let mut definition = probe_definition();
+        definition.description = None;
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("marker-missing"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_classifies_wrong_description_as_marker_mismatch() {
+        let mut definition = probe_definition();
+        definition.description = Some("other".to_owned());
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("marker-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_xml_verify_rejects_argument_marker_mismatch() {
+        let mut definition = probe_definition();
+        definition.arguments.push('x');
+        assert_eq!(
+            verify_probe_task_definition(&definition, &probe_verify_input()),
+            Err(RailError::new("task-command-or-nonce-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_priority_present_value() {
+        assert_eq!(
+            parse_probe_task_xml(&render_probe_task_xml(&probe_definition()))
+                .expect("parses")
+                .priority,
+            ProbePriority::Present(7)
+        );
+    }
+
+    #[test]
+    fn probe_priority_absent_is_unavailable() {
+        let mut definition = probe_definition();
+        definition.priority = ProbePriority::Unavailable;
+        assert_eq!(
+            parse_probe_task_xml(&render_probe_task_xml(&definition))
+                .expect("parses")
+                .priority,
+            ProbePriority::Unavailable
+        );
+    }
+
+    #[test]
+    fn probe_priority_malformed_text_or_range() {
+        let xml = render_probe_task_xml(&probe_definition()).replacen(
+            "<Priority>7</Priority>",
+            "<Priority>high</Priority>",
+            1,
+        );
+        assert_eq!(
+            parse_probe_task_xml(&xml).expect("parses").priority,
+            ProbePriority::Malformed
+        );
+        let xml = render_probe_task_xml(&probe_definition()).replacen(
+            "<Priority>7</Priority>",
+            "<Priority>11</Priority>",
+            1,
+        );
+        assert_eq!(
+            parse_probe_task_xml(&xml).expect("parses").priority,
+            ProbePriority::Malformed
+        );
+    }
+
+    #[test]
+    fn probe_priority_view_json_states() {
+        let present = serde_json::to_value(ProbePriorityView::from(ProbePriority::Present(7)))
+            .expect("present");
+        assert_eq!(present["state"], "present");
+        assert_eq!(present["value"], 7);
+        let unavailable = serde_json::to_value(ProbePriorityView::from(ProbePriority::Unavailable))
+            .expect("absent");
+        assert_eq!(unavailable["state"], "unavailable");
+        assert_eq!(unavailable["value"], serde_json::Value::Null);
+        let malformed = serde_json::to_value(ProbePriorityView::from(ProbePriority::Malformed))
+            .expect("malformed");
+        assert_eq!(malformed["state"], "malformed");
+        assert_eq!(malformed["value"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn token_class_maps_microsoft_values() {
+        assert_eq!(
+            classify_token_elevation_type(1),
+            TokenElevationClass::Default
+        );
+        assert_eq!(classify_token_elevation_type(2), TokenElevationClass::Full);
+        assert_eq!(
+            classify_token_elevation_type(3),
+            TokenElevationClass::Limited
+        );
+        assert_eq!(
+            classify_token_elevation_type(0),
+            TokenElevationClass::Unknown
+        );
+        assert_eq!(
+            classify_token_elevation_type(4),
+            TokenElevationClass::Unknown
+        );
+    }
+
+    #[test]
+    fn token_gate_stops_full_and_limited_continues_default() {
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Full, true),
+            Ok(ProbeTokenGate::StopElevated)
+        );
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Limited, false),
+            Ok(ProbeTokenGate::StopFilteredAdmin)
+        );
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Default, false),
+            Ok(ProbeTokenGate::ContinueUnelevated)
+        );
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Unknown, false),
+            Ok(ProbeTokenGate::StopElevated)
+        );
+    }
+
+    #[test]
+    fn token_gate_rejects_full_without_elevated_flag() {
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Full, false),
+            Err(RailError::new("token-elevation-inconsistent"))
+        );
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Limited, true),
+            Err(RailError::new("token-elevation-inconsistent"))
+        );
+        assert_eq!(
+            probe_token_gate(TokenElevationClass::Default, true),
+            Err(RailError::new("token-elevation-inconsistent"))
+        );
+    }
+
+    #[test]
+    fn select_outcome_elevated_and_filtered_admin_from_token_stage() {
+        let mut elevated = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Full,
+            elevated: true,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-full"),
+                ProbeResolutionAction::UseStandardLogon,
+            ),
+        });
+        elevated.outcome = select_probe_outcome(&elevated);
+        assert_eq!(elevated.outcome, ProbeOutcome::ElevatedCreator);
+        assert_eq!(elevated.token.stage.status, ProbeStageStatus::Inconclusive);
+        let mut filtered = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Limited,
+            elevated: false,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-limited"),
+                ProbeResolutionAction::StopFilteredAdmin,
+            ),
+        });
+        filtered.outcome = select_probe_outcome(&filtered);
+        assert_eq!(filtered.outcome, ProbeOutcome::FilteredAdministratorCreator);
+        assert_eq!(filtered.token.stage.status, ProbeStageStatus::Inconclusive);
+    }
+
+    #[test]
+    fn report_json_elevated_creator() {
+        let mut report = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Full,
+            elevated: true,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-full"),
+                ProbeResolutionAction::UseStandardLogon,
+            ),
+        });
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "elevated-creator");
+        assert_eq!(json["token"]["elevation_type"], "full");
+        assert_eq!(json["token"]["stage"]["status"], "inconclusive");
+        assert_eq!(json["xml"]["create"]["status"], "skipped");
+        assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn report_json_filtered_administrator_creator() {
+        let mut report = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Limited,
+            elevated: false,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-limited"),
+                ProbeResolutionAction::StopFilteredAdmin,
+            ),
+        });
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "filtered-administrator-creator");
+        assert_eq!(json["token"]["elevation_type"], "limited");
+        assert_eq!(json["token"]["stage"]["status"], "inconclusive");
+        assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn report_json_registration_refused() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.com.folder_create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "registration-refused");
+        assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn report_json_verified_registration() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.xml.priority = ProbePriority::Present(7).into();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.folder_acl.status = ProbeStageStatus::Passed;
+        report.com.folder_acl.ordinary_mutation = Some(false);
+        report.com.folder_acl.descriptor_source = Some(ProbeDescriptorSource::NamedInfo);
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "verified-registration");
+        assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn report_json_definition_unverified() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::failed(
+            ProbeApiError {
+                space: ProbeApiErrorSpace::Schtasks,
+                code: 0,
+                diagnostic: "marker-mismatch".to_owned(),
+            },
+            ProbeResolutionAction::InspectDefinition,
+        );
+        report.xml.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "definition-unverified");
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn report_json_cleanup_uncertain() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::inconclusive(
+            probe_error("delete did not prove absence"),
+            ProbeResolutionAction::ManualCleanup,
+        );
+        report.outcome = select_probe_outcome(&report);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["outcome"], "cleanup-uncertain");
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn probe_names_are_nonce_fresh_and_disjoint_from_ordinary_owner() {
+        let xml = probe_xml_task_name(PROBE_NONCE);
+        let com = probe_com_folder_path(PROBE_NONCE);
+        let ordinary = task_name(PROBE_NONCE);
+        assert!(xml.starts_with(r"\solstone\probe\onlogon-xml-"));
+        assert!(com.starts_with(r"\solstone\probe\onlogon-com-"));
+        assert_eq!(probe_com_task_name(), "probe");
+        assert_ne!(xml, com);
+        assert!(!xml.contains(r"\journal\"));
+        assert!(!com.contains(r"\journal\"));
+        assert!(ordinary.starts_with(r"\solstone\journal\ordinary-owner-"));
+        assert_ne!(xml, ordinary);
+        assert_ne!(com, ordinary);
+        assert_ne!(probe_xml_task_name("OTHERNONCE23456789ABCDEFGH234567"), xml);
+    }
+
+    #[test]
+    fn schtasks_create_xml_argv_has_no_force_flag() {
+        let argv = schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        assert!(argv.windows(2).any(|pair| pair == ["/Create", "/TN"]));
+        assert!(argv.windows(2).any(|pair| pair == ["/XML", r"C:\a.xml"]));
+        assert!(!argv.iter().any(|arg| arg == "/F"));
+    }
+
+    #[test]
+    fn select_outcome_collision_is_not_verified() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::failed(
+            probe_error("already exists"),
+            ProbeResolutionAction::RetryFreshNonce,
+        );
+        report.com.folder_create = ProbeStage::failed(
+            probe_error("already exists"),
+            ProbeResolutionAction::RetryFreshNonce,
+        );
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn classify_sid_exempts_caller_system_administrators() {
+        assert_eq!(
+            classify_probe_sid("S-1-5-21-100", "S-1-5-21-100"),
+            ProbeSidClass::Caller
+        );
+        assert_eq!(
+            classify_probe_sid("s-1-5-18", "S-1-5-21-100"),
+            ProbeSidClass::LocalSystem
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-19", "S-1-5-21-100"),
+            ProbeSidClass::LocalService
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-20", "S-1-5-21-100"),
+            ProbeSidClass::NetworkService
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-32-544", "S-1-5-21-100"),
+            ProbeSidClass::Administrators
+        );
+    }
+
+    #[test]
+    fn classify_sid_marks_users_authenticated_everyone_interactive_ordinary() {
+        assert_eq!(
+            classify_probe_sid("S-1-5-32-545", "S-1-5-21-100"),
+            ProbeSidClass::OrdinaryGroup
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-11", "S-1-5-21-100"),
+            ProbeSidClass::OrdinaryGroup
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-1-0", "S-1-5-21-100"),
+            ProbeSidClass::OrdinaryGroup
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-4", "S-1-5-21-100"),
+            ProbeSidClass::OrdinaryGroup
+        );
+        assert_eq!(
+            classify_probe_sid("S-1-5-21-999", "S-1-5-21-100"),
+            ProbeSidClass::OrdinaryDistinctUser
+        );
+    }
+
+    #[test]
+    fn folder_ordinary_allow_generic_all_is_non_isolatable() {
+        let entries = [ProbeAclEntry {
+            sid: "S-1-5-32-545".to_owned(),
+            allow: true,
+            access_mask: 0x1000_0000,
+            classification: ProbeSidClass::OrdinaryGroup,
+        }];
+        assert!(folder_allows_ordinary_mutation(&entries));
+    }
+
+    #[test]
+    fn folder_only_caller_system_admin_is_isolatable() {
+        let entries = [
+            ProbeAclEntry {
+                sid: "S-1-5-21-100".to_owned(),
+                allow: true,
+                access_mask: ACE_MUTATION_MASK,
+                classification: ProbeSidClass::Caller,
+            },
+            ProbeAclEntry {
+                sid: "S-1-5-18".to_owned(),
+                allow: true,
+                access_mask: ACE_MUTATION_MASK,
+                classification: ProbeSidClass::LocalSystem,
+            },
+            ProbeAclEntry {
+                sid: "S-1-5-32-544".to_owned(),
+                allow: true,
+                access_mask: ACE_MUTATION_MASK,
+                classification: ProbeSidClass::Administrators,
+            },
+        ];
+        assert!(!folder_allows_ordinary_mutation(&entries));
+    }
+
+    #[test]
+    fn normalize_acl_canonicalizes_sid_case_and_sorts() {
+        let entries = [
+            ProbeAclEntry {
+                sid: "s-1-5-32-544".to_owned(),
+                allow: true,
+                access_mask: 1,
+                classification: ProbeSidClass::Administrators,
+            },
+            ProbeAclEntry {
+                sid: "S-1-5-18".to_owned(),
+                allow: true,
+                access_mask: 1,
+                classification: ProbeSidClass::LocalSystem,
+            },
+        ];
+        let normalized = normalize_probe_acl_entries(&entries);
+        assert_eq!(normalized[0].sid, "S-1-5-18");
+        assert_eq!(normalized[1].sid, "S-1-5-32-544");
+        assert_eq!(normalized[1].classification, ProbeSidClass::Administrators);
+    }
+
+    #[test]
+    fn select_outcome_folder_acl_inconclusive_without_descriptor() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.folder_acl = ProbeFolderAclStage {
+            status: ProbeStageStatus::Inconclusive,
+            error: Some(probe_error("named-info access denied")),
+            resolution_action: Some(ProbeResolutionAction::RepairSchedulerAccess),
+            descriptor_source: None,
+            sddl: None,
+            ordinary_mutation: None,
+        };
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+    }
+
+    #[test]
+    fn select_outcome_ordinary_mutation_sets_isolate_folder_acl_action() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.folder_acl = ProbeFolderAclStage {
+            status: ProbeStageStatus::Failed,
+            error: Some(probe_error("ordinary mutation")),
+            resolution_action: Some(ProbeResolutionAction::IsolateFolderAcl),
+            descriptor_source: Some(ProbeDescriptorSource::ComSddl),
+            sddl: Some("D:(A;;FA;;;BU)".to_owned()),
+            ordinary_mutation: Some(true),
+        };
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        assert_eq!(
+            report.com.folder_acl.resolution_action,
+            Some(ProbeResolutionAction::IsolateFolderAcl)
+        );
+        assert_eq!(report.outcome, ProbeOutcome::VerifiedRegistration);
+    }
+
+    #[test]
+    fn failed_or_inconclusive_stage_requires_resolution_action() {
+        let mut report = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Full,
+            elevated: true,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-full"),
+                ProbeResolutionAction::UseStandardLogon,
+            ),
+        });
+        report.outcome = select_probe_outcome(&report);
+        assert_stage_resolution_invariants(&report);
+        let mut refused = base_probe_report(default_token_passed());
+        refused.xml.create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        refused.com.folder_acl = ProbeFolderAclStage {
+            status: ProbeStageStatus::Inconclusive,
+            error: Some(probe_error("no descriptor")),
+            resolution_action: Some(ProbeResolutionAction::RepairSchedulerAccess),
+            descriptor_source: None,
+            sddl: None,
+            ordinary_mutation: None,
+        };
+        refused.outcome = select_probe_outcome(&refused);
+        assert_stage_resolution_invariants(&refused);
+    }
+
+    #[test]
+    fn passed_and_skipped_stages_have_null_resolution_action() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.folder_acl.status = ProbeStageStatus::Passed;
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        assert_stage_resolution_invariants(&report);
+        let skipped = base_probe_report(ProbeTokenSection {
+            elevation_type: TokenElevationClass::Full,
+            elevated: true,
+            session: 1,
+            owner_sid: PROBE_SID.to_owned(),
+            stage: ProbeStage::inconclusive(
+                probe_error("token-elevation-type-full"),
+                ProbeResolutionAction::UseStandardLogon,
+            ),
+        });
+        assert_stage_resolution_invariants(&skipped);
+        assert!(skipped.xml.create.resolution_action.is_none());
+        assert!(skipped.com.register.resolution_action.is_none());
     }
 }
