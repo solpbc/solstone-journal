@@ -361,11 +361,13 @@ async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
     // full host suite it can legitimately lose several scheduler turns while
     // other native fixtures are compiling and exiting. On macOS, preserve the
     // finite hard-failure bound but amortize a dilated scheduler interval over
-    // a longer positive observation window.
+    // a longer positive observation window. Linux full CI uses protected
+    // concurrent shards too, so it needs a bounded observation window that
+    // exceeds the observed recycle time under that load.
     #[cfg(target_os = "macos")]
     let iterations = 4_800;
     #[cfg(not(target_os = "macos"))]
-    let iterations = 2_400;
+    let iterations = 4_800;
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
         Duration::from_millis(10),
