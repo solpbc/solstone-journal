@@ -105,10 +105,10 @@ fn one_shot_child_dies_with_the_caller_process_group() {
 
     let deadline = Instant::now() + Duration::from_secs(3);
     let child_pid = loop {
-        if let Ok(text) = fs::read_to_string(&pidfile) {
-            if let Ok(pid) = text.trim().parse::<i32>() {
-                break pid;
-            }
+        if let Ok(text) = fs::read_to_string(&pidfile)
+            && let Ok(pid) = text.trim().parse::<i32>()
+        {
+            break pid;
         }
         if Instant::now() >= deadline {
             let _ = babysitter.kill();
