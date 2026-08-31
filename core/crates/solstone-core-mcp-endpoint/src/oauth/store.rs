@@ -1011,12 +1011,13 @@ pub(crate) fn set_test_now(timestamp: Option<i64>) {
 mod tests {
     use std::fs;
 
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use chrono::{TimeZone, Utc};
 
     use super::{
-        AUTH_CODE_TTL_SECS, MAX_CLIENTS_PER_SOURCE, MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE,
-        OAuthStore, OAuthStoreError, PENDING_TRANSACTION_TTL_SECS, TEST_MAX_STATE_BYTES, TEST_NOW,
-        sha256_b64,
+        AUTH_CODE_TTL_SECS, CLIENT_UNUSED_TTL_SECS, MAX_CLIENTS_PER_SOURCE, MAX_GRANTS,
+        MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, OAuthStore, OAuthStoreError, OAuthStoreFile,
+        PENDING_TRANSACTION_TTL_SECS, StoredGrant, TEST_MAX_STATE_BYTES, TEST_NOW, sha256_b64,
     };
     use crate::tokens::{RandomSource, RandomSourceError};
 
@@ -1264,6 +1265,16 @@ mod tests {
                 "pkce-verifier",
             ),
             Err(OAuthStoreError::BindingMismatch)
+        ));
+        assert!(matches!(
+            store.redeem_authorization_code(
+                &issued.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+            ),
+            Err(OAuthStoreError::InvalidToken)
         ));
     }
 
@@ -1536,26 +1547,78 @@ mod tests {
     }
 
     #[test]
+    fn unused_clients_prune_after_ttl_used_clients_survive() {
+        let _guard = NowGuard;
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let start = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(start.timestamp());
+        store
+            .register_client(
+                "https://client.example/unused.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.8",
+            )
+            .unwrap();
+        let used = seed_client(&store, "192.0.2.9");
+        redeem_access(&store, &used, "https://client.example/cimd.json");
+        set_now(start.timestamp() + CLIENT_UNUSED_TTL_SECS + 1);
+        store.generate_pairing_code().unwrap();
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/unused.json")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/cimd.json")
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(store.list_clients().unwrap().len(), 1);
+    }
+
+    #[test]
     fn grants_are_not_evicted_at_quota() {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let mut last_id = String::new();
-        for index in 0..3 {
-            let pairing = store.generate_pairing_code().unwrap();
-            let transaction = open_transaction(&store, &client, &format!("198.51.100.{index}"));
-            let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
-            last_id = store
-                .redeem_authorization_code(
-                    &issued.code,
-                    "https://client.example/cimd.json",
-                    "http://127.0.0.1/callback",
-                    "https://mcp.test/mcp",
-                    "pkce-verifier",
-                )
-                .unwrap()
-                .token_id;
-        }
-        assert!(!last_id.is_empty());
+        let pairing = store.generate_pairing_code().unwrap();
+        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let mut file: OAuthStoreFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let now = Utc.timestamp_opt(4_000_000_000, 0).unwrap();
+        let token_bytes = [0x11_u8; 32];
+        let access = URL_SAFE_NO_PAD.encode(token_bytes);
+        let verifier = sha256_b64(&token_bytes);
+        file.grants = (0..MAX_GRANTS)
+            .map(|index| StoredGrant {
+                id: format!("grant-{index}"),
+                client_record_id: client.clone(),
+                client_id: "https://client.example/cimd.json".to_owned(),
+                access_verifier: verifier.clone(),
+                refresh_verifier: verifier.clone(),
+                refresh_generation: 0,
+                revocation_generation: 0,
+                access_expires_at: now,
+                refresh_expires_at: now,
+                created_at: now,
+            })
+            .collect();
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+        assert!(matches!(
+            store.redeem_authorization_code(
+                &issued.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+            ),
+            Err(OAuthStoreError::Quota)
+        ));
+        store.verify_access_token(&access).unwrap();
     }
 }

@@ -644,7 +644,7 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
         }
     }
     assert_eq!(source_files, 102, "classified source discovery drifted");
-    assert_eq!(routine_tests, 314, "routine annotation census drifted");
+    assert_eq!(routine_tests, 317, "routine annotation census drifted");
     assert_eq!(full_tests, 463, "classified full annotation census drifted");
 
     let mut integration_files = 0;
@@ -667,7 +667,7 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
         integration_tests, 65,
         "integration annotation census drifted"
     );
-    assert_eq!(routine_tests + full_tests + integration_tests, 842);
+    assert_eq!(routine_tests + full_tests + integration_tests, 845);
 
     let external_full_files = [
         ("solstone-core-sol-link", "http_tests.rs"),

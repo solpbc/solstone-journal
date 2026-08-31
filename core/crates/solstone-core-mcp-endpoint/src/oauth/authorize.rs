@@ -7,10 +7,12 @@ use std::net::IpAddr;
 
 use tokio::sync::watch;
 
-use super::cimd::{CimdAttemptIo, canonicalize_ip};
-use super::dcr::{
-    CimdRegistrationError, resolve_or_register_cimd_client, resolve_or_register_cimd_client_with_io,
-};
+#[cfg(test)]
+use super::cimd::CimdAttemptIo;
+use super::cimd::canonicalize_ip;
+#[cfg(test)]
+use super::dcr::resolve_or_register_cimd_client_with_io;
+use super::dcr::{CimdRegistrationError, resolve_or_register_cimd_client};
 use super::rate_limit::PairingFailureRecord;
 use super::redirect::{RedirectHost, parse_redirect_uri, redirect_uri_is_allowed};
 use super::store::{IssuedAuthorization, OAuthStoreError, RegisteredClient};
@@ -20,6 +22,7 @@ use super::{
     parse_urlencoded_pairs, reject_non_identity_encoding,
 };
 use crate::http1::{HttpRequest, HttpResponse};
+#[cfg(test)]
 use crate::tokens::RandomSource;
 
 const AUTHORIZE_CSP: &str = "default-src 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -45,6 +48,7 @@ pub(crate) async fn get_authorize(
 }
 
 /// GET `/authorize` with injected CIMD I/O.
+#[cfg(test)]
 pub(crate) async fn get_authorize_with_io<IO: CimdAttemptIo>(
     request: &HttpRequest,
     source: IpAddr,
@@ -152,6 +156,7 @@ pub(crate) fn post_authorize(
         Ok(generation) => generation,
         Err(_) => return local_error("authorization is temporarily unavailable"),
     };
+    oauth.pairing_limiter.prune_generation(generation);
     if oauth.pairing_limiter.is_limited(source, generation) {
         return html_status(
             429,
@@ -196,6 +201,7 @@ pub(crate) fn post_authorize(
     }
 }
 
+#[cfg(test)]
 async fn resolve_authorize_client<IO: CimdAttemptIo>(
     oauth: &OAuthRuntime,
     source: IpAddr,
@@ -892,5 +898,67 @@ mod tests {
         );
         assert_eq!(encoded.status, 400);
         assert!(!journal.path().join("mcp-endpoint/oauth.json").exists());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_ignores_spoofed_redirect_and_state_fields() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let get = get_with(
+            &oauth,
+            FakeIo::ok("fixture"),
+            &authorize_query(&[("state", "bound")]),
+        )
+        .await;
+        let transaction_id = hidden_transaction_id(&body_text(&get));
+        let response = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code={}&redirect_uri={}&state=spoofed",
+                query_value_encode(&transaction_id),
+                query_value_encode(&pairing.code),
+                query_value_encode("http://127.0.0.1/evil"),
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(response.status, 302);
+        let location = header(&response, "Location").unwrap();
+        assert!(location.starts_with(REDIRECT));
+        assert!(!location.contains("127.0.0.1/evil"));
+        assert!(location.contains(&format!("state={}", query_value_encode("bound"))));
+        assert!(!location.contains("state=spoofed"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_prunes_stale_generation_limiter_buckets() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+        oauth.store.generate_pairing_code().unwrap();
+        let old_generation = oauth.store.pairing_generation().unwrap();
+        let overflow = IpAddr::V4(Ipv4Addr::from(u32::MAX));
+        for index in 0..u32::MAX {
+            if oauth.pairing_limiter.is_limited(overflow, old_generation) {
+                break;
+            }
+            oauth
+                .pairing_limiter
+                .record_failure(IpAddr::V4(Ipv4Addr::from(index)), old_generation);
+        }
+        assert!(oauth.pairing_limiter.is_limited(overflow, old_generation));
+
+        oauth.store.generate_pairing_code().unwrap();
+        let new_generation = oauth.store.pairing_generation().unwrap();
+        assert_ne!(new_generation, old_generation);
+
+        let response = post_authorize(
+            &post_request("transaction_id=x&pairing_code=00000000"),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(response.status, 400);
+        assert!(!oauth.pairing_limiter.is_limited(overflow, old_generation));
+        let fresh = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9));
+        assert!(!oauth.pairing_limiter.is_limited(fresh, new_generation));
     }
 }
