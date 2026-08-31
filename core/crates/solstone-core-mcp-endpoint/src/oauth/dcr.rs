@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Serialize;
 use tokio::sync::watch;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 use super::cimd::CimdAttemptIo;
 #[cfg(any(test, feature = "full-tests"))]
 use super::cimd::fetch_cimd_with_io;
@@ -91,11 +91,7 @@ pub(crate) async fn register(
     }
 }
 
-#[cfg(test)]
-#[cfg_attr(
-    feature = "full-tests",
-    expect(dead_code, reason = "default-feature tests exercise injected CIMD I/O")
-)]
+#[cfg(all(test, not(feature = "full-tests")))]
 pub(crate) async fn register_with_io<IO: CimdAttemptIo>(
     request: &HttpRequest,
     source: IpAddr,
@@ -265,11 +261,7 @@ pub(crate) async fn resolve_or_register_cimd_client(
     }
 }
 
-#[cfg(test)]
-#[cfg_attr(
-    feature = "full-tests",
-    expect(dead_code, reason = "default-feature tests exercise injected CIMD I/O")
-)]
+#[cfg(all(test, not(feature = "full-tests")))]
 pub(crate) async fn resolve_or_register_cimd_client_with_io<IO: CimdAttemptIo>(
     oauth: &OAuthRuntime,
     source: IpAddr,
