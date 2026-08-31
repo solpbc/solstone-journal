@@ -7,10 +7,10 @@ use std::net::IpAddr;
 
 use tokio::sync::watch;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 use super::cimd::CimdAttemptIo;
 use super::cimd::canonicalize_ip;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 use super::dcr::resolve_or_register_cimd_client_with_io;
 use super::dcr::{CimdRegistrationError, resolve_or_register_cimd_client};
 use super::rate_limit::PairingFailureRecord;
@@ -22,7 +22,7 @@ use super::{
     parse_urlencoded_pairs, reject_non_identity_encoding,
 };
 use crate::http1::{HttpRequest, HttpResponse};
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 use crate::tokens::RandomSource;
 
 const AUTHORIZE_CSP: &str = "default-src 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -48,7 +48,7 @@ pub(crate) async fn get_authorize(
 }
 
 /// GET `/authorize` with injected CIMD I/O.
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 pub(crate) async fn get_authorize_with_io<IO: CimdAttemptIo>(
     request: &HttpRequest,
     source: IpAddr,
@@ -201,7 +201,7 @@ pub(crate) fn post_authorize(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 async fn resolve_authorize_client<IO: CimdAttemptIo>(
     oauth: &OAuthRuntime,
     source: IpAddr,

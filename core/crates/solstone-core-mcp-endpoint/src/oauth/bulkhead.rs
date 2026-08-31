@@ -112,13 +112,13 @@ impl CimdBulkhead {
         self.notify.notify_waiters();
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn debug_state(&self) -> (usize, usize) {
         let state = lock(&self.inner);
         (state.global, state.per_source.len())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn debug_held(&self, source: IpAddr) -> usize {
         let source = canonicalize_ip(source);
         lock(&self.inner)

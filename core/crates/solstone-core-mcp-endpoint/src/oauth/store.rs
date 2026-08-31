@@ -668,7 +668,7 @@ impl OAuthStore {
     }
 
     /// Register a CIMD client, returning the existing record when the URL matches.
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn register_client(
         &self,
         client_id: &str,
@@ -756,7 +756,7 @@ impl OAuthStore {
     }
 
     /// Invalidate outstanding tokens for one client without deleting its record.
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn revoke_client(&self, client_record_id: &str) -> Result<(), OAuthStoreError> {
         self.mutate(|store, _now| {
             let client = store
