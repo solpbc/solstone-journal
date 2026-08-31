@@ -118,11 +118,7 @@ pub fn build_fixture(label: &str, version: &str) -> Fixture {
 
 fn publisher_identity() -> &'static (PublicKey, PathBuf, PathBuf) {
     PUBLISHER_IDENTITY.get_or_init(|| {
-        let root = PathBuf::from(format!(
-            "/var/tmp/solstone-distribution-publisher-identity-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).expect("publisher identity directory");
+        let root = scratch("publisher-identity");
         write_identity(&root, PASSPHRASE)
     })
 }
