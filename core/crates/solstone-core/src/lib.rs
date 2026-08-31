@@ -7,7 +7,10 @@ pub mod installation_context;
 pub mod supervisor;
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-pub use solstone_core_mcp_endpoint::{McpEndpointTlsService, mcp_endpoint_server_config};
+pub use solstone_core_mcp_endpoint::{
+    McpEndpointTlsService, McpServiceError, TokenStore, TokenStoreError,
+    mcp_endpoint_server_config, run_native_service_with_hosted_parent,
+};
 
 #[cfg(all(test, unix, feature = "journal-mcp-endpoint"))]
 mod mcp_endpoint_public_surface_tests {

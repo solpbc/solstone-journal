@@ -255,6 +255,7 @@ pub(crate) fn service_name(service: HostedServiceKind) -> &'static str {
         HostedServiceKind::Sense => "sense",
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
+        HostedServiceKind::Mcp => "mcp",
     }
 }
 

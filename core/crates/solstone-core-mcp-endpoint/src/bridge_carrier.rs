@@ -125,7 +125,7 @@ impl BridgeAuthority {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     fn fixture(
         token: &str,
         hostname: &str,
@@ -384,7 +384,7 @@ fn map_pop_error(_: McpBridgePopError) -> McpBridgeCarrierError {
     McpBridgeCarrierError::Pop
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use base64::Engine as _;
     use ring::signature::{Ed25519KeyPair, KeyPair as _};

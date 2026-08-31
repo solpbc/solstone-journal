@@ -32,16 +32,16 @@ use solstone_core_cli::{
     IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE,
-    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
-    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
-    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand,
-    TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
-    render_service_diagnostic, version_line,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
+    MCP_USAGE, McpCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP,
+    SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
+    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP,
+    START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
+    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
+    SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
+    TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
+    TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -62,6 +62,8 @@ mod service;
 mod service_logs;
 mod settings;
 use solstone_core::supervisor;
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core::{TokenStore, TokenStoreError};
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
     DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
@@ -85,6 +87,8 @@ use solstone_core_journal::{
     ensure_journal_dir_with_label, read_config_journal,
     resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
@@ -171,6 +175,7 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
         HostedServiceKind::Sense => "sense",
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
+        HostedServiceKind::Mcp => "mcp",
     }
 }
 
@@ -439,6 +444,16 @@ fn main() -> ExitCode {
         }
         Ok(Command::SplHelp) => {
             print!("{SPL_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Mcp(command)) => run_mcp_process(command),
+        Ok(Command::McpUsage(error)) => {
+            eprint!("{MCP_USAGE}");
+            eprintln!("journal mcp: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::McpHelp) => {
+            print!("{MCP_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::Sense(options)) => run_sense(options),
@@ -4696,6 +4711,174 @@ fn commit_config_error_exit(error: &CommitConfigError) -> u8 {
 fn run_spl_process(command: SplCommand) -> ExitCode {
     match command {
         SplCommand::Service(options) => run_spl_service(options),
+    }
+}
+
+fn run_mcp_process(command: McpCommand) -> ExitCode {
+    match command {
+        McpCommand::Service => run_mcp_service(),
+        McpCommand::Status => run_mcp_status(),
+        McpCommand::Token(command) => run_mcp_token(command),
+    }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_service() -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let service_journal = journal.path.clone();
+    run_hosted_service(&journal.path, HostedServiceKind::Mcp, move |parent| {
+        match solstone_core::run_native_service_with_hosted_parent(service_journal, parent) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("mcp service failed: {}", error.class());
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
+        }
+    })
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_service() -> ExitCode {
+    eprintln!("journal mcp service is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_status() -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+
+    let mut exit = ExitCode::SUCCESS;
+    let capability = match read_journal_config(&journal.path) {
+        Ok(read) => match mcp_endpoint_capability(&read) {
+            Ok(McpEndpointCapability::Enabled) => "enabled".to_owned(),
+            Ok(McpEndpointCapability::Disabled) => "disabled".to_owned(),
+            Err(error) => {
+                eprintln!("journal mcp status: MCP capability configuration is invalid: {error:?}");
+                exit = ExitCode::from(EXIT_UNAVAILABLE);
+                "error".to_owned()
+            }
+        },
+        Err(error) => {
+            eprintln!("journal mcp status: could not read MCP capability configuration: {error}");
+            exit = ExitCode::from(EXIT_UNAVAILABLE);
+            "error".to_owned()
+        }
+    };
+
+    let token_count = match TokenStore::open(&journal.path).list() {
+        Ok(tokens) => tokens.len().to_string(),
+        Err(error) => {
+            eprintln!("journal mcp status: could not read bearer-token ledger: {error}");
+            exit = ExitCode::from(token_store_error_exit(&error));
+            "unavailable".to_owned()
+        }
+    };
+
+    println!("MCP capability/config status only; this does not report service liveness.");
+    println!("capability compiled in: true");
+    println!("capability: {capability}");
+    println!("token count: {token_count}");
+    exit
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_status() -> ExitCode {
+    eprintln!("journal mcp status is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = TokenStore::open(&journal.path);
+
+    match command {
+        McpTokenCommand::Create { label } => match store.create(&label) {
+            Ok(created) => {
+                println!("Created bearer token for label {:?}.", created.label);
+                println!(
+                    "Save this token now. It will not be shown again and cannot be recovered:"
+                );
+                println!("{}", created.token);
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("create", &error),
+        },
+        McpTokenCommand::List => match store.list() {
+            Ok(tokens) => {
+                for token in tokens {
+                    println!("{}\t{}", token.label, token.created_at.to_rfc3339());
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("list", &error),
+        },
+        McpTokenCommand::Revoke { label } => match store.revoke(&label) {
+            Ok(()) => {
+                println!("Revoked bearer token for label {label:?}.");
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_token(_command: McpTokenCommand) -> ExitCode {
+    eprintln!("journal mcp token management is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCode {
+    match error {
+        TokenStoreError::InvalidLabel(error) => {
+            eprintln!("journal mcp token {operation}: invalid label: {error}");
+        }
+        TokenStoreError::DuplicateLabel { label } => {
+            eprintln!(
+                "journal mcp token {operation}: a bearer token already exists for label {label:?}"
+            );
+        }
+        TokenStoreError::NotFound { label } => {
+            eprintln!("journal mcp token {operation}: no bearer token exists for label {label:?}");
+        }
+        _ => {
+            eprintln!("journal mcp token {operation}: {error}");
+        }
+    }
+    ExitCode::from(token_store_error_exit(error))
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
+    match error {
+        TokenStoreError::InvalidLabel(_) | TokenStoreError::DuplicateLabel { .. } => EXIT_USAGE,
+        TokenStoreError::NotFound { .. } | TokenStoreError::InvalidToken => EXIT_DATAERR,
+        TokenStoreError::Lock(_) => EXIT_TEMPFAIL,
+        TokenStoreError::Directory(_) | TokenStoreError::Read { .. } => EXIT_IOERR,
+        TokenStoreError::Write(_) => EXIT_CANTCREAT,
+        TokenStoreError::Randomness
+        | TokenStoreError::Malformed { .. }
+        | TokenStoreError::UnsupportedSchema { .. } => EXIT_UNAVAILABLE,
     }
 }
 

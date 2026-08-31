@@ -190,7 +190,7 @@ fn decode_canonical_nonce(value: &str) -> Result<[u8; BRIDGE_NONCE_BYTES], McpBr
     decoded.try_into().map_err(|_| McpBridgePopError::Nonce)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{
         McpBridgePopError, initial_registration_frame, parse_challenge_frame,

@@ -1141,7 +1141,7 @@ async fn write_mux_frames<W: AsyncWrite + Unpin>(
     writer.flush().await.map_err(|_| McpBridgeCarrierError::Io)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
     use spl_core::frame::FLAG_OPEN;

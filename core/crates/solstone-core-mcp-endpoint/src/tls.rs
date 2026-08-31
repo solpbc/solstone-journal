@@ -310,12 +310,12 @@ impl McpEndpointTlsService {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     fn empty_for_test(hostname: String) -> Self {
         Self::empty(hostname, None, false)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     fn install_ordinary_for_test(&self, key: Arc<CertifiedKey>) {
         self.resolver
             .ordinary
@@ -870,7 +870,7 @@ fn is_only_acme_alpn(protocols: &[&[u8]]) -> bool {
     protocols == [ACME_TLS_ALPN]
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::fs;
     use std::io::Cursor;

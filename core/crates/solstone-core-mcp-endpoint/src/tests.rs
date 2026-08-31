@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, not(feature = "full-tests")))]
+
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
@@ -2273,7 +2275,20 @@ fn is_cfg_test(attributes: &[syn::Attribute]) -> bool {
     attributes.iter().any(|attribute| {
         attribute.path().is_ident("cfg")
             && match &attribute.meta {
-                syn::Meta::List(list) => list.tokens.to_string().trim() == "test",
+                syn::Meta::List(list) => {
+                    let condition = list
+                        .tokens
+                        .to_string()
+                        .chars()
+                        .filter(|character| !character.is_whitespace())
+                        .collect::<String>();
+                    matches!(
+                        condition.as_str(),
+                        "test"
+                            | "all(test,not(feature=\"full-tests\"))"
+                            | "all(test,feature=\"full-tests\")"
+                    )
+                }
                 _ => false,
             }
     })
@@ -2538,13 +2553,16 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
         path == root.join("tests.rs"),
         path == root.join("account_wire.rs")
             || path == root.join("bridge_carrier.rs")
-            || path == root.join("bridge_session.rs"),
+            || path == root.join("bridge_session.rs")
+            || path == root.join("http1.rs"),
         if path == root.join("account_wire.rs") {
             Some("write_account_request")
         } else if path == root.join("bridge_carrier.rs") {
             Some("write_bridge_control")
         } else if path == root.join("bridge_session.rs") {
             Some("write_mux_frames")
+        } else if path == root.join("http1.rs") {
+            Some("write_response")
         } else {
             None
         },

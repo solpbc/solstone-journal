@@ -396,7 +396,7 @@ struct McpAccountResponseWire {
     bridge_address: String,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 impl McpAccountResponseWire {
     fn token(&self) -> &str {
         &self.token
@@ -1385,7 +1385,7 @@ fn validate_account_registration(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 fn validate_fixture_account_registration(
     wire: McpAccountResponseWire,
     fixture_instance_id: &str,
@@ -1628,7 +1628,7 @@ fn is_v1_denied_ipv4(address: std::net::Ipv4Addr) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::cell::Cell;
     use std::collections::VecDeque;

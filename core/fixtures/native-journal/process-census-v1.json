@@ -39,6 +39,7 @@
     { "token": "cortex", "module": "solstone.think.cortex", "preset_argv": [], "surface": "service" },
     { "token": "talent", "module": "solstone.think.talent_cli", "preset_argv": [], "surface": "service" },
     { "token": "spl", "module": "solstone.think.spl_native", "preset_argv": [], "surface": "service" },
+    { "token": "mcp", "module": "solstone.think.mcp_endpoint", "preset_argv": [], "surface": "service" },
     { "token": "navigate", "module": "solstone.think.tools.navigate", "preset_argv": [], "surface": "service" },
     { "token": "identity", "module": "solstone.think.tools.sol", "preset_argv": [], "surface": "service" },
     { "token": "engage", "module": "solstone.think.engage", "preset_argv": [], "surface": "service" },

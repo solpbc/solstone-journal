@@ -16,6 +16,10 @@ use serde::Serialize;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_journal_config::read_direct_door_port;
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core_journal_config::{
+    McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
+};
 use solstone_core_journal_config_write::persist_direct_door_port;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 use solstone_core_local::plan::Platform;
@@ -256,6 +260,8 @@ pub(crate) enum AppService {
     Sense,
     Cortex,
     Spl,
+    #[cfg_attr(not(all(unix, feature = "journal-mcp-endpoint")), allow(dead_code))]
+    Mcp,
 }
 
 impl AppService {
@@ -265,6 +271,7 @@ impl AppService {
             Self::Sense => "sense",
             Self::Cortex => "cortex",
             Self::Spl => "spl",
+            Self::Mcp => "mcp",
         }
     }
 
@@ -274,6 +281,7 @@ impl AppService {
             Self::Sense => HostedServiceKind::Sense,
             Self::Cortex => HostedServiceKind::Cortex,
             Self::Spl => HostedServiceKind::Spl,
+            Self::Mcp => HostedServiceKind::Mcp,
         }
     }
 
@@ -288,6 +296,7 @@ impl AppService {
             Self::Sense => argv.push("sense".to_owned()),
             Self::Cortex => argv.push("cortex".to_owned()),
             Self::Spl => argv.push("spl".to_owned()),
+            Self::Mcp => argv.extend(["mcp".to_owned(), "service".to_owned()]),
         }
         argv
     }
@@ -968,25 +977,42 @@ fn app_processes(
     fast_fixture_timing: bool,
 ) -> Vec<ManagedAppProcess> {
     let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
-    [
+    let services = vec![
         (AppService::Convey, !remote && !options.no_convey),
         (AppService::Sense, !remote),
         (AppService::Cortex, !remote && !options.no_cortex),
         (AppService::Spl, !remote && !options.no_spl),
-    ]
-    .into_iter()
-    .map(|(service, enabled)| {
-        ManagedAppProcess::new(
-            service,
-            enabled,
-            journal,
-            fixture_binary,
-            journal_binary,
-            convey_port,
-            fast_fixture_timing,
-        )
-    })
-    .collect()
+    ];
+    #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+    let services = {
+        let mut services = services;
+        if !remote && mcp_endpoint_enabled(journal) {
+            services.push((AppService::Mcp, true));
+        }
+        services
+    };
+    services
+        .into_iter()
+        .map(|(service, enabled)| {
+            ManagedAppProcess::new(
+                service,
+                enabled,
+                journal,
+                fixture_binary,
+                journal_binary,
+                convey_port,
+                fast_fixture_timing,
+            )
+        })
+        .collect()
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn mcp_endpoint_enabled(journal: &Path) -> bool {
+    matches!(
+        read_journal_config(journal),
+        Ok(config) if matches!(mcp_endpoint_capability(&config), Ok(McpEndpointCapability::Enabled))
+    )
 }
 
 pub(crate) fn spawn_app_process(
@@ -1132,12 +1158,24 @@ async fn start_app_stack(
     lifecycle: &mut SupervisorLifecycle,
     heartbeat_interval: Duration,
 ) -> Result<(), SyncTickOutcome> {
-    for service in [
+    let services = vec![
         AppService::Convey,
         AppService::Sense,
         AppService::Cortex,
         AppService::Spl,
-    ] {
+    ];
+    #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+    let services = {
+        let mut services = services;
+        if app_processes
+            .iter()
+            .any(|app| app.service == AppService::Mcp)
+        {
+            services.push(AppService::Mcp);
+        }
+        services
+    };
+    for service in services {
         let app = app_processes
             .iter_mut()
             .find(|app| app.service == service)

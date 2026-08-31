@@ -173,7 +173,7 @@ fn shutdown_requested(shutdown: &watch::Receiver<bool>) -> bool {
     *shutdown.borrow() || shutdown.has_changed().is_err()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
 

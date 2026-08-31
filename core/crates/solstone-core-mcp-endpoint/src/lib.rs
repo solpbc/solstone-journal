@@ -28,6 +28,8 @@ use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capabilit
 #[allow(dead_code)]
 mod account_wire;
 #[cfg(unix)]
+mod audit;
+#[cfg(unix)]
 mod bridge_carrier;
 #[cfg(unix)]
 mod bridge_forwarder;
@@ -35,12 +37,30 @@ mod bridge_forwarder;
 mod bridge_pop;
 #[cfg(unix)]
 mod bridge_session;
+#[cfg(unix)]
+mod http1;
+#[cfg(unix)]
+mod jsonrpc;
+#[cfg(unix)]
+mod permits;
+#[cfg(unix)]
+mod proxy_preface;
+#[cfg(unix)]
+mod server;
+#[cfg(unix)]
+mod service_process;
+#[cfg(unix)]
+mod session;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
-#[cfg(all(test, unix))]
+#[cfg(all(test, unix, not(feature = "full-tests")))]
 mod tests;
 #[cfg(unix)]
 mod tls;
+#[cfg(unix)]
+mod tokens;
+#[cfg(unix)]
+mod tools;
 #[cfg(unix)]
 mod unix;
 
@@ -49,9 +69,13 @@ pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
+pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
+#[cfg(unix)]
 pub use tls::{
     McpEndpointCertificateLifecycleError, McpEndpointTlsService, mcp_endpoint_server_config,
 };
+#[cfg(unix)]
+pub use tokens::{CreatedToken, TokenStore, TokenStoreError, TokenSummary, VerifiedToken};
 
 /// One authenticated bridge session paired with its authorized TLS service.
 ///

@@ -269,6 +269,7 @@
         "install-provider",
         "journal-stats",
         "maintenance",
+        "mcp",
         "navigate",
         "reprocess",
         "schedule",
