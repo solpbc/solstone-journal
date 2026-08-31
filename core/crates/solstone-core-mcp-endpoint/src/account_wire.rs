@@ -636,7 +636,6 @@ fn is_v1_denied_ipv4(address: std::net::Ipv4Addr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write as _;
     use std::fs;
     use std::os::unix::fs::PermissionsExt as _;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -961,7 +960,7 @@ mod tests {
     fn hex(bytes: &[u8]) -> String {
         let mut text = String::with_capacity(bytes.len() * 2);
         for byte in bytes {
-            write!(text, "{byte:02x}").expect("string formats");
+            text.push_str(&format!("{byte:02x}"));
         }
         text
     }
@@ -1269,6 +1268,24 @@ mod tests {
         ));
     }
 
+    fn assert_response_error_redacts(
+        result: Result<McpAccountResponseWire, McpAccountResponseWireError>,
+        expected: ExpectedResponseError,
+        canary: &str,
+    ) {
+        let error = match result {
+            Ok(_) => panic!("response parser must refuse canary input"),
+            Err(error) => error,
+        };
+        let display = error.to_string();
+        let debug = format!("{error:?}");
+        assert!(!display.contains(canary), "display redacts the canary");
+        assert!(!debug.contains(canary), "debug redacts the canary");
+        assert!(!display.is_empty(), "display retains a static category");
+        assert!(!debug.is_empty(), "debug retains a static category");
+        assert_response_error(Err(error), expected);
+    }
+
     fn valid_response_value() -> serde_json::Value {
         serde_json::json!({
             "token": "opaque-bridge-token",
@@ -1439,6 +1456,237 @@ mod tests {
         );
     }
 
+    #[test]
+    fn response_cache_control_and_json_whitespace_boundaries_are_complete() {
+        let value = valid_response_value();
+        let body = response_body(&value);
+
+        for cache_control in [
+            b"no-store".as_slice(),
+            b" NO-STORE ",
+            b"\tNo-StOrE\t",
+            b" \t no-store \t ",
+        ] {
+            assert!(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(cache_control),
+                    &body,
+                )
+                .is_ok()
+            );
+        }
+
+        for cache_control in [
+            b"".as_slice(),
+            b" ",
+            b"\t",
+            b"\"no-store\"",
+            b"no-store=1",
+            b"no-store; private",
+            b"no-cache",
+            b"private",
+            b"public",
+            b"max-age=0",
+            b"s-maxage=0",
+            b"must-revalidate",
+            b"extension",
+            b"no-store,",
+            b",no-store",
+            b"no-store,,no-cache",
+            b"no-store,no-store",
+            b"no-store\r",
+            b"no-store\n",
+            b"no-store\x0b",
+            b"no-store\x0c",
+            b"no-store\0",
+            b"no-store\x7f",
+            b"no\r-store",
+            b"no\n-store",
+            b"no\x0b-store",
+            b"no\x0c-store",
+            b"no\0-store",
+            b"no\x7f-store",
+        ] {
+            assert!(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(cache_control),
+                    &body,
+                )
+                .is_err(),
+                "Cache-Control value must reject: {cache_control:?}"
+            );
+        }
+        for cache_control in [b"no-store\x80".as_slice(), b"\xffno-store"] {
+            assert_response_error(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(cache_control),
+                    &body,
+                ),
+                ExpectedResponseError::CacheControlNonAscii,
+            );
+        }
+
+        let headers = vec![
+            (b"Content-Type".to_vec(), b"application/json".to_vec()),
+            (
+                b"Strict-Transport-Security".to_vec(),
+                b"max-age=31536000".to_vec(),
+            ),
+            (b"X-Frame-Options".to_vec(), b"DENY".to_vec()),
+            (b"X-Content-Type-Options".to_vec(), b"nosniff".to_vec()),
+            (b"Referrer-Policy".to_vec(), b"no-referrer".to_vec()),
+            (
+                b"Permissions-Policy".to_vec(),
+                b"interest-cohort=()".to_vec(),
+            ),
+            (
+                b"Content-Security-Policy".to_vec(),
+                b"default-src 'none'".to_vec(),
+            ),
+            (b"X-Repeated".to_vec(), b"one".to_vec()),
+            (b"X-Repeated".to_vec(), b"two".to_vec()),
+            (b"Cache-Control".to_vec(), b"no-store".to_vec()),
+        ];
+        assert!(parse_account_registration_response(200, &headers, &body).is_ok());
+        let no_cache = &headers[..headers.len() - 1];
+        assert_response_error(
+            parse_account_registration_response(200, no_cache, &body),
+            ExpectedResponseError::CacheControlMissing,
+        );
+
+        let internal_whitespace = br#"{
+            "token" 	: "opaque-bridge-token" ,
+            "token_type":	"Bearer",
+            "expires_in" : 600,
+            "expires_at": "2023-11-14T22:23:20Z",
+            "instance_id":"8488ae64-b592-80a3-97c6-490e995daa85",
+            "hostname" : "aaaqeaye.solstone.me",
+            "bridge_id":"mcp-bridge-fixture",
+            "bridge_addresses" : [ "20.186.92.169" ]
+        }"#;
+        assert!(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                internal_whitespace,
+            )
+            .is_ok()
+        );
+        let cr_internal = concat!(
+            "{\"token\"\r:\r\"opaque-bridge-token\"\r,\r",
+            "\"token_type\"\r:\r\"Bearer\"\r,\r",
+            "\"expires_in\"\r:\r600\r,\r",
+            "\"expires_at\"\r:\r\"2023-11-14T22:23:20Z\"\r,\r",
+            "\"instance_id\"\r:\r\"8488ae64-b592-80a3-97c6-490e995daa85\"\r,\r",
+            "\"hostname\"\r:\r\"aaaqeaye.solstone.me\"\r,\r",
+            "\"bridge_id\"\r:\r\"mcp-bridge-fixture\"\r,\r",
+            "\"bridge_addresses\"\r:\r[\"20.186.92.169\"]}"
+        );
+        assert!(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                cr_internal.as_bytes(),
+            )
+            .is_ok()
+        );
+        for &whitespace in b" \t\n\r" {
+            let mut prefixed = vec![whitespace];
+            prefixed.extend_from_slice(&body);
+            assert!(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(b"no-store"),
+                    &prefixed,
+                )
+                .is_ok()
+            );
+            let mut suffixed = body.clone();
+            suffixed.push(whitespace);
+            assert!(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(b"no-store"),
+                    &suffixed,
+                )
+                .is_ok()
+            );
+        }
+        for invalid_whitespace in [b"\x0b".as_slice(), b"\x0c", b"\0", b"\xef\xbb\xbf"] {
+            for leading in [true, false] {
+                let mut invalid = Vec::new();
+                if leading {
+                    invalid.extend_from_slice(invalid_whitespace);
+                }
+                invalid.extend_from_slice(&body);
+                if !leading {
+                    invalid.extend_from_slice(invalid_whitespace);
+                }
+                assert_response_error(
+                    parse_account_registration_response(
+                        200,
+                        &cache_control_headers(b"no-store"),
+                        &invalid,
+                    ),
+                    ExpectedResponseError::BodyJson,
+                );
+            }
+        }
+        for nonobject in [b"null".as_slice(), b"true", b"1", b"\"text\"", b"[]"] {
+            assert_response_error(
+                parse_account_registration_response(
+                    200,
+                    &cache_control_headers(b"no-store"),
+                    nonobject,
+                ),
+                ExpectedResponseError::BodyJson,
+            );
+        }
+        let mut second_value = body.clone();
+        second_value.extend_from_slice(b" {} ");
+        assert_response_error(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                &second_value,
+            ),
+            ExpectedResponseError::BodyJson,
+        );
+
+        let mut exact_cap = body.clone();
+        exact_cap.resize(RESPONSE_BODY_MAX_BYTES, b' ');
+        assert!(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                &exact_cap,
+            )
+            .is_ok()
+        );
+        exact_cap.push(b' ');
+        assert_response_error(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                &exact_cap,
+            ),
+            ExpectedResponseError::BodySize,
+        );
+        let mut invalid_utf8_over_cap = vec![b' '; RESPONSE_BODY_MAX_BYTES + 1];
+        invalid_utf8_over_cap[0] = 0xff;
+        assert_response_error(
+            parse_account_registration_response(
+                200,
+                &cache_control_headers(b"no-store"),
+                &invalid_utf8_over_cap,
+            ),
+            ExpectedResponseError::BodySize,
+        );
+    }
+
     enum ResponseMutation {
         String(&'static str, String),
         Number(&'static str, u64),
@@ -1493,30 +1741,16 @@ mod tests {
             ExpectedResponseError::BodyUtf8,
         );
 
-        let mut passing = Vec::new();
-        passing.push(ResponseMutation::String(
-            "token",
-            "t".repeat(TOKEN_MAX_BYTES),
-        ));
-        passing.push(ResponseMutation::String("token_type", "Bearer".to_owned()));
-        passing.push(ResponseMutation::Number("expires_in", 1));
-        passing.push(ResponseMutation::String(
-            "expires_at",
-            "a".repeat(EXPIRES_AT_MAX_BYTES),
-        ));
-        passing.push(ResponseMutation::String(
-            "instance_id",
-            "i".repeat(INSTANCE_ID_MAX_BYTES),
-        ));
-        passing.push(ResponseMutation::String(
-            "hostname",
-            "a234567z.solstone.me".to_owned(),
-        ));
-        passing.push(ResponseMutation::String(
-            "bridge_id",
-            "b".repeat(BRIDGE_ID_MAX_BYTES),
-        ));
-        passing.push(ResponseMutation::Addresses(vec!["8.8.8.8".to_owned()]));
+        let passing = vec![
+            ResponseMutation::String("token", "t".repeat(TOKEN_MAX_BYTES)),
+            ResponseMutation::String("token_type", "Bearer".to_owned()),
+            ResponseMutation::Number("expires_in", 1),
+            ResponseMutation::String("expires_at", "a".repeat(EXPIRES_AT_MAX_BYTES)),
+            ResponseMutation::String("instance_id", "i".repeat(INSTANCE_ID_MAX_BYTES)),
+            ResponseMutation::String("hostname", "a234567z.solstone.me".to_owned()),
+            ResponseMutation::String("bridge_id", "b".repeat(BRIDGE_ID_MAX_BYTES)),
+            ResponseMutation::Addresses(vec!["8.8.8.8".to_owned()]),
+        ];
         for mutation in passing {
             let mut value = baseline.clone();
             apply_response_mutation(&mut value, mutation);
@@ -1578,18 +1812,218 @@ mod tests {
         }
     }
 
+    fn response_with_expires_in_literal(literal: &str) -> Vec<u8> {
+        let body = String::from_utf8(response_body(&valid_response_value()))
+            .expect("valid response JSON is UTF-8");
+        let marker = "\"expires_in\":600";
+        assert!(body.contains(marker), "expiry marker is present");
+        body.replacen(marker, &format!("\"expires_in\":{literal}"), 1)
+            .into_bytes()
+    }
+
+    #[test]
+    fn response_top_level_types_and_byte_bounds_are_complete() {
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+        let fields = [
+            "token",
+            "token_type",
+            "expires_in",
+            "expires_at",
+            "instance_id",
+            "hostname",
+            "bridge_id",
+            "bridge_addresses",
+        ];
+        for field in fields {
+            let mut value = baseline.clone();
+            value
+                .as_object_mut()
+                .expect("response is an object")
+                .remove(field);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BodyJson,
+            );
+        }
+
+        let reordered = br#"{
+            "bridge_addresses":["20.186.92.169"],
+            "bridge_id":"mcp-bridge-fixture",
+            "hostname":"aaaqeaye.solstone.me",
+            "instance_id":"8488ae64-b592-80a3-97c6-490e995daa85",
+            "expires_at":"2023-11-14T22:23:20Z",
+            "expires_in":600,
+            "token_type":"Bearer",
+            "token":"opaque-bridge-token"
+        }"#;
+        assert!(parse_account_registration_response(200, &headers, reordered).is_ok());
+
+        let non_strings = [
+            serde_json::Value::Null,
+            serde_json::json!(true),
+            serde_json::json!(1),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ];
+        for field in [
+            "token",
+            "token_type",
+            "expires_at",
+            "instance_id",
+            "hostname",
+            "bridge_id",
+        ] {
+            for wrong_type in &non_strings {
+                let mut value = baseline.clone();
+                value[field] = wrong_type.clone();
+                assert_response_error(
+                    parse_response_value(200, &headers, &value),
+                    ExpectedResponseError::BodyJson,
+                );
+            }
+        }
+        for wrong_type in [
+            serde_json::Value::Null,
+            serde_json::json!(true),
+            serde_json::json!("600"),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let mut value = baseline.clone();
+            value["expires_in"] = wrong_type;
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BodyJson,
+            );
+        }
+        for wrong_type in [
+            serde_json::Value::Null,
+            serde_json::json!(true),
+            serde_json::json!(1),
+            serde_json::json!("20.186.92.169"),
+            serde_json::json!({}),
+        ] {
+            let mut value = baseline.clone();
+            value["bridge_addresses"] = wrong_type;
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BodyJson,
+            );
+        }
+
+        for (literal, expected) in [
+            ("-1", ExpectedResponseError::BodyJson),
+            ("0", ExpectedResponseError::ExpiresIn),
+            ("1", ExpectedResponseError::ExpiresIn),
+            ("18446744073709551615", ExpectedResponseError::ExpiresIn),
+            ("18446744073709551616", ExpectedResponseError::BodyJson),
+            ("1.0", ExpectedResponseError::BodyJson),
+        ] {
+            let result = parse_account_registration_response(
+                200,
+                &headers,
+                &response_with_expires_in_literal(literal),
+            );
+            if matches!(literal, "1" | "18446744073709551615") {
+                assert!(result.is_ok(), "positive u64 expiry {literal} passes");
+            } else {
+                assert_response_error(result, expected);
+            }
+        }
+
+        for (field, passing, failing, expected) in [
+            (
+                "token",
+                vec![
+                    "t".to_owned(),
+                    "t".repeat(TOKEN_MAX_BYTES),
+                    "é".repeat(TOKEN_MAX_BYTES / 2),
+                ],
+                vec![
+                    String::new(),
+                    "t".repeat(TOKEN_MAX_BYTES + 1),
+                    format!("{}a", "é".repeat(TOKEN_MAX_BYTES / 2)),
+                ],
+                ExpectedResponseError::TokenLength,
+            ),
+            (
+                "expires_at",
+                vec![
+                    "x".to_owned(),
+                    "x".repeat(EXPIRES_AT_MAX_BYTES),
+                    "é".repeat(EXPIRES_AT_MAX_BYTES / 2),
+                ],
+                vec![
+                    String::new(),
+                    "x".repeat(EXPIRES_AT_MAX_BYTES + 1),
+                    format!("{}a", "é".repeat(EXPIRES_AT_MAX_BYTES / 2)),
+                ],
+                ExpectedResponseError::ExpiresAtLength,
+            ),
+            (
+                "instance_id",
+                vec![
+                    "i".to_owned(),
+                    "i".repeat(INSTANCE_ID_MAX_BYTES),
+                    "é".repeat(INSTANCE_ID_MAX_BYTES / 2),
+                ],
+                vec![
+                    String::new(),
+                    "i".repeat(INSTANCE_ID_MAX_BYTES + 1),
+                    format!("{}a", "é".repeat(INSTANCE_ID_MAX_BYTES / 2)),
+                ],
+                ExpectedResponseError::InstanceIdLength,
+            ),
+        ] {
+            for text in passing {
+                let mut value = baseline.clone();
+                value[field] = serde_json::json!(text);
+                assert!(parse_response_value(200, &headers, &value).is_ok());
+            }
+            for text in failing {
+                let mut value = baseline.clone();
+                value[field] = serde_json::json!(text);
+                assert_response_error(parse_response_value(200, &headers, &value), expected);
+            }
+        }
+        for token_type in ["", "bearer", "BEARER", "Bearer ", " Bearer"] {
+            let mut value = baseline.clone();
+            value["token_type"] = serde_json::json!(token_type);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::TokenType,
+            );
+        }
+    }
+
     #[test]
     fn response_hostname_and_bridge_id_grammar_is_validated() {
         let headers = cache_control_headers(b"no-store");
         let baseline = valid_response_value();
         for hostname in [
-            "short.solstone.me",
+            "aaaaaaa.solstone.me",
+            "aaaaaaaaa.solstone.me",
             "AAAAAAAA.solstone.me",
             "aaaaaaa0.solstone.me",
             "aaaaaaa1.solstone.me",
             "aaaaaaa8.solstone.me",
             "aaaaaaa9.solstone.me",
+            "aaaa-aaa.solstone.me",
+            "aaaa_aaa.solstone.me",
+            "aaaa.aaa.solstone.me",
+            "éaaaaaaa.solstone.me",
             "aaaqeaye.example.com",
+            "aaaqeaye.SOLSTONE.ME",
+            " aaaqeaye.solstone.me",
+            "aaaqeaye.solstone.me ",
+            "aa.aeaye.solstone.me",
+            "aaaqeaye..solstone.me",
+            "aaaqeaye.solstone.me.",
+            "aaaqeaye.solstone.me:443",
+            "aaaqeaye.solstone.me%zone",
+            "prefix-aaaqeaye.solstone.me",
+            "aaaqeaye.solstone.me-suffix",
         ] {
             let mut value = baseline.clone();
             value["hostname"] = serde_json::json!(hostname);
@@ -1602,8 +2036,12 @@ mod tests {
             String::new(),
             "b".repeat(BRIDGE_ID_MAX_BYTES + 1),
             "has space".to_owned(),
+            "has\ttab".to_owned(),
+            "has\nnewline".to_owned(),
             "bad/name".to_owned(),
             "bad@name".to_owned(),
+            "bad\0name".to_owned(),
+            "nonascii-é".to_owned(),
         ] {
             let mut value = baseline.clone();
             value["bridge_id"] = serde_json::json!(bridge_id);
@@ -1615,6 +2053,7 @@ mod tests {
         for bridge_id in [
             "A".to_owned(),
             "ABC.def_ghi:jkl-123".to_owned(),
+            "._:-".to_owned(),
             "b".repeat(BRIDGE_ID_MAX_BYTES),
         ] {
             let mut value = baseline.clone();
@@ -1721,13 +2160,215 @@ mod tests {
     fn response_bridge_address_shape_and_cardinality_are_validated() {
         let headers = cache_control_headers(b"no-store");
         let baseline = valid_response_value();
-        for address in ["192.0.2.001", "192.0.2", "192.0.2.1.1", ""] {
+        for address in [
+            "192.0.2.001",
+            "192.0.2",
+            "192.0.2.1.1",
+            "",
+            " 8.8.8.8",
+            "8.8.8.8 ",
+            "x8.8.8.8",
+            "8.8.8.8x",
+            "2001:4860:4860::8888",
+            "8.8.8.8:443",
+            "8.8.8.8%eth0",
+            "[8.8.8.8]",
+        ] {
             let mut value = baseline.clone();
             value["bridge_addresses"] = serde_json::json!([address]);
             assert_response_error(
                 parse_response_value(200, &headers, &value),
                 ExpectedResponseError::BridgeAddressIpv4,
             );
+        }
+        for element in [
+            serde_json::Value::Null,
+            serde_json::json!(true),
+            serde_json::json!(8),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            let mut value = baseline.clone();
+            value["bridge_addresses"] = serde_json::Value::Array(vec![element]);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BodyJson,
+            );
+        }
+        let mut value = baseline;
+        value["bridge_addresses"] = serde_json::json!(["8.8.8.8"]);
+        let response =
+            parse_response_value(200, &headers, &value).expect("one allowed string address passes");
+        assert_eq!(response.bridge_address(), "8.8.8.8");
+    }
+
+    #[test]
+    fn response_errors_are_closed_static_and_payload_free() {
+        let canary = "secret-response-canary";
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+
+        let mut status_value = baseline.clone();
+        status_value["token"] = serde_json::json!(canary);
+        assert_response_error_redacts(
+            parse_response_value(500, &headers, &status_value),
+            ExpectedResponseError::UnexpectedStatus,
+            canary,
+        );
+
+        assert_response_error_redacts(
+            parse_response_value(200, &cache_control_headers(canary.as_bytes()), &baseline),
+            ExpectedResponseError::CacheControlWrongDirective,
+            canary,
+        );
+        assert_response_error_redacts(
+            parse_account_registration_response(
+                200,
+                &headers,
+                format!("{{\"{canary}\":").as_bytes(),
+            ),
+            ExpectedResponseError::BodyJson,
+            canary,
+        );
+
+        for (field, value, expected) in [
+            (
+                "token",
+                format!("{canary}{}", "x".repeat(TOKEN_MAX_BYTES + 1 - canary.len())),
+                ExpectedResponseError::TokenLength,
+            ),
+            (
+                "token_type",
+                canary.to_owned(),
+                ExpectedResponseError::TokenType,
+            ),
+            (
+                "expires_at",
+                format!(
+                    "{canary}{}",
+                    "x".repeat(EXPIRES_AT_MAX_BYTES + 1 - canary.len())
+                ),
+                ExpectedResponseError::ExpiresAtLength,
+            ),
+            (
+                "instance_id",
+                format!(
+                    "{canary}{}",
+                    "x".repeat(INSTANCE_ID_MAX_BYTES + 1 - canary.len())
+                ),
+                ExpectedResponseError::InstanceIdLength,
+            ),
+            (
+                "hostname",
+                format!("{canary}.solstone.me"),
+                ExpectedResponseError::Hostname,
+            ),
+            (
+                "bridge_id",
+                format!("{canary}/invalid"),
+                ExpectedResponseError::BridgeId,
+            ),
+        ] {
+            let mut changed = baseline.clone();
+            changed[field] = serde_json::json!(value);
+            assert_response_error_redacts(
+                parse_response_value(200, &headers, &changed),
+                expected,
+                canary,
+            );
+        }
+        let mut expiry = baseline.clone();
+        expiry["token"] = serde_json::json!(canary);
+        expiry["expires_in"] = serde_json::json!(0);
+        assert_response_error_redacts(
+            parse_response_value(200, &headers, &expiry),
+            ExpectedResponseError::ExpiresIn,
+            canary,
+        );
+        let mut address = baseline.clone();
+        address["bridge_addresses"] = serde_json::json!([canary]);
+        assert_response_error_redacts(
+            parse_response_value(200, &headers, &address),
+            ExpectedResponseError::BridgeAddressIpv4,
+            canary,
+        );
+
+        for (cache_headers, expected) in [
+            (vec![], ExpectedResponseError::CacheControlMissing),
+            (
+                vec![
+                    (b"Cache-Control".to_vec(), b"no-store".to_vec()),
+                    (b"cache-control".to_vec(), b"no-store".to_vec()),
+                ],
+                ExpectedResponseError::CacheControlDuplicate,
+            ),
+            (
+                cache_control_headers(&[0xff]),
+                ExpectedResponseError::CacheControlNonAscii,
+            ),
+            (
+                cache_control_headers(b"no\r-store"),
+                ExpectedResponseError::CacheControlMalformedOws,
+            ),
+            (
+                cache_control_headers(b"no-cache"),
+                ExpectedResponseError::CacheControlWrongDirective,
+            ),
+            (
+                cache_control_headers(b"no-store,private"),
+                ExpectedResponseError::CacheControlMultipleDirectives,
+            ),
+        ] {
+            let mut value = baseline.clone();
+            value["token"] = serde_json::json!(canary);
+            assert_response_error_redacts(
+                parse_response_value(200, &cache_headers, &value),
+                expected,
+                canary,
+            );
+        }
+
+        let mut cardinality = baseline.clone();
+        cardinality["token"] = serde_json::json!(canary);
+        cardinality["bridge_addresses"] = serde_json::json!([]);
+        assert_response_error_redacts(
+            parse_response_value(200, &headers, &cardinality),
+            ExpectedResponseError::BridgeAddressesCardinality,
+            canary,
+        );
+        let mut denied = baseline;
+        denied["token"] = serde_json::json!(canary);
+        denied["bridge_addresses"] = serde_json::json!(["10.0.0.1"]);
+        assert_response_error_redacts(
+            parse_response_value(200, &headers, &denied),
+            ExpectedResponseError::BridgeAddressDenied,
+            canary,
+        );
+
+        for error in [
+            McpAccountResponseWireError::BodySize,
+            McpAccountResponseWireError::UnexpectedStatus,
+            McpAccountResponseWireError::CacheControlMissing,
+            McpAccountResponseWireError::CacheControlDuplicate,
+            McpAccountResponseWireError::CacheControlNonAscii,
+            McpAccountResponseWireError::CacheControlMalformedOws,
+            McpAccountResponseWireError::CacheControlWrongDirective,
+            McpAccountResponseWireError::CacheControlMultipleDirectives,
+            McpAccountResponseWireError::BodyUtf8,
+            McpAccountResponseWireError::BodyJson,
+            McpAccountResponseWireError::TokenLength,
+            McpAccountResponseWireError::TokenType,
+            McpAccountResponseWireError::ExpiresIn,
+            McpAccountResponseWireError::ExpiresAtLength,
+            McpAccountResponseWireError::InstanceIdLength,
+            McpAccountResponseWireError::Hostname,
+            McpAccountResponseWireError::BridgeId,
+            McpAccountResponseWireError::BridgeAddressesCardinality,
+            McpAccountResponseWireError::BridgeAddressIpv4,
+            McpAccountResponseWireError::BridgeAddressDenied,
+        ] {
+            assert!(!error.to_string().contains(canary));
+            assert!(!format!("{error:?}").contains(canary));
         }
     }
 }

@@ -1354,76 +1354,1136 @@ fn rust_source_files(source: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn source_violations(source: &Path, prohibited: &[String]) -> Vec<(PathBuf, String)> {
+fn push_unique(violations: &mut Vec<&'static str>, violation: &'static str) {
+    if !violations.contains(&violation) {
+        violations.push(violation);
+    }
+}
+
+fn normalized_ident(ident: &proc_macro2::Ident) -> String {
+    let raw = ident.to_string();
+    raw.strip_prefix("r#").unwrap_or(&raw).to_owned()
+}
+
+fn collect_macro_token_idents(stream: proc_macro2::TokenStream, idents: &mut Vec<String>) {
+    for token in stream {
+        match token {
+            proc_macro2::TokenTree::Group(group) => {
+                collect_macro_token_idents(group.stream(), idents);
+            }
+            proc_macro2::TokenTree::Ident(ident) => idents.push(normalized_ident(&ident)),
+            proc_macro2::TokenTree::Punct(_) | proc_macro2::TokenTree::Literal(_) => {}
+        }
+    }
+}
+
+fn macro_tokens_have_invocation(stream: proc_macro2::TokenStream, prohibited: &[&str]) -> bool {
+    let tokens: Vec<_> = stream.into_iter().collect();
+    for (index, token) in tokens.iter().enumerate() {
+        if let proc_macro2::TokenTree::Group(group) = token
+            && macro_tokens_have_invocation(group.stream(), prohibited)
+        {
+            return true;
+        }
+        let proc_macro2::TokenTree::Ident(ident) = token else {
+            continue;
+        };
+        let Some(proc_macro2::TokenTree::Punct(bang)) = tokens.get(index + 1) else {
+            continue;
+        };
+        if bang.as_char() == '!'
+            && prohibited
+                .iter()
+                .any(|name| normalized_ident(ident) == *name)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn macro_tokens_have_path_root(stream: proc_macro2::TokenStream, prohibited: &[&str]) -> bool {
+    let tokens: Vec<_> = stream.into_iter().collect();
+    for (index, token) in tokens.iter().enumerate() {
+        if let proc_macro2::TokenTree::Group(group) = token
+            && macro_tokens_have_path_root(group.stream(), prohibited)
+        {
+            return true;
+        }
+        let proc_macro2::TokenTree::Ident(ident) = token else {
+            continue;
+        };
+        let Some(proc_macro2::TokenTree::Punct(first_colon)) = tokens.get(index + 1) else {
+            continue;
+        };
+        let Some(proc_macro2::TokenTree::Punct(second_colon)) = tokens.get(index + 2) else {
+            continue;
+        };
+        if first_colon.as_char() == ':'
+            && second_colon.as_char() == ':'
+            && prohibited
+                .iter()
+                .any(|name| normalized_ident(ident) == *name)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn collect_use_idents(tree: &syn::UseTree, idents: &mut Vec<String>) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            idents.push(normalized_ident(&path.ident));
+            collect_use_idents(&path.tree, idents);
+        }
+        syn::UseTree::Name(name) => idents.push(normalized_ident(&name.ident)),
+        syn::UseTree::Rename(rename) => {
+            idents.push(normalized_ident(&rename.ident));
+            idents.push(normalized_ident(&rename.rename));
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                collect_use_idents(item, idents);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
+fn collect_use_roots(tree: &syn::UseTree, roots: &mut Vec<String>) {
+    match tree {
+        syn::UseTree::Path(path) => roots.push(normalized_ident(&path.ident)),
+        syn::UseTree::Name(name) => roots.push(normalized_ident(&name.ident)),
+        syn::UseTree::Rename(rename) => roots.push(normalized_ident(&rename.ident)),
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                collect_use_roots(item, roots);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
+#[derive(Clone)]
+struct UseBinding {
+    path: Vec<String>,
+    local: String,
+}
+
+fn collect_use_bindings(
+    tree: &syn::UseTree,
+    prefix: &mut Vec<String>,
+    bindings: &mut Vec<UseBinding>,
+    glob_paths: &mut Vec<Vec<String>>,
+) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            prefix.push(normalized_ident(&path.ident));
+            collect_use_bindings(&path.tree, prefix, bindings, glob_paths);
+            prefix.pop();
+        }
+        syn::UseTree::Name(name) => {
+            let local = normalized_ident(&name.ident);
+            let mut path = prefix.clone();
+            path.push(local.clone());
+            bindings.push(UseBinding { path, local });
+        }
+        syn::UseTree::Rename(rename) => {
+            let mut path = prefix.clone();
+            path.push(normalized_ident(&rename.ident));
+            bindings.push(UseBinding {
+                path,
+                local: normalized_ident(&rename.rename),
+            });
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                collect_use_bindings(item, prefix, bindings, glob_paths);
+            }
+        }
+        syn::UseTree::Glob(_) => glob_paths.push(prefix.clone()),
+    }
+}
+
+#[derive(Default)]
+struct FilesystemModuleAliasCollector {
+    bindings: Vec<UseBinding>,
+    glob_paths: Vec<Vec<String>>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for FilesystemModuleAliasCollector {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        collect_use_bindings(
+            &node.tree,
+            &mut Vec::new(),
+            &mut self.bindings,
+            &mut self.glob_paths,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl FilesystemModuleAliasCollector {
+    fn resolve(self) -> FilesystemAliases {
+        let mut module_aliases = std::collections::BTreeSet::new();
+        let mut write_aliases = std::collections::BTreeSet::new();
+        let mut io_module_aliases = std::collections::BTreeSet::new();
+        let mut io_write_trait_aliases = std::collections::BTreeSet::new();
+        loop {
+            let before = (
+                module_aliases.len(),
+                write_aliases.len(),
+                io_module_aliases.len(),
+                io_write_trait_aliases.len(),
+            );
+            for binding in &self.bindings {
+                let is_module_alias = binding.path == ["std", "fs"]
+                    || binding.path == ["std", "fs", "self"]
+                    || (binding.path.len() == 1 && module_aliases.contains(&binding.path[0]))
+                    || (binding.path.len() == 2
+                        && module_aliases.contains(&binding.path[0])
+                        && binding.path[1] == "self");
+                if is_module_alias {
+                    module_aliases.insert(binding.local.clone());
+                }
+                let is_io_module_alias = binding.path == ["std", "io"]
+                    || binding.path == ["std", "io", "self"]
+                    || (binding.path.len() == 1 && io_module_aliases.contains(&binding.path[0]))
+                    || (binding.path.len() == 2
+                        && io_module_aliases.contains(&binding.path[0])
+                        && binding.path[1] == "self");
+                if is_io_module_alias {
+                    io_module_aliases.insert(binding.local.clone());
+                }
+                if binding.path.last().is_some_and(|last| last == "write")
+                    && ((binding.path.len() == 3 && binding.path[..2] == ["std", "fs"])
+                        || (binding.path.len() == 2 && module_aliases.contains(&binding.path[0])))
+                {
+                    write_aliases.insert(binding.local.clone());
+                }
+                if binding.path.len() == 1 && write_aliases.contains(&binding.path[0]) {
+                    write_aliases.insert(binding.local.clone());
+                }
+                if binding.path.last().is_some_and(|last| last == "Write")
+                    && ((binding.path.len() == 3 && binding.path[..2] == ["std", "io"])
+                        || (binding.path.len() == 2
+                            && io_module_aliases.contains(&binding.path[0])))
+                {
+                    io_write_trait_aliases.insert(binding.local.clone());
+                }
+                if binding.path.len() == 1 && io_write_trait_aliases.contains(&binding.path[0]) {
+                    io_write_trait_aliases.insert(binding.local.clone());
+                }
+            }
+            if (
+                module_aliases.len(),
+                write_aliases.len(),
+                io_module_aliases.len(),
+                io_write_trait_aliases.len(),
+            ) == before
+            {
+                break;
+            }
+        }
+        let has_forbidden_glob_import = self.glob_paths.iter().any(|path| {
+            path == &["std", "fs"]
+                || path == &["std", "io"]
+                || (path.len() == 1 && module_aliases.contains(&path[0]))
+                || (path.len() == 1 && io_module_aliases.contains(&path[0]))
+        });
+        FilesystemAliases {
+            module_aliases,
+            write_aliases,
+            io_module_aliases,
+            io_write_trait_aliases,
+            has_forbidden_glob_import,
+        }
+    }
+}
+
+struct FilesystemAliases {
+    module_aliases: std::collections::BTreeSet<String>,
+    write_aliases: std::collections::BTreeSet<String>,
+    io_module_aliases: std::collections::BTreeSet<String>,
+    io_write_trait_aliases: std::collections::BTreeSet<String>,
+    has_forbidden_glob_import: bool,
+}
+
+struct DiagnosticSyntaxVisitor {
+    allow_fixture_file_writes: bool,
+    in_test_scope: bool,
+    filesystem_module_aliases: std::collections::BTreeSet<String>,
+    filesystem_write_aliases: std::collections::BTreeSet<String>,
+    io_module_aliases: std::collections::BTreeSet<String>,
+    io_write_trait_aliases: std::collections::BTreeSet<String>,
+    violations: Vec<&'static str>,
+}
+
+impl DiagnosticSyntaxVisitor {
+    fn new(allow_fixture_file_writes: bool, aliases: FilesystemAliases) -> Self {
+        Self {
+            allow_fixture_file_writes,
+            in_test_scope: false,
+            filesystem_module_aliases: aliases.module_aliases,
+            filesystem_write_aliases: aliases.write_aliases,
+            io_module_aliases: aliases.io_module_aliases,
+            io_write_trait_aliases: aliases.io_write_trait_aliases,
+            violations: aliases
+                .has_forbidden_glob_import
+                .then_some("filesystem or I/O glob import")
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    fn writes_allowed(&self) -> bool {
+        self.allow_fixture_file_writes || self.in_test_scope
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        let prior = self.in_test_scope;
+        self.in_test_scope |= is_cfg_test(&node.attrs);
+        syn::visit::visit_item_mod(self, node);
+        self.in_test_scope = prior;
+    }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        let prior = self.in_test_scope;
+        self.in_test_scope |= is_cfg_test(&node.attrs);
+        syn::visit::visit_item_fn(self, node);
+        self.in_test_scope = prior;
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        let prior = self.in_test_scope;
+        self.in_test_scope |= is_cfg_test(&node.attrs);
+        syn::visit::visit_item_impl(self, node);
+        self.in_test_scope = prior;
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        let name = node
+            .path
+            .segments
+            .last()
+            .map(|segment| normalized_ident(&segment.ident));
+        let mut token_idents = Vec::new();
+        collect_macro_token_idents(node.tokens.clone(), &mut token_idents);
+        if macro_tokens_have_invocation(
+            node.tokens.clone(),
+            &[
+                "print", "println", "eprint", "eprintln", "dbg", "write", "writeln",
+            ],
+        ) || macro_tokens_have_path_root(node.tokens.clone(), &["log", "tracing"])
+            || token_idents
+                .iter()
+                .any(|ident| matches!(ident.as_str(), "stdout" | "stderr"))
+        {
+            push_unique(
+                &mut self.violations,
+                "diagnostic egress inside macro tokens",
+            );
+        }
+        if !self.writes_allowed()
+            && token_idents
+                .iter()
+                .any(|ident| matches!(ident.as_str(), "write_all" | "write_fmt"))
+        {
+            push_unique(&mut self.violations, "write egress inside macro tokens");
+        }
+        match name.as_deref() {
+            Some("print") => push_unique(&mut self.violations, "print macro"),
+            Some("println") => push_unique(&mut self.violations, "println macro"),
+            Some("eprint") => push_unique(&mut self.violations, "eprint macro"),
+            Some("eprintln") => push_unique(&mut self.violations, "eprintln macro"),
+            Some("dbg") => push_unique(&mut self.violations, "dbg macro"),
+            Some("writeln") => push_unique(&mut self.violations, "writeln macro"),
+            Some("write") => push_unique(&mut self.violations, "write macro"),
+            _ => {}
+        }
+        syn::visit::visit_macro(self, node);
+    }
+
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        if node.segments.len() > 1 {
+            match node
+                .segments
+                .first()
+                .map(|segment| normalized_ident(&segment.ident))
+            {
+                Some(root) if root == "log" => push_unique(&mut self.violations, "log path"),
+                Some(root) if root == "tracing" => {
+                    push_unique(&mut self.violations, "tracing path")
+                }
+                _ => {}
+            }
+        }
+        let path_idents: Vec<_> = node
+            .segments
+            .iter()
+            .map(|segment| normalized_ident(&segment.ident))
+            .collect();
+        if path_idents.windows(3).any(|window| {
+            window[0] == "std"
+                && window[1] == "io"
+                && matches!(window[2].as_str(), "stdout" | "stderr")
+        }) || path_idents.windows(2).any(|window| {
+            (window[0] == "io" || self.io_module_aliases.contains(&window[0]))
+                && matches!(window[1].as_str(), "stdout" | "stderr")
+        }) {
+            push_unique(&mut self.violations, "stdio output path");
+        }
+        if !self.writes_allowed()
+            && (path_idents
+                .windows(3)
+                .any(|window| window == ["std", "io", "Write"])
+                || path_idents
+                    .windows(2)
+                    .any(|window| window == ["io", "Write"])
+                || path_idents.windows(2).any(|window| {
+                    window[1] == "Write" && self.io_module_aliases.contains(&window[0])
+                })
+                || (path_idents.len() == 1
+                    && self.io_write_trait_aliases.contains(&path_idents[0]))
+                || (path_idents.len() > 1
+                    && self.io_write_trait_aliases.contains(&path_idents[0])
+                    && path_idents[1..].iter().any(|ident| {
+                        matches!(ident.as_str(), "write" | "write_all" | "write_fmt")
+                    }))
+                || path_idents
+                    .iter()
+                    .any(|ident| matches!(ident.as_str(), "write_all" | "write_fmt")))
+        {
+            push_unique(&mut self.violations, "I/O Write trait");
+        }
+        if !self.writes_allowed()
+            && (path_idents
+                .windows(3)
+                .any(|window| window == ["std", "fs", "write"])
+                || path_idents
+                    .windows(2)
+                    .any(|window| window == ["fs", "write"])
+                || path_idents.windows(2).any(|window| {
+                    window[1] == "write" && self.filesystem_module_aliases.contains(&window[0])
+                })
+                || (path_idents.len() == 1
+                    && self.filesystem_write_aliases.contains(&path_idents[0])))
+        {
+            push_unique(&mut self.violations, "filesystem write function");
+        }
+        syn::visit::visit_path(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if !self.writes_allowed()
+            && matches!(
+                normalized_ident(&node.method).as_str(),
+                "write" | "write_all" | "write_fmt"
+            )
+        {
+            push_unique(&mut self.violations, "direct write method");
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        let mut roots = Vec::new();
+        collect_use_roots(&node.tree, &mut roots);
+        if roots.iter().any(|root| root == "log") {
+            push_unique(&mut self.violations, "log import");
+        }
+        if roots.iter().any(|root| root == "tracing") {
+            push_unique(&mut self.violations, "tracing import");
+        }
+        let mut idents = Vec::new();
+        collect_use_idents(&node.tree, &mut idents);
+        if idents.iter().any(|ident| ident == "stdout") {
+            push_unique(&mut self.violations, "stdout import");
+        }
+        if idents.iter().any(|ident| ident == "stderr") {
+            push_unique(&mut self.violations, "stderr import");
+        }
+        if idents.iter().any(|ident| {
+            matches!(
+                ident.as_str(),
+                "print" | "println" | "eprint" | "eprintln" | "dbg" | "write" | "writeln"
+            )
+        }) {
+            push_unique(&mut self.violations, "diagnostic macro import");
+        }
+        if !self.writes_allowed()
+            && ["std", "io", "Write"]
+                .iter()
+                .all(|required| idents.iter().any(|ident| ident == required))
+        {
+            push_unique(&mut self.violations, "I/O Write import");
+        }
+        if !self.writes_allowed()
+            && ["std", "fs", "write"]
+                .iter()
+                .all(|required| idents.iter().any(|ident| ident == required))
+        {
+            push_unique(&mut self.violations, "filesystem write import");
+        }
+        syn::visit::visit_item_use(self, node);
+    }
+
+    fn visit_item_extern_crate(&mut self, node: &'ast syn::ItemExternCrate) {
+        match normalized_ident(&node.ident).as_str() {
+            "log" => push_unique(&mut self.violations, "log extern crate"),
+            "tracing" => push_unique(&mut self.violations, "tracing extern crate"),
+            _ => {}
+        }
+        syn::visit::visit_item_extern_crate(self, node);
+    }
+}
+
+struct TypeNameVisitor<'a> {
+    names: &'a std::collections::BTreeSet<String>,
+    found: bool,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for TypeNameVisitor<'_> {
+    fn visit_ident(&mut self, node: &'ast syn::Ident) {
+        if self.names.contains(&normalized_ident(node)) {
+            self.found = true;
+        }
+    }
+}
+
+fn type_mentions_names(ty: &syn::Type, names: &std::collections::BTreeSet<String>) -> bool {
+    let mut visitor = TypeNameVisitor {
+        names,
+        found: false,
+    };
+    syn::visit::Visit::visit_type(&mut visitor, ty);
+    visitor.found
+}
+
+#[derive(Default)]
+struct AuthoritySyntaxVisitor {
+    is_privacy_unit: bool,
+    wire_aliases: std::collections::BTreeSet<String>,
+    violations: Vec<&'static str>,
+    saw_parser: bool,
+    saw_wire: bool,
+    saw_error: bool,
+}
+
+impl AuthoritySyntaxVisitor {
+    fn new(is_privacy_unit: bool, wire_aliases: std::collections::BTreeSet<String>) -> Self {
+        Self {
+            is_privacy_unit,
+            wire_aliases,
+            ..Self::default()
+        }
+    }
+
+    fn wire_names(&self) -> std::collections::BTreeSet<String> {
+        let mut names = self.wire_aliases.clone();
+        names.insert("McpAccountResponseWire".to_owned());
+        names
+    }
+
+    fn type_mentions_wire(&self, ty: &syn::Type) -> bool {
+        type_mentions_names(ty, &self.wire_names())
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for AuthoritySyntaxVisitor {
+    fn visit_ident(&mut self, node: &'ast syn::Ident) {
+        if !self.is_privacy_unit {
+            match normalized_ident(node).as_str() {
+                "parse_account_registration_response" => {
+                    push_unique(&mut self.violations, "parser outside privacy unit")
+                }
+                "McpAccountResponseWire" => {
+                    push_unique(&mut self.violations, "wire outside privacy unit")
+                }
+                "McpAccountResponseWireError" => {
+                    push_unique(&mut self.violations, "wire error outside privacy unit")
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        if normalized_ident(&node.sig.ident) == "parse_account_registration_response" {
+            self.saw_parser = true;
+            if !matches!(node.vis, syn::Visibility::Inherited) {
+                push_unique(&mut self.violations, "parser visibility");
+            }
+        }
+        syn::visit::visit_item_fn(self, node);
+    }
+
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        let mut idents = Vec::new();
+        collect_use_idents(&node.tree, &mut idents);
+        if idents.iter().any(|ident| {
+            matches!(
+                ident.as_str(),
+                "parse_account_registration_response"
+                    | "McpAccountResponseWire"
+                    | "McpAccountResponseWireError"
+            )
+        }) {
+            push_unique(&mut self.violations, "response authority item alias");
+        }
+        syn::visit::visit_item_use(self, node);
+    }
+
+    fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
+        let mut response_use = ResponseUseVisitor::default();
+        syn::visit::Visit::visit_type(&mut response_use, &node.ty);
+        syn::visit::Visit::visit_expr(&mut response_use, &node.expr);
+        if response_use.direct_response_use {
+            push_unique(&mut self.violations, "response authority const alias");
+        }
+        syn::visit::visit_item_const(self, node);
+    }
+
+    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
+        let mut response_use = ResponseUseVisitor::default();
+        syn::visit::Visit::visit_type(&mut response_use, &node.ty);
+        syn::visit::Visit::visit_expr(&mut response_use, &node.expr);
+        if response_use.direct_response_use {
+            push_unique(&mut self.violations, "response authority static alias");
+        }
+        syn::visit::visit_item_static(self, node);
+    }
+
+    fn visit_impl_item_const(&mut self, node: &'ast syn::ImplItemConst) {
+        let mut response_use = ResponseUseVisitor::default();
+        syn::visit::Visit::visit_type(&mut response_use, &node.ty);
+        syn::visit::Visit::visit_expr(&mut response_use, &node.expr);
+        if response_use.direct_response_use {
+            push_unique(
+                &mut self.violations,
+                "response authority associated const alias",
+            );
+        }
+        syn::visit::visit_impl_item_const(self, node);
+    }
+
+    fn visit_trait_item_const(&mut self, node: &'ast syn::TraitItemConst) {
+        let mut response_use = ResponseUseVisitor::default();
+        syn::visit::Visit::visit_type(&mut response_use, &node.ty);
+        if let Some((_, expression)) = &node.default {
+            syn::visit::Visit::visit_expr(&mut response_use, expression);
+        }
+        if response_use.direct_response_use {
+            push_unique(&mut self.violations, "response authority trait const alias");
+        }
+        syn::visit::visit_trait_item_const(self, node);
+    }
+
+    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+        if normalized_ident(&node.ident) == "McpAccountResponseWire" {
+            self.saw_wire = true;
+            if !matches!(node.vis, syn::Visibility::Inherited) {
+                push_unique(&mut self.violations, "wire visibility");
+            }
+            if node
+                .fields
+                .iter()
+                .any(|field| !matches!(field.vis, syn::Visibility::Inherited))
+            {
+                push_unique(&mut self.violations, "wire field visibility");
+            }
+            if !node.attrs.is_empty() {
+                push_unique(&mut self.violations, "wire has an attribute");
+            }
+        } else {
+            if node
+                .fields
+                .iter()
+                .any(|field| self.type_mentions_wire(&field.ty))
+            {
+                push_unique(&mut self.violations, "wire stored in another struct");
+            }
+        }
+        syn::visit::visit_item_struct(self, node);
+    }
+
+    fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
+        if normalized_ident(&node.ident) == "McpAccountResponseWireError" {
+            self.saw_error = true;
+            if !matches!(node.vis, syn::Visibility::Inherited) {
+                push_unique(&mut self.violations, "wire error visibility");
+            }
+        } else if node
+            .variants
+            .iter()
+            .flat_map(|variant| variant.fields.iter())
+            .any(|field| self.type_mentions_wire(&field.ty))
+        {
+            push_unique(&mut self.violations, "wire stored in another enum");
+        }
+        syn::visit::visit_item_enum(self, node);
+    }
+
+    fn visit_item_union(&mut self, node: &'ast syn::ItemUnion) {
+        if node
+            .fields
+            .named
+            .iter()
+            .any(|field| self.type_mentions_wire(&field.ty))
+        {
+            push_unique(&mut self.violations, "wire stored in a union");
+        }
+        syn::visit::visit_item_union(self, node);
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        if self.type_mentions_wire(&node.self_ty) {
+            if node.trait_.is_some() {
+                push_unique(&mut self.violations, "wire implements a trait");
+            } else if node.items.iter().any(|item| {
+                matches!(item, syn::ImplItem::Fn(function) if !matches!(function.vis, syn::Visibility::Inherited))
+            }) {
+                push_unique(&mut self.violations, "wire accessor visibility");
+            }
+        }
+        syn::visit::visit_item_impl(self, node);
+    }
+
+    fn visit_item_type(&mut self, node: &'ast syn::ItemType) {
+        if self.type_mentions_wire(&node.ty) {
+            push_unique(&mut self.violations, "wire type alias");
+        }
+        syn::visit::visit_item_type(self, node);
+    }
+
+    fn visit_impl_item_type(&mut self, node: &'ast syn::ImplItemType) {
+        if self.type_mentions_wire(&node.ty) {
+            push_unique(&mut self.violations, "wire associated type alias");
+        }
+        syn::visit::visit_impl_item_type(self, node);
+    }
+
+    fn visit_trait_item_type(&mut self, node: &'ast syn::TraitItemType) {
+        if let Some((_, ty)) = &node.default
+            && self.type_mentions_wire(ty)
+        {
+            push_unique(&mut self.violations, "wire trait associated type alias");
+        }
+        syn::visit::visit_trait_item_type(self, node);
+    }
+
+    fn visit_item_foreign_mod(&mut self, node: &'ast syn::ItemForeignMod) {
+        for item in &node.items {
+            let mut response_use = ResponseUseVisitor::default();
+            match item {
+                syn::ForeignItem::Fn(function) => {
+                    syn::visit::Visit::visit_signature(&mut response_use, &function.sig)
+                }
+                syn::ForeignItem::Static(item) => {
+                    syn::visit::Visit::visit_type(&mut response_use, &item.ty)
+                }
+                syn::ForeignItem::Type(_)
+                | syn::ForeignItem::Macro(_)
+                | syn::ForeignItem::Verbatim(_) => {}
+                _ => {}
+            }
+            if response_use.direct_response_use {
+                push_unique(&mut self.violations, "response authority foreign module");
+            }
+        }
+        syn::visit::visit_item_foreign_mod(self, node);
+    }
+
+    fn visit_item_macro(&mut self, node: &'ast syn::ItemMacro) {
+        let mut idents = Vec::new();
+        collect_macro_token_idents(node.mac.tokens.clone(), &mut idents);
+        if idents.iter().any(|ident| {
+            matches!(
+                ident.as_str(),
+                "parse_account_registration_response"
+                    | "McpAccountResponseWire"
+                    | "McpAccountResponseWireError"
+            )
+        }) {
+            push_unique(
+                &mut self.violations,
+                "response authority inside an item macro",
+            );
+        }
+        syn::visit::visit_item_macro(self, node);
+    }
+}
+
+#[derive(Default)]
+struct ResponseUseVisitor {
+    direct_response_use: bool,
+    calls: Vec<String>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for ResponseUseVisitor {
+    fn visit_ident(&mut self, node: &'ast syn::Ident) {
+        if matches!(
+            normalized_ident(node).as_str(),
+            "parse_account_registration_response" | "McpAccountResponseWire"
+        ) {
+            self.direct_response_use = true;
+        }
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(path) = node.func.as_ref()
+            && let Some(segment) = path.path.segments.last()
+        {
+            self.calls.push(normalized_ident(&segment.ident));
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        self.calls.push(normalized_ident(&node.method));
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+        if let Some(segment) = node.path.segments.last() {
+            self.calls.push(normalized_ident(&segment.ident));
+        }
+        syn::visit::visit_expr_path(self, node);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        let mut idents = Vec::new();
+        collect_macro_token_idents(node.tokens.clone(), &mut idents);
+        if idents.iter().any(|ident| {
+            matches!(
+                ident.as_str(),
+                "parse_account_registration_response" | "McpAccountResponseWire"
+            )
+        }) {
+            self.direct_response_use = true;
+        }
+        self.calls.extend(idents);
+        syn::visit::visit_macro(self, node);
+    }
+}
+
+struct ResponseFunction {
+    name: String,
+    visible: bool,
+    direct_response_use: bool,
+    is_allowed_direct_response_consumer: bool,
+    calls: Vec<String>,
+}
+
+fn is_cfg_test(attributes: &[syn::Attribute]) -> bool {
+    attributes.iter().any(|attribute| {
+        attribute.path().is_ident("cfg")
+            && match &attribute.meta {
+                syn::Meta::List(list) => list.tokens.to_string().trim() == "test",
+                _ => false,
+            }
+    })
+}
+
+fn inspect_response_function(
+    signature: &syn::Signature,
+    visible: bool,
+    is_allowed_direct_response_consumer: bool,
+    block: &syn::Block,
+    functions: &mut Vec<ResponseFunction>,
+) {
+    let mut visitor = ResponseUseVisitor::default();
+    syn::visit::Visit::visit_signature(&mut visitor, signature);
+    syn::visit::Visit::visit_block(&mut visitor, block);
+    functions.push(ResponseFunction {
+        name: normalized_ident(&signature.ident),
+        visible,
+        direct_response_use: visitor.direct_response_use,
+        is_allowed_direct_response_consumer,
+        calls: visitor.calls,
+    });
+}
+
+fn collect_response_functions(
+    items: &[syn::Item],
+    under_test: bool,
+    at_root: bool,
+    local_traits: &std::collections::BTreeSet<String>,
+    visible_traits: &std::collections::BTreeSet<String>,
+    functions: &mut Vec<ResponseFunction>,
+) {
+    for item in items {
+        let item_under_test = under_test
+            || match item {
+                syn::Item::Fn(item) => is_cfg_test(&item.attrs),
+                syn::Item::Impl(item) => is_cfg_test(&item.attrs),
+                syn::Item::Mod(item) => is_cfg_test(&item.attrs),
+                _ => false,
+            };
+        if item_under_test {
+            continue;
+        }
+        match item {
+            syn::Item::Fn(function) => {
+                let is_private = matches!(function.vis, syn::Visibility::Inherited);
+                let is_allowed_direct_response_consumer = at_root
+                    && is_private
+                    && matches!(
+                        normalized_ident(&function.sig.ident).as_str(),
+                        "parse_account_registration_response" | "validate_account_registration"
+                    );
+                inspect_response_function(
+                    &function.sig,
+                    !is_private,
+                    is_allowed_direct_response_consumer,
+                    &function.block,
+                    functions,
+                );
+            }
+            syn::Item::Impl(implementation) => {
+                let trait_is_visible =
+                    implementation.trait_.as_ref().is_some_and(|(_, path, _)| {
+                        path.segments.len() > 1
+                            || path.segments.last().is_some_and(|segment| {
+                                let name = normalized_ident(&segment.ident);
+                                !local_traits.contains(&name) || visible_traits.contains(&name)
+                            })
+                    });
+                for item in &implementation.items {
+                    if let syn::ImplItem::Fn(function) = item
+                        && !is_cfg_test(&function.attrs)
+                    {
+                        inspect_response_function(
+                            &function.sig,
+                            trait_is_visible || !matches!(function.vis, syn::Visibility::Inherited),
+                            false,
+                            &function.block,
+                            functions,
+                        );
+                    }
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, items)) = &module.content {
+                    collect_response_functions(
+                        items,
+                        false,
+                        false,
+                        local_traits,
+                        visible_traits,
+                        functions,
+                    );
+                }
+            }
+            syn::Item::Trait(trait_item) => {
+                let trait_visible = !matches!(trait_item.vis, syn::Visibility::Inherited);
+                for item in &trait_item.items {
+                    if let syn::TraitItem::Fn(function) = item
+                        && let Some(block) = &function.default
+                    {
+                        inspect_response_function(
+                            &function.sig,
+                            trait_visible,
+                            false,
+                            block,
+                            functions,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_trait_visibility(
+    items: &[syn::Item],
+    under_test: bool,
+    local_traits: &mut std::collections::BTreeSet<String>,
+    visible_traits: &mut std::collections::BTreeSet<String>,
+) {
+    for item in items {
+        let item_under_test = under_test
+            || match item {
+                syn::Item::Mod(item) => is_cfg_test(&item.attrs),
+                syn::Item::Trait(item) => is_cfg_test(&item.attrs),
+                _ => false,
+            };
+        if item_under_test {
+            continue;
+        }
+        match item {
+            syn::Item::Trait(item) => {
+                let name = normalized_ident(&item.ident);
+                local_traits.insert(name.clone());
+                if !matches!(item.vis, syn::Visibility::Inherited) {
+                    visible_traits.insert(name);
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, items)) = &module.content {
+                    collect_trait_visibility(items, false, local_traits, visible_traits);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn response_function_violations(file: &syn::File) -> Vec<&'static str> {
+    let mut functions = Vec::new();
+    let mut local_traits = std::collections::BTreeSet::new();
+    let mut visible_traits = std::collections::BTreeSet::new();
+    collect_trait_visibility(&file.items, false, &mut local_traits, &mut visible_traits);
+    collect_response_functions(
+        &file.items,
+        false,
+        true,
+        &local_traits,
+        &visible_traits,
+        &mut functions,
+    );
+    let mut tainted: std::collections::BTreeSet<String> = functions
+        .iter()
+        .filter(|function| function.direct_response_use)
+        .map(|function| function.name.clone())
+        .collect();
+    loop {
+        let before = tainted.len();
+        for function in &functions {
+            if function.calls.iter().any(|called| tainted.contains(called)) {
+                tainted.insert(function.name.clone());
+            }
+        }
+        if tainted.len() == before {
+            break;
+        }
+    }
+
+    let mut violations = Vec::new();
+    for function in &functions {
+        if function.direct_response_use && !function.is_allowed_direct_response_consumer {
+            push_unique(
+                &mut violations,
+                "response use outside parser or named validation transition",
+            );
+        }
+        if function.visible && tainted.contains(&function.name) {
+            push_unique(
+                &mut violations,
+                "response authority reaches a visible function",
+            );
+        }
+    }
+    violations
+}
+
+#[derive(Default)]
+struct TypeAliasCollector {
+    aliases: Vec<(String, syn::Type)>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for TypeAliasCollector {
+    fn visit_item_type(&mut self, node: &'ast syn::ItemType) {
+        self.aliases
+            .push((normalized_ident(&node.ident), (*node.ty).clone()));
+        syn::visit::visit_item_type(self, node);
+    }
+}
+
+fn wire_type_aliases(file: &syn::File) -> std::collections::BTreeSet<String> {
+    let mut collector = TypeAliasCollector::default();
+    syn::visit::Visit::visit_file(&mut collector, file);
+    let mut aliases = std::collections::BTreeSet::new();
+    loop {
+        let before = aliases.len();
+        let mut names = aliases.clone();
+        names.insert("McpAccountResponseWire".to_owned());
+        for (alias, target) in &collector.aliases {
+            if type_mentions_names(target, &names) {
+                aliases.insert(alias.clone());
+            }
+        }
+        if aliases.len() == before {
+            break;
+        }
+    }
+    aliases
+}
+
+fn syntax_detector_violations(
+    source: &Path,
+    detector: fn(&Path, &Path, &syn::File) -> Vec<&'static str>,
+) -> Vec<(PathBuf, &'static str)> {
     rust_source_files(source)
         .into_iter()
         .flat_map(|path| {
             let text = fs::read_to_string(&path).expect("source reads");
-            prohibited
-                .iter()
-                .filter(|needle| text.contains(needle.as_str()))
-                .cloned()
-                .map(move |needle| (path.clone(), needle))
-                .collect::<Vec<_>>()
+            let file = syn::parse_file(&text).expect("Rust source parses");
+            detector(source, &path, &file)
+                .into_iter()
+                .map(move |violation| (path.clone(), violation))
         })
         .collect()
 }
 
-fn diagnostic_egress_needles() -> Vec<String> {
-    [
-        ["print", "ln!"].concat(),
-        ["eprint", "ln!"].concat(),
-        ["lo", "g::"].concat(),
-        ["trac", "ing::"].concat(),
-        ["d", "bg!"].concat(),
-    ]
-    .into()
+fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec<&'static str> {
+    let mut aliases = FilesystemModuleAliasCollector::default();
+    syn::visit::Visit::visit_file(&mut aliases, file);
+    let mut visitor =
+        DiagnosticSyntaxVisitor::new(path == root.join("tests.rs"), aliases.resolve());
+    syn::visit::Visit::visit_file(&mut visitor, file);
+    visitor.violations
 }
 
-fn response_wire_visibility_needles() -> Vec<String> {
-    let crate_visibility = ["pub", "(crate)"].concat();
-    let parser = ["parse_account_registration", "_response"].concat();
-    let wire = ["McpAccount", "ResponseWire"].concat();
-    let error = ["McpAccount", "ResponseWireError"].concat();
-    vec![
-        format!("{crate_visibility} fn {parser}"),
-        format!("pub fn {parser}"),
-        format!("{crate_visibility} struct {wire}"),
-        format!("pub struct {wire}"),
-        format!("{crate_visibility} enum {error}"),
-        format!("pub enum {error}"),
-    ]
-}
-
-fn response_wire_required_symbols() -> Vec<String> {
-    let parser = ["parse_account_registration", "_response"].concat();
-    let wire = ["McpAccount", "ResponseWire"].concat();
-    let error = ["McpAccount", "ResponseWireError"].concat();
-    vec![
-        format!("fn {parser}"),
-        format!("struct {wire}"),
-        format!("enum {error}"),
-    ]
+fn authority_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec<&'static str> {
+    let is_privacy_unit = path == root.join("account_wire.rs");
+    let mut visitor = AuthoritySyntaxVisitor::new(is_privacy_unit, wire_type_aliases(file));
+    syn::visit::Visit::visit_file(&mut visitor, file);
+    if is_privacy_unit {
+        for violation in response_function_violations(file) {
+            push_unique(&mut visitor.violations, violation);
+        }
+    }
+    visitor.violations
 }
 
 fn assert_closed_corpus_files(source: &Path) {
     let files = rust_source_files(source);
     assert!(!files.is_empty(), "source corpus is nonempty");
-    for required in ["account_wire.rs", "test_seam.rs"] {
-        assert!(
-            files
-                .iter()
-                .any(|path| { path.file_name().and_then(|name| name.to_str()) == Some(required) }),
-            "source corpus includes {required}"
-        );
-    }
+    let account_wire = source.join("account_wire.rs");
+    let test_seam = source.join("test_seam.rs");
+    assert!(
+        files.contains(&account_wire),
+        "corpus includes exact account-wire path"
+    );
+    assert!(
+        files.contains(&test_seam),
+        "corpus includes exact test-seam path"
+    );
+
+    let account_file =
+        syn::parse_file(&fs::read_to_string(&account_wire).expect("account-wire source reads"))
+            .expect("account-wire source parses");
+    assert!(account_file.items.iter().any(|item| {
+        matches!(item, syn::Item::Fn(function) if function.sig.ident == "parse_account_registration_response")
+    }));
+    let seam_file =
+        syn::parse_file(&fs::read_to_string(&test_seam).expect("test-seam source reads"))
+            .expect("test-seam source parses");
+    assert!(seam_file.items.iter().any(|item| {
+        matches!(item, syn::Item::Enum(enumeration) if enumeration.ident == "OwnerBootstrapPrimitive")
+    }));
 }
 
 #[test]
 fn production_source_has_no_logging_or_printing_surface() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     assert_closed_corpus_files(&source);
-    let violations = source_violations(&source, &diagnostic_egress_needles());
+    let violations = syntax_detector_violations(&source, diagnostic_syntax_detector);
     assert!(violations.is_empty(), "diagnostic egress: {violations:?}");
 }
 
@@ -1431,44 +2491,278 @@ fn production_source_has_no_logging_or_printing_surface() {
 fn production_source_has_no_response_wire_visibility_or_authority_leaks() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     assert_closed_corpus_files(&source);
-    let violations = source_violations(&source, &response_wire_visibility_needles());
+    let violations = syntax_detector_violations(&source, authority_syntax_detector);
     assert!(
         violations.is_empty(),
         "response-wire visibility: {violations:?}"
     );
-    let corpus = rust_source_files(&source)
-        .into_iter()
-        .map(|path| fs::read_to_string(path).expect("source reads"))
-        .collect::<String>();
-    for required in response_wire_required_symbols() {
+    let privacy_unit = fs::read_to_string(source.join("account_wire.rs"))
+        .expect("account-wire privacy unit reads");
+    let file = syn::parse_file(&privacy_unit).expect("account-wire Rust parses");
+    let mut visitor = AuthoritySyntaxVisitor::new(true, wire_type_aliases(&file));
+    syn::visit::Visit::visit_file(&mut visitor, &file);
+    assert!(visitor.saw_parser, "privacy unit defines the parser");
+    assert!(visitor.saw_wire, "privacy unit defines the response wire");
+    assert!(visitor.saw_error, "privacy unit defines the closed error");
+}
+
+#[test]
+fn diagnostic_egress_detector_rejects_each_planted_family() {
+    let root = TempDir::new().expect("synthetic source root creates");
+    let nested = root.path().join("nested");
+    fs::create_dir(&nested).expect("synthetic nested source creates");
+    let planted = [
+        ["print", "!(\"x\");"].concat(),
+        ["print", "ln!(\"x\");"].concat(),
+        ["r#print", "ln!(\"x\");"].concat(),
+        ["eprint", "!(\"x\");"].concat(),
+        ["eprint", "ln!(\"x\");"].concat(),
+        ["d", "bg!(1);"].concat(),
+        ["std::io::std", "out();"].concat(),
+        ["std::io::std", "err();"].concat(),
+        [
+            "use std::io::{self, Wri",
+            "te}; io::stderr().write_all(b\"x\");",
+        ]
+        .concat(),
+        ["use std::io::stderr as leak; le", "ak();"].concat(),
+        ["write", "ln!(sink, \"x\");"].concat(),
+        ["wri", "te!(sink, \"{}\", token);"].concat(),
+        ["wri", "te!(std::io::stderr(), \"x\");"].concat(),
+        [
+            "fn leak<W: std::io::Wri",
+            "te>(mut sink: W, token: &[u8]) { sink.write_all(token).unwrap(); }",
+        ]
+        .concat(),
+        [
+            "macro_rules! leak { () => { fn emit<W: std::io::Wri",
+            "te>(mut sink: W, token: &[u8]) { sink.write_all(token).unwrap(); } } }",
+        ]
+        .concat(),
+        [
+            "macro_rules! leak { () => { eprint",
+            "ln!(\"{}\", token); } }",
+        ]
+        .concat(),
+        [
+            "macro_rules! leak { () => { trac",
+            "ing::info!(\"{}\", token); } }",
+        ]
+        .concat(),
+        [
+            "use std::io; io::Wri",
+            "te::write_all(&mut sink, token).unwrap();",
+        ]
+        .concat(),
+        ["use lo", "g::info;"].concat(),
+        ["lo", "g::info!(\"x\");"].concat(),
+        ["use trac", "ing::info;"].concat(),
+        ["trac", "ing::info!(\"x\");"].concat(),
+        ["r#trac", "ing::info!(\"x\");"].concat(),
+        ["extern crate lo", "g as audit; audit::info!(\"x\");"].concat(),
+        ["extern crate trac", "ing as audit; audit::info!(\"x\");"].concat(),
+        ["use std::eprint", "ln as emit; emit!(\"{}\", token);"].concat(),
+        [
+            "use std::fs::wri",
+            "te as persist; persist(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        [
+            "use std::fs as disk; disk::wri",
+            "te(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        [
+            "use std::fs::{self as disk}; disk::wri",
+            "te(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        [
+            "use std::fs as filesystem; use filesystem as disk; disk::wri",
+            "te(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        [
+            "use std::fs::*; wri",
+            "te(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        [
+            "use std::io::{self as input}; fn leak<W: input::Wri",
+            "te>(mut sink: W, token: &[u8]) { <W as input::Write>::write(&mut sink, token).unwrap(); }",
+        ]
+        .concat(),
+        [
+            "use std::io::*; fn leak<W: Wri",
+            "te>(mut sink: W, token: &[u8]) { <W as Write>::write(&mut sink, token).unwrap(); }",
+        ]
+        .concat(),
+        [
+            "use std::io::Wri",
+            "te as Writer; fn leak(mut sink: std::io::Cursor<Vec<u8>>, token: &[u8]) { Writer::write(&mut sink, token).unwrap(); }",
+        ]
+        .concat(),
+        [
+            "use std::io::Wri",
+            "te as Writer; use Writer as W; fn leak(mut sink: std::io::Cursor<Vec<u8>>, token: &[u8]) { W::write(&mut sink, token).unwrap(); }",
+        ]
+        .concat(),
+        [
+            "use std::fs as filesystem; use filesystem::wri",
+            "te as persist; persist(\"token.txt\", token).unwrap();",
+        ]
+        .concat(),
+        ["std::fs::wri", "te(\"token.txt\", token).unwrap();"].concat(),
+    ];
+    for (index, control) in planted.into_iter().enumerate() {
+        let path = nested.join(format!("control-{index}.rs"));
+        fs::write(&path, format!("fn control() {{ {control} }}")).expect("synthetic source writes");
         assert!(
-            corpus.contains(&required),
-            "source corpus contains {required}"
+            !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+            "diagnostic family {index} is rejected"
+        );
+        fs::remove_file(path).expect("synthetic source control removes");
+    }
+
+    fs::write(
+        nested.join("clean.rs"),
+        "use logistics::catalog; use std::fs as filesystem; use filesystem as disk; enum Permission { Write } fn clean(permission: Permission, log: &str, tracing: &str) { let stdout = \"stdout\"; let stderr = \"stderr\"; let _ = catalog; let _ = matches!(permission, Permission::Write); let _ = (log, tracing, stdout, stderr); let _ = disk::read(\"fixture\"); }",
+    )
+    .expect("clean synthetic source writes");
+    assert!(syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty());
+}
+
+#[test]
+fn response_wire_visibility_detector_rejects_each_planted_leak() {
+    let root = TempDir::new().expect("synthetic source root creates");
+    let nested = root.path().join("nested");
+    fs::create_dir(&nested).expect("synthetic nested source creates");
+    let wire = ["McpAccount", "ResponseWire"].concat();
+    let parser = ["parse_account_registration", "_response"].concat();
+    for (index, control) in [
+        format!("pub(crate) struct {wire};"),
+        format!("pub(super) struct {wire};"),
+        format!("pub(in crate) struct {wire};"),
+        format!("fn sibling(value: {wire}) {{ let {wire} {{ .. }} = value; }}"),
+        format!("fn sibling() -> {wire} {{ todo!() }}"),
+        format!("use crate::account_wire::{wire};"),
+        format!("fn sibling() {{ let _ = {parser}(200, &[], &[]); }}"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let path = nested.join(format!("leak-{index}.rs"));
+        fs::write(&path, control).expect("synthetic source writes");
+        assert!(
+            !syntax_detector_violations(root.path(), authority_syntax_detector).is_empty(),
+            "authority leak {index} is rejected"
+        );
+        fs::remove_file(path).expect("synthetic source control removes");
+    }
+
+    let nested_basename = nested.join("account_wire.rs");
+    fs::write(&nested_basename, format!("struct {wire};")).expect("nested basename leak writes");
+    assert!(
+        !syntax_detector_violations(root.path(), authority_syntax_detector).is_empty(),
+        "only the exact root privacy-unit path is allowlisted"
+    );
+    fs::remove_file(nested_basename).expect("nested basename leak removes");
+
+    let privacy_unit = root.path().join("account_wire.rs");
+    fs::write(
+        &privacy_unit,
+        format!(
+            "struct {wire}; fn {parser}() -> {wire} {{ {wire} }} fn validate_account_registration(value: {wire}) {{ let _ = value; }} #[cfg(test)] pub(super) fn test_only() {{ let _ = {parser}(); }}"
+        ),
+    )
+    .expect("synthetic privacy unit writes");
+    assert!(
+        syntax_detector_violations(root.path(), authority_syntax_detector).is_empty(),
+        "private parser and named same-unit consumer remain allowed"
+    );
+
+    for (index, control) in [
+        format!("#[derive(Clone)] struct {wire};"),
+        format!("#[derive(Debug, serde::Serialize)] struct {wire};"),
+        format!("use core::clone::Clone as C; #[derive(C)] struct {wire};"),
+        format!("#[cfg_attr(not(test), derive(Debug))] struct {wire};"),
+        format!("struct {wire} {{ pub(crate) token: String }}"),
+        format!("struct {wire}; enum Holder {{ Wire({wire}) }}"),
+        format!("struct {wire}; union Holder {{ wire: std::mem::ManuallyDrop<{wire}> }}"),
+        format!("struct {wire}; trait Carrier {{ type Output; }} struct Holder; impl Carrier for Holder {{ type Output = {wire}; }}"),
+        format!("struct {wire}; trait Carrier {{ type Output = {wire}; }}"),
+        format!("struct {wire}; impl {wire} {{ pub(super) fn token(&self) {{}} }}"),
+        format!("struct {wire}; impl {wire} {{ pub(crate) fn one(&self) {{}} }} impl {wire} {{ pub(in crate) fn two(&self) {{}} }}"),
+        format!("struct {wire}; pub(super) async fn {parser}() -> {wire} {{ {wire} }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} pub(super) fn leak() -> String {{ {parser}().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} fn helper() -> String {{ {parser}().token }} pub(super) fn leak() -> String {{ helper() }}"),
+        format!("struct {wire} {{ token: String }} fn validate_account_registration(value: {wire}) -> String {{ value.token }} pub(super) fn leak(value: {wire}) -> String {{ validate_account_registration(value) }}"),
+        format!("struct {wire} {{ token: String }} struct Holder; impl Holder {{ fn validate_account_registration(&self, value: {wire}) -> String {{ value.token }} pub(super) fn leak(&self, value: {wire}) -> String {{ self.validate_account_registration(value) }} }}"),
+        format!("struct {wire} {{ token: String }} fn validate_account_registration(value: {wire}) -> String {{ value.token }} pub(super) fn leak(value: {wire}) -> String {{ let transition = validate_account_registration; transition(value) }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} use self::{parser} as parse; pub(super) fn leak() -> String {{ parse().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} const PARSE: fn() -> {wire} = {parser}; pub(super) fn leak() -> String {{ PARSE().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} static PARSE: fn() -> {wire} = {parser}; pub(super) fn leak() -> String {{ PARSE().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} struct Holder; impl Holder {{ const PARSE: fn() -> {wire} = {parser}; }} pub(super) fn leak() -> String {{ (Holder::PARSE)().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} pub trait Reveal {{ const PARSE: fn() -> {wire} = {parser}; }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} fn validate_account_registration() -> String {{ {parser}().token }} pub trait Reveal {{ fn leak() -> String {{ validate_account_registration() }} }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} fn validate_account_registration() -> String {{ {parser}().token }} struct Holder; pub trait Reveal {{ fn leak() -> String; }} impl Reveal for Holder {{ fn leak() -> String {{ validate_account_registration() }} }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} mod child {{ use super::{wire}; fn validate_account_registration(value: {wire}) -> String {{ value.token }} }}"),
+        format!("struct {wire}; extern \"C\" {{ fn hand_off(value: {wire}); }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} fn validate_account_registration() -> String {{ {parser}().token }} trait Display {{}} struct Holder; impl std::fmt::Display for Holder {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ let _ = validate_account_registration(); Ok(()) }} }}"),
+        format!("struct {wire} {{ token: String }} fn validate_account_registration(value: {wire}) -> String {{ value.token }} pub(super) fn leak(value: {wire}) -> String {{ invoke!(validate_account_registration(value)) }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} #[cfg(not(test))] pub(super) fn leak() -> String {{ {parser}().token }}"),
+        format!("struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} #[cfg(any(test, feature = \"test-hooks\"))] pub(super) fn leak() -> String {{ {parser}().token }}"),
+        format!("struct {wire} {{ token: String }} fn r#{parser}() -> {wire} {{ todo!() }} pub(super) fn leak() -> String {{ r#{parser}().r#token }}"),
+        format!("struct {wire} {{ token: String }} macro_rules! expose {{ () => {{ pub(crate) fn leak() -> String {{ {parser}().token }} }} }}"),
+        format!("struct {wire}; impl Clone for {wire} {{ fn clone(&self) -> Self {{ {wire} }} }}"),
+        format!("use std::fmt::Debug as Reveal; struct {wire}; impl Reveal for {wire} {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+        format!("struct {wire}; type Alias = {wire}; impl std::fmt::Debug for Alias {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+        format!("struct {wire}; impl std::fmt::Debug for &{wire} {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+        format!("struct {wire}; type Alias<'a> = &'a {wire}; impl std::fmt::Debug for Alias<'_> {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+        format!("struct {wire}; impl std::fmt::Debug for {wire} {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+        format!("struct {wire}; impl serde::Serialize for {wire} {{ fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {{ todo!() }} }}"),
+        format!("struct {wire}; impl std::fmt::Display for {wire} {{ fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ Ok(()) }} }}"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        fs::write(&privacy_unit, control).expect("synthetic privacy violation writes");
+        assert!(
+            !syntax_detector_violations(root.path(), authority_syntax_detector).is_empty(),
+            "privacy-unit leak {index} is rejected"
         );
     }
-}
-
-#[test]
-fn diagnostic_egress_detector_rejects_planted_violation() {
-    let root = TempDir::new().expect("synthetic source root creates");
-    let nested = root.path().join("nested");
-    fs::create_dir(&nested).expect("synthetic nested source creates");
-    let planted = ["print", "ln!(\"synthetic\");"].concat();
-    fs::write(nested.join("control.rs"), planted).expect("synthetic source writes");
-    assert!(!source_violations(root.path(), &diagnostic_egress_needles()).is_empty());
-}
-
-#[test]
-fn response_wire_visibility_detector_rejects_planted_violation() {
-    let root = TempDir::new().expect("synthetic source root creates");
-    let nested = root.path().join("nested");
-    fs::create_dir(&nested).expect("synthetic nested source creates");
-    let crate_visibility = ["pub", "(crate)"].concat();
-    let wire = ["McpAccount", "ResponseWire"].concat();
     fs::write(
-        nested.join("control.rs"),
-        format!("{crate_visibility} struct {wire};"),
+        &privacy_unit,
+        format!(
+            "struct {wire}; fn {parser}() -> {wire} {{ {wire} }} fn validate_account_registration(value: {wire}) {{ let _ = value; }} #[cfg(test)] pub(super) fn test_only() {{ let _ = {parser}(); }}"
+        ),
     )
-    .expect("synthetic source writes");
-    assert!(!source_violations(root.path(), &response_wire_visibility_needles()).is_empty());
+    .expect("synthetic privacy unit restores");
+    fs::write(
+        &privacy_unit,
+        format!(
+            "struct {wire} {{ token: String }} fn {parser}() -> {wire} {{ todo!() }} fn validate_account_registration() -> String {{ {parser}().token }} trait PrivateDefault {{ fn reveal() -> String {{ validate_account_registration() }} }} trait PrivateImplemented {{ fn reveal() -> String; }} struct Holder; impl PrivateImplemented for Holder {{ fn reveal() -> String {{ validate_account_registration() }} }}"
+        ),
+    )
+    .expect("private trait clean control writes");
+    assert!(
+        syntax_detector_violations(root.path(), authority_syntax_detector).is_empty(),
+        "private traits do not make their methods externally visible"
+    );
+    fs::write(
+        &privacy_unit,
+        format!(
+            "struct {wire}; fn {parser}() -> {wire} {{ {wire} }} fn validate_account_registration(value: {wire}) {{ let _ = value; }}"
+        ),
+    )
+    .expect("synthetic privacy unit restores after clean trait control");
+
+    fs::write(
+        nested.join("combined.rs"),
+        format!("fn leak(value: {wire}) {{ std::io::stderr(); let _ = value; }}"),
+    )
+    .expect("combined synthetic source writes");
+    assert!(!syntax_detector_violations(root.path(), authority_syntax_detector).is_empty());
+    assert!(!syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty());
 }

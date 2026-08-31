@@ -30,7 +30,9 @@ solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 
 [dev-dependencies]
+proc-macro2 = "1.0.107"
 serde.workspace = true
+syn = { version = "2.0.119", features = ["full", "visit"] }
 tempfile = "3.24.0"
 
 # This opt-in target exercises the public bootstrap boundary through its real

@@ -4330,6 +4330,7 @@ version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "nix",
+ "proc-macro2",
  "rcgen",
  "ring",
  "serde",
@@ -4337,6 +4338,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
+ "syn 2.0.119",
  "tempfile",
 ]
 
