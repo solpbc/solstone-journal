@@ -8,12 +8,14 @@ use std::path::{Component, Path};
 
 use serde_json::Value;
 
+mod lock;
 mod namespace;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
 
+pub use lock::{CortexNamespaceLock, CortexNamespaceLockError, acquire_cortex_namespace_lock};
 pub use namespace::{
     CortexNamespaceAuthority, CortexNamespaceError, create_or_admit_cortex_namespace,
 };
