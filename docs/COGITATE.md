@@ -33,9 +33,11 @@ Cortex (cortex/request)
    |- resolves execution facts
    |- spawns: solstone-core __talent-worker
         |- native talent runtime
-             |- solstone-core cogitate --one-shot
-                  |- native request/prompt/tool/finalization runtime
+             |- type: cogitate → solstone-core cogitate --one-shot
+             |- type: generate (or absent) → solstone-core generate --one-shot
 ```
+
+The talent worker selects the engine from prepared `type` after `prepare()`. `type: cogitate` is translated to a `CogitateRequest` and spawned as a sibling `solstone-core cogitate --one-shot` subprocess (`CogitateOneShotClient`). There is no Generate fallback. `correlation_id` is the Cortex request `use_id` (required; never the talent name). One-shot NDJSON events (`tool_start`, `tool_end`, `thinking`, budget, terminal) are replayed onto the worker's stdout as distinct log lines so Cortex can relay them; the worker still emits its own `start` and `finish`/`error` envelopes around that stream. Artifact files such as weekly reflection markdown are written by the worker's existing `write_output_if_configured` path — `emit_final` / `finish` only supply the terminal `result` text.
 
 The model's initial context is the native request's **initial prompt plus native
 tool schemas** — not a snapshot of the cwd. Files that merely sit in the
@@ -231,7 +233,7 @@ but deliberately cannot reconstruct a retry delay from discarded provider text.
 |---|---|
 | The contract preamble + locked vocabularies | `core/crates/solstone-core-cogitate/src/preambles.rs` |
 | Preamble injection into the system prompt | `compose_system_instruction` in `core/crates/solstone-core-cogitate/src/prompt.rs` |
-| Cogitate run assembly | `run_cogitate` in `solstone/think/cogitate_client.py`, then `solstone-core cogitate --one-shot` |
+| Cogitate run assembly | `EngineKind::from_prepared_config` + `cogitate_request` in `core/crates/solstone-core-talent-runtime/src/cogitate.rs`, then `CogitateOneShotClient` spawning `solstone-core cogitate --one-shot` |
 | Talent-tier inventory and capabilities | `load_talent_contract` in `solstone/think/cogitate_client.py`, then `solstone-core cogitate --talent-contract` |
 | Effective prompt and finalization display | `render_dry_run_details` in `solstone/think/cogitate_client.py`, from the native one-shot `dry_run` event |
 | Command / write policy | `core/crates/solstone-core-cogitate/src/policy.rs` and `core/crates/solstone-core-cogitate-tools/` |

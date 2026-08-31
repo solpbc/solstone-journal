@@ -272,10 +272,17 @@ mod tests {
                 root.path(),
                 r#"{"title":"Focus complete","description":"Completes focused work."}"#,
             ));
+        let mut sink = Vec::new();
+        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
+            root.path().join("unused-cogitate"),
+        );
         let outcome = generate_and_write(
             &mut prepared,
             &context,
             &client,
+            &cogitate,
+            &mut sink,
+            crate::cogitate::EngineKind::Generate,
             Some((&TIMELINE_SEGMENT_SUMMARY, state)),
         );
         assert!(matches!(

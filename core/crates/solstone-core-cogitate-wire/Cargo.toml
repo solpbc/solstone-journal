@@ -29,5 +29,9 @@ solstone-core-spp-ratls.workspace = true
 name = "cogitate_environment_isolation"
 path = "tests/cogitate_environment_isolation.rs"
 
+[[test]]
+name = "cogitate_oneshot_process_group"
+path = "tests/cogitate_oneshot_process_group.rs"
+
 [lints]
 workspace = true

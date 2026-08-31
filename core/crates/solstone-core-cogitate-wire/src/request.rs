@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_cogitate::{
     FinalizationConfig, FinalizationValue, capabilities_for_access_tier,
     compose_system_instruction, expects_emit_final,
@@ -91,6 +91,30 @@ impl CogitateRequest {
             initial_prompt: required_string(object, "initial_prompt")?,
             journal_root,
             dry_run: optional_bool(object, "dry_run")?.unwrap_or(false),
+        })
+    }
+
+    pub fn to_value(&self) -> Value {
+        json!({
+            "schema": self.schema,
+            "access_tier": self.access_tier,
+            "outbound_approval": self.outbound_approval,
+            "diagnostic": self.diagnostic,
+            "talent_instruction": self.talent_instruction,
+            "sol_tool_name": self.sol_tool_name,
+            "read_scope": self.read_scope,
+            "output_path": self.output_path,
+            "schedule": self.schedule,
+            "max_turns": self.max_turns,
+            "cost_cap_usd": self.cost_cap_usd,
+            "context_window": self.context_window,
+            "timeout_ms": self.timeout_ms,
+            "read_call_budget": self.read_call_budget,
+            "model": self.model,
+            "correlation_id": self.correlation_id,
+            "initial_prompt": self.initial_prompt,
+            "journal_root": self.journal_root.to_string_lossy(),
+            "dry_run": self.dry_run,
         })
     }
 
