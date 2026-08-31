@@ -47,6 +47,10 @@ pub(crate) struct BridgeBinding {
 }
 
 impl BridgeAuthority {
+    pub(crate) fn hostname(&self) -> String {
+        self.hostname.clone()
+    }
+
     pub(crate) fn expires_at(&self) -> i64 {
         self.expires_at
     }
@@ -191,6 +195,15 @@ impl McpBridgeCarrier {
             self.renewal_owner,
             self.shutdown,
         )
+    }
+
+    /// Pair the authenticated carrier with TLS state bound to the very same
+    /// account-authorized hostname before exposing either to other crates.
+    pub(crate) fn into_tunnel(self) -> Result<crate::McpEndpointTunnel, McpBridgeCarrierError> {
+        let tls =
+            crate::tls::McpEndpointTlsService::for_authorized_hostname(self.authority.hostname());
+        let session = self.into_session()?;
+        Ok(crate::McpEndpointTunnel { tls, session })
     }
 }
 
