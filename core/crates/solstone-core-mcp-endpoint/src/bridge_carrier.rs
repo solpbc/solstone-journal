@@ -154,6 +154,7 @@ pub enum McpBridgeCarrierError {
     Tls,
     Io,
     Pop,
+    State,
 }
 
 impl fmt::Display for McpBridgeCarrierError {
@@ -166,6 +167,7 @@ impl fmt::Display for McpBridgeCarrierError {
             Self::Tls => "MCP bridge TLS connection failed",
             Self::Io => "MCP bridge control I/O failed",
             Self::Pop => "MCP bridge proof-of-possession failed",
+            Self::State => "MCP endpoint certificate state could not be loaded",
         })
     }
 }
@@ -200,8 +202,9 @@ impl McpBridgeCarrier {
     /// Pair the authenticated carrier with TLS state bound to the very same
     /// account-authorized hostname before exposing either to other crates.
     pub(crate) fn into_tunnel(self) -> Result<crate::McpEndpointTunnel, McpBridgeCarrierError> {
-        let tls =
-            crate::tls::McpEndpointTlsService::for_authorized_hostname(self.authority.hostname());
+        let tls = self
+            .renewal_owner
+            .tls_service_for(self.authority.hostname())?;
         let session = self.into_session()?;
         Ok(crate::McpEndpointTunnel { tls, session })
     }

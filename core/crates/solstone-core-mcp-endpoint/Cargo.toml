@@ -33,9 +33,11 @@ solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 spl-core.workspace = true
 spl-home.workspace = true
+time = "0.3.55"
 tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 webpki-roots = "1.0.9"
+x509-parser = { version = "0.16.0", features = ["verify"] }
 
 [dev-dependencies]
 proc-macro2 = "1.0.107"

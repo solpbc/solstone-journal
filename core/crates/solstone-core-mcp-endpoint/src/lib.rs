@@ -16,6 +16,11 @@ use std::sync::Arc;
 #[cfg(unix)]
 use tokio::sync::watch;
 
+#[cfg(unix)]
+use solstone_core_journal_config::McpEndpointCertificateEnvironment;
+#[cfg(unix)]
+use solstone_core_journal_io::journal_root::JournalRoot;
+
 #[cfg(not(unix))]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 
@@ -204,6 +209,10 @@ pub struct McpEndpointOwnerContext {
     committed: Arc<solstone_core_sol_link::committed::CommittedIdentity>,
     #[cfg(unix)]
     keypair: Arc<ring::signature::Ed25519KeyPair>,
+    #[cfg(unix)]
+    journal_root: Arc<JournalRoot>,
+    #[cfg(unix)]
+    certificate_environment: McpEndpointCertificateEnvironment,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -259,11 +268,25 @@ impl McpEndpointOwnerContext {
             _private: (),
             committed: Arc::clone(&self.committed),
             keypair: Arc::clone(&self.keypair),
+            journal_root: Arc::clone(&self.journal_root),
+            certificate_environment: self.certificate_environment,
         }
     }
 
     pub(crate) fn proof_keypair(&self) -> Arc<ring::signature::Ed25519KeyPair> {
         Arc::clone(&self.keypair)
+    }
+
+    pub(crate) fn tls_service_for(
+        &self,
+        hostname: String,
+    ) -> Result<McpEndpointTlsService, McpBridgeCarrierError> {
+        tls::McpEndpointTlsService::for_authorized_hostname(
+            Arc::clone(&self.journal_root),
+            hostname,
+            self.certificate_environment,
+        )
+        .map_err(|_| McpBridgeCarrierError::State)
     }
 }
 
