@@ -3,8 +3,10 @@
 
 //! Journal-hosted OAuth helpers for the MCP endpoint.
 
+pub(crate) mod bulkhead;
 pub(crate) mod cimd;
 pub(crate) mod pairing;
+pub(crate) mod rate_limit;
 pub(crate) mod redirect;
 pub(crate) mod store;
 pub(crate) mod urlparse;
