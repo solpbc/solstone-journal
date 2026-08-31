@@ -900,10 +900,8 @@ mod tests {
         added: &[&str],
     ) {
         let mut expected = before;
-        if lock {
-            if let Some(value) = after.get(Path::new("cortex-use.lock")) {
-                expected.insert(PathBuf::from("cortex-use.lock"), value.clone());
-            }
+        if lock && let Some(value) = after.get(Path::new("cortex-use.lock")) {
+            expected.insert(PathBuf::from("cortex-use.lock"), value.clone());
         }
         for (from, to) in renames {
             rename_prefix(&mut expected, Path::new(from), Path::new(to));
