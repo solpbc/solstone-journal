@@ -3608,6 +3608,7 @@ name = "solstone-core-cortex"
 version = "2.0.0"
 dependencies = [
  "chrono",
+ "log",
  "nix",
  "serde_json",
  "solstone-core-brain",
@@ -3615,6 +3616,7 @@ dependencies = [
  "solstone-core-generate-wire",
  "solstone-core-journal",
  "solstone-core-journal-cli",
+ "solstone-core-journal-io",
  "solstone-core-spp-ratls",
  "solstone-core-system",
  "solstone-core-talent-cli",

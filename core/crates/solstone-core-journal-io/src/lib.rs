@@ -18,6 +18,7 @@ pub mod append;
 pub mod atomic;
 #[cfg(unix)]
 pub mod claim_remove;
+pub mod cortex_use;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;

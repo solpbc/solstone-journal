@@ -9,6 +9,9 @@ use std::thread;
 use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_callosum::CallosumSocketConnection;
+use solstone_core_journal_io::cortex_use::{
+    CortexUseOperation, format_cortex_use_fatal, format_cortex_use_summary,
+};
 use solstone_core_system::lifecycle::{
     HostedServiceParentRuntime, HostedServiceShutdownEvidence, ParentLossReason,
 };
@@ -42,6 +45,8 @@ pub enum CortexServiceError {
     InstallationRoot(String),
     #[error("could not initialize cortex journal storage: {0}")]
     Storage(#[source] std::io::Error),
+    #[error("cortex recovery failed: {0}")]
+    Recovery(String),
     #[error("hosted parent-loss coordination failed: {0}")]
     ParentLoss(String),
 }
@@ -53,6 +58,7 @@ impl CortexServiceError {
             Self::CurrentExecutable(_) => "executable",
             Self::InstallationRoot(_) => "installation-root",
             Self::Storage(_) => "storage",
+            Self::Recovery(_) => "recovery",
             Self::ParentLoss(_) => "parent-loss",
         }
     }
@@ -223,7 +229,16 @@ where
 {
     let store = CortexStore::new(journal.clone()).map_err(CortexServiceError::Storage)?;
     // Recovery intentionally happens before this connection is started.
-    store.recover();
+    let recovery = store.recover().map_err(|fatal| {
+        let diagnostic = format_cortex_use_fatal(CortexUseOperation::Recovery, fatal);
+        log::error!("{diagnostic}");
+        CortexServiceError::Recovery(diagnostic)
+    })?;
+    if let Some(diagnostic) =
+        format_cortex_use_summary(CortexUseOperation::Recovery, recovery.refusals())
+    {
+        log::warn!("{diagnostic}");
+    }
     let (spawn_tx, spawn_rx) = mpsc::channel();
     let (cancel_tx, cancel_rx) = mpsc::channel();
     let (outbound_tx, outbound_rx) = mpsc::channel();
@@ -499,6 +514,10 @@ mod tests {
         assert_eq!(
             CortexServiceError::Storage(std::io::Error::other("storage")).class(),
             "storage"
+        );
+        assert_eq!(
+            CortexServiceError::Recovery("failed".into()).class(),
+            "recovery"
         );
         let text = error.to_string();
         assert!(

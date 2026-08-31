@@ -17,11 +17,13 @@ test-hooks = []
 
 [dependencies]
 chrono.workspace = true
+log.workspace = true
 serde_json.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-generate-wire.workspace = true
 solstone-core-journal-cli.workspace = true
+solstone-core-journal-io.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-spp-ratls.workspace = true
 solstone-core-system.workspace = true
@@ -36,6 +38,9 @@ nix = { workspace = true, features = ["process", "signal"] }
 [dev-dependencies]
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 
 [[bin]]
 name = "solstone-cortex-controller"

@@ -8,6 +8,11 @@ use std::thread;
 
 use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
+use solstone_core_journal_io::cortex_use::{
+    CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
+    CortexUseRefusalCounts, check_cortex_use_destination, inspect_cortex_use_root,
+    read_cortex_use_request, talent_directory_name,
+};
 
 #[derive(Clone, Debug)]
 pub struct CortexStore {
@@ -24,7 +29,7 @@ impl CortexStore {
 
     pub(crate) fn active_path(&self, name: &str, use_id: &str) -> PathBuf {
         self.talents
-            .join(safe_name(name))
+            .join(talent_directory_name(name))
             .join(format!("{use_id}_active.jsonl"))
     }
 
@@ -69,46 +74,53 @@ impl CortexStore {
         }
     }
 
-    pub(crate) fn recover(&self) {
-        let Ok(entries) = fs::read_dir(&self.talents) else {
-            return;
-        };
-        for directory in entries.flatten().filter_map(|entry| {
-            entry
-                .file_type()
-                .ok()
-                .filter(|kind| kind.is_dir())
-                .map(|_| entry.path())
-        }) {
-            let Ok(files) = fs::read_dir(directory) else {
-                continue;
-            };
-            for active in files.flatten().map(|entry| entry.path()).filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("_active.jsonl"))
-            }) {
-                let Some(use_id) = active
-                    .file_stem()
-                    .and_then(|name| name.to_str())
-                    .and_then(|name| name.strip_suffix("_active"))
-                    .map(str::to_owned)
-                else {
+    pub(crate) fn recover(&self) -> Result<RecoveryReport, CortexUseFatal> {
+        let (candidates, mut refusals) = self.inventory_recovery_candidates()?;
+        for candidate in candidates {
+            let request = match read_cortex_use_request(
+                &candidate.talent_directory,
+                &candidate.active_leaf,
+            ) {
+                CortexUseCandidateRead::Accepted(request) => request,
+                CortexUseCandidateRead::Refused(refusal) => {
+                    refusals.record(refusal);
                     continue;
-                };
-                let mut error = synthesized_error(
-                    &use_id,
-                    "Recovered: Cortex restarted while talent was running",
-                );
-                // Recovery deliberately uses create-or-append. Its caller has just
-                // globbed existing active paths, unlike late-event appends.
-                if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&active) {
-                    let _ = writeln!(file, "{}", Value::Object(std::mem::take(&mut error)));
-                    let completed = active.with_file_name(format!("{use_id}.jsonl"));
-                    let _ = fs::rename(&active, completed);
+                }
+            };
+            let destination = match recovery_destination_check_checkpoint() {
+                Ok(()) => check_cortex_use_destination(&candidate.talent_directory, &request),
+                Err(refusal) => CortexUseDestinationCheck::Refused(refusal),
+            };
+            match destination {
+                CortexUseDestinationCheck::Vacant => {}
+                CortexUseDestinationCheck::Refused(refusal) => {
+                    refusals.record(refusal);
+                    continue;
                 }
             }
+            let error = synthesized_error(
+                &request.use_id,
+                "Recovered: Cortex restarted while talent was running",
+            );
+            match self.append_active(&candidate.active_path, &error) {
+                Ok(true) => {}
+                Ok(false) | Err(_) => {
+                    refusals.record(CortexUseRefusal::CandidateIo);
+                    continue;
+                }
+            }
+            if fs::rename(
+                &candidate.active_path,
+                candidate
+                    .talent_directory
+                    .join(format!("{}.jsonl", request.use_id)),
+            )
+            .is_err()
+            {
+                refusals.record(CortexUseRefusal::CandidateIo);
+            }
         }
+        Ok(RecoveryReport { refusals })
     }
 
     pub(crate) fn complete(
@@ -130,8 +142,13 @@ impl CortexStore {
         else {
             return;
         };
-        let link = self.talents.join(format!("{}.log", safe_name(name)));
-        atomic_symlink(&link, &format!("{}/{use_id}.jsonl", safe_name(name)));
+        let link = self
+            .talents
+            .join(format!("{}.log", talent_directory_name(name)));
+        atomic_symlink(
+            &link,
+            &format!("{}/{use_id}.jsonl", talent_directory_name(name)),
+        );
         self.append_day_index(use_id, request, &completed);
     }
 
@@ -248,6 +265,155 @@ impl CortexStore {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RecoveryReport {
+    refusals: CortexUseRefusalCounts,
+}
+
+impl RecoveryReport {
+    pub(crate) fn refusals(&self) -> &CortexUseRefusalCounts {
+        &self.refusals
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RecoveryCandidate {
+    talent_directory: PathBuf,
+    active_leaf: std::ffi::OsString,
+    active_path: PathBuf,
+}
+
+#[cfg(test)]
+thread_local! {
+    static RECOVERY_ROOT_REVALIDATION_FAULT: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
+#[cfg(test)]
+fn recovery_root_revalidation_checkpoint() -> Result<(), CortexUseFatal> {
+    RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| {
+        (!fault.replace(false))
+            .then_some(())
+            .ok_or(CortexUseFatal::RootInspectionFailed)
+    })
+}
+
+#[cfg(not(test))]
+fn recovery_root_revalidation_checkpoint() -> Result<(), CortexUseFatal> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn run_with_recovery_root_revalidation_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+    RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| {
+        assert!(
+            !fault.replace(true),
+            "recovery root fault is already active"
+        );
+    });
+    let result = operation();
+    let consumed = RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| !fault.replace(false));
+    (result, consumed)
+}
+
+#[cfg(test)]
+thread_local! {
+    static RECOVERY_DESTINATION_IO_FAULT: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
+#[cfg(test)]
+fn recovery_destination_check_checkpoint() -> Result<(), CortexUseRefusal> {
+    RECOVERY_DESTINATION_IO_FAULT.with(|fault| {
+        (!fault.replace(false))
+            .then_some(())
+            .ok_or(CortexUseRefusal::DestinationIo)
+    })
+}
+
+#[cfg(not(test))]
+fn recovery_destination_check_checkpoint() -> Result<(), CortexUseRefusal> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn run_with_recovery_destination_io_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+    RECOVERY_DESTINATION_IO_FAULT.with(|fault| {
+        assert!(
+            !fault.replace(true),
+            "recovery destination fault is already active"
+        );
+    });
+    let result = operation();
+    let consumed = RECOVERY_DESTINATION_IO_FAULT.with(|fault| !fault.replace(false));
+    (result, consumed)
+}
+
+impl CortexStore {
+    fn inventory_recovery_candidates(
+        &self,
+    ) -> Result<(Vec<RecoveryCandidate>, CortexUseRefusalCounts), CortexUseFatal> {
+        inspect_cortex_use_root(&self.talents)?;
+        let mut directories =
+            fs::read_dir(&self.talents).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+        let mut candidates = Vec::new();
+        let mut refusals = CortexUseRefusalCounts::default();
+        loop {
+            let Some(entry) = directories.next() else {
+                break;
+            };
+            let entry = entry.map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+            let file_type = entry
+                .file_type()
+                .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+            if !file_type.is_dir() {
+                continue;
+            }
+            let directory = entry.path();
+            let files = match fs::read_dir(&directory) {
+                Ok(files) => files,
+                Err(_) => {
+                    refusals.record(CortexUseRefusal::TalentDirectoryRefused);
+                    continue;
+                }
+            };
+            let mut directory_candidates = Vec::new();
+            let mut refused = false;
+            for entry in files {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => {
+                        refused = true;
+                        break;
+                    }
+                };
+                let active_leaf = entry.file_name();
+                if active_leaf
+                    .to_str()
+                    .is_some_and(|name| name.ends_with("_active.jsonl"))
+                {
+                    directory_candidates.push(RecoveryCandidate {
+                        active_path: directory.join(&active_leaf),
+                        talent_directory: directory.clone(),
+                        active_leaf,
+                    });
+                }
+            }
+            if refused {
+                refusals.record(CortexUseRefusal::TalentDirectoryRefused);
+            } else {
+                candidates.extend(directory_candidates);
+            }
+        }
+        recovery_root_revalidation_checkpoint()?;
+        inspect_cortex_use_root(&self.talents)?;
+        candidates.sort_by(|left, right| left.active_path.cmp(&right.active_path));
+        Ok((candidates, refusals))
+    }
+}
+
 pub(crate) fn synthesized_error(use_id: &str, error: impl Into<String>) -> Map<String, Value> {
     Map::from_iter([
         ("event".into(), Value::String("error".into())),
@@ -338,18 +504,6 @@ fn derived_output_path(day_dir: &Path, request: &Map<String, Value>) -> Option<P
     })
 }
 
-pub(crate) fn safe_name(name: &str) -> String {
-    let candidate = name.replace(':', "--").replace(['/', '\\'], "-");
-    if candidate.is_empty()
-        || Path::new(&candidate)
-            .components()
-            .any(|component| !matches!(component, std::path::Component::Normal(_)))
-    {
-        return "_invalid".to_owned();
-    }
-    candidate
-}
-
 fn is_day_key(day: &str) -> bool {
     day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
@@ -383,6 +537,14 @@ fn temporary_link_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[cfg(unix)]
+    use solstone_core_journal_io::cortex_use::{
+        CortexUseOperation, CortexUseReadPrimitive, format_cortex_use_summary,
+        run_with_cortex_use_read_fault,
+    };
     use tempfile::tempdir;
 
     fn request() -> Map<String, Value> {
@@ -390,6 +552,22 @@ mod tests {
             json!({"name":"conversation","day":"19700101","ts":1000,"prompt":"p"}),
         )
         .unwrap()
+    }
+
+    fn recovery_request(use_id: &str) -> Map<String, Value> {
+        recovery_request_named("conversation", use_id)
+    }
+
+    fn recovery_request_named(name: &str, use_id: &str) -> Map<String, Value> {
+        let mut request = request();
+        request.insert("name".into(), Value::String(name.into()));
+        request.insert("use_id".into(), Value::String(use_id.into()));
+        request
+    }
+
+    fn claim_recovery_candidate(store: &CortexStore, name: &str, use_id: &str) -> PathBuf {
+        let request = recovery_request_named(name, use_id);
+        store.claim(name, use_id, &request).unwrap().unwrap()
     }
 
     fn complete_with_request(store: &CortexStore, use_id: &str, request: &Map<String, Value>) {
@@ -407,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn append_without_create_drops_late_event_and_create_append_causes_bogus_recovery() {
+    fn append_without_create_drops_late_event_and_invalid_recovery_evidence_is_preserved() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let active = store
@@ -426,10 +604,12 @@ mod tests {
             .append(true)
             .open(&active)
             .unwrap();
-        store.recover();
+        let report = store.recover().unwrap();
         let completed = active.with_file_name("one.jsonl");
+        assert_eq!(report.refusals().get(CortexUseRefusal::InvalidRequest), 1);
+        assert!(!active.exists() || fs::read(&active).unwrap().is_empty());
         assert!(
-            fs::read_to_string(completed)
+            !fs::read_to_string(completed)
                 .unwrap()
                 .contains("Recovered: Cortex restarted while talent was running")
         );
@@ -470,7 +650,7 @@ mod tests {
     fn duplicate_claim_leaves_request_file_byte_identical() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let request = request();
+        let request = recovery_request("one");
         let active = store
             .claim("conversation", "one", &request)
             .unwrap()
@@ -489,7 +669,7 @@ mod tests {
     fn recovery_does_not_create_day_index_or_repoint_symlink() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let request = request();
+        let request = recovery_request("one");
         let active = store
             .claim("conversation", "one", &request)
             .unwrap()
@@ -497,10 +677,17 @@ mod tests {
         let link = store.talents().join("chat.log");
         atomic_symlink(&link, "chat/old.jsonl");
         let before = fs::read_link(&link).unwrap();
-        store.recover();
+        let report = store.recover().unwrap();
         assert!(active.with_file_name("one.jsonl").exists());
         assert!(!store.talents().join("19700101.jsonl").exists());
         assert_eq!(fs::read_link(link).unwrap(), before);
+        assert!(
+            solstone_core_journal_io::cortex_use::format_cortex_use_summary(
+                solstone_core_journal_io::cortex_use::CortexUseOperation::Recovery,
+                report.refusals(),
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -685,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_create_append_and_late_no_create_append_are_deliberately_different() {
+    fn recovery_requires_a_valid_request_and_does_not_resurrect_late_output() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let active = store
@@ -698,12 +885,12 @@ mod tests {
                 .append_active(&active, &synthesized_error("one", "late"))
                 .unwrap()
         );
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&active)
+        let recovery_request = recovery_request("one");
+        store
+            .claim("conversation", "one", &recovery_request)
+            .unwrap()
             .unwrap();
-        store.recover();
+        store.recover().unwrap();
         assert!(active.with_file_name("one.jsonl").exists());
     }
 
@@ -807,16 +994,17 @@ mod tests {
     fn recovery_rerun_overwrites_recovered_log_and_duplicates_day_index() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let request = request();
+        let request = recovery_request("one");
         let first = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
+        let second_request = recovery_request("two");
         let _second = store
-            .claim("conversation", "two", &request)
+            .claim("conversation", "two", &second_request)
             .unwrap()
             .unwrap();
-        store.recover();
+        store.recover().unwrap();
         let recovered = first.with_file_name("one.jsonl");
         let recovered_text = fs::read_to_string(&recovered).unwrap();
         store.append_day_index("one", &request, &recovered);
@@ -843,13 +1031,301 @@ mod tests {
     }
 
     #[test]
-    fn safe_name_cannot_escape_the_talents_directory() {
-        assert_eq!(safe_name("conversation"), "conversation");
-        assert_eq!(safe_name("app:name"), "app--name");
-        assert_eq!(safe_name("foo/../etc"), "foo-..-etc");
-        assert_eq!(safe_name(".."), "_invalid");
+    fn recovery_terminalizes_only_admitted_candidates_and_preserves_refused_evidence() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let genuine = store
+            .claim("conversation", "genuine", &recovery_request("genuine"))
+            .unwrap()
+            .unwrap();
+        let malformed = store.active_path("conversation", "malformed");
+        fs::write(&malformed, b"not-json\n").unwrap();
+        let wrong_directory = store.active_path("other", "wrong-directory");
+        fs::create_dir_all(wrong_directory.parent().unwrap()).unwrap();
+        fs::write(
+            &wrong_directory,
+            b"{\"name\":\"conversation\",\"use_id\":\"wrong-directory\"}\n",
+        )
+        .unwrap();
+        let occupied = store
+            .claim("conversation", "occupied", &recovery_request("occupied"))
+            .unwrap()
+            .unwrap();
+        let occupied_completed = occupied.with_file_name("occupied.jsonl");
+        fs::write(&occupied_completed, b"existing completed record\n").unwrap();
+        let malformed_before = fs::read(&malformed).unwrap();
+        let wrong_directory_before = fs::read(&wrong_directory).unwrap();
+        let occupied_before = fs::read(&occupied).unwrap();
+
+        let report = store.recover().unwrap();
+
+        assert!(genuine.with_file_name("genuine.jsonl").exists());
+        assert_eq!(fs::read(&malformed).unwrap(), malformed_before);
+        assert_eq!(fs::read(&wrong_directory).unwrap(), wrong_directory_before);
+        assert_eq!(fs::read(&occupied).unwrap(), occupied_before);
+        assert_eq!(
+            fs::read(&occupied_completed).unwrap(),
+            b"existing completed record\n"
+        );
+        assert_eq!(report.refusals().get(CortexUseRefusal::InvalidRequest), 2);
+        assert_eq!(
+            report.refusals().get(CortexUseRefusal::DestinationOccupied),
+            1
+        );
+    }
+
+    #[test]
+    fn recovery_counts_nonregular_active_leaf_and_recovers_another_candidate() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let genuine = claim_recovery_candidate(&store, "genuine", "one");
+        let nonregular = store.active_path("nonregular", "directory");
+        fs::create_dir_all(nonregular.parent().unwrap()).unwrap();
+        fs::create_dir(&nonregular).unwrap();
+
+        let report = store.recover().unwrap();
+
+        assert!(genuine.with_file_name("one.jsonl").exists());
+        assert!(fs::metadata(&nonregular).unwrap().is_dir());
+        assert_eq!(
+            report.refusals().get(CortexUseRefusal::CandidateNonregular),
+            1
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_counts_injected_candidate_io_and_recovers_another_candidate() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let first = claim_recovery_candidate(&store, "conversation", "first");
+        let second = claim_recovery_candidate(&store, "conversation", "second");
+        let first_before = fs::read(&first).unwrap();
+        let second_before = fs::read(&second).unwrap();
+
+        let (report, injected) =
+            run_with_cortex_use_read_fault(CortexUseReadPrimitive::FirstRowRead, 1, || {
+                store.recover().unwrap()
+            });
+
+        assert!(injected);
+        assert_eq!(report.refusals().get(CortexUseRefusal::CandidateIo), 1);
+        let recovered = usize::from(first.with_file_name("first.jsonl").exists())
+            + usize::from(second.with_file_name("second.jsonl").exists());
+        assert_eq!(recovered, 1);
+        if first.exists() {
+            assert_eq!(fs::read(&first).unwrap(), first_before);
+        } else {
+            assert_eq!(fs::read(&second).unwrap(), second_before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_counts_injected_candidate_identity_change_and_recovers_another_candidate() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let first = claim_recovery_candidate(&store, "conversation", "first");
+        let second = claim_recovery_candidate(&store, "conversation", "second");
+        let first_before = fs::read(&first).unwrap();
+        let second_before = fs::read(&second).unwrap();
+
+        let (report, injected) =
+            run_with_cortex_use_read_fault(CortexUseReadPrimitive::FinalNameObserve, 1, || {
+                store.recover().unwrap()
+            });
+
+        assert!(injected);
+        assert_eq!(
+            report
+                .refusals()
+                .get(CortexUseRefusal::CandidateIdentityChanged),
+            1
+        );
+        let recovered = usize::from(first.with_file_name("first.jsonl").exists())
+            + usize::from(second.with_file_name("second.jsonl").exists());
+        assert_eq!(recovered, 1);
+        if first.exists() {
+            assert_eq!(fs::read(&first).unwrap(), first_before);
+        } else {
+            assert_eq!(fs::read(&second).unwrap(), second_before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_counts_refused_talent_directory_and_recovers_another_candidate() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let genuine = claim_recovery_candidate(&store, "genuine", "one");
+        let refused = claim_recovery_candidate(&store, "refused", "blocked");
+        let refused_before = fs::read(&refused).unwrap();
+        let refused_directory = refused.parent().unwrap();
+        let original_permissions = fs::metadata(refused_directory).unwrap().permissions();
+        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0)).unwrap();
+        let report = store.recover();
+        fs::set_permissions(refused_directory, original_permissions).unwrap();
+        let report = report.unwrap();
+
+        assert!(genuine.with_file_name("one.jsonl").exists());
+        assert_eq!(fs::read(&refused).unwrap(), refused_before);
+        assert_eq!(
+            report
+                .refusals()
+                .get(CortexUseRefusal::TalentDirectoryRefused),
+            1
+        );
+    }
+
+    #[test]
+    fn recovery_counts_destination_io_fault_and_recovers_another_candidate() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let first = claim_recovery_candidate(&store, "conversation", "first");
+        let second = claim_recovery_candidate(&store, "conversation", "second");
+        let first_before = fs::read(&first).unwrap();
+        let second_before = fs::read(&second).unwrap();
+
+        let (report, injected) =
+            run_with_recovery_destination_io_fault(|| store.recover().unwrap());
+
+        assert!(injected);
+        assert_eq!(report.refusals().get(CortexUseRefusal::DestinationIo), 1);
+        let recovered = usize::from(first.with_file_name("first.jsonl").exists())
+            + usize::from(second.with_file_name("second.jsonl").exists());
+        assert_eq!(recovered, 1);
+        if first.exists() {
+            assert_eq!(fs::read(&first).unwrap(), first_before);
+        } else {
+            assert_eq!(fs::read(&second).unwrap(), second_before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_aggregates_every_refusal_class_in_fixed_diagnostic_order() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+
+        let invalid = store.active_path("invalid", "missing-newline");
+        fs::create_dir_all(invalid.parent().unwrap()).unwrap();
+        fs::write(
+            &invalid,
+            b"{\"name\":\"invalid\",\"use_id\":\"missing-newline\"}",
+        )
+        .unwrap();
+
+        let nonregular = store.active_path("nonregular", "directory");
+        fs::create_dir_all(nonregular.parent().unwrap()).unwrap();
+        fs::create_dir(&nonregular).unwrap();
+
+        let candidate_io = claim_recovery_candidate(&store, "candidate-io", "io");
+        let candidate_io_permissions = fs::metadata(&candidate_io).unwrap().permissions();
+        fs::set_permissions(&candidate_io, std::fs::Permissions::from_mode(0)).unwrap();
+
+        let occupied = claim_recovery_candidate(&store, "occupied", "taken");
+        fs::write(
+            occupied.with_file_name("taken.jsonl"),
+            b"already completed\n",
+        )
+        .unwrap();
+        let destination = claim_recovery_candidate(&store, "destination", "io");
+        let genuine_one = claim_recovery_candidate(&store, "genuine-one", "one");
+        let genuine_two = claim_recovery_candidate(&store, "genuine-two", "two");
+
+        let refused = claim_recovery_candidate(&store, "refused", "blocked");
+        let refused_directory = refused.parent().unwrap();
+        let refused_permissions = fs::metadata(refused_directory).unwrap().permissions();
+        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0)).unwrap();
+
+        let ((report, destination_injected), identity_injected) =
+            run_with_cortex_use_read_fault(CortexUseReadPrimitive::FinalNameObserve, 1, || {
+                run_with_recovery_destination_io_fault(|| store.recover())
+            });
+        fs::set_permissions(&candidate_io, candidate_io_permissions).unwrap();
+        fs::set_permissions(refused_directory, refused_permissions).unwrap();
+        let report = report.unwrap();
+
+        assert!(identity_injected);
+        assert!(destination_injected);
+        for refusal in [
+            CortexUseRefusal::InvalidRequest,
+            CortexUseRefusal::CandidateNonregular,
+            CortexUseRefusal::CandidateIo,
+            CortexUseRefusal::CandidateIdentityChanged,
+            CortexUseRefusal::DestinationOccupied,
+            CortexUseRefusal::DestinationIo,
+            CortexUseRefusal::TalentDirectoryRefused,
+        ] {
+            assert_eq!(report.refusals().get(refusal), 1, "{refusal:?}");
+        }
+        assert!(
+            genuine_one.with_file_name("one.jsonl").exists()
+                || genuine_two.with_file_name("two.jsonl").exists()
+        );
+        assert_eq!(
+            format_cortex_use_summary(CortexUseOperation::Recovery, report.refusals()),
+            Some(
+                "cortex_recovery invalid_request=1 candidate_nonregular=1 candidate_io=1 candidate_identity_changed=1 destination_occupied=1 destination_io=1 talent_directory_refused=1".into()
+            )
+        );
+        assert!(invalid.exists());
+        assert!(fs::metadata(&nonregular).unwrap().is_dir());
+        assert!(candidate_io.exists());
+        assert!(destination.exists() || destination.with_file_name("io.jsonl").exists());
+    }
+
+    #[test]
+    fn recovery_root_revalidation_failure_after_inventory_leaves_candidates_unmodified() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let active = store
+            .claim("conversation", "one", &recovery_request("one"))
+            .unwrap()
+            .unwrap();
+        let before = fs::read(&active).unwrap();
+
+        let (result, injected) = run_with_recovery_root_revalidation_fault(|| store.recover());
+
+        assert!(injected);
+        assert_eq!(result, Err(CortexUseFatal::RootInspectionFailed));
+        assert_eq!(fs::read(&active).unwrap(), before);
+        assert!(!active.with_file_name("one.jsonl").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_refuses_symlinked_talents_root_and_does_not_traverse_talent_symlinks() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let target = directory.path().join("target");
+        fs::create_dir(&target).unwrap();
+        let linked_talent = target.join("conversation");
+        fs::create_dir(&linked_talent).unwrap();
+        fs::write(
+            linked_talent.join("one_active.jsonl"),
+            b"{\"name\":\"conversation\",\"use_id\":\"one\"}\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&linked_talent, store.talents().join("linked")).unwrap();
+        store.recover().unwrap();
+        assert!(linked_talent.join("one_active.jsonl").exists());
+
+        fs::remove_file(store.talents().join("linked")).unwrap();
+        fs::remove_dir(store.talents()).unwrap();
+        std::os::unix::fs::symlink(&target, store.talents()).unwrap();
+        assert_eq!(store.recover(), Err(CortexUseFatal::RootInspectionFailed));
+    }
+
+    #[test]
+    fn active_path_uses_the_shared_talent_directory_projection() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        assert!(
+            store
+                .active_path("app:name", "one")
+                .ends_with("app--name/one_active.jsonl")
+        );
         let escaped = store.active_path("foo/../../outside", "one");
         assert!(escaped.starts_with(store.talents()));
     }
