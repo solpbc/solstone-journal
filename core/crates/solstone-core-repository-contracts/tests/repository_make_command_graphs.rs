@@ -1666,6 +1666,105 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 17] = [
     ),
 ];
 
+const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 24] = [
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
 const VALID_NATIVE_RECEIPT_TAIL: [(&str, &str); 4] = [
     (
         "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
@@ -1704,6 +1803,7 @@ enum CortexReceiptMutation {
 fn valid_native_receipts() -> Vec<String> {
     VALID_NATIVE_RECEIPTS
         .into_iter()
+        .chain(VALID_CORTEX_NAMESPACE_RECEIPTS)
         .chain(VALID_NATIVE_RECEIPT_TAIL)
         .map(|(key, value)| format!("{key}={value}"))
         .collect()
@@ -1871,6 +1971,40 @@ fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
             ),
         ]);
     }
+    for (index, (key, value)) in VALID_CORTEX_NAMESPACE_RECEIPTS.into_iter().enumerate() {
+        let diagnostic_key = key.strip_suffix("_FILESYSTEM").unwrap_or(key);
+        let wrong_value = match value {
+            "NTFS" => "ReFS",
+            "ReFS" => "NTFS",
+            _ => "fixture-invalid",
+        };
+        scenarios.extend([
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-omit"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Omit,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-duplicate"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Duplicate,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-wrong-value"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Replace(wrong_value),
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-post"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::MoveAfterAcknowledgement,
+            ),
+        ]);
+    }
     scenarios
 }
 
@@ -2018,6 +2152,24 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         assert!(
             driver.contains(marker),
             "driver missing receipt marker validator {marker}"
+        );
+    }
+    for fragment in [
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_",
+        "CREATE_ADMIT",
+        "WRONG_KIND_REPARSE",
+        "RETAINED_ROOT",
+        "RETAINED_HEALTH",
+        "FAILURE_MAPPING",
+        "PRESERVATION",
+    ] {
+        assert!(
+            runner.contains(fragment),
+            "runner missing Cortex namespace receipt fragment {fragment}"
+        );
+        assert!(
+            driver.contains(fragment),
+            "driver missing Cortex namespace receipt fragment {fragment}"
         );
     }
     for retired in [
