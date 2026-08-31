@@ -972,22 +972,25 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
         }
         let Some(bytes) = pending_writes.remove(&stream_id) else {
             if closing.remove(&stream_id) {
-                let Ok(output) = acceptor.close_write(stream_id) else {
-                    return false;
-                };
-                if !write_output(
-                    output,
-                    control_open,
-                    streams,
-                    accepts,
-                    command_tx,
-                    command_wakers,
-                    control_events,
-                    writer,
-                )
-                .await
-                {
-                    return false;
+                match acceptor.close_write(stream_id) {
+                    Ok(output) => {
+                        if !write_output(
+                            output,
+                            control_open,
+                            streams,
+                            accepts,
+                            command_tx,
+                            command_wakers,
+                            control_events,
+                            writer,
+                        )
+                        .await
+                        {
+                            return false;
+                        }
+                    }
+                    Err(HomeError::Closed) => retire_closed_stream(streams, stream_id, 0),
+                    Err(_) => return false,
                 }
             }
             continue;
@@ -1012,22 +1015,25 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                     stream.state.release_write(bytes.len());
                 }
                 if closing.remove(&stream_id) {
-                    let Ok(output) = acceptor.close_write(stream_id) else {
-                        return false;
-                    };
-                    if !write_output(
-                        output,
-                        control_open,
-                        streams,
-                        accepts,
-                        command_tx,
-                        command_wakers,
-                        control_events,
-                        writer,
-                    )
-                    .await
-                    {
-                        return false;
+                    match acceptor.close_write(stream_id) {
+                        Ok(output) => {
+                            if !write_output(
+                                output,
+                                control_open,
+                                streams,
+                                accepts,
+                                command_tx,
+                                command_wakers,
+                                control_events,
+                                writer,
+                            )
+                            .await
+                            {
+                                return false;
+                            }
+                        }
+                        Err(HomeError::Closed) => retire_closed_stream(streams, stream_id, 0),
+                        Err(_) => return false,
                     }
                 }
             }
@@ -1053,17 +1059,26 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                 {
                     return false;
                 }
-                if let Some(stream) = streams.remove(&stream_id) {
-                    stream.state.release_write(bytes.len());
-                    stream.state.state.store(STREAM_RESET, Ordering::Release);
-                    let _ = stream.tx.try_send(StreamSignal::Reset);
-                }
+                retire_closed_stream(streams, stream_id, bytes.len());
                 closing.remove(&stream_id);
             }
             Err(_) => return false,
         }
     }
     true
+}
+
+fn retire_closed_stream(
+    streams: &mut HashMap<u32, DriverStream>,
+    stream_id: u32,
+    staged_bytes: usize,
+) {
+    let Some(stream) = streams.remove(&stream_id) else {
+        return;
+    };
+    stream.state.release_write(staged_bytes);
+    stream.state.state.store(STREAM_RESET, Ordering::Release);
+    let _ = stream.tx.try_send(StreamSignal::Reset);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1365,6 +1380,52 @@ mod tests {
         assert!(pending_writes.is_empty());
         assert!(!streams.contains_key(&3));
         assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
+        assert_eq!(state.state.load(Ordering::Acquire), STREAM_RESET);
+
+        let output = acceptor
+            .feed(&Frame::new(5, FLAG_OPEN, Vec::new()).encode().unwrap())
+            .expect("second public open parses");
+        assert!(
+            write_output(
+                output,
+                &mut control_open,
+                &mut streams,
+                &accept_tx,
+                &command_tx,
+                &command_wakers,
+                &mut control_events,
+                &mut writer,
+            )
+            .await
+        );
+        let public = accept_rx.try_recv().expect("stream five is accepted");
+        assert_eq!(public.id, 5);
+        let _ = acceptor
+            .reset(5, ResetReason::Cancel)
+            .expect("peer reset removes stream five");
+        let state = Arc::clone(&streams.get(&5).expect("driver tracks stream five").state);
+        let mut pending_writes = HashMap::new();
+        let mut ready = VecDeque::from([5]);
+        let mut closing = HashSet::from([5]);
+
+        assert!(
+            flush_ready(
+                &mut acceptor,
+                &mut streams,
+                &mut pending_writes,
+                &mut ready,
+                &mut closing,
+                &mut control_open,
+                &accept_tx,
+                &command_tx,
+                &command_wakers,
+                &mut control_events,
+                &mut writer,
+            )
+            .await
+        );
+        assert!(pending_writes.is_empty());
+        assert!(!streams.contains_key(&5));
         assert_eq!(state.state.load(Ordering::Acquire), STREAM_RESET);
     }
 
