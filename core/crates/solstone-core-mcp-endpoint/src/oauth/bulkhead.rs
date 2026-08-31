@@ -268,14 +268,16 @@ mod tests {
                     let second = bulkhead.try_acquire(source).unwrap();
                     let waiting = Arc::clone(&bulkhead);
                     let deadline = Instant::now() + Duration::from_secs(30);
-                    let mut waiter =
-                        std::pin::pin!(async move { waiting.acquire(source, deadline).await });
-                    tokio::select! {
-                        biased;
-                        _ = &mut waiter => panic!("cancel waiter resolved"),
-                        () = tokio::task::yield_now() => {}
+                    {
+                        let mut waiter = std::pin::pin!(async move {
+                            waiting.acquire(source, deadline).await
+                        });
+                        tokio::select! {
+                            biased;
+                            _ = &mut waiter => panic!("cancel waiter resolved"),
+                            () = tokio::task::yield_now() => {}
+                        }
                     }
-                    drop(waiter);
                     drop(first);
                     drop(second);
                 }
@@ -348,13 +350,15 @@ mod tests {
             let second = bulkhead.try_acquire(source).unwrap();
             let waiting = Arc::clone(&bulkhead);
             let deadline = Instant::now() + Duration::from_secs(30);
-            let mut waiter = std::pin::pin!(async move { waiting.acquire(source, deadline).await });
-            tokio::select! {
-                biased;
-                _ = &mut waiter => panic!("cancel waiter resolved"),
-                () = tokio::task::yield_now() => {}
+            {
+                let mut waiter =
+                    std::pin::pin!(async move { waiting.acquire(source, deadline).await });
+                tokio::select! {
+                    biased;
+                    _ = &mut waiter => panic!("cancel waiter resolved"),
+                    () = tokio::task::yield_now() => {}
+                }
             }
-            drop(waiter);
             drop(first);
             drop(second);
             assert_eq!(bulkhead.debug_state(), (0, 0));
