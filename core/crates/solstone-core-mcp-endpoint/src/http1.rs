@@ -116,6 +116,18 @@ impl HttpResponse {
         }
     }
 
+    pub(crate) fn html(status: u16, reason: &'static str, body: String) -> Self {
+        Self {
+            status,
+            reason,
+            content_type: Some("text/html; charset=utf-8"),
+            body: body.into_bytes(),
+            session_id: None,
+            close: false,
+            extra_headers: Vec::new(),
+        }
+    }
+
     pub(crate) fn with_session_id(mut self, session_id: String) -> Self {
         self.session_id = Some(session_id);
         self

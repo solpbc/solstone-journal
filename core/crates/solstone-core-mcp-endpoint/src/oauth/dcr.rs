@@ -22,6 +22,23 @@ use crate::tokens::{RandomSource, SystemRandomSource};
 
 const CLIENT_ID_BYTES: usize = 32;
 
+/// Why a CIMD client could not be resolved or registered.
+#[derive(Debug)]
+pub(crate) enum CimdRegistrationError {
+    Fetch,
+    NoAllowlistedRedirect,
+    RequestedRedirectNotInDocument,
+    InvalidName,
+    Randomness,
+    Store(OAuthStoreError),
+}
+
+/// A CIMD client record plus whether this call inserted it.
+pub(crate) struct ResolvedCimdClient {
+    pub(crate) client: RegisteredClient,
+    pub(crate) created: bool,
+}
+
 enum ParsedRegistration {
     Cimd {
         client_id: String,
@@ -44,16 +61,17 @@ pub(crate) async fn register(
         Ok(ParsedRegistration::Cimd {
             client_id,
             requested_redirect_uris,
-        }) => match fetch_cimd(&client_id, source, &oauth.cimd_bulkhead, shutdown).await {
-            Ok(document) => complete_cimd(
-                oauth,
-                source,
-                client_id,
-                requested_redirect_uris,
-                document,
-                &SystemRandomSource,
-            ),
-            Err(_) => cimd_unavailable(),
+        }) => match resolve_or_register_cimd_client(
+            oauth,
+            source,
+            &client_id,
+            requested_redirect_uris,
+            shutdown,
+        )
+        .await
+        {
+            Ok(resolved) => registration_outcome(resolved),
+            Err(error) => map_cimd_error(error),
         },
         Ok(ParsedRegistration::Classic {
             redirect_uris,
@@ -82,16 +100,19 @@ pub(crate) async fn register_with_io<IO: CimdAttemptIo>(
             client_id,
             requested_redirect_uris,
         }) => {
-            match fetch_cimd_with_io(&client_id, source, &oauth.cimd_bulkhead, shutdown, io).await {
-                Ok(document) => complete_cimd(
-                    oauth,
-                    source,
-                    client_id,
-                    requested_redirect_uris,
-                    document,
-                    random,
-                ),
-                Err(_) => cimd_unavailable(),
+            match resolve_or_register_cimd_client_with_io(
+                oauth,
+                source,
+                &client_id,
+                requested_redirect_uris,
+                shutdown,
+                io,
+                random,
+            )
+            .await
+            {
+                Ok(resolved) => registration_outcome(resolved),
+                Err(error) => map_cimd_error(error),
             }
         }
         Ok(ParsedRegistration::Classic {
@@ -188,50 +209,138 @@ fn parse_registration(request: &HttpRequest) -> Result<ParsedRegistration, HttpR
     })
 }
 
-fn complete_cimd(
+/// Fetch (if needed) and return the registered CIMD client for `client_id`.
+pub(crate) async fn resolve_or_register_cimd_client(
     oauth: &OAuthRuntime,
     source: IpAddr,
-    client_id: String,
+    client_id: &str,
+    requested_redirect_uris: Option<Vec<String>>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<ResolvedCimdClient, CimdRegistrationError> {
+    if let Some(existing) = oauth
+        .store
+        .lookup_client_by_cimd_url(client_id)
+        .map_err(CimdRegistrationError::Store)?
+    {
+        return Ok(ResolvedCimdClient {
+            client: existing,
+            created: false,
+        });
+    }
+    match fetch_cimd(client_id, source, &oauth.cimd_bulkhead, shutdown).await {
+        Ok(document) => complete_cimd_document(
+            oauth,
+            source,
+            client_id,
+            requested_redirect_uris,
+            document,
+            &SystemRandomSource,
+        ),
+        Err(_) => Err(CimdRegistrationError::Fetch),
+    }
+}
+
+pub(crate) async fn resolve_or_register_cimd_client_with_io<IO: CimdAttemptIo>(
+    oauth: &OAuthRuntime,
+    source: IpAddr,
+    client_id: &str,
+    requested_redirect_uris: Option<Vec<String>>,
+    shutdown: &mut watch::Receiver<bool>,
+    io: IO,
+    random: &dyn RandomSource,
+) -> Result<ResolvedCimdClient, CimdRegistrationError> {
+    if let Some(existing) = oauth
+        .store
+        .lookup_client_by_cimd_url(client_id)
+        .map_err(CimdRegistrationError::Store)?
+    {
+        return Ok(ResolvedCimdClient {
+            client: existing,
+            created: false,
+        });
+    }
+    match fetch_cimd_with_io(client_id, source, &oauth.cimd_bulkhead, shutdown, io).await {
+        Ok(document) => complete_cimd_document(
+            oauth,
+            source,
+            client_id,
+            requested_redirect_uris,
+            document,
+            random,
+        ),
+        Err(_) => Err(CimdRegistrationError::Fetch),
+    }
+}
+
+fn complete_cimd_document(
+    oauth: &OAuthRuntime,
+    source: IpAddr,
+    client_id: &str,
     requested_redirect_uris: Option<Vec<String>>,
     document: CimdDocument,
     random: &dyn RandomSource,
-) -> HttpResponse {
+) -> Result<ResolvedCimdClient, CimdRegistrationError> {
     let selected = match requested_redirect_uris {
         Some(requested) => {
             if requested
                 .iter()
                 .any(|uri| !document.redirect_uris.iter().any(|listed| listed == uri))
             {
-                return invalid_metadata();
+                return Err(CimdRegistrationError::RequestedRedirectNotInDocument);
             }
             requested
         }
         None => document.redirect_uris,
     };
-    let redirect_uris = match filter_redirect_uris(selected) {
-        Ok(uris) => uris,
-        Err(response) => return response,
-    };
+    let redirect_uris = filter_redirect_uris(selected)?;
     let client_name = match document.client_name {
-        Some(name) if name.len() > MAX_CLIENT_NAME_BYTES => return invalid_metadata(),
+        Some(name) if name.len() > MAX_CLIENT_NAME_BYTES => {
+            return Err(CimdRegistrationError::InvalidName);
+        }
         other => other,
     };
-    let existing = match oauth.store.lookup_client_by_cimd_url(&client_id) {
-        Ok(existing) => existing,
-        Err(error) => return store_error(error),
-    };
+    let existing = oauth
+        .store
+        .lookup_client_by_cimd_url(client_id)
+        .map_err(CimdRegistrationError::Store)?;
     if let Some(existing) = existing {
-        return registration_response(200, "OK", &existing);
+        return Ok(ResolvedCimdClient {
+            client: existing,
+            created: false,
+        });
     }
     match oauth.store.register_client_with_random(
-        &client_id,
+        client_id,
         redirect_uris,
         client_name,
         &source_text(source),
         random,
     ) {
-        Ok(created) => registration_response(201, "Created", &created),
-        Err(error) => store_error(error),
+        Ok(created) => Ok(ResolvedCimdClient {
+            client: created,
+            created: true,
+        }),
+        Err(OAuthStoreError::Randomness) => Err(CimdRegistrationError::Randomness),
+        Err(error) => Err(CimdRegistrationError::Store(error)),
+    }
+}
+
+fn registration_outcome(resolved: ResolvedCimdClient) -> HttpResponse {
+    if resolved.created {
+        registration_response(201, "Created", &resolved.client)
+    } else {
+        registration_response(200, "OK", &resolved.client)
+    }
+}
+
+fn map_cimd_error(error: CimdRegistrationError) -> HttpResponse {
+    match error {
+        CimdRegistrationError::Fetch => cimd_unavailable(),
+        CimdRegistrationError::NoAllowlistedRedirect
+        | CimdRegistrationError::RequestedRedirectNotInDocument
+        | CimdRegistrationError::InvalidName => invalid_metadata(),
+        CimdRegistrationError::Randomness => registration_unavailable(),
+        CimdRegistrationError::Store(error) => store_error(error),
     }
 }
 
@@ -244,7 +353,7 @@ fn complete_classic(
 ) -> HttpResponse {
     let redirect_uris = match filter_redirect_uris(redirect_uris) {
         Ok(uris) => uris,
-        Err(response) => return response,
+        Err(_) => return invalid_metadata(),
     };
     let client_id = match mint_client_id(random) {
         Ok(client_id) => client_id,
@@ -262,13 +371,13 @@ fn complete_classic(
     }
 }
 
-fn filter_redirect_uris(uris: Vec<String>) -> Result<Vec<String>, HttpResponse> {
+fn filter_redirect_uris(uris: Vec<String>) -> Result<Vec<String>, CimdRegistrationError> {
     let filtered: Vec<String> = uris
         .into_iter()
         .filter(|uri| parse_redirect_uri(uri).is_ok())
         .collect();
     if filtered.is_empty() || filtered.len() > MAX_REDIRECT_URIS_PER_CLIENT {
-        return Err(invalid_metadata());
+        return Err(CimdRegistrationError::NoAllowlistedRedirect);
     }
     Ok(filtered)
 }
@@ -679,10 +788,14 @@ mod tests {
             &body,
         )
         .await;
-        let second = register_json(
+        let (_tx, mut shutdown) = watch::channel(false);
+        let second = register_with_io(
+            &json_request(&body),
+            SOURCE,
             &oauth,
-            FakeIo::document(&["http://127.0.0.1/callback"], Some("fixture")),
-            &body,
+            &mut shutdown,
+            UnusedIo,
+            &SystemRandomSource,
         )
         .await;
         assert_eq!(first.status, 201);

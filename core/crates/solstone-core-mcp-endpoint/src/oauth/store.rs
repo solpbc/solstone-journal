@@ -718,6 +718,18 @@ impl OAuthStore {
         })
     }
 
+    /// True when a pending authorization transaction still exists.
+    pub(crate) fn pending_transaction_exists(
+        &self,
+        transaction_id: &str,
+    ) -> Result<bool, OAuthStoreError> {
+        Ok(self
+            .read_store()?
+            .pending
+            .iter()
+            .any(|pending| pending.transaction_id == transaction_id))
+    }
+
     /// Look up a registered client by CIMD URL.
     pub(crate) fn lookup_client_by_cimd_url(
         &self,

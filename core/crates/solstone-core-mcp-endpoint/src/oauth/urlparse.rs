@@ -127,9 +127,40 @@ fn nibble(value: u8) -> char {
     })
 }
 
+/// Decode `%XX` sequences. `+` is left literal. Invalid escapes or UTF-8 yield `None`.
+pub(crate) fn percent_decode(value: &str) -> Option<String> {
+    let raw = value.as_bytes();
+    let mut bytes = Vec::with_capacity(raw.len());
+    let mut index = 0;
+    while index < raw.len() {
+        if raw[index] == b'%' {
+            if index + 2 >= raw.len() {
+                return None;
+            }
+            let high = from_hex(raw[index + 1])?;
+            let low = from_hex(raw[index + 2])?;
+            bytes.push((high << 4) | low);
+            index += 3;
+        } else {
+            bytes.push(raw[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+fn from_hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
-    use super::{query_value_encode, validate_cimd_url};
+    use super::{percent_decode, query_value_encode, validate_cimd_url};
 
     #[test]
     fn cimd_url_accepts_https_dns_hosts() {
@@ -184,5 +215,26 @@ mod tests {
         assert_eq!(query_value_encode(" "), "%20");
         assert_eq!(query_value_encode("\u{0001}"), "%01");
         assert_eq!(query_value_encode("a&b=c#d"), "a%26b%3Dc%23d");
+    }
+
+    #[test]
+    fn percent_decode_round_trips_query_value_encode() {
+        for value in [
+            "Abc-._~012",
+            "a&b=c#d",
+            "100%",
+            "plus+and space",
+            "\u{00e9}",
+        ] {
+            assert_eq!(
+                percent_decode(&query_value_encode(value)).as_deref(),
+                Some(value)
+            );
+        }
+        assert_eq!(percent_decode("a%2Bb"), Some("a+b".to_owned()));
+        assert_eq!(percent_decode("%"), None);
+        assert_eq!(percent_decode("%A"), None);
+        assert_eq!(percent_decode("%ZZ"), None);
+        assert_eq!(percent_decode("%80"), None);
     }
 }
