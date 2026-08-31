@@ -98,6 +98,12 @@ impl McpEndpointTunnel {
     pub fn into_bridge_session(self) -> McpBridgeSession {
         self.session
     }
+
+    /// Transfer the paired TLS owner and authenticated session to the native
+    /// service composition without widening either capability publicly.
+    pub(crate) fn into_service_parts(self) -> (McpEndpointTlsService, McpBridgeSession) {
+        (self.tls, self.session)
+    }
 }
 
 /// Bootstrap the committed owner identity and durable Ed25519 proof-of-possession key.

@@ -148,13 +148,13 @@ async fn run_endpoint_topology(
         Err(_) if shutdown_requested(&shutdown_receive) => return Ok(()),
         Err(_) => return Err(McpServiceError::Tunnel),
     };
-    let tunnel = Arc::new(tunnel);
-    let tls_config = mcp_endpoint_server_config(tunnel.tls_service());
+    let (tls, forwarder_session) = tunnel.into_service_parts();
+    let tls = Arc::new(tls);
+    let tls_config = mcp_endpoint_server_config(&tls);
     let listener = TcpListener::bind(("127.0.0.1", MCP_ENDPOINT_LOOPBACK_PORT))
         .await
         .map_err(|_| McpServiceError::Bind)?;
 
-    let owner = Arc::new(owner);
     let mut tasks = JoinSet::new();
     let listener_shutdown = shutdown_receive.clone();
     let listener_root = Arc::new(journal_root);
@@ -163,18 +163,16 @@ async fn run_endpoint_topology(
             .await
             .map_err(|_| McpServiceError::Listener)
     });
-    let forwarder_owner = Arc::clone(&owner);
     let mut forwarder_shutdown = shutdown_receive.clone();
     tasks.spawn(async move {
-        crate::bridge_forwarder::run(&forwarder_owner, &mut forwarder_shutdown)
+        crate::bridge_forwarder::run_session(forwarder_session, &mut forwarder_shutdown)
             .await
             .map_err(|_| McpServiceError::Forwarder)
     });
-    let renewal_tunnel = Arc::clone(&tunnel);
+    let renewal_tls = Arc::clone(&tls);
     let mut renewal_shutdown = shutdown_receive.clone();
     tasks.spawn(async move {
-        renewal_tunnel
-            .tls_service()
+        renewal_tls
             .run_acme_renewal(&mut renewal_shutdown)
             .await
             .map_err(|_| McpServiceError::Renewal)

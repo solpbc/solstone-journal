@@ -60,6 +60,18 @@ pub(crate) async fn run(
     }
 }
 
+/// Forward the already authenticated session paired with a TLS service.
+///
+/// This is intentionally separate from [`run`]: the native service owns the
+/// initial tunnel and must not authenticate a second generation after the
+/// hostname-bound TLS service has been constructed.
+pub(crate) async fn run_session(
+    session: McpBridgeSession,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<(), McpBridgeCarrierError> {
+    forward_generation(session, shutdown).await
+}
+
 async fn forward_generation(
     session: McpBridgeSession,
     shutdown: &mut watch::Receiver<bool>,
