@@ -79,6 +79,14 @@ pub(crate) struct RegisteredClient {
     pub(crate) created_at: DateTime<Utc>,
 }
 
+/// Non-secret metadata suitable for listing registered OAuth clients.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OAuthClientSummary {
+    pub client_id: String,
+    pub client_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Failure while operating the OAuth ledger.
 #[derive(Debug)]
 pub enum OAuthStoreError {
@@ -86,6 +94,7 @@ pub enum OAuthStoreError {
     InvalidToken,
     NoActivePairing,
     Quota,
+    ClientNotFound,
     TransactionNotFound,
     TransactionExpired,
     TransactionExhausted,
@@ -110,6 +119,7 @@ impl fmt::Display for OAuthStoreError {
             Self::InvalidToken => "OAuth token is invalid",
             Self::NoActivePairing => "no active pairing code",
             Self::Quota => "OAuth store quota reached",
+            Self::ClientNotFound => "OAuth client was not found",
             Self::TransactionNotFound => "OAuth authorization transaction was not found",
             Self::TransactionExpired => "OAuth authorization transaction expired",
             Self::TransactionExhausted => "OAuth authorization transaction is exhausted",
@@ -750,7 +760,35 @@ impl OAuthStore {
                 .clients
                 .iter_mut()
                 .find(|client| client.id == client_record_id)
-                .ok_or(OAuthStoreError::TransactionNotFound)?;
+                .ok_or(OAuthStoreError::ClientNotFound)?;
+            client.revocation_generation = client.revocation_generation.saturating_add(1);
+            Ok(())
+        })
+    }
+
+    /// List only non-secret OAuth client metadata from the current store.
+    pub fn list_clients(&self) -> Result<Vec<OAuthClientSummary>, OAuthStoreError> {
+        Ok(self
+            .read_store()?
+            .clients
+            .into_iter()
+            .map(|client| OAuthClientSummary {
+                client_id: client.client_id,
+                client_name: client.client_name,
+                created_at: client.created_at,
+            })
+            .collect())
+    }
+
+    /// Invalidate outstanding tokens for the client identified by `client_id`.
+    pub fn revoke_client_by_client_id(&self, client_id: &str) -> Result<(), OAuthStoreError> {
+        let client_id = client_id.to_owned();
+        self.mutate(|store, _now| {
+            let client = store
+                .clients
+                .iter_mut()
+                .find(|client| client.client_id == client_id)
+                .ok_or(OAuthStoreError::ClientNotFound)?;
             client.revocation_generation = client.revocation_generation.saturating_add(1);
             Ok(())
         })
@@ -1424,6 +1462,68 @@ mod tests {
         assert!(matches!(
             store.verify_access_token(&tokens.access_token),
             Err(OAuthStoreError::InvalidToken)
+        ));
+    }
+
+    #[test]
+    fn list_clients_includes_cimd_and_classic_ids() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        seed_client(&store, "192.0.2.1");
+        let minted = "oauth:dcr:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        store
+            .register_client(
+                minted,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("classic".to_owned()),
+                "198.51.100.2",
+            )
+            .unwrap();
+        let listed = store.list_clients().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(
+            listed
+                .iter()
+                .any(|client| client.client_id == "https://client.example/cimd.json")
+        );
+        assert!(
+            listed.iter().any(|client| client.client_id == minted
+                && client.client_name.as_deref() == Some("classic"))
+        );
+    }
+
+    #[test]
+    fn revoke_client_by_client_id_invalidates_only_that_client() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let cimd_id = "https://client.example/cimd.json";
+        let cimd = seed_client(&store, "192.0.2.1");
+        let minted = "oauth:dcr:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let classic = store
+            .register_client(
+                minted,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "198.51.100.2",
+            )
+            .unwrap();
+        let cimd_token = redeem_access(&store, &cimd, cimd_id);
+        let classic_token = redeem_access(&store, &classic.id, minted);
+        store.revoke_client_by_client_id(cimd_id).unwrap();
+        assert!(matches!(
+            store.verify_access_token(&cimd_token),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+        store
+            .verify_access_token(&classic_token)
+            .expect("unrelated client remains valid");
+        assert!(matches!(
+            store.revoke_client_by_client_id("https://missing.example/cimd.json"),
+            Err(OAuthStoreError::ClientNotFound)
+        ));
+        assert!(matches!(
+            store.revoke_client("missing-record"),
+            Err(OAuthStoreError::ClientNotFound)
         ));
     }
 

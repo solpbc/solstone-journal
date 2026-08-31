@@ -72,6 +72,8 @@ pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
+pub use oauth::store::{CreatedPairingCode, OAuthClientSummary, OAuthStore, OAuthStoreError};
+#[cfg(unix)]
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
 #[cfg(unix)]
 pub use tls::{
