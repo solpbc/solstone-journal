@@ -80,6 +80,8 @@ call :run_platform_receipt "Windows Job process owner" "solstone-core-system" "w
 call :run_platform_receipt "Windows Job last-handle negative" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_last_handle_negative_receipt" "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE" || exit /b 1
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
+call :run_receipt "NTFS Cortex-use recovery" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_cortex_use_receipt" "JOURNAL_WIN_CI_CORTEX_USE_NTFS" "NTFS" || exit /b 1
+call :run_receipt "ReFS Cortex-use recovery" "solstone-core-journal-io" "windows_atomic_detailed" "refs_cortex_use_receipt" "JOURNAL_WIN_CI_CORTEX_USE_REFS" "ReFS" || exit /b 1
 call :run_receipt "NTFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_managed_log_reference_receipt" "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE" "NTFS" || exit /b 1
 call :run_receipt "ReFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "refs_managed_log_reference_receipt" "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE" "ReFS" || exit /b 1
 call :run_receipt "NTFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "ntfs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP" "NTFS" || exit /b 1

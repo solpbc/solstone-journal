@@ -20,6 +20,10 @@ use solstone_core_journal_io::atomic::{
     run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
     run_with_windows_detailed_atomic_faults_and_barrier,
 };
+use solstone_core_journal_io::cortex_use::{
+    CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseRefusal,
+    check_cortex_use_destination, inspect_cortex_use_root, read_cortex_use_request,
+};
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, exercise_windows_managed_log_reference_substrate,
     hold_managed_log_alias_then_publish, publish_test_managed_log_alias,
@@ -750,6 +754,35 @@ fn publication_receipt(root: &Path) {
     classified_retry_then_real_move_publication_receipt(root);
 }
 
+fn exercise_cortex_use_receipt(root: &Path) {
+    assert_eq!(inspect_cortex_use_root(root), Ok(()));
+    let talent = root.join("conversation");
+    fs::create_dir(&talent).unwrap();
+    let active = talent.join("one_active.jsonl");
+    fs::write(&active, b"{\"name\":\"conversation\",\"use_id\":\"one\"}\n").unwrap();
+    let request = match read_cortex_use_request(&talent, active.file_name().unwrap()) {
+        CortexUseCandidateRead::Accepted(request) => request,
+        other => panic!("valid Cortex-use request was refused: {other:?}"),
+    };
+    assert_eq!(
+        check_cortex_use_destination(&talent, &request),
+        CortexUseDestinationCheck::Vacant
+    );
+
+    let invalid = talent.join("invalid_active.jsonl");
+    fs::write(&invalid, b"not-json\n").unwrap();
+    assert_eq!(
+        read_cortex_use_request(&talent, invalid.file_name().unwrap()),
+        CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+    );
+
+    fs::write(talent.join("one.jsonl"), b"completed\n").unwrap();
+    assert_eq!(
+        check_cortex_use_destination(&talent, &request),
+        CortexUseDestinationCheck::Refused(CortexUseRefusal::DestinationOccupied)
+    );
+}
+
 #[test]
 #[ignore = "requires a native NTFS filesystem"]
 fn ntfs_publication_receipt() {
@@ -774,6 +807,32 @@ fn refs_publication_receipt() {
     publication_receipt(temporary.path());
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass");
     println!("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS");
+}
+
+#[test]
+#[ignore = "requires a native NTFS filesystem"]
+fn ntfs_cortex_use_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
+    exercise_cortex_use_receipt(root.path());
+    println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS=executed/pass");
+    println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM=NTFS");
+}
+
+#[test]
+#[ignore = "requires a native ReFS filesystem"]
+fn refs_cortex_use_receipt() {
+    let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
+        .map(PathBuf::from)
+        .expect("ReFS Cortex-use receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
+    assert_eq!(filesystem_name(&root).unwrap(), "ReFS");
+    let temporary = tempfile::Builder::new()
+        .prefix("solstone-refs-cortex-use-")
+        .tempdir_in(&root)
+        .unwrap();
+    exercise_cortex_use_receipt(temporary.path());
+    println!("JOURNAL_WIN_CI_CORTEX_USE_REFS=executed/pass");
+    println!("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS");
 }
 
 fn managed_log_reference_receipt(root: &Path) {
