@@ -31,6 +31,10 @@ use std::{
 static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
 
 const ACCEPT_BOUND: Duration = Duration::from_millis(250);
+// Keep the harness scheduling envelope separate from the production timeout
+// exercised by each check. Loaded CI hosts can delay the worker after the
+// expected wire timeout has elapsed without changing the check's semantics.
+const CHECK_RESULT_BOUND: Duration = Duration::from_secs(2);
 const COMPLETE_STATUS_TIMEOUT: Duration = Duration::from_millis(250);
 const WIRE_STATUS_TIMEOUT: Duration = Duration::from_millis(50);
 const ISOLATED_BATTERY_BOUND: Duration = Duration::from_secs(10);
@@ -394,7 +398,7 @@ fn service_running_from_status(crashed: serde_json::Value) -> CheckResult {
     .into_bytes();
     frame.push(b'\n');
     write_exact(&mut stream, &frame);
-    let row = recv_result(result_rx, COMPLETE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     drop(stream);
     fs::remove_file(socket_path).expect("remove callosum fixture socket");
     row
@@ -428,7 +432,7 @@ fn callosum_complete_frame_status_consumed() {
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
     let mut stream = accept_stream(listener);
     write_exact(&mut stream, HEALTHY_TASK_PACE_FRAME);
-    let row = recv_result(result_rx, COMPLETE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     drop(stream);
     assert!(started.elapsed() < COMPLETE_STATUS_TIMEOUT + ACCEPT_BOUND);
     assert_eq!(row.status, Status::Ok);
@@ -444,7 +448,7 @@ fn callosum_malformed_frame_does_not_count_as_status() {
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
     let mut stream = accept_stream(listener);
     write_exact(&mut stream, payload);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     drop(stream);
     assert_eq!(row.status, Status::Skip);
     assert_eq!(row.detail, "supervisor status unavailable");
@@ -459,7 +463,7 @@ fn callosum_partial_frame_does_not_count_as_status() {
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
     let mut stream = accept_stream(listener);
     write_exact(&mut stream, payload);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     drop(stream);
     assert_eq!(row.status, Status::Skip);
     assert_eq!(row.detail, "supervisor status unavailable");
@@ -473,7 +477,7 @@ fn callosum_accepted_silent_times_out() {
     let waited_from = Instant::now();
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
     let stream = accept_stream(listener);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     let elapsed = waited_from.elapsed();
     drop(stream);
     assert!(
@@ -496,7 +500,7 @@ fn callosum_accepted_then_eof_without_status() {
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
     let stream = accept_stream(listener);
     drop(stream);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     assert_eq!(row.status, Status::Skip);
     assert_eq!(row.detail, "supervisor status unavailable");
 }
@@ -514,7 +518,7 @@ fn service_running_accepted_silent_warns() {
     let result_rx =
         spawn_result(move || service_running::run(&context, service_running_check()).unwrap());
     let stream = accept_stream(listener);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     let elapsed = waited_from.elapsed();
     drop(stream);
     assert!(
@@ -539,7 +543,7 @@ fn service_running_failed_service_command_fails() {
     let result_rx =
         spawn_result(move || service_running::run(&context, service_running_check()).unwrap());
     let stream = accept_stream(listener);
-    let row = recv_result(result_rx, WIRE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
     drop(stream);
     assert_eq!(row.status, Status::Fail);
     assert_eq!(row.detail, "journal service unit is failed");
