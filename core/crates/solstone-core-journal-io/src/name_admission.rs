@@ -642,11 +642,12 @@ mod tests {
             check_logical_field(&format!("{}\0", "a".repeat(512))),
             Err(LogicalFieldAdmissionReason::Control)
         );
-        for candidate in ["a\0b", "a\u{7f}b", "a\u{80}b", "a\u{9f}b"] {
+        for codepoint in (0x00..=0x1f).chain([0x7f]).chain(0x80..=0x9f) {
+            let candidate = format!("a{}b", char::from_u32(codepoint).unwrap());
             assert_eq!(
-                check_logical_field(candidate),
+                check_logical_field(&candidate),
                 Err(LogicalFieldAdmissionReason::Control),
-                "{candidate:?}"
+                "U+{codepoint:04X}"
             );
         }
 
