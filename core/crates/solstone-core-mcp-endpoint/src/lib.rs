@@ -49,7 +49,9 @@ pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
-pub use tls::{McpEndpointTlsService, mcp_endpoint_server_config};
+pub use tls::{
+    McpEndpointCertificateLifecycleError, McpEndpointTlsService, mcp_endpoint_server_config,
+};
 
 /// One authenticated bridge session paired with its authorized TLS service.
 ///
