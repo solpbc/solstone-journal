@@ -25,6 +25,8 @@ mod account_wire;
 #[cfg(unix)]
 mod bridge_carrier;
 #[cfg(unix)]
+mod bridge_forwarder;
+#[cfg(unix)]
 mod bridge_pop;
 #[cfg(unix)]
 mod bridge_session;
@@ -200,6 +202,18 @@ impl McpEndpointOwnerContext {
         account_wire::establish_mcp_bridge_carrier(self, shutdown)
             .await?
             .into_session()
+    }
+
+    /// Keep the authenticated bridge tunnel connected and forward only its
+    /// bridge-opened public streams to the fixed journal-local MCP listener.
+    ///
+    /// This never creates a listener or changes the capability gate. The
+    /// caller owns supervision and supplies its one shutdown signal.
+    pub async fn run_mcp_bridge_forwarder(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<(), McpBridgeCarrierError> {
+        bridge_forwarder::run(self, shutdown).await
     }
 
     pub(crate) fn renewal_owner(&self) -> Self {
