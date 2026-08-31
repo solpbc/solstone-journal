@@ -4,11 +4,12 @@
 use chrono::TimeZone;
 use solstone_core_doctor::{
     args::DoctorArgs,
-    checks::{service_running, task_pace},
+    checks::{journal_sync, service_running, task_pace},
     context::CheckContext,
     run,
     vocabulary::{Check, CheckResult, Platform, Severity, Status, results_failed},
 };
+use solstone_core_system::lifecycle::WriterId;
 use std::{
     collections::BTreeMap,
     fs,
@@ -794,5 +795,59 @@ fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
         !marker.exists(),
         "native doctor invoked a poison interpreter: {}",
         fs::read_to_string(&marker).unwrap_or_default()
+    );
+}
+
+fn journal_sync_check() -> Check {
+    Check {
+        name: "journal_sync",
+        severity: Severity::Blocker,
+        platforms: &[Platform::Linux],
+    }
+}
+
+/// W8-1: a healthy, currently-running supervisor's own fresh heartbeat must
+/// not trip `journal_sync`'s blocker check. Boots a real
+/// `solstone_core_system::lifecycle::SupervisorLifecycle` onto a disposable
+/// journal (the exact mechanism the production supervisor uses to publish
+/// its heartbeat file under `health/sync/`), then answers doctor's
+/// service-status probe the same way a running supervisor would, using the
+/// same accept/write rendezvous the existing `service_running` callosum
+/// tests use so the check thread's confirmation is not a timing race.
+#[test]
+fn ac_journal_sync_ok_against_confirmed_running_supervisors_own_heartbeat() {
+    let (mut context, _root) = context();
+    context.service_status_timeout = COMPLETE_STATUS_TIMEOUT;
+    fs::create_dir_all(&context.journal_path).expect("create disposable journal");
+    let writer_id =
+        WriterId::parse("0123456789abcdef0123456789abcdef").expect("parse fixture writer id");
+    let lifecycle = solstone_core_system::lifecycle::boot(&context.journal_path, writer_id)
+        .expect("boot a real supervisor lifecycle onto the disposable journal");
+
+    let listener = bind_listener(&context.callosum_socket_path);
+    let socket_path = context.callosum_socket_path.clone();
+    let result_rx = spawn_result(move || {
+        journal_sync::run(&context, journal_sync_check()).expect("journal_sync check")
+    });
+    let mut stream = accept_stream(listener);
+    let mut frame = serde_json::json!({
+        "tract": "supervisor",
+        "event": "status",
+        "crashed": [],
+    })
+    .to_string()
+    .into_bytes();
+    frame.push(b'\n');
+    write_exact(&mut stream, &frame);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
+    drop(stream);
+    drop(lifecycle);
+    fs::remove_file(&socket_path).expect("remove callosum fixture socket");
+
+    assert_eq!(
+        row.status,
+        Status::Ok,
+        "journal_sync must not fail against the running supervisor's own live heartbeat; detail: {}",
+        row.detail
     );
 }

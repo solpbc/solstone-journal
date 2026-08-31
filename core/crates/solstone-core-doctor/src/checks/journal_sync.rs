@@ -8,6 +8,8 @@ use solstone_core_system::lifecycle::{SyncPeerIdentity, sync_peer_diagnostic};
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
+use super::service_status;
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if !context.journal_path.is_dir() {
         return Ok(make_result(
@@ -18,16 +20,32 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ));
     }
     let process_source = SystemProcessInstanceSource;
-    render_sync_rescan(
-        context,
-        check,
-        describe_sync_rescan(
-            &context.journal_path,
-            "doctor.check",
-            context.now.timestamp() as f64,
-            &process_source,
-        ),
-    )
+    let diagnosis = describe_sync_rescan(
+        &context.journal_path,
+        "doctor.check",
+        context.now.timestamp() as f64,
+        &process_source,
+    );
+    // `doctor` never writes its own heartbeat, so the exclusion filter inside
+    // `describe_sync_rescan` (keyed on a caller's own heartbeat filename) can
+    // never suppress the journal's own supervisor. That means a healthy,
+    // currently-running supervisor's fresh heartbeat is otherwise
+    // indistinguishable from a genuine foreign live writer and gets
+    // classified `HeartbeatNeedsAttention`. Confirm independently, the same
+    // way `service_running` and `task_pace` already do, whether this
+    // journal's own supervisor is actually reachable over its status socket
+    // before trusting that classification.
+    if matches!(diagnosis, SyncRescanDiagnosis::HeartbeatNeedsAttention(_))
+        && service_status::fetch(context).is_some()
+    {
+        return Ok(make_result(
+            check,
+            Status::Ok,
+            format!("this device only ({})", context.hostname),
+            None::<String>,
+        ));
+    }
+    render_sync_rescan(context, check, diagnosis)
 }
 
 fn render_sync_rescan(
