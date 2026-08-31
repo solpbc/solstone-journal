@@ -363,6 +363,19 @@ mod tests {
         assert_eq!(weekly.read_call_budget, 200);
         assert_eq!(weekly.sol_tool_name.as_deref(), Some("solstone"));
         assert_eq!(weekly.correlation_id, "1750000000001");
+        assert_eq!(
+            weekly.read_scope,
+            resolve_read_scope(
+                ReadScopeConfig {
+                    read_scope: None,
+                    read_scope_span: Some(7),
+                },
+                "20260809",
+                0,
+            )
+            .unwrap()
+        );
+        assert!(weekly.to_run_input().config.expects_emit_final);
 
         let partner = translate(Map::from_iter([
             ("name".to_owned(), json!("partner")),
@@ -383,6 +396,7 @@ mod tests {
         assert_eq!(partner.cost_cap_usd, 1.0);
         assert_eq!(partner.read_scope, ["chronicle/20260813"]);
         assert!(!partner.diagnostic);
+        assert!(partner.to_run_input().config.expects_emit_final);
 
         let assist = translate(Map::from_iter([
             ("name".to_owned(), json!("entities:entity_assist")),
@@ -396,6 +410,7 @@ mod tests {
         assert_eq!(assist.cost_cap_usd, 1.0);
         assert!(assist.read_scope.is_empty());
         assert_eq!(assist.initial_prompt, "add Alice Chen as a person");
+        assert!(!assist.to_run_input().config.expects_emit_final);
     }
 
     #[test]
