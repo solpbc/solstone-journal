@@ -3724,22 +3724,22 @@ fn production_pairing_paths_do_not_create_ca_material() {
         .next()
         .expect("production handler source");
     let domain = include_str!("../../solstone-core-sol-link/src/pairing/mod.rs")
-        .split("#[cfg(test)]")
+        .split("#[cfg(all(test, feature = \"full-tests\"))]")
         .next()
         .expect("production pairing source");
     let committed = include_str!("../../solstone-core-sol-link/src/committed.rs")
-        .split("#[cfg(test)]")
+        .split("#[cfg(all(test, feature = \"full-tests\"))]")
         .next()
         .expect("production committed identity source");
     let attestation = include_str!("../../solstone-core-sol-link/src/pairing/attestation.rs")
-        .split("#[cfg(test)]")
+        .split("#[cfg(all(test, not(feature = \"full-tests\")))]")
         .next()
         .expect("production attestation source");
     let signing = include_str!("../../solstone-core-sol-link/src/ca.rs")
         .split("pub fn sign_csr")
         .nth(1)
         .expect("signing direct callee")
-        .split("#[cfg(test)]")
+        .split("#[cfg(all(test, not(feature = \"full-tests\")))]")
         .next()
         .expect("production signing source");
     assert!(!handler.contains("generate_ca"));
