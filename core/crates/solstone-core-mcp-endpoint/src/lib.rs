@@ -77,6 +77,18 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 /// use solstone_core_mcp_endpoint::account_wire::{McpAccountRequest, McpAccountWireError};
 /// ```
 ///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire::parse_account_registration_response;
+/// ```
+///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire::McpAccountResponseWire;
+/// ```
+///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire::McpAccountResponseWireError;
+/// ```
+///
 /// ```compile_fail,E0432
 /// use solstone_core_mcp_endpoint::CommittedIdentity;
 /// ```

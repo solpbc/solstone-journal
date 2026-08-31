@@ -1336,22 +1336,139 @@ fn sensitive_inputs_never_reach_mcp_endpoint_diagnostics_or_public_context() {
     assert!(captured_diagnostic(&SyntheticDiagnostic(control)).contains(control));
 }
 
+fn collect_rust_source_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("source directory reads") {
+        let path = entry.expect("source entry reads").path();
+        if path.is_dir() {
+            collect_rust_source_files(&path, files);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            files.push(path);
+        }
+    }
+}
+
+fn rust_source_files(source: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_rust_source_files(source, &mut files);
+    files.sort();
+    files
+}
+
+fn source_violations(source: &Path, prohibited: &[String]) -> Vec<(PathBuf, String)> {
+    rust_source_files(source)
+        .into_iter()
+        .flat_map(|path| {
+            let text = fs::read_to_string(&path).expect("source reads");
+            prohibited
+                .iter()
+                .filter(|needle| text.contains(needle.as_str()))
+                .cloned()
+                .map(move |needle| (path.clone(), needle))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn diagnostic_egress_needles() -> Vec<String> {
+    [
+        ["print", "ln!"].concat(),
+        ["eprint", "ln!"].concat(),
+        ["lo", "g::"].concat(),
+        ["trac", "ing::"].concat(),
+        ["d", "bg!"].concat(),
+    ]
+    .into()
+}
+
+fn response_wire_visibility_needles() -> Vec<String> {
+    let crate_visibility = ["pub", "(crate)"].concat();
+    let parser = ["parse_account_registration", "_response"].concat();
+    let wire = ["McpAccount", "ResponseWire"].concat();
+    let error = ["McpAccount", "ResponseWireError"].concat();
+    vec![
+        format!("{crate_visibility} fn {parser}"),
+        format!("pub fn {parser}"),
+        format!("{crate_visibility} struct {wire}"),
+        format!("pub struct {wire}"),
+        format!("{crate_visibility} enum {error}"),
+        format!("pub enum {error}"),
+    ]
+}
+
+fn response_wire_required_symbols() -> Vec<String> {
+    let parser = ["parse_account_registration", "_response"].concat();
+    let wire = ["McpAccount", "ResponseWire"].concat();
+    let error = ["McpAccount", "ResponseWireError"].concat();
+    vec![
+        format!("fn {parser}"),
+        format!("struct {wire}"),
+        format!("enum {error}"),
+    ]
+}
+
+fn assert_closed_corpus_files(source: &Path) {
+    let files = rust_source_files(source);
+    assert!(!files.is_empty(), "source corpus is nonempty");
+    for required in ["account_wire.rs", "test_seam.rs"] {
+        assert!(
+            files
+                .iter()
+                .any(|path| { path.file_name().and_then(|name| name.to_str()) == Some(required) }),
+            "source corpus includes {required}"
+        );
+    }
+}
+
 #[test]
 fn production_source_has_no_logging_or_printing_surface() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let production_files = [
-        source.join("lib.rs"),
-        source.join("unix.rs"),
-        source.join("test_seam.rs"),
-    ];
-    for path in production_files {
-        let text = fs::read_to_string(&path).expect("production source reads");
-        for prohibited in ["println!", "eprintln!", "log::", "tracing::"] {
-            assert!(
-                !text.contains(prohibited),
-                "{} must not expose {prohibited}",
-                path.display()
-            );
-        }
+    assert_closed_corpus_files(&source);
+    let violations = source_violations(&source, &diagnostic_egress_needles());
+    assert!(violations.is_empty(), "diagnostic egress: {violations:?}");
+}
+
+#[test]
+fn production_source_has_no_response_wire_visibility_or_authority_leaks() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    assert_closed_corpus_files(&source);
+    let violations = source_violations(&source, &response_wire_visibility_needles());
+    assert!(
+        violations.is_empty(),
+        "response-wire visibility: {violations:?}"
+    );
+    let corpus = rust_source_files(&source)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).expect("source reads"))
+        .collect::<String>();
+    for required in response_wire_required_symbols() {
+        assert!(
+            corpus.contains(&required),
+            "source corpus contains {required}"
+        );
     }
+}
+
+#[test]
+fn diagnostic_egress_detector_rejects_planted_violation() {
+    let root = TempDir::new().expect("synthetic source root creates");
+    let nested = root.path().join("nested");
+    fs::create_dir(&nested).expect("synthetic nested source creates");
+    let planted = ["print", "ln!(\"synthetic\");"].concat();
+    fs::write(nested.join("control.rs"), planted).expect("synthetic source writes");
+    assert!(!source_violations(root.path(), &diagnostic_egress_needles()).is_empty());
+}
+
+#[test]
+fn response_wire_visibility_detector_rejects_planted_violation() {
+    let root = TempDir::new().expect("synthetic source root creates");
+    let nested = root.path().join("nested");
+    fs::create_dir(&nested).expect("synthetic nested source creates");
+    let crate_visibility = ["pub", "(crate)"].concat();
+    let wire = ["McpAccount", "ResponseWire"].concat();
+    fs::write(
+        nested.join("control.rs"),
+        format!("{crate_visibility} struct {wire};"),
+    )
+    .expect("synthetic source writes");
+    assert!(!source_violations(root.path(), &response_wire_visibility_needles()).is_empty());
 }

@@ -295,6 +295,345 @@ fn checkpoint(_primitive: AccountWirePrimitive) -> Result<(), McpAccountWireErro
     Ok(())
 }
 
+const RESPONSE_BODY_MAX_BYTES: usize = 65_536;
+const TOKEN_MAX_BYTES: usize = 16_384;
+const EXPIRES_AT_MAX_BYTES: usize = 64;
+const INSTANCE_ID_MAX_BYTES: usize = 128;
+const BRIDGE_ID_MAX_BYTES: usize = 128;
+const V1_DENIED_IPV4_RANGES: &[(std::net::Ipv4Addr, std::net::Ipv4Addr)] = &[
+    (
+        std::net::Ipv4Addr::new(0, 0, 0, 0),
+        std::net::Ipv4Addr::new(0, 255, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(10, 0, 0, 0),
+        std::net::Ipv4Addr::new(10, 255, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(100, 64, 0, 0),
+        std::net::Ipv4Addr::new(100, 127, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(127, 0, 0, 0),
+        std::net::Ipv4Addr::new(127, 255, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(169, 254, 0, 0),
+        std::net::Ipv4Addr::new(169, 254, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(172, 16, 0, 0),
+        std::net::Ipv4Addr::new(172, 31, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(192, 0, 0, 0),
+        std::net::Ipv4Addr::new(192, 0, 0, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(192, 0, 2, 0),
+        std::net::Ipv4Addr::new(192, 0, 2, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(192, 88, 99, 0),
+        std::net::Ipv4Addr::new(192, 88, 99, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(192, 168, 0, 0),
+        std::net::Ipv4Addr::new(192, 168, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(198, 18, 0, 0),
+        std::net::Ipv4Addr::new(198, 19, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(198, 51, 100, 0),
+        std::net::Ipv4Addr::new(198, 51, 100, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(203, 0, 113, 0),
+        std::net::Ipv4Addr::new(203, 0, 113, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(224, 0, 0, 0),
+        std::net::Ipv4Addr::new(239, 255, 255, 255),
+    ),
+    (
+        std::net::Ipv4Addr::new(240, 0, 0, 0),
+        std::net::Ipv4Addr::new(255, 255, 255, 255),
+    ),
+];
+
+struct McpAccountResponseWire {
+    token: String,
+    expires_in: u64,
+    expires_at: String,
+    instance_id: String,
+    hostname: String,
+    bridge_id: String,
+    bridge_address: String,
+}
+
+#[cfg(test)]
+impl McpAccountResponseWire {
+    fn token(&self) -> &str {
+        &self.token
+    }
+
+    fn expires_in(&self) -> u64 {
+        self.expires_in
+    }
+
+    fn expires_at(&self) -> &str {
+        &self.expires_at
+    }
+
+    fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
+
+    fn hostname(&self) -> &str {
+        &self.hostname
+    }
+
+    fn bridge_id(&self) -> &str {
+        &self.bridge_id
+    }
+
+    fn bridge_address(&self) -> &str {
+        &self.bridge_address
+    }
+}
+
+#[derive(Debug)]
+enum McpAccountResponseWireError {
+    BodySize,
+    UnexpectedStatus,
+    CacheControlMissing,
+    CacheControlDuplicate,
+    CacheControlNonAscii,
+    CacheControlMalformedOws,
+    CacheControlWrongDirective,
+    CacheControlMultipleDirectives,
+    BodyUtf8,
+    BodyJson,
+    TokenLength,
+    TokenType,
+    ExpiresIn,
+    ExpiresAtLength,
+    InstanceIdLength,
+    Hostname,
+    BridgeId,
+    BridgeAddressesCardinality,
+    BridgeAddressIpv4,
+    BridgeAddressDenied,
+}
+
+impl fmt::Display for McpAccountResponseWireError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::BodySize => "MCP account registration response body exceeds its size bounds",
+            Self::UnexpectedStatus => "MCP account registration response has an unexpected status",
+            Self::CacheControlMissing => {
+                "MCP account registration response is missing Cache-Control"
+            }
+            Self::CacheControlDuplicate => {
+                "MCP account registration response has duplicate Cache-Control"
+            }
+            Self::CacheControlNonAscii => {
+                "MCP account registration response Cache-Control is not ASCII"
+            }
+            Self::CacheControlMalformedOws => {
+                "MCP account registration response Cache-Control has malformed whitespace"
+            }
+            Self::CacheControlWrongDirective => {
+                "MCP account registration response Cache-Control has the wrong directive"
+            }
+            Self::CacheControlMultipleDirectives => {
+                "MCP account registration response Cache-Control has multiple directives"
+            }
+            Self::BodyUtf8 => "MCP account registration response body is not UTF-8",
+            Self::BodyJson => "MCP account registration response body is not valid JSON",
+            Self::TokenLength => "MCP account registration response token exceeds its size bounds",
+            Self::TokenType => "MCP account registration response token type is invalid",
+            Self::ExpiresIn => "MCP account registration response expiry is invalid",
+            Self::ExpiresAtLength => {
+                "MCP account registration response expiry timestamp exceeds its size bounds"
+            }
+            Self::InstanceIdLength => {
+                "MCP account registration response instance ID exceeds its size bounds"
+            }
+            Self::Hostname => "MCP account registration response hostname is invalid",
+            Self::BridgeId => "MCP account registration response bridge ID is invalid",
+            Self::BridgeAddressesCardinality => {
+                "MCP account registration response bridge address count is invalid"
+            }
+            Self::BridgeAddressIpv4 => {
+                "MCP account registration response bridge address is not canonical IPv4"
+            }
+            Self::BridgeAddressDenied => {
+                "MCP account registration response bridge address is denied"
+            }
+        })
+    }
+}
+
+impl std::error::Error for McpAccountResponseWireError {}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpAccountResponseBody {
+    token: String,
+    token_type: String,
+    expires_in: u64,
+    expires_at: String,
+    instance_id: String,
+    hostname: String,
+    bridge_id: String,
+    bridge_addresses: Vec<String>,
+}
+
+fn parse_account_registration_response(
+    status: u16,
+    headers: &[(Vec<u8>, Vec<u8>)],
+    body: &[u8],
+) -> Result<McpAccountResponseWire, McpAccountResponseWireError> {
+    if status != 200 {
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
+    if !(1..=RESPONSE_BODY_MAX_BYTES).contains(&body.len()) {
+        return Err(McpAccountResponseWireError::BodySize);
+    }
+    validate_cache_control(headers)?;
+    std::str::from_utf8(body).map_err(|_| McpAccountResponseWireError::BodyUtf8)?;
+    let response: McpAccountResponseBody =
+        serde_json::from_slice(body).map_err(|_| McpAccountResponseWireError::BodyJson)?;
+
+    if response.token.is_empty() || response.token.len() > TOKEN_MAX_BYTES {
+        return Err(McpAccountResponseWireError::TokenLength);
+    }
+    if response.token_type != "Bearer" {
+        return Err(McpAccountResponseWireError::TokenType);
+    }
+    if response.expires_in == 0 {
+        return Err(McpAccountResponseWireError::ExpiresIn);
+    }
+    if response.expires_at.is_empty() || response.expires_at.len() > EXPIRES_AT_MAX_BYTES {
+        return Err(McpAccountResponseWireError::ExpiresAtLength);
+    }
+    if response.instance_id.is_empty() || response.instance_id.len() > INSTANCE_ID_MAX_BYTES {
+        return Err(McpAccountResponseWireError::InstanceIdLength);
+    }
+    if !is_valid_hostname(&response.hostname) {
+        return Err(McpAccountResponseWireError::Hostname);
+    }
+    if !is_valid_bridge_id(&response.bridge_id) {
+        return Err(McpAccountResponseWireError::BridgeId);
+    }
+    if response.bridge_addresses.len() != 1 {
+        return Err(McpAccountResponseWireError::BridgeAddressesCardinality);
+    }
+    let bridge_address = canonical_bridge_address(&response.bridge_addresses[0])?;
+
+    Ok(McpAccountResponseWire {
+        token: response.token,
+        expires_in: response.expires_in,
+        expires_at: response.expires_at,
+        instance_id: response.instance_id,
+        hostname: response.hostname,
+        bridge_id: response.bridge_id,
+        bridge_address,
+    })
+}
+
+fn validate_cache_control(
+    headers: &[(Vec<u8>, Vec<u8>)],
+) -> Result<(), McpAccountResponseWireError> {
+    let mut value = None;
+    for (name, candidate) in headers {
+        if !name.eq_ignore_ascii_case(b"Cache-Control") {
+            continue;
+        }
+        if value.replace(candidate).is_some() {
+            return Err(McpAccountResponseWireError::CacheControlDuplicate);
+        }
+    }
+    let value = value.ok_or(McpAccountResponseWireError::CacheControlMissing)?;
+    if !value.is_ascii() {
+        return Err(McpAccountResponseWireError::CacheControlNonAscii);
+    }
+
+    let directives: Vec<_> = value
+        .split(|byte| *byte == b',')
+        .map(trim_cache_control_ows)
+        .collect::<Result<_, _>>()?;
+    if directives.len() != 1 {
+        return Err(McpAccountResponseWireError::CacheControlMultipleDirectives);
+    }
+    if !directives[0].eq_ignore_ascii_case(b"no-store") {
+        return Err(McpAccountResponseWireError::CacheControlWrongDirective);
+    }
+    Ok(())
+}
+
+fn trim_cache_control_ows(value: &[u8]) -> Result<&[u8], McpAccountResponseWireError> {
+    let start = value
+        .iter()
+        .position(|byte| !matches!(*byte, b' ' | b'\t'))
+        .unwrap_or(value.len());
+    let value = &value[start..];
+    let end = value
+        .iter()
+        .rposition(|byte| !matches!(*byte, b' ' | b'\t'))
+        .map_or(0, |index| index + 1);
+    let trimmed = &value[..end];
+    if trimmed.iter().any(|byte| byte.is_ascii_whitespace()) {
+        return Err(McpAccountResponseWireError::CacheControlMalformedOws);
+    }
+    Ok(trimmed)
+}
+
+fn is_valid_hostname(hostname: &str) -> bool {
+    let bytes = hostname.as_bytes();
+    bytes.len() == 20
+        && bytes.ends_with(b".solstone.me")
+        && bytes[..8]
+            .iter()
+            .all(|byte| matches!(*byte, b'a'..=b'z' | b'2'..=b'7'))
+}
+
+fn is_valid_bridge_id(bridge_id: &str) -> bool {
+    !bridge_id.is_empty()
+        && bridge_id.len() <= BRIDGE_ID_MAX_BYTES
+        && bridge_id.as_bytes().iter().all(|byte| {
+            matches!(
+                *byte,
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b':' | b'-'
+            )
+        })
+}
+
+fn canonical_bridge_address(address: &str) -> Result<String, McpAccountResponseWireError> {
+    let parsed = <std::net::Ipv4Addr as std::str::FromStr>::from_str(address)
+        .map_err(|_| McpAccountResponseWireError::BridgeAddressIpv4)?;
+    let canonical = parsed.to_string();
+    if canonical != address {
+        return Err(McpAccountResponseWireError::BridgeAddressIpv4);
+    }
+    if is_v1_denied_ipv4(parsed) {
+        return Err(McpAccountResponseWireError::BridgeAddressDenied);
+    }
+    Ok(canonical)
+}
+
+fn is_v1_denied_ipv4(address: std::net::Ipv4Addr) -> bool {
+    let address = u32::from_be_bytes(address.octets());
+    V1_DENIED_IPV4_RANGES.iter().any(|(start, end)| {
+        let start = u32::from_be_bytes(start.octets());
+        let end = u32::from_be_bytes(end.octets());
+        start <= address && address <= end
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
@@ -830,5 +1169,565 @@ mod tests {
             .expect("base64url decodes");
         decoded[0] ^= 1;
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(decoded)
+    }
+
+    #[derive(Clone, Copy)]
+    enum ExpectedResponseError {
+        BodySize,
+        UnexpectedStatus,
+        CacheControlMissing,
+        CacheControlDuplicate,
+        CacheControlNonAscii,
+        CacheControlMalformedOws,
+        CacheControlWrongDirective,
+        CacheControlMultipleDirectives,
+        BodyUtf8,
+        BodyJson,
+        TokenLength,
+        TokenType,
+        ExpiresIn,
+        ExpiresAtLength,
+        InstanceIdLength,
+        Hostname,
+        BridgeId,
+        BridgeAddressesCardinality,
+        BridgeAddressIpv4,
+        BridgeAddressDenied,
+    }
+
+    fn assert_response_error(
+        result: Result<McpAccountResponseWire, McpAccountResponseWireError>,
+        expected: ExpectedResponseError,
+    ) {
+        let error = match result {
+            Ok(_) => panic!("response parser must refuse this input"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            (expected, error),
+            (
+                ExpectedResponseError::BodySize,
+                McpAccountResponseWireError::BodySize
+            ) | (
+                ExpectedResponseError::UnexpectedStatus,
+                McpAccountResponseWireError::UnexpectedStatus
+            ) | (
+                ExpectedResponseError::CacheControlMissing,
+                McpAccountResponseWireError::CacheControlMissing
+            ) | (
+                ExpectedResponseError::CacheControlDuplicate,
+                McpAccountResponseWireError::CacheControlDuplicate
+            ) | (
+                ExpectedResponseError::CacheControlNonAscii,
+                McpAccountResponseWireError::CacheControlNonAscii
+            ) | (
+                ExpectedResponseError::CacheControlMalformedOws,
+                McpAccountResponseWireError::CacheControlMalformedOws
+            ) | (
+                ExpectedResponseError::CacheControlWrongDirective,
+                McpAccountResponseWireError::CacheControlWrongDirective
+            ) | (
+                ExpectedResponseError::CacheControlMultipleDirectives,
+                McpAccountResponseWireError::CacheControlMultipleDirectives
+            ) | (
+                ExpectedResponseError::BodyUtf8,
+                McpAccountResponseWireError::BodyUtf8
+            ) | (
+                ExpectedResponseError::BodyJson,
+                McpAccountResponseWireError::BodyJson
+            ) | (
+                ExpectedResponseError::TokenLength,
+                McpAccountResponseWireError::TokenLength
+            ) | (
+                ExpectedResponseError::TokenType,
+                McpAccountResponseWireError::TokenType
+            ) | (
+                ExpectedResponseError::ExpiresIn,
+                McpAccountResponseWireError::ExpiresIn
+            ) | (
+                ExpectedResponseError::ExpiresAtLength,
+                McpAccountResponseWireError::ExpiresAtLength
+            ) | (
+                ExpectedResponseError::InstanceIdLength,
+                McpAccountResponseWireError::InstanceIdLength
+            ) | (
+                ExpectedResponseError::Hostname,
+                McpAccountResponseWireError::Hostname
+            ) | (
+                ExpectedResponseError::BridgeId,
+                McpAccountResponseWireError::BridgeId
+            ) | (
+                ExpectedResponseError::BridgeAddressesCardinality,
+                McpAccountResponseWireError::BridgeAddressesCardinality
+            ) | (
+                ExpectedResponseError::BridgeAddressIpv4,
+                McpAccountResponseWireError::BridgeAddressIpv4
+            ) | (
+                ExpectedResponseError::BridgeAddressDenied,
+                McpAccountResponseWireError::BridgeAddressDenied
+            )
+        ));
+    }
+
+    fn valid_response_value() -> serde_json::Value {
+        serde_json::json!({
+            "token": "opaque-bridge-token",
+            "token_type": "Bearer",
+            "expires_in": 600,
+            "expires_at": "2023-11-14T22:23:20Z",
+            "instance_id": "8488ae64-b592-80a3-97c6-490e995daa85",
+            "hostname": "aaaqeaye.solstone.me",
+            "bridge_id": "mcp-bridge-fixture",
+            "bridge_addresses": ["20.186.92.169"]
+        })
+    }
+
+    fn cache_control_headers(value: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+        vec![(b"Cache-Control".to_vec(), value.to_vec())]
+    }
+
+    fn response_body(value: &serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(value).expect("response body serializes")
+    }
+
+    fn parse_response_value(
+        status: u16,
+        headers: &[(Vec<u8>, Vec<u8>)],
+        value: &serde_json::Value,
+    ) -> Result<McpAccountResponseWire, McpAccountResponseWireError> {
+        parse_account_registration_response(status, headers, &response_body(value))
+    }
+
+    fn assert_response_matches(response: &McpAccountResponseWire, expected: &serde_json::Value) {
+        assert_eq!(response.token(), expected["token"].as_str().expect("token"));
+        assert_eq!(
+            response.expires_in(),
+            expected["expires_in"].as_u64().expect("expiry")
+        );
+        assert_eq!(
+            response.expires_at(),
+            expected["expires_at"].as_str().expect("expiry timestamp")
+        );
+        assert_eq!(
+            response.instance_id(),
+            expected["instance_id"].as_str().expect("instance ID")
+        );
+        assert_eq!(
+            response.hostname(),
+            expected["hostname"].as_str().expect("hostname")
+        );
+        assert_eq!(
+            response.bridge_id(),
+            expected["bridge_id"].as_str().expect("bridge ID")
+        );
+        assert_eq!(
+            response.bridge_address(),
+            expected["bridge_addresses"][0]
+                .as_str()
+                .expect("bridge address")
+        );
+    }
+
+    #[test]
+    fn response_fixture_round_trip_and_fields_are_independent() {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(fixture_bytes()).expect("fixture JSON");
+        let fixture_response = &fixture["response"];
+        let headers = cache_control_headers(
+            fixture_response["cache_control"]
+                .as_str()
+                .expect("fixture cache control")
+                .as_bytes(),
+        );
+        let response = parse_response_value(
+            fixture_response["status"].as_u64().expect("fixture status") as u16,
+            &headers,
+            &fixture_response["body"],
+        )
+        .expect("fixture response parses");
+        assert_response_matches(&response, &fixture_response["body"]);
+
+        let baseline = valid_response_value();
+        for (field, replacement) in [
+            ("token", serde_json::json!("different-opaque-token")),
+            ("expires_in", serde_json::json!(601)),
+            ("expires_at", serde_json::json!("another-raw-expiry")),
+            ("instance_id", serde_json::json!("another-raw-instance")),
+            ("hostname", serde_json::json!("bbbbbbbb.solstone.me")),
+            ("bridge_id", serde_json::json!("another-bridge")),
+            ("bridge_addresses", serde_json::json!(["8.8.8.8"])),
+        ] {
+            let mut changed = baseline.clone();
+            changed[field] = replacement;
+            let response = parse_response_value(200, &cache_control_headers(b"no-store"), &changed)
+                .expect("one valid field changes independently");
+            assert_response_matches(&response, &changed);
+        }
+    }
+
+    #[test]
+    fn response_status_cache_control_and_body_gates_are_ordered() {
+        let body = valid_response_value();
+        for status in [0, 199, 201, 404, 500] {
+            assert_response_error(
+                parse_response_value(status, &[], &body),
+                ExpectedResponseError::UnexpectedStatus,
+            );
+        }
+
+        for (headers, expected) in [
+            (vec![], ExpectedResponseError::CacheControlMissing),
+            (
+                vec![
+                    (b"Cache-Control".to_vec(), b"no-store".to_vec()),
+                    (b"cache-control".to_vec(), b"no-store".to_vec()),
+                ],
+                ExpectedResponseError::CacheControlDuplicate,
+            ),
+            (
+                cache_control_headers(&[0xff]),
+                ExpectedResponseError::CacheControlNonAscii,
+            ),
+            (
+                cache_control_headers(b"no\tstore"),
+                ExpectedResponseError::CacheControlMalformedOws,
+            ),
+            (
+                cache_control_headers(b"no-store\r\n"),
+                ExpectedResponseError::CacheControlMalformedOws,
+            ),
+            (
+                cache_control_headers(b"no-cache"),
+                ExpectedResponseError::CacheControlWrongDirective,
+            ),
+            (
+                cache_control_headers(b"no-store=1"),
+                ExpectedResponseError::CacheControlWrongDirective,
+            ),
+            (
+                cache_control_headers(b"no-store, no-cache"),
+                ExpectedResponseError::CacheControlMultipleDirectives,
+            ),
+        ] {
+            assert_response_error(parse_response_value(200, &headers, &body), expected);
+        }
+        let mixed_case = vec![(b"cAcHe-CoNtRoL".to_vec(), b" \tNo-StOrE\t ".to_vec())];
+        assert!(parse_response_value(200, &mixed_case, &body).is_ok());
+
+        let headers = cache_control_headers(b"no-store");
+        assert_response_error(
+            parse_account_registration_response(200, &headers, b""),
+            ExpectedResponseError::BodySize,
+        );
+        assert_response_error(
+            parse_account_registration_response(200, &headers, b"{"),
+            ExpectedResponseError::BodyJson,
+        );
+        let mut boundary = vec![b' '; RESPONSE_BODY_MAX_BYTES];
+        boundary[0] = b'{';
+        assert_response_error(
+            parse_account_registration_response(200, &headers, &boundary),
+            ExpectedResponseError::BodyJson,
+        );
+        assert_response_error(
+            parse_account_registration_response(
+                200,
+                &headers,
+                &vec![0xff; RESPONSE_BODY_MAX_BYTES + 1],
+            ),
+            ExpectedResponseError::BodySize,
+        );
+    }
+
+    enum ResponseMutation {
+        String(&'static str, String),
+        Number(&'static str, u64),
+        Addresses(Vec<String>),
+    }
+
+    fn apply_response_mutation(value: &mut serde_json::Value, mutation: ResponseMutation) {
+        match mutation {
+            ResponseMutation::String(field, replacement) => {
+                value[field] = serde_json::Value::String(replacement);
+            }
+            ResponseMutation::Number(field, replacement) => {
+                value[field] = serde_json::json!(replacement);
+            }
+            ResponseMutation::Addresses(replacement) => {
+                value["bridge_addresses"] = serde_json::json!(replacement);
+            }
+        }
+    }
+
+    #[test]
+    fn response_json_and_field_bounds_are_validated() {
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+        let mut duplicate = response_body(&baseline);
+        duplicate.pop().expect("object closing brace");
+        duplicate.extend_from_slice(br#","token":"duplicate"}"#);
+        assert_response_error(
+            parse_account_registration_response(200, &headers, &duplicate),
+            ExpectedResponseError::BodyJson,
+        );
+        let mut unknown = baseline.clone();
+        unknown["unexpected"] = serde_json::json!(true);
+        assert_response_error(
+            parse_response_value(200, &headers, &unknown),
+            ExpectedResponseError::BodyJson,
+        );
+        let mut wrong_type = baseline.clone();
+        wrong_type["expires_in"] = serde_json::json!("600");
+        assert_response_error(
+            parse_response_value(200, &headers, &wrong_type),
+            ExpectedResponseError::BodyJson,
+        );
+        let mut trailing = response_body(&baseline);
+        trailing.extend_from_slice(b" trailing");
+        assert_response_error(
+            parse_account_registration_response(200, &headers, &trailing),
+            ExpectedResponseError::BodyJson,
+        );
+        assert_response_error(
+            parse_account_registration_response(200, &headers, &[0xff]),
+            ExpectedResponseError::BodyUtf8,
+        );
+
+        let mut passing = Vec::new();
+        passing.push(ResponseMutation::String(
+            "token",
+            "t".repeat(TOKEN_MAX_BYTES),
+        ));
+        passing.push(ResponseMutation::String("token_type", "Bearer".to_owned()));
+        passing.push(ResponseMutation::Number("expires_in", 1));
+        passing.push(ResponseMutation::String(
+            "expires_at",
+            "a".repeat(EXPIRES_AT_MAX_BYTES),
+        ));
+        passing.push(ResponseMutation::String(
+            "instance_id",
+            "i".repeat(INSTANCE_ID_MAX_BYTES),
+        ));
+        passing.push(ResponseMutation::String(
+            "hostname",
+            "a234567z.solstone.me".to_owned(),
+        ));
+        passing.push(ResponseMutation::String(
+            "bridge_id",
+            "b".repeat(BRIDGE_ID_MAX_BYTES),
+        ));
+        passing.push(ResponseMutation::Addresses(vec!["8.8.8.8".to_owned()]));
+        for mutation in passing {
+            let mut value = baseline.clone();
+            apply_response_mutation(&mut value, mutation);
+            assert!(parse_response_value(200, &headers, &value).is_ok());
+        }
+
+        let failing = vec![
+            (
+                ResponseMutation::String("token", String::new()),
+                ExpectedResponseError::TokenLength,
+            ),
+            (
+                ResponseMutation::String("token", "t".repeat(TOKEN_MAX_BYTES + 1)),
+                ExpectedResponseError::TokenLength,
+            ),
+            (
+                ResponseMutation::String("token_type", "bearer".to_owned()),
+                ExpectedResponseError::TokenType,
+            ),
+            (
+                ResponseMutation::Number("expires_in", 0),
+                ExpectedResponseError::ExpiresIn,
+            ),
+            (
+                ResponseMutation::String("expires_at", String::new()),
+                ExpectedResponseError::ExpiresAtLength,
+            ),
+            (
+                ResponseMutation::String(
+                    "expires_at",
+                    format!("{}é", "a".repeat(EXPIRES_AT_MAX_BYTES - 1)),
+                ),
+                ExpectedResponseError::ExpiresAtLength,
+            ),
+            (
+                ResponseMutation::String("instance_id", String::new()),
+                ExpectedResponseError::InstanceIdLength,
+            ),
+            (
+                ResponseMutation::String(
+                    "instance_id",
+                    format!("{}é", "i".repeat(INSTANCE_ID_MAX_BYTES - 1)),
+                ),
+                ExpectedResponseError::InstanceIdLength,
+            ),
+            (
+                ResponseMutation::Addresses(Vec::new()),
+                ExpectedResponseError::BridgeAddressesCardinality,
+            ),
+            (
+                ResponseMutation::Addresses(vec!["8.8.8.8".to_owned(), "1.1.1.1".to_owned()]),
+                ExpectedResponseError::BridgeAddressesCardinality,
+            ),
+        ];
+        for (mutation, expected) in failing {
+            let mut value = baseline.clone();
+            apply_response_mutation(&mut value, mutation);
+            assert_response_error(parse_response_value(200, &headers, &value), expected);
+        }
+    }
+
+    #[test]
+    fn response_hostname_and_bridge_id_grammar_is_validated() {
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+        for hostname in [
+            "short.solstone.me",
+            "AAAAAAAA.solstone.me",
+            "aaaaaaa0.solstone.me",
+            "aaaaaaa1.solstone.me",
+            "aaaaaaa8.solstone.me",
+            "aaaaaaa9.solstone.me",
+            "aaaqeaye.example.com",
+        ] {
+            let mut value = baseline.clone();
+            value["hostname"] = serde_json::json!(hostname);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::Hostname,
+            );
+        }
+        for bridge_id in [
+            String::new(),
+            "b".repeat(BRIDGE_ID_MAX_BYTES + 1),
+            "has space".to_owned(),
+            "bad/name".to_owned(),
+            "bad@name".to_owned(),
+        ] {
+            let mut value = baseline.clone();
+            value["bridge_id"] = serde_json::json!(bridge_id);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BridgeId,
+            );
+        }
+        for bridge_id in [
+            "A".to_owned(),
+            "ABC.def_ghi:jkl-123".to_owned(),
+            "b".repeat(BRIDGE_ID_MAX_BYTES),
+        ] {
+            let mut value = baseline.clone();
+            value["bridge_id"] = serde_json::json!(bridge_id);
+            assert!(parse_response_value(200, &headers, &value).is_ok());
+        }
+    }
+
+    fn ipv4_u32(address: std::net::Ipv4Addr) -> u32 {
+        u32::from_be_bytes(address.octets())
+    }
+
+    fn ipv4_text(address: u32) -> String {
+        let bytes = address.to_be_bytes();
+        std::net::Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]).to_string()
+    }
+
+    fn expected_v1_denied_ipv4(address: u32, ranges: &[(u32, u32)]) -> bool {
+        ranges
+            .iter()
+            .any(|(start, end)| *start <= address && address <= *end)
+    }
+
+    #[test]
+    fn response_ipv4_denylist_boundaries_and_neighbors_are_enforced() {
+        let expected = [
+            (0x0000_0000, 0x00ff_ffff),
+            (0x0a00_0000, 0x0aff_ffff),
+            (0x6440_0000, 0x647f_ffff),
+            (0x7f00_0000, 0x7fff_ffff),
+            (0xa9fe_0000, 0xa9fe_ffff),
+            (0xac10_0000, 0xac1f_ffff),
+            (0xc000_0000, 0xc000_00ff),
+            (0xc000_0200, 0xc000_02ff),
+            (0xc058_6300, 0xc058_63ff),
+            (0xc0a8_0000, 0xc0a8_ffff),
+            (0xc612_0000, 0xc613_ffff),
+            (0xc633_6400, 0xc633_64ff),
+            (0xcb00_7100, 0xcb00_71ff),
+            (0xe000_0000, 0xefff_ffff),
+            (0xf000_0000, 0xffff_ffff),
+        ];
+        assert_eq!(V1_DENIED_IPV4_RANGES.len(), expected.len());
+        for ((actual_start, actual_end), (expected_start, expected_end)) in
+            V1_DENIED_IPV4_RANGES.iter().zip(expected)
+        {
+            assert_eq!(ipv4_u32(*actual_start), expected_start);
+            assert_eq!(ipv4_u32(*actual_end), expected_end);
+        }
+
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+        for (start, end) in expected {
+            for address in [start, start + (end - start) / 2, end] {
+                let mut value = baseline.clone();
+                value["bridge_addresses"] = serde_json::json!([ipv4_text(address)]);
+                assert_response_error(
+                    parse_response_value(200, &headers, &value),
+                    ExpectedResponseError::BridgeAddressDenied,
+                );
+            }
+            for neighbor in [start.checked_sub(1), end.checked_add(1)]
+                .into_iter()
+                .flatten()
+            {
+                let mut value = baseline.clone();
+                value["bridge_addresses"] = serde_json::json!([ipv4_text(neighbor)]);
+                if expected_v1_denied_ipv4(neighbor, &expected) {
+                    assert_response_error(
+                        parse_response_value(200, &headers, &value),
+                        ExpectedResponseError::BridgeAddressDenied,
+                    );
+                } else {
+                    assert!(parse_response_value(200, &headers, &value).is_ok());
+                }
+            }
+        }
+
+        for (address, expected_error) in [
+            (
+                "192.0.0.9",
+                Some(ExpectedResponseError::BridgeAddressDenied),
+            ),
+            (
+                "192.0.0.10",
+                Some(ExpectedResponseError::BridgeAddressDenied),
+            ),
+            ("191.255.255.255", None),
+            ("192.0.1.0", None),
+            ("20.186.92.169", None),
+        ] {
+            let mut value = baseline.clone();
+            value["bridge_addresses"] = serde_json::json!([address]);
+            match expected_error {
+                Some(expected) => {
+                    assert_response_error(parse_response_value(200, &headers, &value), expected)
+                }
+                None => assert!(parse_response_value(200, &headers, &value).is_ok()),
+            }
+        }
+    }
+
+    #[test]
+    fn response_bridge_address_shape_and_cardinality_are_validated() {
+        let headers = cache_control_headers(b"no-store");
+        let baseline = valid_response_value();
+        for address in ["192.0.2.001", "192.0.2", "192.0.2.1.1", ""] {
+            let mut value = baseline.clone();
+            value["bridge_addresses"] = serde_json::json!([address]);
+            assert_response_error(
+                parse_response_value(200, &headers, &value),
+                ExpectedResponseError::BridgeAddressIpv4,
+            );
+        }
     }
 }
