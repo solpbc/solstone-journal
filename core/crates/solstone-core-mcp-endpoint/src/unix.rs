@@ -31,6 +31,8 @@ use crate::{McpEndpointBootstrapError, McpEndpointOwnerContext};
 const ENDPOINT_DIRECTORY: &str = "mcp-endpoint";
 const TLS_DIRECTORY: &str = "tls";
 const TLS_STATE_FILE: &str = "state.json";
+const TLS_STAGING_ACCOUNT_FILE: &str = "account-staging.pk8";
+const TLS_PRODUCTION_ACCOUNT_FILE: &str = "account-production.pk8";
 const CREATE_LOCK: &str = ".create.lock";
 const POP_KEY: &str = "pop.ed25519.pk8";
 const DIRECTORY_MODE: u32 = 0o700;
@@ -38,6 +40,7 @@ const FILE_MODE: u32 = 0o600;
 const MAX_POP_PKCS8_DER_BYTES: u64 = 512;
 const POP_PKCS8_READ_LIMIT: u64 = MAX_POP_PKCS8_DER_BYTES + 1;
 pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
 
 const DIRECTORY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
@@ -163,11 +166,31 @@ pub(crate) fn open_tls_state_directory(root: &JournalRoot) -> io::Result<TlsStat
 /// exact-mode, identity, and size validation. This never repairs hostile
 /// state; the caller receives no bytes on any failed check.
 pub(crate) fn read_tls_state_bytes(directory: &TlsStateDirectory) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(directory, OsStr::new(TLS_STATE_FILE), MAX_TLS_STATE_BYTES)
+}
+
+/// Load the bounded persistent ACME account key for exactly one certificate
+/// environment. The name is fixed by this module, never caller supplied.
+pub(crate) fn read_tls_acme_account_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_file_name(production)),
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+fn read_tls_named_bytes(
+    directory: &TlsStateDirectory,
+    name: &OsStr,
+    max_bytes: usize,
+) -> io::Result<Option<Vec<u8>>> {
     let directory_stat = fstat(&directory.file).map_err(errno_error)?;
     if !is_exact_directory(&directory_stat, directory.owner, DIRECTORY_MODE) {
         return Err(invalid_entry());
     }
-    let name = OsStr::new(TLS_STATE_FILE);
     let before = match fstatat(&directory.file, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(stat) => stat,
         Err(Errno::ENOENT) => return Ok(None),
@@ -175,7 +198,7 @@ pub(crate) fn read_tls_state_bytes(directory: &TlsStateDirectory) -> io::Result<
     };
     if !is_exact_regular(&before, directory.owner, FILE_MODE)
         || before.st_size < 0
-        || u64::try_from(before.st_size).map_err(|_| invalid_entry())? > MAX_TLS_STATE_BYTES as u64
+        || u64::try_from(before.st_size).map_err(|_| invalid_entry())? > max_bytes as u64
     {
         return Err(invalid_entry());
     }
@@ -212,24 +235,57 @@ pub(crate) fn persist_tls_state_bytes(
     directory: &TlsStateDirectory,
     bytes: &[u8],
 ) -> io::Result<()> {
-    if bytes.len() > MAX_TLS_STATE_BYTES {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_STATE_FILE),
+        bytes,
+        MAX_TLS_STATE_BYTES,
+    )
+}
+
+/// Persist one ACME account key under its fixed environment-specific name.
+/// Both the account and certificate state remain descriptor-bound and
+/// owner-only; callers cannot select a path.
+pub(crate) fn persist_tls_acme_account_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_file_name(production)),
+        bytes,
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+fn persist_tls_named_bytes(
+    directory: &TlsStateDirectory,
+    name: &OsStr,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> io::Result<()> {
+    if bytes.len() > max_bytes {
         return Err(invalid_entry());
     }
     let directory_stat = fstat(&directory.file).map_err(errno_error)?;
     if !is_exact_directory(&directory_stat, directory.owner, DIRECTORY_MODE) {
         return Err(invalid_entry());
     }
-    match atomic_replace_bound(
-        &directory.file,
-        OsStr::new(TLS_STATE_FILE),
-        bytes,
-        FILE_MODE,
-    ) {
+    match atomic_replace_bound(&directory.file, name, bytes, FILE_MODE) {
         Ok(BoundAtomicOutcome::Published { .. }) => Ok(()),
         Ok(_) => Err(io::Error::other(
             "TLS state publication was not durable and certain",
         )),
         Err(_) => Err(io::Error::other("TLS state publication failed")),
+    }
+}
+
+const fn acme_account_file_name(production: bool) -> &'static str {
+    if production {
+        TLS_PRODUCTION_ACCOUNT_FILE
+    } else {
+        TLS_STAGING_ACCOUNT_FILE
     }
 }
 

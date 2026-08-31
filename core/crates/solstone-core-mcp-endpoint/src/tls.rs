@@ -9,12 +9,14 @@
 //! a certificate path or recover a private key from the opaque service.
 
 use std::fmt;
+use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
 
 use arc_swap::ArcSwapOption;
 use base64::Engine as _;
+use futures::StreamExt as _;
 use rcgen::{
     CertificateParams, CustomExtension, DistinguishedName, KeyPair, KeyUsagePurpose,
     PKCS_ECDSA_P256_SHA256,
@@ -26,6 +28,7 @@ use ring::signature::{
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
+use rustls_acme::{AccountCache, AcmeConfig, CertCache, EventError, ResolvesServerCertAcme};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use solstone_core_journal_config::McpEndpointCertificateEnvironment;
@@ -60,6 +63,7 @@ struct McpEndpointCertificateResolver {
     hostname: String,
     ordinary: ArcSwapOption<ActiveOrdinaryCertificate>,
     challenge: ArcSwapOption<ActiveChallengeCertificate>,
+    acme: ArcSwapOption<ResolvesServerCertAcme>,
     #[allow(dead_code)] // Consumed by the same-crate challenge lifecycle owner.
     next_challenge_generation: AtomicU64,
 }
@@ -82,6 +86,31 @@ struct ActiveChallengeCertificate {
 pub(crate) struct McpEndpointChallengeGuard {
     resolver: Arc<McpEndpointCertificateResolver>,
     generation: u64,
+}
+
+/// Payload-free result from the unattended ACME certificate lifecycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpEndpointCertificateLifecycleError {
+    /// Owner-held TLS state could not be opened or validated.
+    State,
+}
+
+impl fmt::Display for McpEndpointCertificateLifecycleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MCP endpoint certificate lifecycle could not start")
+    }
+}
+
+impl std::error::Error for McpEndpointCertificateLifecycleError {}
+
+struct McpEndpointAcmeCache {
+    service: McpEndpointTlsService,
+    production: bool,
+}
+
+struct McpEndpointAcmeResolverGuard {
+    resolver: Arc<McpEndpointCertificateResolver>,
+    installed: Arc<ResolvesServerCertAcme>,
 }
 
 /// Payload-free failure from local TLS state validation or activation.
@@ -119,8 +148,11 @@ impl McpEndpointTlsService {
         if let Some(bytes) =
             unix::read_tls_state_bytes(&store.directory).map_err(|_| McpEndpointTlsError::State)?
         {
-            let active = validate_stored_state(&bytes, &service.resolver.hostname, environment)?;
-            service.resolver.ordinary.store(Some(Arc::new(active)));
+            let decoded = decode_stored_state(&bytes, &service.resolver.hostname, environment)?;
+            if certificate_is_current(&decoded)? {
+                let active = activate_decoded_stored_state(decoded)?;
+                service.resolver.ordinary.store(Some(Arc::new(active)));
+            }
         }
         Ok(service)
     }
@@ -131,6 +163,7 @@ impl McpEndpointTlsService {
                 hostname,
                 ordinary: ArcSwapOption::empty(),
                 challenge: ArcSwapOption::empty(),
+                acme: ArcSwapOption::empty(),
                 next_challenge_generation: AtomicU64::new(0),
             }),
             store,
@@ -198,6 +231,72 @@ impl McpEndpointTlsService {
         })
     }
 
+    /// Keep the journal-owned ACME account and certificate current until the
+    /// supplied listener shutdown. The caller must already be serving this
+    /// service's [`mcp_endpoint_server_config`]: TLS-ALPN-01 validation is
+    /// deliberately answered by that same listener, not by a second port.
+    ///
+    /// A cached but expired certificate is structurally validated and passed
+    /// to the ACME scheduler without being activated for ordinary handshakes.
+    /// Consequently a journal returning after an offline renewal window
+    /// immediately retries issuance while never serving an expired key.
+    pub async fn run_acme_renewal(
+        &self,
+        shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), McpEndpointCertificateLifecycleError> {
+        if *shutdown.borrow() || shutdown.has_changed().is_err() {
+            return Ok(());
+        }
+        let store = self
+            .store
+            .as_ref()
+            .ok_or(McpEndpointCertificateLifecycleError::State)?;
+        let production = matches!(
+            store.environment,
+            McpEndpointCertificateEnvironment::Production
+        );
+        let cache = McpEndpointAcmeCache {
+            service: self.lifecycle_copy(),
+            production,
+        };
+        let mut state = AcmeConfig::new([self.resolver.hostname.as_str()])
+            .cache(cache)
+            .directory_lets_encrypt(production)
+            .state();
+        let _resolver_guard = McpEndpointAcmeResolverGuard {
+            resolver: Arc::clone(&self.resolver),
+            installed: state.resolver(),
+        };
+        self.resolver
+            .acme
+            .store(Some(Arc::clone(&_resolver_guard.installed)));
+
+        loop {
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow_and_update() {
+                        return Ok(());
+                    }
+                }
+                event = state.next() => match event {
+                    Some(Ok(_)) => {},
+                    Some(Err(error)) if persistent_acme_state_error(&error) => {
+                        return Err(McpEndpointCertificateLifecycleError::State);
+                    }
+                    Some(Err(_)) => {},
+                    None => return Err(McpEndpointCertificateLifecycleError::State),
+                }
+            }
+        }
+    }
+
+    fn lifecycle_copy(&self) -> Self {
+        Self {
+            resolver: Arc::clone(&self.resolver),
+            store: self.store.as_ref().map(Arc::clone),
+        }
+    }
+
     #[cfg(test)]
     fn empty_for_test(hostname: String) -> Self {
         Self::empty(hostname, None)
@@ -211,6 +310,110 @@ impl McpEndpointTlsService {
                 key,
                 expires_at: Instant::now() + StdDuration::from_secs(3600),
             })));
+    }
+}
+
+fn persistent_acme_state_error(error: &EventError<io::Error, io::Error>) -> bool {
+    matches!(
+        error,
+        EventError::CertCacheLoad(_)
+            | EventError::AccountCacheLoad(_)
+            | EventError::CertCacheStore(_)
+            | EventError::AccountCacheStore(_)
+            | EventError::CachedCertParse(_)
+    )
+}
+
+impl Drop for McpEndpointAcmeResolverGuard {
+    fn drop(&mut self) {
+        let current = self.resolver.acme.load_full();
+        if current
+            .as_ref()
+            .is_some_and(|resolver| Arc::ptr_eq(resolver, &self.installed))
+        {
+            let _ = self.resolver.acme.compare_and_swap(&current, None);
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CertCache for McpEndpointAcmeCache {
+    type EC = io::Error;
+
+    async fn load_cert(
+        &self,
+        _domains: &[String],
+        _directory_url: &str,
+    ) -> Result<Option<Vec<u8>>, Self::EC> {
+        let store = self
+            .service
+            .store
+            .as_ref()
+            .ok_or_else(|| io::Error::other("MCP endpoint TLS state is unavailable"))?;
+        let Some(bytes) = unix::read_tls_state_bytes(&store.directory)? else {
+            return Ok(None);
+        };
+        let decoded =
+            decode_stored_state(&bytes, &self.service.resolver.hostname, store.environment)
+                .map_err(|_| io::Error::other("MCP endpoint certificate state is invalid"))?;
+        Ok(Some(stored_state_to_pem(decoded)))
+    }
+
+    async fn store_cert(
+        &self,
+        _domains: &[String],
+        _directory_url: &str,
+        certificate: &[u8],
+    ) -> Result<(), Self::EC> {
+        let issued = issued_pem_parts(certificate)
+            .map_err(|_| io::Error::other("ACME returned an invalid certificate bundle"))?;
+        self.service
+            .install_ordinary_certificate(
+                issued.certificate_chain,
+                issued.private_key,
+                issued.not_before,
+                issued.not_after,
+            )
+            .map_err(|_| io::Error::other("ACME certificate state could not be activated"))
+    }
+}
+
+#[async_trait::async_trait]
+impl AccountCache for McpEndpointAcmeCache {
+    type EA = io::Error;
+
+    async fn load_account(
+        &self,
+        _contact: &[String],
+        _directory_url: &str,
+    ) -> Result<Option<Vec<u8>>, Self::EA> {
+        let store = self
+            .service
+            .store
+            .as_ref()
+            .ok_or_else(|| io::Error::other("MCP endpoint TLS state is unavailable"))?;
+        let account = unix::read_tls_acme_account_bytes(&store.directory, self.production)?;
+        if let Some(account) = account.as_deref() {
+            validate_acme_account_key(account)
+                .map_err(|_| io::Error::other("MCP endpoint ACME account state is invalid"))?;
+        }
+        Ok(account)
+    }
+
+    async fn store_account(
+        &self,
+        _contact: &[String],
+        _directory_url: &str,
+        account: &[u8],
+    ) -> Result<(), Self::EA> {
+        validate_acme_account_key(account)
+            .map_err(|_| io::Error::other("ACME returned an invalid account key"))?;
+        let store = self
+            .service
+            .store
+            .as_ref()
+            .ok_or_else(|| io::Error::other("MCP endpoint TLS state is unavailable"))?;
+        unix::persist_tls_acme_account_bytes(&store.directory, self.production, account)
     }
 }
 
@@ -256,6 +459,9 @@ impl ResolvesServerCert for McpEndpointCertificateResolver {
         if is_acme_attempt(&alpn) {
             if !is_only_acme_alpn(&alpn) {
                 return None;
+            }
+            if let Some(resolver) = self.acme.load_full() {
+                return resolver.resolve(hello);
             }
             return self
                 .challenge
@@ -358,11 +564,37 @@ where
     Ok(())
 }
 
+struct DecodedStoredCertificateState {
+    certificate_chain: Vec<Vec<u8>>,
+    private_key: Vec<u8>,
+    not_before: i64,
+    not_after: i64,
+}
+
+struct IssuedCertificate {
+    certificate_chain: Vec<Vec<u8>>,
+    private_key: Vec<u8>,
+    not_before: i64,
+    not_after: i64,
+}
+
 fn validate_stored_state(
     bytes: &[u8],
     expected_hostname: &str,
     expected_environment: McpEndpointCertificateEnvironment,
 ) -> Result<ActiveOrdinaryCertificate, McpEndpointTlsError> {
+    let decoded = decode_stored_state(bytes, expected_hostname, expected_environment)?;
+    if !certificate_is_current(&decoded)? {
+        return Err(McpEndpointTlsError::State);
+    }
+    activate_decoded_stored_state(decoded)
+}
+
+fn decode_stored_state(
+    bytes: &[u8],
+    expected_hostname: &str,
+    expected_environment: McpEndpointCertificateEnvironment,
+) -> Result<DecodedStoredCertificateState, McpEndpointTlsError> {
     if bytes.len() > unix::MAX_TLS_STATE_BYTES {
         return Err(McpEndpointTlsError::State);
     }
@@ -373,10 +605,6 @@ fn validate_stored_state(
         || !is_exact_authorized_hostname(&state.hostname, expected_hostname)
         || state.not_before >= state.not_after
     {
-        return Err(McpEndpointTlsError::State);
-    }
-    let now = now_unix_seconds()?;
-    if now < state.not_before || now >= state.not_after {
         return Err(McpEndpointTlsError::State);
     }
     let certificate_chain = state
@@ -439,6 +667,31 @@ fn validate_stored_state(
     if leaf.public_key().subject_public_key.data != ecdsa_key.public_key().as_ref() {
         return Err(McpEndpointTlsError::State);
     }
+    Ok(DecodedStoredCertificateState {
+        certificate_chain,
+        private_key,
+        not_before: state.not_before,
+        not_after: state.not_after,
+    })
+}
+
+fn certificate_is_current(
+    state: &DecodedStoredCertificateState,
+) -> Result<bool, McpEndpointTlsError> {
+    let now = now_unix_seconds()?;
+    Ok(now >= state.not_before && now < state.not_after)
+}
+
+fn activate_decoded_stored_state(
+    state: DecodedStoredCertificateState,
+) -> Result<ActiveOrdinaryCertificate, McpEndpointTlsError> {
+    let DecodedStoredCertificateState {
+        certificate_chain,
+        private_key,
+        not_before: _,
+        not_after,
+    } = state;
+    let now = now_unix_seconds()?;
     let private_key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key));
     let signing_key = rustls::crypto::ring::sign::any_supported_type(&private_key_der)
         .map_err(|_| McpEndpointTlsError::State)?;
@@ -446,8 +699,7 @@ fn validate_stored_state(
         .into_iter()
         .map(CertificateDer::from)
         .collect();
-    let seconds_until_expiry = state
-        .not_after
+    let seconds_until_expiry = not_after
         .checked_sub(now)
         .and_then(|seconds| u64::try_from(seconds).ok())
         .filter(|seconds| *seconds > 0)
@@ -459,6 +711,65 @@ fn validate_stored_state(
         key: Arc::new(CertifiedKey::new(certificate_chain, signing_key)),
         expires_at,
     })
+}
+
+fn stored_state_to_pem(state: DecodedStoredCertificateState) -> Vec<u8> {
+    let mut blocks = Vec::with_capacity(state.certificate_chain.len() + 1);
+    blocks.push(pem::Pem::new("PRIVATE KEY", state.private_key));
+    blocks.extend(
+        state
+            .certificate_chain
+            .into_iter()
+            .map(|certificate| pem::Pem::new("CERTIFICATE", certificate)),
+    );
+    pem::encode_many(&blocks).into_bytes()
+}
+
+fn issued_pem_parts(certificate: &[u8]) -> Result<IssuedCertificate, McpEndpointTlsError> {
+    let blocks = pem::parse_many(certificate).map_err(|_| McpEndpointTlsError::State)?;
+    let (private_key, certificates) = blocks.split_first().ok_or(McpEndpointTlsError::State)?;
+    if private_key.tag() != "PRIVATE KEY" || certificates.is_empty() {
+        return Err(McpEndpointTlsError::State);
+    }
+    if certificates
+        .iter()
+        .any(|block| block.tag() != "CERTIFICATE")
+    {
+        return Err(McpEndpointTlsError::State);
+    }
+    let chain = certificates
+        .iter()
+        .map(|certificate| certificate.contents().to_vec())
+        .collect::<Vec<_>>();
+    let (remainder, leaf) =
+        parse_x509_certificate(&chain[0]).map_err(|_| McpEndpointTlsError::State)?;
+    if !remainder.is_empty() {
+        return Err(McpEndpointTlsError::State);
+    }
+    let not_before = leaf.validity().not_before.timestamp();
+    let not_after = leaf.validity().not_after.timestamp();
+    Ok(IssuedCertificate {
+        certificate_chain: chain,
+        private_key: private_key.contents().to_vec(),
+        not_before,
+        not_after,
+    })
+}
+
+fn validate_acme_account_key(bytes: &[u8]) -> Result<(), McpEndpointTlsError> {
+    if bytes.is_empty() || bytes.len() > unix::MAX_TLS_ACME_ACCOUNT_BYTES {
+        return Err(McpEndpointTlsError::State);
+    }
+    EcdsaKeyPair::from_pkcs8(
+        &ECDSA_P256_SHA256_FIXED_SIGNING,
+        bytes,
+        &SystemRandom::new(),
+    )
+    .or_else(|_| {
+        EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, bytes, &SystemRandom::new())
+    })
+    .map(|_| ())
+    .map_err(|_| McpEndpointTlsError::State)
 }
 
 #[allow(dead_code)] // Called by the same-crate ACME lifecycle owner.
@@ -592,6 +903,26 @@ mod tests {
             not_before,
             not_after,
             CertificateDer::from(der),
+        )
+    }
+
+    fn expired_state_fixture() -> (Vec<Vec<u8>>, Vec<u8>, i64, i64) {
+        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("expired state key");
+        let now = OffsetDateTime::now_utc();
+        let mut params =
+            CertificateParams::new(vec![HOSTNAME.to_owned()]).expect("expired state params");
+        params.not_before = now - Duration::hours(2);
+        params.not_after = now - Duration::hours(1);
+        let not_before = params.not_before.unix_timestamp();
+        let not_after = params.not_after.unix_timestamp();
+        let certificate = params
+            .self_signed(&key_pair)
+            .expect("expired state certificate");
+        (
+            vec![certificate.der().to_vec()],
+            key_pair.serialize_der(),
+            not_before,
+            not_after,
         )
     }
 
@@ -777,6 +1108,110 @@ mod tests {
         let mut server =
             ServerConnection::new(mcp_endpoint_server_config(&reloaded)).expect("reloaded server");
         complete_handshake(&mut client, &mut server).expect("reloaded certificate handshakes");
+    }
+
+    #[test]
+    fn expired_state_is_not_served_but_is_retained_for_acme_recovery() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after) = expired_state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+        )
+        .expect("empty service");
+        let state = StoredCertificateState {
+            environment: "staging".to_owned(),
+            hostname: HOSTNAME.to_owned(),
+            certificate_chain: chain
+                .into_iter()
+                .map(|value| base64::engine::general_purpose::STANDARD.encode(value))
+                .collect(),
+            private_key: base64::engine::general_purpose::STANDARD.encode(private_key),
+            not_before,
+            not_after,
+        };
+        let encoded = serde_json::to_vec(&state).expect("state JSON");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_state_bytes(&store.directory, &encoded).expect("persist expired state");
+
+        let recovered = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+        )
+        .expect("expired state is structurally valid");
+        assert!(recovered.resolver.ordinary.load_full().is_none());
+
+        let cache = McpEndpointAcmeCache {
+            service: recovered.lifecycle_copy(),
+            production: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let pem = runtime
+            .block_on(CertCache::load_cert(&cache, &[], "staging"))
+            .expect("expired certificate cache load")
+            .expect("expired certificate remains available to ACME");
+        assert!(pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+    }
+
+    #[test]
+    fn acme_account_state_is_environment_scoped_and_owner_only() {
+        let root = TempDir::new().expect("state root");
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+        )
+        .expect("empty service");
+        let account =
+            EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
+                .expect("account key");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_acme_account_bytes(&store.directory, false, account.as_ref())
+            .expect("persist staging account");
+        assert!(
+            unix::read_tls_acme_account_bytes(&store.directory, true)
+                .expect("read production account")
+                .is_none()
+        );
+        assert_eq!(
+            fs::metadata(root.path().join("mcp-endpoint/tls/account-staging.pk8"))
+                .expect("staging account")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn renewal_honors_a_preexisting_shutdown_without_acme_work() {
+        let root = TempDir::new().expect("state root");
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+        )
+        .expect("empty service");
+        let (_sender, mut shutdown) = tokio::sync::watch::channel(true);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime
+            .block_on(service.run_acme_renewal(&mut shutdown))
+            .expect("preexisting shutdown is clean");
+        assert!(
+            !root
+                .path()
+                .join("mcp-endpoint/tls/account-staging.pk8")
+                .exists()
+        );
+        assert!(!root.path().join("mcp-endpoint/tls/state.json").exists());
     }
 
     #[test]
