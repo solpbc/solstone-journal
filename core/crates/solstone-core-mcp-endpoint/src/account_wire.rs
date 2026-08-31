@@ -1735,17 +1735,18 @@ mod tests {
             }
             self.active_phase = Some(phase);
             self.trace.borrow_mut().push(phase);
-            let plan = self
+            let plan = if self
                 .plans
                 .front()
                 .is_some_and(|(planned, _)| *planned == phase)
-                .then(|| {
-                    self.plans
-                        .pop_front()
-                        .expect("matching connection plan exists")
-                        .1
-                })
-                .unwrap_or(AccountAttemptPlan::Complete);
+            {
+                self.plans
+                    .pop_front()
+                    .expect("matching connection plan exists")
+                    .1
+            } else {
+                AccountAttemptPlan::Complete
+            };
             match plan {
                 AccountAttemptPlan::Complete => Poll::Ready(Ok(())),
                 AccountAttemptPlan::Fail => {

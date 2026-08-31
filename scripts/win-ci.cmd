@@ -152,6 +152,11 @@ type "%JOURNAL_WIN_CI_RECEIPT_LOG%"
 if not "%JOURNAL_WIN_CI_RECEIPT_STATUS%"=="0" exit /b 1
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_RECEIPT_LOG); $marker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER); $filesystemMarker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM'); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '=executed/pass'); $filesystem = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM=' + $env:JOURNAL_WIN_CI_RECEIPT_FILESYSTEM); if ([regex]::Matches($text, '(?m)^' + $marker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystemMarker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystem + '\r?$').Count -eq 1) { exit 0 }; exit 1"
 if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_RECEIPT_LABEL% receipt did not emit exactly one source-originated pass and runtime-filesystem marker & exit /b 1 )
+set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN="
+if "%JOURNAL_WIN_CI_RECEIPT_MARKER%"=="JOURNAL_WIN_CI_CORTEX_USE_NTFS" set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN=NTFS"
+if "%JOURNAL_WIN_CI_RECEIPT_MARKER%"=="JOURNAL_WIN_CI_CORTEX_USE_REFS" set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN=REFS"
+if defined JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_RECEIPT_LOG); $categories = @('CREATE_ADMIT', 'WRONG_KIND_REPARSE', 'RETAINED_ROOT', 'RETAINED_HEALTH', 'FAILURE_MAPPING', 'PRESERVATION'); foreach ($category in $categories) { $marker = 'JOURNAL_WIN_CI_CORTEX_NAMESPACE_' + $env:JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN + '_' + $category; $pass = [regex]::Escape($marker + '=executed/pass'); $filesystemMarker = [regex]::Escape($marker + '_FILESYSTEM=' + $env:JOURNAL_WIN_CI_RECEIPT_FILESYSTEM); if ([regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -ne 1 -or [regex]::Matches($text, '(?m)^' + $filesystemMarker + '\r?$').Count -ne 1) { exit 1 } }; exit 0"
+if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_RECEIPT_LABEL% receipt did not emit every Cortex namespace category exactly once & exit /b 1 )
 del /q "%JOURNAL_WIN_CI_RECEIPT_LOG%" >nul 2>&1
 exit /b 0
 

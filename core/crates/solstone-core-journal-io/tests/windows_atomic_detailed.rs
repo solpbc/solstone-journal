@@ -8,6 +8,7 @@ use std::fs;
 use std::io;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -22,12 +23,13 @@ use solstone_core_journal_io::atomic::{
 };
 use solstone_core_journal_io::cortex_use::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseRefusal,
-    check_cortex_use_destination, inspect_cortex_use_root, read_cortex_use_request,
+    check_cortex_use_destination, create_or_admit_cortex_namespace, inspect_cortex_use_root,
+    read_cortex_use_request,
 };
 use solstone_core_journal_io::{
-    DetailedAtomicOutcome, exercise_windows_managed_log_logical_coordinates,
+    DetailedAtomicOutcome, JournalRoot, exercise_windows_managed_log_logical_coordinates,
     exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
-    publish_test_managed_log_alias, root_test_managed_log_alias_name,
+    list_windows_flat_directory, publish_test_managed_log_alias, root_test_managed_log_alias_name,
     try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
@@ -36,9 +38,9 @@ use windows_sys::Win32::Foundation::{
     INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetVolumeInformationByHandleW,
-    OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, GetVolumeInformationByHandleW, OPEN_EXISTING,
 };
 
 const OLD: &[u8] = b"old-content";
@@ -809,6 +811,243 @@ fn exercise_cortex_use_receipt(root: &Path) {
     );
 }
 
+fn create_directory_junction(link: &Path, target: &Path) {
+    let output = Command::new("cmd")
+        .args(["/d", "/c", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .expect("launch cmd.exe for Cortex namespace junction fixture");
+    assert!(
+        output.status.success(),
+        "create Cortex namespace junction fixture {} -> {}: status={} stdout={} stderr={}",
+        link.display(),
+        target.display(),
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+fn cortex_namespace_failure(root: &Path) -> String {
+    match create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap()) {
+        Ok(_) => panic!("Cortex namespace fixture unexpectedly admitted"),
+        Err(error) => error.to_string(),
+    }
+}
+
+fn exercise_cortex_namespace_receipt(root: &Path) {
+    let create_root = root.join("cortex-namespace-create-admit");
+    fs::create_dir(&create_root).unwrap();
+    fs::write(create_root.join("unrelated"), b"root-before").unwrap();
+
+    let created = create_or_admit_cortex_namespace(JournalRoot::open(&create_root).unwrap())
+        .expect("create both missing Cortex namespace children");
+    assert!(create_root.join("health").is_dir());
+    assert!(create_root.join("talents").is_dir());
+    assert_eq!(
+        list_windows_flat_directory(created.health(), 8)
+            .unwrap()
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>(),
+        Vec::<std::ffi::OsString>::new()
+    );
+    drop(created);
+    fs::write(create_root.join("health/preserved"), b"health-before").unwrap();
+    let admitted = create_or_admit_cortex_namespace(JournalRoot::open(&create_root).unwrap())
+        .expect("admit existing Cortex namespace children");
+    assert!(
+        list_windows_flat_directory(admitted.talents(), 8)
+            .unwrap()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read(create_root.join("health/preserved")).unwrap(),
+        b"health-before"
+    );
+    assert_eq!(
+        fs::read(create_root.join("unrelated")).unwrap(),
+        b"root-before"
+    );
+    drop(admitted);
+
+    let wrong_kind_root = root.join("cortex-namespace-wrong-kind");
+    fs::create_dir(&wrong_kind_root).unwrap();
+    fs::write(wrong_kind_root.join("health"), b"wrong-kind-before").unwrap();
+    fs::create_dir(wrong_kind_root.join("talents")).unwrap();
+    fs::write(wrong_kind_root.join("talents/preserved"), b"talents-before").unwrap();
+    let wrong_kind_health_identity = file_identity(&wrong_kind_root.join("health"));
+    let wrong_kind_talents_identity = file_identity(&wrong_kind_root.join("talents"));
+    assert_eq!(
+        cortex_namespace_failure(&wrong_kind_root),
+        "cortex_namespace_health_unsafe"
+    );
+    assert_eq!(
+        file_identity(&wrong_kind_root.join("health")),
+        wrong_kind_health_identity
+    );
+    assert_eq!(
+        file_identity(&wrong_kind_root.join("talents")),
+        wrong_kind_talents_identity
+    );
+    assert_eq!(
+        fs::read(wrong_kind_root.join("health")).unwrap(),
+        b"wrong-kind-before"
+    );
+    assert_eq!(
+        fs::read(wrong_kind_root.join("talents/preserved")).unwrap(),
+        b"talents-before"
+    );
+    let mut wrong_kind_entries = fs::read_dir(&wrong_kind_root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    wrong_kind_entries.sort();
+    assert_eq!(
+        wrong_kind_entries,
+        vec![
+            OsStr::new("health").to_os_string(),
+            OsStr::new("talents").to_os_string()
+        ]
+    );
+
+    let reparse_root = root.join("cortex-namespace-reparse");
+    let reparse_target = root.join("cortex-namespace-reparse-target");
+    fs::create_dir(&reparse_root).unwrap();
+    fs::create_dir(&reparse_target).unwrap();
+    fs::write(reparse_root.join("unrelated"), b"root-before").unwrap();
+    fs::write(reparse_target.join("outside"), b"outside-before").unwrap();
+    create_directory_junction(&reparse_root.join("talents"), &reparse_target);
+    let reparse_identity = file_identity(&reparse_root.join("talents"));
+    let unrelated_identity = file_identity(&reparse_root.join("unrelated"));
+    let outside_identity = file_identity(&reparse_target.join("outside"));
+    assert_eq!(
+        cortex_namespace_failure(&reparse_root),
+        "cortex_namespace_talents_unsafe"
+    );
+    assert!(reparse_root.join("health").is_dir());
+    assert!(
+        fs::read_dir(reparse_root.join("health"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "talents refusal must leave only the empty created health residual"
+    );
+    assert_eq!(
+        file_identity(&reparse_root.join("talents")),
+        reparse_identity
+    );
+    assert_ne!(
+        fs::symlink_metadata(reparse_root.join("talents"))
+            .unwrap()
+            .file_attributes()
+            & FILE_ATTRIBUTE_REPARSE_POINT,
+        0
+    );
+    assert_eq!(
+        file_identity(&reparse_root.join("unrelated")),
+        unrelated_identity
+    );
+    assert_eq!(
+        file_identity(&reparse_target.join("outside")),
+        outside_identity
+    );
+    assert_eq!(
+        fs::read(reparse_root.join("unrelated")).unwrap(),
+        b"root-before"
+    );
+    assert_eq!(
+        fs::read(reparse_target.join("outside")).unwrap(),
+        b"outside-before"
+    );
+    let mut reparse_entries = fs::read_dir(&reparse_root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    reparse_entries.sort();
+    assert_eq!(
+        reparse_entries,
+        vec![
+            OsStr::new("health").to_os_string(),
+            OsStr::new("talents").to_os_string(),
+            OsStr::new("unrelated").to_os_string()
+        ]
+    );
+
+    let root_replacement_parent = root.join("cortex-namespace-retained-root");
+    let original_root = root_replacement_parent.join("journal");
+    let moved_root = root_replacement_parent.join("journal-moved");
+    fs::create_dir(&root_replacement_parent).unwrap();
+    fs::create_dir(&original_root).unwrap();
+    let retained_root = JournalRoot::open(&original_root).unwrap();
+    fs::rename(&original_root, &moved_root).unwrap();
+    fs::create_dir(&original_root).unwrap();
+    fs::write(original_root.join("replacement"), b"replacement-before").unwrap();
+    let rooted = create_or_admit_cortex_namespace(retained_root).unwrap();
+    assert!(moved_root.join("health").is_dir());
+    assert!(moved_root.join("talents").is_dir());
+    assert!(!original_root.join("health").exists());
+    assert!(!original_root.join("talents").exists());
+    assert_eq!(
+        fs::read(original_root.join("replacement")).unwrap(),
+        b"replacement-before"
+    );
+    drop(rooted);
+
+    let health_replacement_root = root.join("cortex-namespace-retained-health");
+    fs::create_dir(&health_replacement_root).unwrap();
+    let retained_health =
+        create_or_admit_cortex_namespace(JournalRoot::open(&health_replacement_root).unwrap())
+            .unwrap();
+    fs::write(
+        health_replacement_root.join("health/original"),
+        b"original-before",
+    )
+    .unwrap();
+    fs::rename(
+        health_replacement_root.join("health"),
+        health_replacement_root.join("health-moved"),
+    )
+    .unwrap();
+    fs::create_dir(health_replacement_root.join("health")).unwrap();
+    fs::write(
+        health_replacement_root.join("health/replacement"),
+        b"replacement-before",
+    )
+    .unwrap();
+    let retained_entries = list_windows_flat_directory(retained_health.health(), 8)
+        .unwrap()
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        retained_entries,
+        vec![OsStr::new("original").to_os_string()]
+    );
+    assert_eq!(
+        fs::read(health_replacement_root.join("health/replacement")).unwrap(),
+        b"replacement-before"
+    );
+}
+
+fn print_cortex_namespace_receipts(token: &str, filesystem: &str) {
+    for category in [
+        "CREATE_ADMIT",
+        "WRONG_KIND_REPARSE",
+        "RETAINED_ROOT",
+        "RETAINED_HEALTH",
+        "FAILURE_MAPPING",
+        "PRESERVATION",
+    ] {
+        println!("JOURNAL_WIN_CI_CORTEX_NAMESPACE_{token}_{category}=executed/pass");
+        println!("JOURNAL_WIN_CI_CORTEX_NAMESPACE_{token}_{category}_FILESYSTEM={filesystem}");
+    }
+}
+
 #[test]
 #[ignore = "requires a native NTFS filesystem"]
 fn ntfs_publication_receipt() {
@@ -841,6 +1080,8 @@ fn ntfs_cortex_use_receipt() {
     let root = tempfile::tempdir().unwrap();
     assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
     exercise_cortex_use_receipt(root.path());
+    exercise_cortex_namespace_receipt(root.path());
+    print_cortex_namespace_receipts("NTFS", "NTFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM=NTFS");
 }
@@ -857,6 +1098,8 @@ fn refs_cortex_use_receipt() {
         .tempdir_in(&root)
         .unwrap();
     exercise_cortex_use_receipt(temporary.path());
+    exercise_cortex_namespace_receipt(temporary.path());
+    print_cortex_namespace_receipts("REFS", "ReFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS");
 }

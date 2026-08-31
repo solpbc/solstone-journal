@@ -194,6 +194,13 @@ require_native_receipt() {
     exit 1
   fi
 }
+require_cortex_namespace_receipts() {
+  receipt_token=$1
+  receipt_filesystem=$2
+  for receipt_category in CREATE_ADMIT WRONG_KIND_REPARSE RETAINED_ROOT RETAINED_HEALTH FAILURE_MAPPING PRESERVATION; do
+    require_native_receipt "JOURNAL_WIN_CI_CORTEX_NAMESPACE_${receipt_token}_${receipt_category}" "$receipt_filesystem"
+  done
+}
 require_platform_receipt() {
   receipt_key=$1
   pass_line="$receipt_key=executed/pass"
@@ -214,6 +221,8 @@ require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
 require_native_receipt JOURNAL_WIN_CI_CORTEX_USE_NTFS NTFS
 require_native_receipt JOURNAL_WIN_CI_CORTEX_USE_REFS ReFS
+require_cortex_namespace_receipts NTFS NTFS
+require_cortex_namespace_receipts REFS ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP NTFS
