@@ -269,7 +269,25 @@ impl McpEndpointOwnerContext {
         &self,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, shutdown)
+        account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
+            .await?
+            .into_session()
+    }
+
+    /// Reconnect a bridge carrier only when it is authorized for the existing
+    /// endpoint TLS service.
+    ///
+    /// The native service keeps its listener and certificate state across a
+    /// recoverable carrier loss.  A later account registration is therefore
+    /// admitted only if it names the exact hostname already bound to that TLS
+    /// service; a changed hostname must fail closed instead of being forwarded
+    /// through the old certificate.
+    pub(crate) async fn connect_mcp_bridge_for_tls(
+        &self,
+        tls: &McpEndpointTlsService,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
+        account_wire::establish_mcp_bridge_carrier(self, Some(tls), shutdown)
             .await?
             .into_session()
     }
@@ -280,7 +298,7 @@ impl McpEndpointOwnerContext {
         &self,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpEndpointTunnel, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, shutdown)
+        account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
             .await?
             .into_tunnel()
     }
