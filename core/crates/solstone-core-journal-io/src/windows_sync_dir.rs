@@ -230,15 +230,29 @@ pub(crate) fn list_windows_native_entries(
     let mut entries = Vec::new();
     for listed in listed {
         let path = directory.diagnostic_entry(&listed.name);
-        let handle = open_relative_exact(
+        let handle = match open_relative_exact(
             directory.directory.as_raw_handle(),
             &listed.name,
             FILE_READ_ATTRIBUTES,
             0,
             &path,
             FILE_OPEN,
-        )
-        .map_err(|error| map_listing(enumeration_stage, error))?;
+        ) {
+            Ok(handle) => handle,
+            Err(FlatDirectoryError::Io { source, .. })
+                if matches!(
+                    source.raw_os_error(),
+                    Some(code)
+                        if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+                ) =>
+            {
+                return Err(map_listing(
+                    enumeration_stage,
+                    FlatDirectoryError::EnumerationChanged { path },
+                ));
+            }
+            Err(error) => return Err(map_listing(enumeration_stage, error)),
+        };
         let entry = entry_from_handle(listed.name.clone(), handle.as_raw_handle(), &path)
             .map_err(|error| map_listing(enumeration_stage, error))?;
         let identity = entry_identity(handle.as_raw_handle(), &path)
