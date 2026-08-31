@@ -325,7 +325,7 @@ impl OAuthStore {
                 }
                 verified = Some(VerifiedToken {
                     id: grant.id.clone(),
-                    agent_identity: format!("oauth:dcr:{}", grant.client_id),
+                    agent_identity: grant.client_id.clone(),
                 });
             }
         }
@@ -1338,6 +1338,54 @@ mod tests {
         }
         let first = sizes[0];
         assert!(sizes.iter().all(|size| size.abs_diff(first) < 64));
+    }
+
+    fn redeem_access(store: &OAuthStore, client_record_id: &str, client_id: &str) -> String {
+        let pairing = store.generate_pairing_code().unwrap();
+        let transaction = open_transaction(store, client_record_id, "192.0.2.1");
+        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        store
+            .redeem_authorization_code(
+                &issued.code,
+                client_id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+            )
+            .unwrap()
+            .access_token
+    }
+
+    #[test]
+    fn access_token_identity_is_the_stored_client_id() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let cimd_id = "https://client.example/cimd.json";
+        let cimd = seed_client(&store, "192.0.2.1");
+        let cimd_token = redeem_access(&store, &cimd, cimd_id);
+        let cimd_verified = store.verify_access_token(&cimd_token).unwrap();
+        assert_eq!(cimd_verified.agent_identity, cimd_id);
+        assert!(!cimd_verified.agent_identity.starts_with("oauth:dcr:"));
+
+        let minted = "oauth:dcr:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let classic = store
+            .register_client(
+                minted,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "198.51.100.2",
+            )
+            .unwrap();
+        let classic_token = redeem_access(&store, &classic.id, minted);
+        let classic_verified = store.verify_access_token(&classic_token).unwrap();
+        assert_eq!(classic_verified.agent_identity, minted);
+        assert!(
+            !classic_verified
+                .agent_identity
+                .starts_with("oauth:dcr:oauth:dcr:")
+        );
+        assert!(cimd_verified.agent_identity.contains(':'));
+        assert!(classic_verified.agent_identity.contains(':'));
     }
 
     #[test]
