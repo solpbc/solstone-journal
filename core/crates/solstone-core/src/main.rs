@@ -33,12 +33,12 @@ use solstone_core_cli::{
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
-    MCP_USAGE, McpCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP,
-    SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
-    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP,
-    START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
-    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
-    SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpTokenCommand, NAVIGATE_HELP,
+    NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
+    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
     THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
     TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
     TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
@@ -63,7 +63,7 @@ mod service_logs;
 mod settings;
 use solstone_core::supervisor;
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-use solstone_core::{TokenStore, TokenStoreError};
+use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
     DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
@@ -4719,6 +4719,8 @@ fn run_mcp_process(command: McpCommand) -> ExitCode {
         McpCommand::Service => run_mcp_service(),
         McpCommand::Status => run_mcp_status(),
         McpCommand::Token(command) => run_mcp_token(command),
+        McpCommand::Pairing(command) => run_mcp_pairing(command),
+        McpCommand::Oauth(command) => run_mcp_oauth(command),
     }
 }
 
@@ -4848,6 +4850,94 @@ fn run_mcp_token(_command: McpTokenCommand) -> ExitCode {
 }
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = OAuthStore::open(&journal.path);
+    match command {
+        McpPairingCommand::Generate => match store.generate_pairing_code() {
+            Ok(created) => {
+                println!("Generated a pairing code, valid for 10 minutes and one use.");
+                println!("Save this now. It will not be shown again and cannot be recovered:");
+                println!("{}", created.code);
+                println!("Expires at {}.", created.expires_at.to_rfc3339());
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_oauth_store_error("pairing", "generate", &error),
+        },
+        McpPairingCommand::Revoke => match store.revoke_pairing_code() {
+            Ok(()) => {
+                println!("Revoked the active pairing code.");
+                ExitCode::SUCCESS
+            }
+            Err(OAuthStoreError::NoActivePairing) => {
+                eprintln!("journal mcp pairing revoke: no active pairing code to revoke");
+                ExitCode::from(EXIT_DATAERR)
+            }
+            Err(error) => render_oauth_store_error("pairing", "revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_pairing(_command: McpPairingCommand) -> ExitCode {
+    eprintln!("journal mcp pairing is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = OAuthStore::open(&journal.path);
+    match command {
+        McpOauthCommand::List => match store.list_clients() {
+            Ok(clients) => {
+                for client in clients {
+                    let name = client.client_name.as_deref().unwrap_or("-");
+                    println!(
+                        "{}\t{}\t{}",
+                        client.client_id,
+                        name,
+                        client.created_at.to_rfc3339()
+                    );
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_oauth_store_error("oauth", "list", &error),
+        },
+        McpOauthCommand::Revoke { client_id } => match store.revoke_client_by_client_id(&client_id)
+        {
+            Ok(()) => {
+                println!("Revoked OAuth client {client_id}.");
+                ExitCode::SUCCESS
+            }
+            Err(OAuthStoreError::ClientNotFound) => {
+                eprintln!("journal mcp oauth revoke: no such OAuth client");
+                ExitCode::from(EXIT_DATAERR)
+            }
+            Err(error) => render_oauth_store_error("oauth", "revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_oauth(_command: McpOauthCommand) -> ExitCode {
+    eprintln!("journal mcp oauth is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCode {
     match error {
         TokenStoreError::InvalidLabel(error) => {
@@ -4879,6 +4969,47 @@ const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
         TokenStoreError::Randomness
         | TokenStoreError::Malformed { .. }
         | TokenStoreError::UnsupportedSchema { .. } => EXIT_UNAVAILABLE,
+    }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn render_oauth_store_error(command: &str, operation: &str, error: &OAuthStoreError) -> ExitCode {
+    match error {
+        OAuthStoreError::NoActivePairing => {
+            eprintln!("journal mcp {command} {operation}: no active pairing code");
+        }
+        OAuthStoreError::ClientNotFound => {
+            eprintln!("journal mcp {command} {operation}: no such OAuth client");
+        }
+        _ => {
+            eprintln!("journal mcp {command} {operation}: {error}");
+        }
+    }
+    ExitCode::from(oauth_store_error_exit(error))
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
+    match error {
+        OAuthStoreError::NoActivePairing
+        | OAuthStoreError::ClientNotFound
+        | OAuthStoreError::InvalidToken
+        | OAuthStoreError::TransactionNotFound
+        | OAuthStoreError::TransactionExpired
+        | OAuthStoreError::TransactionExhausted
+        | OAuthStoreError::CodeExpired
+        | OAuthStoreError::BindingMismatch
+        | OAuthStoreError::PairingMismatch
+        | OAuthStoreError::PairingLocked => EXIT_DATAERR,
+        OAuthStoreError::Lock(_) => EXIT_TEMPFAIL,
+        OAuthStoreError::Directory(_) | OAuthStoreError::Read { .. } => EXIT_IOERR,
+        OAuthStoreError::Write(_) => EXIT_CANTCREAT,
+        OAuthStoreError::Randomness
+        | OAuthStoreError::Quota
+        | OAuthStoreError::Malformed { .. }
+        | OAuthStoreError::UnsupportedSchema { .. }
+        | OAuthStoreError::EntryTooLarge
+        | OAuthStoreError::StateTooLarge => EXIT_UNAVAILABLE,
     }
 }
 

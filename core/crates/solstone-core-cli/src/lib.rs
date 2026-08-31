@@ -677,11 +677,11 @@ pub const SPL_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal mcp`.
-pub const MCP_USAGE: &str = "usage: journal mcp [-h] {service,status,token} ...\n";
+pub const MCP_USAGE: &str = "usage: journal mcp [-h] {service,status,token,pairing,oauth} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,status,token} ...\n",
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -690,6 +690,8 @@ pub const MCP_HELP: &str = concat!(
     "  service               Run the hosted MCP service\n",
     "  status                Show MCP endpoint status\n",
     "  token                 Manage MCP bearer tokens\n",
+    "  pairing               Manage the local owner pairing code\n",
+    "  oauth                 Manage registered OAuth clients\n",
 );
 
 pub const TALENT_USAGE: &str =
@@ -1274,6 +1276,8 @@ pub enum McpCommand {
     Service,
     Status,
     Token(McpTokenCommand),
+    Pairing(McpPairingCommand),
+    Oauth(McpOauthCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1281,6 +1285,18 @@ pub enum McpTokenCommand {
     Create { label: String },
     List,
     Revoke { label: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpPairingCommand {
+    Generate,
+    Revoke,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpOauthCommand {
+    List,
+    Revoke { client_id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3833,13 +3849,16 @@ fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
 fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
         return Err(McpUsageError(
-            "the following arguments are required: service, status, token".to_owned(),
+            "the following arguments are required: service, status, token, pairing, oauth"
+                .to_owned(),
         ));
     };
     match command.to_str() {
         Some("service") if rest.is_empty() => Ok(McpCommand::Service),
         Some("status") if rest.is_empty() => Ok(McpCommand::Status),
         Some("token") => parse_mcp_token(rest).map(McpCommand::Token),
+        Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
+        Some("oauth") => parse_mcp_oauth(rest).map(McpCommand::Oauth),
         _ => Err(McpUsageError(format!(
             "invalid MCP command: {}",
             command.to_string_lossy()
@@ -3884,6 +3903,58 @@ fn parse_mcp_token_label(args: &[OsString]) -> Result<String, McpUsageError> {
         .filter(|label| !label.is_empty())
         .map(str::to_owned)
         .ok_or_else(|| McpUsageError("label must be valid UTF-8 and nonempty".to_owned()))
+}
+
+fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageError> {
+    let [command, rest @ ..] = args else {
+        return Err(McpUsageError(
+            "the following arguments are required: generate, revoke".to_owned(),
+        ));
+    };
+    match command.to_str() {
+        Some("generate") if rest.is_empty() => Ok(McpPairingCommand::Generate),
+        Some("revoke") if rest.is_empty() => Ok(McpPairingCommand::Revoke),
+        _ => Err(McpUsageError(format!(
+            "invalid MCP pairing command: {}",
+            command.to_string_lossy()
+        ))),
+    }
+}
+
+fn parse_mcp_oauth(args: &[OsString]) -> Result<McpOauthCommand, McpUsageError> {
+    let [command, rest @ ..] = args else {
+        return Err(McpUsageError(
+            "the following arguments are required: list, revoke".to_owned(),
+        ));
+    };
+    match command.to_str() {
+        Some("list") if rest.is_empty() => Ok(McpOauthCommand::List),
+        Some("revoke") => {
+            parse_mcp_oauth_client_id(rest).map(|client_id| McpOauthCommand::Revoke { client_id })
+        }
+        _ => Err(McpUsageError(format!(
+            "invalid MCP oauth command: {}",
+            command.to_string_lossy()
+        ))),
+    }
+}
+
+fn parse_mcp_oauth_client_id(args: &[OsString]) -> Result<String, McpUsageError> {
+    let [flag, client_id] = args else {
+        return Err(McpUsageError(
+            "the following arguments are required: --client-id CLIENT_ID".to_owned(),
+        ));
+    };
+    if flag != OsStr::new("--client-id") || client_id.is_empty() {
+        return Err(McpUsageError(
+            "expected exactly one --client-id CLIENT_ID argument".to_owned(),
+        ));
+    }
+    client_id
+        .to_str()
+        .filter(|client_id| !client_id.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| McpUsageError("client-id must be valid UTF-8 and nonempty".to_owned()))
 }
 
 fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
@@ -8606,6 +8677,57 @@ mod tests {
             Ok(Command::Mcp(McpCommand::Token(McpTokenCommand::Revoke {
                 label: "operator".to_owned(),
             })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing", "generate"])),
+            Ok(Command::Mcp(McpCommand::Pairing(
+                McpPairingCommand::Generate
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing", "revoke"])),
+            Ok(Command::Mcp(McpCommand::Pairing(McpPairingCommand::Revoke)))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "oauth", "list"])),
+            Ok(Command::Mcp(McpCommand::Oauth(McpOauthCommand::List)))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "oauth", "revoke", "--client-id", "X"])),
+            Ok(Command::Mcp(McpCommand::Oauth(McpOauthCommand::Revoke {
+                client_id: "X".to_owned(),
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "the following arguments are required: service, status, token, pairing, oauth"
+                    .to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "the following arguments are required: generate, revoke".to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "oauth"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "the following arguments are required: list, revoke".to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "oauth", "revoke"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "the following arguments are required: --client-id CLIENT_ID".to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "oauth", "revoke", "--client-id", ""])),
+            Ok(Command::McpUsage(McpUsageError(
+                "expected exactly one --client-id CLIENT_ID argument".to_owned()
+            )))
         );
         assert_eq!(
             evaluate_args(&args(&["mcp", "--help"])),

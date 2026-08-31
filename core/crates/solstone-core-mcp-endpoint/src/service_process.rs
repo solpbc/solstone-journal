@@ -151,6 +151,7 @@ async fn run_endpoint_topology(
     let (tls, forwarder_session) = tunnel.into_service_parts();
     let tls = Arc::new(tls);
     let tls_config = mcp_endpoint_server_config(&tls);
+    let resource_origin = format!("https://{}", tls.authorized_hostname());
     let listener = TcpListener::bind(("127.0.0.1", MCP_ENDPOINT_LOOPBACK_PORT))
         .await
         .map_err(|_| McpServiceError::Bind)?;
@@ -158,10 +159,20 @@ async fn run_endpoint_topology(
     let mut tasks = JoinSet::new();
     let listener_shutdown = shutdown_receive.clone();
     let listener_root = Arc::new(journal_root);
+    let oauth = Arc::new(crate::oauth::OAuthRuntime::new(
+        listener_root.as_path(),
+        resource_origin,
+    ));
     tasks.spawn(async move {
-        crate::server::serve(listener, tls_config, listener_root, listener_shutdown)
-            .await
-            .map_err(|_| McpServiceError::Listener)
+        crate::server::serve(
+            listener,
+            tls_config,
+            listener_root,
+            oauth,
+            listener_shutdown,
+        )
+        .await
+        .map_err(|_| McpServiceError::Listener)
     });
     let mut forwarder_shutdown = shutdown_receive.clone();
     let forwarder_tls = Arc::clone(&tls);

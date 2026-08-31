@@ -239,6 +239,8 @@ Create an agent credential with `journal mcp token create --label <label>`.
 The command displays the bearer secret once only; it cannot be recovered later.
 Use `journal mcp token list` to view labels and creation times, and `journal
 mcp token revoke --label <label>` to disable a credential immediately.
+Local pairing and OAuth client registration are documented in
+[MCP OAuth](MCP_OAUTH.md) (`journal mcp pairing` and `journal mcp oauth`).
 `journal mcp status` reports the compiled capability, the current journal
 configuration result, and token count. It is capability/configuration status,
 not a listener-liveness check.
@@ -257,7 +259,8 @@ That account-authorized hostname is intentionally opaque and is not exposed by
 generic MCP client is consequently not currently practical from the local CLI;
 use the account bridge/tunnel path rather than assuming `127.0.0.1:7658` is a
 drop-in HTTPS URL. In either connection mode, send `Authorization: Bearer
-<token>` on every request. The normal flow is `initialize`, retain the returned
+<token>` on every request, where `<token>` is a static MCP token or an OAuth
+access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
 `Mcp-Session-Id` response header, then call `tools/list` or `tools/call` with
 that header. The server advertises exactly the read-only `search` and `fetch`
 tools.

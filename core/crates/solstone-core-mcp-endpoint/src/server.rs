@@ -5,7 +5,8 @@
 
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -24,6 +25,8 @@ use crate::jsonrpc::{
     JsonRpcResponse, McpMethod, classify_method, initialize_result, parse_request, tool_arguments,
     tools_list_result,
 };
+use crate::oauth::OAuthRuntime;
+use crate::oauth::store::OAuthStore;
 use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
 use crate::proxy_preface::{ParsedPreface, parse_preface};
 use crate::session::{SessionError, SessionTable};
@@ -48,17 +51,18 @@ impl fmt::Display for ServerError {
 impl std::error::Error for ServerError {}
 
 /// Accept connections using an injected TLS configuration.
-#[allow(dead_code)]
 pub(crate) async fn serve(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     shutdown: watch::Receiver<bool>,
 ) -> Result<(), ServerError> {
     serve_with_permit_pool(
         listener,
         tls_config,
         journal_root,
+        oauth,
         shutdown,
         Arc::new(SessionTable::new()),
         connection_permit_pool(),
@@ -70,6 +74,7 @@ async fn serve_with_permit_pool(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     mut shutdown: watch::Receiver<bool>,
     sessions: Arc<SessionTable>,
     permits: Arc<Semaphore>,
@@ -92,6 +97,7 @@ async fn serve_with_permit_pool(
                 };
                 let connection_config = Arc::clone(&tls_config);
                 let connection_root = Arc::clone(&journal_root);
+                let connection_oauth = Arc::clone(&oauth);
                 let connection_shutdown = shutdown.clone();
                 let connection_sessions = Arc::clone(&sessions);
                 tokio::spawn(async move {
@@ -100,6 +106,7 @@ async fn serve_with_permit_pool(
                         socket,
                         connection_config,
                         connection_root,
+                        connection_oauth,
                         connection_sessions,
                         connection_shutdown,
                     )
@@ -114,6 +121,7 @@ async fn handle_connection(
     mut socket: TcpStream,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), ConnectionError> {
@@ -121,10 +129,8 @@ async fn handle_connection(
         .await
         .map_err(|_| ConnectionError::PrefaceTimeout)?
         .map_err(|_| ConnectionError::Preface)?;
-    let ParsedPreface {
-        source: _,
-        trailing,
-    } = preface;
+    let ParsedPreface { source, trailing } = preface;
+    let source = source.ip();
     let stream = PrefixedStream::new(socket, trailing);
     let tls_stream = timeout(
         TLS_HANDSHAKE_DEADLINE,
@@ -153,7 +159,16 @@ async fn handle_connection(
                 return Ok(());
             }
         };
-        let response = process_request(&request, &token_store, &sessions, journal_root.as_path());
+        let response = process_request(
+            &request,
+            &token_store,
+            &sessions,
+            journal_root.as_path(),
+            source,
+            oauth.as_ref(),
+            &mut shutdown,
+        )
+        .await;
         http.write_response(&response)
             .await
             .map_err(|_| ConnectionError::HttpWrite)?;
@@ -173,59 +188,126 @@ enum ConnectionError {
     HttpWrite,
 }
 
-fn process_request(
+async fn process_request(
     request: &HttpRequest,
     token_store: &TokenStore,
     sessions: &SessionTable,
-    journal_root: &std::path::Path,
+    journal_root: &Path,
+    source: IpAddr,
+    oauth: &OAuthRuntime,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> HttpResponse {
-    if request.target != "/mcp" {
-        return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
+    let path = request_path(&request.target);
+    match (request.method, path) {
+        (HttpMethod::Get, "/.well-known/oauth-protected-resource") => {
+            crate::oauth::metadata::protected_resource(&oauth.resource_origin)
+        }
+        (HttpMethod::Get, "/.well-known/oauth-authorization-server") => {
+            crate::oauth::metadata::authorization_server(&oauth.resource_origin)
+        }
+        (HttpMethod::Post, "/register") => {
+            crate::oauth::dcr::register(request, source, oauth, shutdown).await
+        }
+        (HttpMethod::Get, "/authorize") => {
+            crate::oauth::authorize::get_authorize(request, source, oauth, shutdown).await
+        }
+        (HttpMethod::Post, "/authorize") => {
+            crate::oauth::authorize::post_authorize(request, source, oauth)
+        }
+        (HttpMethod::Post, "/token") => crate::oauth::token::token(request, oauth),
+        (_, "/mcp") => handle_mcp(request, token_store, sessions, journal_root, oauth),
+        (
+            HttpMethod::Post | HttpMethod::Delete,
+            "/.well-known/oauth-protected-resource" | "/.well-known/oauth-authorization-server",
+        ) => method_not_allowed_with_allow("GET"),
+        (HttpMethod::Get | HttpMethod::Delete, "/register" | "/token") => {
+            method_not_allowed_with_allow("POST")
+        }
+        _ => HttpResponse::error(404, "Not Found", "MCP endpoint was not found"),
     }
-    let verified = match authenticate(request, token_store) {
+}
+
+fn handle_mcp(
+    request: &HttpRequest,
+    token_store: &TokenStore,
+    sessions: &SessionTable,
+    journal_root: &Path,
+    oauth: &OAuthRuntime,
+) -> HttpResponse {
+    let verified = match authenticate(request, token_store, &oauth.store, &oauth.resource_origin) {
         Ok(verified) => verified,
         Err(response) => return response,
     };
+    if request.target != "/mcp" {
+        return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
+    }
     match request.method {
         HttpMethod::Delete => delete_session(request, sessions, &verified),
         HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
+        HttpMethod::Get => method_not_allowed_with_allow("POST, DELETE"),
     }
+}
+
+fn request_path(target: &str) -> &str {
+    target.split(['?', '#']).next().unwrap_or(target)
+}
+
+fn method_not_allowed_with_allow(method: &'static str) -> HttpResponse {
+    HttpResponse::error(405, "Method Not Allowed", "HTTP method is not allowed")
+        .with_header("Allow", method.to_owned())
 }
 
 fn authenticate(
     request: &HttpRequest,
     token_store: &TokenStore,
+    oauth_store: &OAuthStore,
+    resource_origin: &str,
 ) -> Result<VerifiedToken, HttpResponse> {
     let authorization = request
         .header("authorization")
         .map_err(|_| HttpResponse::error(400, "Bad Request", "Authorization header is ambiguous"))?
-        .ok_or_else(|| {
-            HttpResponse::error(401, "Unauthorized", "Bearer authorization is required")
-        })?;
+        .ok_or_else(|| mcp_unauthorized(resource_origin, "Bearer authorization is required"))?;
     let Some(token) = authorization.strip_prefix("Bearer ") else {
-        return Err(HttpResponse::error(
-            401,
-            "Unauthorized",
+        return Err(mcp_unauthorized(
+            resource_origin,
             "Bearer authorization is required",
         ));
     };
     if token.is_empty() || token.bytes().any(|byte| byte.is_ascii_whitespace()) {
-        return Err(HttpResponse::error(
-            401,
-            "Unauthorized",
+        return Err(mcp_unauthorized(
+            resource_origin,
             "Bearer authorization is malformed",
         ));
     }
-    token_store.verify(token).map_err(|error| match error {
-        TokenStoreError::InvalidToken => {
-            HttpResponse::error(401, "Unauthorized", "Bearer token is invalid or revoked")
-        }
-        _ => HttpResponse::error(
+    match token_store.verify(token) {
+        Ok(verified) => Ok(verified),
+        Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token) {
+            Ok(verified) => Ok(verified),
+            Err(crate::oauth::store::OAuthStoreError::InvalidToken) => Err(mcp_unauthorized(
+                resource_origin,
+                "Bearer token is invalid or revoked",
+            )),
+            Err(_) => Err(HttpResponse::error(
+                503,
+                "Service Unavailable",
+                "Bearer token verification is unavailable",
+            )),
+        },
+        Err(_) => Err(HttpResponse::error(
             503,
             "Service Unavailable",
             "Bearer token verification is unavailable",
+        )),
+    }
+}
+
+fn mcp_unauthorized(resource_origin: &str, message: &'static str) -> HttpResponse {
+    HttpResponse::error(401, "Unauthorized", message).with_header(
+        "WWW-Authenticate",
+        format!(
+            "Bearer realm=\"mcp\", resource_metadata=\"{resource_origin}/.well-known/oauth-protected-resource\""
         ),
-    })
+    )
 }
 
 fn delete_session(
@@ -420,11 +502,9 @@ fn http_error_response(error: Http1Error) -> HttpResponse {
         Http1Error::BodyTooLarge => {
             HttpResponse::error(413, "Payload Too Large", "HTTP request body exceeds 64 KiB")
         }
-        Http1Error::UnsupportedRequest => HttpResponse::error(
-            405,
-            "Method Not Allowed",
-            "MCP requires HTTP/1.1 POST or DELETE",
-        ),
+        Http1Error::UnsupportedRequest => {
+            HttpResponse::error(405, "Method Not Allowed", "HTTP/1.1 GET, POST, or DELETE")
+        }
         _ => HttpResponse::error(400, "Bad Request", "HTTP/1.1 request framing is invalid"),
     }
 }
@@ -507,8 +587,9 @@ mod tests {
     use tokio::sync::{Semaphore, watch};
     use tokio::task::JoinHandle;
     use tokio::time::{Duration, advance};
-    use tokio_rustls::{TlsConnector, client::TlsStream};
+    use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
 
+    use crate::oauth::OAuthRuntime;
     use crate::permits::{
         CONNECTION_PERMITS, connection_permit_pool, try_acquire_connection_permit,
     };
@@ -634,24 +715,46 @@ mod tests {
         shutdown: watch::Sender<bool>,
         task: JoinHandle<Result<(), ServerError>>,
         journal: tempfile::TempDir,
+        oauth: Arc<OAuthRuntime>,
     }
 
     impl ServerHarness {
         async fn start(tls_config: std::sync::Arc<ServerConfig>) -> Self {
+            let journal = tempfile::Builder::new()
+                .prefix("solstone-mcp-server-")
+                .tempdir_in("/var/tmp")
+                .expect("fixture journal directory");
+            Self::start_with_journal(tls_config, journal).await
+        }
+
+        async fn start_with_journal(
+            tls_config: std::sync::Arc<ServerConfig>,
+            journal: tempfile::TempDir,
+        ) -> Self {
+            Self::start_with_journal_override(tls_config, journal, None).await
+        }
+
+        async fn start_with_journal_override(
+            tls_config: std::sync::Arc<ServerConfig>,
+            journal: tempfile::TempDir,
+            cimd: Option<(SocketAddr, std::sync::Arc<ClientConfig>)>,
+        ) -> Self {
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
                 .await
                 .expect("fixture listener binds");
             let address = listener.local_addr().expect("fixture listener address");
             let permits = connection_permit_pool();
-            let journal = tempfile::Builder::new()
-                .prefix("solstone-mcp-server-")
-                .tempdir_in("/var/tmp")
-                .expect("fixture journal directory");
             let (shutdown, receiver) = watch::channel(false);
+            let mut oauth = OAuthRuntime::new(journal.path(), format!("https://{HOSTNAME}"));
+            if let Some((target, config)) = cimd {
+                oauth = oauth.with_cimd_test_target(target, config);
+            }
+            let oauth = Arc::new(oauth);
             let task = tokio::spawn(serve_with_permit_pool(
                 listener,
                 tls_config,
                 Arc::new(journal.path().to_path_buf()),
+                Arc::clone(&oauth),
                 receiver,
                 Arc::new(SessionTable::new()),
                 std::sync::Arc::clone(&permits),
@@ -662,6 +765,7 @@ mod tests {
                 shutdown,
                 task,
                 journal,
+                oauth,
             }
         }
 
@@ -671,18 +775,23 @@ mod tests {
                 .expect("fixture creates bearer token")
         }
 
-        async fn stop(self) {
+        async fn stop(self) -> tempfile::TempDir {
             self.shutdown.send(true).expect("server remains subscribed");
             self.task
                 .await
                 .expect("server task joins")
                 .expect("server exits cleanly");
+            self.journal
         }
     }
 
     fn tls_configs() -> (std::sync::Arc<ServerConfig>, std::sync::Arc<ClientConfig>) {
+        tls_pair(HOSTNAME)
+    }
+
+    fn tls_pair(hostname: &str) -> (std::sync::Arc<ServerConfig>, std::sync::Arc<ClientConfig>) {
         let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("fixture key");
-        let certificate = CertificateParams::new(vec![HOSTNAME.to_owned()])
+        let certificate = CertificateParams::new(vec![hostname.to_owned()])
             .expect("fixture params")
             .self_signed(&key_pair)
             .expect("fixture certificate");
@@ -851,6 +960,52 @@ mod tests {
             .write_all(&body)
             .await
             .expect("client writes request body");
+        let mut head = Vec::new();
+        loop {
+            let mut byte = [0_u8; 1];
+            client
+                .read_exact(&mut byte)
+                .await
+                .expect("client reads response headers");
+            head.push(byte[0]);
+            if head.ends_with(b"\r\n\r\n") {
+                break;
+            }
+        }
+        let head = String::from_utf8(head).expect("response headers are text");
+        let status = head
+            .split_whitespace()
+            .nth(1)
+            .expect("response has status")
+            .parse::<u16>()
+            .expect("response status is numeric");
+        let length = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .expect("response has content length")
+            .parse::<usize>()
+            .expect("response length is numeric");
+        let mut body = vec![0_u8; length];
+        client
+            .read_exact(&mut body)
+            .await
+            .expect("client reads response body");
+        (status, body, head)
+    }
+
+    fn www_authenticate(head: &str) -> Option<&str> {
+        head.lines()
+            .find_map(|line| line.strip_prefix("WWW-Authenticate: "))
+    }
+
+    async fn exchange_http<S>(client: &mut TlsStream<S>, request: &str) -> (u16, Vec<u8>, String)
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        client
+            .write_all(request.as_bytes())
+            .await
+            .expect("client writes request");
         let mut head = Vec::new();
         loop {
             let mut byte = [0_u8; 1];
@@ -1093,12 +1248,17 @@ mod tests {
             .prefix("solstone-mcp-server-")
             .tempdir_in("/var/tmp")
             .expect("fixture journal directory");
+        let oauth = Arc::new(OAuthRuntime::new(
+            journal.path(),
+            format!("https://{HOSTNAME}"),
+        ));
         let task = tokio::spawn(async move {
             let _permit = permit;
             let _ = super::handle_connection(
                 socket,
                 server_config,
                 Arc::new(journal.path().to_path_buf()),
+                oauth,
                 Arc::new(SessionTable::new()),
                 shutdown,
             )
@@ -1393,7 +1553,7 @@ mod tests {
         TokenStore::open(server.journal.path())
             .revoke("revoked-session-agent")
             .expect("fixture revokes bearer");
-        let (status, body, _) = post_json_response_with_headers(
+        let (status, body, head) = post_json_response_with_headers(
             &mut client,
             &token.token,
             json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
@@ -1402,8 +1562,720 @@ mod tests {
         .await;
         assert_eq!(status, 401);
         assert_eq!(body, b"Bearer token is invalid or revoked");
+        assert_eq!(
+            www_authenticate(&head),
+            Some(
+                "Bearer realm=\"mcp\", resource_metadata=\"https://mcp.test/.well-known/oauth-protected-resource\""
+            )
+        );
         assert!(!server.journal.path().join("chronicle").exists());
 
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn oauth_discovery_and_unauthenticated_mcp_use_the_connection_pool() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let origin = server.oauth.resource_origin.clone();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-protected-resource HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).expect("protected resource JSON"),
+            json!({
+                "resource": format!("{origin}/mcp"),
+                "authorization_servers": [origin],
+                "bearer_methods_supported": ["header"],
+            })
+        );
+
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).expect("authorization server JSON"),
+            json!({
+                "issuer": origin,
+                "authorization_endpoint": format!("{origin}/authorize"),
+                "token_endpoint": format!("{origin}/token"),
+                "registration_endpoint": format!("{origin}/register"),
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "refresh_token"],
+                "code_challenge_methods_supported": ["S256"],
+                "token_endpoint_auth_methods_supported": ["none"],
+                "authorization_response_iss_parameter_supported": true,
+            })
+        );
+        drop(client);
+
+        let expected_challenge = format!(
+            "Bearer realm=\"mcp\", resource_metadata=\"{origin}/.well-known/oauth-protected-resource\""
+        );
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, _, head) = exchange_http(
+            &mut client,
+            &format!("POST /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"),
+        )
+        .await;
+        assert_eq!(status, 401);
+        assert_eq!(www_authenticate(&head), Some(expected_challenge.as_str()));
+        drop(client);
+
+        let mut client = connect_tls(server.address, client_config).await;
+        let (status, _, head) = exchange_http(
+            &mut client,
+            &format!("GET /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(status, 401);
+        assert_eq!(www_authenticate(&head), Some(expected_challenge.as_str()));
+        drop(client);
+
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    const CIMD_HOST: &str = "cimd.test";
+    const CIMD_URL: &str = "https://cimd.test/cimd.json";
+    const OAUTH_REDIRECT: &str = "http://127.0.0.1/callback";
+    const OAUTH_VERIFIER: &str =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+
+    fn pkce_challenge() -> String {
+        use base64::Engine as _;
+        use sha2::{Digest, Sha256};
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(Sha256::digest(OAUTH_VERIFIER.as_bytes()))
+    }
+
+    fn location_param(location: &str, name: &str) -> String {
+        let query = location.split_once('?').expect("redirect has query").1;
+        let prefix = format!("{name}=");
+        query
+            .split('&')
+            .find_map(|piece| piece.strip_prefix(&prefix))
+            .expect("parameter present")
+            .to_owned()
+    }
+
+    fn hidden_transaction_id(body: &str) -> String {
+        let marker = "name=\"transaction_id\" value=\"";
+        let start = body.find(marker).expect("hidden transaction_id") + marker.len();
+        let end = start + body[start..].find('"').expect("value terminator");
+        body[start..end].to_owned()
+    }
+
+    async fn spawn_cimd_fixture() -> (
+        SocketAddr,
+        std::sync::Arc<ClientConfig>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (server_config, client_config) = tls_pair(CIMD_HOST);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("CIMD fixture binds");
+        let address = listener.local_addr().expect("CIMD fixture address");
+        let json_body = format!(
+            r#"{{"client_id":"{CIMD_URL}","redirect_uris":["{OAUTH_REDIRECT}"],"client_name":"fixture"}}"#
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json_body}",
+            json_body.len()
+        );
+        let handle = tokio::spawn(async move {
+            let acceptor = TlsAcceptor::from(server_config);
+            loop {
+                let Ok((socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let acceptor = acceptor.clone();
+                let response = response.clone();
+                tokio::spawn(async move {
+                    let Ok(mut stream) = acceptor.accept(socket).await else {
+                        return;
+                    };
+                    let mut head = Vec::new();
+                    loop {
+                        let mut byte = [0_u8; 1];
+                        if stream.read_exact(&mut byte).await.is_err() {
+                            return;
+                        }
+                        head.push(byte[0]);
+                        if head.ends_with(b"\r\n\r\n") {
+                            break;
+                        }
+                        if head.len() > 8192 {
+                            return;
+                        }
+                    }
+                    let _ = stream.write_all(response.as_bytes()).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        });
+        (address, client_config, handle)
+    }
+
+    async fn oauth_form(
+        client: &mut TlsStream<TcpStream>,
+        target: &str,
+        body: &str,
+    ) -> (u16, Vec<u8>, String) {
+        exchange_http(
+            client,
+            &format!(
+                "POST {target} HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            ),
+        )
+        .await
+    }
+
+    struct OauthNowGuard;
+
+    impl Drop for OauthNowGuard {
+        fn drop(&mut self) {
+            crate::oauth::store::set_test_now(None);
+        }
+    }
+
+    #[tokio::test]
+    async fn oauth_end_to_end_through_the_tls_listener() {
+        let (server_config, client_config) = tls_configs();
+        let (cimd_addr, cimd_client, cimd_server) = spawn_cimd_fixture().await;
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-mcp-server-")
+            .tempdir_in("/var/tmp")
+            .expect("fixture journal directory");
+        seed_indexed_note(journal.path());
+        let server = ServerHarness::start_with_journal_override(
+            server_config,
+            journal,
+            Some((cimd_addr, cimd_client)),
+        )
+        .await;
+        let origin = server.oauth.resource_origin.clone();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-protected-resource HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap()["resource"],
+            format!("{origin}/mcp")
+        );
+        let (status, _, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+
+        let classic_body = serde_json::to_vec(&json!({
+            "redirect_uris": [OAUTH_REDIRECT],
+            "token_endpoint_auth_method": "none",
+        }))
+        .unwrap();
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "POST /register HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                classic_body.len(),
+                std::str::from_utf8(&classic_body).unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let classic_id = serde_json::from_slice::<Value>(&body).unwrap()["client_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(classic_id.starts_with("oauth:dcr:"));
+
+        let cimd_body = serde_json::to_vec(&json!({"client_id": CIMD_URL})).unwrap();
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "POST /register HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                cimd_body.len(),
+                std::str::from_utf8(&cimd_body).unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(status, 201, "{}", String::from_utf8_lossy(&body));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap()["client_id"],
+            CIMD_URL
+        );
+
+        let challenge = pkce_challenge();
+        let query = format!(
+            "client_id={}&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256&resource={}/mcp&state=st",
+            crate::oauth::urlparse::query_value_encode(CIMD_URL),
+            crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+            crate::oauth::urlparse::query_value_encode(&challenge),
+            crate::oauth::urlparse::query_value_encode(&origin),
+        );
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!("GET /authorize?{query} HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        let html = String::from_utf8(body).unwrap();
+        let transaction_id = hidden_transaction_id(&html);
+        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let (status, _, head) = oauth_form(
+            &mut client,
+            "/authorize",
+            &format!(
+                "transaction_id={}&pairing_code={}",
+                crate::oauth::urlparse::query_value_encode(&transaction_id),
+                crate::oauth::urlparse::query_value_encode(&pairing.code)
+            ),
+        )
+        .await;
+        assert_eq!(status, 302);
+        assert!(
+            head.to_ascii_lowercase()
+                .contains("cache-control: no-store")
+        );
+        let location = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Location: "))
+            .unwrap();
+        let code = location_param(location, "code");
+        assert!(!location_param(location, "state").is_empty());
+        assert!(!location_param(location, "iss").is_empty());
+
+        let (status, body, head) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=authorization_code&code={code}&redirect_uri={}&code_verifier={OAUTH_VERIFIER}&client_id={}&resource={origin}/mcp",
+                crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+                crate::oauth::urlparse::query_value_encode(CIMD_URL),
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        assert!(
+            head.to_ascii_lowercase()
+                .contains("cache-control: no-store")
+        );
+        let tokens = serde_json::from_slice::<Value>(&body).unwrap();
+        let access = tokens["access_token"].as_str().unwrap().to_owned();
+        let refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+        let issued_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("wall clock after epoch")
+            .as_secs() as i64;
+
+        let (init, headers) = post_json_with_headers(
+            &mut client,
+            &access,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        assert_eq!(init["jsonrpc"], "2.0");
+        let session = session_id(&headers);
+        let search = post_json_with_headers(
+            &mut client,
+            &access,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10, "offset": 0}},
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert_eq!(search["result"]["results"][0]["id"], "notes/mcp.txt:0");
+        let fetch = post_json_with_headers(
+            &mut client,
+            &access,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "fetch", "arguments": {"id": "notes/mcp.txt:0"}},
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert_eq!(
+            fetch["result"],
+            json!({"content": "MCP fixture search needle"})
+        );
+        assert_eq!(audit_record_count(server.journal.path()), 2);
+
+        {
+            let _guard = OauthNowGuard;
+            // 3601 exceeds ACCESS_TTL_SECS (3600) in oauth/store.rs.
+            crate::oauth::store::set_test_now(Some(issued_at + 3601));
+            let (status, _, _) = post_json_response_with_headers(
+                &mut client,
+                &access,
+                json!({"jsonrpc": "2.0", "id": 8, "method": "initialize"}),
+                &[("Mcp-Session-Id", &session)],
+            )
+            .await;
+            assert_eq!(status, 401, "expired access token is rejected at /mcp");
+        }
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        let (status, body, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(CIMD_URL)
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+        let rotated = serde_json::from_slice::<Value>(&body).unwrap();
+        let access2 = rotated["access_token"].as_str().unwrap().to_owned();
+        let refresh2 = rotated["refresh_token"].as_str().unwrap().to_owned();
+        let (status, _, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(CIMD_URL)
+            ),
+        )
+        .await;
+        assert_eq!(status, 400);
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        post_json_with_headers(
+            &mut client,
+            &access2,
+            json!({"jsonrpc": "2.0", "id": 4, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        drop(client);
+
+        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let challenge = pkce_challenge();
+        let query = format!(
+            "client_id={}&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256&resource={origin}/mcp",
+            crate::oauth::urlparse::query_value_encode(&classic_id),
+            crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+            crate::oauth::urlparse::query_value_encode(&challenge),
+        );
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!("GET /authorize?{query} HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let transaction_id = hidden_transaction_id(&String::from_utf8(body).unwrap());
+        let (status, _, head) = oauth_form(
+            &mut client,
+            "/authorize",
+            &format!(
+                "transaction_id={}&pairing_code={}",
+                crate::oauth::urlparse::query_value_encode(&transaction_id),
+                crate::oauth::urlparse::query_value_encode(&pairing.code)
+            ),
+        )
+        .await;
+        assert_eq!(status, 302);
+        let location = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Location: "))
+            .unwrap();
+        let other_code = location_param(location, "code");
+        let (status, body, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=authorization_code&code={other_code}&redirect_uri={}&code_verifier={OAUTH_VERIFIER}&client_id={}&resource={origin}/mcp",
+                crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+                crate::oauth::urlparse::query_value_encode(&classic_id),
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let other_tokens = serde_json::from_slice::<Value>(&body).unwrap();
+        let other_access = other_tokens["access_token"].as_str().unwrap().to_owned();
+        drop(client);
+
+        let journal = server.stop().await;
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start_with_journal(server_config, journal).await;
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, body, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh2}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(CIMD_URL)
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "rotated refresh survives restart");
+        let after_restart = serde_json::from_slice::<Value>(&body).unwrap();
+        let access3 = after_restart["access_token"].as_str().unwrap().to_owned();
+        let refresh3 = after_restart["refresh_token"].as_str().unwrap().to_owned();
+        let (status, _, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(CIMD_URL)
+            ),
+        )
+        .await;
+        assert_eq!(status, 400, "pre-rotation refresh stays dead after restart");
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        post_json_with_headers(
+            &mut client,
+            &access3,
+            json!({"jsonrpc": "2.0", "id": 5, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        drop(client);
+
+        server
+            .oauth
+            .store
+            .revoke_client_by_client_id(CIMD_URL)
+            .unwrap();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, _, _) = post_json_response_with_headers(
+            &mut client,
+            &access3,
+            json!({"jsonrpc": "2.0", "id": 6, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        assert_eq!(status, 401);
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, _, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh3}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(CIMD_URL)
+            ),
+        )
+        .await;
+        assert_eq!(status, 400);
+        drop(client);
+        let mut client = connect_tls(server.address, client_config).await;
+        post_json_with_headers(
+            &mut client,
+            &other_access,
+            json!({"jsonrpc": "2.0", "id": 7, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        drop(client);
+        cimd_server.abort();
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn oauth_bulkhead_saturation_does_not_block_other_traffic() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        seed_indexed_note(server.journal.path());
+        let mut held = Vec::new();
+        for octet in 1..=16 {
+            held.push(
+                server
+                    .oauth
+                    .cimd_bulkhead
+                    .try_acquire(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                        203, 0, 113, octet,
+                    )))
+                    .expect("bulkhead admits stalled connector"),
+            );
+        }
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let classic_body = serde_json::to_vec(&json!({
+            "redirect_uris": [OAUTH_REDIRECT],
+            "token_endpoint_auth_method": "none",
+        }))
+        .unwrap();
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "POST /register HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                classic_body.len(),
+                std::str::from_utf8(&classic_body).unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let classic_id = serde_json::from_slice::<Value>(&body).unwrap()["client_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let challenge = pkce_challenge();
+        let origin = server.oauth.resource_origin.clone();
+        let query = format!(
+            "client_id={}&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256&resource={origin}/mcp",
+            crate::oauth::urlparse::query_value_encode(&classic_id),
+            crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+            crate::oauth::urlparse::query_value_encode(&challenge),
+        );
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!("GET /authorize?{query} HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let transaction_id = hidden_transaction_id(&String::from_utf8(body).unwrap());
+        let (status, _, head) = oauth_form(
+            &mut client,
+            "/authorize",
+            &format!(
+                "transaction_id={}&pairing_code={}",
+                crate::oauth::urlparse::query_value_encode(&transaction_id),
+                crate::oauth::urlparse::query_value_encode(&pairing.code)
+            ),
+        )
+        .await;
+        assert_eq!(status, 302);
+        let location = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Location: "))
+            .unwrap();
+        let code = location_param(location, "code");
+        let (status, body, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=authorization_code&code={code}&redirect_uri={}&code_verifier={OAUTH_VERIFIER}&client_id={}&resource={origin}/mcp",
+                crate::oauth::urlparse::query_value_encode(OAUTH_REDIRECT),
+                crate::oauth::urlparse::query_value_encode(&classic_id),
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let tokens = serde_json::from_slice::<Value>(&body).unwrap();
+        let access = tokens["access_token"].as_str().unwrap().to_owned();
+        let refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+        post_json_with_headers(
+            &mut client,
+            &access,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        let static_token = server.create_token("static-agent");
+        post_json_with_headers(
+            &mut client,
+            &static_token.token,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        let (status, _, _) = oauth_form(
+            &mut client,
+            "/token",
+            &format!(
+                "grant_type=refresh_token&refresh_token={refresh}&client_id={}",
+                crate::oauth::urlparse::query_value_encode(&classic_id)
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        server
+            .oauth
+            .store
+            .revoke_client_by_client_id(&classic_id)
+            .unwrap();
+        drop(held);
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn oauth_endpoints_respond_immediately_on_cold_start() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let first = tokio::time::timeout(
+            Duration::from_secs(2),
+            exchange_http(
+                &mut client,
+                &format!(
+                    "GET /.well-known/oauth-protected-resource HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+                ),
+            ),
+        )
+        .await
+        .expect("discovery does not wait on think/indexer");
+        assert_eq!(first.0, 200);
+        let authorize = tokio::time::timeout(
+            Duration::from_secs(2),
+            exchange_http(
+                &mut client,
+                &format!("GET /authorize HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+            ),
+        )
+        .await
+        .expect("authorize does not wait on think/indexer");
+        assert_eq!(authorize.0, 400);
+        let token = tokio::time::timeout(
+            Duration::from_secs(2),
+            oauth_form(&mut client, "/token", "grant_type=password"),
+        )
+        .await
+        .expect("token does not wait on think/indexer");
+        assert_eq!(token.0, 400);
+        drop(client);
+        let mut client = connect_tls(server.address, client_config).await;
+        let register = tokio::time::timeout(
+            Duration::from_secs(2),
+            exchange_http(
+                &mut client,
+                "POST /register HTTP/1.1\r\nHost: mcp.test\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+            ),
+        )
+        .await
+        .expect("DCR does not wait on think/indexer");
+        assert_eq!(register.0, 400);
         drop(client);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
