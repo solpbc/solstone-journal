@@ -23,7 +23,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::http1::{Http1Connection, Http1Error, HttpMethod, HttpRequest, HttpResponse};
 use crate::jsonrpc::{
     JsonRpcResponse, McpMethod, classify_method, initialize_result, parse_request, tool_arguments,
-    tools_list_result,
+    tool_result, tools_list_result,
 };
 use crate::oauth::OAuthRuntime;
 use crate::oauth::store::OAuthStore;
@@ -452,7 +452,10 @@ fn execute_tool_call(
         },
         || tools::execute(journal_root, &validated, now),
     ) {
-        Ok(result) => json_rpc_response(JsonRpcResponse::success(request.id.as_ref(), result)),
+        Ok(result) => json_rpc_response(JsonRpcResponse::success(
+            request.id.as_ref(),
+            tool_result(result),
+        )),
         Err(tools::ToolError::AuditUnavailable) => json_rpc_response(
             JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed"),
         ),
@@ -1309,7 +1312,10 @@ mod tests {
             }),
         )
         .await;
-        assert_eq!(search["result"]["reason"], "not_tokenizable");
+        assert_eq!(
+            search["result"]["structuredContent"]["reason"],
+            "not_tokenizable"
+        );
         let fetch = post_json(
             &mut client,
             &token.token,
@@ -1419,7 +1425,10 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(search["result"]["results"][0]["id"], "notes/mcp.txt:0");
+        assert_eq!(
+            search["result"]["structuredContent"]["results"][0]["id"],
+            "notes/mcp.txt:0"
+        );
         let fetch = post_json_with_headers(
             &mut client,
             &token.token,
@@ -1434,7 +1443,7 @@ mod tests {
         .await
         .0;
         assert_eq!(
-            fetch["result"],
+            fetch["result"]["structuredContent"],
             json!({"content": "MCP fixture search needle"})
         );
         client.shutdown().await.expect("client closes TLS");
@@ -1488,7 +1497,10 @@ mod tests {
             }),
         )
         .await;
-        assert_eq!(search["result"]["results"][0]["id"], "notes/mcp.txt:0");
+        assert_eq!(
+            search["result"]["structuredContent"]["results"][0]["id"],
+            "notes/mcp.txt:0"
+        );
         let fetch = post_json(
             &mut client,
             &token.token,
@@ -1501,7 +1513,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            fetch["result"],
+            fetch["result"]["structuredContent"],
             json!({"content": "MCP fixture search needle"})
         );
         client.shutdown().await.expect("client closes TLS");
@@ -1908,7 +1920,10 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(search["result"]["results"][0]["id"], "notes/mcp.txt:0");
+        assert_eq!(
+            search["result"]["structuredContent"]["results"][0]["id"],
+            "notes/mcp.txt:0"
+        );
         let fetch = post_json_with_headers(
             &mut client,
             &access,
@@ -1923,7 +1938,7 @@ mod tests {
         .await
         .0;
         assert_eq!(
-            fetch["result"],
+            fetch["result"]["structuredContent"],
             json!({"content": "MCP fixture search needle"})
         );
         assert_eq!(audit_record_count(server.journal.path()), 2);

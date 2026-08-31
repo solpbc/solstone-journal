@@ -202,6 +202,20 @@ pub(crate) fn tools_list_result() -> Value {
     })
 }
 
+/// Render a successful tool result in the MCP `CallToolResult` shape.
+///
+/// `content` is required by MCP clients, including when the machine-readable
+/// response is also available in `structuredContent`. Keeping both forms lets
+/// a client display the response while consuming its typed JSON without
+/// inferring a response type from a journal-specific object.
+pub(crate) fn tool_result(value: Value) -> Value {
+    let text = value.to_string();
+    json!({
+        "content": [{ "type": "text", "text": text }],
+        "structuredContent": value,
+    })
+}
+
 fn classify_tool_call(request: &JsonRpcRequest) -> Result<McpMethod, JsonRpcFailure> {
     let Some(Value::Object(params)) = request.params.as_ref() else {
         return Err(Box::new(JsonRpcResponse::invalid_params(
@@ -245,7 +259,7 @@ mod tests {
 
     use super::{
         JsonRpcResponse, McpMethod, ToolName, classify_method, initialize_result, parse_request,
-        tools_list_result,
+        tool_result, tools_list_result,
     };
 
     fn error_code(response: &JsonRpcResponse) -> i32 {
@@ -363,5 +377,17 @@ mod tests {
             .unwrap()
         );
         assert_eq!(initialize_result()["capabilities"], json!({ "tools": {} }));
+    }
+
+    #[test]
+    fn successful_tool_result_has_required_content_and_machine_readable_json() {
+        let payload = json!({"results": [], "total": 0});
+        assert_eq!(
+            tool_result(payload.clone()),
+            json!({
+                "content": [{"type": "text", "text": "{\"results\":[],\"total\":0}"}],
+                "structuredContent": payload,
+            })
+        );
     }
 }
