@@ -1,10 +1,10 @@
-# Journal MCP OAuth
+# journal MCP OAuth
 
 Local pairing and OAuth for the journal MCP endpoint. This is an MVP:
 it is not intended for a public or untrusted client population. There is
 no scope support, no client secrets or confidential clients, no third-party
 dynamic redirect registration beyond the fixed allowlist, and only one
-active pairing code at a time. Do not claim public readiness.
+active pairing code at a time.
 
 Static bearer tokens remain available and independent: `journal mcp token
 create|list|revoke`. A client may authenticate with either scheme on each
@@ -46,9 +46,9 @@ does not come back on restart.
 
 - `GET /.well-known/oauth-protected-resource`
 - `GET /.well-known/oauth-authorization-server`
-- `POST /register` — dynamic client registration (classic DCR or CIMD)
-- `GET /authorize` — consent form; `POST /authorize` — pairing code
-- `POST /token` — `authorization_code` and `refresh_token`
+- `POST /register`: dynamic client registration (classic DCR or CIMD)
+- `GET /authorize`: consent form; `POST /authorize`: pairing code
+- `POST /token`: `authorization_code` and `refresh_token`
 
 PKCE S256 is mandatory. Lifetimes: authorization code 5 minutes, access
 token 1 hour, refresh grant 30 days (rotated on use).
