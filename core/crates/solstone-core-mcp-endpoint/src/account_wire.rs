@@ -6,9 +6,10 @@
 use std::fmt;
 
 use base64::Engine as _;
+use chrono::{DateTime, SecondsFormat, Utc};
 use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair as _};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::McpEndpointOwnerContext;
 
@@ -300,6 +301,10 @@ const TOKEN_MAX_BYTES: usize = 16_384;
 const EXPIRES_AT_MAX_BYTES: usize = 64;
 const INSTANCE_ID_MAX_BYTES: usize = 128;
 const BRIDGE_ID_MAX_BYTES: usize = 128;
+const JWT_SIGNATURE_BYTES: usize = 64;
+const JWT_SKEW_SECONDS: i64 = 60;
+const JWT_MIN_TTL_SECONDS: i64 = 600;
+const JWT_MAX_TTL_SECONDS: i64 = 900;
 const V1_DENIED_IPV4_RANGES: &[(std::net::Ipv4Addr, std::net::Ipv4Addr)] = &[
     (
         std::net::Ipv4Addr::new(0, 0, 0, 0),
@@ -479,6 +484,106 @@ impl fmt::Display for McpAccountResponseWireError {
 
 impl std::error::Error for McpAccountResponseWireError {}
 
+/// A validated, memory-only authority to register one journal with one bridge.
+///
+/// Its fields deliberately remain private: later tunnel code may carry this
+/// opaque value but cannot recover the bearer credential or alter its bindings.
+pub(crate) struct McpAccountRegistration {
+    token: String,
+    hostname: String,
+    bridge_id: String,
+    bridge_address: String,
+    issued_at: i64,
+    expires_at: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum McpAccountRegistrationError {
+    WallBounds,
+    CompactJwt,
+    JwtEncoding,
+    JwtCanonicalEncoding,
+    JwtSignatureLength,
+    JwtHeader,
+    JwtKid,
+    JwtPayload,
+    JwtIssuer,
+    JwtAudience,
+    JwtSubject,
+    JwtHostname,
+    JwtConfirmation,
+    JwtPopKey,
+    JwtResponseBinding,
+    JwtTime,
+    JwtTtl,
+    ResponseExpiry,
+}
+
+impl fmt::Display for McpAccountRegistrationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::WallBounds => "MCP account registration wall bounds are invalid",
+            Self::CompactJwt => "MCP account registration token is not a compact JWT",
+            Self::JwtEncoding => "MCP account registration token encoding is invalid",
+            Self::JwtCanonicalEncoding => {
+                "MCP account registration token encoding is not canonical"
+            }
+            Self::JwtSignatureLength => {
+                "MCP account registration token signature has invalid length"
+            }
+            Self::JwtHeader => "MCP account registration token header is invalid",
+            Self::JwtKid => "MCP account registration token key ID is invalid",
+            Self::JwtPayload => "MCP account registration token payload is invalid",
+            Self::JwtIssuer => "MCP account registration token issuer is invalid",
+            Self::JwtAudience => "MCP account registration token audience is invalid",
+            Self::JwtSubject => "MCP account registration token subject is invalid",
+            Self::JwtHostname => "MCP account registration token hostname is invalid",
+            Self::JwtConfirmation => "MCP account registration token confirmation is invalid",
+            Self::JwtPopKey => "MCP account registration token proof key is invalid",
+            Self::JwtResponseBinding => "MCP account registration response binding is invalid",
+            Self::JwtTime => "MCP account registration token time is invalid",
+            Self::JwtTtl => "MCP account registration token lifetime is invalid",
+            Self::ResponseExpiry => "MCP account registration response expiry is invalid",
+        })
+    }
+}
+
+impl std::error::Error for McpAccountRegistrationError {}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationJwtHeader {
+    alg: String,
+    typ: String,
+    kid: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationJwtPayload {
+    iss: String,
+    aud: String,
+    sub: String,
+    iat: i64,
+    exp: i64,
+    hostname: String,
+    cnf: RegistrationConfirmation,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationConfirmation {
+    jwk: RegistrationJwk,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationJwk {
+    kty: String,
+    crv: String,
+    x: String,
+}
+
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct McpAccountResponseBody {
@@ -543,6 +648,243 @@ fn parse_account_registration_response(
         bridge_id: response.bridge_id,
         bridge_address,
     })
+}
+
+/// Turn one sealed response wire into the sole opaque registration authority.
+///
+/// Signature verification intentionally does not happen here: the account
+/// transport owns trusted-origin WebPKI and the bridge validates the JWT
+/// signature against JWKS before it admits a tunnel. This transition still
+/// makes every locally knowable structural, time, owner, and PoP binding exact.
+fn validate_account_registration(
+    wire: McpAccountResponseWire,
+    owner: &McpEndpointOwnerContext,
+    wall_start_unix_seconds: i64,
+    wall_end_unix_seconds: i64,
+) -> Result<McpAccountRegistration, McpAccountRegistrationError> {
+    if wall_end_unix_seconds < wall_start_unix_seconds {
+        return Err(McpAccountRegistrationError::WallBounds);
+    }
+    let (header_segment, payload_segment, signature_segment) = compact_jwt_segments(&wire.token)?;
+    let header: RegistrationJwtHeader = decode_jwt_json(header_segment)?;
+    let payload: RegistrationJwtPayload = decode_jwt_json(payload_segment)?;
+    let signature = decode_canonical_base64url(signature_segment)?;
+    if signature.len() != JWT_SIGNATURE_BYTES {
+        return Err(McpAccountRegistrationError::JwtSignatureLength);
+    }
+    if header.alg != "EdDSA" || header.typ != "JWT" {
+        return Err(McpAccountRegistrationError::JwtHeader);
+    }
+    if header.kid.is_empty() || has_ecmascript_trim_edge(&header.kid) {
+        return Err(McpAccountRegistrationError::JwtKid);
+    }
+
+    if payload.iss != "services.solstone.app" {
+        return Err(McpAccountRegistrationError::JwtIssuer);
+    }
+    if payload.aud != wire.bridge_id {
+        return Err(McpAccountRegistrationError::JwtAudience);
+    }
+    let owner_instance_id = owner.committed.instance_id();
+    if payload.sub != format!("home:{owner_instance_id}") {
+        return Err(McpAccountRegistrationError::JwtSubject);
+    }
+    if payload.hostname != wire.hostname {
+        return Err(McpAccountRegistrationError::JwtHostname);
+    }
+    if wire.instance_id != owner_instance_id {
+        return Err(McpAccountRegistrationError::JwtResponseBinding);
+    }
+    validate_confirmation_key(&payload.cnf.jwk, owner.keypair.public_key().as_ref())?;
+
+    let earliest_iat = wall_start_unix_seconds
+        .checked_sub(JWT_SKEW_SECONDS)
+        .ok_or(McpAccountRegistrationError::JwtTime)?;
+    let latest_iat = wall_end_unix_seconds
+        .checked_add(JWT_SKEW_SECONDS)
+        .ok_or(McpAccountRegistrationError::JwtTime)?;
+    if !(earliest_iat..=latest_iat).contains(&payload.iat) || payload.exp <= wall_end_unix_seconds {
+        return Err(McpAccountRegistrationError::JwtTime);
+    }
+    let ttl = payload
+        .exp
+        .checked_sub(payload.iat)
+        .ok_or(McpAccountRegistrationError::JwtTtl)?;
+    if !(JWT_MIN_TTL_SECONDS..=JWT_MAX_TTL_SECONDS).contains(&ttl) {
+        return Err(McpAccountRegistrationError::JwtTtl);
+    }
+    if wire.expires_in != u64::try_from(ttl).map_err(|_| McpAccountRegistrationError::JwtTtl)? {
+        return Err(McpAccountRegistrationError::JwtResponseBinding);
+    }
+    let expected_expiry = DateTime::<Utc>::from_timestamp(payload.exp, 0)
+        .ok_or(McpAccountRegistrationError::ResponseExpiry)?
+        .to_rfc3339_opts(SecondsFormat::Secs, true);
+    if wire.expires_at != expected_expiry {
+        return Err(McpAccountRegistrationError::ResponseExpiry);
+    }
+
+    Ok(McpAccountRegistration {
+        token: wire.token,
+        hostname: wire.hostname,
+        bridge_id: wire.bridge_id,
+        bridge_address: wire.bridge_address,
+        issued_at: payload.iat,
+        expires_at: payload.exp,
+    })
+}
+
+#[cfg(test)]
+fn validate_fixture_account_registration(
+    wire: McpAccountResponseWire,
+    fixture_instance_id: &str,
+    fixture_public_key: &[u8],
+    wall_start_unix_seconds: i64,
+    wall_end_unix_seconds: i64,
+) -> Result<McpAccountRegistration, McpAccountRegistrationError> {
+    if wall_end_unix_seconds < wall_start_unix_seconds {
+        return Err(McpAccountRegistrationError::WallBounds);
+    }
+    let (header_segment, payload_segment, signature_segment) = compact_jwt_segments(&wire.token)?;
+    let header: RegistrationJwtHeader = decode_jwt_json(header_segment)?;
+    let payload: RegistrationJwtPayload = decode_jwt_json(payload_segment)?;
+    let signature = decode_canonical_base64url(signature_segment)?;
+    if signature.len() != JWT_SIGNATURE_BYTES {
+        return Err(McpAccountRegistrationError::JwtSignatureLength);
+    }
+    if header.alg != "EdDSA" || header.typ != "JWT" {
+        return Err(McpAccountRegistrationError::JwtHeader);
+    }
+    if header.kid.is_empty() || has_ecmascript_trim_edge(&header.kid) {
+        return Err(McpAccountRegistrationError::JwtKid);
+    }
+    if payload.iss != "services.solstone.app" {
+        return Err(McpAccountRegistrationError::JwtIssuer);
+    }
+    if payload.aud != wire.bridge_id {
+        return Err(McpAccountRegistrationError::JwtAudience);
+    }
+    if payload.sub != format!("home:{fixture_instance_id}") {
+        return Err(McpAccountRegistrationError::JwtSubject);
+    }
+    if payload.hostname != wire.hostname {
+        return Err(McpAccountRegistrationError::JwtHostname);
+    }
+    if wire.instance_id != fixture_instance_id {
+        return Err(McpAccountRegistrationError::JwtResponseBinding);
+    }
+    validate_confirmation_key(&payload.cnf.jwk, fixture_public_key)?;
+
+    let earliest_iat = wall_start_unix_seconds
+        .checked_sub(JWT_SKEW_SECONDS)
+        .ok_or(McpAccountRegistrationError::JwtTime)?;
+    let latest_iat = wall_end_unix_seconds
+        .checked_add(JWT_SKEW_SECONDS)
+        .ok_or(McpAccountRegistrationError::JwtTime)?;
+    if !(earliest_iat..=latest_iat).contains(&payload.iat) || payload.exp <= wall_end_unix_seconds {
+        return Err(McpAccountRegistrationError::JwtTime);
+    }
+    let ttl = payload
+        .exp
+        .checked_sub(payload.iat)
+        .ok_or(McpAccountRegistrationError::JwtTtl)?;
+    if !(JWT_MIN_TTL_SECONDS..=JWT_MAX_TTL_SECONDS).contains(&ttl) {
+        return Err(McpAccountRegistrationError::JwtTtl);
+    }
+    if wire.expires_in != u64::try_from(ttl).map_err(|_| McpAccountRegistrationError::JwtTtl)? {
+        return Err(McpAccountRegistrationError::JwtResponseBinding);
+    }
+    let expected_expiry = DateTime::<Utc>::from_timestamp(payload.exp, 0)
+        .ok_or(McpAccountRegistrationError::ResponseExpiry)?
+        .to_rfc3339_opts(SecondsFormat::Secs, true);
+    if wire.expires_at != expected_expiry {
+        return Err(McpAccountRegistrationError::ResponseExpiry);
+    }
+
+    Ok(McpAccountRegistration {
+        token: wire.token,
+        hostname: wire.hostname,
+        bridge_id: wire.bridge_id,
+        bridge_address: wire.bridge_address,
+        issued_at: payload.iat,
+        expires_at: payload.exp,
+    })
+}
+
+fn compact_jwt_segments(token: &str) -> Result<(&str, &str, &str), McpAccountRegistrationError> {
+    let mut segments = token.split('.');
+    let header = segments
+        .next()
+        .ok_or(McpAccountRegistrationError::CompactJwt)?;
+    let payload = segments
+        .next()
+        .ok_or(McpAccountRegistrationError::CompactJwt)?;
+    let signature = segments
+        .next()
+        .ok_or(McpAccountRegistrationError::CompactJwt)?;
+    if header.is_empty() || payload.is_empty() || signature.is_empty() || segments.next().is_some()
+    {
+        return Err(McpAccountRegistrationError::CompactJwt);
+    }
+    Ok((header, payload, signature))
+}
+
+fn decode_jwt_json<T: serde::de::DeserializeOwned>(
+    segment: &str,
+) -> Result<T, McpAccountRegistrationError> {
+    let bytes = decode_canonical_base64url(segment)?;
+    serde_json::from_slice(&bytes).map_err(|_| McpAccountRegistrationError::JwtPayload)
+}
+
+fn decode_canonical_base64url(segment: &str) -> Result<Vec<u8>, McpAccountRegistrationError> {
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(segment)
+        .map_err(|_| McpAccountRegistrationError::JwtEncoding)?;
+    if base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&decoded) != segment {
+        return Err(McpAccountRegistrationError::JwtCanonicalEncoding);
+    }
+    Ok(decoded)
+}
+
+fn validate_confirmation_key(
+    jwk: &RegistrationJwk,
+    owner_public_key: &[u8],
+) -> Result<(), McpAccountRegistrationError> {
+    if jwk.kty != "OKP" || jwk.crv != "Ed25519" {
+        return Err(McpAccountRegistrationError::JwtConfirmation);
+    }
+    let supplied = decode_canonical_base64url(&jwk.x)?;
+    if supplied.len() != 32 || supplied.as_slice() != owner_public_key {
+        return Err(McpAccountRegistrationError::JwtPopKey);
+    }
+    Ok(())
+}
+
+fn has_ecmascript_trim_edge(value: &str) -> bool {
+    value
+        .chars()
+        .next()
+        .is_some_and(is_ecmascript_trim_character)
+        || value
+            .chars()
+            .next_back()
+            .is_some_and(is_ecmascript_trim_character)
+}
+
+fn is_ecmascript_trim_character(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0009}'..='\u{000D}'
+            | '\u{0020}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200A}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}'
+            | '\u{FEFF}'
+    )
 }
 
 fn validate_cache_control(
@@ -2366,6 +2708,596 @@ mod tests {
             McpAccountResponseWireError::BridgeAddressesCardinality,
             McpAccountResponseWireError::BridgeAddressIpv4,
             McpAccountResponseWireError::BridgeAddressDenied,
+        ] {
+            assert!(!error.to_string().contains(canary));
+            assert!(!format!("{error:?}").contains(canary));
+        }
+    }
+
+    const REGISTRATION_WALL_START: i64 = 1_700_000_000;
+    const REGISTRATION_WALL_END: i64 = 1_700_000_005;
+    const FIXTURE_INSTANCE_ID: &str = "8488ae64-b592-80a3-97c6-490e995daa85";
+    const FIXTURE_POP_PUBLIC_KEY: &str = "AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c";
+
+    fn registration_expiry(epoch: i64) -> String {
+        DateTime::<Utc>::from_timestamp(epoch, 0)
+            .expect("fixture epoch is representable")
+            .to_rfc3339_opts(SecondsFormat::Secs, true)
+    }
+
+    fn valid_registration_payload(
+        owner: &McpEndpointOwnerContext,
+        iat: i64,
+        exp: i64,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "iss": "services.solstone.app",
+            "aud": "mcp-bridge-fixture",
+            "sub": format!("home:{}", owner.committed.instance_id()),
+            "iat": iat,
+            "exp": exp,
+            "hostname": "aaaqeaye.solstone.me",
+            "cnf": {
+                "jwk": {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .encode(owner.keypair.public_key().as_ref()),
+                }
+            }
+        })
+    }
+
+    fn signed_registration_token(
+        owner: &McpEndpointOwnerContext,
+        header: &serde_json::Value,
+        payload: &serde_json::Value,
+    ) -> String {
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(header).expect("header serializes"));
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(payload).expect("payload serializes"));
+        let signing_input = format!("{header}.{payload}");
+        let signature = owner.keypair.sign(signing_input.as_bytes());
+        format!(
+            "{signing_input}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.as_ref())
+        )
+    }
+
+    fn valid_registration_wire(
+        owner: &McpEndpointOwnerContext,
+        iat: i64,
+        exp: i64,
+    ) -> McpAccountResponseWire {
+        let payload = valid_registration_payload(owner, iat, exp);
+        let token = signed_registration_token(
+            owner,
+            &serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"account-key-1"}),
+            &payload,
+        );
+        McpAccountResponseWire {
+            token,
+            expires_in: u64::try_from(exp - iat).expect("fixture TTL is positive"),
+            expires_at: registration_expiry(exp),
+            instance_id: owner.committed.instance_id().to_owned(),
+            hostname: "aaaqeaye.solstone.me".to_owned(),
+            bridge_id: "mcp-bridge-fixture".to_owned(),
+            bridge_address: "20.186.92.169".to_owned(),
+        }
+    }
+
+    fn assert_registration_error(
+        result: Result<McpAccountRegistration, McpAccountRegistrationError>,
+        expected: McpAccountRegistrationError,
+    ) {
+        match result {
+            Ok(_) => panic!("fixture must refuse"),
+            Err(error) => assert_eq!(error, expected),
+        }
+    }
+
+    fn pinned_fixture_response_wire() -> McpAccountResponseWire {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(fixture_bytes()).expect("fixture JSON");
+        let response = &fixture["response"];
+        parse_response_value(
+            response["status"]
+                .as_u64()
+                .expect("fixture response status") as u16,
+            &cache_control_headers(
+                response["cache_control"]
+                    .as_str()
+                    .expect("fixture cache control")
+                    .as_bytes(),
+            ),
+            &response["body"],
+        )
+        .expect("fixture response wire")
+    }
+
+    fn fixture_public_key() -> Vec<u8> {
+        fixture_decode_canonical_base64url(FIXTURE_POP_PUBLIC_KEY)
+            .expect("fixture PoP key is canonical base64url")
+    }
+
+    fn fixture_compact_jwt_parts(token: &str) -> Option<(&str, &str, &str)> {
+        let mut parts = token.split('.');
+        let header = parts.next()?;
+        let payload = parts.next()?;
+        let signature = parts.next()?;
+        if header.is_empty() || payload.is_empty() || signature.is_empty() || parts.next().is_some()
+        {
+            return None;
+        }
+        Some((header, payload, signature))
+    }
+
+    fn fixture_decode_canonical_base64url(segment: &str) -> Option<Vec<u8>> {
+        if segment.is_empty() {
+            return None;
+        }
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(segment)
+            .ok()?;
+        (base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&decoded) == segment)
+            .then_some(decoded)
+    }
+
+    fn fixture_jwks_oracle(token: &str, jwks: &serde_json::Value) -> bool {
+        let Some((header_segment, payload_segment, signature_segment)) =
+            fixture_compact_jwt_parts(token)
+        else {
+            return false;
+        };
+        let Some(header_bytes) = fixture_decode_canonical_base64url(header_segment) else {
+            return false;
+        };
+        let Ok(header) = serde_json::from_slice::<serde_json::Value>(&header_bytes) else {
+            return false;
+        };
+        let Some(kid) = header["kid"].as_str() else {
+            return false;
+        };
+        if header["alg"] != "EdDSA" {
+            return false;
+        }
+        let Some(key) = jwks["body"]["keys"].as_array().and_then(|keys| {
+            keys.iter().find(|key| {
+                key["kid"].as_str() == Some(kid)
+                    && key["alg"] == "EdDSA"
+                    && key["kty"] == "OKP"
+                    && key["crv"] == "Ed25519"
+            })
+        }) else {
+            return false;
+        };
+        let Some(public_key) = key["x"]
+            .as_str()
+            .and_then(fixture_decode_canonical_base64url)
+        else {
+            return false;
+        };
+        let Some(signature) = fixture_decode_canonical_base64url(signature_segment) else {
+            return false;
+        };
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public_key)
+            .verify(
+                format!("{header_segment}.{payload_segment}").as_bytes(),
+                &signature,
+            )
+            .is_ok()
+    }
+
+    fn replace_token_signature(token: &str, mutation: impl FnOnce(&mut [u8])) -> String {
+        let (header, payload, signature) = compact_jwt_segments(token).expect("fixture token");
+        let mut signature = decode_canonical_base64url(signature).expect("fixture signature");
+        mutation(&mut signature);
+        format!(
+            "{header}.{payload}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+        )
+    }
+
+    fn replace_fixture_token_signature(token: &str, mutation: impl FnOnce(&mut [u8])) -> String {
+        let (header, payload, signature) = fixture_compact_jwt_parts(token).expect("fixture token");
+        let mut signature =
+            fixture_decode_canonical_base64url(signature).expect("fixture signature is canonical");
+        mutation(&mut signature);
+        format!(
+            "{header}.{payload}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+        )
+    }
+
+    #[test]
+    fn validation_turns_only_a_bound_wire_into_an_opaque_registration() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let wire = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        let expected_token = wire.token.clone();
+        let registration = validate_account_registration(
+            wire,
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_END,
+        )
+        .expect("bound registration validates");
+        assert_eq!(registration.token, expected_token);
+        assert_eq!(registration.hostname, "aaaqeaye.solstone.me");
+        assert_eq!(registration.bridge_id, "mcp-bridge-fixture");
+        assert_eq!(registration.bridge_address, "20.186.92.169");
+        assert_eq!(registration.issued_at, REGISTRATION_WALL_START);
+        assert_eq!(registration.expires_at, REGISTRATION_WALL_START + 600);
+    }
+
+    #[test]
+    fn validation_accepts_a_mutated_signature_until_the_bridge_checks_jwks() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let mut wire = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        wire.token = replace_token_signature(&wire.token, |signature| signature[0] ^= 1);
+        assert!(
+            validate_account_registration(
+                wire,
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn pinned_account_fixture_jwks_oracle_verifies_before_bridge_admission() {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(fixture_bytes()).expect("fixture JSON");
+        let wire = pinned_fixture_response_wire();
+        let fixture_pop = fixture_public_key();
+        assert!(fixture_jwks_oracle(&wire.token, &fixture["jwks"]));
+        assert!(
+            validate_fixture_account_registration(
+                wire_for(&wire),
+                FIXTURE_INSTANCE_ID,
+                &fixture_pop,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            )
+            .is_ok(),
+            "the pinned response must bind to its fixed owner"
+        );
+
+        let mut mutated = wire;
+        mutated.token =
+            replace_fixture_token_signature(&mutated.token, |signature| signature[0] ^= 1);
+        assert!(
+            !fixture_jwks_oracle(&mutated.token, &fixture["jwks"]),
+            "the independent fixture JWKS oracle must reject a changed signature"
+        );
+        assert!(
+            validate_fixture_account_registration(
+                mutated,
+                FIXTURE_INSTANCE_ID,
+                &fixture_pop,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            )
+            .is_ok(),
+            "the local transition deliberately leaves issuer signature verification to the bridge"
+        );
+    }
+
+    #[test]
+    fn validation_rejects_jwt_structure_header_and_kid_edges() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let payload = valid_registration_payload(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        let mut wire = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        for token in ["", "one.two", "one.two.three.four", ".one.two"] {
+            wire.token = token.to_owned();
+            assert_registration_error(
+                validate_account_registration(
+                    wire_for(&wire),
+                    &owner,
+                    REGISTRATION_WALL_START,
+                    REGISTRATION_WALL_END,
+                ),
+                McpAccountRegistrationError::CompactJwt,
+            );
+        }
+        for (header, expected) in [
+            (
+                serde_json::json!({"alg":"HS256", "typ":"JWT", "kid":"key"}),
+                McpAccountRegistrationError::JwtHeader,
+            ),
+            (
+                serde_json::json!({"alg":"EdDSA", "typ":"token", "kid":"key"}),
+                McpAccountRegistrationError::JwtHeader,
+            ),
+            (
+                serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":""}),
+                McpAccountRegistrationError::JwtKid,
+            ),
+            (
+                serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"\u{FEFF}key"}),
+                McpAccountRegistrationError::JwtKid,
+            ),
+            (
+                serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"key\u{3000}"}),
+                McpAccountRegistrationError::JwtKid,
+            ),
+        ] {
+            wire.token = signed_registration_token(&owner, &header, &payload);
+            assert_registration_error(
+                validate_account_registration(
+                    wire_for(&wire),
+                    &owner,
+                    REGISTRATION_WALL_START,
+                    REGISTRATION_WALL_END,
+                ),
+                expected,
+            );
+        }
+        wire.token = signed_registration_token(
+            &owner,
+            &serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"\u{0085}key"}),
+            &payload,
+        );
+        assert!(
+            validate_account_registration(
+                wire,
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn validation_enforces_owner_response_and_confirmation_bindings() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let baseline = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        for (field, value, expected) in [
+            (
+                "iss",
+                serde_json::json!("other"),
+                McpAccountRegistrationError::JwtIssuer,
+            ),
+            (
+                "aud",
+                serde_json::json!("other"),
+                McpAccountRegistrationError::JwtAudience,
+            ),
+            (
+                "sub",
+                serde_json::json!("home:other"),
+                McpAccountRegistrationError::JwtSubject,
+            ),
+            (
+                "hostname",
+                serde_json::json!("bbbbbbbb.solstone.me"),
+                McpAccountRegistrationError::JwtHostname,
+            ),
+        ] {
+            let mut payload = valid_registration_payload(
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_START + 600,
+            );
+            payload[field] = value;
+            let mut wire = wire_for(&baseline);
+            wire.token = signed_registration_token(
+                &owner,
+                &serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"key"}),
+                &payload,
+            );
+            assert_registration_error(
+                validate_account_registration(
+                    wire,
+                    &owner,
+                    REGISTRATION_WALL_START,
+                    REGISTRATION_WALL_END,
+                ),
+                expected,
+            );
+        }
+        let mut mismatched_response = wire_for(&baseline);
+        mismatched_response.instance_id = "other-owner".to_owned();
+        assert_registration_error(
+            validate_account_registration(
+                mismatched_response,
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            ),
+            McpAccountRegistrationError::JwtResponseBinding,
+        );
+        for (jwk, expected) in [
+            (
+                serde_json::json!({"kty":"EC","crv":"Ed25519","x":"AA"}),
+                McpAccountRegistrationError::JwtConfirmation,
+            ),
+            (
+                serde_json::json!({"kty":"OKP","crv":"Ed25519","x":"AA"}),
+                McpAccountRegistrationError::JwtPopKey,
+            ),
+        ] {
+            let mut payload = valid_registration_payload(
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_START + 600,
+            );
+            payload["cnf"]["jwk"] = jwk;
+            let mut wire = wire_for(&baseline);
+            wire.token = signed_registration_token(
+                &owner,
+                &serde_json::json!({"alg":"EdDSA", "typ":"JWT", "kid":"key"}),
+                &payload,
+            );
+            assert_registration_error(
+                validate_account_registration(
+                    wire,
+                    &owner,
+                    REGISTRATION_WALL_START,
+                    REGISTRATION_WALL_END,
+                ),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn validation_enforces_checked_skew_ttl_and_exact_response_expiry() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        for (iat, exp, expected) in [
+            (
+                REGISTRATION_WALL_START - 60,
+                REGISTRATION_WALL_START + 600,
+                None,
+            ),
+            (
+                REGISTRATION_WALL_END + 60,
+                REGISTRATION_WALL_END + 660,
+                None,
+            ),
+            (
+                REGISTRATION_WALL_START - 61,
+                REGISTRATION_WALL_START + 600,
+                Some(McpAccountRegistrationError::JwtTime),
+            ),
+            (
+                REGISTRATION_WALL_END + 61,
+                REGISTRATION_WALL_END + 661,
+                Some(McpAccountRegistrationError::JwtTime),
+            ),
+            (
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_START + 599,
+                Some(McpAccountRegistrationError::JwtTtl),
+            ),
+            (
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_START + 901,
+                Some(McpAccountRegistrationError::JwtTtl),
+            ),
+        ] {
+            let wire = valid_registration_wire(&owner, iat, exp);
+            let result = validate_account_registration(
+                wire,
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            );
+            if let Some(expected) = expected {
+                assert_registration_error(result, expected);
+            } else {
+                assert!(result.is_ok(), "boundary token passes");
+            }
+        }
+        let mut wire = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        wire.expires_in -= 1;
+        assert_registration_error(
+            validate_account_registration(
+                wire_for(&wire),
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            ),
+            McpAccountRegistrationError::JwtResponseBinding,
+        );
+        wire.expires_in += 1;
+        wire.expires_at = "2023-11-14T22:23:20+00:00".to_owned();
+        assert_registration_error(
+            validate_account_registration(
+                wire,
+                &owner,
+                REGISTRATION_WALL_START,
+                REGISTRATION_WALL_END,
+            ),
+            McpAccountRegistrationError::ResponseExpiry,
+        );
+        let valid = valid_registration_wire(
+            &owner,
+            REGISTRATION_WALL_START,
+            REGISTRATION_WALL_START + 600,
+        );
+        assert_registration_error(
+            validate_account_registration(valid, &owner, 1, 0),
+            McpAccountRegistrationError::WallBounds,
+        );
+    }
+
+    fn wire_for(wire: &McpAccountResponseWire) -> McpAccountResponseWire {
+        McpAccountResponseWire {
+            token: wire.token.clone(),
+            expires_in: wire.expires_in,
+            expires_at: wire.expires_at.clone(),
+            instance_id: wire.instance_id.clone(),
+            hostname: wire.hostname.clone(),
+            bridge_id: wire.bridge_id.clone(),
+            bridge_address: wire.bridge_address.clone(),
+        }
+    }
+
+    #[test]
+    fn registration_type_and_errors_have_no_payload_egress_surface() {
+        let source = include_str!("account_wire.rs");
+        let definition = source
+            .find("pub(crate) struct McpAccountRegistration")
+            .expect("registration definition");
+        let immediately_before = source[..definition]
+            .trim_end()
+            .rsplit_once("\n\n")
+            .map_or("", |(_, item)| item);
+        for forbidden in ["Clone", "Debug", "Display", "Serialize", "Deserialize"] {
+            assert!(
+                !immediately_before.contains("#[derive(")
+                    || !immediately_before.contains(forbidden),
+                "McpAccountRegistration must not derive {forbidden}"
+            );
+        }
+        let canary = "CANARY-REGISTRATION-SECRET";
+        for error in [
+            McpAccountRegistrationError::WallBounds,
+            McpAccountRegistrationError::CompactJwt,
+            McpAccountRegistrationError::JwtEncoding,
+            McpAccountRegistrationError::JwtCanonicalEncoding,
+            McpAccountRegistrationError::JwtSignatureLength,
+            McpAccountRegistrationError::JwtHeader,
+            McpAccountRegistrationError::JwtKid,
+            McpAccountRegistrationError::JwtPayload,
+            McpAccountRegistrationError::JwtIssuer,
+            McpAccountRegistrationError::JwtAudience,
+            McpAccountRegistrationError::JwtSubject,
+            McpAccountRegistrationError::JwtHostname,
+            McpAccountRegistrationError::JwtConfirmation,
+            McpAccountRegistrationError::JwtPopKey,
+            McpAccountRegistrationError::JwtResponseBinding,
+            McpAccountRegistrationError::JwtTime,
+            McpAccountRegistrationError::JwtTtl,
+            McpAccountRegistrationError::ResponseExpiry,
         ] {
             assert!(!error.to_string().contains(canary));
             assert!(!format!("{error:?}").contains(canary));

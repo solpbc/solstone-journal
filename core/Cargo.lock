@@ -4329,6 +4329,7 @@ name = "solstone-core-mcp-endpoint"
 version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "nix",
  "proc-macro2",
  "rcgen",
