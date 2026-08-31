@@ -1197,12 +1197,12 @@ mod tests {
         let status = StreamStatus::new();
         let waker = Waker::noop();
         assert_eq!(
-            status.reserve_write(RECOMMENDED_CHUNK + 1, &waker),
+            status.reserve_write(RECOMMENDED_CHUNK + 1, waker),
             RECOMMENDED_CHUNK
         );
-        assert_eq!(status.reserve_write(1, &waker), 0);
+        assert_eq!(status.reserve_write(1, waker), 0);
         status.release_write(RECOMMENDED_CHUNK);
-        assert_eq!(status.reserve_write(1, &waker), 1);
+        assert_eq!(status.reserve_write(1, waker), 1);
     }
 
     #[test]
