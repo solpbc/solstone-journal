@@ -75,6 +75,15 @@ pub enum CortexUseFatal {
     RootInspectionFailed,
 }
 
+/// Opaque identity of a no-follow-admitted `talents/` root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CortexUseRootIdentity {
+    #[cfg(unix)]
+    unix: (libc::dev_t, libc::ino_t),
+    #[cfg(windows)]
+    windows: crate::windows_identity::WindowsFileIdentity,
+}
+
 impl CortexUseFatal {
     const fn token(self) -> &'static str {
         match self {
@@ -246,8 +255,8 @@ pub fn check_cortex_use_destination(
     }
 }
 
-/// Admit and revalidate the `talents/` root without following links or reparse points.
-pub fn inspect_cortex_use_root(root: &Path) -> Result<(), CortexUseFatal> {
+/// Admit the `talents/` root without following links or reparse points.
+pub fn inspect_cortex_use_root(root: &Path) -> Result<CortexUseRootIdentity, CortexUseFatal> {
     #[cfg(unix)]
     {
         unix::inspect_cortex_use_root(root)
@@ -255,6 +264,21 @@ pub fn inspect_cortex_use_root(root: &Path) -> Result<(), CortexUseFatal> {
     #[cfg(windows)]
     {
         windows::inspect_cortex_use_root(root)
+    }
+}
+
+/// Revalidate the `talents/` root against its previously admitted identity.
+pub fn revalidate_cortex_use_root(
+    root: &Path,
+    expected: &CortexUseRootIdentity,
+) -> Result<(), CortexUseFatal> {
+    #[cfg(unix)]
+    {
+        unix::revalidate_cortex_use_root(root, expected)
+    }
+    #[cfg(windows)]
+    {
+        windows::revalidate_cortex_use_root(root, expected)
     }
 }
 

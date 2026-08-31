@@ -12,7 +12,7 @@ use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 
 use super::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
-    CortexUseRequest, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
+    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
 };
 use crate::JournalEntryKind;
 
@@ -244,7 +244,9 @@ pub(super) fn check_cortex_use_destination(
     }
 }
 
-pub(super) fn inspect_cortex_use_root(root: &Path) -> Result<(), CortexUseFatal> {
+pub(super) fn inspect_cortex_use_root(
+    root: &Path,
+) -> Result<CortexUseRootIdentity, CortexUseFatal> {
     let observed = fstatat(AT_FDCWD, root, AtFlags::AT_SYMLINK_NOFOLLOW)
         .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
     if JournalEntryKind::from_mode(SFlag::from_bits_truncate(observed.st_mode))
@@ -256,6 +258,17 @@ pub(super) fn inspect_cortex_use_root(root: &Path) -> Result<(), CortexUseFatal>
         .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
     let opened = fstat(&descriptor).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
     (identity(&observed) == identity(&opened) && is_directory(&opened))
+        .then_some(CortexUseRootIdentity {
+            unix: identity(&opened),
+        })
+        .ok_or(CortexUseFatal::RootInspectionFailed)
+}
+
+pub(super) fn revalidate_cortex_use_root(
+    root: &Path,
+    expected: &CortexUseRootIdentity,
+) -> Result<(), CortexUseFatal> {
+    (inspect_cortex_use_root(root)? == *expected)
         .then_some(())
         .ok_or(CortexUseFatal::RootInspectionFailed)
 }
@@ -375,7 +388,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::cortex_use::{CortexUseCandidateRead, CortexUseRefusal, talent_directory_name};
+    use crate::cortex_use::{
+        CortexUseCandidateRead, CortexUseFatal, CortexUseRefusal, inspect_cortex_use_root,
+        revalidate_cortex_use_root, talent_directory_name,
+    };
 
     fn active(directory: &Path, leaf: &str, row: &str) {
         fs::write(
@@ -671,6 +687,25 @@ mod tests {
         assert_eq!(
             check_cortex_use_destination(&directory, &request),
             CortexUseDestinationCheck::Refused(CortexUseRefusal::DestinationOccupied)
+        );
+    }
+
+    #[test]
+    fn root_revalidation_requires_the_original_directory_identity() {
+        let temporary = tempdir().unwrap();
+        let root = temporary.path().join("talents");
+        let replacement = temporary.path().join("replacement");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&replacement).unwrap();
+
+        let identity = inspect_cortex_use_root(&root).unwrap();
+        assert_eq!(revalidate_cortex_use_root(&root, &identity), Ok(()));
+
+        fs::remove_dir(&root).unwrap();
+        fs::rename(&replacement, &root).unwrap();
+        assert_eq!(
+            revalidate_cortex_use_root(&root, &identity),
+            Err(CortexUseFatal::RootInspectionFailed)
         );
     }
 }

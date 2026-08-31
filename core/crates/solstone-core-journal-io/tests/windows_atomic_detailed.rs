@@ -755,7 +755,7 @@ fn publication_receipt(root: &Path) {
 }
 
 fn exercise_cortex_use_receipt(root: &Path) {
-    assert_eq!(inspect_cortex_use_root(root), Ok(()));
+    assert!(inspect_cortex_use_root(root).is_ok());
     let talent = root.join("conversation");
     fs::create_dir(&talent).unwrap();
     let active = talent.join("one_active.jsonl");

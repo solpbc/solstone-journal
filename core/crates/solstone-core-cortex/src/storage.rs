@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_journal_io::cortex_use::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
     CortexUseRefusalCounts, check_cortex_use_destination, inspect_cortex_use_root,
-    read_cortex_use_request, talent_directory_name,
+    read_cortex_use_request, revalidate_cortex_use_root, talent_directory_name,
 };
 
 #[derive(Clone, Debug)]
@@ -355,7 +355,7 @@ impl CortexStore {
     fn inventory_recovery_candidates(
         &self,
     ) -> Result<(Vec<RecoveryCandidate>, CortexUseRefusalCounts), CortexUseFatal> {
-        inspect_cortex_use_root(&self.talents)?;
+        let root_identity = inspect_cortex_use_root(&self.talents)?;
         let mut directories =
             fs::read_dir(&self.talents).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
         let mut candidates = Vec::new();
@@ -408,7 +408,7 @@ impl CortexStore {
             }
         }
         recovery_root_revalidation_checkpoint()?;
-        inspect_cortex_use_root(&self.talents)?;
+        revalidate_cortex_use_root(&self.talents, &root_identity)?;
         candidates.sort_by(|left, right| left.active_path.cmp(&right.active_path));
         Ok((candidates, refusals))
     }

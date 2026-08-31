@@ -15,7 +15,7 @@ use windows_sys::Win32::Storage::FileSystem::{FILE_READ_ATTRIBUTES, FILE_READ_DA
 
 use super::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
-    CortexUseRequest, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
+    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
 };
 use crate::JournalRoot;
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
@@ -101,10 +101,24 @@ pub(super) fn check_cortex_use_destination(
     }
 }
 
-pub(super) fn inspect_cortex_use_root(root: &Path) -> Result<(), CortexUseFatal> {
+pub(super) fn inspect_cortex_use_root(
+    root: &Path,
+) -> Result<CortexUseRootIdentity, CortexUseFatal> {
     let root = JournalRoot::open(root).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
     root.revalidate()
-        .map_err(|_| CortexUseFatal::RootInspectionFailed)
+        .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+    let identity = file_identity(root.as_handle().as_raw_handle())
+        .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+    Ok(CortexUseRootIdentity { windows: identity })
+}
+
+pub(super) fn revalidate_cortex_use_root(
+    root: &Path,
+    expected: &CortexUseRootIdentity,
+) -> Result<(), CortexUseFatal> {
+    (inspect_cortex_use_root(root)? == *expected)
+        .then_some(())
+        .ok_or(CortexUseFatal::RootInspectionFailed)
 }
 
 fn open_regular(
