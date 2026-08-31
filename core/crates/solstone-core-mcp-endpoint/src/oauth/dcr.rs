@@ -227,6 +227,22 @@ pub(crate) async fn resolve_or_register_cimd_client(
             created: false,
         });
     }
+    #[cfg(feature = "full-tests")]
+    if let Some((target, config)) = &oauth.cimd_fetch_override {
+        let io = super::LoopbackCimdIo::new(*target, std::sync::Arc::clone(config));
+        return match fetch_cimd_with_io(client_id, source, &oauth.cimd_bulkhead, shutdown, io).await
+        {
+            Ok(document) => complete_cimd_document(
+                oauth,
+                source,
+                client_id,
+                requested_redirect_uris,
+                document,
+                &SystemRandomSource,
+            ),
+            Err(_) => Err(CimdRegistrationError::Fetch),
+        };
+    }
     match fetch_cimd(client_id, source, &oauth.cimd_bulkhead, shutdown).await {
         Ok(document) => complete_cimd_document(
             oauth,

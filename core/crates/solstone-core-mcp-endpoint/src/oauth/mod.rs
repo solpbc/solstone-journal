@@ -24,6 +24,15 @@ use self::bulkhead::CimdBulkhead;
 use self::rate_limit::PairingRateLimiter;
 use self::store::OAuthStore;
 
+#[cfg(feature = "full-tests")]
+use rustls::pki_types::ServerName;
+#[cfg(feature = "full-tests")]
+use std::io;
+#[cfg(feature = "full-tests")]
+use std::net::SocketAddr;
+#[cfg(feature = "full-tests")]
+use tokio_rustls::TlsConnector;
+
 pub(crate) const DCR_MAX_BODY_BYTES: usize = 16 * 1024;
 pub(crate) const AUTHORIZE_MAX_BODY_BYTES: usize = 8 * 1024;
 pub(crate) const TOKEN_MAX_BODY_BYTES: usize = 8 * 1024;
@@ -41,6 +50,8 @@ pub(crate) struct OAuthRuntime {
     pub(crate) pairing_limiter: PairingRateLimiter,
     pub(crate) cimd_bulkhead: Arc<CimdBulkhead>,
     pub(crate) resource_origin: String,
+    #[cfg(feature = "full-tests")]
+    pub(crate) cimd_fetch_override: Option<(SocketAddr, Arc<rustls::ClientConfig>)>,
 }
 
 impl OAuthRuntime {
@@ -50,7 +61,66 @@ impl OAuthRuntime {
             pairing_limiter: PairingRateLimiter::new(),
             cimd_bulkhead: CimdBulkhead::new(),
             resource_origin,
+            #[cfg(feature = "full-tests")]
+            cimd_fetch_override: None,
         }
+    }
+
+    #[cfg(feature = "full-tests")]
+    pub(crate) fn with_cimd_test_target(
+        mut self,
+        target: SocketAddr,
+        tls_config: Arc<rustls::ClientConfig>,
+    ) -> Self {
+        self.cimd_fetch_override = Some((target, tls_config));
+        self
+    }
+}
+
+#[cfg(feature = "full-tests")]
+pub(crate) struct LoopbackCimdIo {
+    target: SocketAddr,
+    tls_connector: TlsConnector,
+    server_name: ServerName<'static>,
+}
+
+#[cfg(feature = "full-tests")]
+impl LoopbackCimdIo {
+    pub(crate) fn new(target: SocketAddr, tls_config: Arc<rustls::ClientConfig>) -> Self {
+        Self {
+            target,
+            tls_connector: TlsConnector::from(tls_config),
+            server_name: ServerName::try_from("cimd.test".to_owned())
+                .expect("CIMD fixture server name"),
+        }
+    }
+}
+
+#[cfg(feature = "full-tests")]
+impl cimd::CimdAttemptIo for LoopbackCimdIo {
+    type Socket = tokio::net::TcpStream;
+    type Connection = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
+
+    async fn resolve(&mut self, _host: &str, _port: u16) -> io::Result<Vec<SocketAddr>> {
+        Ok(vec![SocketAddr::from((
+            std::net::Ipv4Addr::new(8, 8, 8, 8),
+            443,
+        ))])
+    }
+
+    async fn connect(&mut self, _address: SocketAddr) -> io::Result<Self::Socket> {
+        tokio::net::TcpStream::connect(self.target).await
+    }
+
+    async fn tls(
+        &mut self,
+        socket: Self::Socket,
+        _server_name: &str,
+    ) -> io::Result<Self::Connection> {
+        self.tls_connector
+            .connect(self.server_name.clone(), socket)
+            .await
+            .map_err(io::Error::other)
     }
 }
 

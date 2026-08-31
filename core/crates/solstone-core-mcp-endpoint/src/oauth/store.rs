@@ -998,6 +998,11 @@ thread_local! {
     static TEST_MAX_STATE_BYTES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn set_test_now(timestamp: Option<i64>) {
+    TEST_NOW.with(|now| now.set(timestamp));
+}
+
 #[cfg(all(test, not(feature = "full-tests")))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
