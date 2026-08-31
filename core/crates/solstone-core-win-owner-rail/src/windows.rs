@@ -20,11 +20,11 @@ use solstone_core_win_owner_rail::{
     ProbeStage, ProbeStageStatus, ProbeTokenGate, ProbeTokenSection, ProbeVerifyInput,
     ProbeXmlSection, RAIL_ROOT, RailError, ResultRecord, TaskRuntime, TerminalState,
     TokenAttestation, TokenElevationClass, classify_probe_sid, classify_terminal,
-    classify_token_elevation_type, folder_allows_ordinary_mutation, mint_nonce,
-    parse_probe_task_xml, parse_task_runtime_csv, parse_task_xml, probe_com_folder_path,
-    probe_com_task_name, probe_exits_successfully, probe_marker, probe_token_gate,
-    probe_xml_task_name, recovery_decision, render_probe_task_xml, require_clean_worktree,
-    schtasks_create_argv, schtasks_create_xml_argv, schtasks_delete_argv,
+    classify_token_elevation_type, com_hresult_proves_not_found, folder_allows_ordinary_mutation,
+    mint_nonce, parse_probe_task_xml, parse_task_runtime_csv, parse_task_xml,
+    probe_com_folder_path, probe_com_task_name, probe_exits_successfully, probe_marker,
+    probe_token_gate, probe_xml_task_name, recovery_decision, render_probe_task_xml,
+    require_clean_worktree, schtasks_create_argv, schtasks_create_xml_argv, schtasks_delete_argv,
     schtasks_query_proves_task_absent, schtasks_query_runtime_argv, schtasks_query_xml_argv,
     schtasks_run_argv, select_probe_outcome, sha256_hex, verify_attestation,
     verify_probe_task_definition, verify_result, verify_result_binding, verify_task_definition,
@@ -1341,22 +1341,22 @@ fn run_xml_onlogon_route(
             } else {
                 ProbeStage::failed(schtasks_probe_error(&error), action)
             };
+            if !skip_cleanup_after_create_failure(Some(action)) {
+                section.cleanup = cleanup_xml_task(task_name);
+            }
             return section;
         }
     }
     match query_probe_xml(task_name) {
-        Ok(xml) => match bind_probe_xml(&xml, owner_sid, exe_path, marker) {
-            Ok(parsed) => {
-                section.priority = parsed.priority.into();
-                section.definition = ProbeStage::passed();
-            }
-            Err(error) => {
-                section.definition = ProbeStage::failed(
-                    schtasks_probe_error(&error),
-                    ProbeResolutionAction::InspectDefinition,
-                );
-            }
-        },
+        Ok(xml) => apply_retrieved_probe_xml(
+            &xml,
+            owner_sid,
+            exe_path,
+            marker,
+            &mut section.priority,
+            &mut section.definition,
+            true,
+        ),
         Err(error) => {
             section.definition = ProbeStage::inconclusive(
                 schtasks_probe_error(&error),
@@ -1410,7 +1410,10 @@ fn run_com_onlogon_route(
             leaf
         }
         Err(stage) => {
-            section.folder_create = stage;
+            section.folder_create = stage.clone();
+            if !skip_cleanup_after_create_failure(stage.resolution_action) {
+                section.cleanup = cleanup_com_leaf(&parent, leaf_name);
+            }
             return section;
         }
     };
@@ -1418,22 +1421,19 @@ fn run_com_onlogon_route(
     match register_com_onlogon_task(&service, &leaf, exe_path, marker, owner_sid) {
         Ok(xml) => {
             section.register = ProbeStage::passed();
-            match bind_probe_xml(&xml, owner_sid, exe_path, marker) {
-                Ok(parsed) => {
-                    section.priority = parsed.priority.into();
-                    section.definition = ProbeStage::passed();
-                }
-                Err(error) => {
-                    section.definition = ProbeStage::failed(
-                        hresult_probe_error(0, &error),
-                        ProbeResolutionAction::InspectDefinition,
-                    );
-                }
-            }
+            apply_retrieved_probe_xml(
+                &xml,
+                owner_sid,
+                exe_path,
+                marker,
+                &mut section.priority,
+                &mut section.definition,
+                false,
+            );
         }
         Err(stage) => section.register = stage,
     }
-    section.cleanup = cleanup_com_leaf(&parent, &leaf, leaf_name);
+    section.cleanup = cleanup_com_leaf(&parent, leaf_name);
     drop(com);
     section
 }
@@ -1610,30 +1610,75 @@ fn register_com_onlogon_task(
     Ok(xml.to_string())
 }
 
-fn cleanup_com_leaf(parent: &ITaskFolder, leaf: &ITaskFolder, leaf_name: &str) -> ProbeStage {
+fn cleanup_com_leaf(parent: &ITaskFolder, leaf_name: &str) -> ProbeStage {
+    let bname = BSTR::from(leaf_name);
+    // SAFETY: parent is \solstone\probe; only the nonce leaf is inspected.
+    #[allow(unsafe_code)]
+    let leaf = match unsafe { parent.GetFolder(&bname) } {
+        Ok(folder) => folder,
+        Err(error) if com_hresult_proves_not_found(error.code().0) => {
+            return ProbeStage::passed();
+        }
+        Err(error) => {
+            return com_stage(
+                &error,
+                "GetFolder leaf for cleanup",
+                ProbeResolutionAction::ManualCleanup,
+                true,
+            );
+        }
+    };
     let task = BSTR::from(probe_com_task_name());
-    // SAFETY: leaf is the per-invocation folder this probe created.
+    // SAFETY: leaf is the per-invocation folder; DeleteTask is best-effort before GetTask proof.
     #[allow(unsafe_code)]
     let _ = unsafe { leaf.DeleteTask(&task, 0) };
-    let bname = BSTR::from(leaf_name);
+    // SAFETY: GetTask is the independent absence check for the nonce task name.
+    #[allow(unsafe_code)]
+    match unsafe { leaf.GetTask(&task) } {
+        Ok(_) => {
+            return ProbeStage::inconclusive(
+                win32_probe_error(0, "COM leaf task still exists after delete"),
+                ProbeResolutionAction::ManualCleanup,
+            );
+        }
+        Err(error) if com_hresult_proves_not_found(error.code().0) => {}
+        Err(error) => {
+            return com_stage(
+                &error,
+                "GetTask after DeleteTask",
+                ProbeResolutionAction::ManualCleanup,
+                true,
+            );
+        }
+    }
     // SAFETY: parent is \solstone\probe; only the nonce leaf is deleted.
     #[allow(unsafe_code)]
-    if let Err(error) = unsafe { parent.DeleteFolder(&bname, 0) } {
-        return com_stage(
-            &error,
-            "DeleteFolder leaf",
-            ProbeResolutionAction::ManualCleanup,
-            true,
-        );
-    }
-    // SAFETY: absence of the leaf folder is proof of cleanup.
+    let delete_folder = unsafe { parent.DeleteFolder(&bname, 0) };
+    // SAFETY: GetFolder is the independent absence check for the nonce leaf.
     #[allow(unsafe_code)]
     match unsafe { parent.GetFolder(&bname) } {
-        Ok(_) => ProbeStage::inconclusive(
-            win32_probe_error(0, "COM leaf folder still exists after delete"),
+        Ok(_) => {
+            if let Err(error) = delete_folder {
+                com_stage(
+                    &error,
+                    "DeleteFolder leaf",
+                    ProbeResolutionAction::ManualCleanup,
+                    true,
+                )
+            } else {
+                ProbeStage::inconclusive(
+                    win32_probe_error(0, "COM leaf folder still exists after delete"),
+                    ProbeResolutionAction::ManualCleanup,
+                )
+            }
+        }
+        Err(error) if com_hresult_proves_not_found(error.code().0) => ProbeStage::passed(),
+        Err(error) => com_stage(
+            &error,
+            "GetFolder after DeleteFolder",
             ProbeResolutionAction::ManualCleanup,
+            true,
         ),
-        Err(_) => ProbeStage::passed(),
     }
 }
 
@@ -1956,29 +2001,80 @@ fn query_probe_xml(task_name: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn bind_probe_xml(
+fn apply_retrieved_probe_xml(
     xml: &str,
     owner_sid: &str,
     exe_path: &str,
     marker: &str,
-) -> Result<solstone_core_win_owner_rail::ProbeTaskDefinition, String> {
-    let mut definition = parse_probe_task_xml(xml).map_err(display_rail_error)?;
+    priority: &mut solstone_core_win_owner_rail::ProbePriorityView,
+    definition_stage: &mut ProbeStage,
+    schtasks_errors: bool,
+) {
+    let inspect_error = |diagnostic: String| {
+        if schtasks_errors {
+            schtasks_probe_error(&diagnostic)
+        } else {
+            hresult_probe_error(0, &diagnostic)
+        }
+    };
+    let mut definition = match parse_probe_task_xml(xml) {
+        Ok(definition) => definition,
+        Err(error) => {
+            *definition_stage = ProbeStage::failed(
+                inspect_error(display_rail_error(error)),
+                ProbeResolutionAction::InspectDefinition,
+            );
+            return;
+        }
+    };
+    *priority = definition.priority.clone().into();
     if !definition.principal_sid.starts_with("S-") {
-        definition.principal_sid = lookup_account_sid(&definition.principal_sid)?.text;
+        match lookup_account_sid(&definition.principal_sid) {
+            Ok(sid) => definition.principal_sid = sid.text,
+            Err(error) => {
+                *definition_stage = ProbeStage::failed(
+                    inspect_error(error),
+                    ProbeResolutionAction::InspectDefinition,
+                );
+                return;
+            }
+        }
     }
     if !definition.trigger_user_id.starts_with("S-") {
-        definition.trigger_user_id = lookup_account_sid(&definition.trigger_user_id)?.text;
+        match lookup_account_sid(&definition.trigger_user_id) {
+            Ok(sid) => definition.trigger_user_id = sid.text,
+            Err(error) => {
+                *definition_stage = ProbeStage::failed(
+                    inspect_error(error),
+                    ProbeResolutionAction::InspectDefinition,
+                );
+                return;
+            }
+        }
     }
-    verify_probe_task_definition(
+    match verify_probe_task_definition(
         &definition,
         &ProbeVerifyInput {
             expected_sid: owner_sid.to_owned(),
             expected_command: exe_path.to_owned(),
             marker: marker.to_owned(),
         },
+    ) {
+        Ok(()) => *definition_stage = ProbeStage::passed(),
+        Err(error) => {
+            *definition_stage = ProbeStage::failed(
+                inspect_error(display_rail_error(error)),
+                ProbeResolutionAction::InspectDefinition,
+            );
+        }
+    }
+}
+
+fn skip_cleanup_after_create_failure(action: Option<ProbeResolutionAction>) -> bool {
+    matches!(
+        action,
+        Some(ProbeResolutionAction::TreatAsRefused) | Some(ProbeResolutionAction::RetryFreshNonce)
     )
-    .map_err(display_rail_error)?;
-    Ok(definition)
 }
 
 fn cleanup_xml_task(task_name: &str) -> ProbeStage {

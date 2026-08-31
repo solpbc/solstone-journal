@@ -301,6 +301,12 @@ pub fn schtasks_query_proves_task_absent(output: &str) -> bool {
         || output.contains("task not found")
 }
 
+/// COM `GetTask`/`GetFolder` is proof of absence only for documented not-found
+/// HRESULTs. `0x80041326` is `SCHED_E_TASK_DISABLED`, not a missing object.
+pub fn com_hresult_proves_not_found(hresult: i32) -> bool {
+    matches!(hresult as u32, 0x8007_0002 | 0x8007_0003 | 0x8004_130D)
+}
+
 pub fn parse_task_xml(xml: &str) -> Result<TaskDefinition, RailError> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
@@ -1089,10 +1095,21 @@ pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
     let com_refused = report.com.folder_create.resolution_action
         == Some(ProbeResolutionAction::TreatAsRefused)
         || report.com.register.resolution_action == Some(ProbeResolutionAction::TreatAsRefused);
-    if xml_refused || com_refused {
+    if (xml_refused || com_refused)
+        && !create_stage_blocks_refusal(&report.xml.create)
+        && !create_stage_blocks_refusal(&report.com.folder_create)
+        && !create_stage_blocks_refusal(&report.com.register)
+    {
         return ProbeOutcome::RegistrationRefused;
     }
     ProbeOutcome::DefinitionUnverified
+}
+
+fn create_stage_blocks_refusal(stage: &ProbeStage) -> bool {
+    matches!(
+        stage.status,
+        ProbeStageStatus::Failed | ProbeStageStatus::Inconclusive
+    ) && stage.resolution_action != Some(ProbeResolutionAction::TreatAsRefused)
 }
 
 pub fn priority_from_xml_text(value: Option<&str>) -> ProbePriority {
@@ -1493,6 +1510,17 @@ mod tests {
         // A name collision must surface as a loud `/Create` failure, never a silent overwrite of
         // whatever task (possibly still live) already held the nonce-derived name.
         assert!(!argv.iter().any(|arg| arg == "/F"));
+    }
+
+    #[test]
+    fn com_hresult_proves_absence_only_for_not_found() {
+        assert!(com_hresult_proves_not_found(0x8007_0002_u32 as i32));
+        assert!(com_hresult_proves_not_found(0x8007_0003_u32 as i32));
+        assert!(com_hresult_proves_not_found(0x8004_130D_u32 as i32));
+        assert!(!com_hresult_proves_not_found(0x8004_1326_u32 as i32));
+        assert!(!com_hresult_proves_not_found(0x8007_0005_u32 as i32));
+        assert!(!com_hresult_proves_not_found(0));
+        assert!(!com_hresult_proves_not_found(1));
     }
 
     #[test]
@@ -2026,6 +2054,26 @@ mod tests {
     }
 
     #[test]
+    fn probe_priority_preserved_when_verify_fails() {
+        let parsed = parse_probe_task_xml(&render_probe_task_xml(&probe_definition()))
+            .expect("parses probe fixture");
+        let mut expected = probe_verify_input();
+        expected.expected_sid.push('x');
+        assert_eq!(
+            verify_probe_task_definition(&parsed, &expected),
+            Err(RailError::new("task-principal-sid-mismatch"))
+        );
+        assert_eq!(parsed.priority, ProbePriority::Present(7));
+        assert_eq!(
+            ProbePriorityView::from(parsed.priority),
+            ProbePriorityView {
+                state: ProbePriorityState::Present,
+                value: Some(7),
+            }
+        );
+    }
+
+    #[test]
     fn probe_priority_view_json_states() {
         let present = serde_json::to_value(ProbePriorityView::from(ProbePriority::Present(7)))
             .expect("present");
@@ -2184,6 +2232,23 @@ mod tests {
         let json = serialize_outcome(&report);
         assert_eq!(json["outcome"], "registration-refused");
         assert!(probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_com_transport_uncertainty_is_not_refused() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.com.folder_create = ProbeStage::inconclusive(
+            probe_error("ITaskService::Connect RPC failure"),
+            ProbeResolutionAction::RepairSchedulerAccess,
+        );
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&report));
     }
 
     #[test]
