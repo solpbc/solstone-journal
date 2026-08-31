@@ -588,6 +588,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -4603,6 +4604,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-mcp-audit"
+version = "2.0.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-mcp-endpoint"
 version = "2.0.0"
 dependencies = [
@@ -4616,15 +4627,23 @@ dependencies = [
  "proc-macro2",
  "rcgen",
  "ring",
+ "rusqlite",
  "rustls",
  "rustls-acme",
  "serde",
  "serde_json",
+ "sha2",
+ "solstone-core-callosum",
+ "solstone-core-indexer-query",
+ "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-mcp-audit",
  "solstone-core-sol-link",
+ "solstone-core-system",
  "spl-core",
  "spl-home",
+ "subtle",
  "syn 2.0.119",
  "tempfile",
  "time",

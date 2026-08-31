@@ -4,8 +4,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Maximum text size accepted by bounded journal reads.
 pub const MAX_BYTES: u64 = 16_384;
 
+/// Failure while resolving or reading bounded journal text.
 #[derive(Debug, PartialEq, Eq)]
 pub enum JournalReadError {
     Path(String),
@@ -15,6 +17,7 @@ pub enum JournalReadError {
     Io,
 }
 
+/// Read one UTF-8 journal file within the fixed byte limit.
 pub fn read_text(journal_root: &Path, rel: &str) -> Result<String, JournalReadError> {
     let path = resolve_read_path(journal_root, rel)?;
     let metadata = fs::metadata(&path).map_err(map_io)?;
@@ -28,24 +31,24 @@ pub fn read_text(journal_root: &Path, rel: &str) -> Result<String, JournalReadEr
         .map_err(|_| JournalReadError::Encoding("file is not valid UTF-8".into()))
 }
 
+/// Resolve one bounded journal-relative file without following an escape.
 pub fn resolve_read_path(journal_root: &Path, rel: &str) -> Result<PathBuf, JournalReadError> {
     if percent_decode_changes(rel) {
         return Err(JournalReadError::Path(
             "rel must not contain percent-encoded components".into(),
         ));
     }
-    let candidate =
-        solstone_core_journal_io::resolve_journal_path(journal_root, rel).map_err(|_| {
-            JournalReadError::Path(if rel.trim().is_empty() {
-                "rel must not be empty".into()
-            } else if Path::new(rel).is_absolute() {
-                "rel must be a relative path".into()
-            } else if rel.contains('\\') {
-                "rel must use forward slashes".into()
-            } else {
-                "rel must not contain empty, '.', or '..' components".into()
-            })
-        })?;
+    let candidate = crate::resolve_journal_path(journal_root, rel).map_err(|_| {
+        JournalReadError::Path(if rel.trim().is_empty() {
+            "rel must not be empty".into()
+        } else if Path::new(rel).is_absolute() {
+            "rel must be a relative path".into()
+        } else if rel.contains('\\') {
+            "rel must use forward slashes".into()
+        } else {
+            "rel must not contain empty, '.', or '..' components".into()
+        })
+    })?;
     let metadata = fs::metadata(&candidate).map_err(map_io)?;
     if !metadata.is_file() {
         return Err(JournalReadError::NotFound);
@@ -87,7 +90,7 @@ mod tests {
 
     fn root() -> PathBuf {
         let path = PathBuf::from("/var/tmp").join(format!(
-            "solstone-records-web-read-{}-{}",
+            "solstone-journal-io-bounded-read-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));

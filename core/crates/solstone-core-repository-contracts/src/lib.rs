@@ -54,6 +54,9 @@ mod hosted_launch_admission_boundary;
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]
+#[path = "contracts/mcp_audit_boundary.rs"]
+mod mcp_audit_boundary;
+#[cfg(test)]
 #[path = "contracts/mcp_endpoint_exclusion_coherence.rs"]
 mod mcp_endpoint_exclusion_coherence;
 #[cfg(test)]

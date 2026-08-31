@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use axum::{Router, routing::get};
 
-mod journal_read;
 mod search;
 mod talent_outputs;
 

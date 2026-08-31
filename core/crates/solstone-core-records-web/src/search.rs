@@ -15,8 +15,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_indexer_query::{SearchRequest, search, search_counts};
+use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
 
-use crate::{journal_read, talent_outputs};
+use crate::talent_outputs;
 
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &str = "<section class=\"search-app\"><p>search lives in the CLI with <code>solstone call journal search</code></p></section>";
@@ -189,7 +190,7 @@ struct ReadQuery {
 }
 
 async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Response {
-    if query.max_bytes.unwrap_or(journal_read::MAX_BYTES) != journal_read::MAX_BYTES {
+    if query.max_bytes.unwrap_or(MAX_BYTES) != MAX_BYTES {
         return invalid_value("max_bytes must be 16384 for HTTP reads");
     }
     let rel = if let Some(path) = query.path {
@@ -224,13 +225,13 @@ async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Resp
             }
         }
     };
-    match journal_read::read_text(&journal_root, &rel) {
+    match read_text(&journal_root, &rel) {
         Ok(content) => axum::Json(json!({"path": rel, "content": content})).into_response(),
-        Err(journal_read::JournalReadError::Path(detail)) => invalid_path(&detail),
-        Err(journal_read::JournalReadError::NotFound) => file_not_found("journal file not found"),
-        Err(journal_read::JournalReadError::TooLarge(detail)) => invalid_value(&detail),
-        Err(journal_read::JournalReadError::Encoding(detail)) => file_read_failed(&detail),
-        Err(journal_read::JournalReadError::Io) => file_read_failed("unable to read journal file"),
+        Err(JournalReadError::Path(detail)) => invalid_path(&detail),
+        Err(JournalReadError::NotFound) => file_not_found("journal file not found"),
+        Err(JournalReadError::TooLarge(detail)) => invalid_value(&detail),
+        Err(JournalReadError::Encoding(detail)) => file_read_failed(&detail),
+        Err(JournalReadError::Io) => file_read_failed("unable to read journal file"),
     }
 }
 

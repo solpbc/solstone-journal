@@ -16,6 +16,7 @@ compile_error!(
 pub mod append;
 #[cfg(any(unix, windows))]
 pub mod atomic;
+pub mod bounded_read;
 #[cfg(unix)]
 pub mod claim_remove;
 pub mod cortex_use;
@@ -88,6 +89,7 @@ pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_deta
 pub use atomic::{
     install_file, write_bytes_exclusive, write_jsonl, write_reader_exclusive, write_text,
 };
+pub use bounded_read::{JournalReadError, MAX_BYTES, resolve_read_path};
 #[cfg(unix)]
 pub use claim_remove::claim_and_remove_observed;
 #[cfg(all(unix, feature = "test-hooks"))]
