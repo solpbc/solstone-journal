@@ -11,18 +11,28 @@
 use std::fmt;
 use std::path::Path;
 
+#[cfg(unix)]
+use tokio::sync::watch;
+
 #[cfg(not(unix))]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 
 #[cfg(unix)]
 #[allow(dead_code)]
 mod account_wire;
+#[cfg(unix)]
+mod bridge_carrier;
+#[cfg(unix)]
+mod bridge_pop;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix))]
 mod tests;
 #[cfg(unix)]
 mod unix;
+
+#[cfg(unix)]
+pub use bridge_carrier::{McpBridgeCarrier, McpBridgeCarrierError};
 
 /// Bootstrap the committed owner identity and durable Ed25519 proof-of-possession key.
 ///
@@ -168,6 +178,20 @@ impl McpEndpointOwnerContext {
         use ring::signature::KeyPair as _;
 
         self.keypair.public_key().as_ref().to_vec()
+    }
+}
+
+#[cfg(unix)]
+impl McpEndpointOwnerContext {
+    /// Connect one fixed WebPKI-authenticated bridge carrier for this enabled journal.
+    ///
+    /// The returned carrier remains opaque: callers cannot inspect the account
+    /// authority, hostname, proof key, or underlying TLS stream.
+    pub async fn connect_mcp_bridge(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
+        account_wire::establish_mcp_bridge_carrier(self, shutdown).await
     }
 }
 

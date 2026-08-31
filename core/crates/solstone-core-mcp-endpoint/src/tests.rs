@@ -1636,6 +1636,7 @@ fn pattern_binds_ident(pattern: &syn::Pat, target: &str) -> bool {
 struct DiagnosticSyntaxVisitor {
     allow_fixture_file_writes: bool,
     allow_account_protocol_writes: bool,
+    allowed_protocol_writer: Option<&'static str>,
     in_account_protocol_write: bool,
     account_protocol_writer_shadowed: bool,
     in_test_scope: bool,
@@ -1650,11 +1651,13 @@ impl DiagnosticSyntaxVisitor {
     fn new(
         allow_fixture_file_writes: bool,
         allow_account_protocol_writes: bool,
+        allowed_protocol_writer: Option<&'static str>,
         aliases: FilesystemAliases,
     ) -> Self {
         Self {
             allow_fixture_file_writes,
             allow_account_protocol_writes,
+            allowed_protocol_writer,
             in_account_protocol_write: false,
             account_protocol_writer_shadowed: false,
             in_test_scope: false,
@@ -1707,7 +1710,9 @@ impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
         let prior_account_protocol_writer_shadowed = self.account_protocol_writer_shadowed;
         self.in_test_scope |= is_cfg_test(&node.attrs);
         self.in_account_protocol_write = self.allow_account_protocol_writes
-            && normalized_ident(&node.sig.ident) == "write_account_request";
+            && self
+                .allowed_protocol_writer
+                .is_some_and(|name| normalized_ident(&node.sig.ident) == name);
         self.account_protocol_writer_shadowed = false;
         syn::visit::visit_item_fn(self, node);
         self.in_test_scope = prior;
@@ -2323,6 +2328,7 @@ fn collect_response_functions(
                             | "validate_account_registration"
                             | "request_account_registration"
                             | "run_fixed_account_attempt"
+                            | "establish_mcp_bridge_carrier"
                     );
                 inspect_response_function(
                     &function.sig,
@@ -2460,7 +2466,10 @@ fn response_function_violations(file: &syn::File) -> Vec<&'static str> {
                 "response use outside parser or named validation transition",
             );
         }
-        if function.visible && tainted.contains(&function.name) {
+        if function.visible
+            && tainted.contains(&function.name)
+            && function.name != "establish_mcp_bridge_carrier"
+        {
             push_unique(
                 &mut violations,
                 "response authority reaches a visible function",
@@ -2524,7 +2533,14 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
     syn::visit::Visit::visit_file(&mut aliases, file);
     let mut visitor = DiagnosticSyntaxVisitor::new(
         path == root.join("tests.rs"),
-        path == root.join("account_wire.rs"),
+        path == root.join("account_wire.rs") || path == root.join("bridge_carrier.rs"),
+        if path == root.join("account_wire.rs") {
+            Some("write_account_request")
+        } else if path == root.join("bridge_carrier.rs") {
+            Some("write_bridge_control")
+        } else {
+            None
+        },
         aliases.resolve(),
     );
     syn::visit::Visit::visit_file(&mut visitor, file);
@@ -2738,6 +2754,27 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         "the account protocol writer exemption may not flow into nested functions"
     );
     fs::remove_file(&account_wire).expect("synthetic nested account-wire control removes");
+
+    let carrier = root.path().join("bridge_carrier.rs");
+    fs::write(
+        &carrier,
+        "async fn write_bridge_control(writer: Writer) { writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic bridge control writer writes");
+    assert!(
+        syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "only the exact bridge protocol writer may write control bytes"
+    );
+    fs::write(
+        &carrier,
+        "async fn persistence(writer: Writer) { writer.write_all(b\"x\"); }",
+    )
+    .expect("synthetic bridge control writer mutation writes");
+    assert!(
+        !syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+        "a bridge source file may not use another writer name as an egress exemption"
+    );
+    fs::remove_file(&carrier).expect("synthetic bridge control writer removes");
 
     fs::write(
         &account_wire,

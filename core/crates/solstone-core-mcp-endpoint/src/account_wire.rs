@@ -21,6 +21,9 @@ use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
 
 use crate::McpEndpointOwnerContext;
+use crate::bridge_carrier::{
+    BridgeAuthority, McpBridgeCarrier, McpBridgeCarrierError, establish_initial_bridge_carrier,
+};
 
 const ASSERTION_CAP_BYTES: usize = 8_192;
 const REQUEST_CAP_BYTES: usize = 16_384;
@@ -716,6 +719,30 @@ async fn request_account_registration(
 ) -> Result<McpAccountRegistration, McpAccountError> {
     let mut io = TokioAccountAttemptIo;
     run_fixed_account_attempt(owner, shutdown, &mut io, &SystemAccountClock).await
+}
+
+/// Establish one private bridge carrier from a newly validated account registration.
+///
+/// This is the sole transition that can carry the sealed account authority into
+/// the opaque reachability transport. It exposes neither the registration nor
+/// a token/key/hostname accessor to the rest of the product.
+pub(crate) async fn establish_mcp_bridge_carrier(
+    owner: &McpEndpointOwnerContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
+    let registration = request_account_registration(owner, shutdown)
+        .await
+        .map_err(|_| McpBridgeCarrierError::Account)?;
+    let authority = BridgeAuthority::new(
+        registration.token,
+        registration.hostname,
+        registration.bridge_id,
+        registration.bridge_address,
+        registration.issued_at,
+        registration.expires_at,
+    );
+    establish_initial_bridge_carrier(authority, &owner.keypair, shutdown, Utc::now().timestamp())
+        .await
 }
 
 trait AccountAttemptIo {
