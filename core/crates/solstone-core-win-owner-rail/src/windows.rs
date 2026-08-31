@@ -16,10 +16,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use solstone_core_win_owner_rail::{
     ACE_MUTATION_MASK, CONTROL_ID, LEASE_PATH, LeaseInput, LeaseRecord, LeaseState,
     OnlogonProbeReport, PROBE_SCHEMA, ProbeApiError, ProbeApiErrorSpace, ProbeComSection,
-    ProbeDescriptorSource, ProbeFolderAclStage, ProbeOutcome, ProbePriority, ProbeResolutionAction,
-    ProbeStage, ProbeStageStatus, ProbeTokenGate, ProbeTokenSection, ProbeVerifyInput,
-    ProbeXmlSection, RAIL_ROOT, RailError, ResultRecord, TaskRuntime, TerminalState,
-    TokenAttestation, TokenElevationClass, classify_probe_sid, classify_terminal,
+    ProbeDescriptorSource, ProbeFolderAclStage, ProbeOutcome, ProbePriority, ProbeReceipt,
+    ProbeResolutionAction, ProbeStage, ProbeStageStatus, ProbeTokenGate, ProbeTokenSection,
+    ProbeVerifyInput, ProbeXmlSection, RAIL_ROOT, RailError, ResultRecord, TaskRuntime,
+    TerminalState, TokenAttestation, TokenElevationClass, classify_probe_sid, classify_terminal,
     classify_token_elevation_type, com_hresult_proves_not_found, folder_allows_ordinary_mutation,
     mint_nonce, parse_probe_task_xml, parse_task_runtime_csv, parse_task_xml,
     probe_com_folder_path, probe_com_task_name, probe_exits_successfully, probe_marker,
@@ -40,7 +40,8 @@ use windows::Win32::System::TaskScheduler::{
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::{BSTR, Interface};
 use windows_sys::Win32::Foundation::{
-    ERROR_INSUFFICIENT_BUFFER, GENERIC_ALL, GetLastError, INVALID_HANDLE_VALUE, LocalFree,
+    ERROR_INSUFFICIENT_BUFFER, GENERIC_ALL, GENERIC_WRITE, GetLastError, INVALID_HANDLE_VALUE,
+    LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
@@ -58,6 +59,7 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_NONE, FILE_WRITE_DATA,
+    TRUNCATE_EXISTING,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -705,6 +707,36 @@ fn create_new(path: &str) -> Result<File, String> {
     Ok(unsafe { File::from_raw_handle(raw) })
 }
 
+fn update_existing(path: &str) -> Result<File, String> {
+    let wide = wide(OsStr::new(path));
+    // SAFETY: `wide` is NUL-terminated. TRUNCATE_EXISTING requires the file to already
+    // exist -- it never silently creates one -- and truncates prior content to zero
+    // length before this process's single write_all, so a shorter terminal payload can
+    // never leave a stale placeholder tail underneath it.
+    #[allow(unsafe_code)]
+    let raw = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            GENERIC_WRITE,
+            FILE_SHARE_NONE,
+            std::ptr::null(),
+            TRUNCATE_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(format!(
+            "CreateFileW(TRUNCATE_EXISTING) {}: {}",
+            path,
+            io::Error::last_os_error()
+        ));
+    }
+    // SAFETY: CreateFileW returned a valid, uniquely-owned handle.
+    #[allow(unsafe_code)]
+    Ok(unsafe { File::from_raw_handle(raw) })
+}
+
 #[derive(Clone)]
 struct Sid {
     bytes: Vec<u8>,
@@ -1129,14 +1161,31 @@ impl Drop for ComScope {
 fn probe_onlogon(options: &Options) -> Result<(), String> {
     let scratch = options.required("--scratch")?;
     let exe = options.required("--exe")?;
+    let receipt_path = options.required("--receipt")?;
     if !Path::new(scratch).is_dir() {
         return Err(format!("scratch directory does not exist: {scratch}"));
+    }
+    if !Path::new(receipt_path).is_absolute() {
+        return Err(format!("receipt path must be absolute: {receipt_path}"));
     }
     let exe_path = canonical(exe).unwrap_or_else(|_| exe.to_owned());
     let nonce = mint_nonce().map_err(display_rail_error)?;
     let marker = probe_marker(&nonce);
     let xml_task_name = probe_xml_task_name(&nonce);
     let com_folder_path = probe_com_folder_path(&nonce);
+
+    let mut receipt = ProbeReceipt::incomplete(&nonce, &marker);
+    if let Err(error) = establish_probe_receipt(receipt_path, &receipt) {
+        best_effort_eprintln(&format!(
+            "win-owner-rail: onlogon probe outcome={} ({error})",
+            ProbeOutcome::ReceiptUnavailable
+        ));
+        return Err(format!(
+            "onlogon probe outcome={}",
+            ProbeOutcome::ReceiptUnavailable
+        ));
+    }
+
     let (mut token, gate) = match current_probe_token() {
         Ok(token) => token,
         Err(error) => {
@@ -1157,8 +1206,7 @@ fn probe_onlogon(options: &Options) -> Result<(), String> {
                 },
             );
             report.outcome = select_probe_outcome(&report);
-            write_probe_report(&report, scratch)?;
-            return Err(format!("onlogon probe outcome={}", report.outcome));
+            return finalize_and_report(receipt_path, &mut receipt, report);
         }
     };
     let mut report = skipped_probe_report(
@@ -1211,17 +1259,11 @@ fn probe_onlogon(options: &Options) -> Result<(), String> {
             }
             report.token = token;
             report.outcome = select_probe_outcome(&report);
-            write_probe_report(&report, scratch)?;
-            return Err(format!("onlogon probe outcome={}", report.outcome));
+            return finalize_and_report(receipt_path, &mut receipt, report);
         }
     }
     report.outcome = select_probe_outcome(&report);
-    write_probe_report(&report, scratch)?;
-    if probe_exits_successfully(&report) {
-        Ok(())
-    } else {
-        Err(format!("onlogon probe outcome={}", report.outcome))
-    }
+    finalize_and_report(receipt_path, &mut receipt, report)
 }
 
 fn skipped_probe_report(
@@ -1375,7 +1417,7 @@ fn run_com_onlogon_route(
     owner_sid: &str,
 ) -> ProbeComSection {
     let mut section = ProbeComSection::skipped();
-    let com = match init_com() {
+    let _com = match init_com() {
         Ok(com) => com,
         Err(error) => {
             section.folder_create = ProbeStage::inconclusive(
@@ -1434,7 +1476,10 @@ fn run_com_onlogon_route(
         Err(stage) => section.register = stage,
     }
     section.cleanup = cleanup_com_leaf(&parent, leaf_name);
-    drop(com);
+    // `_com`, `service`, `parent`, and `leaf` all drop here at end of scope, in reverse
+    // declaration order (leaf, parent, service, _com) -- releasing every COM interface
+    // before CoUninitialize runs. Do not `drop(_com)` early: releasing an interface after
+    // CoUninitialize is an access-violation hazard.
     section
 }
 
@@ -2110,16 +2155,62 @@ fn confirm_task_name_absent(task_name: &str) -> Result<(), String> {
     ))
 }
 
-fn write_probe_report(report: &OnlogonProbeReport, scratch: &str) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(report)
-        .map_err(|error| format!("serialize onlogon probe report: {error}"))?;
-    println!("{json}");
-    let path = Path::new(scratch).join(format!("onlogon-probe-{}.json", report.nonce));
-    let mut file = create_new(&path.to_string_lossy())?;
+fn best_effort_eprintln(text: &str) {
+    let _ = writeln!(io::stderr(), "{text}");
+}
+
+fn establish_probe_receipt(path: &str, receipt: &ProbeReceipt) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(receipt)
+        .map_err(|error| format!("serialize onlogon probe receipt: {error}"))?;
+    let mut file = create_new(path)?;
     file.write_all(json.as_bytes())
-        .map_err(|error| format!("write onlogon probe report: {error}"))?;
+        .map_err(|error| format!("write onlogon probe receipt: {error}"))?;
     file.sync_all()
-        .map_err(|error| format!("sync onlogon probe report: {error}"))
+        .map_err(|error| format!("sync onlogon probe receipt: {error}"))
+}
+
+fn finalize_probe_receipt(path: &str, receipt: &ProbeReceipt) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(receipt)
+        .map_err(|error| format!("serialize onlogon probe receipt: {error}"))?;
+    let mut file = update_existing(path)?;
+    file.write_all(json.as_bytes())
+        .map_err(|error| format!("write onlogon probe receipt: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("sync onlogon probe receipt: {error}"))
+}
+
+fn finalize_and_report(
+    receipt_path: &str,
+    receipt: &mut ProbeReceipt,
+    report: OnlogonProbeReport,
+) -> Result<(), String> {
+    let outcome = report.outcome;
+    let exits_successfully = probe_exits_successfully(&report);
+    if let Err(error) = receipt.finalize(report) {
+        best_effort_eprintln(&format!(
+            "win-owner-rail: onlogon probe outcome={} (receipt transition rejected: {error})",
+            ProbeOutcome::TerminalUpdateFailed
+        ));
+        return Err(format!(
+            "onlogon probe outcome={}",
+            ProbeOutcome::TerminalUpdateFailed
+        ));
+    }
+    if let Err(error) = finalize_probe_receipt(receipt_path, receipt) {
+        best_effort_eprintln(&format!(
+            "win-owner-rail: onlogon probe outcome={} (computed {outcome}, persist failed: {error})",
+            ProbeOutcome::TerminalUpdateFailed
+        ));
+        return Err(format!(
+            "onlogon probe outcome={}",
+            ProbeOutcome::TerminalUpdateFailed
+        ));
+    }
+    if exits_successfully {
+        Ok(())
+    } else {
+        Err(format!("onlogon probe outcome={outcome}"))
+    }
 }
 
 fn scheduler_create_resolution(error: &str) -> ProbeResolutionAction {

@@ -616,6 +616,7 @@ pub fn payload_sha256(parts: &[&str]) -> String {
 }
 
 pub const PROBE_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-probe.v1";
+pub const PROBE_RECEIPT_SCHEMA: &str = "solstone.journal.win-owner-rail.onlogon-probe-receipt.v1";
 pub const PROBE_MARKER_PREFIX: &str = "solstone-onlogon-probe:";
 pub const ACE_MUTATION_MASK: u32 =
     0x0001_0000 | 0x0004_0000 | 0x0008_0000 | 0x1000_0000 | 0x4000_0000;
@@ -723,6 +724,8 @@ pub enum ProbeOutcome {
     VerifiedRegistration,
     DefinitionUnverified,
     CleanupUncertain,
+    ReceiptUnavailable,
+    TerminalUpdateFailed,
 }
 
 impl fmt::Display for ProbeOutcome {
@@ -734,6 +737,8 @@ impl fmt::Display for ProbeOutcome {
             Self::VerifiedRegistration => "verified-registration",
             Self::DefinitionUnverified => "definition-unverified",
             Self::CleanupUncertain => "cleanup-uncertain",
+            Self::ReceiptUnavailable => "receipt-unavailable",
+            Self::TerminalUpdateFailed => "terminal-update-failed",
         })
     }
 }
@@ -941,6 +946,50 @@ pub struct OnlogonProbeReport {
     pub token: ProbeTokenSection,
     pub xml: ProbeXmlSection,
     pub com: ProbeComSection,
+}
+
+/// Mirrors `LeaseRecord`/`LeaseState::transition`: a schema-versioned on-disk record
+/// with a guarded one-way `Incomplete -> Terminal` state transition, so a crash between
+/// establishing the receipt and finalizing it leaves a durable, honestly-marked
+/// "incomplete" record instead of no evidence at all.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProbeReceiptState {
+    Incomplete,
+    Terminal,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProbeReceipt {
+    pub schema: String,
+    pub marker: String,
+    pub nonce: String,
+    pub state: ProbeReceiptState,
+    pub report: Option<OnlogonProbeReport>,
+}
+
+impl ProbeReceipt {
+    pub fn incomplete(nonce: &str, marker: &str) -> Self {
+        Self {
+            schema: PROBE_RECEIPT_SCHEMA.to_owned(),
+            marker: marker.to_owned(),
+            nonce: nonce.to_owned(),
+            state: ProbeReceiptState::Incomplete,
+            report: None,
+        }
+    }
+
+    pub fn finalize(&mut self, report: OnlogonProbeReport) -> Result<(), RailError> {
+        if self.state != ProbeReceiptState::Incomplete {
+            return Err(RailError::new("invalid-receipt-transition"));
+        }
+        if report.marker != self.marker || report.nonce != self.nonce {
+            return Err(RailError::new("receipt-marker-mismatch"));
+        }
+        self.state = ProbeReceiptState::Terminal;
+        self.report = Some(report);
+        Ok(())
+    }
 }
 
 pub fn classify_token_elevation_type(value: i32) -> TokenElevationClass {
@@ -2560,5 +2609,51 @@ mod tests {
         assert_stage_resolution_invariants(&skipped);
         assert!(skipped.xml.create.resolution_action.is_none());
         assert!(skipped.com.register.resolution_action.is_none());
+    }
+
+    #[test]
+    fn probe_receipt_finalize_transitions_incomplete_to_terminal() {
+        let mut receipt = ProbeReceipt::incomplete(PROBE_NONCE, &probe_marker_value());
+        assert_eq!(receipt.state, ProbeReceiptState::Incomplete);
+        assert!(receipt.report.is_none());
+        let report = base_probe_report(default_token_passed());
+        receipt.finalize(report.clone()).expect("finalize succeeds");
+        assert_eq!(receipt.state, ProbeReceiptState::Terminal);
+        assert_eq!(receipt.report, Some(report));
+    }
+
+    #[test]
+    fn probe_receipt_finalize_rejects_double_finalize() {
+        let mut receipt = ProbeReceipt::incomplete(PROBE_NONCE, &probe_marker_value());
+        receipt
+            .finalize(base_probe_report(default_token_passed()))
+            .expect("first finalize succeeds");
+        assert_eq!(
+            receipt.finalize(base_probe_report(default_token_passed())),
+            Err(RailError::new("invalid-receipt-transition"))
+        );
+    }
+
+    #[test]
+    fn probe_receipt_finalize_rejects_marker_mismatch() {
+        let mut receipt = ProbeReceipt::incomplete(PROBE_NONCE, &probe_marker_value());
+        let mut report = base_probe_report(default_token_passed());
+        report.marker = "solstone-onlogon-probe:someone-else".to_owned();
+        assert_eq!(
+            receipt.finalize(report),
+            Err(RailError::new("receipt-marker-mismatch"))
+        );
+    }
+
+    #[test]
+    fn probe_outcome_display_covers_new_receipt_dispositions() {
+        assert_eq!(
+            ProbeOutcome::ReceiptUnavailable.to_string(),
+            "receipt-unavailable"
+        );
+        assert_eq!(
+            ProbeOutcome::TerminalUpdateFailed.to_string(),
+            "terminal-update-failed"
+        );
     }
 }
