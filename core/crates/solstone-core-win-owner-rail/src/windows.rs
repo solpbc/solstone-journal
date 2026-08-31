@@ -1657,7 +1657,9 @@ fn register_com_onlogon_task(
         call_sequence.push("IExecAction::SetArguments".to_owned());
     }
     let empty = VARIANT::default();
-    // SAFETY: create-or-update; empty user/password use the caller token.
+    // SAFETY: create-or-update is safe here because RegisterTaskDefinition only
+    // ever targets the fresh-nonce leaf folder from create_com_leaf_folder, which
+    // fail-closes if the leaf already exists; empty user/password use the caller token.
     #[allow(unsafe_code)]
     let registered = unsafe {
         folder.RegisterTaskDefinition(

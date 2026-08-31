@@ -1165,7 +1165,8 @@ pub fn select_probe_outcome(report: &OnlogonProbeReport) -> ProbeOutcome {
     let com_refused = report.com.folder_create.resolution_action
         == Some(ProbeResolutionAction::TreatAsRefused)
         || report.com.register.resolution_action == Some(ProbeResolutionAction::TreatAsRefused);
-    if (xml_refused || com_refused)
+    if !(xml_verified || com_verified)
+        && (xml_refused || com_refused)
         && !create_stage_blocks_refusal(&report.xml.create)
         && !create_stage_blocks_refusal(&report.com.folder_create)
         && !create_stage_blocks_refusal(&report.com.register)
@@ -2512,6 +2513,59 @@ mod tests {
         report.outcome = select_probe_outcome(&report);
         assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
         assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_xml_verified_com_refused_is_not_refused() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::passed();
+        report.xml.definition = ProbeStage::passed();
+        report.xml.cleanup = ProbeStage::passed();
+        report.xml.priority = ProbePriority::Present(7).into();
+        report.xml.create_argv =
+            schtasks_create_xml_argv(r"\solstone\probe\onlogon-xml-abc", r"C:\a.xml");
+        report.xml.definition_sha256 = "def456".to_owned();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.register = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.com.cleanup = ProbeStage::passed();
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["xml"]["definition"]["status"], "passed");
+        assert_eq!(json["xml"]["priority"]["state"], "present");
+        assert_eq!(json["xml"]["create_argv"][0], "/Create");
+        assert_eq!(json["xml"]["definition_sha256"], "def456");
+        assert!(!probe_exits_successfully(&report));
+    }
+
+    #[test]
+    fn select_outcome_com_verified_xml_refused_is_not_refused() {
+        let mut report = base_probe_report(default_token_passed());
+        report.xml.create = ProbeStage::failed(
+            probe_error("access denied"),
+            ProbeResolutionAction::TreatAsRefused,
+        );
+        report.xml.cleanup = ProbeStage::passed();
+        report.com.folder_create = ProbeStage::passed();
+        report.com.register = ProbeStage::passed();
+        report.com.definition = ProbeStage::passed();
+        report.com.cleanup = ProbeStage::passed();
+        report.com.register_flag = com_register_flag();
+        report.com.call_sequence = vec!["ITaskService::Connect".to_owned()];
+        report.outcome = select_probe_outcome(&report);
+        assert_ne!(report.outcome, ProbeOutcome::RegistrationRefused);
+        assert_ne!(report.outcome, ProbeOutcome::VerifiedRegistration);
+        assert_eq!(report.outcome, ProbeOutcome::DefinitionUnverified);
+        let json = serialize_outcome(&report);
+        assert_eq!(json["com"]["definition"]["status"], "passed");
+        assert_eq!(json["com"]["register_flag"], com_register_flag());
+        assert_eq!(json["com"]["call_sequence"][0], "ITaskService::Connect");
         assert!(!probe_exits_successfully(&report));
     }
 
