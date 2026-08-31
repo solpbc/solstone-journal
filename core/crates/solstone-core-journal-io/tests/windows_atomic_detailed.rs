@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::mem::size_of;
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -22,10 +22,12 @@ use solstone_core_journal_io::atomic::{
     run_with_windows_detailed_atomic_faults_and_barrier,
 };
 use solstone_core_journal_io::cortex_use::{
-    CortexNamespaceLock, CortexNamespaceLockError, CortexUseCandidateRead,
-    CortexUseDestinationCheck, CortexUseRefusal, acquire_cortex_namespace_lock,
-    check_cortex_use_destination, create_or_admit_cortex_namespace, inspect_cortex_use_root,
-    read_cortex_use_request,
+    CortexCensus, CortexCensusError, CortexCensusPrimitive, CortexNamespaceLock,
+    CortexNamespaceLockError, CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseRefusal,
+    acquire_cortex_namespace_lock, acquire_cortex_namespace_lock_with_test_timing,
+    census_cortex_namespace, check_cortex_use_destination, create_or_admit_cortex_namespace,
+    inspect_cortex_use_root, parse_cortex_lifecycle_name, read_cortex_use_request,
+    run_with_cortex_census_barrier,
 };
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, ExistingParentLockError, JournalRoot, WindowsLockFileExSubstitution,
@@ -870,6 +872,94 @@ fn cortex_lock_error(result: Result<CortexNamespaceLock, CortexNamespaceLockErro
     }
 }
 
+/// `CortexCensus` does not implement `Debug` (by design -- it retains an admitted
+/// namespace authority and a live directory handle), so `Result::expect_err`/`unwrap_err`
+/// cannot be called directly on `Result<CortexCensus, CortexCensusError>` -- both require
+/// `T: Debug` to format a panic message on the `Ok` arm. Match explicitly instead, the same
+/// idiom census.rs's own internal unit tests use (`census_err`).
+fn census_err(result: Result<CortexCensus, CortexCensusError>, message: &str) -> CortexCensusError {
+    match result {
+        Ok(_) => panic!("{message}"),
+        Err(error) => error,
+    }
+}
+
+/// Minimal preservation-accounting snapshot for one successful, non-adversarial census
+/// receipt (F3 §5 item 9 / the F3 caller-owned-gate's "preservation" property) --
+/// deliberately smaller than census.rs's own internal `snapshot_tree`/`Snap`, which also
+/// tracks renames for its many adversarial barrier fixtures; this receipt only needs one
+/// shape: "nothing changed except the F2 lock entry's first creation." Records kind, size,
+/// and (for regular files) exact content bytes for every entry under `root`. A directory
+/// junction/reparse point is never recursed into -- checked via the raw
+/// `FILE_ATTRIBUTE_REPARSE_POINT` bit (the same `.file_attributes()` idiom already used
+/// elsewhere in this file), not `FileType::is_dir()`/`is_symlink()`, whose exact behavior
+/// for a Windows junction this receipt does not need to depend on either way -- and is
+/// recorded only as an opaque "other" leaf, matching how the census itself treats it.
+///
+/// Caller contract: never snapshot while a live `CortexCensus`/`CortexNamespaceLock` for
+/// this same root is still held -- reading `cortex-use.lock`'s own bytes through a fresh
+/// handle while its exclusive Windows byte-range lock is live is the exact
+/// `ERROR_LOCK_VIOLATION` (Os error 33) trap this validation pass found in census.rs's
+/// own internal test suite (separately scope-checked repair pending, not part of this
+/// receipt). Drop any holder first, as the caller here does.
+fn snapshot_journal_tree(root: &Path) -> std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)> {
+    fn walk(
+        dir: &Path,
+        root: &Path,
+        out: &mut std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)>,
+    ) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let relative = path.strip_prefix(root).unwrap().to_path_buf();
+            let metadata = fs::symlink_metadata(&path).unwrap();
+            let is_reparse_point = metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+            let file_type = metadata.file_type();
+            let (kind, bytes) = if is_reparse_point {
+                ("other", Vec::new())
+            } else if file_type.is_dir() {
+                ("dir", Vec::new())
+            } else if file_type.is_file() {
+                ("file", fs::read(&path).unwrap())
+            } else {
+                ("other", Vec::new())
+            };
+            let recurse = !is_reparse_point && kind == "dir";
+            out.insert(relative, (kind, metadata.len(), bytes));
+            if recurse {
+                walk(&path, root, out);
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(root, root, &mut out);
+    out
+}
+
+/// Assert that `after` differs from `before` by nothing except one added
+/// `cortex-use.lock` entry (the F2 lock's first-ever creation on this namespace).
+fn assert_preserved_except_lock_creation(
+    before: &std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)>,
+    after: &std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)>,
+) {
+    for (path, value) in before {
+        assert_eq!(
+            after.get(path),
+            Some(value),
+            "a successful census must never mutate a pre-existing entry: {path:?}"
+        );
+    }
+    let lock_entry = PathBuf::from("cortex-use.lock");
+    let added: Vec<_> = after
+        .keys()
+        .filter(|path| !before.contains_key(*path))
+        .collect();
+    assert!(
+        added.iter().all(|path| **path == lock_entry),
+        "a successful census must add nothing except the F2 lock entry, found: {added:?}"
+    );
+}
+
 fn run_cortex_lock_child(root: &Path, test_name: &str, expected: &str) -> Output {
     Command::new(std::env::current_exe().expect("current Windows test executable"))
         .args(["--exact", test_name, "--ignored", "--nocapture"])
@@ -1444,6 +1534,486 @@ fn exercise_cortex_namespace_lock_receipt(root: &Path, child_test: &str) {
     drop(acquire_cortex_namespace_lock(&io_authority).unwrap());
 }
 
+/// Caller-owned native-Windows receipt for R1A1b-F3 (Cortex census/lifecycle parsing).
+///
+/// DRAFT — not yet run against native Windows. Covers proof items 1-9 from the F3
+/// scope's §5 (lock lifetime already covered by `exercise_cortex_namespace_lock_receipt`,
+/// which every caller of this function already runs alongside it). Item 10's Windows
+/// non-skippable exact-case NTFS `Alpha`/`alpha` + `Use.jsonl`/`use.jsonl` fixture is
+/// deliberately NOT implemented here — see the trailing comment block for why.
+fn exercise_cortex_census_receipt(root: &Path) {
+    // --- fixture: two real talent directories, one junction (must not be traversed as
+    // a talent), a two-projection ambiguous leaf, a malformed-name leaf, and an unrelated
+    // top-level entry.
+    let census_root = root.join("cortex-census");
+    fs::create_dir(&census_root).unwrap();
+    let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap())
+        .expect("admit Cortex namespace for census fixture");
+    let talents = census_root.join("talents");
+    fs::create_dir_all(talents.join("alpha")).unwrap();
+    fs::create_dir_all(talents.join("beta")).unwrap();
+    fs::write(talents.join("alpha").join("one.jsonl"), b"completed").unwrap();
+    fs::write(talents.join("alpha").join("two_active.jsonl"), b"ambiguous").unwrap();
+    fs::write(talents.join("beta").join("plain.txt"), b"unrelated").unwrap();
+    fs::write(talents.join("daily-index.jsonl"), b"top-level").unwrap();
+    let junction_target = census_root.join("cortex-census-junction-target");
+    fs::create_dir(&junction_target).unwrap();
+    create_directory_junction(&talents.join("linked"), &junction_target);
+
+    // Preservation snapshot, taken over the fully-built fixture before any census walk
+    // touches it. Compared below once the census is dropped (§5 item 9 "mutation
+    // accounting" / the F3 caller-owned-gate's "preservation" property).
+    let before_census = snapshot_journal_tree(&census_root);
+
+    // Expected cardinality: 3 root entries (alpha, beta, linked) + daily-index.jsonl = 4,
+    // plus 2 (alpha) + 1 (beta) = 3 talent-child entries = 7 total.
+    let census = census_cortex_namespace(authority, 7).expect("census within exact limit");
+    assert_eq!(census.observed_entry_count(), 7);
+    let alpha = census
+        .talents()
+        .iter()
+        .find(|talent| talent.name() == OsStr::new("alpha"))
+        .expect("alpha talent present");
+    let ambiguous = alpha
+        .entries()
+        .iter()
+        .find(|leaf| leaf.name() == OsStr::new("two_active.jsonl"))
+        .expect("two_active.jsonl leaf present");
+    // `two_active.jsonl` also ends in `.jsonl`, so `parse_cortex_lifecycle_name` reports
+    // BOTH projections at once (active="two", completed="two_active") -- confirmed
+    // against the real parser (census.rs `parse_cortex_lifecycle_name`) and its own
+    // `parser_matrix` unit-test row for `alpha_active.jsonl`. This is exactly the
+    // "two-projection ambiguous leaf" the fixture comment above names; the wrong
+    // expectation here (`completed() == None`) would have been a silent own-goal on
+    // the first native run, unrelated to anything this receipt is meant to validate.
+    assert_eq!(ambiguous.projections().active(), Some("two"));
+    assert_eq!(ambiguous.projections().completed(), Some("two_active"));
+    let completed = alpha
+        .entries()
+        .iter()
+        .find(|leaf| leaf.name() == OsStr::new("one.jsonl"))
+        .expect("one.jsonl leaf present");
+    assert_eq!(completed.projections().completed(), Some("one"));
+
+    // Junction is a root entry, never traversed as a talent (JournalEntryKind must not
+    // classify it as a real directory the census recurses into).
+    assert!(
+        census
+            .talents()
+            .iter()
+            .all(|talent| talent.name() != OsStr::new("linked")),
+        "a directory junction under talents/ must never be traversed as a talent directory"
+    );
+
+    // `CortexCensus` retains the acquired `cortex-use.lock` guard for its own lifetime
+    // (F2's design: the lock stays held as long as the census value is alive). Drop it
+    // explicitly before acquiring a fresh authority on the same `census_root` below, or
+    // the next acquisition sees `cortex_namespace_lock_busy` instead of exercising the
+    // cardinality limit this next block is actually testing.
+    //
+    // The drop also has to happen BEFORE the preservation snapshot immediately below:
+    // reading `cortex-use.lock`'s own bytes via a fresh handle while this value still
+    // holds its exclusive Windows byte-range lock is exactly the `ERROR_LOCK_VIOLATION`
+    // (Os error 33) trap this validation pass found in census.rs's own internal test
+    // suite (separately scope-checked repair pending) -- drop-before-snapshot avoids it
+    // here by construction rather than by accident.
+    drop(census);
+
+    // Preservation: nothing under `census_root` changed except the first-ever creation
+    // of the F2 lock entry. A successful, non-adversarial census reads only; it must
+    // never touch fixture content.
+    let after_census = snapshot_journal_tree(&census_root);
+    assert_preserved_except_lock_creation(&before_census, &after_census);
+
+    // One-less-than-cardinality is the closed limit-exceeded token, not a partial census.
+    let authority_for_limit =
+        create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap()).unwrap();
+    let limited = census_cortex_namespace(authority_for_limit, 6);
+    assert_eq!(
+        census_err(limited, "one below exact cardinality must refuse").to_string(),
+        "cortex_census_limit_exceeded"
+    );
+
+    // Pre-open replacement: barrier fires after `alpha` is classified as a real directory
+    // but before it is opened; replace it with a fresh directory of the same name in
+    // between. The census must reject with the talent_open identity_changed token, never
+    // silently describe the replacement.
+    {
+        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap())
+            .unwrap();
+        let census_root = census_root.clone();
+        let (result, fired) = run_with_cortex_census_barrier(
+            CortexCensusPrimitive::PreTalentOpen,
+            1,
+            move || {
+                let alpha = census_root.join("talents").join("alpha");
+                fs::rename(&alpha, census_root.join("talents").join("alpha-displaced")).unwrap();
+                fs::create_dir(&alpha).unwrap();
+            },
+            move || census_cortex_namespace(authority, 32),
+        );
+        assert!(fired);
+        assert_eq!(
+            census_err(result, "pre-open replacement must be refused").to_string(),
+            "cortex_census_talent_open_identity_changed"
+        );
+    }
+
+    // Post-open (final binding) replacement: barrier fires immediately before the final
+    // parent-relative authority/talent binding pass, well after `alpha` was already
+    // listed and opened successfully. Replacing it here must still be caught by the
+    // final check, not accepted as a stale-but-successful snapshot.
+    {
+        let census_root2 = census_root.join("cortex-census-final");
+        fs::create_dir(&census_root2).unwrap();
+        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root2).unwrap())
+            .unwrap();
+        fs::create_dir_all(census_root2.join("talents").join("gamma")).unwrap();
+        let root_for_barrier = census_root2.clone();
+        let (result, fired) = run_with_cortex_census_barrier(
+            CortexCensusPrimitive::PreFinalAuthorityCheck,
+            1,
+            move || {
+                let gamma = root_for_barrier.join("talents").join("gamma");
+                fs::rename(&gamma, root_for_barrier.join("talents").join("gamma-displaced"))
+                    .unwrap();
+                fs::create_dir(&gamma).unwrap();
+            },
+            move || census_cortex_namespace(authority, 32),
+        );
+        assert!(fired);
+        assert_eq!(
+            census_err(result, "final-pass replacement must be refused").to_string(),
+            "cortex_census_talent_binding_identity_changed"
+        );
+    }
+
+    // Child (leaf) replacement mid-listing: barrier fires after `delta`'s children are
+    // enumerated but before they're observed; remove the one leaf in between.
+    //
+    // PLATFORM DIVERGENCE, empirically confirmed against native Windows (`sol-winbuild`,
+    // Windows 11 Pro build 26200) on this exact fixture: the POSIX path
+    // (`flat_directory::list_native_entries`) special-cases an ENOENT `stat_entry` result
+    // into `FlatDirectoryError::EnumerationChanged`, which `map_listing` classifies as
+    // `IdentityChanged` -- so on POSIX (and in census.rs's own non-Windows
+    // `barrier_stage_errors` unit test) this scenario yields
+    // `cortex_census_talent_list_identity_changed`. The Windows path
+    // (`windows_sync_dir::list_windows_native_entries`) has no analogous ENOENT
+    // special-case: it unconditionally opens each previously-listed name via
+    // `open_relative_exact`, and a vanished name surfaces as a bare
+    // `FlatDirectoryError::Io` (NtCreateFile's not-found status, converted generically),
+    // which `map_listing` classifies as `Io`, not `IdentityChanged`. The real,
+    // native-observed token here is `cortex_census_talent_list_io`. This is a property
+    // of the already-landed F3 production code (`census.rs`/`windows_sync_dir.rs`,
+    // commit d6d8c51c9), not of this test; census.rs's own `#[cfg(windows)]
+    // windows_barrier_stage_errors` unit test currently asserts the POSIX token for this
+    // same scenario and has, as far as this validation could determine, never previously
+    // run on real Windows hardware -- flagged separately as a caller-owned finding, not
+    // fixed here (out of this receipt's scope, which is to record true observed
+    // behavior rather than the classification this project might prefer).
+    {
+        let census_root3 = census_root.join("cortex-census-child");
+        fs::create_dir(&census_root3).unwrap();
+        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root3).unwrap())
+            .unwrap();
+        let delta = census_root3.join("talents").join("delta");
+        fs::create_dir_all(&delta).unwrap();
+        fs::write(delta.join("only.jsonl"), b"will be removed").unwrap();
+        let delta_for_barrier = delta.clone();
+        let (result, fired) = run_with_cortex_census_barrier(
+            CortexCensusPrimitive::PostLeafEnumeration,
+            1,
+            move || {
+                fs::remove_file(delta_for_barrier.join("only.jsonl")).unwrap();
+            },
+            move || census_cortex_namespace(authority, 32),
+        );
+        assert!(fired);
+        assert_eq!(
+            census_err(result, "child removal mid-listing must be refused, not silently reflected as a shorter-than-listed census").to_string(),
+            "cortex_census_talent_list_io"
+        );
+    }
+
+    // Continuous F2 exclusion around a LIVE `CortexCensus`, not just a raw
+    // `CortexNamespaceLock`. `exercise_cortex_namespace_lock_receipt` (called by both
+    // `ntfs_cortex_use_receipt`/`refs_cortex_use_receipt` alongside this function)
+    // already proves F2's raw lock semantics -- busy/reacquire, cross-process contention
+    // -- but never constructs a `CortexCensus`, so it cannot show that `CortexCensus`
+    // itself retains that lock for its own lifetime while enumerating. This barrier-based
+    // check mirrors census.rs's own `lock_lifetime_and_exact_authority` unit test shape:
+    // pause mid-walk, prove a same-process contender sees `busy` while the census is
+    // alive and mid-enumeration (not merely at acquisition), prove it is still `busy`
+    // immediately after the census *returns* (not only mid-walk), then prove the lock is
+    // free the instant the census value is dropped.
+    {
+        let census_root4 = census_root.join("cortex-census-f2-exclusion");
+        fs::create_dir(&census_root4).unwrap();
+        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root4).unwrap())
+            .unwrap();
+        fs::create_dir_all(census_root4.join("talents").join("epsilon")).unwrap();
+        let contender_root = census_root4.clone();
+        let (result, fired) = run_with_cortex_census_barrier(
+            CortexCensusPrimitive::PostRootList,
+            1,
+            move || {
+                let contender =
+                    create_or_admit_cortex_namespace(JournalRoot::open(&contender_root).unwrap())
+                        .unwrap();
+                assert_eq!(
+                    cortex_lock_error(acquire_cortex_namespace_lock_with_test_timing(
+                        &contender,
+                        Duration::ZERO,
+                        Duration::ZERO,
+                    )),
+                    "cortex_namespace_lock_busy",
+                    "a live CortexCensus mid-walk must keep the F2 lock held"
+                );
+            },
+            move || census_cortex_namespace(authority, 32),
+        );
+        assert!(fired);
+        let census =
+            result.expect("census must still succeed once the barrier's contention probe returns");
+        let lock_path = census_root4.join("cortex-use.lock");
+        assert!(lock_path.exists());
+        let post_return_contender =
+            create_or_admit_cortex_namespace(JournalRoot::open(&census_root4).unwrap()).unwrap();
+        assert_eq!(
+            cortex_lock_error(acquire_cortex_namespace_lock_with_test_timing(
+                &post_return_contender,
+                Duration::ZERO,
+                Duration::ZERO,
+            )),
+            "cortex_namespace_lock_busy",
+            "the lock must still be held immediately after the census returns, not only mid-walk"
+        );
+        drop(census);
+        let reacquired = acquire_cortex_namespace_lock_with_test_timing(
+            &post_return_contender,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .expect("the lock must be free once the live CortexCensus value is dropped");
+        drop(reacquired);
+    }
+
+    // Parser matrix (pure — no filesystem fixture required; runs identically on every
+    // platform), included here so the Windows receipt also pins it against native
+    // WTF-16 names, not only the portable unit-test corpus. Full row set mirrors
+    // census.rs's own `parser_matrix` unit test exactly (empty, `.jsonl`, `_active.jsonl`,
+    // `alpha.jsonl`, `alpha_active.jsonl`, `alpha_active_active.jsonl`, mixed-case
+    // suffixes, extra suffixes, path-separator characters embedded in the stem,
+    // control characters, and non-ASCII) plus one extra non-ASCII-without-suffix case
+    // (`nö-suffix`) for additional coverage, plus the ill-formed WTF-16 unpaired
+    // surrogate appended after the loop -- the one row census.rs's own author noted is
+    // most likely to actually differ between native hardware and a cross-build, and
+    // which was entirely absent from this native receipt before this addition.
+    for (name, active, completed) in [
+        ("", None, None),
+        (".jsonl", None, None),
+        ("_active.jsonl", None, Some("_active")),
+        ("alpha.jsonl", None, Some("alpha")),
+        ("alpha_active.jsonl", Some("alpha"), Some("alpha_active")),
+        (
+            "alpha_active_active.jsonl",
+            Some("alpha_active"),
+            Some("alpha_active_active"),
+        ),
+        ("alpha.JSONL", None, None),
+        ("alpha_ACTIVE.jsonl", None, Some("alpha_ACTIVE")),
+        ("alpha_Active.jsonl", None, Some("alpha_Active")),
+        ("Alpha_active.jsonl", Some("Alpha"), Some("Alpha_active")),
+        ("alpha.jsonl.bak", None, None),
+        ("alpha_active.jsonl.extra", None, None),
+        ("alpha.jsonl.jsonl", None, Some("alpha.jsonl")),
+        ("a/b.jsonl", None, Some("a/b")),
+        ("a\\b.jsonl", None, Some("a\\b")),
+        ("alpha\n.jsonl", None, Some("alpha\n")),
+        ("α.jsonl", None, Some("α")),
+        ("alpha_актив.jsonl", None, Some("alpha_актив")),
+        ("nö-suffix", None, None),
+        // `_active.jsonl` also ends in `.jsonl`, so both projections are always populated
+        // together for this suffix shape (same fix as the "two_active.jsonl" fixture leaf
+        // above): completed is the full stem before `.jsonl`, not None.
+        ("plain_active.jsonl", Some("plain"), Some("plain_active")),
+    ] {
+        let projections = parse_cortex_lifecycle_name(OsStr::new(name));
+        assert_eq!(projections.active(), active, "active projection for {name:?}");
+        assert_eq!(projections.completed(), completed, "completed projection for {name:?}");
+    }
+
+    // Native ill-formed WTF-16 (an unpaired UTF-16 surrogate): `OsStr::to_str()` fails
+    // for this name, so both projections must be the empty default -- pinned here
+    // against the real native `OsString::from_wide` on Windows, not only the portable
+    // unit-test corpus, matching census.rs's own `#[cfg(windows)]` parser_matrix case.
+    let ill_formed =
+        parse_cortex_lifecycle_name(&std::ffi::OsString::from_wide(&[0xD800, 0x0061]));
+    assert_eq!(ill_formed.active(), None, "ill-formed WTF-16 must have no active projection");
+    assert_eq!(
+        ill_formed.completed(),
+        None,
+        "ill-formed WTF-16 must have no completed projection"
+    );
+
+    // Bounded diagnostics: every error's Display/Debug is the bare closed token, nothing
+    // path- or name-shaped leaks through.
+    let leaked_root = census_root.join("this-path-must-never-appear-in-a-diagnostic");
+    fs::create_dir(&leaked_root).unwrap();
+    let authority = create_or_admit_cortex_namespace(JournalRoot::open(&leaked_root).unwrap())
+        .unwrap();
+    fs::remove_dir_all(&leaked_root).unwrap();
+    let err = census_err(
+        census_cortex_namespace(authority, 32),
+        "removed root must fail closed",
+    );
+    let display = err.to_string();
+    let debug = format!("{err:?}");
+    assert_eq!(display, debug);
+    assert!(!display.contains("this-path-must-never-appear"));
+    assert!(display.starts_with("cortex_census_") || display.starts_with("cortex_namespace_lock_"));
+
+    println!("JOURNAL_WIN_CI_CORTEX_CENSUS=executed/pass");
+}
+
+/// Caller-owned native-Windows receipt for R1A1b-F3 proof item 10: a non-skippable NTFS
+/// fixture proving the census's exact-case `NtCreateFile` variant (`nt_create_relative_exact`
+/// in `windows_ntcreate.rs`, `object_attributes = 0`, no `OBJ_CASE_INSENSITIVE`) genuinely
+/// distinguishes `Alpha`/`alpha` and `Use.jsonl`/`use.jsonl` rather than silently folding
+/// through the default `OBJ_CASE_INSENSITIVE` path every other caller (`nt_create_relative`)
+/// still uses.
+///
+/// Empirically verified on `sol-winbuild` (Windows 11 Pro, build 26200) before this fixture
+/// was written, via disposable `fsutil.exe` probes outside the crate: an ordinary directory
+/// folds `Alpha`/`alpha` (`mkdir alpha` after `mkdir Alpha` fails `ERROR_ALREADY_EXISTS`,
+/// exit 1); `fsutil.exe file setCaseSensitiveInfo <dir> enable` on a fresh directory flips
+/// that -- both `mkdir Alpha` and `mkdir alpha` then exit 0 and both list distinctly, two
+/// files `Use.jsonl`/`use.jsonl` round-trip distinct byte content, and newly-created child
+/// directories inherit the parent's case-sensitive attribute. This is not a version-gated
+/// WSL-optional-feature requirement on this OS build -- the toggle worked immediately as
+/// `solbuild`, no elevation or feature-enable step needed.
+///
+/// The in-fixture control below repeats the cheap half of that proof (ordinary NTFS folds)
+/// on every run, so a future host or OS update that silently stops honoring the toggle
+/// fails this test loudly at the control instead of letting the treatment assertions pass
+/// vacuously (both names folding to one census talent would otherwise just look like an
+/// `Alpha`-only or `alpha`-only namespace, which nothing else in this file would catch).
+fn exercise_cortex_census_exact_case_receipt(root: &Path) {
+    let census_root = root.join("cortex-census-exact-case");
+    fs::create_dir(&census_root).unwrap();
+
+    // Negative control: an ordinary NTFS directory (case sensitivity never toggled) must
+    // fold Alpha/alpha. No fsutil involved -- this is the baseline every Windows directory
+    // has until explicitly opted out.
+    let control = census_root.join("case-fold-control");
+    fs::create_dir(&control).unwrap();
+    fs::create_dir(control.join("Alpha")).unwrap();
+    assert!(
+        fs::create_dir(control.join("alpha")).is_err(),
+        "ordinary (non-case-sensitive) NTFS must fold Alpha/alpha; the exact-case \
+         treatment below is meaningless as a proof if this control no longer fails"
+    );
+
+    let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap())
+        .expect("admit Cortex namespace for exact-case fixture");
+    let talents = census_root.join("talents");
+    enable_case_sensitive(&talents);
+    fs::create_dir(talents.join("Alpha")).unwrap();
+    fs::create_dir(talents.join("alpha")).unwrap();
+    // Belt and suspenders: the parent toggle is inherited by newly-created children
+    // (verified on sol-winbuild), but set it directly on each talent too so this fixture
+    // does not silently depend on inheritance semantics holding on a future host.
+    enable_case_sensitive(&talents.join("Alpha"));
+    enable_case_sensitive(&talents.join("alpha"));
+    fs::write(talents.join("Alpha").join("Use.jsonl"), b"upper").unwrap();
+    fs::write(talents.join("Alpha").join("use.jsonl"), b"lower-case-marker").unwrap();
+    fs::write(talents.join("alpha").join("marker.jsonl"), b"distinct-talent").unwrap();
+
+    let census = census_cortex_namespace(authority, 32).expect("exact-case census");
+    assert_eq!(
+        census.talents().len(),
+        2,
+        "Alpha and alpha must both survive census as distinct talents, not fold to one"
+    );
+    let upper = census
+        .talents()
+        .iter()
+        .find(|talent| talent.name() == OsStr::new("Alpha"))
+        .expect("exact-case 'Alpha' talent present");
+    let lower = census
+        .talents()
+        .iter()
+        .find(|talent| talent.name() == OsStr::new("alpha"))
+        .expect("exact-case 'alpha' talent present");
+
+    assert_eq!(
+        upper.entries().len(),
+        2,
+        "Alpha must retain both Use.jsonl and use.jsonl as distinct leaves"
+    );
+    let use_upper = upper
+        .entries()
+        .iter()
+        .find(|leaf| leaf.name() == OsStr::new("Use.jsonl"))
+        .expect("Use.jsonl leaf present");
+    let use_lower = upper
+        .entries()
+        .iter()
+        .find(|leaf| leaf.name() == OsStr::new("use.jsonl"))
+        .expect("use.jsonl leaf present");
+    // Distinct byte lengths double as a content-identity proxy: if the exact-case open
+    // actually resolved both listed names to the same underlying file (a subtler fold
+    // than the directory-count check above would catch), the sizes would collide too.
+    assert_eq!(use_upper.size(), 5, "Use.jsonl must report its own distinct byte length");
+    assert_eq!(
+        use_lower.size(),
+        17,
+        "use.jsonl must report its own distinct byte length, not Use.jsonl's"
+    );
+
+    assert_eq!(
+        lower.entries().len(),
+        1,
+        "alpha must hold only its own marker.jsonl, not any of Alpha's leaves"
+    );
+    assert_eq!(lower.entries()[0].name(), OsStr::new("marker.jsonl"));
+
+    println!("JOURNAL_WIN_CI_CORTEX_CENSUS_EXACT_CASE=executed/pass");
+}
+
+fn enable_case_sensitive(path: &Path) {
+    let output = Command::new("fsutil.exe")
+        .args(["file", "setCaseSensitiveInfo"])
+        .arg(path)
+        .arg("enable")
+        .output()
+        .expect("launch fsutil.exe for Cortex exact-case fixture");
+    assert!(
+        output.status.success(),
+        "enable case sensitivity on {}: status={} stdout={} stderr={}",
+        path.display(),
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    // Round-trip the query rather than trusting the enable command's exit code alone --
+    // exactly the "silently vacuous" failure mode this fixture exists to rule out.
+    let query = Command::new("fsutil.exe")
+        .args(["file", "queryCaseSensitiveInfo"])
+        .arg(path)
+        .output()
+        .expect("launch fsutil.exe to verify Cortex exact-case fixture");
+    let reported = String::from_utf8_lossy(&query.stdout);
+    assert!(
+        query.status.success() && reported.contains("is enabled"),
+        "case sensitivity did not take effect on {}: status={} stdout={} stderr={}",
+        path.display(),
+        query.status,
+        reported,
+        String::from_utf8_lossy(&query.stderr),
+    );
+}
+
 fn print_cortex_namespace_receipts(token: &str, filesystem: &str) {
     for category in [
         "CREATE_ADMIT",
@@ -1496,6 +2066,8 @@ fn ntfs_cortex_use_receipt() {
     exercise_cortex_use_receipt(root.path());
     exercise_cortex_namespace_receipt(root.path());
     exercise_cortex_namespace_lock_receipt(root.path(), "ntfs_cortex_use_receipt");
+    exercise_cortex_census_receipt(root.path());
+    exercise_cortex_census_exact_case_receipt(root.path());
     print_cortex_namespace_receipts("NTFS", "NTFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM=NTFS");
@@ -1518,6 +2090,8 @@ fn refs_cortex_use_receipt() {
     exercise_cortex_use_receipt(temporary.path());
     exercise_cortex_namespace_receipt(temporary.path());
     exercise_cortex_namespace_lock_receipt(temporary.path(), "refs_cortex_use_receipt");
+    exercise_cortex_census_receipt(temporary.path());
+    exercise_cortex_census_exact_case_receipt(temporary.path());
     print_cortex_namespace_receipts("REFS", "ReFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS");
