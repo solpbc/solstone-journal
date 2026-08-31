@@ -15,7 +15,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::name_admission::{NameAdmissionReason, check_portable_component};
+use crate::name_admission::{LogicalFieldAdmissionReason, check_logical_field};
 use crate::paths::is_day_key;
 use crate::windows_identity::WindowsFileIdentity;
 
@@ -103,14 +103,14 @@ impl ManagedLogRecord {
         if !is_day_key(&self.day) {
             return Err(ManagedLogRecordError::InvalidDay);
         }
-        check_portable_component(&self.reference).map_err(|reason| {
-            ManagedLogRecordError::InvalidLogicalComponent {
+        check_logical_field(&self.reference).map_err(|reason| {
+            ManagedLogRecordError::InvalidLogicalField {
                 field: "reference",
                 reason,
             }
         })?;
-        check_portable_component(&self.name).map_err(|reason| {
-            ManagedLogRecordError::InvalidLogicalComponent {
+        check_logical_field(&self.name).map_err(|reason| {
+            ManagedLogRecordError::InvalidLogicalField {
                 field: "name",
                 reason,
             }
@@ -355,9 +355,9 @@ pub(crate) enum ManagedLogRecordError {
     },
     ZeroGeneration,
     InvalidDay,
-    InvalidLogicalComponent {
+    InvalidLogicalField {
         field: &'static str,
-        reason: NameAdmissionReason,
+        reason: LogicalFieldAdmissionReason,
     },
 }
 
@@ -407,7 +407,7 @@ impl fmt::Display for ManagedLogRecordError {
             ),
             Self::ZeroGeneration => formatter.write_str("managed-log generation must be nonzero"),
             Self::InvalidDay => formatter.write_str("managed-log day must be eight ASCII digits"),
-            Self::InvalidLogicalComponent { field, reason } => {
+            Self::InvalidLogicalField { field, reason } => {
                 write!(formatter, "invalid managed-log {field}: {reason}")
             }
         }
@@ -426,9 +426,25 @@ impl Error for ManagedLogRecordError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::managed_log_names::canonical_payload_name;
+    use crate::name_admission::{LogicalFieldAdmissionReason, check_portable_component};
 
     fn identity(bytes: [u8; 16]) -> WindowsFileIdentity {
         WindowsFileIdentity::from_parts(7, bytes)
+    }
+
+    fn record_json(reference: &str, name: &str) -> Vec<u8> {
+        record_json_literals(
+            &serde_json::to_string(reference).unwrap(),
+            &serde_json::to_string(name).unwrap(),
+        )
+    }
+
+    fn record_json_literals(reference: &str, name: &str) -> Vec<u8> {
+        format!(
+            r#"{{"version":1,"generation":1,"day":"20260829","reference":{reference},"name":{name},"canonical_identity":{{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}}}"#
+        )
+        .into_bytes()
     }
 
     #[test]
@@ -475,8 +491,6 @@ mod tests {
             r#"{"version":2,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
             r#"{"version":1,"generation":0,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
             r#"{"version":1,"generation":1,"day":"2026082x","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
-            r#"{"version":1,"generation":1,"day":"20260829","reference":"CON","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
-            r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"trailing. ","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001"}}"#,
             r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"0000000000000000000000000000001"}}"#,
             r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"000000000000000g","file_id":"00000000000000000000000000000001"}}"#,
             r#"{"version":1,"generation":1,"day":"20260829","reference":"writer","name":"stream","canonical_identity":{"volume_serial":"0000000000000007","file_id":"00000000000000000000000000000001","file_id":"00000000000000000000000000000001"}}"#,
@@ -487,6 +501,217 @@ mod tests {
                 "parser accepted invalid record: {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn logical_field_matrix_accepts_path_component_policy_shapes() {
+        let shapes = [
+            "maintenance:backup:run",
+            "/leading",
+            "embedded/slash",
+            r"embedded\backslash",
+            ".",
+            "..",
+            "<",
+            ">",
+            "\"",
+            "|",
+            "?",
+            "*",
+            "CON",
+            "COM1",
+            "trailing.",
+            "trailing ",
+        ];
+        let expected_identity = identity([0xa5; 16]);
+
+        for shape in shapes {
+            for (reference, name) in [(shape, "stream"), ("writer", shape)] {
+                let record = ManagedLogRecord::new(
+                    1,
+                    "20260829".into(),
+                    reference.into(),
+                    name.into(),
+                    expected_identity,
+                )
+                .unwrap();
+                let parsed = ManagedLogRecord::parse(&record.to_bytes().unwrap()).unwrap();
+                assert_eq!(parsed.reference(), reference);
+                assert_eq!(parsed.name(), name);
+                assert_eq!(parsed.canonical_identity(), expected_identity);
+                let payload_name = canonical_payload_name(parsed.reference(), parsed.name());
+                assert_eq!(
+                    check_portable_component(&payload_name.to_string_lossy()),
+                    Ok(())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn logical_field_boundary_512_bytes_ok_513_bytes_rejected() {
+        let accepted = "é".repeat(256);
+        assert_eq!(accepted.len(), 512);
+        let rejected = format!("{accepted}a");
+        assert_eq!(rejected.len(), 513);
+
+        for (reference, name) in [(accepted.as_str(), "stream"), ("writer", accepted.as_str())] {
+            let record = ManagedLogRecord::new(
+                1,
+                "20260829".into(),
+                reference.into(),
+                name.into(),
+                identity([1; 16]),
+            )
+            .unwrap();
+            let parsed = ManagedLogRecord::parse(&record.to_bytes().unwrap()).unwrap();
+            assert_eq!(parsed.reference(), reference);
+            assert_eq!(parsed.name(), name);
+            assert_eq!(parsed.canonical_identity(), identity([1; 16]));
+        }
+
+        for (field, reference, name) in [
+            ("reference", rejected.as_str(), "stream"),
+            ("name", "writer", rejected.as_str()),
+        ] {
+            assert!(matches!(
+                ManagedLogRecord::new(
+                    1,
+                    "20260829".into(),
+                    reference.into(),
+                    name.into(),
+                    identity([1; 16]),
+                ),
+                Err(ManagedLogRecordError::InvalidLogicalField {
+                    field: actual,
+                    reason: LogicalFieldAdmissionReason::TooLong,
+                }) if actual == field
+            ));
+            assert!(ManagedLogRecord::parse(&record_json(reference, name)).is_err());
+        }
+    }
+
+    #[test]
+    fn logical_field_constructor_and_parser_reject_empty_fields() {
+        for (field, reference, name) in [("reference", "", "stream"), ("name", "writer", "")] {
+            assert!(matches!(
+                ManagedLogRecord::new(
+                    1,
+                    "20260829".into(),
+                    reference.into(),
+                    name.into(),
+                    identity([1; 16]),
+                ),
+                Err(ManagedLogRecordError::InvalidLogicalField {
+                    field: actual,
+                    reason: LogicalFieldAdmissionReason::Empty,
+                }) if actual == field
+            ));
+            assert!(ManagedLogRecord::parse(&record_json(reference, name)).is_err());
+        }
+    }
+
+    #[test]
+    fn logical_field_rejects_c0_del_c1_control_characters() {
+        for (control, escaped) in [
+            ("\0", r"\u0000"),
+            ("\u{7f}", r"\u007f"),
+            ("\u{80}", r"\u0080"),
+            ("\u{9f}", r"\u009f"),
+        ] {
+            let invalid = format!("before{control}after");
+            let invalid_json = format!("\"before{escaped}after\"");
+            for (field, reference, name, reference_json, name_json) in [
+                (
+                    "reference",
+                    invalid.as_str(),
+                    "stream",
+                    invalid_json.as_str(),
+                    r#""stream""#,
+                ),
+                (
+                    "name",
+                    "writer",
+                    invalid.as_str(),
+                    r#""writer""#,
+                    invalid_json.as_str(),
+                ),
+            ] {
+                assert!(matches!(
+                    ManagedLogRecord::new(
+                        1,
+                        "20260829".into(),
+                        reference.into(),
+                        name.into(),
+                        identity([1; 16]),
+                    ),
+                    Err(ManagedLogRecordError::InvalidLogicalField {
+                        field: actual,
+                        reason: LogicalFieldAdmissionReason::Control,
+                    }) if actual == field
+                ));
+                assert!(
+                    ManagedLogRecord::parse(&record_json_literals(reference_json, name_json))
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn logical_field_parser_rejects_invalid_utf8() {
+        let base = record_json("writer", "stream");
+        for (field, value) in [("reference", "writer"), ("name", "stream")] {
+            let mut invalid = base.clone();
+            let offset = invalid
+                .windows(value.len())
+                .position(|window| window == value.as_bytes())
+                .expect("logical field value is present in the record JSON");
+            invalid[offset + 2] = 0xff;
+            assert!(
+                matches!(
+                    ManagedLogRecord::parse(&invalid),
+                    Err(ManagedLogRecordError::Json(_))
+                ),
+                "parser accepted invalid UTF-8 in {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn logical_field_preserves_replacement_character() {
+        let reference = "reference\u{fffd}";
+        let name = "name\u{fffd}";
+        let record = ManagedLogRecord::new(
+            1,
+            "20260829".into(),
+            reference.into(),
+            name.into(),
+            identity([2; 16]),
+        )
+        .unwrap();
+        let parsed = ManagedLogRecord::parse(&record.to_bytes().unwrap()).unwrap();
+        assert_eq!(parsed.reference(), reference);
+        assert_eq!(parsed.name(), name);
+    }
+
+    #[test]
+    fn logical_field_json_escaping_round_trip_within_size_budget() {
+        let field = format!("{}\"\\", "é".repeat(255));
+        assert_eq!(field.len(), 512);
+        let record = ManagedLogRecord::new(
+            1,
+            "20260829".into(),
+            field.clone(),
+            field.clone(),
+            identity([3; 16]),
+        )
+        .unwrap();
+        let bytes = record.to_bytes().unwrap();
+        assert!(bytes.len() <= MAX_MANAGED_LOG_RECORD_BYTES);
+        let parsed = ManagedLogRecord::parse(&bytes).unwrap();
+        assert_eq!(parsed.reference(), field);
+        assert_eq!(parsed.name(), field);
     }
 
     #[test]

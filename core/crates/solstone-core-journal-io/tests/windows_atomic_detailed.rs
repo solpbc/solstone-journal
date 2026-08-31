@@ -25,9 +25,10 @@ use solstone_core_journal_io::cortex_use::{
     check_cortex_use_destination, inspect_cortex_use_root, read_cortex_use_request,
 };
 use solstone_core_journal_io::{
-    DetailedAtomicOutcome, exercise_windows_managed_log_reference_substrate,
-    hold_managed_log_alias_then_publish, publish_test_managed_log_alias,
-    root_test_managed_log_alias_name, try_test_managed_log_alias_lock,
+    DetailedAtomicOutcome, exercise_windows_managed_log_logical_coordinates,
+    exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
+    publish_test_managed_log_alias, root_test_managed_log_alias_name,
+    try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_DISK_FULL, ERROR_INVALID_FUNCTION, ERROR_LOCK_VIOLATION,
@@ -43,6 +44,24 @@ use windows_sys::Win32::Storage::FileSystem::{
 const OLD: &[u8] = b"old-content";
 const NEW: &[u8] = b"new-content";
 const OUTSIDE_SENTINEL: &[u8] = b"outside-before";
+const LOGICAL_FIELD_SHAPES: &[&str] = &[
+    "maintenance:backup:run",
+    "/leading",
+    "embedded/slash",
+    r"embedded\backslash",
+    ".",
+    "..",
+    "<",
+    ">",
+    "\"",
+    "|",
+    "?",
+    "*",
+    "CON",
+    "COM1",
+    "trailing.",
+    "trailing ",
+];
 
 fn wide(value: &OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
@@ -846,6 +865,18 @@ fn managed_log_reference_receipt(root: &Path) {
     let single_process = root.join("single-process");
     fs::create_dir(&single_process).unwrap();
     exercise_windows_managed_log_reference_substrate(&single_process);
+
+    let logical_coordinates = root.join("logical-coordinates");
+    fs::create_dir(&logical_coordinates).unwrap();
+    let mut index = 0;
+    for shape in LOGICAL_FIELD_SHAPES {
+        for (reference, name) in [(*shape, "stream"), ("writer", *shape)] {
+            let pair_root = logical_coordinates.join(format!("logical-{index}"));
+            fs::create_dir(&pair_root).unwrap();
+            exercise_windows_managed_log_logical_coordinates(&pair_root, reference, name);
+            index += 1;
+        }
+    }
 
     let process_root = root.join("process-boundary");
     fs::create_dir(&process_root).unwrap();
