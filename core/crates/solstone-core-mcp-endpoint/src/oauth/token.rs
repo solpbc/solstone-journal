@@ -84,12 +84,11 @@ fn refresh_token(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpRespon
     let Some(client_id) = required(pairs, "client_id", MAX_CLIENT_ID_BYTES) else {
         return oauth_error("invalid_request");
     };
-    if let Some(resource) = field(pairs, "resource") {
-        if resource.len() > MAX_CLIENT_ID_BYTES
-            || resource != format!("{}/mcp", oauth.resource_origin)
-        {
-            return oauth_error("invalid_request");
-        }
+    if let Some(resource) = field(pairs, "resource")
+        && (resource.len() > MAX_CLIENT_ID_BYTES
+            || resource != format!("{}/mcp", oauth.resource_origin))
+    {
+        return oauth_error("invalid_request");
     }
     match oauth.store.refresh_grant(refresh, client_id) {
         Ok(tokens) => token_response(tokens),

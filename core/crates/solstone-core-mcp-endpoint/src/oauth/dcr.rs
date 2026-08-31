@@ -177,20 +177,20 @@ fn parse_registration(request: &HttpRequest) -> Result<ParsedRegistration, HttpR
         });
     }
 
-    if let Some(method) = object.get("token_endpoint_auth_method") {
-        if method.as_str() != Some("none") {
-            return Err(invalid_metadata());
-        }
+    if let Some(method) = object.get("token_endpoint_auth_method")
+        && method.as_str() != Some("none")
+    {
+        return Err(invalid_metadata());
     }
-    if let Some(grants) = object.get("grant_types") {
-        if !grant_types_allowed(grants) {
-            return Err(invalid_metadata());
-        }
+    if let Some(grants) = object.get("grant_types")
+        && !grant_types_allowed(grants)
+    {
+        return Err(invalid_metadata());
     }
-    if let Some(responses) = object.get("response_types") {
-        if !is_exactly_code(responses) {
-            return Err(invalid_metadata());
-        }
+    if let Some(responses) = object.get("response_types")
+        && !is_exactly_code(responses)
+    {
+        return Err(invalid_metadata());
     }
     let redirect_uris = match object.get("redirect_uris") {
         Some(uris) => string_list(uris)?,
