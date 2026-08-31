@@ -20,7 +20,8 @@ use spl_core::mux::INITIAL_WINDOW;
 use spl_home::{MuxAcceptor, MuxEvent, MuxLimits, MuxOutput, ResetReason};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
-use tokio::time::{Duration, Instant, sleep, sleep_until};
+use tokio::task::JoinHandle;
+use tokio::time::{Duration, Instant, sleep, sleep_until, timeout_at};
 use tokio_rustls::client::TlsStream;
 
 use crate::McpBridgeCarrierError;
@@ -47,6 +48,8 @@ pub struct McpBridgeSession {
     accepts: AsyncMutex<mpsc::Receiver<McpPublicStream>>,
     commands: mpsc::Sender<DriverCommand>,
     cancel: watch::Sender<bool>,
+    driver: JoinHandle<()>,
+    renewal: JoinHandle<()>,
 }
 
 /// An opaque bounded bidirectional byte stream for one public SPL stream.
@@ -253,7 +256,7 @@ pub(crate) fn start_bridge_session(
     let binding = authority.binding();
     let epoch = MonotonicEpoch::new(Utc::now().timestamp());
     let proof_key = renewal_owner.proof_keypair();
-    tokio::spawn(run_renewal_fetcher(
+    let renewal = tokio::spawn(run_renewal_fetcher(
         renewal_owner,
         binding,
         authority.expires_at(),
@@ -262,13 +265,14 @@ pub(crate) fn start_bridge_session(
         renewal_tx,
         advance_rx,
     ));
-    tokio::spawn(run_driver(
+    let driver_commands = command_tx.clone();
+    let driver = tokio::spawn(run_driver(
         carrier,
         acceptor,
         authority,
         epoch,
         accept_tx,
-        command_tx.clone(),
+        driver_commands,
         command_rx,
         Arc::clone(&command_wakers),
         external_shutdown,
@@ -282,6 +286,8 @@ pub(crate) fn start_bridge_session(
         accepts: AsyncMutex::new(accept_rx),
         commands: command_tx,
         cancel,
+        driver,
+        renewal,
     })
 }
 
@@ -297,10 +303,28 @@ impl McpBridgeSession {
     }
 
     /// Stop the carrier task and all of its public streams.
-    pub async fn shutdown(self) -> Result<(), McpBridgeCarrierError> {
+    pub async fn shutdown(mut self) -> Result<(), McpBridgeCarrierError> {
         self.cancel.send_replace(true);
-        let _ = self.commands.send(DriverCommand::CloseSession).await;
-        Ok(())
+        let _ = self.commands.try_send(DriverCommand::CloseSession);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        match timeout_at(deadline, &mut self.driver).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(McpBridgeCarrierError::Io),
+            Err(_) => {
+                self.driver.abort();
+                let _ = (&mut self.driver).await;
+                Err(McpBridgeCarrierError::Io)
+            }
+        }?;
+        match timeout_at(deadline, &mut self.renewal).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(McpBridgeCarrierError::Io),
+            Err(_) => {
+                self.renewal.abort();
+                let _ = (&mut self.renewal).await;
+                Err(McpBridgeCarrierError::Io)
+            }
+        }
     }
 }
 
@@ -308,6 +332,8 @@ impl Drop for McpBridgeSession {
     fn drop(&mut self) {
         self.cancel.send_replace(true);
         let _ = self.commands.try_send(DriverCommand::CloseSession);
+        self.driver.abort();
+        self.renewal.abort();
     }
 }
 
