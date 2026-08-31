@@ -269,9 +269,8 @@ mod tests {
                     let waiting = Arc::clone(&bulkhead);
                     let deadline = Instant::now() + Duration::from_secs(30);
                     {
-                        let mut waiter = std::pin::pin!(async move {
-                            waiting.acquire(source, deadline).await
-                        });
+                        let mut waiter =
+                            std::pin::pin!(async move { waiting.acquire(source, deadline).await });
                         tokio::select! {
                             biased;
                             _ = &mut waiter => panic!("cancel waiter resolved"),
