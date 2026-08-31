@@ -48,6 +48,7 @@ impl HttpRequest {
 /// HTTP methods admitted by the MCP endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HttpMethod {
+    Get,
     Post,
     Delete,
 }
@@ -60,6 +61,7 @@ pub(crate) struct HttpResponse {
     pub(crate) body: Vec<u8>,
     pub(crate) session_id: Option<String>,
     pub(crate) close: bool,
+    extra_headers: Vec<(&'static str, String)>,
 }
 
 impl HttpResponse {
@@ -71,6 +73,7 @@ impl HttpResponse {
             body,
             session_id: None,
             close: false,
+            extra_headers: Vec::new(),
         }
     }
 
@@ -82,6 +85,7 @@ impl HttpResponse {
             body: Vec::new(),
             session_id: None,
             close: false,
+            extra_headers: Vec::new(),
         }
     }
 
@@ -93,11 +97,24 @@ impl HttpResponse {
             body: message.as_bytes().to_vec(),
             session_id: None,
             close: true,
+            extra_headers: Vec::new(),
         }
     }
 
     pub(crate) fn with_session_id(mut self, session_id: String) -> Self {
         self.session_id = Some(session_id);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn with_header(mut self, name: &'static str, value: String) -> Self {
+        if !value
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, b'\r' | b'\n'))
+        {
+            self.extra_headers.push((name, value));
+        }
         self
     }
 }
@@ -313,6 +330,19 @@ async fn write_response<S: AsyncWrite + Unpin>(
         head.push_str(session_id);
         head.push_str("\r\n");
     }
+    for (name, value) in &response.extra_headers {
+        if value
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, b'\r' | b'\n'))
+        {
+            continue;
+        }
+        head.push_str(name);
+        head.push_str(": ");
+        head.push_str(value);
+        head.push_str("\r\n");
+    }
     head.push_str("\r\n");
     writer.write_all(head.as_bytes()).await?;
     writer.write_all(&response.body).await?;
@@ -347,6 +377,7 @@ fn parse_headers(bytes: &[u8]) -> Result<ParsedHeaders, Http1Error> {
     let request_line = std::str::from_utf8(request_line).map_err(|_| Http1Error::BadRequest)?;
     let mut parts = request_line.split(' ');
     let method = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some("GET"), Some(target), Some("HTTP/1.1"), None) => (HttpMethod::Get, target),
         (Some("POST"), Some(target), Some("HTTP/1.1"), None) => (HttpMethod::Post, target),
         (Some("DELETE"), Some(target), Some("HTTP/1.1"), None) => (HttpMethod::Delete, target),
         _ => return Err(Http1Error::UnsupportedRequest),
@@ -393,6 +424,11 @@ fn parse_headers(bytes: &[u8]) -> Result<ParsedHeaders, Http1Error> {
             .split(',')
             .any(|item| item.trim().eq_ignore_ascii_case("close"))
     });
+    if method.0 == HttpMethod::Get
+        && !matches!(framing, BodyFraming::Empty | BodyFraming::ContentLength(0))
+    {
+        return Err(Http1Error::BadRequest);
+    }
     Ok(ParsedHeaders {
         method: method.0,
         target: method.1.to_owned(),
@@ -488,7 +524,7 @@ mod tests {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::time::{Duration, advance};
 
-    use super::{Http1Connection, Http1Error};
+    use super::{Http1Connection, Http1Error, HttpMethod, HttpResponse};
 
     fn request(headers: &str, body: &[u8]) -> Vec<u8> {
         let mut bytes =
@@ -618,5 +654,111 @@ mod tests {
         tokio::task::yield_now().await;
         advance(Duration::from_secs(30)).await;
         assert_eq!(idle.await.unwrap(), Err(Http1Error::IdleTimeout));
+    }
+
+    fn get_request(headers: &str, body: &[u8]) -> Vec<u8> {
+        let mut bytes =
+            format!("GET /authorize HTTP/1.1\r\nHost: mcp.test\r\n{headers}\r\n").into_bytes();
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn get_parses_without_a_body_and_rejects_a_body() {
+        let (mut writer, reader) = tokio::io::duplex(128);
+        writer.write_all(&get_request("", b"")).await.unwrap();
+        let mut connection = Http1Connection::new(reader);
+        let parsed = connection.read_request(false).await.unwrap().unwrap();
+        assert_eq!(parsed.method, HttpMethod::Get);
+        assert_eq!(parsed.target, "/authorize");
+        assert!(parsed.body.is_empty());
+
+        let (mut writer, reader) = tokio::io::duplex(128);
+        writer
+            .write_all(&get_request("Content-Length: 0\r\n", b""))
+            .await
+            .unwrap();
+        let mut connection = Http1Connection::new(reader);
+        let parsed = connection.read_request(false).await.unwrap().unwrap();
+        assert_eq!(parsed.method, HttpMethod::Get);
+        assert!(parsed.body.is_empty());
+
+        let (mut writer, reader) = tokio::io::duplex(128);
+        writer
+            .write_all(&get_request("Content-Length: 1\r\n", b"x"))
+            .await
+            .unwrap();
+        let mut connection = Http1Connection::new(reader);
+        assert_eq!(
+            connection.read_request(false).await,
+            Err(Http1Error::BadRequest)
+        );
+
+        let (mut writer, reader) = tokio::io::duplex(128);
+        writer
+            .write_all(&get_request("Transfer-Encoding: chunked\r\n", b"0\r\n\r\n"))
+            .await
+            .unwrap();
+        let mut connection = Http1Connection::new(reader);
+        assert_eq!(
+            connection.read_request(false).await,
+            Err(Http1Error::BadRequest)
+        );
+    }
+
+    #[tokio::test]
+    async fn extra_headers_round_trip_and_control_bytes_are_dropped() {
+        let (client, server) = tokio::io::duplex(1024);
+        let mut connection = Http1Connection::new(server);
+        let response = HttpResponse::json(200, "OK", b"{}".to_vec())
+            .with_session_id("session-1".to_owned())
+            .with_header("Cache-Control", "no-store".to_owned())
+            .with_header("X-Inject", "a\r\nInjected: yes".to_owned())
+            .with_header("X-NL", "a\nb".to_owned())
+            .with_header("X-Frame-Options", "DENY".to_owned());
+        let write = async move {
+            connection.write_response(&response).await.unwrap();
+        };
+        let read = async move {
+            let mut client = client;
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        };
+        let (_, bytes) = tokio::join!(write, read);
+        let rendered = String::from_utf8(bytes).unwrap();
+        assert!(rendered.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(rendered.contains("Content-Type: application/json\r\n"));
+        assert!(rendered.contains("Mcp-Session-Id: session-1\r\n"));
+        assert!(rendered.contains("Cache-Control: no-store\r\n"));
+        assert!(rendered.contains("X-Frame-Options: DENY\r\n"));
+        assert!(!rendered.contains("X-Inject"));
+        assert!(!rendered.contains("Injected:"));
+        assert!(!rendered.contains("X-NL"));
+        assert!(rendered.contains("\r\n\r\n{}"));
+    }
+
+    #[tokio::test]
+    async fn existing_constructors_emit_no_extra_headers() {
+        let (client, server) = tokio::io::duplex(256);
+        let mut connection = Http1Connection::new(server);
+        let write = async move {
+            connection
+                .write_response(&HttpResponse::empty(204, "No Content"))
+                .await
+                .unwrap();
+        };
+        let read = async move {
+            let mut client = client;
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        };
+        let (_, bytes) = tokio::join!(write, read);
+        let rendered = String::from_utf8(bytes).unwrap();
+        assert_eq!(
+            rendered,
+            "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n"
+        );
     }
 }

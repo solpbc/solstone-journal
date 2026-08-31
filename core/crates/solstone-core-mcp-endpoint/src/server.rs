@@ -182,11 +182,23 @@ fn process_request(
     if request.target != "/mcp" {
         return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
     }
+    if matches!(request.method, HttpMethod::Get) {
+        return HttpResponse::error(
+            405,
+            "Method Not Allowed",
+            "MCP requires HTTP/1.1 POST or DELETE",
+        );
+    }
     let verified = match authenticate(request, token_store) {
         Ok(verified) => verified,
         Err(response) => return response,
     };
     match request.method {
+        HttpMethod::Get => HttpResponse::error(
+            405,
+            "Method Not Allowed",
+            "MCP requires HTTP/1.1 POST or DELETE",
+        ),
         HttpMethod::Delete => delete_session(request, sessions, &verified),
         HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
     }
