@@ -902,7 +902,9 @@ fn census_err(result: Result<CortexCensus, CortexCensusError>, message: &str) ->
 /// `ERROR_LOCK_VIOLATION` (Os error 33) trap this validation pass found in census.rs's
 /// own internal test suite (separately scope-checked repair pending, not part of this
 /// receipt). Drop any holder first, as the caller here does.
-fn snapshot_journal_tree(root: &Path) -> std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)> {
+fn snapshot_journal_tree(
+    root: &Path,
+) -> std::collections::BTreeMap<PathBuf, (&'static str, u64, Vec<u8>)> {
     fn walk(
         dir: &Path,
         root: &Path,
@@ -1639,8 +1641,8 @@ fn exercise_cortex_census_receipt(root: &Path) {
     // between. The census must reject with the talent_open identity_changed token, never
     // silently describe the replacement.
     {
-        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap())
-            .unwrap();
+        let authority =
+            create_or_admit_cortex_namespace(JournalRoot::open(&census_root).unwrap()).unwrap();
         let census_root = census_root.clone();
         let (result, fired) = run_with_cortex_census_barrier(
             CortexCensusPrimitive::PreTalentOpen,
@@ -1666,8 +1668,8 @@ fn exercise_cortex_census_receipt(root: &Path) {
     {
         let census_root2 = census_root.join("cortex-census-final");
         fs::create_dir(&census_root2).unwrap();
-        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root2).unwrap())
-            .unwrap();
+        let authority =
+            create_or_admit_cortex_namespace(JournalRoot::open(&census_root2).unwrap()).unwrap();
         fs::create_dir_all(census_root2.join("talents").join("gamma")).unwrap();
         let root_for_barrier = census_root2.clone();
         let (result, fired) = run_with_cortex_census_barrier(
@@ -1675,8 +1677,11 @@ fn exercise_cortex_census_receipt(root: &Path) {
             1,
             move || {
                 let gamma = root_for_barrier.join("talents").join("gamma");
-                fs::rename(&gamma, root_for_barrier.join("talents").join("gamma-displaced"))
-                    .unwrap();
+                fs::rename(
+                    &gamma,
+                    root_for_barrier.join("talents").join("gamma-displaced"),
+                )
+                .unwrap();
                 fs::create_dir(&gamma).unwrap();
             },
             move || census_cortex_namespace(authority, 32),
@@ -1714,8 +1719,8 @@ fn exercise_cortex_census_receipt(root: &Path) {
     {
         let census_root3 = census_root.join("cortex-census-child");
         fs::create_dir(&census_root3).unwrap();
-        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root3).unwrap())
-            .unwrap();
+        let authority =
+            create_or_admit_cortex_namespace(JournalRoot::open(&census_root3).unwrap()).unwrap();
         let delta = census_root3.join("talents").join("delta");
         fs::create_dir_all(&delta).unwrap();
         fs::write(delta.join("only.jsonl"), b"will be removed").unwrap();
@@ -1749,8 +1754,8 @@ fn exercise_cortex_census_receipt(root: &Path) {
     {
         let census_root4 = census_root.join("cortex-census-f2-exclusion");
         fs::create_dir(&census_root4).unwrap();
-        let authority = create_or_admit_cortex_namespace(JournalRoot::open(&census_root4).unwrap())
-            .unwrap();
+        let authority =
+            create_or_admit_cortex_namespace(JournalRoot::open(&census_root4).unwrap()).unwrap();
         fs::create_dir_all(census_root4.join("talents").join("epsilon")).unwrap();
         let contender_root = census_root4.clone();
         let (result, fired) = run_with_cortex_census_barrier(
@@ -1839,17 +1844,28 @@ fn exercise_cortex_census_receipt(root: &Path) {
         ("plain_active.jsonl", Some("plain"), Some("plain_active")),
     ] {
         let projections = parse_cortex_lifecycle_name(OsStr::new(name));
-        assert_eq!(projections.active(), active, "active projection for {name:?}");
-        assert_eq!(projections.completed(), completed, "completed projection for {name:?}");
+        assert_eq!(
+            projections.active(),
+            active,
+            "active projection for {name:?}"
+        );
+        assert_eq!(
+            projections.completed(),
+            completed,
+            "completed projection for {name:?}"
+        );
     }
 
     // Native ill-formed WTF-16 (an unpaired UTF-16 surrogate): `OsStr::to_str()` fails
     // for this name, so both projections must be the empty default -- pinned here
     // against the real native `OsString::from_wide` on Windows, not only the portable
     // unit-test corpus, matching census.rs's own `#[cfg(windows)]` parser_matrix case.
-    let ill_formed =
-        parse_cortex_lifecycle_name(&std::ffi::OsString::from_wide(&[0xD800, 0x0061]));
-    assert_eq!(ill_formed.active(), None, "ill-formed WTF-16 must have no active projection");
+    let ill_formed = parse_cortex_lifecycle_name(&std::ffi::OsString::from_wide(&[0xD800, 0x0061]));
+    assert_eq!(
+        ill_formed.active(),
+        None,
+        "ill-formed WTF-16 must have no active projection"
+    );
     assert_eq!(
         ill_formed.completed(),
         None,
@@ -1860,8 +1876,8 @@ fn exercise_cortex_census_receipt(root: &Path) {
     // path- or name-shaped leaks through.
     let leaked_root = census_root.join("this-path-must-never-appear-in-a-diagnostic");
     fs::create_dir(&leaked_root).unwrap();
-    let authority = create_or_admit_cortex_namespace(JournalRoot::open(&leaked_root).unwrap())
-        .unwrap();
+    let authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&leaked_root).unwrap()).unwrap();
     fs::remove_dir_all(&leaked_root).unwrap();
     let err = census_err(
         census_cortex_namespace(authority, 32),
@@ -1926,8 +1942,16 @@ fn exercise_cortex_census_exact_case_receipt(root: &Path) {
     enable_case_sensitive(&talents.join("Alpha"));
     enable_case_sensitive(&talents.join("alpha"));
     fs::write(talents.join("Alpha").join("Use.jsonl"), b"upper").unwrap();
-    fs::write(talents.join("Alpha").join("use.jsonl"), b"lower-case-marker").unwrap();
-    fs::write(talents.join("alpha").join("marker.jsonl"), b"distinct-talent").unwrap();
+    fs::write(
+        talents.join("Alpha").join("use.jsonl"),
+        b"lower-case-marker",
+    )
+    .unwrap();
+    fs::write(
+        talents.join("alpha").join("marker.jsonl"),
+        b"distinct-talent",
+    )
+    .unwrap();
 
     let census = census_cortex_namespace(authority, 32).expect("exact-case census");
     assert_eq!(
@@ -1964,7 +1988,11 @@ fn exercise_cortex_census_exact_case_receipt(root: &Path) {
     // Distinct byte lengths double as a content-identity proxy: if the exact-case open
     // actually resolved both listed names to the same underlying file (a subtler fold
     // than the directory-count check above would catch), the sizes would collide too.
-    assert_eq!(use_upper.size(), 5, "Use.jsonl must report its own distinct byte length");
+    assert_eq!(
+        use_upper.size(),
+        5,
+        "Use.jsonl must report its own distinct byte length"
+    );
     assert_eq!(
         use_lower.size(),
         17,
