@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 use tokio::sync::Notify;
+use tokio::time::Instant;
 
 use super::{
     AdmissionIdentity, DeclaredParent, HostedServiceKind, ParentAdmissionFailure,
@@ -26,6 +27,8 @@ use crate::process::{
 const HOSTED_PARENT_ENV: &str = "SOL_SUPERVISOR_SPAWNED";
 const PARENT_LOSS_DESCENDANT_TIMEOUT: Duration = Duration::from_secs(2);
 const HOSTED_LAUNCH_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(3);
+const RETIRE_EXPECTED_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const RETIRE_EXPECTED_REQUEST_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// The admitted hosted-service state. It is absent for ordinary, unhosted
 /// command invocation so those commands keep their pre-existing lifecycle.
@@ -86,14 +89,22 @@ impl HostedServiceParentRuntime {
     /// `retired_expected`; this merely lets the service take its normal
     /// listener/runner cleanup path instead of being killed mid-cleanup.
     pub fn retire_expected_requested(&self) -> bool {
-        ParentLossLedger::open(&self.journal)
-            .map(|ledger| {
-                ledger
-                    .generation_path(self.admission.generation)
-                    .join("control/retire-expected.json")
-                    .is_file()
-            })
-            .unwrap_or(false)
+        retire_expected_requested(&self.journal, self.admission.generation)
+    }
+
+    /// Allow either genuine parent loss or the supervisor's authenticated
+    /// retirement control a bounded window to arrive after a host-level
+    /// signal stops this service. On systemd, `KillMode=control-group`
+    /// delivers SIGTERM to the supervisor and its services concurrently, so
+    /// an immediate filesystem check can race the supervisor's control drop.
+    pub async fn await_parent_loss_or_retire_expected_request(&self) -> Option<ParentLossReason> {
+        await_parent_loss_or_retire_expected_request(
+            &self.journal,
+            self.admission.generation,
+            Some(&self.loss_signal),
+            RETIRE_EXPECTED_REQUEST_TIMEOUT,
+        )
+        .await
     }
 
     /// Stop every still-owned exact descendant after the caller has stopped
@@ -129,6 +140,39 @@ impl HostedServiceParentRuntime {
         };
         write_parent_loss_service_witness(&self.journal, &witness)?;
         Ok(())
+    }
+}
+
+fn retire_expected_requested(journal: &Path, generation: u64) -> bool {
+    ParentLossLedger::open(journal)
+        .map(|ledger| {
+            ledger
+                .generation_path(generation)
+                .join("control/retire-expected.json")
+                .is_file()
+        })
+        .unwrap_or(false)
+}
+
+async fn await_parent_loss_or_retire_expected_request(
+    journal: &Path,
+    generation: u64,
+    loss_signal: Option<&ParentLossSignal>,
+    timeout: Duration,
+) -> Option<ParentLossReason> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(reason) = loss_signal.and_then(ParentLossSignal::reason) {
+            return Some(reason);
+        }
+        if retire_expected_requested(journal, generation) {
+            return Some(ParentLossReason::ExitedOrReused);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return None;
+        }
+        tokio::time::sleep(RETIRE_EXPECTED_REQUEST_POLL_INTERVAL.min(deadline - now)).await;
     }
 }
 
@@ -240,11 +284,91 @@ struct ParentLossSignal {
 }
 
 impl ParentLossSignal {
+    fn reason(&self) -> Option<ParentLossReason> {
+        *self
+            .reason
+            .lock()
+            .expect("hosted parent-loss signal lock poisoned")
+    }
+
     fn publish(&self, reason: ParentLossReason) {
         *self
             .reason
             .lock()
             .expect("hosted parent-loss signal lock poisoned") = Some(reason);
         self.notify.notify_waiters();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn delayed_retire_expected_request_is_observed() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        let generation = 7;
+        let control = ParentLossLedger::open(journal.path())
+            .expect("parent-loss ledger")
+            .generation_path(generation)
+            .join("control/retire-expected.json");
+        std::fs::create_dir_all(control.parent().expect("control parent"))
+            .expect("create control directory");
+        let writer = control.clone();
+        let write = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            std::fs::write(writer, b"{}\n").expect("write delayed control");
+        });
+
+        assert_eq!(
+            await_parent_loss_or_retire_expected_request(
+                journal.path(),
+                generation,
+                None,
+                Duration::from_secs(1),
+            )
+            .await,
+            Some(ParentLossReason::ExitedOrReused)
+        );
+        write.await.expect("delayed control task");
+    }
+
+    #[tokio::test]
+    async fn absent_retire_expected_request_times_out() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+
+        assert_eq!(
+            await_parent_loss_or_retire_expected_request(
+                journal.path(),
+                7,
+                None,
+                Duration::from_millis(5),
+            )
+            .await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn parent_loss_is_observed_while_retirement_control_is_absent() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        let signal = Arc::new(ParentLossSignal::default());
+        let publisher = Arc::clone(&signal);
+        let publish = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            publisher.publish(ParentLossReason::Unverifiable);
+        });
+
+        assert_eq!(
+            await_parent_loss_or_retire_expected_request(
+                journal.path(),
+                7,
+                Some(&signal),
+                Duration::from_secs(1),
+            )
+            .await,
+            Some(ParentLossReason::Unverifiable)
+        );
+        publish.await.expect("parent-loss publication task");
     }
 }

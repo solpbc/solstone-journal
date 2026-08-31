@@ -82,11 +82,10 @@ async fn run(
     .await;
     let parent_loss = outcome.shutdown.flatten();
     if let Some(parent) = hosted_parent {
-        let reason = parent_loss.or_else(|| {
-            parent
-                .retire_expected_requested()
-                .then_some(ParentLossReason::ExitedOrReused)
-        });
+        let mut reason = parent_loss;
+        if reason.is_none() {
+            reason = parent.await_parent_loss_or_retire_expected_request().await;
+        }
         if reason.is_some() {
             // `connection.stop` is infallible and always runs before this point.
             // Worker joins are independently observed so a panic cannot claim a

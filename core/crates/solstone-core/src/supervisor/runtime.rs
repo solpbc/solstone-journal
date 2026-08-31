@@ -463,9 +463,12 @@ fn retire_bootstrap_coordinator(
     authority: &mut solstone_core_system::process::LaunchAuthority,
     coordinator: LaunchedProcessIdentity,
 ) -> Result<(), ParentLossCoordinatorBootstrapFailure> {
-    authority
-        .terminate_exact(Duration::from_secs(2))
-        .map_err(|_| ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified)?;
+    // A coordinator intentionally blocks SIGTERM so it can adjudicate a
+    // supervisor death. Exact termination may therefore report that the
+    // graceful window elapsed even after its SIGKILL escalation reaped the
+    // process. The postcondition is the exact-identity observation, not the
+    // intermediate graceful result.
+    let _termination = authority.terminate_exact(Duration::from_secs(2));
     match SystemProcessInstanceSource.observe(&coordinator.instance) {
         InstanceVerdict::NotSameOrExited => Ok(()),
         InstanceVerdict::SameLive { .. } | InstanceVerdict::Unverifiable => {
