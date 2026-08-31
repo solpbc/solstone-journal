@@ -11,18 +11,68 @@
 use std::fmt;
 use std::path::Path;
 
+#[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
+use tokio::sync::watch;
+
+#[cfg(unix)]
+use solstone_core_journal_config::McpEndpointCertificateEnvironment;
+#[cfg(unix)]
+use solstone_core_journal_io::journal_root::JournalRoot;
+
 #[cfg(not(unix))]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 
 #[cfg(unix)]
 #[allow(dead_code)]
 mod account_wire;
+#[cfg(unix)]
+mod bridge_carrier;
+#[cfg(unix)]
+mod bridge_forwarder;
+#[cfg(unix)]
+mod bridge_pop;
+#[cfg(unix)]
+mod bridge_session;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix))]
 mod tests;
 #[cfg(unix)]
+mod tls;
+#[cfg(unix)]
 mod unix;
+
+#[cfg(unix)]
+pub use bridge_carrier::McpBridgeCarrierError;
+#[cfg(unix)]
+pub use bridge_session::{McpBridgeSession, McpPublicStream};
+#[cfg(unix)]
+pub use tls::{McpEndpointTlsService, mcp_endpoint_server_config};
+
+/// One authenticated bridge session paired with its authorized TLS service.
+///
+/// The service can be handed to Lane B before the opaque bridge session is
+/// consumed by the forwarder. Neither field exposes a hostname or key.
+#[cfg(unix)]
+pub struct McpEndpointTunnel {
+    tls: McpEndpointTlsService,
+    session: McpBridgeSession,
+}
+
+#[cfg(unix)]
+impl McpEndpointTunnel {
+    /// Borrow the sole opaque TLS service for the dedicated MCP listener.
+    pub fn tls_service(&self) -> &McpEndpointTlsService {
+        &self.tls
+    }
+
+    /// Transfer the authenticated bridge session to the Lane-A forwarder.
+    pub fn into_bridge_session(self) -> McpBridgeSession {
+        self.session
+    }
+}
 
 /// Bootstrap the committed owner identity and durable Ed25519 proof-of-possession key.
 ///
@@ -156,9 +206,13 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 pub struct McpEndpointOwnerContext {
     _private: (),
     #[cfg(unix)]
-    committed: solstone_core_sol_link::committed::CommittedIdentity,
+    committed: Arc<solstone_core_sol_link::committed::CommittedIdentity>,
     #[cfg(unix)]
-    keypair: ring::signature::Ed25519KeyPair,
+    keypair: Arc<ring::signature::Ed25519KeyPair>,
+    #[cfg(unix)]
+    journal_root: Arc<JournalRoot>,
+    #[cfg(unix)]
+    certificate_environment: McpEndpointCertificateEnvironment,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -168,6 +222,71 @@ impl McpEndpointOwnerContext {
         use ring::signature::KeyPair as _;
 
         self.keypair.public_key().as_ref().to_vec()
+    }
+}
+
+#[cfg(unix)]
+impl McpEndpointOwnerContext {
+    /// Connect one fixed WebPKI-authenticated bridge carrier for this enabled journal.
+    ///
+    /// The returned carrier remains opaque: callers cannot inspect the account
+    /// authority, hostname, proof key, or underlying TLS stream.
+    pub async fn connect_mcp_bridge(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
+        account_wire::establish_mcp_bridge_carrier(self, shutdown)
+            .await?
+            .into_session()
+    }
+
+    /// Authenticate one bridge generation and derive its matching opaque TLS
+    /// service from the same account-authorized hostname binding.
+    pub async fn connect_mcp_endpoint_tunnel(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<McpEndpointTunnel, McpBridgeCarrierError> {
+        account_wire::establish_mcp_bridge_carrier(self, shutdown)
+            .await?
+            .into_tunnel()
+    }
+
+    /// Keep the authenticated bridge tunnel connected and forward only its
+    /// bridge-opened public streams to the fixed journal-local MCP listener.
+    ///
+    /// This never creates a listener or changes the capability gate. The
+    /// caller owns supervision and supplies its one shutdown signal.
+    pub async fn run_mcp_bridge_forwarder(
+        &self,
+        shutdown: &mut watch::Receiver<bool>,
+    ) -> Result<(), McpBridgeCarrierError> {
+        bridge_forwarder::run(self, shutdown).await
+    }
+
+    pub(crate) fn renewal_owner(&self) -> Self {
+        Self {
+            _private: (),
+            committed: Arc::clone(&self.committed),
+            keypair: Arc::clone(&self.keypair),
+            journal_root: Arc::clone(&self.journal_root),
+            certificate_environment: self.certificate_environment,
+        }
+    }
+
+    pub(crate) fn proof_keypair(&self) -> Arc<ring::signature::Ed25519KeyPair> {
+        Arc::clone(&self.keypair)
+    }
+
+    pub(crate) fn tls_service_for(
+        &self,
+        hostname: String,
+    ) -> Result<McpEndpointTlsService, McpBridgeCarrierError> {
+        tls::McpEndpointTlsService::for_authorized_hostname(
+            Arc::clone(&self.journal_root),
+            hostname,
+            self.certificate_environment,
+        )
+        .map_err(|_| McpBridgeCarrierError::State)
     }
 }
 

@@ -20,6 +20,22 @@ pub enum McpEndpointCapabilityError {
     EnabledMustBeBoolean,
 }
 
+/// The ACME directory selected for the journal-local MCP certificate.
+///
+/// This setting never enables the endpoint. Missing configuration deliberately
+/// selects the non-production directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpEndpointCertificateEnvironment {
+    Staging,
+    Production,
+}
+
+/// Invalid explicit `mcp_endpoint.certificate_environment` configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpEndpointCertificateEnvironmentError {
+    CertificateEnvironmentMustBeStagingOrProduction,
+}
+
 /// Loopback port reserved for the journal-local MCP endpoint.
 pub const MCP_ENDPOINT_LOOPBACK_PORT: u16 = 7658;
 
@@ -40,6 +56,38 @@ pub fn mcp_endpoint_capability(
         None | Some(Value::Bool(false)) => Ok(McpEndpointCapability::Disabled),
         Some(Value::Bool(true)) => Ok(McpEndpointCapability::Enabled),
         Some(_) => Err(McpEndpointCapabilityError::EnabledMustBeBoolean),
+    }
+}
+
+/// Return the certificate environment without changing the capability gate.
+///
+/// Only the exact lowercase literal `production` can select the production
+/// directory. An absent endpoint object or key is always staging.
+pub fn mcp_endpoint_certificate_environment(
+    read: &JournalConfigRead,
+) -> Result<McpEndpointCertificateEnvironment, McpEndpointCertificateEnvironmentError> {
+    let Some(config) = read.config.as_ref() else {
+        return Ok(McpEndpointCertificateEnvironment::Staging);
+    };
+    let Some(endpoint) = config.get("mcp_endpoint") else {
+        return Ok(McpEndpointCertificateEnvironment::Staging);
+    };
+    let Some(endpoint) = endpoint.as_object() else {
+        return Err(
+            McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction,
+        );
+    };
+    match endpoint.get("certificate_environment") {
+        None => Ok(McpEndpointCertificateEnvironment::Staging),
+        Some(Value::String(value)) if value == "staging" => {
+            Ok(McpEndpointCertificateEnvironment::Staging)
+        }
+        Some(Value::String(value)) if value == "production" => {
+            Ok(McpEndpointCertificateEnvironment::Production)
+        }
+        Some(_) => Err(
+            McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction,
+        ),
     }
 }
 
@@ -150,6 +198,79 @@ mod tests {
         assert_eq!(
             format!("{:?}", McpEndpointCapabilityError::EnabledMustBeBoolean),
             "EnabledMustBeBoolean"
+        );
+    }
+
+    #[test]
+    fn certificate_environment_missing_is_staging_without_changing_the_gate() {
+        for config in [
+            None,
+            Some(Map::new()),
+            Some(config_with_endpoint(json!({}))),
+            Some(config_with_endpoint(json!({"enabled": false}))),
+            Some(config_with_endpoint(json!({"enabled": true}))),
+        ] {
+            let read = read(config);
+            assert_eq!(
+                mcp_endpoint_certificate_environment(&read),
+                Ok(McpEndpointCertificateEnvironment::Staging)
+            );
+        }
+    }
+
+    #[test]
+    fn certificate_environment_requires_one_exact_literal() {
+        for (value, expected) in [
+            (
+                json!("staging"),
+                Ok(McpEndpointCertificateEnvironment::Staging),
+            ),
+            (
+                json!("production"),
+                Ok(McpEndpointCertificateEnvironment::Production),
+            ),
+        ] {
+            assert_eq!(
+                mcp_endpoint_certificate_environment(&read(Some(config_with_endpoint(json!({
+                    "certificate_environment": value,
+                }))))),
+                expected
+            );
+        }
+        for value in [
+            json!(null),
+            json!(false),
+            json!(0),
+            json!([]),
+            json!({}),
+            json!("Staging"),
+            json!("production "),
+            json!(" prod"),
+            json!("test"),
+        ] {
+            assert_eq!(
+                mcp_endpoint_certificate_environment(&read(Some(config_with_endpoint(json!({
+                    "certificate_environment": value,
+                }))))),
+                Err(
+                    McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_endpoint_is_rejected_by_both_independent_parsers() {
+        let read = read(Some(config_with_endpoint(json!(false))));
+        assert_eq!(
+            mcp_endpoint_capability(&read),
+            Err(McpEndpointCapabilityError::EnabledMustBeBoolean)
+        );
+        assert_eq!(
+            mcp_endpoint_certificate_environment(&read),
+            Err(
+                McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction
+            )
         );
     }
 }
