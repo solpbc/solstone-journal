@@ -10,6 +10,7 @@
 :: The mandatory native receipt children prove NTFS and ReFS publication and
 :: stale-heartbeat cleanup. Their source-originated output is captured and
 :: validated below; the runner never synthesizes receipt markers.
+:: Keep this runner CRLF-materialized: cmd.exe label calls fail on LF-only rewrites.
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
