@@ -15,7 +15,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::name_admission::{LogicalFieldAdmissionReason, check_logical_field};
+use crate::managed_log_field_admission::{LogicalFieldAdmissionReason, check_logical_field};
 use crate::paths::is_day_key;
 use crate::windows_identity::WindowsFileIdentity;
 
@@ -426,8 +426,9 @@ impl Error for ManagedLogRecordError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::managed_log_field_admission::LogicalFieldAdmissionReason;
     use crate::managed_log_names::canonical_payload_name;
-    use crate::name_admission::{LogicalFieldAdmissionReason, check_portable_component};
+    use crate::name_admission::check_portable_component;
 
     fn identity(bytes: [u8; 16]) -> WindowsFileIdentity {
         WindowsFileIdentity::from_parts(7, bytes)

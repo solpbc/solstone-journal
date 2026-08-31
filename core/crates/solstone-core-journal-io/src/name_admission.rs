@@ -70,33 +70,6 @@ impl fmt::Display for NameAdmissionReason {
     }
 }
 
-/// Why a managed-log logical field is not admissible.
-///
-/// Variant order is evaluation order. First match wins.
-#[allow(
-    dead_code,
-    reason = "the managed-log record is compiled only on Windows"
-)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LogicalFieldAdmissionReason {
-    /// The field is empty.
-    Empty,
-    /// The field contains a control character.
-    Control,
-    /// The field is longer than 512 UTF-8 bytes.
-    TooLong,
-}
-
-impl fmt::Display for LogicalFieldAdmissionReason {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Empty => "the field is empty",
-            Self::Control => "the field contains a control character",
-            Self::TooLong => "the field is longer than 512 UTF-8 bytes",
-        })
-    }
-}
-
 /// An admitted stream directory name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamName(String);
@@ -145,24 +118,6 @@ impl ClaimName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-}
-
-/// Codes 1–3 of the logical-field policy, in precedence order.
-#[allow(
-    dead_code,
-    reason = "the managed-log record is compiled only on Windows"
-)]
-pub(crate) fn check_logical_field(candidate: &str) -> Result<(), LogicalFieldAdmissionReason> {
-    if candidate.is_empty() {
-        return Err(LogicalFieldAdmissionReason::Empty);
-    }
-    if candidate.chars().any(|character| character.is_control()) {
-        return Err(LogicalFieldAdmissionReason::Control);
-    }
-    if candidate.len() > 512 {
-        return Err(LogicalFieldAdmissionReason::TooLong);
-    }
-    Ok(())
 }
 
 /// Codes 1–10 of the portable-component policy, in precedence order.
@@ -550,10 +505,9 @@ pub(crate) fn scan_directory_conflicts(
 #[cfg(test)]
 mod tests {
     use super::{
-        ClaimName, ConflictKind, LogicalFieldAdmissionReason, NameAdmissionError,
-        NameAdmissionReason, NameReuse, StreamName, check_logical_field, check_lookup_component,
-        check_portable_component, conflicts_for_candidate, decide_reuse, escape_name,
-        scan_directory_conflicts,
+        ClaimName, ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse, StreamName,
+        check_lookup_component, check_portable_component, conflicts_for_candidate, decide_reuse,
+        escape_name, scan_directory_conflicts,
     };
     use crate::test_support::TempDir;
     use std::ffi::OsString;
@@ -630,47 +584,6 @@ mod tests {
             Err(NameAdmissionReason::TooLong)
         );
         check_portable_component(&"a".repeat(255)).unwrap();
-    }
-
-    #[test]
-    fn logical_field_policy_rejects_in_precedence_order_and_bounds_utf8_bytes() {
-        assert_eq!(
-            check_logical_field(""),
-            Err(LogicalFieldAdmissionReason::Empty)
-        );
-        assert_eq!(
-            check_logical_field(&format!("{}\0", "a".repeat(512))),
-            Err(LogicalFieldAdmissionReason::Control)
-        );
-        for codepoint in (0x00..=0x1f).chain([0x7f]).chain(0x80..=0x9f) {
-            let candidate = format!("a{}b", char::from_u32(codepoint).unwrap());
-            assert_eq!(
-                check_logical_field(&candidate),
-                Err(LogicalFieldAdmissionReason::Control),
-                "U+{codepoint:04X}"
-            );
-        }
-
-        let boundary = "é".repeat(256);
-        assert_eq!(boundary.len(), 512);
-        assert_eq!(check_logical_field(&boundary), Ok(()));
-        let overlong = format!("{boundary}a");
-        assert_eq!(overlong.len(), 513);
-        assert_eq!(
-            check_logical_field(&overlong),
-            Err(LogicalFieldAdmissionReason::TooLong)
-        );
-
-        for candidate in [
-            "maintenance:backup:run",
-            "embedded/slash",
-            r"embedded\backslash",
-            "CON",
-            "trailing.",
-            "trailing ",
-        ] {
-            assert_eq!(check_logical_field(candidate), Ok(()), "{candidate:?}");
-        }
     }
 
     #[test]
