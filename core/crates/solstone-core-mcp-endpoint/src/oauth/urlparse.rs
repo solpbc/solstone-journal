@@ -22,7 +22,10 @@ pub(crate) fn validate_cimd_url(raw: &str) -> Result<ParsedHttpsUrl, CimdUrlErro
     if raw.is_empty() || raw.len() > MAX_CIMD_URL_BYTES {
         return Err(CimdUrlError);
     }
-    if raw.contains('#') || raw.bytes().any(|byte| byte == 0) {
+    // The path and query are written directly into an HTTP/1.1 request line
+    // after parsing.  Admit only visible ASCII so a client ID cannot smuggle
+    // whitespace or a new header into that request.
+    if raw.contains('#') || raw.bytes().any(|byte| !byte.is_ascii_graphic()) {
         return Err(CimdUrlError);
     }
     let rest = raw.strip_prefix("https://").ok_or(CimdUrlError)?;
@@ -194,6 +197,10 @@ mod tests {
             "https://example..com/client",
             "ftp://example.com/client",
             "https://example.com:65536/client",
+            "https://example.com/client with space",
+            "https://example.com/client\r\nHost: poison.example",
+            "https://example.com/client\nHost: poison.example",
+            "https://example.com/caf\u{00e9}",
             "https://",
             &format!("https://example.com/{}", "x".repeat(2048)),
         ] {
