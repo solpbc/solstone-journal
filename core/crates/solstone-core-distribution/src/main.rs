@@ -13,7 +13,6 @@ use solstone_core_distribution::cleanroom::{
 use solstone_core_distribution::discover_and_validate_inventory;
 use solstone_core_distribution::produce::{self, ProduceArgs};
 use solstone_core_distribution::publish;
-use solstone_core_distribution::sign;
 
 fn usage() -> &'static str {
     "usage: solstone-distribution <validate|produce|publish|sign|acquire|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
@@ -113,22 +112,9 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Some("sign") => match args.next() {
-            Some(dir) if args.next().is_none() => match sign::run(std::path::Path::new(&dir)) {
-                Ok(path) => {
-                    println!("{}", path.display());
-                    ExitCode::SUCCESS
-                }
-                Err(error) => {
-                    eprintln!("{error}");
-                    ExitCode::from(2)
-                }
-            },
-            _ => {
-                eprintln!("{}", usage());
-                ExitCode::from(2)
-            }
-        },
+        Some("sign") => {
+            solstone_core_distribution::cli_sign::run(&args.collect::<Vec<_>>(), usage())
+        }
         Some("cleanroom-plan") => {
             let start = args
                 .next()

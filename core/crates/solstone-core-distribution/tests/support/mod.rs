@@ -15,7 +15,7 @@ use solstone_core_distribution::inventory;
 use solstone_core_distribution::promote::{PromoteRequest, promote};
 use solstone_core_distribution::provenance::Provenance;
 
-pub const BINARY: &str = env!("CARGO_BIN_EXE_solstone-distribution");
+pub const BINARY: &str = env!("CARGO_BIN_EXE_solstone-distribution-fixture");
 pub const PASSPHRASE: &str = "fixture-pass";
 const HEX_COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HEX_LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

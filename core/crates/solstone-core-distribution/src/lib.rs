@@ -10,6 +10,8 @@ pub mod archive_contract;
 pub mod archive_seal;
 pub mod archive_taxonomy;
 pub mod cleanroom;
+#[doc(hidden)]
+pub mod cli_sign;
 pub mod deb;
 pub mod digest;
 pub mod elf;

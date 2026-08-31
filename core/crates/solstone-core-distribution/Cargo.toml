@@ -13,6 +13,13 @@ publish = false
 name = "solstone-distribution"
 path = "src/main.rs"
 
+[[bin]]
+name = "solstone-distribution-fixture"
+path = "src/bin/solstone-distribution-fixture.rs"
+required-features = ["test-fixture-pin"]
+test = false
+bench = false
+
 [lints]
 workspace = true
 
