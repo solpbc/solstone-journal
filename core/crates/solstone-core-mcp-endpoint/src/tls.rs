@@ -130,6 +130,10 @@ impl fmt::Debug for McpEndpointCertificateResolver {
 }
 
 impl McpEndpointTlsService {
+    pub(crate) fn authorized_hostname(&self) -> &str {
+        &self.resolver.hostname
+    }
+
     /// Construct TLS state for an account-authorized hostname and activate a
     /// valid persisted ordinary certificate, if one exists. Invalid state is
     /// never repaired or replaced during load.

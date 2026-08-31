@@ -5,7 +5,8 @@
 
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -24,6 +25,8 @@ use crate::jsonrpc::{
     JsonRpcResponse, McpMethod, classify_method, initialize_result, parse_request, tool_arguments,
     tools_list_result,
 };
+use crate::oauth::OAuthRuntime;
+use crate::oauth::store::OAuthStore;
 use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
 use crate::proxy_preface::{ParsedPreface, parse_preface};
 use crate::session::{SessionError, SessionTable};
@@ -48,17 +51,18 @@ impl fmt::Display for ServerError {
 impl std::error::Error for ServerError {}
 
 /// Accept connections using an injected TLS configuration.
-#[allow(dead_code)]
 pub(crate) async fn serve(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     shutdown: watch::Receiver<bool>,
 ) -> Result<(), ServerError> {
     serve_with_permit_pool(
         listener,
         tls_config,
         journal_root,
+        oauth,
         shutdown,
         Arc::new(SessionTable::new()),
         connection_permit_pool(),
@@ -70,6 +74,7 @@ async fn serve_with_permit_pool(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     mut shutdown: watch::Receiver<bool>,
     sessions: Arc<SessionTable>,
     permits: Arc<Semaphore>,
@@ -92,6 +97,7 @@ async fn serve_with_permit_pool(
                 };
                 let connection_config = Arc::clone(&tls_config);
                 let connection_root = Arc::clone(&journal_root);
+                let connection_oauth = Arc::clone(&oauth);
                 let connection_shutdown = shutdown.clone();
                 let connection_sessions = Arc::clone(&sessions);
                 tokio::spawn(async move {
@@ -100,6 +106,7 @@ async fn serve_with_permit_pool(
                         socket,
                         connection_config,
                         connection_root,
+                        connection_oauth,
                         connection_sessions,
                         connection_shutdown,
                     )
@@ -114,6 +121,7 @@ async fn handle_connection(
     mut socket: TcpStream,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), ConnectionError> {
@@ -121,10 +129,8 @@ async fn handle_connection(
         .await
         .map_err(|_| ConnectionError::PrefaceTimeout)?
         .map_err(|_| ConnectionError::Preface)?;
-    let ParsedPreface {
-        source: _,
-        trailing,
-    } = preface;
+    let ParsedPreface { source, trailing } = preface;
+    let source = source.ip();
     let stream = PrefixedStream::new(socket, trailing);
     let tls_stream = timeout(
         TLS_HANDSHAKE_DEADLINE,
@@ -153,7 +159,16 @@ async fn handle_connection(
                 return Ok(());
             }
         };
-        let response = process_request(&request, &token_store, &sessions, journal_root.as_path());
+        let response = process_request(
+            &request,
+            &token_store,
+            &sessions,
+            journal_root.as_path(),
+            source,
+            oauth.as_ref(),
+            &mut shutdown,
+        )
+        .await;
         http.write_response(&response)
             .await
             .map_err(|_| ConnectionError::HttpWrite)?;
@@ -173,71 +188,130 @@ enum ConnectionError {
     HttpWrite,
 }
 
-fn process_request(
+async fn process_request(
     request: &HttpRequest,
     token_store: &TokenStore,
     sessions: &SessionTable,
-    journal_root: &std::path::Path,
+    journal_root: &Path,
+    source: IpAddr,
+    oauth: &OAuthRuntime,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> HttpResponse {
-    if request.target != "/mcp" {
-        return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
+    let path = request_path(&request.target);
+    match (request.method, path) {
+        (HttpMethod::Get, "/.well-known/oauth-protected-resource") => {
+            crate::oauth::metadata::protected_resource(&oauth.resource_origin)
+        }
+        (HttpMethod::Get, "/.well-known/oauth-authorization-server") => {
+            crate::oauth::metadata::authorization_server(&oauth.resource_origin)
+        }
+        (HttpMethod::Post, "/register") => {
+            crate::oauth::dcr::register(request, source, oauth, shutdown).await
+        }
+        (HttpMethod::Get, "/authorize") => {
+            crate::oauth::authorize::get_authorize(request, source, oauth, shutdown).await
+        }
+        (HttpMethod::Post, "/authorize") => {
+            crate::oauth::authorize::post_authorize(request, source, oauth)
+        }
+        (HttpMethod::Post, "/token") => crate::oauth::token::token(request, oauth),
+        (_, "/mcp") => handle_mcp(request, token_store, sessions, journal_root, oauth),
+        (
+            HttpMethod::Post | HttpMethod::Delete,
+            "/.well-known/oauth-protected-resource" | "/.well-known/oauth-authorization-server",
+        ) => method_not_allowed_with_allow("GET"),
+        (HttpMethod::Get | HttpMethod::Delete, "/register" | "/token") => {
+            method_not_allowed_with_allow("POST")
+        }
+        _ => HttpResponse::error(404, "Not Found", "MCP endpoint was not found"),
     }
-    if matches!(request.method, HttpMethod::Get) {
-        return HttpResponse::error(
-            405,
-            "Method Not Allowed",
-            "MCP requires HTTP/1.1 POST or DELETE",
-        );
-    }
-    let verified = match authenticate(request, token_store) {
+}
+
+fn handle_mcp(
+    request: &HttpRequest,
+    token_store: &TokenStore,
+    sessions: &SessionTable,
+    journal_root: &Path,
+    oauth: &OAuthRuntime,
+) -> HttpResponse {
+    let verified = match authenticate(request, token_store, &oauth.store, &oauth.resource_origin) {
         Ok(verified) => verified,
         Err(response) => return response,
     };
+    if request.target != "/mcp" {
+        return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
+    }
     match request.method {
+        HttpMethod::Delete => delete_session(request, sessions, &verified),
+        HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
         HttpMethod::Get => HttpResponse::error(
             405,
             "Method Not Allowed",
             "MCP requires HTTP/1.1 POST or DELETE",
         ),
-        HttpMethod::Delete => delete_session(request, sessions, &verified),
-        HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
     }
+}
+
+fn request_path(target: &str) -> &str {
+    target.split(['?', '#']).next().unwrap_or(target)
+}
+
+fn method_not_allowed_with_allow(method: &'static str) -> HttpResponse {
+    HttpResponse::error(405, "Method Not Allowed", "HTTP method is not allowed")
+        .with_header("Allow", method.to_owned())
 }
 
 fn authenticate(
     request: &HttpRequest,
     token_store: &TokenStore,
+    oauth_store: &OAuthStore,
+    resource_origin: &str,
 ) -> Result<VerifiedToken, HttpResponse> {
     let authorization = request
         .header("authorization")
         .map_err(|_| HttpResponse::error(400, "Bad Request", "Authorization header is ambiguous"))?
-        .ok_or_else(|| {
-            HttpResponse::error(401, "Unauthorized", "Bearer authorization is required")
-        })?;
+        .ok_or_else(|| mcp_unauthorized(resource_origin, "Bearer authorization is required"))?;
     let Some(token) = authorization.strip_prefix("Bearer ") else {
-        return Err(HttpResponse::error(
-            401,
-            "Unauthorized",
+        return Err(mcp_unauthorized(
+            resource_origin,
             "Bearer authorization is required",
         ));
     };
     if token.is_empty() || token.bytes().any(|byte| byte.is_ascii_whitespace()) {
-        return Err(HttpResponse::error(
-            401,
-            "Unauthorized",
+        return Err(mcp_unauthorized(
+            resource_origin,
             "Bearer authorization is malformed",
         ));
     }
-    token_store.verify(token).map_err(|error| match error {
-        TokenStoreError::InvalidToken => {
-            HttpResponse::error(401, "Unauthorized", "Bearer token is invalid or revoked")
-        }
-        _ => HttpResponse::error(
+    match token_store.verify(token) {
+        Ok(verified) => Ok(verified),
+        Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token) {
+            Ok(verified) => Ok(verified),
+            Err(crate::oauth::store::OAuthStoreError::InvalidToken) => Err(mcp_unauthorized(
+                resource_origin,
+                "Bearer token is invalid or revoked",
+            )),
+            Err(_) => Err(HttpResponse::error(
+                503,
+                "Service Unavailable",
+                "Bearer token verification is unavailable",
+            )),
+        },
+        Err(_) => Err(HttpResponse::error(
             503,
             "Service Unavailable",
             "Bearer token verification is unavailable",
+        )),
+    }
+}
+
+fn mcp_unauthorized(resource_origin: &str, message: &'static str) -> HttpResponse {
+    HttpResponse::error(401, "Unauthorized", message).with_header(
+        "WWW-Authenticate",
+        format!(
+            "Bearer realm=\"mcp\", resource_metadata=\"{resource_origin}/.well-known/oauth-protected-resource\""
         ),
-    })
+    )
 }
 
 fn delete_session(
@@ -521,6 +595,7 @@ mod tests {
     use tokio::time::{Duration, advance};
     use tokio_rustls::{TlsConnector, client::TlsStream};
 
+    use crate::oauth::OAuthRuntime;
     use crate::permits::{
         CONNECTION_PERMITS, connection_permit_pool, try_acquire_connection_permit,
     };
@@ -646,6 +721,7 @@ mod tests {
         shutdown: watch::Sender<bool>,
         task: JoinHandle<Result<(), ServerError>>,
         journal: tempfile::TempDir,
+        oauth: Arc<OAuthRuntime>,
     }
 
     impl ServerHarness {
@@ -660,10 +736,15 @@ mod tests {
                 .tempdir_in("/var/tmp")
                 .expect("fixture journal directory");
             let (shutdown, receiver) = watch::channel(false);
+            let oauth = Arc::new(OAuthRuntime::new(
+                journal.path(),
+                format!("https://{HOSTNAME}"),
+            ));
             let task = tokio::spawn(serve_with_permit_pool(
                 listener,
                 tls_config,
                 Arc::new(journal.path().to_path_buf()),
+                Arc::clone(&oauth),
                 receiver,
                 Arc::new(SessionTable::new()),
                 std::sync::Arc::clone(&permits),
@@ -674,6 +755,7 @@ mod tests {
                 shutdown,
                 task,
                 journal,
+                oauth,
             }
         }
 
@@ -863,6 +945,52 @@ mod tests {
             .write_all(&body)
             .await
             .expect("client writes request body");
+        let mut head = Vec::new();
+        loop {
+            let mut byte = [0_u8; 1];
+            client
+                .read_exact(&mut byte)
+                .await
+                .expect("client reads response headers");
+            head.push(byte[0]);
+            if head.ends_with(b"\r\n\r\n") {
+                break;
+            }
+        }
+        let head = String::from_utf8(head).expect("response headers are text");
+        let status = head
+            .split_whitespace()
+            .nth(1)
+            .expect("response has status")
+            .parse::<u16>()
+            .expect("response status is numeric");
+        let length = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .expect("response has content length")
+            .parse::<usize>()
+            .expect("response length is numeric");
+        let mut body = vec![0_u8; length];
+        client
+            .read_exact(&mut body)
+            .await
+            .expect("client reads response body");
+        (status, body, head)
+    }
+
+    fn www_authenticate(head: &str) -> Option<&str> {
+        head.lines()
+            .find_map(|line| line.strip_prefix("WWW-Authenticate: "))
+    }
+
+    async fn exchange_http<S>(client: &mut TlsStream<S>, request: &str) -> (u16, Vec<u8>, String)
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        client
+            .write_all(request.as_bytes())
+            .await
+            .expect("client writes request");
         let mut head = Vec::new();
         loop {
             let mut byte = [0_u8; 1];
@@ -1105,12 +1233,17 @@ mod tests {
             .prefix("solstone-mcp-server-")
             .tempdir_in("/var/tmp")
             .expect("fixture journal directory");
+        let oauth = Arc::new(OAuthRuntime::new(
+            journal.path(),
+            format!("https://{HOSTNAME}"),
+        ));
         let task = tokio::spawn(async move {
             let _permit = permit;
             let _ = super::handle_connection(
                 socket,
                 server_config,
                 Arc::new(journal.path().to_path_buf()),
+                oauth,
                 Arc::new(SessionTable::new()),
                 shutdown,
             )
@@ -1405,7 +1538,7 @@ mod tests {
         TokenStore::open(server.journal.path())
             .revoke("revoked-session-agent")
             .expect("fixture revokes bearer");
-        let (status, body, _) = post_json_response_with_headers(
+        let (status, body, head) = post_json_response_with_headers(
             &mut client,
             &token.token,
             json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
@@ -1414,9 +1547,90 @@ mod tests {
         .await;
         assert_eq!(status, 401);
         assert_eq!(body, b"Bearer token is invalid or revoked");
+        assert_eq!(
+            www_authenticate(&head),
+            Some(
+                "Bearer realm=\"mcp\", resource_metadata=\"https://mcp.test/.well-known/oauth-protected-resource\""
+            )
+        );
         assert!(!server.journal.path().join("chronicle").exists());
 
         drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn oauth_discovery_and_unauthenticated_mcp_use_the_connection_pool() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let origin = server.oauth.resource_origin.clone();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-protected-resource HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).expect("protected resource JSON"),
+            json!({
+                "resource": format!("{origin}/mcp"),
+                "authorization_servers": [origin],
+                "bearer_methods_supported": ["header"],
+            })
+        );
+
+        let (status, body, _) = exchange_http(
+            &mut client,
+            &format!(
+                "GET /.well-known/oauth-authorization-server HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).expect("authorization server JSON"),
+            json!({
+                "issuer": origin,
+                "authorization_endpoint": format!("{origin}/authorize"),
+                "token_endpoint": format!("{origin}/token"),
+                "registration_endpoint": format!("{origin}/register"),
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "refresh_token"],
+                "code_challenge_methods_supported": ["S256"],
+                "token_endpoint_auth_methods_supported": ["none"],
+                "authorization_response_iss_parameter_supported": true,
+            })
+        );
+        drop(client);
+
+        let expected_challenge = format!(
+            "Bearer realm=\"mcp\", resource_metadata=\"{origin}/.well-known/oauth-protected-resource\""
+        );
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (status, _, head) = exchange_http(
+            &mut client,
+            &format!("POST /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"),
+        )
+        .await;
+        assert_eq!(status, 401);
+        assert_eq!(www_authenticate(&head), Some(expected_challenge.as_str()));
+        drop(client);
+
+        let mut client = connect_tls(server.address, client_config).await;
+        let (status, _, head) = exchange_http(
+            &mut client,
+            &format!("GET /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(status, 401);
+        assert_eq!(www_authenticate(&head), Some(expected_challenge.as_str()));
+        drop(client);
+
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }
