@@ -6,6 +6,7 @@
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+#[cfg(any(test, feature = "test-hooks"))]
 use std::time::Duration;
 
 use super::namespace::CortexNamespaceAuthority;
@@ -14,14 +15,8 @@ use crate::locking::{
     BoundParentLock, DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT,
     acquire_existing_parent_lock_bound,
 };
-
 #[cfg(all(test, unix))]
 use std::path::Path;
-#[cfg(all(test, unix))]
-use std::process::Command;
-
-#[cfg(all(test, unix))]
-use crate::journal_root::JournalRoot;
 
 const CORTEX_NAMESPACE_LOCK_NAME: &str = "cortex-use.lock";
 
@@ -29,7 +24,6 @@ const CORTEX_NAMESPACE_LOCK_NAME: &str = "cortex-use.lock";
 ///
 /// Dropping this value releases the advisory lock but leaves its persistent
 /// journal-root entry in place.
-#[derive(Debug)]
 pub struct CortexNamespaceLock {
     _guard: BoundParentLock,
 }
@@ -91,14 +85,19 @@ impl Error for CortexNamespaceLockError {
 pub fn acquire_cortex_namespace_lock(
     authority: &CortexNamespaceAuthority,
 ) -> Result<CortexNamespaceLock, CortexNamespaceLockError> {
-    acquire_cortex_namespace_lock_with_timeout(
-        authority,
+    acquire_existing_parent_lock_bound(
+        authority.root(),
+        OsStr::new(CORTEX_NAMESPACE_LOCK_NAME),
         DEFAULT_LOCK_TIMEOUT,
         DEFAULT_LOCK_POLL_INTERVAL,
     )
+    .map(|guard| CortexNamespaceLock { _guard: guard })
+    .map_err(map_existing_parent_lock_error)
 }
 
-fn acquire_cortex_namespace_lock_with_timeout(
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn acquire_cortex_namespace_lock_with_test_timing(
     authority: &CortexNamespaceAuthority,
     timeout: Duration,
     poll_interval: Duration,
@@ -145,44 +144,12 @@ fn create_cortex_namespace_inert_socket(path: &Path) {
 }
 
 #[cfg(all(test, unix))]
-fn verify_cortex_namespace_lock_cross_process(root: &Path) {
-    let marker = root.join("cortex-namespace-lock.ready");
-    let mut child = Command::new(std::env::current_exe().expect("current test executable"))
-        .args([
-            "--exact",
-            "cortex_use::lock::tests::cortex_namespace_lock_pause_helper",
-            "--nocapture",
-        ])
-        .env("JOURNAL_IO_CORTEX_NAMESPACE_LOCK_ROOT", root)
-        .env("JOURNAL_IO_CORTEX_NAMESPACE_LOCK_READY", &marker)
-        .spawn()
-        .expect("run namespace-lock holder");
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while !marker.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(marker.exists(), "helper did not acquire the namespace lock");
-
-    let authority =
-        super::namespace::create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap())
-            .unwrap();
-    let error =
-        acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO)
-            .unwrap_err();
-    assert_eq!(error.to_string(), "cortex_namespace_lock_busy");
-    child.kill().unwrap();
-    child.wait().unwrap();
-    acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO).unwrap();
-}
-
-#[cfg(all(test, unix))]
 mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::io;
     use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
     use std::path::{Path, PathBuf};
-    use std::thread;
     use std::time::Duration;
 
     use nix::sys::stat::Mode;
@@ -191,9 +158,6 @@ mod tests {
     use super::*;
     use crate::errors::LockTimeout;
     use crate::journal_root::JournalRoot;
-
-    const LOCK_ROOT_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_LOCK_ROOT";
-    const LOCK_READY_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_LOCK_READY";
 
     fn authority(root: &Path) -> CortexNamespaceAuthority {
         super::super::namespace::create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap())
@@ -207,6 +171,15 @@ mod tests {
     fn entry_identity(path: &Path) -> (u64, u64, fs::FileType) {
         let metadata = fs::symlink_metadata(path).unwrap();
         (metadata.dev(), metadata.ino(), metadata.file_type())
+    }
+
+    fn expect_lock_error(
+        result: Result<CortexNamespaceLock, CortexNamespaceLockError>,
+    ) -> CortexNamespaceLockError {
+        match result {
+            Ok(_) => panic!("expected Cortex namespace lock acquisition to fail"),
+            Err(error) => error,
+        }
     }
 
     fn expect_busy(error: CortexNamespaceLockError) {
@@ -312,23 +285,34 @@ mod tests {
     fn same_process_exclusion_persists_and_reacquires() {
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
         let authority = authority(temporary.path());
-        let first =
-            acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO)
-                .unwrap();
+        let first = acquire_cortex_namespace_lock_with_test_timing(
+            &authority,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
         let entry = temporary.path().join(CORTEX_NAMESPACE_LOCK_NAME);
         let identity = entry_identity(&entry);
         assert_eq!(entry_mode(&entry), 0o600);
-        expect_busy(
-            acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO)
-                .unwrap_err(),
-        );
+        assert!(fs::read(&entry).unwrap().is_empty());
+        expect_busy(expect_lock_error(
+            acquire_cortex_namespace_lock_with_test_timing(
+                &authority,
+                Duration::ZERO,
+                Duration::ZERO,
+            ),
+        ));
         drop(first);
 
-        let second =
-            acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO)
-                .unwrap();
+        let second = acquire_cortex_namespace_lock_with_test_timing(
+            &authority,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
         assert_eq!(entry_identity(&entry), identity);
         assert_eq!(entry_mode(&entry), 0o600);
+        assert!(fs::read(&entry).unwrap().is_empty());
         drop(second);
         assert!(entry.exists());
     }
@@ -337,28 +321,68 @@ mod tests {
     fn root_lock_straddles_health_replacement_between_authorities() {
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
         let root = temporary.path();
+        fs::write(root.join("root-sentinel"), b"root").unwrap();
         let authority_a = authority(root);
-        let lock_a = acquire_cortex_namespace_lock_with_timeout(
+        fs::write(root.join("health/sentinel"), b"old-health").unwrap();
+        fs::write(root.join("talents/sentinel"), b"talents").unwrap();
+        let root_identity = authority_a.root().identity();
+        let old_health_identity = authority_a.health().identity();
+        let talents_identity = authority_a.talents().identity();
+        let lock_a = acquire_cortex_namespace_lock_with_test_timing(
             &authority_a,
             Duration::ZERO,
             Duration::ZERO,
         )
         .unwrap();
+        let lock_entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
+        let lock_identity = entry_identity(&lock_entry);
         fs::rename(root.join("health"), root.join("health-moved")).unwrap();
         fs::create_dir(root.join("health")).unwrap();
+        fs::write(root.join("health/sentinel"), b"replacement-health").unwrap();
 
         let authority_b = authority(root);
-        expect_busy(
-            acquire_cortex_namespace_lock_with_timeout(
+        assert_eq!(authority_a.root().identity(), root_identity);
+        assert_eq!(authority_b.root().identity(), root_identity);
+        assert_eq!(authority_a.talents().identity(), talents_identity);
+        assert_eq!(authority_b.talents().identity(), talents_identity);
+        assert_eq!(authority_a.health().identity(), old_health_identity);
+        assert_ne!(authority_b.health().identity(), old_health_identity);
+        expect_busy(expect_lock_error(
+            acquire_cortex_namespace_lock_with_test_timing(
                 &authority_b,
                 Duration::ZERO,
                 Duration::ZERO,
-            )
-            .unwrap_err(),
+            ),
+        ));
+        assert_eq!(entry_identity(&lock_entry), lock_identity);
+        assert_eq!(fs::read(root.join("root-sentinel")).unwrap(), b"root");
+        assert_eq!(
+            fs::read(root.join("health-moved/sentinel")).unwrap(),
+            b"old-health"
         );
-        assert!(root.join("health-moved").is_dir());
-        assert!(root.join("health").is_dir());
+        assert_eq!(
+            fs::read(root.join("health/sentinel")).unwrap(),
+            b"replacement-health"
+        );
+        assert_eq!(fs::read(root.join("talents/sentinel")).unwrap(), b"talents");
+        assert!(!root.join("health-moved/cortex-use.lock").exists());
+        assert!(!root.join("health/cortex-use.lock").exists());
+        authority_a.root().revalidate().unwrap();
+        authority_a.health().revalidate().unwrap();
+        authority_a.talents().revalidate().unwrap();
+        authority_b.root().revalidate().unwrap();
+        authority_b.health().revalidate().unwrap();
+        authority_b.talents().revalidate().unwrap();
         drop(lock_a);
+
+        let lock_b = acquire_cortex_namespace_lock_with_test_timing(
+            &authority_b,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(entry_identity(&lock_entry), lock_identity);
+        drop(lock_b);
     }
 
     #[test]
@@ -367,6 +391,12 @@ mod tests {
             let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
             let root = temporary.path();
             let authority = authority(root);
+            fs::write(root.join("root-sentinel"), b"root").unwrap();
+            fs::write(root.join("health/sentinel"), b"health").unwrap();
+            fs::write(root.join("talents/sentinel"), b"talents").unwrap();
+            let root_identity = authority.root().identity();
+            let health_identity = authority.health().identity();
+            let talents_identity = authority.talents().identity();
             let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
             match kind {
                 "symlink" => {
@@ -383,57 +413,185 @@ mod tests {
                 _ => unreachable!(),
             }
             let identity = entry_identity(&entry);
+            let mode = entry_mode(&entry);
             let bytes = (kind == "wrong-mode").then(|| fs::read(&entry).unwrap());
+            let outside = (kind == "symlink").then(|| {
+                let path = root.join("outside");
+                (entry_identity(&path), fs::read(&path).unwrap())
+            });
 
-            let error = acquire_cortex_namespace_lock_with_timeout(
+            let error = expect_lock_error(acquire_cortex_namespace_lock_with_test_timing(
                 &authority,
                 Duration::ZERO,
                 Duration::ZERO,
-            )
-            .unwrap_err();
+            ));
 
             assert_eq!(error.to_string(), "cortex_namespace_lock_unsafe");
             assert_eq!(entry_identity(&entry), identity);
+            assert_eq!(entry_mode(&entry), mode);
             assert_eq!(
                 (kind == "wrong-mode").then(|| fs::read(&entry).unwrap()),
                 bytes
             );
+            assert_eq!(
+                (kind == "symlink").then(|| {
+                    let path = root.join("outside");
+                    (entry_identity(&path), fs::read(&path).unwrap())
+                }),
+                outside
+            );
+            assert_eq!(authority.root().identity(), root_identity);
+            assert_eq!(authority.health().identity(), health_identity);
+            assert_eq!(authority.talents().identity(), talents_identity);
+            authority.root().revalidate().unwrap();
+            authority.health().revalidate().unwrap();
+            authority.talents().revalidate().unwrap();
+            assert_eq!(fs::read(root.join("root-sentinel")).unwrap(), b"root");
+            assert_eq!(fs::read(root.join("health/sentinel")).unwrap(), b"health");
+            assert_eq!(fs::read(root.join("talents/sentinel")).unwrap(), b"talents");
         }
 
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
         let root = temporary.path();
-        let authority = authority(root);
+        let single_authority = authority(root);
         let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
-        fs::File::create(&entry).unwrap();
+        fs::write(&entry, b"valid-entry-bytes").unwrap();
         fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
         let identity = entry_identity(&entry);
 
-        let lock =
-            acquire_cortex_namespace_lock_with_timeout(&authority, Duration::ZERO, Duration::ZERO)
-                .unwrap();
+        let lock = acquire_cortex_namespace_lock_with_test_timing(
+            &single_authority,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
         assert_eq!(entry_identity(&entry), identity);
         assert_eq!(entry_mode(&entry), 0o600);
+        assert_eq!(fs::read(&entry).unwrap(), b"valid-entry-bytes");
         drop(lock);
-    }
 
-    #[test]
-    fn cortex_namespace_lock_pause_helper() {
-        let Some(root) = std::env::var_os(LOCK_ROOT_ENV) else {
-            return;
-        };
-        let marker = PathBuf::from(std::env::var_os(LOCK_READY_ENV).unwrap());
-        let authority = authority(Path::new(&root));
-        let _lock = acquire_cortex_namespace_lock(&authority).unwrap();
-        fs::write(marker, "locked").unwrap();
-        loop {
-            thread::sleep(Duration::from_millis(25));
+        let left = tempfile::tempdir_in("/var/tmp").unwrap();
+        let right = tempfile::tempdir_in("/var/tmp").unwrap();
+        let left_authority = authority(left.path());
+        let right_authority = authority(right.path());
+        let left_entry = left.path().join(CORTEX_NAMESPACE_LOCK_NAME);
+        let right_entry = right.path().join(CORTEX_NAMESPACE_LOCK_NAME);
+        for path in [&left_entry, &right_entry] {
+            fs::write(path, b"byte-identical-valid-entry").unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
         }
+        let left_identity = entry_identity(&left_entry);
+        let right_identity = entry_identity(&right_entry);
+        assert_ne!(left_identity, right_identity);
+
+        let left_lock = acquire_cortex_namespace_lock_with_test_timing(
+            &left_authority,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+        let right_lock = acquire_cortex_namespace_lock_with_test_timing(
+            &right_authority,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(entry_identity(&left_entry), left_identity);
+        assert_eq!(entry_identity(&right_entry), right_identity);
+        assert_eq!(
+            fs::read(&left_entry).unwrap(),
+            b"byte-identical-valid-entry"
+        );
+        assert_eq!(
+            fs::read(&right_entry).unwrap(),
+            b"byte-identical-valid-entry"
+        );
+        drop(right_lock);
+        drop(left_lock);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs;
+    use std::os::windows::fs::{MetadataExt, symlink_file};
+    use std::path::Path;
+    use std::time::Duration;
+
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    use super::*;
+    use crate::journal_root::JournalRoot;
+    use crate::locking::{
+        with_windows_lock_entry_observation_fault, with_windows_wrong_kind_replacement_hook,
+    };
+
+    fn authority(root: &Path) -> CortexNamespaceAuthority {
+        super::super::namespace::create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap())
+            .unwrap()
+    }
+
+    fn assert_file_reparse(path: &Path) {
+        assert_ne!(
+            fs::symlink_metadata(path).unwrap().file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT,
+            0
+        );
     }
 
     #[test]
-    #[ignore = "VPE-direct multi-process verification"]
-    fn cross_process_holder_is_busy_then_releases_after_death() {
-        let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
-        verify_cortex_namespace_lock_cross_process(temporary.path());
+    fn successful_reparse_open_replacement_maps_to_identity_changed() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let authority = authority(root);
+        let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
+        let displaced = root.join("displaced-link");
+        let replacement = root.join("replacement-link");
+        let old_target = root.join("old-target");
+        let new_target = root.join("new-target");
+        fs::write(&old_target, b"old").unwrap();
+        fs::write(&new_target, b"new").unwrap();
+        symlink_file(&old_target, &entry).unwrap();
+        symlink_file(&new_target, &replacement).unwrap();
+
+        let (result, consumed) = with_windows_wrong_kind_replacement_hook(
+            entry.clone(),
+            displaced.clone(),
+            replacement,
+            || acquire_cortex_namespace_lock(&authority),
+        );
+        assert!(consumed);
+        assert_eq!(
+            result.err().unwrap().class,
+            CortexNamespaceLockClass::IdentityChanged
+        );
+        assert_file_reparse(&displaced);
+        assert_file_reparse(&entry);
+        assert_eq!(fs::read(&old_target).unwrap(), b"old");
+        assert_eq!(fs::read(&new_target).unwrap(), b"new");
+    }
+
+    #[test]
+    fn successful_reparse_open_classification_failures_map_to_io() {
+        for ordinal in [2, 3] {
+            let temporary = tempfile::TempDir::new().unwrap();
+            let root = temporary.path();
+            let authority = authority(root);
+            let target = root.join("target");
+            let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
+            fs::write(&target, b"target").unwrap();
+            symlink_file(&target, &entry).unwrap();
+
+            let (result, consumed) = with_windows_lock_entry_observation_fault(ordinal, || {
+                acquire_cortex_namespace_lock_with_test_timing(
+                    &authority,
+                    Duration::ZERO,
+                    Duration::ZERO,
+                )
+            });
+            assert!(consumed, "classification fault ordinal {ordinal}");
+            assert_eq!(result.err().unwrap().class, CortexNamespaceLockClass::Io);
+            assert_file_reparse(&entry);
+            assert_eq!(fs::read(&target).unwrap(), b"target");
+        }
     }
 }

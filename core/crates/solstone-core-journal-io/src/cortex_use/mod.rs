@@ -15,6 +15,9 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use lock::acquire_cortex_namespace_lock_with_test_timing;
 pub use lock::{CortexNamespaceLock, CortexNamespaceLockError, acquire_cortex_namespace_lock};
 pub use namespace::{
     CortexNamespaceAuthority, CortexNamespaceError, create_or_admit_cortex_namespace,

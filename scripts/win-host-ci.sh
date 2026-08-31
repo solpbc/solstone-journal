@@ -197,7 +197,7 @@ require_native_receipt() {
 require_cortex_namespace_receipts() {
   receipt_token=$1
   receipt_filesystem=$2
-  for receipt_category in CREATE_ADMIT WRONG_KIND_REPARSE RETAINED_ROOT RETAINED_HEALTH FAILURE_MAPPING PRESERVATION; do
+  for receipt_category in CREATE_ADMIT WRONG_KIND_REPARSE RETAINED_ROOT RETAINED_HEALTH FAILURE_MAPPING PRESERVATION LOCK; do
     require_native_receipt "JOURNAL_WIN_CI_CORTEX_NAMESPACE_${receipt_token}_${receipt_category}" "$receipt_filesystem"
   done
 }

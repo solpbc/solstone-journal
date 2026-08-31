@@ -12,7 +12,7 @@ use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command, ExitStatus, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,14 +22,17 @@ use solstone_core_journal_io::atomic::{
     run_with_windows_detailed_atomic_faults_and_barrier,
 };
 use solstone_core_journal_io::cortex_use::{
-    CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseRefusal,
+    CortexNamespaceLock, CortexNamespaceLockError, CortexUseCandidateRead,
+    CortexUseDestinationCheck, CortexUseRefusal, acquire_cortex_namespace_lock,
     check_cortex_use_destination, create_or_admit_cortex_namespace, inspect_cortex_use_root,
     read_cortex_use_request,
 };
 use solstone_core_journal_io::{
-    DetailedAtomicOutcome, JournalRoot, exercise_windows_managed_log_logical_coordinates,
+    DetailedAtomicOutcome, ExistingParentLockError, JournalRoot, WindowsLockFileExSubstitution,
+    acquire_existing_parent_lock, exercise_windows_managed_log_logical_coordinates,
     exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
     list_windows_flat_directory, publish_test_managed_log_alias, root_test_managed_log_alias_name,
+    run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
     try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
@@ -46,6 +49,12 @@ use windows_sys::Win32::Storage::FileSystem::{
 const OLD: &[u8] = b"old-content";
 const NEW: &[u8] = b"new-content";
 const OUTSIDE_SENTINEL: &[u8] = b"outside-before";
+const CORTEX_LOCK_CHILD_MARKER_ENV: &str = "JOURNAL_WIN_CI_CORTEX_LOCK_CHILD";
+const CORTEX_LOCK_CHILD_MARKER_VALUE: &str = "cortex-lock-child-v1";
+const CORTEX_LOCK_CHILD_EXPECT_ENV: &str = "JOURNAL_WIN_CI_CORTEX_LOCK_EXPECT";
+const CORTEX_LOCK_CHILD_ROOT_ENV: &str = "JOURNAL_WIN_CI_CORTEX_LOCK_ROOT";
+const CORTEX_LOCK_CHILD_BUSY: &str = "CORTEX_LOCK_CHILD_BUSY";
+const CORTEX_LOCK_CHILD_ACQUIRED: &str = "CORTEX_LOCK_CHILD_ACQUIRED";
 const LOGICAL_FIELD_SHAPES: &[&str] = &[
     "maintenance:backup:run",
     "/leading",
@@ -829,11 +838,160 @@ fn create_directory_junction(link: &Path, target: &Path) {
     );
 }
 
+fn create_file_symlink(link: &Path, target: &Path) {
+    let output = Command::new("cmd")
+        .args(["/d", "/c", "mklink"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .expect("launch cmd.exe for Cortex file-reparse fixture");
+    assert!(
+        output.status.success(),
+        "create Cortex file-reparse fixture {} -> {}: status={} stdout={} stderr={}",
+        link.display(),
+        target.display(),
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 fn cortex_namespace_failure(root: &Path) -> String {
     match create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap()) {
         Ok(_) => panic!("Cortex namespace fixture unexpectedly admitted"),
         Err(error) => error.to_string(),
     }
+}
+
+fn cortex_lock_error(result: Result<CortexNamespaceLock, CortexNamespaceLockError>) -> String {
+    match result {
+        Ok(_) => panic!("Cortex namespace lock fixture unexpectedly acquired"),
+        Err(error) => error.to_string(),
+    }
+}
+
+fn run_cortex_lock_child(root: &Path, test_name: &str, expected: &str) -> Output {
+    Command::new(std::env::current_exe().expect("current Windows test executable"))
+        .args(["--exact", test_name, "--ignored", "--nocapture"])
+        .env(CORTEX_LOCK_CHILD_MARKER_ENV, CORTEX_LOCK_CHILD_MARKER_VALUE)
+        .env(CORTEX_LOCK_CHILD_EXPECT_ENV, expected)
+        .env(CORTEX_LOCK_CHILD_ROOT_ENV, root)
+        .output()
+        .expect("run Cortex namespace lock child")
+}
+
+fn require_cortex_lock_child(output: Output, receipt: &str) {
+    assert!(
+        output.status.success(),
+        "Cortex namespace lock child failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("child stdout is UTF-8");
+    assert_eq!(stdout.matches(receipt).count(), 1, "child stdout: {stdout}");
+}
+
+struct DeniedFileAcl {
+    path: PathBuf,
+    account: String,
+    active: bool,
+}
+
+impl DeniedFileAcl {
+    fn install(path: &Path) -> Self {
+        let account = std::env::var("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT")
+            .expect("native Windows rail supplies its ordinary owner account");
+        let guard = Self {
+            path: path.to_path_buf(),
+            account,
+            active: true,
+        };
+        let output = Command::new("icacls")
+            .arg(path)
+            .arg("/deny")
+            .arg(format!("{}:(R,W)", guard.account))
+            .output()
+            .unwrap_or_else(|error| panic!("launch icacls to deny the lock entry: {error}"));
+        assert!(
+            output.status.success(),
+            "deny lock-entry ACL: status={} stdout={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        guard
+    }
+
+    fn restore(mut self) {
+        let output = self
+            .restore_output()
+            .unwrap_or_else(|error| panic!("launch icacls to restore the lock entry: {error}"));
+        assert!(
+            output.status.success(),
+            "restore lock-entry ACL: status={} stdout={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        self.active = false;
+    }
+
+    fn restore_output(&self) -> io::Result<Output> {
+        Command::new("icacls")
+            .arg(&self.path)
+            .arg("/remove:d")
+            .arg(&self.account)
+            .output()
+    }
+}
+
+impl Drop for DeniedFileAcl {
+    fn drop(&mut self) {
+        if self.active {
+            match self.restore_output() {
+                Ok(output) if !output.status.success() => eprintln!(
+                    "failed to restore lock-entry ACL during cleanup: status={} stdout={} stderr={}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+                Err(error) => {
+                    eprintln!("failed to launch lock-entry ACL cleanup: {error}");
+                }
+                Ok(_) => {}
+            }
+        }
+    }
+}
+
+fn run_marked_cortex_lock_child() -> bool {
+    let Some(marker) = std::env::var_os(CORTEX_LOCK_CHILD_MARKER_ENV) else {
+        return false;
+    };
+    if marker != OsStr::new(CORTEX_LOCK_CHILD_MARKER_VALUE) {
+        return false;
+    }
+    let root = std::env::var_os(CORTEX_LOCK_CHILD_ROOT_ENV)
+        .map(PathBuf::from)
+        .expect("marked Cortex lock child requires a root");
+    let expected = std::env::var(CORTEX_LOCK_CHILD_EXPECT_ENV)
+        .expect("marked Cortex lock child requires an expected outcome");
+    let authority = create_or_admit_cortex_namespace(JournalRoot::open(&root).unwrap()).unwrap();
+    match expected.as_str() {
+        "busy" => {
+            assert_eq!(
+                cortex_lock_error(acquire_cortex_namespace_lock(&authority)),
+                "cortex_namespace_lock_busy"
+            );
+            println!("{CORTEX_LOCK_CHILD_BUSY}");
+        }
+        "acquired" => {
+            let _lock = acquire_cortex_namespace_lock(&authority).unwrap();
+            println!("{CORTEX_LOCK_CHILD_ACQUIRED}");
+        }
+        other => panic!("unknown Cortex lock child expectation: {other}"),
+    }
+    true
 }
 
 fn exercise_cortex_namespace_receipt(root: &Path) {
@@ -1034,6 +1192,258 @@ fn exercise_cortex_namespace_receipt(root: &Path) {
     );
 }
 
+fn exercise_cortex_namespace_lock_receipt(root: &Path, child_test: &str) {
+    let lock_root = root.join("cortex-namespace-lock");
+    let health = lock_root.join("health");
+    let moved_health = lock_root.join("health-moved");
+    fs::create_dir(&lock_root).unwrap();
+    fs::write(lock_root.join("root-sentinel"), b"root").unwrap();
+    let authority_a =
+        create_or_admit_cortex_namespace(JournalRoot::open(&lock_root).unwrap()).unwrap();
+    fs::write(lock_root.join("health/sentinel"), b"old-health").unwrap();
+    fs::write(lock_root.join("talents/sentinel"), b"talents").unwrap();
+    let root_identity = file_identity(&lock_root);
+    let talents_identity = file_identity(&lock_root.join("talents"));
+    let old_health_identity = file_identity(&health);
+    let lock_entry = lock_root.join("cortex-use.lock");
+    fs::write(&lock_entry, b"persistent-lock-entry").unwrap();
+    let lock_identity = file_identity(&lock_entry);
+    let lock_bytes = fs::read(&lock_entry).unwrap();
+    let parent_lock = acquire_cortex_namespace_lock(&authority_a).unwrap();
+
+    fs::rename(&health, &moved_health).unwrap();
+    fs::create_dir(&health).unwrap();
+    fs::write(health.join("sentinel"), b"replacement-health").unwrap();
+    let new_health_identity = file_identity(&health);
+    let _authority_b =
+        create_or_admit_cortex_namespace(JournalRoot::open(&lock_root).unwrap()).unwrap();
+    let assert_namespace_identities = || {
+        assert_eq!(file_identity(&lock_root), root_identity);
+        assert_eq!(file_identity(&lock_root.join("talents")), talents_identity);
+        assert_eq!(file_identity(&moved_health), old_health_identity);
+        assert_eq!(file_identity(&health), new_health_identity);
+    };
+    require_cortex_lock_child(
+        run_cortex_lock_child(&lock_root, child_test, "busy"),
+        CORTEX_LOCK_CHILD_BUSY,
+    );
+    assert_namespace_identities();
+    assert_eq!(fs::read(lock_root.join("root-sentinel")).unwrap(), b"root");
+    assert_eq!(
+        fs::read(lock_root.join("health-moved/sentinel")).unwrap(),
+        b"old-health"
+    );
+    assert_eq!(
+        fs::read(lock_root.join("health/sentinel")).unwrap(),
+        b"replacement-health"
+    );
+    assert_eq!(
+        fs::read(lock_root.join("talents/sentinel")).unwrap(),
+        b"talents"
+    );
+    assert!(!lock_root.join("health-moved/cortex-use.lock").exists());
+    assert!(!lock_root.join("health/cortex-use.lock").exists());
+    drop(parent_lock);
+
+    require_cortex_lock_child(
+        run_cortex_lock_child(&lock_root, child_test, "acquired"),
+        CORTEX_LOCK_CHILD_ACQUIRED,
+    );
+    assert_namespace_identities();
+    assert_eq!(file_identity(&lock_entry), lock_identity);
+    assert_eq!(fs::read(&lock_entry).unwrap(), lock_bytes);
+
+    let left_root = root.join("cortex-lock-left");
+    let right_root = root.join("cortex-lock-right");
+    fs::create_dir(&left_root).unwrap();
+    fs::create_dir(&right_root).unwrap();
+    let left_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&left_root).unwrap()).unwrap();
+    let right_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&right_root).unwrap()).unwrap();
+    let left_entry = left_root.join("cortex-use.lock");
+    let right_entry = right_root.join("cortex-use.lock");
+    fs::write(&left_entry, b"byte-identical-valid-entry").unwrap();
+    fs::write(&right_entry, b"byte-identical-valid-entry").unwrap();
+    let left_identity = file_identity(&left_entry);
+    let right_identity = file_identity(&right_entry);
+    assert_ne!(left_identity, right_identity);
+    let left_lock = acquire_cortex_namespace_lock(&left_authority).unwrap();
+    let right_lock = acquire_cortex_namespace_lock(&right_authority).unwrap();
+    drop(right_lock);
+    drop(left_lock);
+    assert_eq!(file_identity(&left_entry), left_identity);
+    assert_eq!(file_identity(&right_entry), right_identity);
+    assert_eq!(
+        fs::read(&left_entry).unwrap(),
+        b"byte-identical-valid-entry"
+    );
+    assert_eq!(
+        fs::read(&right_entry).unwrap(),
+        b"byte-identical-valid-entry"
+    );
+    let wrong_root = root.join("cortex-lock-wrong-kind");
+    fs::create_dir(&wrong_root).unwrap();
+    let wrong_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&wrong_root).unwrap()).unwrap();
+    let wrong_entry = wrong_root.join("cortex-use.lock");
+    fs::create_dir(&wrong_entry).unwrap();
+    let wrong_identity = file_identity(&wrong_entry);
+    let generic_wrong = acquire_existing_parent_lock(
+        &wrong_root,
+        OsStr::new("cortex-use.lock"),
+        Duration::ZERO,
+        Duration::ZERO,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        generic_wrong,
+        ExistingParentLockError::UnsafeLockEntry {
+            kind: "directory",
+            ..
+        }
+    ));
+    assert_eq!(
+        cortex_lock_error(acquire_cortex_namespace_lock(&wrong_authority)),
+        "cortex_namespace_lock_unsafe"
+    );
+    assert_eq!(file_identity(&wrong_entry), wrong_identity);
+
+    let reparse_root = root.join("cortex-lock-reparse");
+    let reparse_target = root.join("cortex-lock-reparse-target");
+    fs::create_dir(&reparse_root).unwrap();
+    fs::create_dir(&reparse_target).unwrap();
+    let reparse_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&reparse_root).unwrap()).unwrap();
+    fs::write(reparse_target.join("outside"), b"outside").unwrap();
+    let outside_identity = file_identity(&reparse_target.join("outside"));
+    let reparse_entry = reparse_root.join("cortex-use.lock");
+    create_directory_junction(&reparse_entry, &reparse_target);
+    let reparse_identity = file_identity(&reparse_entry);
+    let generic_reparse = acquire_existing_parent_lock(
+        &reparse_root,
+        OsStr::new("cortex-use.lock"),
+        Duration::ZERO,
+        Duration::ZERO,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        generic_reparse,
+        ExistingParentLockError::UnsafeLockEntry { .. }
+    ));
+    assert_eq!(
+        cortex_lock_error(acquire_cortex_namespace_lock(&reparse_authority)),
+        "cortex_namespace_lock_unsafe"
+    );
+    assert_eq!(file_identity(&reparse_entry), reparse_identity);
+    assert_eq!(
+        file_identity(&reparse_target.join("outside")),
+        outside_identity
+    );
+    assert_eq!(
+        fs::read(reparse_target.join("outside")).unwrap(),
+        b"outside"
+    );
+
+    let file_reparse_root = root.join("cortex-lock-file-reparse");
+    fs::create_dir(&file_reparse_root).unwrap();
+    let file_reparse_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&file_reparse_root).unwrap()).unwrap();
+    let file_reparse_target = file_reparse_root.join("target");
+    let file_reparse_entry = file_reparse_root.join("cortex-use.lock");
+    fs::write(&file_reparse_target, b"file-reparse-target").unwrap();
+    create_file_symlink(&file_reparse_entry, &file_reparse_target);
+    let file_reparse_identity = file_identity(&file_reparse_entry);
+    let file_reparse_target_identity = file_identity(&file_reparse_target);
+    let generic_file_reparse = acquire_existing_parent_lock(
+        &file_reparse_root,
+        OsStr::new("cortex-use.lock"),
+        Duration::ZERO,
+        Duration::ZERO,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        generic_file_reparse,
+        ExistingParentLockError::UnsafeLockEntry {
+            kind: "reparse point",
+            ..
+        }
+    ));
+    assert_eq!(
+        cortex_lock_error(acquire_cortex_namespace_lock(&file_reparse_authority)),
+        "cortex_namespace_lock_unsafe"
+    );
+    assert_eq!(file_identity(&file_reparse_entry), file_reparse_identity);
+    assert_ne!(
+        fs::symlink_metadata(&file_reparse_entry)
+            .unwrap()
+            .file_attributes()
+            & FILE_ATTRIBUTE_REPARSE_POINT,
+        0
+    );
+    assert_eq!(
+        file_identity(&file_reparse_target),
+        file_reparse_target_identity
+    );
+    assert_eq!(
+        fs::read(&file_reparse_target).unwrap(),
+        b"file-reparse-target"
+    );
+
+    let denied_root = root.join("cortex-lock-acl-denied");
+    fs::create_dir(&denied_root).unwrap();
+    let denied_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&denied_root).unwrap()).unwrap();
+    let denied_entry = denied_root.join("cortex-use.lock");
+    fs::write(&denied_entry, b"acl-denied-lock-entry").unwrap();
+    let denied_identity = file_identity(&denied_entry);
+    let denied_bytes = fs::read(&denied_entry).unwrap();
+    let denied_acl = DeniedFileAcl::install(&denied_entry);
+    let generic_denied = acquire_existing_parent_lock(
+        &denied_root,
+        OsStr::new("cortex-use.lock"),
+        Duration::ZERO,
+        Duration::ZERO,
+    )
+    .unwrap_err();
+    assert!(matches!(generic_denied, ExistingParentLockError::Io { .. }));
+    assert_eq!(
+        cortex_lock_error(acquire_cortex_namespace_lock(&denied_authority)),
+        "cortex_namespace_lock_io"
+    );
+    denied_acl.restore();
+    assert_eq!(file_identity(&denied_entry), denied_identity);
+    assert_eq!(fs::read(&denied_entry).unwrap(), denied_bytes);
+
+    let identity_root = root.join("cortex-lock-identity-change");
+    fs::create_dir(&identity_root).unwrap();
+    let identity_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&identity_root).unwrap()).unwrap();
+    let (identity_result, identity_consumed) =
+        run_with_forced_post_lock_identity_mismatch(1, || {
+            acquire_cortex_namespace_lock(&identity_authority)
+        });
+    assert!(identity_consumed);
+    assert_eq!(
+        cortex_lock_error(identity_result),
+        "cortex_namespace_lock_identity_changed"
+    );
+    drop(acquire_cortex_namespace_lock(&identity_authority).unwrap());
+
+    let io_root = root.join("cortex-lock-io");
+    fs::create_dir(&io_root).unwrap();
+    let io_authority =
+        create_or_admit_cortex_namespace(JournalRoot::open(&io_root).unwrap()).unwrap();
+    let (io_result, io_consumed) = run_with_windows_lock_file_ex_substitution(
+        1,
+        WindowsLockFileExSubstitution::ReplaceHandle(INVALID_HANDLE_VALUE),
+        || acquire_cortex_namespace_lock(&io_authority),
+    );
+    assert!(io_consumed);
+    assert_eq!(cortex_lock_error(io_result), "cortex_namespace_lock_io");
+    drop(acquire_cortex_namespace_lock(&io_authority).unwrap());
+}
+
 fn print_cortex_namespace_receipts(token: &str, filesystem: &str) {
     for category in [
         "CREATE_ADMIT",
@@ -1042,6 +1452,7 @@ fn print_cortex_namespace_receipts(token: &str, filesystem: &str) {
         "RETAINED_HEALTH",
         "FAILURE_MAPPING",
         "PRESERVATION",
+        "LOCK",
     ] {
         println!("JOURNAL_WIN_CI_CORTEX_NAMESPACE_{token}_{category}=executed/pass");
         println!("JOURNAL_WIN_CI_CORTEX_NAMESPACE_{token}_{category}_FILESYSTEM={filesystem}");
@@ -1077,10 +1488,14 @@ fn refs_publication_receipt() {
 #[test]
 #[ignore = "requires a native NTFS filesystem"]
 fn ntfs_cortex_use_receipt() {
+    if run_marked_cortex_lock_child() {
+        return;
+    }
     let root = tempfile::tempdir().unwrap();
     assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
     exercise_cortex_use_receipt(root.path());
     exercise_cortex_namespace_receipt(root.path());
+    exercise_cortex_namespace_lock_receipt(root.path(), "ntfs_cortex_use_receipt");
     print_cortex_namespace_receipts("NTFS", "NTFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM=NTFS");
@@ -1089,6 +1504,9 @@ fn ntfs_cortex_use_receipt() {
 #[test]
 #[ignore = "requires a native ReFS filesystem"]
 fn refs_cortex_use_receipt() {
+    if run_marked_cortex_lock_child() {
+        return;
+    }
     let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
         .map(PathBuf::from)
         .expect("ReFS Cortex-use receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
@@ -1099,6 +1517,7 @@ fn refs_cortex_use_receipt() {
         .unwrap();
     exercise_cortex_use_receipt(temporary.path());
     exercise_cortex_namespace_receipt(temporary.path());
+    exercise_cortex_namespace_lock_receipt(temporary.path(), "refs_cortex_use_receipt");
     print_cortex_namespace_receipts("REFS", "ReFS");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS=executed/pass");
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS");

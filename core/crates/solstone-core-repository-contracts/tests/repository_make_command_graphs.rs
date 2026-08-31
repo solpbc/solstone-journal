@@ -1666,7 +1666,7 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 17] = [
     ),
 ];
 
-const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 24] = [
+const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 28] = [
     (
         "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT",
         "executed/pass",
@@ -1715,6 +1715,11 @@ const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 24] = [
         "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION_FILESYSTEM",
         "NTFS",
     ),
+    ("JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK_FILESYSTEM",
+        "NTFS",
+    ),
     (
         "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT",
         "executed/pass",
@@ -1761,6 +1766,11 @@ const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 24] = [
     ),
     (
         "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION_FILESYSTEM",
+        "ReFS",
+    ),
+    ("JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK_FILESYSTEM",
         "ReFS",
     ),
 ];
@@ -2162,6 +2172,7 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         "RETAINED_HEALTH",
         "FAILURE_MAPPING",
         "PRESERVATION",
+        "LOCK",
     ] {
         assert!(
             runner.contains(fragment),
