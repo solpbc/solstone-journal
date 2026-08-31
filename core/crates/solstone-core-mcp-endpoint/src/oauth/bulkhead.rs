@@ -113,6 +113,22 @@ impl CimdBulkhead {
         drop(state);
         self.notify.notify_waiters();
     }
+
+    #[cfg(test)]
+    pub(crate) fn debug_state(&self) -> (usize, usize) {
+        let state = lock(&self.inner);
+        (state.global, state.per_source.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn debug_held(&self, source: IpAddr) -> usize {
+        let source = canonicalize_ip(source);
+        lock(&self.inner)
+            .per_source
+            .get(&source)
+            .copied()
+            .unwrap_or(0)
+    }
 }
 
 fn lock(mutex: &Mutex<CimdBulkheadState>) -> std::sync::MutexGuard<'_, CimdBulkheadState> {
@@ -230,5 +246,184 @@ mod tests {
         handle.abort();
         let _ = handle.await;
         assert!(bulkhead.try_acquire(ip(1)).is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ten_thousand_sources_return_to_empty_bookkeeping() {
+        let bulkhead = CimdBulkhead::new();
+        let twin = IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3));
+        let twin_mapped: IpAddr = "::ffff:10.1.2.3".parse().unwrap();
+        for index in 1_u32..=10_000 {
+            let source = IpAddr::V4(Ipv4Addr::from(index));
+            match index % 5 {
+                0 => {
+                    let mut held = Vec::new();
+                    for offset in 0..CIMD_GLOBAL_PERMITS as u32 {
+                        let filler = IpAddr::V4(Ipv4Addr::from(0x0a00_0000 + offset));
+                        held.push(bulkhead.try_acquire(filler).unwrap());
+                    }
+                    assert!(bulkhead.try_acquire(source).is_none());
+                    drop(held);
+                }
+                1 => {
+                    let first = bulkhead.try_acquire(source).unwrap();
+                    let second = bulkhead.try_acquire(source).unwrap();
+                    let waiting = Arc::clone(&bulkhead);
+                    let deadline = Instant::now() + Duration::from_secs(30);
+                    let mut waiter =
+                        std::pin::pin!(async move { waiting.acquire(source, deadline).await });
+                    tokio::select! {
+                        biased;
+                        _ = &mut waiter => panic!("cancel waiter resolved"),
+                        () = tokio::task::yield_now() => {}
+                    }
+                    drop(waiter);
+                    drop(first);
+                    drop(second);
+                }
+                _ => {
+                    let permit = bulkhead.try_acquire(source).unwrap();
+                    if index == 42 {
+                        let extra = bulkhead.try_acquire(twin).unwrap();
+                        let extra_mapped = bulkhead.try_acquire(twin_mapped).unwrap();
+                        assert!(bulkhead.try_acquire(twin).is_none());
+                        drop(extra);
+                        drop(extra_mapped);
+                    }
+                    drop(permit);
+                }
+            }
+        }
+        assert_eq!(bulkhead.debug_state(), (0, 0));
+    }
+
+    async fn wait_until_parked(bulkhead: &Arc<CimdBulkhead>, source: IpAddr, held: usize) {
+        for _ in 0..32 {
+            if bulkhead.debug_held(source) == held {
+                tokio::task::yield_now().await;
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("waiter did not observe held={held}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn same_source_final_release_is_deterministic_across_outcomes() {
+        let source = ip(7);
+        // Success: waiter lands on the last per-source slot freeing.
+        {
+            let bulkhead = CimdBulkhead::new();
+            let first = bulkhead.try_acquire(source).unwrap();
+            let second = bulkhead.try_acquire(source).unwrap();
+            assert_eq!(bulkhead.debug_held(source), 2);
+            assert_eq!(bulkhead.debug_state().1, 1);
+            let waiting = Arc::clone(&bulkhead);
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let waiter = tokio::spawn(async move { waiting.acquire(source, deadline).await });
+            wait_until_parked(&bulkhead, source, 2).await;
+            drop(first);
+            let acquired = waiter.await.unwrap().expect("success waiter acquires");
+            assert!(bulkhead.debug_held(source) <= CIMD_PER_SOURCE_PERMITS);
+            assert_eq!(bulkhead.debug_state().1, 1);
+            drop(second);
+            drop(acquired);
+            assert_eq!(bulkhead.debug_held(source), 0);
+            assert_eq!(bulkhead.debug_state(), (0, 0));
+        }
+        // Refusal: try_acquire at cap never inserts a third slot.
+        {
+            let bulkhead = CimdBulkhead::new();
+            let first = bulkhead.try_acquire(source).unwrap();
+            let second = bulkhead.try_acquire(source).unwrap();
+            assert!(bulkhead.try_acquire(source).is_none());
+            assert_eq!(bulkhead.debug_held(source), 2);
+            assert_eq!(bulkhead.debug_state().1, 1);
+            drop(first);
+            drop(second);
+            assert_eq!(bulkhead.debug_state(), (0, 0));
+        }
+        // Cancel: drop the waiting acquire future, then release the last permits.
+        {
+            let bulkhead = CimdBulkhead::new();
+            let first = bulkhead.try_acquire(source).unwrap();
+            let second = bulkhead.try_acquire(source).unwrap();
+            let waiting = Arc::clone(&bulkhead);
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let mut waiter = std::pin::pin!(async move { waiting.acquire(source, deadline).await });
+            tokio::select! {
+                biased;
+                _ = &mut waiter => panic!("cancel waiter resolved"),
+                () = tokio::task::yield_now() => {}
+            }
+            drop(waiter);
+            drop(first);
+            drop(second);
+            assert_eq!(bulkhead.debug_state(), (0, 0));
+        }
+        // Timeout: waiter expires, last permits still drop the map entry.
+        {
+            let bulkhead = CimdBulkhead::new();
+            let first = bulkhead.try_acquire(source).unwrap();
+            let second = bulkhead.try_acquire(source).unwrap();
+            let waiting = Arc::clone(&bulkhead);
+            let deadline = Instant::now() + Duration::from_secs(1);
+            let waiter = tokio::spawn(async move { waiting.acquire(source, deadline).await });
+            wait_until_parked(&bulkhead, source, 2).await;
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert!(matches!(
+                waiter.await.unwrap(),
+                Err(CimdBulkheadError::Timeout)
+            ));
+            drop(first);
+            drop(second);
+            assert_eq!(bulkhead.debug_state(), (0, 0));
+        }
+        // Task failure: panicked holder still releases on drop.
+        {
+            let bulkhead = CimdBulkhead::new();
+            let permit = bulkhead.try_acquire(source).unwrap();
+            let handle = tokio::spawn(async move {
+                let _permit = permit;
+                panic!("forced holder failure");
+            });
+            assert!(handle.await.unwrap_err().is_panic());
+            assert_eq!(bulkhead.debug_state(), (0, 0));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn distinct_sources_progress_concurrently_under_global_capacity() {
+        let bulkhead = CimdBulkhead::new();
+        let left = ip(1);
+        let right = ip(2);
+        let left_bulkhead = Arc::clone(&bulkhead);
+        let right_bulkhead = Arc::clone(&bulkhead);
+        let (left_permit, right_permit) = tokio::join!(
+            async move {
+                left_bulkhead
+                    .acquire(left, Instant::now() + Duration::from_secs(5))
+                    .await
+                    .unwrap()
+            },
+            async move {
+                right_bulkhead
+                    .acquire(right, Instant::now() + Duration::from_secs(5))
+                    .await
+                    .unwrap()
+            },
+        );
+        assert_eq!(bulkhead.debug_held(left), 1);
+        assert_eq!(bulkhead.debug_held(right), 1);
+        assert_eq!(bulkhead.debug_state(), (2, 2));
+        let left_second = bulkhead.try_acquire(left).unwrap();
+        let right_second = bulkhead.try_acquire(right).unwrap();
+        assert_eq!(bulkhead.debug_held(left), 2);
+        assert_eq!(bulkhead.debug_held(right), 2);
+        drop(left_permit);
+        drop(right_permit);
+        drop(left_second);
+        drop(right_second);
+        assert_eq!(bulkhead.debug_state(), (0, 0));
     }
 }
