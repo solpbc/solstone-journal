@@ -8,10 +8,15 @@ use std::path::{Component, Path};
 
 use serde_json::Value;
 
+mod namespace;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
+
+pub use namespace::{
+    CortexNamespaceAuthority, CortexNamespaceError, create_or_admit_cortex_namespace,
+};
 
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use unix::{
