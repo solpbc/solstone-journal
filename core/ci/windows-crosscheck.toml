@@ -2,11 +2,11 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived from Cargo metadata after `solstone-core-mcp-endpoint` joined the
-# workspace. The census counts a package once when any target is `lib`, so this
-# new library-only crate increases both baselines by exactly one.
-workspace_packages = 135
-library_packages = 129
+# Re-derived from Cargo metadata after the MCP endpoint and its audit crate
+# joined the workspace. The census counts a package once when any target is
+# `lib`; each new library-only crate increases both baselines by exactly one.
+workspace_packages = 136
+library_packages = 130
 
 [[exclusions]]
 package = "solstone-core-backfill-cli"

@@ -608,7 +608,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
     let calls = calls.lines().collect::<Vec<_>>();
     assert_eq!(
         calls.len(),
-        5,
+        6,
         "full Clippy stopped before all scopes: {calls:?}"
     );
     assert!(calls[0].contains("--workspace"));
@@ -617,6 +617,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
         "solstone-core-convey-body",
         "solstone-core-facets",
         "solstone-core-describe",
+        "solstone-core-mcp-endpoint",
     ]) {
         assert!(
             call.contains(&format!("-p {package}")),

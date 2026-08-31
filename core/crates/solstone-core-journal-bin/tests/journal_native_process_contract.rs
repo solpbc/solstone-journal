@@ -23,8 +23,8 @@ use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPEC
 use sha2::{Digest, Sha256};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SCHEDULE_USAGE, SPL_USAGE,
-    THINKING_USAGE, TOP_USAGE,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, MCP_USAGE, SCHEDULE_USAGE,
+    SPL_USAGE, THINKING_USAGE, TOP_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -363,6 +363,14 @@ const PROBES: &[Probe] = &[
         argv: &["--nope"],
         expected_exit: 2,
         stderr_anchor: Some(SPL_USAGE.as_bytes()),
+    },
+    // This parse-owned usage path proves the MCP dispatcher is present before
+    // the endpoint feature can enter service startup.
+    Probe {
+        token: "mcp",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(MCP_USAGE.as_bytes()),
     },
     Probe {
         token: "schedule",
