@@ -244,11 +244,7 @@ fn handle_mcp(
     match request.method {
         HttpMethod::Delete => delete_session(request, sessions, &verified),
         HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
-        HttpMethod::Get => HttpResponse::error(
-            405,
-            "Method Not Allowed",
-            "MCP requires HTTP/1.1 POST or DELETE",
-        ),
+        HttpMethod::Get => method_not_allowed_with_allow("POST, DELETE"),
     }
 }
 
@@ -506,11 +502,9 @@ fn http_error_response(error: Http1Error) -> HttpResponse {
         Http1Error::BodyTooLarge => {
             HttpResponse::error(413, "Payload Too Large", "HTTP request body exceeds 64 KiB")
         }
-        Http1Error::UnsupportedRequest => HttpResponse::error(
-            405,
-            "Method Not Allowed",
-            "MCP requires HTTP/1.1 POST or DELETE",
-        ),
+        Http1Error::UnsupportedRequest => {
+            HttpResponse::error(405, "Method Not Allowed", "HTTP/1.1 GET, POST, or DELETE")
+        }
         _ => HttpResponse::error(400, "Bad Request", "HTTP/1.1 request framing is invalid"),
     }
 }

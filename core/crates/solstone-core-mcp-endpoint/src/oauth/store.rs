@@ -66,6 +66,7 @@ pub(crate) struct IssuedAuthorization {
 pub(crate) struct IssuedTokens {
     pub(crate) access_token: String,
     pub(crate) refresh_token: String,
+    #[allow(dead_code)]
     pub(crate) token_id: String,
     pub(crate) expires_in: i64,
 }
@@ -667,6 +668,7 @@ impl OAuthStore {
     }
 
     /// Register a CIMD client, returning the existing record when the URL matches.
+    #[cfg(test)]
     pub(crate) fn register_client(
         &self,
         client_id: &str,
@@ -754,6 +756,7 @@ impl OAuthStore {
     }
 
     /// Invalidate outstanding tokens for one client without deleting its record.
+    #[cfg(test)]
     pub(crate) fn revoke_client(&self, client_record_id: &str) -> Result<(), OAuthStoreError> {
         self.mutate(|store, _now| {
             let client = store

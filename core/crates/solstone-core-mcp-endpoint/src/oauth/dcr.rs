@@ -9,7 +9,11 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Serialize;
 use tokio::sync::watch;
 
-use super::cimd::{CimdAttemptIo, CimdDocument, canonicalize_ip, fetch_cimd, fetch_cimd_with_io};
+#[cfg(test)]
+use super::cimd::CimdAttemptIo;
+#[cfg(any(test, feature = "full-tests"))]
+use super::cimd::fetch_cimd_with_io;
+use super::cimd::{CimdDocument, canonicalize_ip, fetch_cimd};
 use super::redirect::parse_redirect_uri;
 use super::store::{OAuthStoreError, RegisteredClient};
 use super::urlparse::validate_cimd_url;
@@ -87,6 +91,7 @@ pub(crate) async fn register(
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn register_with_io<IO: CimdAttemptIo>(
     request: &HttpRequest,
     source: IpAddr,
@@ -256,6 +261,7 @@ pub(crate) async fn resolve_or_register_cimd_client(
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn resolve_or_register_cimd_client_with_io<IO: CimdAttemptIo>(
     oauth: &OAuthRuntime,
     source: IpAddr,

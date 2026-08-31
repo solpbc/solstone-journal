@@ -20,8 +20,6 @@ const CIMD_BULKHEAD_MAX_KEYS: usize = 16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CimdBulkheadError {
     Timeout,
-    #[allow(dead_code)]
-    Cancelled,
 }
 
 struct CimdBulkheadState {

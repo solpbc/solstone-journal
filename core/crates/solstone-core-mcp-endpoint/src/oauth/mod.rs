@@ -66,7 +66,7 @@ impl OAuthRuntime {
         }
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) fn with_cimd_test_target(
         mut self,
         target: SocketAddr,

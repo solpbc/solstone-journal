@@ -42,7 +42,6 @@ mod http1;
 #[cfg(unix)]
 mod jsonrpc;
 #[cfg(unix)]
-#[allow(dead_code)]
 mod oauth;
 #[cfg(unix)]
 mod permits;

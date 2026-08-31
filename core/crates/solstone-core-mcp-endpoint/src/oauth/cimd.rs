@@ -23,6 +23,7 @@ use super::urlparse::validate_cimd_url;
 /// Exact CIMD document URLs treated as known clients.
 ///
 /// Empty until vendor-published Claude/Codex URLs are filled in.
+#[allow(dead_code)]
 pub(crate) const KNOWN_CLIENT_CIMD_URLS: &[&str] = &[];
 
 /// Why a resolved address must not be contacted for a CIMD fetch.
@@ -54,6 +55,7 @@ pub(crate) fn classify_unusable_ip(ip: IpAddr) -> Option<UnusableIpClass> {
 }
 
 /// True when `url` is an exact known-client CIMD document URL.
+#[allow(dead_code)]
 pub(crate) fn is_known_cimd_url(url: &str) -> bool {
     KNOWN_CLIENT_CIMD_URLS.contains(&url)
 }
@@ -305,14 +307,11 @@ pub(crate) async fn fetch_cimd_with_io<IO: CimdAttemptIo>(
     mut io: IO,
 ) -> Result<CimdDocument, CimdFetchError> {
     let parsed = validate_cimd_url(url).map_err(|_| CimdFetchError::Url)?;
-    let _known = is_known_cimd_url(url);
     let deadline = Instant::now() + CIMD_FETCH_TIMEOUT;
     let _permit = bulkhead
         .acquire(canonicalize_ip(source), deadline)
         .await
-        .map_err(|error| match error {
-            CimdBulkheadError::Timeout | CimdBulkheadError::Cancelled => CimdFetchError::Bulkhead,
-        })?;
+        .map_err(|CimdBulkheadError::Timeout| CimdFetchError::Bulkhead)?;
 
     let addresses = await_phase(shutdown, deadline, io.resolve(&parsed.host, 443))
         .await
