@@ -388,6 +388,10 @@ reason = "Windows CI rail tooling for the ordinary-owner scheduled-task delegati
 bin = "solstone-distribution"
 reason = "this producer; never ship inside the product tree"
 
+[[deny]]
+bin = "solstone-distribution-fixture"
+reason = "feature-gated test signing runner; never ship"
+
 [[cleanroom.subject]]
 id = "debian-bookworm-no-python"
 image = "debian:bookworm-slim"
