@@ -15,7 +15,7 @@ use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
 use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,
-    read_journal_config_bound,
+    mcp_endpoint_force_staging_renewal, read_journal_config_bound,
 };
 use solstone_core_journal_io::atomic::{
     BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound,
@@ -91,6 +91,8 @@ pub(super) fn bootstrap(
     }
     let certificate_environment = mcp_endpoint_certificate_environment(&config)
         .map_err(|_| McpEndpointBootstrapError::Capability)?;
+    let force_staging_renewal = mcp_endpoint_force_staging_renewal(&config)
+        .map_err(|_| McpEndpointBootstrapError::Capability)?;
 
     checkpoint(OwnerBootstrapPrimitive::CommittedIdentityLoad)
         .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
@@ -146,6 +148,7 @@ pub(super) fn bootstrap(
         keypair: std::sync::Arc::new(keypair),
         journal_root: std::sync::Arc::new(root),
         certificate_environment,
+        force_staging_renewal,
     }))
 }
 

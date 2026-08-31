@@ -215,6 +215,8 @@ pub struct McpEndpointOwnerContext {
     journal_root: Arc<JournalRoot>,
     #[cfg(unix)]
     certificate_environment: McpEndpointCertificateEnvironment,
+    #[cfg(unix)]
+    force_staging_renewal: bool,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -272,6 +274,7 @@ impl McpEndpointOwnerContext {
             keypair: Arc::clone(&self.keypair),
             journal_root: Arc::clone(&self.journal_root),
             certificate_environment: self.certificate_environment,
+            force_staging_renewal: self.force_staging_renewal,
         }
     }
 
@@ -287,6 +290,7 @@ impl McpEndpointOwnerContext {
             Arc::clone(&self.journal_root),
             hostname,
             self.certificate_environment,
+            self.force_staging_renewal,
         )
         .map_err(|_| McpBridgeCarrierError::State)
     }

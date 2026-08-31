@@ -51,6 +51,7 @@ pub struct McpEndpointTlsService {
     resolver: Arc<McpEndpointCertificateResolver>,
     #[allow(dead_code)] // Reserved for the same-crate ACME lifecycle owner.
     store: Option<Arc<CertificateStateStore>>,
+    force_staging_renewal: bool,
 }
 
 struct CertificateStateStore {
@@ -106,6 +107,7 @@ impl std::error::Error for McpEndpointCertificateLifecycleError {}
 struct McpEndpointAcmeCache {
     service: McpEndpointTlsService,
     production: bool,
+    force_staging_renewal: bool,
 }
 
 struct McpEndpointAcmeResolverGuard {
@@ -135,8 +137,12 @@ impl McpEndpointTlsService {
         journal_root: Arc<JournalRoot>,
         hostname: String,
         environment: McpEndpointCertificateEnvironment,
+        force_staging_renewal: bool,
     ) -> Result<Self, McpEndpointTlsError> {
-        if !is_exact_authorized_hostname(&hostname, &hostname) {
+        if !is_exact_authorized_hostname(&hostname, &hostname)
+            || (force_staging_renewal
+                && matches!(environment, McpEndpointCertificateEnvironment::Production))
+        {
             return Err(McpEndpointTlsError::State);
         }
         let store = Arc::new(CertificateStateStore {
@@ -144,7 +150,7 @@ impl McpEndpointTlsService {
                 .map_err(|_| McpEndpointTlsError::State)?,
             environment,
         });
-        let service = Self::empty(hostname, Some(Arc::clone(&store)));
+        let service = Self::empty(hostname, Some(Arc::clone(&store)), force_staging_renewal);
         if let Some(bytes) =
             unix::read_tls_state_bytes(&store.directory).map_err(|_| McpEndpointTlsError::State)?
         {
@@ -157,7 +163,11 @@ impl McpEndpointTlsService {
         Ok(service)
     }
 
-    fn empty(hostname: String, store: Option<Arc<CertificateStateStore>>) -> Self {
+    fn empty(
+        hostname: String,
+        store: Option<Arc<CertificateStateStore>>,
+        force_staging_renewal: bool,
+    ) -> Self {
         Self {
             resolver: Arc::new(McpEndpointCertificateResolver {
                 hostname,
@@ -167,6 +177,7 @@ impl McpEndpointTlsService {
                 next_challenge_generation: AtomicU64::new(0),
             }),
             store,
+            force_staging_renewal,
         }
     }
 
@@ -258,6 +269,7 @@ impl McpEndpointTlsService {
         let cache = McpEndpointAcmeCache {
             service: self.lifecycle_copy(),
             production,
+            force_staging_renewal: self.force_staging_renewal,
         };
         let mut state = AcmeConfig::new([self.resolver.hostname.as_str()])
             .cache(cache)
@@ -294,12 +306,13 @@ impl McpEndpointTlsService {
         Self {
             resolver: Arc::clone(&self.resolver),
             store: self.store.as_ref().map(Arc::clone),
+            force_staging_renewal: self.force_staging_renewal,
         }
     }
 
     #[cfg(test)]
     fn empty_for_test(hostname: String) -> Self {
-        Self::empty(hostname, None)
+        Self::empty(hostname, None, false)
     }
 
     #[cfg(test)]
@@ -345,6 +358,9 @@ impl CertCache for McpEndpointAcmeCache {
         _domains: &[String],
         _directory_url: &str,
     ) -> Result<Option<Vec<u8>>, Self::EC> {
+        if self.force_staging_renewal {
+            return Ok(None);
+        }
         let store = self
             .service
             .store
@@ -1073,6 +1089,7 @@ mod tests {
             Arc::new(JournalRoot::open(root.path()).expect("journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("empty state service");
         service
@@ -1098,6 +1115,7 @@ mod tests {
             Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("reloaded valid state");
         let mut client = ClientConnection::new(
@@ -1118,6 +1136,7 @@ mod tests {
             Arc::new(JournalRoot::open(root.path()).expect("journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("empty service");
         let state = StoredCertificateState {
@@ -1139,6 +1158,7 @@ mod tests {
             Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("expired state is structurally valid");
         assert!(recovered.resolver.ordinary.load_full().is_none());
@@ -1146,6 +1166,7 @@ mod tests {
         let cache = McpEndpointAcmeCache {
             service: recovered.lifecycle_copy(),
             production: false,
+            force_staging_renewal: false,
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1159,12 +1180,65 @@ mod tests {
     }
 
     #[test]
+    fn forced_staging_renewal_withholds_an_otherwise_current_cached_certificate() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let ordinary = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+            false,
+        )
+        .expect("empty service");
+        ordinary
+            .install_ordinary_certificate(chain, private_key, not_before, not_after)
+            .expect("current state installs");
+
+        let forced = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+            true,
+        )
+        .expect("forced service opens current state");
+        let cache = McpEndpointAcmeCache {
+            service: forced.lifecycle_copy(),
+            production: false,
+            force_staging_renewal: true,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "staging"))
+                .expect("forced staging cache load")
+                .is_none()
+        );
+        assert!(
+            forced.resolver.ordinary.load_full().is_some(),
+            "the last current certificate remains available during reissuance"
+        );
+        assert!(matches!(
+            McpEndpointTlsService::for_authorized_hostname(
+                Arc::new(JournalRoot::open(root.path()).expect("production journal root")),
+                HOSTNAME.to_owned(),
+                McpEndpointCertificateEnvironment::Production,
+                true,
+            ),
+            Err(McpEndpointTlsError::State)
+        ));
+    }
+
+    #[test]
     fn acme_account_state_is_environment_scoped_and_owner_only() {
         let root = TempDir::new().expect("state root");
         let service = McpEndpointTlsService::for_authorized_hostname(
             Arc::new(JournalRoot::open(root.path()).expect("journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("empty service");
         let account =
@@ -1195,6 +1269,7 @@ mod tests {
             Arc::new(JournalRoot::open(root.path()).expect("journal root")),
             HOSTNAME.to_owned(),
             McpEndpointCertificateEnvironment::Staging,
+            false,
         )
         .expect("empty service");
         let (_sender, mut shutdown) = tokio::sync::watch::channel(true);

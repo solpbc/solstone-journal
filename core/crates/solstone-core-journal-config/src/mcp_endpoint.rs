@@ -36,6 +36,17 @@ pub enum McpEndpointCertificateEnvironmentError {
     CertificateEnvironmentMustBeStagingOrProduction,
 }
 
+/// Invalid explicit `mcp_endpoint.force_staging_renewal` configuration.
+///
+/// The switch exists solely to prove the offline-recovery path against the
+/// ACME staging directory. Production issuance is deliberately unavailable
+/// through this probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpEndpointForceStagingRenewalError {
+    ForceStagingRenewalMustBeBoolean,
+    ForceStagingRenewalRequiresStaging,
+}
+
 /// Loopback port reserved for the journal-local MCP endpoint.
 pub const MCP_ENDPOINT_LOOPBACK_PORT: u16 = 7658;
 
@@ -89,6 +100,41 @@ pub fn mcp_endpoint_certificate_environment(
             McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction,
         ),
     }
+}
+
+/// Return whether this staging-only process start must reissue its certificate.
+///
+/// The omitted setting is inert. A true value is rejected unless the same
+/// configuration resolves to ACME staging, so a diagnostic restart cannot
+/// spend a production issuance.
+pub fn mcp_endpoint_force_staging_renewal(
+    read: &JournalConfigRead,
+) -> Result<bool, McpEndpointForceStagingRenewalError> {
+    let Some(config) = read.config.as_ref() else {
+        return Ok(false);
+    };
+    let Some(endpoint) = config.get("mcp_endpoint") else {
+        return Ok(false);
+    };
+    let Some(endpoint) = endpoint.as_object() else {
+        return Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalMustBeBoolean);
+    };
+    let force = match endpoint.get("force_staging_renewal") {
+        None | Some(Value::Bool(false)) => return Ok(false),
+        Some(Value::Bool(true)) => true,
+        Some(_) => {
+            return Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalMustBeBoolean);
+        }
+    };
+    if force
+        && !matches!(
+            mcp_endpoint_certificate_environment(read),
+            Ok(McpEndpointCertificateEnvironment::Staging)
+        )
+    {
+        return Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalRequiresStaging);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -272,5 +318,42 @@ mod tests {
                 McpEndpointCertificateEnvironmentError::CertificateEnvironmentMustBeStagingOrProduction
             )
         );
+    }
+
+    #[test]
+    fn forced_staging_renewal_is_default_false_and_staging_only() {
+        for config in [
+            None,
+            Some(Map::new()),
+            Some(config_with_endpoint(json!({}))),
+            Some(config_with_endpoint(
+                json!({"force_staging_renewal": false}),
+            )),
+        ] {
+            assert_eq!(mcp_endpoint_force_staging_renewal(&read(config)), Ok(false));
+        }
+
+        assert_eq!(
+            mcp_endpoint_force_staging_renewal(&read(Some(config_with_endpoint(json!({
+                "certificate_environment": "staging",
+                "force_staging_renewal": true,
+            }))))),
+            Ok(true)
+        );
+        assert_eq!(
+            mcp_endpoint_force_staging_renewal(&read(Some(config_with_endpoint(json!({
+                "certificate_environment": "production",
+                "force_staging_renewal": true,
+            }))))),
+            Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalRequiresStaging)
+        );
+        for value in [json!(null), json!("yes"), json!(1), json!([]), json!({})] {
+            assert_eq!(
+                mcp_endpoint_force_staging_renewal(&read(Some(config_with_endpoint(json!({
+                    "force_staging_renewal": value,
+                }))))),
+                Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalMustBeBoolean)
+            );
+        }
     }
 }
