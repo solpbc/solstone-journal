@@ -123,7 +123,7 @@ pub(super) fn bootstrap(
     Ok(Some(McpEndpointOwnerContext {
         _private: (),
         committed,
-        _keypair: keypair,
+        keypair,
     }))
 }
 

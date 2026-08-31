@@ -4326,9 +4326,12 @@ dependencies = [
 name = "solstone-core-mcp-endpoint"
 version = "2.0.0"
 dependencies = [
+ "base64 0.22.1",
  "nix",
+ "rcgen",
  "ring",
  "serde",
+ "serde_json",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-link",

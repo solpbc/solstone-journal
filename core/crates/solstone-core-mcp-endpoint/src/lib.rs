@@ -14,6 +14,9 @@ use std::path::Path;
 #[cfg(not(unix))]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 
+#[cfg(unix)]
+#[allow(dead_code)]
+mod account_wire;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix))]
@@ -61,6 +64,18 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 }
 
 /// A successfully admitted committed owner identity and private Ed25519 PoP key.
+///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire;
+/// ```
+///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire::build_account_registration_request;
+/// ```
+///
+/// ```compile_fail,E0603
+/// use solstone_core_mcp_endpoint::account_wire::{McpAccountRequest, McpAccountWireError};
+/// ```
 ///
 /// ```compile_fail,E0432
 /// use solstone_core_mcp_endpoint::CommittedIdentity;
@@ -129,10 +144,9 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 pub struct McpEndpointOwnerContext {
     _private: (),
     #[cfg(unix)]
-    #[allow(dead_code)]
     committed: solstone_core_sol_link::committed::CommittedIdentity,
     #[cfg(unix)]
-    _keypair: ring::signature::Ed25519KeyPair,
+    keypair: ring::signature::Ed25519KeyPair,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -141,7 +155,7 @@ impl McpEndpointOwnerContext {
     pub(crate) fn test_verifying_key_bytes(&self) -> Vec<u8> {
         use ring::signature::KeyPair as _;
 
-        self._keypair.public_key().as_ref().to_vec()
+        self.keypair.public_key().as_ref().to_vec()
     }
 }
 

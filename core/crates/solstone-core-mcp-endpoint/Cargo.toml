@@ -20,8 +20,12 @@ test-hooks = [
 solstone-core-journal-config.workspace = true
 
 [target.'cfg(unix)'.dependencies]
+base64 = "0.22.1"
 nix = { workspace = true, features = ["dir", "fs", "user"] }
+rcgen.workspace = true
 ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 
