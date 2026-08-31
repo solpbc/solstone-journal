@@ -170,12 +170,11 @@ pub fn sign_dir(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn sign");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin)
-        .expect("write stdin");
+    if let Err(error) = child.stdin.take().expect("stdin").write_all(stdin)
+        && error.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        panic!("write stdin: {error}");
+    }
     child.wait_with_output().expect("wait sign")
 }
 
