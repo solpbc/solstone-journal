@@ -25,7 +25,9 @@ pub(crate) struct ValidatedSearch {
 #[serde(deny_unknown_fields)]
 struct SearchParams {
     query: String,
+    #[serde(default = "default_limit")]
     limit: usize,
+    #[serde(default)]
     offset: usize,
     #[serde(default)]
     day: Option<String>,
@@ -49,11 +51,16 @@ struct SearchParams {
     order: Option<Order>,
 }
 
+const fn default_limit() -> usize {
+    10
+}
+
 pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolError> {
     let params = params.cloned().ok_or(ToolError::InvalidInput)?;
     let params =
         serde_json::from_value::<SearchParams>(params).map_err(|_| ToolError::InvalidInput)?;
-    if params.query.len() > MAX_QUERY_BYTES
+    if params.query.is_empty()
+        || params.query.len() > MAX_QUERY_BYTES
         || !(1..=MAX_LIMIT).contains(&params.limit)
         || params.offset > MAX_OFFSET
     {
@@ -116,6 +123,9 @@ mod tests {
 
     #[test]
     fn validation_keeps_only_bounded_declared_search_fields() {
+        let defaulted = validate(Some(&json!({"query": "needle"}))).unwrap();
+        assert_eq!(defaulted.request.limit, 10);
+        assert_eq!(defaulted.request.offset, 0);
         assert!(
             validate(Some(&json!({
                 "query": "needle",
@@ -128,6 +138,7 @@ mod tests {
             .is_ok()
         );
         for value in [
+            json!({"query": "", "limit": 1, "offset": 0}),
             json!({"query": "x", "limit": 0, "offset": 0}),
             json!({"query": "x", "limit": 101, "offset": 0}),
             json!({"query": "x", "limit": 1, "offset": 10_001}),

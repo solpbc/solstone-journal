@@ -164,8 +164,40 @@ pub(crate) fn initialize_result() -> Value {
 pub(crate) fn tools_list_result() -> Value {
     json!({
         "tools": [
-            { "name": "search", "annotations": { "readOnlyHint": true } },
-            { "name": "fetch", "annotations": { "readOnlyHint": true } }
+            {
+                "name": "search",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "query": { "type": "string", "minLength": 1 },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                        "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+                        "day": { "type": "string" },
+                        "day_from": { "type": "string" },
+                        "day_to": { "type": "string" },
+                        "facet": { "type": "string" },
+                        "agent": { "type": "string" },
+                        "stream": { "type": "string" },
+                        "time_bucket": { "type": "string" },
+                        "relax": { "type": "boolean", "default": false },
+                        "counts": { "type": "boolean", "default": false },
+                        "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
+                    },
+                    "required": ["query"]
+                },
+                "annotations": { "readOnlyHint": true }
+            },
+            {
+                "name": "fetch",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": { "id": { "type": "string", "minLength": 3 } },
+                    "required": ["id"]
+                },
+                "annotations": { "readOnlyHint": true }
+            }
         ]
     })
 }
@@ -263,8 +295,40 @@ mod tests {
             result,
             json!({
                 "tools": [
-                    { "name": "search", "annotations": { "readOnlyHint": true } },
-                    { "name": "fetch", "annotations": { "readOnlyHint": true } }
+                    {
+                        "name": "search",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "query": { "type": "string", "minLength": 1 },
+                                "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                                "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+                                "day": { "type": "string" },
+                                "day_from": { "type": "string" },
+                                "day_to": { "type": "string" },
+                                "facet": { "type": "string" },
+                                "agent": { "type": "string" },
+                                "stream": { "type": "string" },
+                                "time_bucket": { "type": "string" },
+                                "relax": { "type": "boolean", "default": false },
+                                "counts": { "type": "boolean", "default": false },
+                                "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
+                            },
+                            "required": ["query"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    },
+                    {
+                        "name": "fetch",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": { "id": { "type": "string", "minLength": 3 } },
+                            "required": ["id"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    }
                 ]
             })
         );

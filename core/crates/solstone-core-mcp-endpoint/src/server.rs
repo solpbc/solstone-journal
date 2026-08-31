@@ -589,6 +589,7 @@ mod tests {
     use tokio::time::{Duration, advance};
     use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
 
+    use crate::jsonrpc::tools_list_result;
     use crate::oauth::OAuthRuntime;
     use crate::permits::{
         CONNECTION_PERMITS, connection_permit_pool, try_acquire_connection_permit,
@@ -1404,15 +1405,7 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(
-            list["result"],
-            json!({
-                "tools": [
-                    {"name": "search", "annotations": {"readOnlyHint": true}},
-                    {"name": "fetch", "annotations": {"readOnlyHint": true}},
-                ],
-            })
-        );
+        assert_eq!(list["result"], tools_list_result());
         let search = post_json_with_headers(
             &mut client,
             &token.token,
