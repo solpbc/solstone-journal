@@ -63,7 +63,7 @@ fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
 
     assert!(
         source.contains(
-            "use solstone_core_journal_config::{\n    McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,\n    read_journal_config_bound,\n};"
+            "use solstone_core_journal_config::{\n    McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,\n    mcp_endpoint_force_staging_renewal, read_journal_config_bound,\n};"
         ),
         "Unix bootstrap must import the established descriptor-bound config pipeline"
     );
@@ -89,6 +89,11 @@ fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
         count_occurrences(&source, "mcp_endpoint_capability("),
         1,
         "Unix bootstrap must use the established endpoint capability gate once"
+    );
+    assert_eq!(
+        count_occurrences(&source, "mcp_endpoint_force_staging_renewal("),
+        1,
+        "Unix bootstrap must derive the recovery-only setting from the same bound config read once"
     );
     assert_eq!(
         count_occurrences(&source, "load_committed_identity_bound("),
