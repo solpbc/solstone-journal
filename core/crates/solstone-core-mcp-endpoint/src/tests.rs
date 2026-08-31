@@ -2554,7 +2554,8 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
         path == root.join("account_wire.rs")
             || path == root.join("bridge_carrier.rs")
             || path == root.join("bridge_session.rs")
-            || path == root.join("http1.rs"),
+            || path == root.join("http1.rs")
+            || path == root.join("oauth/cimd.rs"),
         if path == root.join("account_wire.rs") {
             Some("write_account_request")
         } else if path == root.join("bridge_carrier.rs") {
@@ -2563,6 +2564,8 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
             Some("write_mux_frames")
         } else if path == root.join("http1.rs") {
             Some("write_response")
+        } else if path == root.join("oauth/cimd.rs") {
+            Some("write_cimd_request")
         } else {
             None
         },
