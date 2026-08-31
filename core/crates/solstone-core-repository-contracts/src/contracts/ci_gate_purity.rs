@@ -533,6 +533,7 @@ fn classified_same_crate_packages_are_routine_and_have_package_specific_full_rou
         "solstone-core-convey-body",
         "solstone-core-describe",
         "solstone-core-facets",
+        "solstone-core-mcp-endpoint",
         "solstone-core-sol-link",
     ]);
     assert_eq!(classified, expected, "classified package authority drifted");
@@ -576,6 +577,7 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
         ("solstone-core-convey-body", "convey-body"),
         ("solstone-core-facets", "facets"),
         ("solstone-core-describe", "describe"),
+        ("solstone-core-mcp-endpoint", "mcp-endpoint"),
     ];
     let expected_packages = packages
         .iter()
@@ -641,9 +643,9 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             }
         }
     }
-    assert_eq!(source_files, 71, "classified source discovery drifted");
-    assert_eq!(routine_tests, 77, "routine annotation census drifted");
-    assert_eq!(full_tests, 448, "classified full annotation census drifted");
+    assert_eq!(source_files, 90, "classified source discovery drifted");
+    assert_eq!(routine_tests, 210, "routine annotation census drifted");
+    assert_eq!(full_tests, 458, "classified full annotation census drifted");
 
     let mut integration_files = 0;
     let mut integration_tests = 0;
@@ -660,12 +662,12 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             }
         }
     }
-    assert_eq!(integration_files, 8, "integration target discovery drifted");
+    assert_eq!(integration_files, 9, "integration target discovery drifted");
     assert_eq!(
-        integration_tests, 63,
+        integration_tests, 65,
         "integration annotation census drifted"
     );
-    assert_eq!(routine_tests + full_tests + integration_tests, 588);
+    assert_eq!(routine_tests + full_tests + integration_tests, 733);
 
     let external_full_files = [
         ("solstone-core-sol-link", "http_tests.rs"),
@@ -807,6 +809,7 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
         ("convey-body", "solstone-core-convey-body", "full-tests"),
         ("facets", "solstone-core-facets", "full-tests"),
         ("describe", "solstone-core-describe", "full-tests"),
+        ("mcp-endpoint", "solstone-core-mcp-endpoint", "full-tests"),
     ];
     for (suffix, package, features) in expected_commands {
         let test = target_body(
@@ -845,8 +848,8 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
                 && line.contains("--features")
                 && line.contains("full-tests"))
             .count(),
-        12,
-        "full-tests may activate only on four test, four Clippy, and four macOS edges"
+        14,
+        "full-tests may activate only on five test, five Clippy, and four macOS edges"
     );
 
     let registry = ci_registry(&root);
@@ -880,6 +883,14 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             "native",
             "media",
             vec!["cargo-cache", "ffmpeg-toolchain"],
+            "standard",
+            None,
+        ),
+        (
+            "mcp-endpoint",
+            "component",
+            "trust",
+            vec!["cargo-cache"],
             "standard",
             None,
         ),
@@ -1017,7 +1028,13 @@ fn efficient_ci_statically_checks_only_library_and_binary_targets() {
         full.contains("--all-targets") && full.contains("-- -D warnings"),
         "full CI must retain all-target static compilation"
     );
-    for suffix in ["sol-link", "convey-body", "facets", "describe"] {
+    for suffix in [
+        "sol-link",
+        "convey-body",
+        "facets",
+        "describe",
+        "mcp-endpoint",
+    ] {
         let target = format!("check-rust-classified-full-clippy-{suffix}");
         assert!(full.contains(&target), "full Clippy lost {target}");
         let body = target_body(&makefile, &target);

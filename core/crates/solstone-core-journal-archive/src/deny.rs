@@ -167,6 +167,9 @@ mod tests {
         assert!(deny_member("mcp-endpoint/pop.ed25519.pk8"));
         assert!(deny_member("mcp-endpoint/.create.lock"));
         assert!(!deny_member("chronicle/mcp-endpoint/keep.bin"));
+        assert!(!deny_member(
+            "chronicle/20260101/mcp.agent/120000_1/interaction.json"
+        ));
     }
 
     #[test]

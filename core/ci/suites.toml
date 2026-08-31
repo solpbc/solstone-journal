@@ -113,6 +113,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "classified-full-tests-mcp-endpoint"
+make_target = "check-rust-classified-full-tests-mcp-endpoint"
+set = "component"
+areas = ["trust"]
+packages = ["solstone-core-mcp-endpoint"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"
@@ -1015,6 +1026,17 @@ runtime = "none"
 [[package_suites]]
 id = "package::solstone-core-mcp-endpoint"
 package = "solstone-core-mcp-endpoint"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
+id = "package::solstone-core-mcp-audit"
+package = "solstone-core-mcp-audit"
 set = "component"
 areas = ["trust"]
 platforms = ["linux", "macos"]
