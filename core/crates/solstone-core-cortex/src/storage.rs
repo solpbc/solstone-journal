@@ -1162,7 +1162,7 @@ mod tests {
         let refused_before = fs::read(&refused).unwrap();
         let refused_directory = refused.parent().unwrap();
         let original_permissions = fs::metadata(refused_directory).unwrap().permissions();
-        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0o0)).unwrap();
         let report = store.recover();
         fs::set_permissions(refused_directory, original_permissions).unwrap();
         let report = report.unwrap();
@@ -1221,7 +1221,7 @@ mod tests {
 
         let candidate_io = claim_recovery_candidate(&store, "candidate-io", "io");
         let candidate_io_permissions = fs::metadata(&candidate_io).unwrap().permissions();
-        fs::set_permissions(&candidate_io, std::fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&candidate_io, std::fs::Permissions::from_mode(0o0)).unwrap();
 
         let occupied = claim_recovery_candidate(&store, "occupied", "taken");
         fs::write(
@@ -1236,7 +1236,7 @@ mod tests {
         let refused = claim_recovery_candidate(&store, "refused", "blocked");
         let refused_directory = refused.parent().unwrap();
         let refused_permissions = fs::metadata(refused_directory).unwrap().permissions();
-        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(refused_directory, std::fs::Permissions::from_mode(0o0)).unwrap();
 
         let ((report, destination_injected), identity_injected) =
             run_with_cortex_use_read_fault(CortexUseReadPrimitive::FinalNameObserve, 1, || {
