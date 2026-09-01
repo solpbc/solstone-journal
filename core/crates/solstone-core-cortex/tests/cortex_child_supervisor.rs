@@ -209,10 +209,12 @@ fn worker_command(mode: &str) -> Command {
 fn claim_work(store: &CortexStore, request: &Map<String, Value>) -> Work {
     let use_id = request["use_id"].as_str().unwrap().to_owned();
     let name = request["name"].as_str().unwrap();
-    let active = store.claim(name, &use_id, request).unwrap().unwrap();
+    let (active, identity) = store.claim(name, &use_id, request).unwrap().unwrap();
     Work {
         use_id,
+        talent_name: name.to_owned(),
         active,
+        identity,
         request: request.clone(),
     }
 }

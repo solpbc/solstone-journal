@@ -20,13 +20,14 @@ mod windows;
 
 pub use admission::{
     CortexAdmissionError, CortexAdmittedUse, CortexUseFileIdentity, admit_active_use,
-    complete_active_use,
+    complete_active_use, recover_active_use,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 #[doc(hidden)]
 pub use admission::{
     CortexAdmissionPrimitive, admit_active_use_with_test_timing,
-    complete_active_use_with_test_timing, run_with_cortex_admission_fault,
+    complete_active_use_with_test_timing, recover_active_use_with_test_timing,
+    run_with_cortex_admission_fault,
 };
 pub use catalog::{
     CortexCatalogError, CortexRecoveryCandidate, CortexRecoveryCatalog, CortexRecoveryDisposition,

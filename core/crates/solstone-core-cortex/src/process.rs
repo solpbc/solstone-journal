@@ -482,17 +482,19 @@ mod tests {
             serde_json::json!({"use_id":"one","name":"conversation","day":"20260101","ts":10}),
         )
         .unwrap();
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
         let (spawn_tx, _) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         let work = Work {
             use_id: "one".into(),
+            talent_name: "conversation".into(),
             active: active.clone(),
+            identity,
             request,
         };
         handle_stdout(&state, &work, "{\"event\":\"thinking\"}".into());
@@ -642,17 +644,20 @@ mod tests {
             serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
         )
         .unwrap();
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
         let (spawn_tx, _) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        let store2 = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let work = Work {
             use_id: "one".into(),
+            talent_name: "conversation".into(),
             active: active.clone(),
+            identity,
             request,
         };
         handle_stdout(&state, &work, "plain text".into());
@@ -663,14 +668,16 @@ mod tests {
                 .contains("\"event\":\"info\"")
         );
         handle_stdout(&state, &work, "{\"event\":\"error\"}".into());
-        assert!(store.has_finish(&active));
-        let active_false = store
+        assert!(store2.has_finish(&active));
+        let (active_false, identity_false) = store2
             .claim("conversation", "two", &work.request)
             .unwrap()
             .unwrap();
         let work_false = Work {
             use_id: "two".into(),
+            talent_name: "conversation".into(),
             active: active_false.clone(),
+            identity: identity_false,
             request: work.request.clone(),
         };
         handle_stdout(
@@ -678,7 +685,7 @@ mod tests {
             &work_false,
             "{\"event\":\"error\",\"terminal\":false}".into(),
         );
-        assert!(!store.has_finish(&active_false));
+        assert!(!store2.has_finish(&active_false));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -9,22 +10,43 @@ use std::thread;
 use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::cortex_use::{
-    CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
-    CortexUseRefusalCounts, check_cortex_use_destination, inspect_cortex_use_root,
-    read_cortex_use_request, revalidate_cortex_use_root, talent_directory_name,
+    CortexNamespaceAuthority, CortexRecoveryDisposition, CortexUseCandidateRead,
+    CortexUseDestinationCheck, CortexUseFatal, CortexUseFileIdentity, CortexUseRefusal,
+    CortexUseRefusalCounts, admit_active_use, build_recovery_catalog, census_cortex_namespace,
+    check_cortex_use_destination, complete_active_use, create_or_admit_cortex_namespace,
+    parse_cortex_lifecycle_name, read_cortex_use_request, recover_active_use,
+    talent_directory_name,
 };
+use solstone_core_journal_io::journal_root::{JournalEntryKind, JournalRoot};
 
-#[derive(Clone, Debug)]
+const MAXIMUM_RECOVERY_ENTRIES: usize = 64 * 1024;
+
 pub struct CortexStore {
     journal: PathBuf,
     talents: PathBuf,
+    authority: CortexNamespaceAuthority,
+}
+
+impl fmt::Debug for CortexStore {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CortexStore")
+            .field("journal", &self.journal)
+            .field("talents", &self.talents)
+            .finish()
+    }
 }
 
 impl CortexStore {
     pub fn new(journal: PathBuf) -> io::Result<Self> {
+        let root = JournalRoot::open(&journal).map_err(io::Error::other)?;
+        let authority = create_or_admit_cortex_namespace(root).map_err(io::Error::other)?;
         let talents = journal.join("talents");
-        fs::create_dir_all(&talents)?;
-        Ok(Self { journal, talents })
+        Ok(Self {
+            journal,
+            talents,
+            authority,
+        })
     }
 
     pub(crate) fn active_path(&self, name: &str, use_id: &str) -> PathBuf {
@@ -38,20 +60,12 @@ impl CortexStore {
         name: &str,
         use_id: &str,
         request: &Map<String, Value>,
-    ) -> io::Result<Option<PathBuf>> {
-        let path = self.active_path(name, use_id);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let line = serde_json::to_vec(&Value::Object(request.clone()))?;
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut file) => {
-                file.write_all(&line)?;
-                file.write_all(b"\n")?;
-                Ok(Some(path))
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(None),
-            Err(error) => Err(error),
+    ) -> io::Result<Option<(PathBuf, CortexUseFileIdentity)>> {
+        let first_row = serde_json::to_vec(&Value::Object(request.clone()))?;
+        match admit_active_use(&self.authority, name, use_id, &first_row) {
+            Ok(admitted) => Ok(Some((self.active_path(name, use_id), admitted.identity()))),
+            Err(error) if error.is_already_claimed() => Ok(None),
+            Err(error) => Err(io::Error::other(error.to_string())),
         }
     }
 
@@ -75,49 +89,42 @@ impl CortexStore {
     }
 
     pub(crate) fn recover(&self) -> Result<RecoveryReport, CortexUseFatal> {
-        let (candidates, mut refusals) = self.inventory_recovery_candidates()?;
-        for candidate in candidates {
-            let request = match read_cortex_use_request(
-                &candidate.talent_directory,
-                &candidate.active_leaf,
-            ) {
-                CortexUseCandidateRead::Accepted(request) => request,
-                CortexUseCandidateRead::Refused(refusal) => {
-                    refusals.record(refusal);
-                    continue;
-                }
+        let (catalog, mut refusals) = self.inventory_recovery_catalog()?;
+        let authority = admit_recovery_namespace(&self.journal)?;
+        for talent in catalog.talents() {
+            let Some(talent_name) = talent.name().to_str() else {
+                refusals.record(CortexUseRefusal::TalentDirectoryRefused);
+                continue;
             };
-            let destination = match recovery_destination_check_checkpoint() {
-                Ok(()) => check_cortex_use_destination(&candidate.talent_directory, &request),
-                Err(refusal) => CortexUseDestinationCheck::Refused(refusal),
-            };
-            match destination {
-                CortexUseDestinationCheck::Vacant => {}
-                CortexUseDestinationCheck::Refused(refusal) => {
-                    refusals.record(refusal);
-                    continue;
+            let talent_directory = self.talents.join(talent_name);
+            for candidate in talent.candidates() {
+                match candidate.disposition() {
+                    CortexRecoveryDisposition::Completed => {}
+                    CortexRecoveryDisposition::Collision => match candidate.unresolved_reason() {
+                        Some(reason) => refusals.record(reason),
+                        None if parse_cortex_lifecycle_name(candidate.leaf())
+                            .active()
+                            .is_some() =>
+                        {
+                            recover_collision_without_reason(
+                                &talent_directory,
+                                candidate.leaf(),
+                                &mut refusals,
+                            );
+                        }
+                        None => {}
+                    },
+                    CortexRecoveryDisposition::Active => {
+                        recover_active_candidate(
+                            self,
+                            &authority,
+                            talent_name,
+                            &talent_directory,
+                            candidate.leaf(),
+                            &mut refusals,
+                        );
+                    }
                 }
-            }
-            let error = synthesized_error(
-                &request.use_id,
-                "Recovered: Cortex restarted while talent was running",
-            );
-            match self.append_active(&candidate.active_path, &error) {
-                Ok(true) => {}
-                Ok(false) | Err(_) => {
-                    refusals.record(CortexUseRefusal::CandidateIo);
-                    continue;
-                }
-            }
-            if fs::rename(
-                &candidate.active_path,
-                candidate
-                    .talent_directory
-                    .join(format!("{}.jsonl", request.use_id)),
-            )
-            .is_err()
-            {
-                refusals.record(CortexUseRefusal::CandidateIo);
             }
         }
         Ok(RecoveryReport { refusals })
@@ -126,22 +133,18 @@ impl CortexStore {
     pub(crate) fn complete(
         &self,
         use_id: &str,
-        active: &Path,
+        name: &str,
+        identity: CortexUseFileIdentity,
         request: Option<&Map<String, Value>>,
     ) {
-        let completed = active.with_file_name(format!("{use_id}.jsonl"));
-        if fs::rename(active, &completed).is_err() {
-            eprintln!("cortex: failed to complete talent file {use_id}");
+        if let Err(error) = complete_active_use(&self.authority, name, use_id, identity) {
+            eprintln!("cortex: failed to complete talent file {use_id}: {error}");
             return;
         }
+        let completed = self
+            .active_path(name, use_id)
+            .with_file_name(format!("{use_id}.jsonl"));
         let Some(request) = request else { return };
-        let Some(name) = request
-            .get("name")
-            .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
-        else {
-            return;
-        };
         let link = self
             .talents
             .join(format!("{}.log", talent_directory_name(name)));
@@ -276,47 +279,6 @@ impl RecoveryReport {
     }
 }
 
-#[derive(Clone, Debug)]
-struct RecoveryCandidate {
-    talent_directory: PathBuf,
-    active_leaf: std::ffi::OsString,
-    active_path: PathBuf,
-}
-
-#[cfg(test)]
-thread_local! {
-    static RECOVERY_ROOT_REVALIDATION_FAULT: std::cell::Cell<bool> = const {
-        std::cell::Cell::new(false)
-    };
-}
-
-#[cfg(test)]
-fn recovery_root_revalidation_checkpoint() -> Result<(), CortexUseFatal> {
-    RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| {
-        (!fault.replace(false))
-            .then_some(())
-            .ok_or(CortexUseFatal::RootInspectionFailed)
-    })
-}
-
-#[cfg(not(test))]
-fn recovery_root_revalidation_checkpoint() -> Result<(), CortexUseFatal> {
-    Ok(())
-}
-
-#[cfg(test)]
-fn run_with_recovery_root_revalidation_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
-    RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| {
-        assert!(
-            !fault.replace(true),
-            "recovery root fault is already active"
-        );
-    });
-    let result = operation();
-    let consumed = RECOVERY_ROOT_REVALIDATION_FAULT.with(|fault| !fault.replace(false));
-    (result, consumed)
-}
-
 #[cfg(test)]
 thread_local! {
     static RECOVERY_DESTINATION_IO_FAULT: std::cell::Cell<bool> = const {
@@ -351,66 +313,109 @@ fn run_with_recovery_destination_io_fault<T>(operation: impl FnOnce() -> T) -> (
     (result, consumed)
 }
 
+fn admit_recovery_namespace(journal: &Path) -> Result<CortexNamespaceAuthority, CortexUseFatal> {
+    let root = JournalRoot::open(journal).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+    create_or_admit_cortex_namespace(root).map_err(|_| CortexUseFatal::RootInspectionFailed)
+}
+
 impl CortexStore {
-    fn inventory_recovery_candidates(
+    fn inventory_recovery_catalog(
         &self,
-    ) -> Result<(Vec<RecoveryCandidate>, CortexUseRefusalCounts), CortexUseFatal> {
-        let root_identity = inspect_cortex_use_root(&self.talents)?;
-        let mut directories =
-            fs::read_dir(&self.talents).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
-        let mut candidates = Vec::new();
+    ) -> Result<
+        (
+            solstone_core_journal_io::cortex_use::CortexRecoveryCatalog,
+            CortexUseRefusalCounts,
+        ),
+        CortexUseFatal,
+    > {
+        let authority = admit_recovery_namespace(&self.journal)?;
+        let census = census_cortex_namespace(authority, MAXIMUM_RECOVERY_ENTRIES)
+            .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
         let mut refusals = CortexUseRefusalCounts::default();
-        loop {
-            let Some(entry) = directories.next() else {
-                break;
-            };
-            let entry = entry.map_err(|_| CortexUseFatal::RootInspectionFailed)?;
-            let file_type = entry
-                .file_type()
-                .map_err(|_| CortexUseFatal::RootInspectionFailed)?;
-            if !file_type.is_dir() {
-                continue;
-            }
-            let directory = entry.path();
-            let files = match fs::read_dir(&directory) {
-                Ok(files) => files,
-                Err(_) => {
-                    refusals.record(CortexUseRefusal::TalentDirectoryRefused);
-                    continue;
-                }
-            };
-            let mut directory_candidates = Vec::new();
-            let mut refused = false;
-            for entry in files {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => {
-                        refused = true;
-                        break;
-                    }
-                };
-                let active_leaf = entry.file_name();
-                if active_leaf
-                    .to_str()
-                    .is_some_and(|name| name.ends_with("_active.jsonl"))
+        for _ in 0..census.refused_talent_count() {
+            refusals.record(CortexUseRefusal::TalentDirectoryRefused);
+        }
+        for talent in census.talents() {
+            for leaf in talent.entries() {
+                if leaf.kind() != JournalEntryKind::RegularFile
+                    && leaf.projections().active().is_some()
                 {
-                    directory_candidates.push(RecoveryCandidate {
-                        active_path: directory.join(&active_leaf),
-                        talent_directory: directory.clone(),
-                        active_leaf,
-                    });
+                    refusals.record(CortexUseRefusal::CandidateNonregular);
                 }
-            }
-            if refused {
-                refusals.record(CortexUseRefusal::TalentDirectoryRefused);
-            } else {
-                candidates.extend(directory_candidates);
             }
         }
-        recovery_root_revalidation_checkpoint()?;
-        revalidate_cortex_use_root(&self.talents, &root_identity)?;
-        candidates.sort_by(|left, right| left.active_path.cmp(&right.active_path));
-        Ok((candidates, refusals))
+        let catalog =
+            build_recovery_catalog(&census).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
+        Ok((catalog, refusals))
+    }
+}
+
+fn recover_active_candidate(
+    store: &CortexStore,
+    authority: &CortexNamespaceAuthority,
+    talent_name: &str,
+    talent_directory: &Path,
+    leaf: &std::ffi::OsStr,
+    refusals: &mut CortexUseRefusalCounts,
+) {
+    let request = match read_cortex_use_request(talent_directory, leaf) {
+        CortexUseCandidateRead::Accepted(request) => request,
+        CortexUseCandidateRead::Refused(refusal) => {
+            refusals.record(refusal);
+            return;
+        }
+    };
+    let destination = match recovery_destination_check_checkpoint() {
+        Ok(()) => check_cortex_use_destination(talent_directory, &request),
+        Err(refusal) => CortexUseDestinationCheck::Refused(refusal),
+    };
+    match destination {
+        CortexUseDestinationCheck::Vacant => {}
+        CortexUseDestinationCheck::Refused(refusal) => {
+            refusals.record(refusal);
+            return;
+        }
+    }
+    let error = synthesized_error(
+        &request.use_id,
+        "Recovered: Cortex restarted while talent was running",
+    );
+    let active_path = talent_directory.join(leaf);
+    match store.append_active(&active_path, &error) {
+        Ok(true) => {}
+        Ok(false) | Err(_) => {
+            refusals.record(CortexUseRefusal::CandidateIo);
+            return;
+        }
+    }
+    match recover_active_use(authority, talent_name, &request.use_id) {
+        Ok(()) => {}
+        Err(error) if error.is_already_claimed() => {
+            refusals.record(CortexUseRefusal::DestinationOccupied);
+        }
+        Err(_) => {
+            refusals.record(CortexUseRefusal::CandidateIo);
+        }
+    }
+}
+
+fn recover_collision_without_reason(
+    talent_directory: &Path,
+    leaf: &std::ffi::OsStr,
+    refusals: &mut CortexUseRefusalCounts,
+) {
+    match read_cortex_use_request(talent_directory, leaf) {
+        CortexUseCandidateRead::Accepted(request) => {
+            match check_cortex_use_destination(talent_directory, &request) {
+                CortexUseDestinationCheck::Refused(refusal) => refusals.record(refusal),
+                CortexUseDestinationCheck::Vacant => {
+                    refusals.record(CortexUseRefusal::InvalidRequest);
+                }
+            }
+        }
+        CortexUseCandidateRead::Refused(_) => {
+            refusals.record(CortexUseRefusal::InvalidRequest);
+        }
     }
 }
 
@@ -542,8 +547,8 @@ mod tests {
 
     #[cfg(unix)]
     use solstone_core_journal_io::cortex_use::{
-        CortexUseOperation, CortexUseReadPrimitive, format_cortex_use_summary,
-        run_with_cortex_use_read_fault,
+        CortexCensusPrimitive, CortexUseOperation, CortexUseReadPrimitive,
+        format_cortex_use_summary, run_with_cortex_census_fault, run_with_cortex_use_read_fault,
     };
     use tempfile::tempdir;
 
@@ -567,13 +572,13 @@ mod tests {
 
     fn claim_recovery_candidate(store: &CortexStore, name: &str, use_id: &str) -> PathBuf {
         let request = recovery_request_named(name, use_id);
-        store.claim(name, use_id, &request).unwrap().unwrap()
+        store.claim(name, use_id, &request).unwrap().unwrap().0
     }
 
     fn complete_with_request(store: &CortexStore, use_id: &str, request: &Map<String, Value>) {
         let name = request["name"].as_str().expect("name");
-        let active = store.claim(name, use_id, request).unwrap().unwrap();
-        store.complete(use_id, &active, Some(request));
+        let (_, identity) = store.claim(name, use_id, request).unwrap().unwrap();
+        store.complete(use_id, name, identity, Some(request));
     }
 
     fn day_rows(store: &CortexStore, day: &str) -> Vec<Value> {
@@ -588,11 +593,11 @@ mod tests {
     fn append_without_create_drops_late_event_and_invalid_recovery_evidence_is_preserved() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request())
             .unwrap()
             .unwrap();
-        store.complete("one", &active, Some(&request()));
+        store.complete("one", "conversation", identity, Some(&request()));
         assert!(
             !store
                 .append_active(&active, &synthesized_error("one", "late"))
@@ -619,7 +624,7 @@ mod tests {
     fn day_index_terminal_status_is_last_wins() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request())
             .unwrap()
             .unwrap();
@@ -638,7 +643,7 @@ mod tests {
                 &serde_json::from_value(json!({"event":"finish","ts":1200})).unwrap(),
             )
             .unwrap();
-        store.complete("one", &active, Some(&request()));
+        store.complete("one", "conversation", identity, Some(&request()));
         let index = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
         let row: Value = serde_json::from_str(index.trim()).unwrap();
         assert_eq!(row["status"], "completed");
@@ -654,7 +659,8 @@ mod tests {
         let active = store
             .claim("conversation", "one", &request)
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         let before = fs::read(&active).unwrap();
         assert!(
             store
@@ -673,7 +679,8 @@ mod tests {
         let active = store
             .claim("conversation", "one", &request)
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         let link = store.talents().join("chat.log");
         atomic_symlink(&link, "chat/old.jsonl");
         let before = fs::read_link(&link).unwrap();
@@ -694,11 +701,11 @@ mod tests {
     fn completion_without_request_only_renames() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request())
             .unwrap()
             .unwrap();
-        store.complete("one", &active, None);
+        store.complete("one", "conversation", identity, None);
         assert!(active.with_file_name("one.jsonl").exists());
         assert!(!store.talents().join("chat.log").exists());
         assert!(!store.talents().join("19700101.jsonl").exists());
@@ -727,7 +734,7 @@ mod tests {
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let mut request = request();
         request.insert("model".into(), Value::String("request-model".into()));
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
@@ -739,7 +746,7 @@ mod tests {
                 .append_active(&active, &serde_json::from_value(event).unwrap())
                 .unwrap();
         }
-        store.complete("one", &active, Some(&request));
+        store.complete("one", "conversation", identity, Some(&request));
         let row: Value = serde_json::from_str(
             &fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap(),
         )
@@ -878,7 +885,8 @@ mod tests {
         let active = store
             .claim("conversation", "one", &request())
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         fs::remove_file(&active).unwrap();
         assert!(
             !store
@@ -898,14 +906,18 @@ mod tests {
     fn completion_rename_failure_is_silent_and_success_is_observable() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let missing = store.active_path("conversation", "missing");
-        store.complete("missing", &missing, Some(&request()));
+        let (claimed, identity) = store
+            .claim("conversation", "missing", &request())
+            .unwrap()
+            .unwrap();
+        fs::remove_file(&claimed).unwrap();
+        store.complete("missing", "conversation", identity, Some(&request()));
         assert!(!store.talents().join("19700101.jsonl").exists());
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request())
             .unwrap()
             .unwrap();
-        store.complete("one", &active, Some(&request()));
+        store.complete("one", "conversation", identity, Some(&request()));
         assert!(active.with_file_name("one.jsonl").exists());
     }
 
@@ -962,7 +974,7 @@ mod tests {
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let mut request = request();
         request.insert("model".into(), Value::String("request-model".into()));
-        let active = store
+        let (active, identity) = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
@@ -980,7 +992,7 @@ mod tests {
             .unwrap();
         let mut updated = request;
         updated.insert("provider".into(), Value::String("start-provider".into()));
-        store.complete("one", &active, Some(&updated));
+        store.complete("one", "conversation", identity, Some(&updated));
         let row: Value = serde_json::from_str(
             &fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap(),
         )
@@ -998,7 +1010,8 @@ mod tests {
         let first = store
             .claim("conversation", "one", &request)
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         let second_request = recovery_request("two");
         let _second = store
             .claim("conversation", "two", &second_request)
@@ -1008,7 +1021,8 @@ mod tests {
         let recovered = first.with_file_name("one.jsonl");
         let recovered_text = fs::read_to_string(&recovered).unwrap();
         store.append_day_index("one", &request, &recovered);
-        let rerun = store
+        fs::remove_file(&recovered).unwrap();
+        let (rerun, identity) = store
             .claim("conversation", "one", &request)
             .unwrap()
             .unwrap();
@@ -1018,7 +1032,7 @@ mod tests {
                 &serde_json::from_value(json!({"event":"finish","ts":1200})).unwrap(),
             )
             .unwrap();
-        store.complete("one", &rerun, Some(&request));
+        store.complete("one", "conversation", identity, Some(&request));
         let rerun_text = fs::read_to_string(&recovered).unwrap();
         assert_ne!(rerun_text, recovered_text);
         let rows = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
@@ -1037,7 +1051,8 @@ mod tests {
         let genuine = store
             .claim("conversation", "genuine", &recovery_request("genuine"))
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         let malformed = store.active_path("conversation", "malformed");
         fs::write(&malformed, b"not-json\n").unwrap();
         let wrong_directory = store.active_path("other", "wrong-directory");
@@ -1050,7 +1065,8 @@ mod tests {
         let occupied = store
             .claim("conversation", "occupied", &recovery_request("occupied"))
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0;
         let occupied_completed = occupied.with_file_name("occupied.jsonl");
         fs::write(&occupied_completed, b"existing completed record\n").unwrap();
         let malformed_before = fs::read(&malformed).unwrap();
@@ -1275,24 +1291,6 @@ mod tests {
         assert!(destination.exists() || destination.with_file_name("io.jsonl").exists());
     }
 
-    #[test]
-    fn recovery_root_revalidation_failure_after_inventory_leaves_candidates_unmodified() {
-        let directory = tempdir().unwrap();
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store
-            .claim("conversation", "one", &recovery_request("one"))
-            .unwrap()
-            .unwrap();
-        let before = fs::read(&active).unwrap();
-
-        let (result, injected) = run_with_recovery_root_revalidation_fault(|| store.recover());
-
-        assert!(injected);
-        assert_eq!(result, Err(CortexUseFatal::RootInspectionFailed));
-        assert_eq!(fs::read(&active).unwrap(), before);
-        assert!(!active.with_file_name("one.jsonl").exists());
-    }
-
     #[cfg(unix)]
     #[test]
     fn recovery_refuses_symlinked_talents_root_and_does_not_traverse_talent_symlinks() {
@@ -1339,5 +1337,111 @@ mod tests {
         store.append_day_index("1000", &request, Path::new("/missing"));
         assert!(!directory.path().join("outside.jsonl").exists());
         assert!(!store.talents().join("../outside.jsonl").exists());
+    }
+
+    #[test]
+    fn claim_returns_none_when_the_completed_use_already_exists() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        complete_with_request(&store, "one", &recovery_request("one"));
+        assert!(
+            store
+                .claim("conversation", "one", &recovery_request("one"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn complete_refuses_a_stale_identity_after_the_active_row_changes() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let request = recovery_request("one");
+        let (active, identity) = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
+        let mut bytes = fs::read(&active).unwrap();
+        bytes[0] ^= 1;
+        fs::write(&active, &bytes).unwrap();
+        store.complete("one", "conversation", identity, Some(&request));
+        assert!(active.exists());
+        assert!(!active.with_file_name("one.jsonl").exists());
+        assert!(!store.talents().join("19700101.jsonl").exists());
+    }
+
+    #[test]
+    fn recovery_classifies_completed_content_and_terminalizes_a_sibling_active() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let genuine = claim_recovery_candidate(&store, "conversation", "beta");
+        let completed_named_active = store.active_path("conversation", "gamma");
+        fs::write(
+            &completed_named_active,
+            b"{\"name\":\"conversation\",\"use_id\":\"gamma_active\"}\n",
+        )
+        .unwrap();
+        let before = fs::read(&completed_named_active).unwrap();
+        store.recover().unwrap();
+        assert!(genuine.with_file_name("beta.jsonl").exists());
+        assert_eq!(fs::read(&completed_named_active).unwrap(), before);
+    }
+
+    #[test]
+    fn recovery_completes_active_candidates_in_two_talent_directories() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let first = claim_recovery_candidate(&store, "conversation", "one");
+        let second = claim_recovery_candidate(&store, "other", "two");
+        store.recover().unwrap();
+        assert!(first.with_file_name("one.jsonl").exists());
+        assert!(second.with_file_name("two.jsonl").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_aborts_on_identity_changed_at_talent_list() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let _ = claim_recovery_candidate(&store, "conversation", "one");
+        let (result, consumed) =
+            run_with_cortex_census_fault(CortexCensusPrimitive::PostLeafEnumeration, 1, || {
+                store.recover()
+            });
+        assert!(consumed);
+        assert_eq!(result, Err(CortexUseFatal::RootInspectionFailed));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_collision_on_completed_hypothesis_io_recovers_a_sibling() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let genuine = claim_recovery_candidate(&store, "conversation", "aaa");
+        let refused = store.active_path("conversation", "zzz");
+        fs::write(
+            &refused,
+            b"{\"name\":\"conversation\",\"use_id\":\"nope\"}\n",
+        )
+        .unwrap();
+        let before = fs::read(&refused).unwrap();
+        let (report, consumed) =
+            run_with_cortex_use_read_fault(CortexUseReadPrimitive::InitialNameObserve, 3, || {
+                store.recover().unwrap()
+            });
+        assert!(consumed);
+        assert_eq!(report.refusals().get(CortexUseRefusal::CandidateIo), 1);
+        assert!(genuine.with_file_name("aaa.jsonl").exists());
+        assert_eq!(fs::read(&refused).unwrap(), before);
+    }
+
+    #[test]
+    fn recovery_round_trips_an_escaped_talent_name() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let active = claim_recovery_candidate(&store, "app:name", "one");
+        assert!(active.ends_with("app--name/one_active.jsonl"));
+        store.recover().unwrap();
+        assert!(active.with_file_name("one.jsonl").exists());
     }
 }

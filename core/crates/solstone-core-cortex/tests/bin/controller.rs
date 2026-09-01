@@ -31,7 +31,7 @@ fn main() {
         .expect("name")
         .to_owned();
     let store = CortexStore::new(journal).expect("store");
-    let active = store
+    let (active, identity) = store
         .claim(&name, &use_id, &request)
         .expect("claim")
         .expect("claimed");
@@ -44,7 +44,9 @@ fn main() {
         &templates_dir,
         Work {
             use_id,
+            talent_name: name,
             active,
+            identity,
             request,
         },
         None,

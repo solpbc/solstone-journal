@@ -60,6 +60,7 @@ pub struct CortexCensus {
     lock: CortexNamespaceLock,
     root_entries: Vec<CortexCensusLeaf>,
     talents: Vec<CortexTalentCensus>,
+    refused_talents: usize,
 }
 
 /// One retained talent directory and its direct children.
@@ -110,6 +111,11 @@ impl CortexCensus {
         self.root_entries
             .len()
             .saturating_add(self.talents.iter().map(|talent| talent.entries.len()).sum())
+    }
+
+    /// Talent directories skipped because listing or opening them failed as I/O.
+    pub fn refused_talent_count(&self) -> usize {
+        self.refused_talents
     }
 
     /// Re-open every bound talent name and the fixed authority slots.
@@ -290,6 +296,16 @@ impl CortexCensusError {
             CortexCensusErrorKind::LockBusy => "cortex_namespace_lock_busy".into(),
             CortexCensusErrorKind::LockIo => "cortex_namespace_lock_io".into(),
         }
+    }
+
+    fn is_io_at(self, stage: CortexCensusStage) -> bool {
+        matches!(
+            self.kind,
+            CortexCensusErrorKind::Stage {
+                stage: found,
+                class: CortexCensusClass::Io,
+            } if found == stage
+        )
     }
 }
 
@@ -534,12 +550,45 @@ fn census_after_lock(
     let root_entries = listed.iter().map(|item| leaf_from(&item.entry)).collect();
     let mut counted = listed.len();
     let mut talents = Vec::new();
+    let mut refused_talents = 0;
     for item in listed {
-        let Some(directory) = item.directory else {
+        let _ = item.directory;
+        if item.entry.kind != JournalEntryKind::Directory {
             continue;
+        }
+        checkpoint(CortexCensusPrimitive::PreTalentOpen)?;
+        let directory = match open_census_talent(&authority, &item.entry.name) {
+            Ok(Some(directory)) => directory,
+            Ok(None) => {
+                return Err(CortexCensusError::stage(
+                    CortexCensusStage::TalentOpen,
+                    CortexCensusClass::IdentityChanged,
+                ));
+            }
+            Err(error) => {
+                let mapped = map_listing(CortexCensusStage::TalentOpen, error);
+                if mapped.is_io_at(CortexCensusStage::TalentOpen) {
+                    refused_talents += 1;
+                    continue;
+                }
+                return Err(mapped);
+            }
         };
+        if !opened_matches_listing(&directory, &item.entry) {
+            return Err(CortexCensusError::stage(
+                CortexCensusStage::TalentOpen,
+                CortexCensusClass::IdentityChanged,
+            ));
+        }
         let remaining = maximum_entries.saturating_sub(counted);
-        let children = list_talent(&directory, remaining)?;
+        let children = match list_talent(&directory, remaining) {
+            Ok(children) => children,
+            Err(error) if error.is_io_at(CortexCensusStage::TalentList) => {
+                refused_talents += 1;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let Some(children) = children else {
             return Err(CortexCensusError::limit_exceeded());
         };
@@ -566,6 +615,7 @@ fn census_after_lock(
         lock,
         root_entries,
         talents,
+        refused_talents,
     })
 }
 
@@ -587,11 +637,28 @@ fn list_root(
     list_native_entries(
         authority.talents(),
         maximum_entries,
-        true,
+        false,
         CortexCensusPrimitive::PostRootList,
-        Some(CortexCensusPrimitive::PreTalentOpen),
+        None,
         CortexCensusStage::Root,
     )
+}
+
+#[cfg(unix)]
+fn open_census_talent(
+    authority: &CortexNamespaceAuthority,
+    name: &OsStr,
+) -> Result<Option<FlatDirectory>, FlatDirectoryError> {
+    open_flat_directory_bound(
+        authority.talents(),
+        name,
+        authority.talents().diagnostic_path(),
+    )
+}
+
+#[cfg(unix)]
+fn opened_matches_listing(directory: &FlatDirectory, entry: &FlatDirectoryEntry) -> bool {
+    directory.identity() == ObjectIdentity::from_device_inode(entry.device, entry.inode)
 }
 
 #[cfg(unix)]
@@ -667,11 +734,29 @@ fn list_root(
     list_windows_native_entries(
         authority.talents(),
         maximum_entries,
-        true,
+        false,
         CortexCensusPrimitive::PostRootList,
-        Some(CortexCensusPrimitive::PreTalentOpen),
+        None,
         CortexCensusStage::Root,
     )
+}
+
+#[cfg(windows)]
+fn open_census_talent(
+    authority: &CortexNamespaceAuthority,
+    name: &OsStr,
+) -> Result<Option<WindowsFlatDirectory>, crate::errors::FlatDirectoryError> {
+    open_windows_flat_directory_bound(
+        authority.talents(),
+        name,
+        authority.talents().diagnostic_path(),
+    )
+}
+
+#[cfg(windows)]
+fn opened_matches_listing(directory: &WindowsFlatDirectory, entry: &FlatDirectoryEntry) -> bool {
+    directory.identity().volume_serial() == entry.device
+        && directory.identity().folded_file_id() == entry.inode
 }
 
 #[cfg(windows)]

@@ -35,6 +35,7 @@ pub struct CortexRecoveryCandidate {
     leaf: OsString,
     use_id: String,
     disposition: CortexRecoveryDisposition,
+    unresolved_reason: Option<CortexUseRefusal>,
 }
 
 impl CortexRecoveryCandidate {
@@ -51,6 +52,12 @@ impl CortexRecoveryCandidate {
     /// Classification for this leaf after per-leaf resolution and cross-leaf collision.
     pub fn disposition(&self) -> CortexRecoveryDisposition {
         self.disposition
+    }
+
+    /// I/O-class reason when [`disposition`](Self::disposition) is Collision from a
+    /// hypothesis-read fault; `None` for content/cross-leaf collisions.
+    pub fn unresolved_reason(&self) -> Option<CortexUseRefusal> {
+        self.unresolved_reason
     }
 }
 
@@ -87,6 +94,7 @@ impl CortexRecoveryCatalog {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
 enum CortexCatalogClass {
     CandidateIo,
     CandidateIdentityChanged,
@@ -108,6 +116,7 @@ pub struct CortexCatalogError {
 }
 
 impl CortexCatalogError {
+    #[allow(dead_code)]
     const fn new(class: CortexCatalogClass) -> Self {
         Self { class }
     }
@@ -139,55 +148,66 @@ impl Error for CortexCatalogError {
 enum DualProjectionOutcome {
     Active(String),
     Completed(String),
-    Collision,
+    Collision(Option<CortexUseRefusal>),
 }
 
 /// Classify one dual-projection leaf from two already-obtained first-row reads.
 ///
-/// I/O-class refusals propagate as catalog errors and are never folded into
-/// [`DualProjectionOutcome::Collision`]. Both `Accepted` values cannot occur for
-/// production content (the two expected ids are `X` and `X_active`); that case
-/// is an assertion failure.
+/// I/O-class refusals become [`DualProjectionOutcome::Collision`] carrying the
+/// refusal. The active-read reason wins when both hypotheses refuse as I/O.
+/// Both `Accepted` values cannot occur for production content (the two expected
+/// ids are `X` and `X_active`); that case is an assertion failure.
 fn resolve_dual_projection(
     active_read: CortexUseCandidateRead,
     completed_read: CortexUseCandidateRead,
-) -> Result<DualProjectionOutcome, CortexCatalogError> {
-    if let Some(error) = io_class_error(&active_read) {
-        return Err(error);
+) -> DualProjectionOutcome {
+    if let Some(reason) = io_class_refusal(&active_read) {
+        return DualProjectionOutcome::Collision(Some(reason));
     }
-    if let Some(error) = io_class_error(&completed_read) {
-        return Err(error);
+    if let Some(reason) = io_class_refusal(&completed_read) {
+        return DualProjectionOutcome::Collision(Some(reason));
     }
     match (active_read, completed_read) {
         (CortexUseCandidateRead::Accepted(_), CortexUseCandidateRead::Accepted(_)) => {
             unreachable!("a dual-projection leaf cannot accept both hypotheses")
         }
         (CortexUseCandidateRead::Accepted(request), CortexUseCandidateRead::Refused(_)) => {
-            Ok(DualProjectionOutcome::Active(request.use_id))
+            DualProjectionOutcome::Active(request.use_id)
         }
         (CortexUseCandidateRead::Refused(_), CortexUseCandidateRead::Accepted(request)) => {
-            Ok(DualProjectionOutcome::Completed(request.use_id))
+            DualProjectionOutcome::Completed(request.use_id)
         }
         (CortexUseCandidateRead::Refused(_), CortexUseCandidateRead::Refused(_)) => {
-            Ok(DualProjectionOutcome::Collision)
+            DualProjectionOutcome::Collision(None)
         }
     }
 }
 
-fn io_class_error(read: &CortexUseCandidateRead) -> Option<CortexCatalogError> {
+fn io_class_refusal(read: &CortexUseCandidateRead) -> Option<CortexUseRefusal> {
     match read {
-        CortexUseCandidateRead::Refused(CortexUseRefusal::CandidateIo) => {
-            Some(CortexCatalogError::new(CortexCatalogClass::CandidateIo))
-        }
-        CortexUseCandidateRead::Refused(CortexUseRefusal::CandidateIdentityChanged) => Some(
-            CortexCatalogError::new(CortexCatalogClass::CandidateIdentityChanged),
-        ),
+        CortexUseCandidateRead::Refused(
+            reason @ (CortexUseRefusal::CandidateIo | CortexUseRefusal::CandidateIdentityChanged),
+        ) => Some(*reason),
         CortexUseCandidateRead::Accepted(_)
         | CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
         | CortexUseCandidateRead::Refused(CortexUseRefusal::CandidateNonregular)
         | CortexUseCandidateRead::Refused(CortexUseRefusal::DestinationOccupied)
         | CortexUseCandidateRead::Refused(CortexUseRefusal::DestinationIo)
         | CortexUseCandidateRead::Refused(CortexUseRefusal::TalentDirectoryRefused) => None,
+    }
+}
+
+fn classified(
+    leaf: &OsStr,
+    use_id: String,
+    disposition: CortexRecoveryDisposition,
+    unresolved_reason: Option<CortexUseRefusal>,
+) -> CortexRecoveryCandidate {
+    CortexRecoveryCandidate {
+        leaf: leaf.to_os_string(),
+        use_id,
+        disposition,
+        unresolved_reason,
     }
 }
 
@@ -223,11 +243,12 @@ fn resolve_leaf(
     }
     match (leaf.projections().active(), leaf.projections().completed()) {
         (None, None) => Ok(None),
-        (None, Some(use_id)) => Ok(Some(CortexRecoveryCandidate {
-            leaf: leaf.name().to_os_string(),
-            use_id: use_id.to_owned(),
-            disposition: CortexRecoveryDisposition::Completed,
-        })),
+        (None, Some(use_id)) => Ok(Some(classified(
+            leaf.name(),
+            use_id.to_owned(),
+            CortexRecoveryDisposition::Completed,
+            None,
+        ))),
         (Some(active_id), Some(_)) => resolve_dual_leaf(talent_directory, leaf, active_id),
         (Some(_), None) => {
             unreachable!("a name matching _active.jsonl also matches .jsonl")
@@ -246,38 +267,50 @@ fn resolve_dual_leaf(
     active_id: &str,
 ) -> Result<Option<CortexRecoveryCandidate>, CortexCatalogError> {
     let active_read = read_cortex_use_request(talent_directory, leaf.name());
-    if let Some(error) = io_class_error(&active_read) {
-        return Err(error);
+    if let Some(reason) = io_class_refusal(&active_read) {
+        return Ok(Some(classified(
+            leaf.name(),
+            active_id.to_owned(),
+            CortexRecoveryDisposition::Collision,
+            Some(reason),
+        )));
     }
     if let CortexUseCandidateRead::Accepted(request) = active_read {
-        return Ok(Some(CortexRecoveryCandidate {
-            leaf: leaf.name().to_os_string(),
-            use_id: request.use_id,
-            disposition: CortexRecoveryDisposition::Active,
-        }));
+        return Ok(Some(classified(
+            leaf.name(),
+            request.use_id,
+            CortexRecoveryDisposition::Active,
+            None,
+        )));
     }
     let completed_read = read_cortex_use_completed_request(talent_directory, leaf.name());
-    if let Some(error) = io_class_error(&completed_read) {
-        return Err(error);
+    if let Some(reason) = io_class_refusal(&completed_read) {
+        return Ok(Some(classified(
+            leaf.name(),
+            active_id.to_owned(),
+            CortexRecoveryDisposition::Collision,
+            Some(reason),
+        )));
     }
-    let outcome = resolve_dual_projection(active_read, completed_read)?;
-    Ok(Some(match outcome {
-        DualProjectionOutcome::Active(use_id) => CortexRecoveryCandidate {
-            leaf: leaf.name().to_os_string(),
-            use_id,
-            disposition: CortexRecoveryDisposition::Active,
+    Ok(Some(
+        match resolve_dual_projection(active_read, completed_read) {
+            DualProjectionOutcome::Active(use_id) => {
+                classified(leaf.name(), use_id, CortexRecoveryDisposition::Active, None)
+            }
+            DualProjectionOutcome::Completed(use_id) => classified(
+                leaf.name(),
+                use_id,
+                CortexRecoveryDisposition::Completed,
+                None,
+            ),
+            DualProjectionOutcome::Collision(reason) => classified(
+                leaf.name(),
+                active_id.to_owned(),
+                CortexRecoveryDisposition::Collision,
+                reason,
+            ),
         },
-        DualProjectionOutcome::Completed(use_id) => CortexRecoveryCandidate {
-            leaf: leaf.name().to_os_string(),
-            use_id,
-            disposition: CortexRecoveryDisposition::Completed,
-        },
-        DualProjectionOutcome::Collision => CortexRecoveryCandidate {
-            leaf: leaf.name().to_os_string(),
-            use_id: active_id.to_owned(),
-            disposition: CortexRecoveryDisposition::Collision,
-        },
-    }))
+    ))
 }
 
 fn reclassify_cross_leaf_collisions(candidates: &mut [CortexRecoveryCandidate]) {
@@ -307,7 +340,6 @@ fn reclassify_cross_leaf_collisions(candidates: &mut [CortexRecoveryCandidate]) 
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
     use std::fs;
     use std::path::Path;
     use std::time::Duration;
@@ -456,6 +488,9 @@ mod tests {
             "foo",
             CortexRecoveryDisposition::Collision,
         );
+        for candidate in conversation.candidates().iter().chain(other.candidates()) {
+            assert_eq!(candidate.unresolved_reason(), None);
+        }
     }
 
     #[test]
@@ -483,10 +518,19 @@ mod tests {
                 build_recovery_catalog(&census)
             });
         assert!(consumed);
-        let error = result.expect_err("I/O must fail the catalog");
-        assert_eq!(error.to_string(), "cortex_catalog_candidate_io");
-        assert_eq!(format!("{error:?}"), "cortex_catalog_candidate_io");
-        assert!(error.source().is_none());
+        let catalog = result.expect("I/O-class hypothesis read is a per-leaf collision");
+        let conversation = catalog_talent(&catalog, "conversation");
+        assert_eq!(conversation.candidates().len(), 1);
+        assert_candidate(
+            &conversation.candidates()[0],
+            "beta_active.jsonl",
+            "beta",
+            CortexRecoveryDisposition::Collision,
+        );
+        assert_eq!(
+            conversation.candidates()[0].unresolved_reason(),
+            Some(CortexUseRefusal::CandidateIo)
+        );
     }
 
     #[test]
@@ -581,29 +625,33 @@ mod tests {
             resolve_dual_projection(
                 refused(CortexUseRefusal::InvalidRequest),
                 accepted("foo_active")
-            )
-            .unwrap(),
+            ),
             DualProjectionOutcome::Completed("foo_active".into())
         );
         assert_eq!(
             resolve_dual_projection(
                 refused(CortexUseRefusal::InvalidRequest),
                 refused(CortexUseRefusal::CandidateNonregular)
-            )
-            .unwrap(),
-            DualProjectionOutcome::Collision
+            ),
+            DualProjectionOutcome::Collision(None)
         );
-        let io = resolve_dual_projection(refused(CortexUseRefusal::CandidateIo), accepted("foo"))
-            .unwrap_err();
-        assert_eq!(io.to_string(), "cortex_catalog_candidate_io");
-        let changed = resolve_dual_projection(
-            accepted("foo"),
-            refused(CortexUseRefusal::CandidateIdentityChanged),
-        )
-        .unwrap_err();
         assert_eq!(
-            changed.to_string(),
-            "cortex_catalog_candidate_identity_changed"
+            resolve_dual_projection(refused(CortexUseRefusal::CandidateIo), accepted("foo")),
+            DualProjectionOutcome::Collision(Some(CortexUseRefusal::CandidateIo))
+        );
+        assert_eq!(
+            resolve_dual_projection(
+                accepted("foo"),
+                refused(CortexUseRefusal::CandidateIdentityChanged),
+            ),
+            DualProjectionOutcome::Collision(Some(CortexUseRefusal::CandidateIdentityChanged))
+        );
+        assert_eq!(
+            resolve_dual_projection(
+                refused(CortexUseRefusal::CandidateIo),
+                refused(CortexUseRefusal::CandidateIdentityChanged),
+            ),
+            DualProjectionOutcome::Collision(Some(CortexUseRefusal::CandidateIo))
         );
     }
 }

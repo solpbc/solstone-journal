@@ -153,6 +153,11 @@ impl CortexAdmissionError {
     fn token(self) -> &'static str {
         self.class.token()
     }
+
+    /// True when admit or complete refused because the use id is already claimed.
+    pub const fn is_already_claimed(&self) -> bool {
+        matches!(self.class, CortexAdmissionClass::AlreadyClaimed)
+    }
 }
 
 impl fmt::Display for CortexAdmissionError {
@@ -336,6 +341,18 @@ pub fn complete_active_use(
     )
 }
 
+/// Complete `{use_id}_active.jsonl` to `{use_id}.jsonl` without a prior identity.
+///
+/// Recovery has no admit-time inode: the active leaf must exist as a regular
+/// file, and the completed name must be vacant, under the namespace lock.
+pub fn recover_active_use(
+    authority: &CortexNamespaceAuthority,
+    talent_name: &str,
+    use_id: &str,
+) -> Result<(), CortexAdmissionError> {
+    recover_with_timing(authority, talent_name, use_id, LockTiming::Default)
+}
+
 /// Admit with caller-supplied lock timing.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn admit_active_use_with_test_timing(
@@ -370,6 +387,23 @@ pub fn complete_active_use_with_test_timing(
         talent_name,
         use_id,
         active_path_identity,
+        LockTiming::Explicit(timeout, poll_interval),
+    )
+}
+
+/// Recover with caller-supplied lock timing.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn recover_active_use_with_test_timing(
+    authority: &CortexNamespaceAuthority,
+    talent_name: &str,
+    use_id: &str,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), CortexAdmissionError> {
+    recover_with_timing(
+        authority,
+        talent_name,
+        use_id,
         LockTiming::Explicit(timeout, poll_interval),
     )
 }
@@ -434,6 +468,30 @@ fn complete_with_timing(
         active_path_identity.first_row_len,
         active_path_identity.first_row_hash,
     )?;
+    checkpoint(CortexAdmissionPrimitive::DestinationProbe)?;
+    if probe_exists(&talent, OsStr::new(&completed))? {
+        return Err(CortexAdmissionError::new(
+            CortexAdmissionClass::AlreadyClaimed,
+        ));
+    }
+    checkpoint(CortexAdmissionPrimitive::Rename)?;
+    rename_active_to_completed(&talent, OsStr::new(&active), OsStr::new(&completed))
+}
+
+fn recover_with_timing(
+    authority: &CortexNamespaceAuthority,
+    talent_name: &str,
+    use_id: &str,
+    timing: LockTiming,
+) -> Result<(), CortexAdmissionError> {
+    let _lock = acquire_lock(authority, timing)?;
+    let projected = talent_directory_name(talent_name);
+    checkpoint(CortexAdmissionPrimitive::TalentDirectoryOpen)?;
+    let talent = open_talent_directory(authority, &projected)?;
+    let active = active_leaf(use_id);
+    let completed = completed_leaf(use_id);
+    checkpoint(CortexAdmissionPrimitive::ActiveObserve)?;
+    observe_active_present(&talent, OsStr::new(&active))?;
     checkpoint(CortexAdmissionPrimitive::DestinationProbe)?;
     if probe_exists(&talent, OsStr::new(&completed))? {
         return Err(CortexAdmissionError::new(
@@ -597,6 +655,19 @@ fn observe_active(
         {
             Ok(())
         }
+        _ => Err(CortexAdmissionError::new(
+            CortexAdmissionClass::ActiveIdentityChanged,
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn observe_active_present(
+    talent: &FlatDirectory,
+    name: &OsStr,
+) -> Result<(), CortexAdmissionError> {
+    match stat_entry(talent, name) {
+        Ok(Some(entry)) if entry.kind == JournalEntryKind::RegularFile => Ok(()),
         _ => Err(CortexAdmissionError::new(
             CortexAdmissionClass::ActiveIdentityChanged,
         )),
@@ -783,6 +854,31 @@ fn observe_active(
 }
 
 #[cfg(windows)]
+fn observe_active_present(
+    talent: &WindowsFlatDirectory,
+    name: &OsStr,
+) -> Result<(), CortexAdmissionError> {
+    let handle = match nt_create_relative(
+        talent.as_handle().as_raw_handle(),
+        name,
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    ) {
+        Ok(handle) => handle,
+        Err(_) => {
+            return Err(CortexAdmissionError::new(
+                CortexAdmissionClass::ActiveIdentityChanged,
+            ));
+        }
+    };
+    let path = talent.diagnostic_entry_path(name);
+    validate_windows_regular_handle(handle.as_raw_handle(), &path)
+        .map(|_| ())
+        .map_err(|_| CortexAdmissionError::new(CortexAdmissionClass::ActiveIdentityChanged))
+}
+
+#[cfg(windows)]
 fn verify_active_content(
     talent: &WindowsFlatDirectory,
     name: &OsStr,
@@ -907,6 +1003,31 @@ mod tests {
             admit_active_use_with_test_timing(&authority, TALENT, USE, &first_row(), ZERO, ZERO)
                 .unwrap_err();
         expect_token(error, "cortex_admission_already_claimed");
+        assert!(error.is_already_claimed());
+    }
+
+    #[test]
+    fn recover_active_use_renames_an_orphan_and_refuses_an_occupied_destination() {
+        let temporary = temp();
+        let root = temporary.path();
+        let authority = authority(root);
+        admit_active_use_with_test_timing(&authority, TALENT, USE, &first_row(), ZERO, ZERO)
+            .unwrap();
+        recover_active_use_with_test_timing(&authority, TALENT, USE, ZERO, ZERO).unwrap();
+        assert!(!active_path(root).exists());
+        assert_eq!(fs::read(completed_path(root)).unwrap(), {
+            let mut expected = first_row();
+            expected.push(b'\n');
+            expected
+        });
+        fs::write(active_path(root), b"replacement\n").unwrap();
+        let before_active = fs::read(active_path(root)).unwrap();
+        let before_completed = fs::read(completed_path(root)).unwrap();
+        let error =
+            recover_active_use_with_test_timing(&authority, TALENT, USE, ZERO, ZERO).unwrap_err();
+        assert!(error.is_already_claimed());
+        assert_eq!(fs::read(active_path(root)).unwrap(), before_active);
+        assert_eq!(fs::read(completed_path(root)).unwrap(), before_completed);
     }
 
     #[test]
@@ -1232,6 +1353,14 @@ mod tests {
         assert!(hits.is_empty(), "external callers of F4/F5 APIs: {hits:?}");
     }
 
+    fn is_cortex_storage(path: &Path) -> bool {
+        let parts: Vec<_> = path.iter().rev().take(3).collect();
+        parts.len() == 3
+            && parts[0] == "storage.rs"
+            && parts[1] == "src"
+            && parts[2] == "solstone-core-cortex"
+    }
+
     fn collect_hits(dir: &Path, needles: &[&str], hits: &mut Vec<String>) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
@@ -1240,6 +1369,9 @@ mod tests {
                     continue;
                 }
                 collect_hits(&path, needles, hits);
+                continue;
+            }
+            if is_cortex_storage(&path) {
                 continue;
             }
             if path.extension().is_none_or(|extension| extension != "rs") {
