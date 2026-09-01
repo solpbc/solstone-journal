@@ -387,11 +387,23 @@ fn terminate_exact_unix(
     if let Some(outcome) = already_exited_outcome(child)? {
         return Ok(outcome);
     }
-    let tree =
-        snapshot(parent_pid, source, None).map_err(|_| TerminationError::ProcessTreeNotReaped {
-            reason: "cleanup_unproven",
-            survivors: Vec::new(),
-        })?;
+    // ⛔ A failed snapshot must not mean "do not terminate". This used to return
+    // here, so a census that came back incomplete left the child running and
+    // reported a termination failure -- without ever sending it a signal. The
+    // parent's identity is revalidated by `signal_parent_exact` independently of
+    // the tree, so an exact termination is still safe and still correct; only the
+    // DESCENDANT half is unproven, and that is what the error below says.
+    // 🔒 `parent_pgid` stays `None` on the fallback: the exact path must never
+    // fall back to signalling a process group (see
+    // `ac28_exact_managed_process_terminates_without_process_group_fallback`).
+    let snapshot_result = snapshot(parent_pid, source, None);
+    let snapshot_uncertain = snapshot_result.is_err();
+    let tree = snapshot_result.unwrap_or(ProcessTreeSnapshot {
+        parent_pid,
+        parent_pgid: None,
+        descendants: Vec::new(),
+        descendant_births: HashMap::new(),
+    });
     let guard = SignalGuard::current();
     signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
     let deadline = Instant::now() + timeout;
@@ -403,6 +415,14 @@ fn terminate_exact_unix(
         return Err(TerminationError::ParentGraceTimeout);
     };
     let exit_code = Some(signal_aware_exit_code(&parent_exit));
+    if snapshot_uncertain {
+        // The parent terminated exactly and is reaped; we simply could not
+        // enumerate its descendants to vouch for them.
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: Vec::new(),
+        });
+    }
     let survivors = wait_for_descendants(&tree.descendants, deadline, source);
     if survivors.is_empty() {
         return Ok(TerminationOutcome::Graceful { exit_code });
