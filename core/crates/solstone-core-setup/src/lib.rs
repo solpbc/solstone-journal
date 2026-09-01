@@ -98,15 +98,51 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
     }
 }
 
+/// The managed artifacts an owner must clear to recover from a refused admission.
+///
+/// ⚠ Every path here is created by `journal setup` and rebuilt by it. 🔒 None of
+/// them is journal data — the journal itself is never touched by this remedy,
+/// and saying so is load-bearing: an owner who is not certain of that will not
+/// run the command, and this refusal is otherwise a dead end.
+fn identity_recovery_paths(home_dir: &std::path::Path) -> Vec<PathBuf> {
+    let wrappers = wrapper::wrapper_paths(home_dir);
+    let mut paths = vec![wrappers.journal, wrappers.solstone];
+    if let Some(service) = steps::service_artifact_path(home_dir) {
+        paths.push(service);
+    }
+    paths.push(installation_identity_dir(home_dir));
+    paths
+}
+
+fn installation_identity_dir(home_dir: &std::path::Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home_dir.join("Library/Application Support/solstone/installation-identity")
+    } else {
+        home_dir.join(".local/share/solstone/installation-identity")
+    }
+}
+
 fn report_identity_failure<W: Write>(
     jsonl: bool,
     stdout: &mut W,
     stderr: &mut impl Write,
     error: &IdentityError,
+    home_dir: &std::path::Path,
 ) -> ExitCode {
     let code = identity_error_code(error);
+    let recovery = identity_recovery_paths(home_dir);
+    // ⛔ `journal setup --clean-uninstall` is NOT the remedy here: it runs its own
+    // identity admission (`admit_clean_uninstall`) against the same registry that
+    // is refusing, so in this state it refuses too ("installation identity does
+    // not exist"). Naming it would send the owner in a circle. Verified on the
+    // founder's machine 2026-08-31: removing these paths by hand was the only
+    // route back, and no owner would have found it from the previous wording.
     let message = format!(
-        "installation identity admission failed: {error}. Repair the managed wrapper/service artifacts or identity storage, then re-run `journal setup`."
+        "installation identity admission failed: {error}. Remove the managed setup artifacts below and re-run `journal setup`; setup recreates all of them.{}\n\nYour journal is NOT affected -- none of these is journal data.",
+        recovery
+            .iter()
+            .map(|path| format!("\n    rm -rf {}", path.display()))
+            .collect::<String>()
     );
     if jsonl {
         let mut emitter = JsonlEmitter::new(stdout);
@@ -122,6 +158,10 @@ fn report_identity_failure<W: Write>(
                         "code": code,
                         "message": message,
                         "details": error.to_string(),
+                        "remedy": recovery
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>(),
                         "exit_code": 2,
                     }),
                 ),
@@ -343,7 +383,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         }
         let clean_session = match admit_clean_identity(&home_dir, &executable_dir, &project_root) {
             Ok(session) => session,
-            Err(error) => return report_identity_failure(false, stdout, stderr, &error),
+            Err(error) => return report_identity_failure(false, stdout, stderr, &error, &home_dir),
         };
         let clean_plan = clean_session.plan().clone();
         let journal = clean_plan.binding.journal_token.to_path_buf();
@@ -407,7 +447,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         if outcome.exit_code == 0
             && let Err(error) = clean_session.commit_tombstone()
         {
-            return report_identity_failure(false, stdout, stderr, &error);
+            return report_identity_failure(false, stdout, stderr, &error, &home_dir);
         }
         return ExitCode::from(outcome.exit_code as u8);
     }
@@ -422,7 +462,9 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         let identity_admission =
             match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
                 Ok(admission) => admission,
-                Err(error) => return report_identity_failure(args.jsonl, stdout, stderr, &error),
+                Err(error) => {
+                    return report_identity_failure(args.jsonl, stdout, stderr, &error, &home_dir);
+                }
             };
         let effective_journal = identity_admission
             .admission
@@ -1030,6 +1072,45 @@ mod tests {
             home.join(".local/bin/solstone").exists(),
             "an owner-authored alias must never be removed"
         );
+    }
+
+    /// A refusal that names no remedy is a dead end.
+    ///
+    /// Observed on the founder's machine 2026-08-31: the previous wording said
+    /// only "Repair the managed wrapper/service artifacts or identity storage",
+    /// and the sole route back was hand-removing four paths nobody would guess.
+    /// ⛔ `--clean-uninstall` is not the answer -- it runs the same admission and
+    /// refuses in this exact state -- so the refusal has to carry the paths.
+    #[test]
+    fn a_refused_identity_admission_names_every_path_the_owner_must_clear() {
+        let home = std::path::Path::new("/home/tester");
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        let exit = report_identity_failure(
+            false,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
+            home,
+        );
+        let text = String::from_utf8(stderr).expect("stderr");
+        for path in identity_recovery_paths(home) {
+            assert!(
+                text.contains(&path.display().to_string()),
+                "the remedy must name {}; got:\n{text}",
+                path.display()
+            );
+        }
+        assert!(
+            text.contains("re-run `journal setup`"),
+            "the remedy must say what to run afterwards; got:\n{text}"
+        );
+        // An owner who is not sure their journal is safe will not run the command.
+        assert!(
+            text.contains("journal is NOT affected"),
+            "the remedy must state that journal data is untouched; got:\n{text}"
+        );
+        assert_eq!(format!("{exit:?}"), format!("{:?}", ExitCode::from(2)));
     }
 
     #[test]
