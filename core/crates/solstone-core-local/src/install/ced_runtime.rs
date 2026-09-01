@@ -31,6 +31,15 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 const HELPER: &str = "solstone-core-ced-analyze";
+/// The helper's `probe` argv token. Mirrors
+/// `solstone_core_ced_analyze::PROBE_COMMAND`, which this crate cannot import:
+/// `solstone-core-ced-analyze` owns `solstone-core-ced-sys` and therefore
+/// `libloading`, and this crate is linked into `musl-static`-lane binaries that
+/// must never reach a `dlopen` dependency (enforced by
+/// `distribution_lane_dlopen_purity`). A bare invocation runs the helper in
+/// CLASSIFY mode, which rejects a probe-schema request as `unknown-schema` --
+/// the exact defect this constant exists to prevent.
+pub const CED_PROBE_COMMAND: &str = "probe";
 /// A classify request loads the engine and model once, then classifies every
 /// window of one decoded audio file -- not a sub-second contract probe like
 /// `solstone-core-transcribe::vad_runtime::VAD_RUNTIME_PROBE_TIMEOUT`, but it
@@ -203,8 +212,23 @@ pub fn invoke_ced_analyze(
     request: &Value,
     timeout: Duration,
 ) -> Result<Value, CedAnalyzeError> {
+    invoke_ced_analyze_with_args(program, &[], request, timeout)
+}
+
+/// [`invoke_ced_analyze`] with explicit leading argv tokens.
+///
+/// The helper dispatches on argv: bare is classify, `probe` is the readiness
+/// probe. A probe-schema request sent to a bare invocation is rejected as
+/// `unknown-schema`, so the probe caller MUST pass [`CED_PROBE_COMMAND`].
+pub fn invoke_ced_analyze_with_args(
+    program: &CedAnalyzeProgram,
+    leading_args: &[&str],
+    request: &Value,
+    timeout: Duration,
+) -> Result<Value, CedAnalyzeError> {
     let resolved = resolve_program(program)?;
     let mut child = Command::new(&resolved.executable)
+        .args(leading_args.iter().map(OsString::from))
         .args(&resolved.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -320,6 +344,44 @@ mod tests {
         let response = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(2))
             .expect("stub response parses");
         assert_eq!(response["ok"], Value::Bool(true));
+    }
+
+    /// W8-14 regression. The helper dispatches on argv: bare is CLASSIFY,
+    /// `probe` is the readiness probe, and a probe-schema request sent to a
+    /// bare invocation is rejected as `unknown-schema`. The readiness probe
+    /// shipped without the token, so a correct, loadable engine reported
+    /// `Unloadable` on every real install. The existing helper oracle could
+    /// not catch it because it invokes the helper directly with the token
+    /// rather than through this call path.
+    #[test]
+    fn leading_args_reach_the_helper_argv() {
+        // The stub is the oracle: it succeeds only when argv[1] is `probe`,
+        // exactly as the real helper's classify/probe dispatch behaves.
+        let (_root, path) = write_stub(
+            "#!/bin/sh\ncat >/dev/null\nif [ \"$1\" = \"probe\" ]; then \
+printf '%s\\n' '{\"schema\":\"solstone-ced-probe-response-v1\",\"ok\":true}'; exit 0; fi\n\
+printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schema\",\"detail\":\"bare invocation\"}' >&2\nexit 64\n",
+        );
+        let with_token = invoke_ced_analyze_with_args(
+            &explicit(path.clone()),
+            &[CED_PROBE_COMMAND],
+            &Value::Null,
+            Duration::from_secs(5),
+        )
+        .expect("probe token must reach the helper");
+        assert_eq!(with_token.get("ok"), Some(&Value::Bool(true)));
+
+        // Control: the same stub, same request, no token -> the failure the
+        // founder's machine actually reported.
+        let without = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(5))
+            .expect_err("a bare invocation must not satisfy the probe");
+        match without {
+            CedAnalyzeError::Exit { code, stderr } => {
+                assert_eq!(code, Some(64));
+                assert!(stderr.contains("unknown-schema"), "{stderr}");
+            }
+            other => panic!("expected Exit, got {other:?}"),
+        }
     }
 
     #[test]

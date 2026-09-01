@@ -12,7 +12,8 @@ use super::ced_install::{
     ced_artifact_key, ced_library_path, ced_model_path, check_ced_assets, model_artifact,
 };
 use super::ced_runtime::{
-    CED_ANALYZE_TIMEOUT, CedAnalyzeError, CedAnalyzeProgram, invoke_ced_analyze,
+    CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
+    invoke_ced_analyze_with_args,
 };
 use super::manifest::sha256_file;
 
@@ -184,7 +185,8 @@ fn probe_ced_engine(
             "ced_model_path": model,
         },
     });
-    match invoke_ced_analyze(program, &request, CED_ANALYZE_TIMEOUT) {
+    match invoke_ced_analyze_with_args(program, &[CED_PROBE_COMMAND], &request, CED_ANALYZE_TIMEOUT)
+    {
         Ok(response) if response.get("ok") == Some(&Value::Bool(true)) => Ok(()),
         Ok(response) => Err(format!(
             "ced probe helper returned an unexpected response: {response}"
@@ -215,6 +217,44 @@ fn helper_error_detail(stderr: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W8-14 regression, pinned at the exact call site that shipped broken.
+    ///
+    /// `probe_ced_engine` builds a PROBE-schema request. The helper dispatches
+    /// on argv -- bare is CLASSIFY -- so omitting the `probe` token makes the
+    /// helper reject a perfectly good engine as `unknown-schema`, which this
+    /// module then reports as `Unloadable`. That is precisely what the
+    /// founder's machine did: the helper answered `{"ok":true}` when invoked by
+    /// hand with the token, while `journal check` reported `unloadable`.
+    ///
+    /// The sibling tests below inject a probe CLOSURE and therefore cannot see
+    /// this class at all; this one drives the real invocation path.
+    #[test]
+    fn probe_ced_engine_invokes_the_helper_in_probe_mode() {
+        let root = tempfile::tempdir().expect("temp root");
+        let stub = root.path().join("helper.sh");
+        std::fs::write(
+            &stub,
+            "#!/bin/sh\ncat >/dev/null\nif [ \"$1\" = \"probe\" ]; then \
+printf '%s\\n' '{\"schema\":\"solstone-ced-probe-response-v1\",\"ok\":true}'; exit 0; fi\n\
+printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schema\",\"detail\":\"bare invocation is classify\"}' >&2\nexit 64\n",
+        )
+        .expect("write stub");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod stub");
+        }
+        let program = CedAnalyzeProgram::Explicit {
+            executable: stub,
+            args: Vec::new(),
+        };
+        let library = root.path().join("libced.so");
+        let model = root.path().join("model.gguf");
+        probe_ced_engine(&program, &library, &model)
+            .expect("the readiness probe must invoke the helper in probe mode");
+    }
     use std::fs;
 
     use crate::install::archive::DownloadHostPolicy;

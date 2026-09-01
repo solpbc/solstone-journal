@@ -91,6 +91,7 @@ pub enum AnalyzeError {
     },
     UnknownSchema {
         schema: String,
+        expected: &'static str,
     },
     LibraryUnreadable {
         path: String,
@@ -164,10 +165,13 @@ impl AnalyzeError {
     pub fn detail(&self) -> String {
         match self {
             Self::MalformedRequest { detail } => detail.clone(),
-            Self::UnknownSchema { schema } => {
-                format!(
-                    "request schema {schema:?} is not {REQUEST_SCHEMA:?} or {PROBE_REQUEST_SCHEMA:?}"
-                )
+            Self::UnknownSchema { schema, expected } => {
+                // Name the schema THIS invocation accepts, not both. The old
+                // wording listed the rejected schema among the accepted ones,
+                // which read as a contradiction and hid a real argv/schema
+                // mismatch: a probe request sent to a bare (classify)
+                // invocation was reported as "not X or Y" while being Y.
+                format!("request schema {schema:?} is not {expected:?} for this invocation")
             }
             Self::LibraryUnreadable { path } => {
                 format!("models.ced_library_path is missing or unreadable at {path:?}")
@@ -409,6 +413,7 @@ fn parse_probe_request(input: &str) -> Result<ProbeRequest, AnalyzeError> {
     if schema != PROBE_REQUEST_SCHEMA {
         return Err(AnalyzeError::UnknownSchema {
             schema: schema.to_string(),
+            expected: PROBE_REQUEST_SCHEMA,
         });
     }
     Ok(ProbeRequest {
@@ -428,6 +433,7 @@ fn parse_classify_request(input: &str) -> Result<ClassifyRequest, AnalyzeError> 
     if schema != REQUEST_SCHEMA {
         return Err(AnalyzeError::UnknownSchema {
             schema: schema.to_string(),
+            expected: REQUEST_SCHEMA,
         });
     }
     let models = parse_models(object)?;
