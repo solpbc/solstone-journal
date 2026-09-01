@@ -409,7 +409,7 @@ fn find_use_file(
         let path = entry?.path();
         if path.is_dir() {
             let candidate = path.join(format!("{use_id}.jsonl"));
-            if candidate.is_file() {
+            if candidate.is_file() && candidate_matches(&candidate, use_id)? {
                 return Ok((UseFileStatus::Completed, Some(candidate)));
             }
         }
@@ -418,12 +418,32 @@ fn find_use_file(
         let path = entry?.path();
         if path.is_dir() {
             let candidate = path.join(format!("{use_id}_active.jsonl"));
-            if candidate.is_file() {
+            if candidate.is_file() && candidate_matches(&candidate, use_id)? {
                 return Ok((UseFileStatus::Running, Some(candidate)));
             }
         }
     }
     Ok((UseFileStatus::NotFound, None))
+}
+
+fn candidate_matches(path: &Path, use_id: &str) -> io::Result<bool> {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let Some(line) = BufReader::new(file).lines().next() else {
+        return Ok(false);
+    };
+    let line = line?;
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok(false);
+    }
+    Ok(match serde_json::from_str::<Value>(line) {
+        Ok(event) => event.get("use_id").and_then(Value::as_str) == Some(use_id),
+        Err(_) => false,
+    })
 }
 
 fn read_events_at(path: &Path) -> Result<Vec<Value>, io::Error> {
@@ -660,7 +680,7 @@ mod tests {
         active_use(
             journal.path(),
             "finished",
-            "{bad json}\n{\"event\":\"finish\"}\n",
+            "{\"use_id\":\"finished\"}\n{bad json}\n{\"event\":\"finish\"}\n",
         );
         assert_eq!(
             get_use_end_state(journal.path(), "finished").unwrap(),
@@ -673,7 +693,11 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let path = journal.path().join("talents/test/non_utf8_active.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, b"{\"event\":\"finish\"}\n\xff").unwrap();
+        fs::write(
+            &path,
+            b"{\"event\":\"finish\",\"use_id\":\"non_utf8\"}\n\xff",
+        )
+        .unwrap();
         let error = get_use_end_state(journal.path(), "non_utf8").unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
@@ -695,8 +719,16 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn batch_wait_reports_terminal_and_timeout_per_use() {
         let journal = tempfile::tempdir().unwrap();
-        active_use(journal.path(), "finish", "{bad}\n{\"event\":\"finish\"}\n");
-        active_use(journal.path(), "pending", "{\"event\":\"request\"}\n");
+        active_use(
+            journal.path(),
+            "finish",
+            "{\"use_id\":\"finish\"}\n{bad}\n{\"event\":\"finish\"}\n",
+        );
+        active_use(
+            journal.path(),
+            "pending",
+            "{\"event\":\"request\",\"use_id\":\"pending\"}\n",
+        );
         let report = wait_for_uses_with(
             journal.path(),
             &["finish".to_owned(), "pending".to_owned()],
@@ -726,12 +758,12 @@ mod tests {
         active_use(
             journal.path(),
             "changed",
-            r#"{"event":"finish","output_changed":true}"#,
+            r#"{"event":"finish","output_changed":true,"use_id":"changed"}"#,
         );
         active_use(
             journal.path(),
             "truthy",
-            r#"{"event":"finish","output_changed":"yes"}"#,
+            r#"{"event":"finish","output_changed":"yes","use_id":"truthy"}"#,
         );
         let report = wait_for_uses_with(
             journal.path(),
@@ -773,7 +805,11 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn deadline_with_a_running_use_file_is_a_genuine_timeout() {
         let journal = tempfile::tempdir().unwrap();
-        active_use(journal.path(), "running", "{\"event\":\"request\"}\n");
+        active_use(
+            journal.path(),
+            "running",
+            "{\"event\":\"request\",\"use_id\":\"running\"}\n",
+        );
         let running = wait_for_uses_with(
             journal.path(),
             &["running".to_owned()],
@@ -795,8 +831,12 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let talents = journal.path().join("talents/test");
         fs::create_dir_all(&talents).unwrap();
-        fs::write(talents.join("complete.jsonl"), "").unwrap();
-        fs::write(talents.join("running_active.jsonl"), "").unwrap();
+        fs::write(talents.join("complete.jsonl"), r#"{"use_id":"complete"}"#).unwrap();
+        fs::write(
+            talents.join("running_active.jsonl"),
+            r#"{"use_id":"running"}"#,
+        )
+        .unwrap();
         assert_eq!(
             use_file_status(&journal.path().join("talents"), "complete").unwrap(),
             UseFileStatus::Completed
@@ -809,5 +849,62 @@ mod tests {
             use_file_status(&journal.path().join("talents"), "missing").unwrap(),
             UseFileStatus::NotFound
         );
+    }
+
+    #[test]
+    fn use_file_status_rejects_completed_filename_match_with_wrong_content() {
+        let journal = tempfile::tempdir().unwrap();
+        let talents = journal.path().join("talents/test");
+        fs::create_dir_all(&talents).unwrap();
+        fs::write(
+            talents.join("wrong_completed.jsonl"),
+            r#"{"use_id":"other"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            use_file_status(&journal.path().join("talents"), "wrong_completed").unwrap(),
+            UseFileStatus::NotFound
+        );
+    }
+
+    #[test]
+    fn use_file_status_rejects_active_filename_match_with_wrong_content() {
+        let journal = tempfile::tempdir().unwrap();
+        let talents = journal.path().join("talents/test");
+        fs::create_dir_all(&talents).unwrap();
+        fs::write(
+            talents.join("wrong_running_active.jsonl"),
+            r#"{"use_id":"other"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            use_file_status(&journal.path().join("talents"), "wrong_running").unwrap(),
+            UseFileStatus::NotFound
+        );
+    }
+
+    #[test]
+    fn candidate_matches_treats_vanished_file_as_non_match() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().join("ghost.jsonl");
+        fs::write(&path, r#"{"use_id":"ghost"}"#).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert!(!candidate_matches(&path, "ghost").unwrap());
+    }
+
+    #[test]
+    fn candidate_matches_rejects_malformed_json() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().join("bad.jsonl");
+        fs::write(&path, "not-json\n").unwrap();
+        assert!(!candidate_matches(&path, "bad").unwrap());
+    }
+
+    #[test]
+    fn candidate_matches_rejects_missing_use_id_field() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().join("noid.jsonl");
+        fs::write(&path, r#"{"event":"request"}"#).unwrap();
+        assert!(!candidate_matches(&path, "noid").unwrap());
     }
 }
