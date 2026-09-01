@@ -426,13 +426,28 @@ where
         }
         CedReadiness::Ready { .. } | CedReadiness::Degraded { .. } => {
             provider_stdout.push(ced_download_disclosure());
+            // This arm is reached two ways: `Ready` only falls through here
+            // when `options.force` is already true (the other `Ready` guard
+            // above catches every other case), and `Degraded` falls through
+            // unconditionally because the verdict above already used the
+            // full readiness probe (catalog digest + library ABI/symbols +
+            // load_model), which is strictly stronger than the installer's
+            // own `check_ced_assets` idempotency gate (sidecar match + size
+            // + nonempty files only). Passing `options.force` through
+            // verbatim let a Degraded verdict reach the installer while
+            // still leaving `force` false, so the installer's weaker gate
+            // could see its own checks pass and skip reinstalling entirely
+            // -- silently returning the same broken assets and leaving
+            // `journal install-models` a no-op against exactly the
+            // "present but not actually working" case it exists to repair.
+            // Forcing the real attempt here is safe in both cases: it is
+            // already what `options.force == true` means for `Ready`, and
+            // for `Degraded` a repair was already decided above.
             match (providers.ced)(
                 &journal,
                 &host.os_name,
                 &host.arch,
-                InstallerAction::Install {
-                    force: options.force,
-                },
+                InstallerAction::Install { force: true },
             ) {
                 Ok(None) => provider_stdout.push(format!(
                     "ced install: unsupported platform {}/{}; skipping ced sound-tag assets",
@@ -1749,6 +1764,51 @@ mod tests {
                 .stdout
                 .iter()
                 .any(|line| line.starts_with("model ready:"))
+        );
+    }
+
+    /// Regression test for the CED repair no-op: `check_ced_assets` (sidecar
+    /// match + size + nonempty files) is strictly weaker than the readiness
+    /// verdict that got us into this branch (catalog digest + library
+    /// ABI/symbols + `load_model`). Before the fix, a plain
+    /// `journal install-models` (no `--force`) forwarded `options.force`
+    /// (false) straight into the installer, so whenever the weak check
+    /// happened to pass despite the strong verdict saying Degraded, the
+    /// installer's own `!force && check_ced_assets(...).is_ok()` guard
+    /// skipped any real repair and silently returned the stale, still-broken
+    /// record -- the documented repair command doing nothing at all.
+    #[test]
+    fn degraded_ced_repair_always_forces_a_real_reinstall_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut seen_force = None;
+        let outcome = run_inner_with_test!(
+            host("linux", "x86_64", None),
+            || false,
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _, _, action| {
+                if let InstallerAction::Install { force } = action {
+                    seen_force = Some(force);
+                }
+                Err(ced_install::CedInstallError::new(
+                    "download_failed",
+                    "ced download failed",
+                    EXIT_IOERR,
+                ))
+            },
+            |_, _, _, _| panic!("failed CED repair must not reach rf-detr"),
+            |_, _, _| panic!("coreml installer must not run"),
+            |_, _, _| panic!("failed CED repair must not reach parakeet"),
+        );
+        assert_eq!(outcome.exit_code, EXIT_IOERR);
+        assert_eq!(
+            seen_force,
+            Some(true),
+            "a Degraded CED verdict must force a real reinstall attempt \
+             even when the caller did not pass --force, or the installer's \
+             own weaker idempotency check can silently no-op the repair"
         );
     }
 

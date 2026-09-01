@@ -144,10 +144,25 @@ fn probe_integrity_and_load(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    use crate::install::archive::DownloadHostPolicy;
     use crate::install::ced_fixture::{
         compile_load_stub, write_ced_model_bytes, write_complete_ced_install,
     };
-    use crate::install::ced_install::{ced_library_path, ced_model_path, model_artifact};
+    use crate::install::ced_install::{
+        ced_library_path, ced_model_path, check_ced_assets, install_ced_assets_with_policy,
+        model_artifact,
+    };
+
+    /// Refuses every host, so any attempted download surfaces as a hard
+    /// error instead of silently succeeding against the real network -- the
+    /// fixture stays hermetic and any actual install attempt is unmissable.
+    const DENY_ALL_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
+        allowed_hosts: &["example.invalid"],
+        allow_http: false,
+        origin_base_url: "https://updates.solstone.app",
+    };
 
     #[test]
     fn unsupported_platform_is_unsupported() {
@@ -191,6 +206,65 @@ mod tests {
             } => {}
             other => panic!("expected integrity-invalid, got {other:?}"),
         }
+    }
+
+    /// Hermetic reproduction of Brief A's actual failure mode: a journal
+    /// root where the sidecar, size and nonempty-file checks all pass --
+    /// exactly what `check_ced_assets` (the installer's own idempotency
+    /// gate) verifies -- while the model's real bytes still fail the
+    /// deeper, catalog-digest-based readiness verdict this module computes.
+    /// `write_complete_ced_install` writes a model padded to the catalog's
+    /// `size_bytes` but never fills it with the catalog's actual bytes, so
+    /// it is size-correct and digest-wrong: precisely the class of
+    /// degradation `check_ced_assets`'s "deliberately weak" comment
+    /// (ced_install.rs) says it cannot see.
+    ///
+    /// This shows the mechanism behind "why does the repair command fail
+    /// against it": `install_ced_assets_with_policy(force: false)` reads
+    /// the weak gate as "already fine" and returns the untouched, still-
+    /// broken record without attempting any download -- proven here via a
+    /// host-refusing policy, so any actual attempt would be unmissable.
+    #[test]
+    fn shallow_check_passes_while_deep_readiness_disagrees_and_repair_is_a_noop() {
+        let journal = tempfile::tempdir().unwrap();
+        write_complete_ced_install(journal.path(), "linux-cpu-x64").unwrap();
+
+        // The weak gate: sidecar/size/nonempty all check out.
+        assert!(
+            check_ced_assets(journal.path(), "linux", "x86_64").is_ok(),
+            "fixture must pass the installer's own shallow idempotency check"
+        );
+        // The strong gate (what the caller actually used to decide a repair
+        // was needed): the model's real bytes are all zero, not the
+        // catalog's pinned content, so the deep verdict disagrees.
+        assert!(
+            matches!(
+                evaluate_ced_readiness(journal.path(), "linux", "x86_64"),
+                CedReadiness::Degraded {
+                    cause: CedDegradedCause::IntegrityInvalid,
+                    ..
+                }
+            ),
+            "fixture must fail the deep, catalog-digest readiness verdict"
+        );
+
+        let before = fs::read(ced_model_path(journal.path())).unwrap();
+        let result = install_ced_assets_with_policy(
+            journal.path(),
+            "linux",
+            "x86_64",
+            false,
+            &DENY_ALL_POLICY,
+        );
+        assert!(
+            result.is_ok(),
+            "the weak gate reports success, so the installer skips reinstalling: {result:?}"
+        );
+        let after = fs::read(ced_model_path(journal.path())).unwrap();
+        assert_eq!(
+            before, after,
+            "no repair was attempted -- the deny-all policy never even had a chance to refuse a download"
+        );
     }
 
     #[test]

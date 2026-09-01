@@ -810,6 +810,27 @@ mod tests {
         }
     }
 
+    /// Brief A, done condition 6: once both provider readiness verdicts are
+    /// Ready (the fixed CED path plus a correctly re-installed RF-DETR),
+    /// the severity combination `rfdetr_check`'s `Degraded -> Blocked`
+    /// feeds into `overall()` must not read `Blocked` -- that propagation is
+    /// what currently suppresses the unrelated text-generation bootstrap via
+    /// `local_provider_blocked`. Isolated to just the ced/rfdetr checks
+    /// (matching `ced_warning_stays_independent_from_ready_rfdetr` below) so
+    /// an unrelated host-fit check (gpu/ram/disk) can't confound the result;
+    /// this does not depend on how either provider became Ready, only on
+    /// the propagation once both readiness verdicts agree the assets work.
+    #[test]
+    fn both_providers_ready_leaves_overall_ok() {
+        let inputs = check_inputs(CedCheckInput::Ready, RfdetrCheckInput::Ready);
+        let overall_severity = overall(&[
+            ced_check(&inputs).expect("ready CED check"),
+            rfdetr_check(&inputs).expect("ready RF-DETR check"),
+        ]);
+        assert_eq!(overall_severity, Severity::Ok);
+        assert_ne!(overall_severity, Severity::Blocked);
+    }
+
     #[test]
     fn ced_warning_stays_independent_from_ready_rfdetr() {
         let inputs = check_inputs(
