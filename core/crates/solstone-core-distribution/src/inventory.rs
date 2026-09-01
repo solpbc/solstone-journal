@@ -923,16 +923,26 @@ mod tests {
     }
 
     #[test]
-    fn the_admitted_binary_count_is_ten_and_names_the_pdf_and_vad_helpers() {
+    fn the_admitted_binary_count_is_eleven_and_names_the_pdf_vad_and_ced_helpers() {
         let inventory = committed();
         let bins = inventory.required_bins();
+        // Moved 10 -> 11 when sound tagging gained `solstone-core-ced-analyze`.
+        // CED was previously `dlopen`ed in-process by musl-static binaries,
+        // which have no dynamic loader, so it could never load in a shipped
+        // build; it now ships as a zig-gnu-2.27 helper like its siblings.
         assert_eq!(
             bins.len(),
-            10,
+            11,
             "admitted-binary count must move with the inventory, not widen"
         );
         assert!(bins.contains("solstone-core-pdf"));
         assert!(bins.contains("solstone-core-vad-analyze"));
+        assert!(bins.contains("solstone-core-ced-analyze"));
+        assert!(
+            !inventory
+                .forbidden_bins()
+                .contains("solstone-core-ced-analyze")
+        );
         assert!(!inventory.forbidden_bins().contains("solstone-core-pdf"));
         assert!(
             !inventory
