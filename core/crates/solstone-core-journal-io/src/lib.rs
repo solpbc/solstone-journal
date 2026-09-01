@@ -38,6 +38,8 @@ mod managed_log_lock_boundary;
 mod managed_log_names;
 pub mod name_admission;
 pub mod observation;
+#[cfg(any(unix, windows))]
+pub mod operational_log;
 pub mod paths;
 pub mod readers;
 pub mod removal;

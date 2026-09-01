@@ -3,12 +3,16 @@
 
 //! Advisory file leases held for the lifetime of their guard.
 
-use std::fs;
 #[cfg(unix)]
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
+use std::os::unix::io::{FromRawFd, OwnedFd};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -20,11 +24,15 @@ use nix::fcntl::{FcntlArg, Flock, FlockArg, fcntl};
 #[cfg(unix)]
 use nix::sys::stat::{Mode, fchmod};
 #[cfg(windows)]
-use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+use windows_sys::Win32::Foundation::{
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+};
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT, OPEN_ALWAYS,
 };
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
 use crate::errors::LeaseError;
 #[cfg(windows)]
@@ -68,6 +76,28 @@ pub struct FileLease {
     #[cfg(windows)]
     _guard: WindowsLockGuard,
     path: PathBuf,
+}
+
+/// Exclusive lease taken on an already-open file's own descriptor.
+///
+/// Dropping this value unlocks. It does not close the caller's original `File`.
+#[derive(Debug)]
+pub struct SelfLease {
+    #[cfg(unix)]
+    _guard: Flock<File>,
+    #[cfg(windows)]
+    _guard: WindowsLockGuard,
+}
+
+/// Result of a non-blocking exclusive try-lock used as a liveness probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeaseProbe {
+    /// An exclusive lock is currently held.
+    Active,
+    /// An exclusive lock was acquired and released immediately.
+    Released,
+    /// The probe could not classify the lease.
+    Indeterminate,
 }
 
 impl FileLease {
@@ -143,6 +173,103 @@ pub fn acquire_file_lease(
         }
     }
     Ok(None)
+}
+
+/// Take an exclusive nonblocking lease on `file` itself, without a companion path.
+pub fn acquire_self_lease(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    #[cfg(unix)]
+    {
+        acquire_self_lease_unix(file)
+    }
+    #[cfg(windows)]
+    {
+        acquire_self_lease_windows(file)
+    }
+}
+
+/// Non-blocking exclusive try-lock used as a liveness probe on an open handle.
+pub fn probe_file_lease(file: &File) -> LeaseProbe {
+    match acquire_self_lease(file) {
+        Ok(Some(lease)) => {
+            drop(lease);
+            LeaseProbe::Released
+        }
+        Ok(None) => LeaseProbe::Active,
+        Err(_) => LeaseProbe::Indeterminate,
+    }
+}
+
+#[cfg(unix)]
+fn acquire_self_lease_unix(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    let duplicated = fcntl(file, FcntlArg::F_DUPFD_CLOEXEC(3)).map_err(|error| {
+        io_error(
+            Path::new("self-lease"),
+            io::Error::from_raw_os_error(error as i32),
+        )
+    })?;
+    // SAFETY: `duplicated` is a freshly allocated descriptor owned by this function.
+    #[allow(unsafe_code)]
+    let owned = unsafe { OwnedFd::from_raw_fd(duplicated) };
+    let file = File::from(owned);
+    match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+        Ok(guard) => Ok(Some(SelfLease { _guard: guard })),
+        Err((file, error)) if is_contention(error) => {
+            drop(file);
+            Ok(None)
+        }
+        Err((file, error)) => {
+            drop(file);
+            Err(io_error(
+                Path::new("self-lease"),
+                io::Error::from_raw_os_error(error as i32),
+            ))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn acquire_self_lease_windows(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    let duplicated = duplicate_windows_handle(file)?;
+    match try_lock_exclusive(duplicated) {
+        Ok(guard) => Ok(Some(SelfLease { _guard: guard })),
+        Err((file, error)) if windows_contention(&error) => {
+            drop(file);
+            Ok(None)
+        }
+        Err((file, error)) => {
+            drop(file);
+            Err(io_error(Path::new("self-lease"), error))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn duplicate_windows_handle(file: &File) -> Result<File, LeaseError> {
+    let mut duplicated = INVALID_HANDLE_VALUE;
+    // SAFETY: source handle is a live `File`; output pointer is a local HANDLE.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            file.as_raw_handle(),
+            GetCurrentProcess(),
+            &mut duplicated,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        )
+    };
+    if result == 0 || duplicated == INVALID_HANDLE_VALUE {
+        return Err(io_error(
+            Path::new("self-lease"),
+            io::Error::last_os_error(),
+        ));
+    }
+    // SAFETY: `duplicated` is an owned handle returned by DuplicateHandle.
+    #[allow(unsafe_code)]
+    Ok(File::from(unsafe {
+        OwnedHandle::from_raw_handle(duplicated)
+    }))
 }
 
 #[cfg(unix)]

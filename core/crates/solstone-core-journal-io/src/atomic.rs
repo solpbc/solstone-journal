@@ -703,6 +703,35 @@ pub fn write_bytes_exclusive_bound(
     Ok(())
 }
 
+/// Publish an already-open exclusive stage with `linkat(2)` without closing it.
+///
+/// The destination name is never visible with partial content. The returned
+/// `File` still refers to the published inode after the stage name is unlinked.
+#[cfg(unix)]
+pub(crate) fn publish_open_stage_no_replace(
+    directory: &impl AsFd,
+    stage_name: &OsStr,
+    dest_name: &OsStr,
+    stage_file: File,
+) -> Result<File, AtomicWriteError> {
+    let path = Path::new(dest_name);
+    if let Err(source) = linkat(
+        directory,
+        stage_name,
+        directory,
+        dest_name,
+        AtFlags::empty(),
+    ) {
+        let _ = unlinkat(directory, stage_name, UnlinkatFlags::NoRemoveDir);
+        drop(stage_file);
+        return Err(io_error(path, errno_io(source)));
+    }
+    let _ = checkpoint(BoundPublicationPrimitive::StageUnlink);
+    let _ = unlinkat(directory, stage_name, UnlinkatFlags::NoRemoveDir);
+    let _ = fsync(directory);
+    Ok(stage_file)
+}
+
 /// Stage → fsync → rename → parent-sync on an already-bound directory.
 ///
 /// Pathname identity observations stay in [`atomic_replace_detailed`].
@@ -1125,7 +1154,7 @@ pub(crate) fn publication_candidate_name(
 }
 
 #[cfg(unix)]
-fn allocate_bound_stage(
+pub(crate) fn allocate_bound_stage(
     directory: &impl AsFd,
     destination: &OsStr,
     path: &Path,

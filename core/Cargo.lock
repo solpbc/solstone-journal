@@ -4534,6 +4534,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-journal",
  "tempfile",
  "windows-sys 0.61.2",
