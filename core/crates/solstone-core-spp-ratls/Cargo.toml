@@ -7,20 +7,38 @@ license.workspace = true
 publish = false
 
 [dependencies]
+lzma-rs = { workspace = true }
 ring = "=0.17.14"
 rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+solstone-core-artifact-download = { workspace = true }
 solstone-core-spp-attest = { workspace = true }
+tar = { workspace = true }
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
+[features]
+# Exposes the injectable install seam for the loopback download harness.
+# CI topology forbids TcpListener in the routine lib unit harness.
+test-hooks = []
+
 [dev-dependencies]
 rcgen = { workspace = true }
-serde_json = { workspace = true }
+sha2 = { workspace = true }
 socket2.workspace = true
 
 [[test]]
 name = "attested_channels"
 path = "tests/attested_channels.rs"
+
+[[test]]
+name = "nvattest_install"
+path = "tests/nvattest_install.rs"
+required-features = ["test-hooks"]
 
 [lints]
 workspace = true

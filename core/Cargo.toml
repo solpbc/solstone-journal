@@ -415,6 +415,9 @@ ureq = { version = "3.3.0", default-features = false }
 tar = "0.4"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 bzip2-rs = "0.1.2"
+# Decode-only xz for the nvattest appraiser .tar.xz payload. Pure Rust
+# (byteorder only); no C/FFI. Do not replace with xz2/liblzma.
+lzma-rs = "0.3"
 
 # Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
 # all 410 dependencies) put ~59G in target/debug against ~2.5G in

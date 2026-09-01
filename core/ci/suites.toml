@@ -4421,6 +4421,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-spp-ratls::nvattest_install"
+package = "solstone-core-spp-ratls"
+target = "nvattest_install"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-support-portal::support_portal_transport"
 package = "solstone-core-support-portal"
 target = "support_portal_transport"

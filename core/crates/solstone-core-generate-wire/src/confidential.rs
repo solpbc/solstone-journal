@@ -14,8 +14,8 @@ use solstone_core_generate::GenerateRequest;
 use solstone_core_local::{ByoEndpoint, HttpResponse};
 use solstone_core_spp_ratls::{
     AttestationSession, AttestedHttpError, AttestedIo, CompositeVerdict, NvattestEnsureStatus,
-    RatlsEndpoint, check_nvattest_readiness, classify_channel_failure,
-    classify_nvattest_prerequisite, establish_production_attested_channel, send_json_request,
+    RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
+    ensure_nvattest_installed, establish_production_attested_channel, send_json_request,
 };
 
 use crate::endpoint::{
@@ -52,7 +52,7 @@ pub fn confidential_generate(
             runtime,
             now: SystemTime::now(),
         },
-        check_nvattest_readiness,
+        ensure_nvattest_installed,
         |ratls_endpoint, nvattest_dir| {
             establish_production_attested_channel(
                 ratls_endpoint,
@@ -89,7 +89,7 @@ pub fn confidential_converse(
             runtime,
             now: SystemTime::now(),
         },
-        check_nvattest_readiness,
+        ensure_nvattest_installed,
         |ratls_endpoint, nvattest_dir| {
             establish_production_attested_channel(
                 ratls_endpoint,

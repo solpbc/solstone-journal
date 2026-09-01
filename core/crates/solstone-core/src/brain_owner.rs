@@ -462,6 +462,7 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
         &endpoint.base_url,
         &nvattest_dir,
         StdDuration::from_secs(120),
+        solstone_core_spp_ratls::ensure_nvattest_installed,
     ) {
         Ok(channel) if channel.session.status(SystemTime::now()) == "verified" => {
             spp_component_ok(now, &channel.session)

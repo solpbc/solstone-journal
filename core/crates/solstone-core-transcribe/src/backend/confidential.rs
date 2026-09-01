@@ -14,7 +14,7 @@ use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
 use solstone_core_spp_ratls::{
     AttestationFailureKind, AttestationSession, AttestationState, AttestationStateStore,
     AttestedIo, CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
-    classify_nvattest_prerequisite, perform_fresh_reattest,
+    classify_nvattest_prerequisite, ensure_nvattest_installed, perform_fresh_reattest,
 };
 
 use crate::TranscribeError;
@@ -126,6 +126,7 @@ pub(crate) fn transcribe(
         &endpoint.base_url,
         &nvattest_dir,
         ATTESTED_CHANNEL_TIMEOUT,
+        ensure_nvattest_installed,
     )
     .map_err(|_| deferred_from_attestation(state, now))?;
     let response = send_multipart_request(
