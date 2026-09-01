@@ -10,8 +10,10 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 use solstone_core_artifact_download::DownloadHostPolicy;
@@ -130,6 +132,30 @@ fn serve(body: Vec<u8>, status: u16) -> (String, thread::JoinHandle<()>) {
         let _ = stream.write_all(&body);
     });
     (format!("http://{addr}"), handle)
+}
+
+fn serve_once_with_delay(
+    body: Vec<u8>,
+    delay: Duration,
+) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_for_server = hits.clone();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        hits_for_server.fetch_add(1, Ordering::SeqCst);
+        thread::sleep(delay);
+        let mut buf = [0; 4096];
+        let _ = stream.read(&mut buf);
+        let header = format!(
+            "HTTP/1.1 200 X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(&body);
+    });
+    (format!("http://{addr}"), hits, handle)
 }
 
 fn attempt_dirs(parent: &Path) -> Vec<String> {
@@ -272,4 +298,30 @@ fn preexisting_directory_is_displaced() {
             .to_string_lossy()
             .contains("displaced")
     }));
+}
+
+#[test]
+fn concurrent_calls_perform_exactly_one_download() {
+    let root = TempDir::new("concurrent");
+    let dest = root.path().join("nvattest");
+    let archive = valid_archive();
+    let json = authority(&digest(&archive), archive.len() as u64);
+    let (origin, hits, server) = serve_once_with_delay(archive, Duration::from_millis(400));
+
+    let dest_first = dest.clone();
+    let json_first = json.clone();
+    let origin_first = origin.clone();
+    let first = thread::spawn(move || {
+        ensure_nvattest_installed_with(&dest_first, PLATFORM, &json_first, &policy(&origin_first))
+    });
+    thread::sleep(Duration::from_millis(50));
+    let second = ensure_nvattest_installed_with(&dest, PLATFORM, &json, &policy(&origin));
+    let first = first.join().unwrap();
+    server.join().unwrap();
+
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let results = [first, second];
+    assert!(results.contains(&NvattestEnsureStatus::Installed));
+    assert!(results.contains(&NvattestEnsureStatus::InstallInFlight));
+    locate_nvattest(&dest).expect("the tree is fully installed, not half-done");
 }
