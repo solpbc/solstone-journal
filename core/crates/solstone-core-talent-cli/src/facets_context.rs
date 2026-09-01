@@ -18,6 +18,89 @@ use solstone_core_journal_config::{is_path_shaped_name, read_journal_config};
 const MAX_ENTITIES_PER_FACET: usize = 20;
 const MAX_ENTITY_LINE_CHARS: usize = 240;
 
+/// The facet names a talent is allowed to choose from, in the same sense the
+/// `$facets` prompt context uses: a facet directory with a readable declaration
+/// that is not muted.
+///
+/// 🔴 Exists because the talent schemas ship a literal `__RUNTIME_FACETS__`
+/// placeholder in their `facet` enums and nothing ever replaced it. Measured on the
+/// founder's journal 2026-09-01: 55 real facets on disk, and every V2 `sense` run
+/// emitted `{"facet": "__RUNTIME_FACETS__"}` because that was the only value its
+/// schema permitted. That bogus facet then flowed into `facets.json`, into activity
+/// records, and finally into `participation`, which failed 56 times with
+/// `facet '__RUNTIME_FACETS__' not found` after running 46,245 times cleanly on V1.
+pub(crate) fn enabled_facet_names(journal_root: &Path) -> Vec<String> {
+    let Ok(mut facets) = list_facet_directories(journal_root) else {
+        return Vec::new();
+    };
+    facets.sort();
+    facets.dedup();
+    facets
+        .into_iter()
+        .filter(|facet| {
+            matches!(
+                read_facet_declaration(journal_root, facet),
+                Ok(Some(declaration)) if declaration.muted != Some(true)
+            )
+        })
+        .collect()
+}
+
+/// Replace the `__RUNTIME_FACETS__` placeholder in a talent schema with the owner's
+/// real facet names.
+///
+/// ⚠ When the owner has no enabled facets the enum is **removed** rather than left
+/// empty or left holding the placeholder. That matches what the prompt already tells
+/// the model in the same situation -- `all_summaries` emits "No facets are defined
+/// yet. You are in discovery mode. Name the contexts you observe" -- and a schema
+/// that permits no value at all would make discovery mode impossible to satisfy.
+pub(crate) fn substitute_runtime_facets(schema: &mut Value, journal_root: &Path) {
+    let names = enabled_facet_names(journal_root);
+    substitute_runtime_facets_with(schema, &names);
+}
+
+fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
+    match schema {
+        Value::Object(object) => {
+            let placeholder = object
+                .get("enum")
+                .and_then(Value::as_array)
+                .is_some_and(|values| {
+                    values
+                        .iter()
+                        .any(|value| value.as_str() == Some(RUNTIME_FACETS_PLACEHOLDER))
+                });
+            if placeholder {
+                if names.is_empty() {
+                    object.remove("enum");
+                } else {
+                    object.insert(
+                        "enum".to_owned(),
+                        Value::Array(
+                            names
+                                .iter()
+                                .map(|name| Value::String(name.clone()))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+            for value in object.values_mut() {
+                substitute_runtime_facets_with(value, names);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                substitute_runtime_facets_with(value, names);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The token the shipped talent schemas carry in their `facet` enums.
+pub(crate) const RUNTIME_FACETS_PLACEHOLDER: &str = "__RUNTIME_FACETS__";
+
 pub(crate) fn resolve_facets(
     journal_root: &Path,
     focused_facet: Option<&str>,
@@ -304,6 +387,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     use super::*;
+    use serde_json::json;
 
     fn declaration(root: &Path, facet: &str, content: &str) {
         let directory = root.join("facets").join(facet);
@@ -465,6 +549,70 @@ mod tests {
             resolve_facets(root.path(), None, None).expect("self-referential swallow"),
             ""
         );
+    }
+
+    /// The placeholder must become the owner's real facets.
+    ///
+    /// Measured on the founder's journal: 55 facets on disk, and every V2 `sense` run
+    /// still emitted `{"facet": "__RUNTIME_FACETS__"}` because that was the only value
+    /// its schema allowed.
+    #[test]
+    fn runtime_facets_placeholder_becomes_the_owners_facets() {
+        let mut schema = json!({
+            "properties": {
+                "facets": {
+                    "items": {
+                        "properties": {
+                            "facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]},
+                            "level": {"type": "string", "enum": ["high", "low"]}
+                        }
+                    }
+                }
+            }
+        });
+        super::substitute_runtime_facets_with(
+            &mut schema,
+            &["awareness".to_owned(), "ceo".to_owned()],
+        );
+        assert_eq!(
+            schema["properties"]["facets"]["items"]["properties"]["facet"]["enum"],
+            json!(["awareness", "ceo"])
+        );
+        // 🔒 An unrelated enum must be left exactly as it was.
+        assert_eq!(
+            schema["properties"]["facets"]["items"]["properties"]["level"]["enum"],
+            json!(["high", "low"])
+        );
+    }
+
+    /// ⚠ With no facets the enum is REMOVED, not emptied.
+    ///
+    /// `all_summaries` tells the model "No facets are defined yet. You are in discovery
+    /// mode. Name the contexts you observe" in exactly this case, and an empty enum
+    /// would permit no value at all -- making that instruction impossible to satisfy.
+    #[test]
+    fn discovery_mode_drops_the_facet_enum_entirely() {
+        let mut schema = json!({"facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]}});
+        super::substitute_runtime_facets_with(&mut schema, &[]);
+        assert!(
+            schema["facet"].get("enum").is_none(),
+            "an empty enum permits nothing; discovery mode needs a free string"
+        );
+        assert_eq!(schema["facet"]["type"], json!("string"));
+    }
+
+    /// 🔒 Negative twin: a schema without the placeholder is untouched.
+    #[test]
+    fn a_schema_without_the_placeholder_is_unchanged() {
+        let original = json!({
+            "properties": {
+                "kind": {"type": "string", "enum": ["meeting", "call"]},
+                "note": {"type": "string"}
+            }
+        });
+        let mut schema = original.clone();
+        super::substitute_runtime_facets_with(&mut schema, &["awareness".to_owned()]);
+        assert_eq!(schema, original);
     }
 
     #[test]

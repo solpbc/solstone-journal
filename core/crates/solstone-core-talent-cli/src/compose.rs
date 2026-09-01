@@ -52,7 +52,12 @@ pub fn compose_talent(
         let talent_dir = Path::new(path)
             .parent()
             .ok_or_else(|| format!("talent {}: prompt path has no parent", config.key))?;
-        let parsed = load_talent_schema(&config.key, talent_dir, schema_path)?;
+        let mut parsed = load_talent_schema(&config.key, talent_dir, schema_path)?;
+        // 🔴 The shipped schemas carry a literal `__RUNTIME_FACETS__` in their `facet`
+        // enums, and nothing replaced it -- so the model's only permitted facet value
+        // WAS the placeholder. Substitute the owner's real facets here, where the
+        // journal root is in hand.
+        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root);
         composed.insert("json_schema".to_owned(), parsed);
         composed.remove("schema");
     }
@@ -162,6 +167,47 @@ mod tests {
         )
         .expect("schema");
         root
+    }
+
+    /// 🔴 The wiring, not just the helper: a composed schema must never still carry
+    /// `__RUNTIME_FACETS__`.
+    ///
+    /// On the founder's journal every V2 `sense` run emitted
+    /// `{"facet": "__RUNTIME_FACETS__"}` because the schema handed to the model
+    /// permitted nothing else. That bogus facet reached `facets.json`, activity
+    /// records, and finally `participation`, which failed 56 times with
+    /// `facet '__RUNTIME_FACETS__' not found` after 46,245 clean runs on V1.
+    #[test]
+    fn compose_talent_substitutes_the_runtime_facets_placeholder() {
+        let root = setup();
+        fs::write(
+            root.path().join("talent/demo.schema.json"),
+            r#"{"type":"object","properties":{"facet":{"type":"string","enum":["__RUNTIME_FACETS__"]}}}"#,
+        )
+        .expect("schema");
+        let config = discover(&root.path().join("talent"), &root.path().join("apps"))
+            .expect("discover")
+            .pop()
+            .expect("config");
+        let composed = compose_talent(
+            &config,
+            root.path(),
+            &root.path().join("think/templates"),
+            Some("work"),
+        )
+        .expect("compose");
+        let schema = composed.get("json_schema").expect("json_schema");
+        assert_eq!(
+            schema["properties"]["facet"]["enum"],
+            serde_json::json!(["work"]),
+            "the placeholder must be replaced by the owner's real facets"
+        );
+        assert!(
+            !serde_json::to_string(schema)
+                .expect("serialize")
+                .contains("__RUNTIME_FACETS__"),
+            "no composed schema may still carry the placeholder"
+        );
     }
 
     #[test]
