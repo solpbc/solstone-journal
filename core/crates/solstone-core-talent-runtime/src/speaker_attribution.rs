@@ -242,13 +242,26 @@ pub fn build(
             return Err(skipped(prepared, reason));
         }
     };
-    let ResolveOutcome::Resolved(resolved) = resolved else {
-        let reason = "no_embeddings";
-        if !dry_run && has_embeddings(&segment_dir) {
-            solstone_core_speaker_id::labels::write_stub_labels(&segment_dir, reason)
-                .map_err(|error| skipped(prepared, error.to_string()))?;
+    // Every non-resolved outcome used to report `no_embeddings`, so a broken owner
+    // identity and a segment holding a perfectly good `audio.npz` produced the same
+    // sentence. Name the outcome that actually occurred: only `Empty` is about
+    // missing embeddings, and the other two are separately actionable.
+    let resolved = match resolved {
+        ResolveOutcome::Resolved(resolved) => resolved,
+        outcome => {
+            let reason = match outcome {
+                ResolveOutcome::SegmentMissing => "no_segment",
+                ResolveOutcome::IdentityInvalid => "identity_invalid",
+                ResolveOutcome::NoOwnerCentroid => "no_owner_centroid",
+                ResolveOutcome::Empty { .. } => "no_embeddings",
+                ResolveOutcome::Resolved(_) => unreachable!("matched above"),
+            };
+            if !dry_run && has_embeddings(&segment_dir) {
+                solstone_core_speaker_id::labels::write_stub_labels(&segment_dir, reason)
+                    .map_err(|error| skipped(prepared, error.to_string()))?;
+            }
+            return Err(skipped(prepared, reason));
         }
-        return Err(skipped(prepared, reason));
     };
     if resolved.labels.is_empty() {
         let reason = "no_embeddings";
@@ -593,15 +606,18 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(
-            matches!(outcome, RuntimeOutcome::Skipped { reason, .. } if reason == "no_embeddings")
-        );
+        // This fixture writes no owner identity at all, so the honest reason names
+        // that rather than blaming absent embeddings.
+        let RuntimeOutcome::Skipped { reason, .. } = outcome else {
+            panic!("expected a skip, got {outcome:?}");
+        };
+        assert_eq!(reason, "identity_invalid");
         assert_eq!(
             serde_json::from_str::<Value>(
                 &std::fs::read_to_string(segment.join("talents/speaker_labels.json")).unwrap(),
             )
             .unwrap()["reason"],
-            "no_embeddings"
+            "identity_invalid"
         );
     }
 
