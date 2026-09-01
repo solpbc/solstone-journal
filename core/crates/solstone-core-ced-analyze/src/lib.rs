@@ -558,7 +558,34 @@ fn read_audio_f32le(path: &str) -> Result<Vec<f32>, AnalyzeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command as SystemCommand;
+
+    // No process-spawning helper lives here on purpose. The CI topology
+    // validator's routine-boundary scanner (`solstone-core-repository-contracts::ci::
+    // scan_routine_boundaries`) walks every `src/` file -- including
+    // `#[cfg(test)]` code -- and refuses a `std::process::Command::new` call
+    // reachable from the routine `--lib` unit harness (it does not walk
+    // `tests/`, which is registered and gated separately). A `compile_stub`
+    // helper here previously spawned `cc` and was flagged as
+    // `tests::compile_stub::process`. Every test that needed a real compiled
+    // `libced.so` -- and therefore a real subprocess to build it -- moved to
+    // `tests/ced_oracles.rs`, which already has its own `compile_stub` and
+    // spawns the real `solstone-core-ced-analyze` binary as a subprocess
+    // anyway: `real_subprocess_probe_succeeds_against_a_loadable_stub`,
+    // `real_subprocess_probe_reports_unloadable_for_a_wrong_abi_stub` (now
+    // also asserting the ABI-mismatch detail text),
+    // `real_subprocess_probe_reports_model_load_failed_for_null_load_marker`
+    // (new), and `real_subprocess_classify_matches_the_two_window_contract`
+    // (now also asserting the failed window's `reason`). Every assertion
+    // that lived in the four removed tests
+    // (`probe_wrong_abi_reports_library_unloadable`,
+    // `probe_null_load_reports_model_load_failed`,
+    // `probe_succeeds_against_a_loadable_stub_and_real_model_bytes`,
+    // `classify_reports_per_window_success_and_failure_without_failing_the_request`)
+    // still exists in `tests/ced_oracles.rs`; only the process boundary
+    // moved to a target the scanner already excludes, along with the
+    // in-process call becoming a real subprocess call to the compiled
+    // binary -- a strictly stronger proof, not a weaker one, of the same
+    // outcomes.
 
     fn request_string(value: Value) -> String {
         serde_json::to_string(&value).expect("request JSON")
@@ -570,40 +597,6 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         fs::write(path, bytes).expect("write audio");
-    }
-
-    /// Compile the shared C stub fixture with a given ABI version and model
-    /// call-count log. Returns `None` when no C compiler is available, which
-    /// callers use to skip rather than fail.
-    fn compile_stub(output: &Path, abi: i32) -> Option<()> {
-        let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".to_owned());
-        if SystemCommand::new(&compiler)
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            return None;
-        }
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ced_stub.c");
-        let mut command = SystemCommand::new(compiler);
-        if std::env::consts::OS == "macos" {
-            command.arg("-dynamiclib");
-        } else {
-            command.args(["-shared", "-fPIC"]);
-        }
-        let output = command
-            .arg(format!("-DCED_TEST_ABI={abi}"))
-            .arg(source)
-            .arg("-o")
-            .arg(output)
-            .output()
-            .expect("start C compiler");
-        assert!(
-            output.status.success(),
-            "compile CED stub failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        Some(())
     }
 
     #[test]
@@ -660,69 +653,6 @@ mod tests {
     }
 
     #[test]
-    fn probe_wrong_abi_reports_library_unloadable() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = directory.path().join("libced.so");
-        let Some(()) = compile_stub(&library, 2) else {
-            eprintln!("skipping: no usable C compiler");
-            return;
-        };
-        let model = directory.path().join("model.gguf");
-        fs::write(&model, b"model").unwrap();
-        let error = run_probe_request(&request_string(json!({
-            "schema": PROBE_REQUEST_SCHEMA,
-            "models": {"ced_library_path": library, "ced_model_path": model},
-        })))
-        .unwrap_err();
-        assert_eq!(error.reason(), "library-unloadable");
-        assert!(
-            error.detail().contains("ABI mismatch"),
-            "{}",
-            error.detail()
-        );
-    }
-
-    #[test]
-    fn probe_null_load_reports_model_load_failed() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = directory.path().join("libced.so");
-        let Some(()) = compile_stub(&library, 1) else {
-            eprintln!("skipping: no usable C compiler");
-            return;
-        };
-        let model = directory.path().join("model.gguf");
-        fs::write(&model, b"NULL_LOAD").unwrap();
-        let error = run_probe_request(&request_string(json!({
-            "schema": PROBE_REQUEST_SCHEMA,
-            "models": {"ced_library_path": library, "ced_model_path": model},
-        })))
-        .unwrap_err();
-        assert_eq!(error.reason(), "model-load-failed");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn probe_succeeds_against_a_loadable_stub_and_real_model_bytes() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = directory.path().join("libced.so");
-        let Some(()) = compile_stub(&library, 1) else {
-            eprintln!("skipping: no usable C compiler");
-            return;
-        };
-        let model = directory.path().join("model.gguf");
-        fs::write(&model, b"real model bytes").unwrap();
-        let response = run_probe_request(&request_string(json!({
-            "schema": PROBE_REQUEST_SCHEMA,
-            "models": {"ced_library_path": library, "ced_model_path": model},
-        })))
-        .expect("probe succeeds");
-        assert_eq!(
-            response,
-            json!({"schema": PROBE_RESPONSE_SCHEMA, "ok": true})
-        );
-    }
-
-    #[test]
     fn classify_request_with_unknown_schema_is_rejected() {
         let error = run_classify_request(&request_string(json!({
             "schema": "solstone-ced-request-v2",
@@ -759,43 +689,6 @@ mod tests {
         // exceeds the decoded length) rather than reporting the missing
         // engine as though the window were fine.
         assert_eq!(error.reason(), "window-out-of-range");
-    }
-
-    #[test]
-    fn classify_reports_per_window_success_and_failure_without_failing_the_request() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = directory.path().join("libced.so");
-        let Some(()) = compile_stub(&library, 1) else {
-            eprintln!("skipping: no usable C compiler");
-            return;
-        };
-        let model = directory.path().join("model.gguf");
-        fs::write(&model, b"real model bytes").unwrap();
-        let audio_path = directory.path().join("audio.f32le");
-        // First window: negative first sample triggers the stub's classify
-        // failure. Second window: normal samples classify successfully.
-        let mut audio = vec![-1.0_f32; 16_000];
-        audio.extend(vec![0.0_f32; 16_000]);
-        write_f32le(&audio_path, &audio);
-
-        let response = run_classify_request(&request_string(json!({
-            "schema": REQUEST_SCHEMA,
-            "models": {"ced_library_path": library, "ced_model_path": model},
-            "audio_f32le_path": audio_path,
-            "sample_rate_hz": 16000,
-            "top_k": 0,
-            "windows": [
-                {"start_sample": 0, "end_sample": 16_000},
-                {"start_sample": 16_000, "end_sample": 32_000},
-            ],
-        })))
-        .expect("classify succeeds at the request level");
-
-        assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
-        assert_eq!(response["windows"][0]["ok"], json!(false));
-        assert_eq!(response["windows"][0]["reason"], json!("classify-failed"));
-        assert_eq!(response["windows"][1]["ok"], json!(true));
-        assert_eq!(response["windows"][1]["tags"]["Music"], json!(0.9));
     }
 
     #[test]

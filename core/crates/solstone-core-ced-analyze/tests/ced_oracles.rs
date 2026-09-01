@@ -86,7 +86,11 @@ fn fixture() -> Option<Fixture> {
     })
 }
 
-fn run_helper(args: &[&str], request: &Value) -> (bool, Value, String) {
+/// Runs the real compiled helper as a subprocess. The returned exit code
+/// lets a caller pin the exact exit-status contract (e.g. 69 for a
+/// host/asset-shaped failure) the way the in-process `AnalyzeError::exit_code()`
+/// unit tests used to, before the process-spawning tests moved here.
+fn run_helper(args: &[&str], request: &Value) -> (bool, Value, String, Option<i32>) {
     let mut child = Command::new(helper_binary())
         .args(args)
         .stdin(Stdio::piped())
@@ -115,7 +119,12 @@ fn run_helper(args: &[&str], request: &Value) -> (bool, Value, String) {
             .and_then(|line| serde_json::from_str(line).ok())
             .unwrap_or(Value::Null)
     };
-    (output.status.success(), parsed, stderr)
+    (
+        output.status.success(),
+        parsed,
+        stderr,
+        output.status.code(),
+    )
 }
 
 #[test]
@@ -128,7 +137,7 @@ fn real_subprocess_probe_succeeds_against_a_loadable_stub() {
             "ced_model_path": fixture.model,
         },
     });
-    let (ok, response, stderr) = run_helper(&[PROBE_COMMAND], &request);
+    let (ok, response, stderr, _code) = run_helper(&[PROBE_COMMAND], &request);
     assert!(ok, "probe should succeed: {stderr}");
     assert_eq!(
         response,
@@ -150,9 +159,41 @@ fn real_subprocess_probe_reports_unloadable_for_a_wrong_abi_stub() {
         "schema": PROBE_REQUEST_SCHEMA,
         "models": {"ced_library_path": library, "ced_model_path": model},
     });
-    let (ok, response, _stderr) = run_helper(&[PROBE_COMMAND], &request);
+    let (ok, response, _stderr, code) = run_helper(&[PROBE_COMMAND], &request);
     assert!(!ok, "a wrong-ABI engine must not report ready");
+    assert_eq!(code, Some(69));
     assert_eq!(response["reason"], json!("library-unloadable"));
+    assert!(
+        response["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("ABI mismatch")),
+        "{}",
+        response["detail"]
+    );
+}
+
+/// Ported from `src/lib.rs`'s removed `probe_null_load_reports_model_load_failed`:
+/// the compiled stub's `ced_capi_load` returns `NULL` when the model bytes
+/// contain the `NULL_LOAD` marker, which must surface as `model-load-failed`
+/// (not `library-unloadable` -- the engine itself opened fine) at exit 69.
+#[test]
+fn real_subprocess_probe_reports_model_load_failed_for_null_load_marker() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let library = dir.path().join("libced.so");
+    if !compile_stub(&library, 1) {
+        eprintln!("skipping: no usable C compiler");
+        return;
+    }
+    let model = dir.path().join("model.gguf");
+    fs::write(&model, b"NULL_LOAD").unwrap();
+    let request = json!({
+        "schema": PROBE_REQUEST_SCHEMA,
+        "models": {"ced_library_path": library, "ced_model_path": model},
+    });
+    let (ok, response, stderr, code) = run_helper(&[PROBE_COMMAND], &request);
+    assert!(!ok, "a NULL_LOAD model must not report ready: {stderr}");
+    assert_eq!(code, Some(69));
+    assert_eq!(response["reason"], json!("model-load-failed"));
 }
 
 #[test]
@@ -180,10 +221,11 @@ fn real_subprocess_classify_matches_the_two_window_contract() {
             {"start_sample": 16_000, "end_sample": 32_000},
         ],
     });
-    let (ok, response, stderr) = run_helper(&[], &request);
+    let (ok, response, stderr, _code) = run_helper(&[], &request);
     assert!(ok, "classify request itself should succeed: {stderr}");
     assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
     assert_eq!(response["windows"][0]["ok"], json!(false));
+    assert_eq!(response["windows"][0]["reason"], json!("classify-failed"));
     assert_eq!(response["windows"][1]["ok"], json!(true));
     assert_eq!(response["windows"][1]["tags"]["Music"], json!(0.9));
 }

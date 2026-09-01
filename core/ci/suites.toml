@@ -347,6 +347,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-ced-analyze"
+package = "solstone-core-ced-analyze"
+set = "native"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-support-drafts"
 package = "solstone-core-support-drafts"
 set = "component"
@@ -4031,6 +4042,19 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "onnx"
+
+[[suites]]
+id = "solstone-core-ced-analyze::ced_oracles"
+package = "solstone-core-ced-analyze"
+target = "ced_oracles"
+set = "native"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
 
 [[suites]]
 id = "solstone-core-transcribe::transcription_transports"
