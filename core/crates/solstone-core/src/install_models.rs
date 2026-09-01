@@ -42,7 +42,7 @@ fn rfdetr_bundled_asset_disclosure() -> String {
 
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::ced_readiness::{
-    CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
+    CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{RfdetrReadiness, evaluate_rfdetr_readiness};
 use solstone_core_local::install::{
@@ -173,7 +173,7 @@ fn install_required_rfdetr(
 struct InstallModelsHooks<A> {
     asset_gate: A,
     report_override: Option<fit_report::FitReport>,
-    ced_verdict: fn(&Path, &str, &str) -> CedReadiness,
+    ced_verdict: fn(&Path, &str, &str) -> CedVerdict,
 }
 
 fn install_models_hooks<A>(
@@ -408,15 +408,15 @@ where
     };
     let mut provider_stdout = Vec::new();
     match (hooks.ced_verdict)(&journal, &host.os_name, &host.arch) {
-        CedReadiness::Unsupported { os, arch } => {
+        CedVerdict::Unsupported { os, arch } => {
             provider_stdout.push(format!(
                 "ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets"
             ));
         }
-        CedReadiness::Ready { .. } if options.check || !options.force => {
+        CedVerdict::Ready { .. } if options.check || !options.force => {
             provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
         }
-        CedReadiness::Degraded { .. } if options.check => {
+        CedVerdict::Degraded(_) if options.check => {
             return InstallModelsOutcome::failure_with_stdout(
                 variant,
                 EXIT_DATAERR,
@@ -424,7 +424,7 @@ where
                 provider_stdout,
             );
         }
-        CedReadiness::Ready { .. } | CedReadiness::Degraded { .. } => {
+        CedVerdict::Ready { .. } | CedVerdict::Degraded(_) => {
             provider_stdout.push(ced_download_disclosure());
             match (providers.ced)(
                 &journal,
@@ -447,10 +447,10 @@ where
                     );
                 }
                 Ok(Some(_)) => match (hooks.ced_verdict)(&journal, &host.os_name, &host.arch) {
-                    CedReadiness::Ready { .. } => {
+                    CedVerdict::Ready { .. } => {
                         provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
                     }
-                    CedReadiness::Degraded { .. } => {
+                    CedVerdict::Degraded(_) => {
                         return InstallModelsOutcome::failure_with_stdout(
                             variant,
                             EXIT_DATAERR,
@@ -458,7 +458,7 @@ where
                             provider_stdout,
                         );
                     }
-                    CedReadiness::Unsupported { os, arch } => {
+                    CedVerdict::Unsupported { os, arch } => {
                         provider_stdout.push(format!(
                             "ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets"
                         ));
@@ -1008,7 +1008,7 @@ mod tests {
         );
     }
 
-    fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedReadiness {
+    fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedVerdict {
         match solstone_core_local::install::ced_fixture::ced_model_digest(journal) {
             Ok(digest) => evaluate_ced_readiness_against(journal, os, arch, &digest),
             Err(_) => evaluate_ced_readiness(journal, os, arch),

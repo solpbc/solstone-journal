@@ -11,9 +11,9 @@ use nix::sys::statvfs::statvfs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedDegradedCause, CedReadiness,
-    evaluate_ced_readiness,
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrDegradedCause, RfdetrReadiness,
@@ -45,19 +45,9 @@ pub struct CheckInputs {
     pub gpu_evaluation_error: Option<String>,
     pub version: String,
     #[serde(default)]
-    pub ced: CedCheckInput,
+    pub ced: Option<CapabilityStatus>,
     #[serde(default)]
     pub rfdetr: RfdetrCheckInput,
-}
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum CedCheckInput {
-    #[default]
-    Omit,
-    Ready,
-    Degraded {
-        cause: CedDegradedCause,
-    },
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -310,11 +300,11 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         },
     }
 }
-fn ced_input_from(readiness: CedReadiness) -> CedCheckInput {
-    match readiness {
-        CedReadiness::Ready { .. } => CedCheckInput::Ready,
-        CedReadiness::Degraded { cause, .. } => CedCheckInput::Degraded { cause },
-        CedReadiness::Unsupported { .. } => CedCheckInput::Omit,
+fn ced_input_from(verdict: CedVerdict) -> Option<CapabilityStatus> {
+    match verdict {
+        CedVerdict::Ready { .. } => Some(CapabilityStatus::Ready),
+        CedVerdict::Degraded(status) => Some(status),
+        CedVerdict::Unsupported { .. } => None,
     }
 }
 fn rfdetr_input_from(readiness: RfdetrReadiness) -> RfdetrCheckInput {
@@ -453,9 +443,11 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
 }
 fn ced_check(inputs: &CheckInputs) -> Option<Check> {
     match &inputs.ced {
-        CedCheckInput::Omit => None,
-        CedCheckInput::Ready => Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None)),
-        CedCheckInput::Degraded { .. } => Some(check(
+        None => None,
+        Some(CapabilityStatus::Ready) => {
+            Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None))
+        }
+        Some(_) => Some(check(
             "ced",
             Severity::Warning,
             CED_UNAVAILABLE_GUIDANCE,
@@ -754,8 +746,9 @@ pub fn human_output(report: &CheckReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
 
-    fn check_inputs(ced: CedCheckInput, rfdetr: RfdetrCheckInput) -> CheckInputs {
+    fn check_inputs(ced: Option<CapabilityStatus>, rfdetr: RfdetrCheckInput) -> CheckInputs {
         CheckInputs {
             platform: PlatformInput {
                 os: "Linux".into(),
@@ -790,7 +783,7 @@ mod tests {
 
     #[test]
     fn ready_rfdetr_is_ok_and_does_not_change_overall() {
-        let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Ready);
+        let inputs = check_inputs(None, RfdetrCheckInput::Ready);
         let rfdetr = rfdetr_check(&inputs).expect("ready RF-DETR check");
         assert_eq!(rfdetr.severity, Severity::Ok);
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
@@ -803,7 +796,7 @@ mod tests {
             RfdetrDegradedCause::IntegrityInvalid,
             RfdetrDegradedCause::Unrunnable,
         ] {
-            let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
+            let inputs = check_inputs(None, RfdetrCheckInput::Degraded { cause });
             let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
             assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
             assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
@@ -813,9 +806,10 @@ mod tests {
     #[test]
     fn ced_warning_stays_independent_from_ready_rfdetr() {
         let inputs = check_inputs(
-            CedCheckInput::Degraded {
-                cause: CedDegradedCause::Absent,
-            },
+            Some(CapabilityStatus::Absent {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "sidecar missing".to_owned(),
+            }),
             RfdetrCheckInput::Ready,
         );
         assert_eq!(
@@ -856,7 +850,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);
@@ -893,7 +887,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
@@ -941,7 +935,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);

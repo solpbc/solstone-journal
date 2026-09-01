@@ -32,8 +32,9 @@
           "probe_ok": false
         },
         "ced": {
-          "status": "degraded",
-          "cause": "absent"
+          "status": "absent",
+          "capability": "ced",
+          "detail": "ced sidecar files missing from journal cache"
         }
       },
       "json_payload": {
@@ -119,8 +120,9 @@
           "probe_ok": false
         },
         "ced": {
-          "status": "degraded",
-          "cause": "integrity_invalid"
+          "status": "integrity_invalid",
+          "capability": "ced",
+          "detail": "ced model digest does not match the pinned catalog value"
         }
       },
       "json_payload": {
@@ -207,8 +209,9 @@
           "probe_ok": true
         },
         "ced": {
-          "status": "degraded",
-          "cause": "unloadable"
+          "status": "unloadable_or_unrunnable",
+          "capability": "ced",
+          "detail": "ced library failed to load"
         }
       },
       "json_payload": {

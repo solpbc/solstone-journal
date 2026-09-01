@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_ced_sys::CedLibrary;
 use solstone_core_local::install::ced_readiness::{
-    CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
+    CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 
 pub const SCORE_FLOOR: f64 = 0.1;
@@ -38,21 +38,21 @@ pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
 ///
 /// Production [`tag_audio`] supplies the catalog verdict. Tests supply a
 /// verdict against a fixture digest so classify can run without the 6 MiB pin.
-pub fn tag_audio_with_readiness(audio: &[f32], readiness: CedReadiness) -> Option<Value> {
+pub fn tag_audio_with_readiness(audio: &[f32], verdict: CedVerdict) -> Option<Value> {
     let spans = window_spans(audio.len());
     if spans.is_empty() {
         return None;
     }
 
-    let (library, model) = match readiness {
-        CedReadiness::Ready { library, model } => (library, model),
-        CedReadiness::Unsupported { os, arch } => {
+    let (library, model) = match verdict {
+        CedVerdict::Ready { library, model } => (library, model),
+        CedVerdict::Unsupported { os, arch } => {
             log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
             return None;
         }
-        CedReadiness::Degraded { cause, detail } => {
+        CedVerdict::Degraded(status) => {
             log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-            log::debug!("ced readiness {cause:?}: {detail}");
+            log::debug!("ced status: {status:?}");
             return None;
         }
     };

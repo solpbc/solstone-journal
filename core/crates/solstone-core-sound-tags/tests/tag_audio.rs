@@ -8,6 +8,7 @@ use std::process::Command;
 
 use serde_json::json;
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_fixture::{
     ced_model_digest, write_ced_model_bytes, write_complete_ced_install,
 };
@@ -15,7 +16,7 @@ use solstone_core_local::install::ced_install::{
     ced_artifact_key, ced_library_path, ced_model_path,
 };
 use solstone_core_local::install::ced_readiness::{
-    CedDegradedCause, CedReadiness, evaluate_ced_readiness, evaluate_ced_readiness_against,
+    CedVerdict, evaluate_ced_readiness, evaluate_ced_readiness_against,
 };
 use solstone_core_sound_tags::{tag_audio, tag_audio_with_readiness};
 
@@ -26,6 +27,17 @@ fn missing_assets_degrade_to_none() {
 }
 
 #[test]
+fn unsupported_platform_returns_none() {
+    // Exercises CedVerdict::Unsupported in tag_audio_with_readiness
+    // (distinct warn: "sound tagger disabled: ced assets unsupported on {os}/{arch}").
+    let verdict = CedVerdict::Unsupported {
+        os: "windows".to_owned(),
+        arch: "x86_64".to_owned(),
+    };
+    assert_eq!(tag_audio_with_readiness(&one_second(), verdict), None);
+}
+
+#[test]
 fn integrity_invalid_model_degrades() {
     let Some(key) = host_key() else {
         return;
@@ -33,10 +45,7 @@ fn integrity_invalid_model_degrades() {
     let journal = tempfile::tempdir().expect("temporary journal");
     write_complete_ced_install(journal.path(), key).expect("complete install");
     match evaluate_ced_readiness(journal.path(), host_os(), host_arch()) {
-        CedReadiness::Degraded {
-            cause: CedDegradedCause::IntegrityInvalid,
-            ..
-        } => {}
+        CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { .. }) => {}
         other => panic!("expected integrity-invalid, got {other:?}"),
     }
     assert_eq!(tag_audio(&one_second(), journal.path()), None);
@@ -51,10 +60,7 @@ fn unloadable_null_load_degrades() {
     let digest = ced_model_digest(assets.journal()).expect("fixture digest");
     let (os, arch) = (host_os(), host_arch());
     match evaluate_ced_readiness_against(assets.journal(), os, arch, &digest) {
-        CedReadiness::Degraded {
-            cause: CedDegradedCause::Unloadable,
-            ..
-        } => {}
+        CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable { .. }) => {}
         other => panic!("expected unloadable, got {other:?}"),
     }
     assert_eq!(tag_audio(&one_second(), assets.journal()), None);
@@ -120,7 +126,7 @@ fn ready_layout_maps_linux_x64_linux_arm64_and_macos_metal() {
         }
         let digest = ced_model_digest(journal.path()).expect("fixture digest");
         match evaluate_ced_readiness_against(journal.path(), os, arch, &digest) {
-            CedReadiness::Ready {
+            CedVerdict::Ready {
                 library: ready_library,
                 model,
             } => {
@@ -165,8 +171,8 @@ fn assets(abi: i32) -> Option<Assets> {
     })
 }
 
-fn ready_verdict(assets: &Assets) -> CedReadiness {
-    CedReadiness::Ready {
+fn ready_verdict(assets: &Assets) -> CedVerdict {
+    CedVerdict::Ready {
         library: assets.library.clone(),
         model: assets.model.clone(),
     }
