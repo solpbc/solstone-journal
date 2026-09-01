@@ -270,8 +270,17 @@ fn recover_prose_tool_calls_detailed(
         remainder.push_str(&rest[..start]);
         let after = &rest[start + TOOL_CALL_OPEN.len()..];
         let end = after.find(TOOL_CALL_CLOSE).ok_or("unterminated")?;
-        let payload: Value =
-            serde_json::from_str(after[..end].trim()).map_err(|_| "payload is not JSON")?;
+        let raw = after[..end].trim();
+        let payload: Value = serde_json::from_str(raw).map_err(|_| {
+            // ⚠ Shape, not content: every alphanumeric becomes `x`, so punctuation and
+            // structure survive and any owner text does not. That is enough to tell a
+            // single-quoted Python dict from a `<function=..>` wrapper from truncation.
+            let shape: String = raw
+                .chars()
+                .map(|c| if c.is_alphanumeric() { 'x' } else { c })
+                .collect();
+            format!("payload is not JSON; shape={shape}")
+        })?;
         let object = payload.as_object().ok_or("payload is not an object")?;
         let keys: Vec<&str> = object.keys().map(String::as_str).collect();
         let name = object
