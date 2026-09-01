@@ -4,7 +4,8 @@
 //! Read-only Thinking routes retained from the Python Sol application.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -531,7 +532,38 @@ fn talent_use_counts(
     result
 }
 
+enum CandidateOutcome {
+    Match,
+    NonMatch,
+    Unparseable,
+}
+
+fn read_run_candidate_use_id(path: &Path, use_id: &str) -> CandidateOutcome {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(_) => return CandidateOutcome::Unparseable,
+    };
+    let Some(line) = BufReader::new(file).lines().next() else {
+        return CandidateOutcome::Unparseable;
+    };
+    let Ok(line) = line else {
+        return CandidateOutcome::Unparseable;
+    };
+    let line = line.trim();
+    if line.is_empty() {
+        return CandidateOutcome::Unparseable;
+    }
+    let Ok(event) = serde_json::from_str::<Value>(line) else {
+        return CandidateOutcome::Unparseable;
+    };
+    match event.get("use_id").and_then(Value::as_str) {
+        Some(found) if found == use_id => CandidateOutcome::Match,
+        Some(_) | None => CandidateOutcome::NonMatch,
+    }
+}
+
 fn find_run_file(talents: &Path, use_id: &str) -> Option<(PathBuf, bool)> {
+    let mut unparseable: Option<(PathBuf, bool)> = None;
     for (suffix, active) in [(".jsonl", false), ("_active.jsonl", true)] {
         let entries = fs::read_dir(talents).ok()?;
         for directory in entries
@@ -540,12 +572,21 @@ fn find_run_file(talents: &Path, use_id: &str) -> Option<(PathBuf, bool)> {
             .filter(|path| path.is_dir())
         {
             let path = directory.join(format!("{use_id}{suffix}"));
-            if path.is_file() {
-                return Some((path, active));
+            if !path.is_file() {
+                continue;
+            }
+            match read_run_candidate_use_id(&path, use_id) {
+                CandidateOutcome::Match => return Some((path, active)),
+                CandidateOutcome::NonMatch => {}
+                CandidateOutcome::Unparseable => {
+                    if unparseable.is_none() {
+                        unparseable = Some((path, active));
+                    }
+                }
             }
         }
     }
-    None
+    unparseable
 }
 
 enum RunError {
@@ -932,5 +973,46 @@ mod tests {
         assert_eq!(roots.apps_root, share.join("solstone/apps"));
         fs::remove_file(share.join(solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR)).unwrap();
         assert!(TalentRoots::from_executable_dir(&bin).is_err());
+    }
+
+    #[test]
+    fn read_run_candidate_use_id_classifies_match_mismatch_missing_and_unparseable() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("root");
+        let path = root.path().join("run.jsonl");
+        fs::write(&path, r#"{"event":"request","use_id":"hit"}"#).expect("match");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::Match
+        ));
+        fs::write(&path, r#"{"event":"request","use_id":"other"}"#).expect("mismatch");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::NonMatch
+        ));
+        fs::write(&path, r#"{"event":"request"}"#).expect("missing");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::NonMatch
+        ));
+        fs::write(&path, "").expect("empty");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::Unparseable
+        ));
+        fs::write(&path, "not-json\n").expect("invalid");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::Unparseable
+        ));
+        fs::write(&path, [0xff, 0xfe]).expect("non-utf8");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::Unparseable
+        ));
+        fs::remove_file(&path).expect("vanish");
+        assert!(matches!(
+            read_run_candidate_use_id(&path, "hit"),
+            CandidateOutcome::Unparseable
+        ));
     }
 }

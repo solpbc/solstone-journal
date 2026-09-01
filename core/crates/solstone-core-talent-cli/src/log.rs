@@ -329,8 +329,7 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         let talents = root.path().join("talents");
         fs::create_dir_all(talents.join("synthetic")).expect("talent directory");
-        let raw =
-            "{\"event\":\"request\",\"ts\":1700000000123,\"prompt\":\"synthetic\"}\nnot-json\n";
+        let raw = "{\"event\":\"request\",\"use_id\":\"run-z\",\"ts\":1700000000123,\"prompt\":\"synthetic\"}\nnot-json\n";
         fs::write(talents.join("synthetic/run-z.jsonl"), raw).expect("run");
         let json = run_log(&talents, &options("run-z", true, false));
         assert_eq!(

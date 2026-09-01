@@ -889,8 +889,8 @@ mod tests {
         write_day(root.path(), "20260805", &[first, second]);
         let talents = root.path().join("talents/demo");
         fs::create_dir_all(&talents).expect("run directory");
-        fs::write(talents.join("9001.jsonl"), "{\"event\":\"request\"}\n{\"event\":\"start\",\"model\":\"m-1\"}\n{\"event\":\"tool_start\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"finish\",\"usage\":{}}\n").expect("run file");
-        fs::write(talents.join("9002.jsonl"), "{\"event\":\"request\"}\n{\"event\":\"start\",\"model\":\"m-2\"}\n{\"event\":\"error\"}\n").expect("run file");
+        fs::write(talents.join("9001.jsonl"), "{\"event\":\"request\",\"use_id\":\"9001\"}\n{\"event\":\"start\",\"model\":\"m-1\"}\n{\"event\":\"tool_start\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"thinking\"}\n{\"event\":\"finish\",\"usage\":{}}\n").expect("run file");
+        fs::write(talents.join("9002.jsonl"), "{\"event\":\"request\",\"use_id\":\"9002\"}\n{\"event\":\"start\",\"model\":\"m-2\"}\n{\"event\":\"error\"}\n").expect("run file");
         let output = run_logs(
             root.path(),
             &options(),
