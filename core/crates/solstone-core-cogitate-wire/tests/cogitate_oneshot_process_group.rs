@@ -14,6 +14,9 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use nix::errno::Errno;
+use nix::sys::signal::{Signal, kill, killpg};
+use nix::unistd::Pid;
 use serde_json::json;
 use solstone_core_cogitate_wire::{CogitateOneShotClient, CogitateRequest, REQUEST_SCHEMA};
 
@@ -39,22 +42,14 @@ fn request() -> CogitateRequest {
 }
 
 fn alive(pid: i32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .is_ok_and(|status| status.success())
+    matches!(
+        kill(Pid::from_raw(pid), None::<Signal>),
+        Ok(()) | Err(Errno::EPERM)
+    )
 }
 
-fn kill_group(pgid: i32, signal: &str) -> bool {
-    Command::new("python3")
-        .args([
-            "-c",
-            "import os, signal, sys; os.killpg(int(sys.argv[1]), getattr(signal, sys.argv[2]))",
-            &pgid.to_string(),
-            signal,
-        ])
-        .status()
-        .is_ok_and(|status| status.success())
+fn kill_group(pgid: i32, signal: Signal) -> bool {
+    killpg(Pid::from_raw(pgid), signal).is_ok()
 }
 
 #[test]
@@ -119,7 +114,7 @@ fn one_shot_child_dies_with_the_caller_process_group() {
     assert!(alive(child_pid), "stub must be running before group kill");
 
     assert!(
-        kill_group(pgid, "SIGTERM"),
+        kill_group(pgid, Signal::SIGTERM),
         "os.killpg(pgid, SIGTERM) must succeed"
     );
 
@@ -129,7 +124,7 @@ fn one_shot_child_dies_with_the_caller_process_group() {
             break;
         }
         if Instant::now() >= wait_deadline {
-            let _ = kill_group(pgid, "SIGKILL");
+            let _ = kill_group(pgid, Signal::SIGKILL);
             panic!("one-shot child survived SIGTERM to its process group");
         }
         thread::sleep(Duration::from_millis(20));

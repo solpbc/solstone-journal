@@ -25,6 +25,9 @@ solstone-core-generate-wire = { workspace = true, features = ["test-hooks"] }
 solstone-core-spp-attest.workspace = true
 solstone-core-spp-ratls.workspace = true
 
+[target.'cfg(unix)'.dev-dependencies]
+nix.workspace = true
+
 [[test]]
 name = "cogitate_environment_isolation"
 path = "tests/cogitate_environment_isolation.rs"

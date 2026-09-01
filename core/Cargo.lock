@@ -3753,6 +3753,7 @@ dependencies = [
 name = "solstone-core-cogitate-wire"
 version = "2.0.0"
 dependencies = [
+ "nix",
  "serde_json",
  "socket2",
  "solstone-core-cogitate",
