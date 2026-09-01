@@ -510,22 +510,25 @@ mod tests {
             read_cortex_use_completed_request(&directory, OsStr::new(".jsonl")),
             CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
         );
-        use std::os::unix::ffi::OsStringExt;
-        let non_utf8 = std::ffi::OsString::from_vec(b"x-\xff.jsonl".to_vec());
-        active(
-            &directory,
-            "placeholder.jsonl",
-            &request("conversation", "placeholder"),
-        );
-        fs::rename(
-            directory.join("placeholder.jsonl"),
-            directory.join(&non_utf8),
-        )
-        .unwrap();
-        assert_eq!(
-            read_cortex_use_completed_request(&directory, &non_utf8),
-            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
-        );
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let non_utf8 = std::ffi::OsString::from_vec(b"x-\xff.jsonl".to_vec());
+            active(
+                &directory,
+                "placeholder.jsonl",
+                &request("conversation", "placeholder"),
+            );
+            fs::rename(
+                directory.join("placeholder.jsonl"),
+                directory.join(&non_utf8),
+            )
+            .unwrap();
+            assert_eq!(
+                read_cortex_use_completed_request(&directory, &non_utf8),
+                CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+            );
+        }
     }
 
     #[test]
