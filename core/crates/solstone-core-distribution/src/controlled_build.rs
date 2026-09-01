@@ -227,13 +227,12 @@ pub fn census_outputs(
 ) -> Result<Vec<OutputIdentityEntry>, ControlledBuildReceiptError> {
     let mut outputs = Vec::with_capacity(files.len());
     for (index, (label, bytes)) in files.iter().enumerate() {
-        let census = pe::parse_pe(bytes).map_err(|source| {
-            ControlledBuildReceiptError::OutputParse {
+        let census =
+            pe::parse_pe(bytes).map_err(|source| ControlledBuildReceiptError::OutputParse {
                 index,
                 label: (*label).to_owned(),
                 source,
-            }
-        })?;
+            })?;
         outputs.push(OutputIdentityEntry {
             pre_signing_sha256: sha256_hex(bytes),
             label: (*label).to_owned(),

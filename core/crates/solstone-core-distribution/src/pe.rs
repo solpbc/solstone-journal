@@ -121,11 +121,9 @@ pub fn parse_pe(bytes: &[u8]) -> Result<PeInfo, PeError> {
         return Err(PeError::new(NOT_A_PE));
     }
     let e_lfanew = match bytes.get(DOS_E_LFANEW..DOS_E_LFANEW + 4) {
-        Some(slice) => u32::from_le_bytes(
-            slice
-                .try_into()
-                .map_err(|_| PeError::new(NOT_A_PE))?,
-        ) as usize,
+        Some(slice) => {
+            u32::from_le_bytes(slice.try_into().map_err(|_| PeError::new(NOT_A_PE))?) as usize
+        }
         None => return Err(PeError::new(NOT_A_PE)),
     };
     match bytes.get(e_lfanew..e_lfanew + 4) {
@@ -330,7 +328,8 @@ fn parse_exports(
     let number_of_names = read_u32_at_rva(bytes, sections, virtual_address + 24, OOB_EXPORT)?;
     let address_of_functions = read_u32_at_rva(bytes, sections, virtual_address + 28, OOB_EXPORT)?;
     let address_of_names = read_u32_at_rva(bytes, sections, virtual_address + 32, OOB_EXPORT)?;
-    let address_of_name_ordinals = read_u32_at_rva(bytes, sections, virtual_address + 36, OOB_EXPORT)?;
+    let address_of_name_ordinals =
+        read_u32_at_rva(bytes, sections, virtual_address + 36, OOB_EXPORT)?;
     if number_of_functions as usize > bytes.len() || number_of_names as usize > bytes.len() {
         return Err(PeError::new(OOB_EXPORT));
     }
@@ -797,10 +796,7 @@ mod tests {
             vec![
                 ImportedLibrary {
                     name: "one.dll".into(),
-                    symbols: vec![
-                        PeSymbol::Named("CreateThing".into()),
-                        PeSymbol::Ordinal(7),
-                    ],
+                    symbols: vec![PeSymbol::Named("CreateThing".into()), PeSymbol::Ordinal(7),],
                 },
                 ImportedLibrary {
                     name: "empty.dll".into(),
@@ -890,10 +886,7 @@ mod tests {
         let cases = [
             (None, None),
             (Some(DebugInfoKind::Coff), Some(DebugInfoKind::Coff)),
-            (
-                Some(DebugInfoKind::CodeView),
-                Some(DebugInfoKind::CodeView),
-            ),
+            (Some(DebugInfoKind::CodeView), Some(DebugInfoKind::CodeView)),
             (Some(DebugInfoKind::Repro), Some(DebugInfoKind::Repro)),
             (
                 Some(DebugInfoKind::Other(99)),
@@ -972,9 +965,15 @@ mod tests {
     #[test]
     fn out_of_bounds_directories_are_named_errors() {
         let import = parse_pe(&fixture_oob_import()).unwrap_err().to_string();
-        assert!(import.contains("out-of-bounds import directory"), "{import}");
+        assert!(
+            import.contains("out-of-bounds import directory"),
+            "{import}"
+        );
         let export = parse_pe(&fixture_oob_export()).unwrap_err().to_string();
-        assert!(export.contains("out-of-bounds export directory"), "{export}");
+        assert!(
+            export.contains("out-of-bounds export directory"),
+            "{export}"
+        );
         let debug = parse_pe(&fixture_oob_debug()).unwrap_err().to_string();
         assert!(debug.contains("out-of-bounds debug directory"), "{debug}");
     }
