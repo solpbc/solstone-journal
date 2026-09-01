@@ -12,7 +12,10 @@ use solstone_core_local::HttpResponse;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::token_budget::generate_token_budget;
-use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
+use crate::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
+};
 
 const GOOGLE_API_KEY_ENV: &str = "GOOGLE_API_KEY";
 const GOOGLE_BASE_URL: &str = "https://generativelanguage.googleapis.com";
@@ -32,6 +35,7 @@ const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoogleFailure {
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +45,7 @@ pub struct GoogleGenerated {
     pub usage: Value,
     pub finish_reason: String,
     pub thinking: Option<Value>,
+    pub raw_response_snippet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +151,15 @@ fn google_converse_with<T: GoogleTransport>(
         Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return converse_failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return GoogleConverseResult::Failed(ConverseFailure {
+            reason_code: reason_code.to_owned(),
+            retryable,
+            blocking,
+            detail,
+        });
     }
     let offered = tools.iter().map(|tool| tool.name.clone()).collect();
     parse_converse_response(&response.body, &offered)
@@ -193,9 +206,14 @@ fn google_generate_with_lookup<T: GoogleTransport>(
         Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return GoogleResult::Failed(GoogleFailure {
+            reason_code: Some(reason_code.to_owned()),
+            detail,
+        });
     }
-    parse_response(&response.body)
+    parse_response(&response.body, &api_key)
 }
 
 fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
@@ -334,7 +352,8 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
         .unwrap_or(DEFAULT_TIMEOUT)
 }
 
-fn parse_response(body: &str) -> GoogleResult {
+fn parse_response(body: &str, secret: &str) -> GoogleResult {
+    let raw_snippet = capture_provider_detail(body, secret);
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return failure("provider_response_invalid");
     };
@@ -376,6 +395,7 @@ fn parse_response(body: &str) -> GoogleResult {
         usage,
         finish_reason: normalize_finish_reason(candidate),
         thinking: None,
+        raw_response_snippet: raw_snippet,
     })
 }
 
@@ -601,9 +621,27 @@ fn is_context_window_error(body: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let scrubbed = if secret.is_empty() {
+        body.to_owned()
+    } else {
+        body.replace(secret, "[redacted]")
+    };
+    Some(
+        scrubbed
+            .chars()
+            .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
+            .collect(),
+    )
+}
+
 fn failure(reason_code: &str) -> GoogleResult {
     GoogleResult::Failed(GoogleFailure {
         reason_code: Some(reason_code.to_owned()),
+        detail: None,
     })
 }
 
@@ -613,6 +651,7 @@ fn converse_failure(reason_code: &str) -> GoogleConverseResult {
         reason_code: reason_code.to_owned(),
         retryable,
         blocking,
+        detail: None,
     })
 }
 
@@ -642,7 +681,9 @@ mod tests {
     use solstone_core_generate::{ContentPart, ReasonCodeValue};
 
     use super::*;
-    use crate::{LaneOutcome, ProviderResultView, assess_provider_result, refusal_for};
+    use crate::{
+        LaneOutcome, ProviderResultView, ValidationFailure, assess_provider_result, refusal_for,
+    };
 
     #[derive(Default)]
     struct StubTransport {
@@ -738,7 +779,7 @@ mod tests {
     }
 
     fn parsed(body: Value) -> GoogleGenerated {
-        generated(parse_response(&body.to_string()))
+        generated(parse_response(&body.to_string(), ""))
     }
 
     fn temp_journal() -> std::path::PathBuf {
@@ -888,11 +929,13 @@ mod tests {
                 "promptFeedback": {"blockReason": "SAFETY"},
             })
             .to_string(),
+            "",
         );
         assert_eq!(
             result,
             GoogleResult::Failed(GoogleFailure {
                 reason_code: Some("provider_response_invalid".into()),
+                detail: None,
             })
         );
     }
@@ -964,6 +1007,7 @@ mod tests {
             usage: &zero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         assert!(!journal.join("tokens").exists());
@@ -982,6 +1026,7 @@ mod tests {
             usage: &nonzero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         let files = fs::read_dir(journal.join("tokens")).unwrap().count();
@@ -1073,7 +1118,8 @@ mod tests {
         assert_eq!(
             result,
             GoogleResult::Failed(GoogleFailure {
-                reason_code: Some("provider_key_missing".into())
+                reason_code: Some("provider_key_missing".into()),
+                detail: None,
             })
         );
         assert!(transport.posts.is_empty());
@@ -1086,7 +1132,8 @@ mod tests {
             assert_eq!(
                 google_generate_with(&request(), &config(key, None), &mut transport),
                 GoogleResult::Failed(GoogleFailure {
-                    reason_code: Some("provider_key_missing".into())
+                    reason_code: Some("provider_key_missing".into()),
+                    detail: None,
                 })
             );
             assert!(transport.posts.is_empty());
@@ -1111,6 +1158,73 @@ mod tests {
         let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
         assert!(!refusal.detail.contains(credential));
         assert_eq!(transport.api_keys, [credential]);
+    }
+
+    #[test]
+    fn non_context_window_http_error_body_reaches_refusal_detail() {
+        let body = r#"{"error":{"message":"invalid temperature distinctive-400-google"}}"#;
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 400,
+                body: body.to_owned(),
+            })],
+            ..Default::default()
+        };
+        let GoogleResult::Failed(failure) = google_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("400 must fail");
+        };
+        assert_eq!(failure.detail.as_deref(), Some(body));
+        let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
+        assert_eq!(refusal.detail, body);
+        assert!(!refusal.detail.contains("fixture"));
+        assert_ne!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+    }
+
+    #[test]
+    fn blank_extracted_text_keeps_distinctive_raw_snippet_on_refusal() {
+        let mut body = successful_body();
+        body["candidates"] = json!([{
+            "content": {"parts": [{"text": ""}]},
+            "finishReason": "STOP",
+        }]);
+        body["distinctive"] = json!("blank-visible-google-xyz");
+        let generated = parsed(body);
+        assert!(generated.text.trim().is_empty());
+        let snippet = generated
+            .raw_response_snippet
+            .as_deref()
+            .expect("raw snippet");
+        assert!(snippet.contains("blank-visible-google-xyz"));
+        let journal = temp_journal();
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &generated.model,
+            text: &generated.text,
+            finish_reason: &generated.finish_reason,
+            usage: &generated.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: generated.raw_response_snippet.as_deref(),
+        });
+        assert_eq!(
+            assessment.failure,
+            Some(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: generated.raw_response_snippet.clone(),
+            })
+        );
+        let refusal = refusal_for(
+            &LaneOutcome::ValidationFailure(assessment.failure.unwrap()),
+            "google",
+            None,
+        );
+        assert!(refusal.detail.contains("blank-visible-google-xyz"));
+        assert!(!refusal.detail.contains("fixture"));
+        let _ = fs::remove_dir_all(journal);
     }
 
     /// Gemini refuses `additionalProperties` inside a function declaration.
@@ -1255,6 +1369,7 @@ mod tests {
                 "candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"before"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}}}]}}]
             })
             .to_string(),
+            "",
         ) else {
             panic!("generated response expected")
         };
@@ -1295,6 +1410,7 @@ mod tests {
             usage: &unoffered.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(assessment.failure, None);
         let GoogleConverseResult::Failed(invalid) = parse_converse_response(&json!({

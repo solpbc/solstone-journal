@@ -76,6 +76,7 @@ pub struct ConverseFailure {
     pub reason_code: String,
     pub retryable: bool,
     pub blocking: bool,
+    pub detail: Option<String>,
 }
 
 #[cfg(test)]

@@ -9,6 +9,10 @@ use crate::{LaneOutcome, SanitizedFinishReason, ValidationFailure};
 
 pub(crate) const LIVE_PROVIDER_FAILURE_DETAIL: &str =
     "the configured provider could not produce a usable response";
+pub(crate) const HONEST_PROVIDER_RESPONSE_INVALID_DETAIL: &str =
+    "the provider returned a response with no visible output";
+pub(crate) const HONEST_UNIMPLEMENTED_LANE_DETAIL: &str =
+    "no generate implementation exists for the resolved provider lane";
 
 pub fn refusal_for(
     outcome: &LaneOutcome,
@@ -50,31 +54,57 @@ pub fn refusal_for(
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(LIVE_PROVIDER_FAILURE_DETAIL),
+            Some(
+                failure
+                    .detail
+                    .as_deref()
+                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+            ),
         ),
         LaneOutcome::AnthropicFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(LIVE_PROVIDER_FAILURE_DETAIL),
+            Some(
+                failure
+                    .detail
+                    .as_deref()
+                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+            ),
         ),
         LaneOutcome::OpenAiFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(LIVE_PROVIDER_FAILURE_DETAIL),
+            Some(
+                failure
+                    .detail
+                    .as_deref()
+                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+            ),
         ),
         LaneOutcome::GoogleFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(LIVE_PROVIDER_FAILURE_DETAIL),
+            Some(
+                failure
+                    .detail
+                    .as_deref()
+                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+            ),
         ),
-        LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid) => (
+        LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid {
+            raw_response_snippet,
+        }) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             Some("provider_response_invalid".to_owned()),
-            None,
+            Some(
+                raw_response_snippet
+                    .as_deref()
+                    .unwrap_or(HONEST_PROVIDER_RESPONSE_INVALID_DETAIL),
+            ),
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::IncompleteJson { finish_reason }) => (
             "refused-incomplete-json",
@@ -93,7 +123,7 @@ pub fn refusal_for(
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             None,
-            None,
+            Some(HONEST_UNIMPLEMENTED_LANE_DETAIL),
         ),
         LaneOutcome::BundledLocal
         | LaneOutcome::ByoEndpoint(_)
@@ -314,6 +344,7 @@ mod tests {
             let refusal = refusal_for(
                 &LaneOutcome::EndpointFailure(EndpointFailure {
                     reason_code: reason_code.map(str::to_owned),
+                    detail: None,
                 }),
                 "local",
                 None,
@@ -344,6 +375,7 @@ mod tests {
             let refusal = refusal_for(
                 &LaneOutcome::AnthropicFailure(AnthropicFailure {
                     reason_code: reason_code.map(str::to_owned),
+                    detail: None,
                 }),
                 "anthropic",
                 None,
@@ -374,6 +406,7 @@ mod tests {
             let refusal = refusal_for(
                 &LaneOutcome::OpenAiFailure(OpenAiFailure {
                     reason_code: reason_code.map(str::to_owned),
+                    detail: None,
                 }),
                 "openai",
                 None,
@@ -404,6 +437,7 @@ mod tests {
             let refusal = refusal_for(
                 &LaneOutcome::GoogleFailure(GoogleFailure {
                     reason_code: reason_code.map(str::to_owned),
+                    detail: None,
                 }),
                 "google",
                 None,
@@ -423,7 +457,9 @@ mod tests {
     fn validation_failures_use_fixture_reason_classifications() {
         let cases = [
             (
-                ValidationFailure::ProviderResponseInvalid,
+                ValidationFailure::ProviderResponseInvalid {
+                    raw_response_snippet: None,
+                },
                 RefusalReason::ProviderResponseInvalid,
                 Some("provider_response_invalid"),
                 true,
@@ -465,5 +501,25 @@ mod tests {
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
         }
+    }
+
+    #[test]
+    fn blank_provider_response_invalid_uses_honest_detail_not_fixture() {
+        let refusal = refusal_for(
+            &LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: None,
+            }),
+            "local",
+            None,
+        );
+        assert_eq!(refusal.detail, HONEST_PROVIDER_RESPONSE_INVALID_DETAIL);
+        assert!(!refusal.detail.contains("fixture"));
+    }
+
+    #[test]
+    fn unimplemented_lane_uses_honest_detail_not_fixture() {
+        let refusal = refusal_for(&LaneOutcome::UnimplementedLane, "local", None);
+        assert_eq!(refusal.detail, HONEST_UNIMPLEMENTED_LANE_DETAIL);
+        assert!(!refusal.detail.contains("fixture"));
     }
 }

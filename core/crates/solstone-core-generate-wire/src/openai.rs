@@ -14,7 +14,10 @@ use solstone_core_local::HttpResponse;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::token_budget::generate_token_budget;
-use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
+use crate::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
+};
 
 const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const OPENAI_BASE_URL: &str = "https://api.openai.com";
@@ -37,6 +40,7 @@ static SCHEMA_NAME_RE: LazyLock<Regex> =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiFailure {
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +50,7 @@ pub struct OpenAiGenerated {
     pub usage: Value,
     pub finish_reason: String,
     pub thinking: Option<Value>,
+    pub raw_response_snippet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,7 +155,15 @@ fn openai_converse_with<T: OpenAiTransport>(
         Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return converse_failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return OpenAiConverseResult::Failed(ConverseFailure {
+            reason_code: reason_code.to_owned(),
+            retryable,
+            blocking,
+            detail,
+        });
     }
     let offered = tools.iter().map(|tool| tool.name.clone()).collect();
     parse_converse_response(&response.body, &offered)
@@ -196,9 +209,14 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
         Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return OpenAiResult::Failed(OpenAiFailure {
+            reason_code: Some(reason_code.to_owned()),
+            detail,
+        });
     }
-    parse_response(&response.body)
+    parse_response(&response.body, &api_key)
 }
 
 fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
@@ -338,7 +356,8 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
         .unwrap_or(DEFAULT_TIMEOUT)
 }
 
-fn parse_response(body: &str) -> OpenAiResult {
+fn parse_response(body: &str, secret: &str) -> OpenAiResult {
+    let raw_snippet = capture_provider_detail(body, secret);
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return failure("provider_response_invalid");
     };
@@ -381,6 +400,7 @@ fn parse_response(body: &str) -> OpenAiResult {
         usage,
         finish_reason: normalize_finish_reason(&body),
         thinking: None,
+        raw_response_snippet: raw_snippet,
     })
 }
 
@@ -609,9 +629,27 @@ fn is_context_window_error(body: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let scrubbed = if secret.is_empty() {
+        body.to_owned()
+    } else {
+        body.replace(secret, "[redacted]")
+    };
+    Some(
+        scrubbed
+            .chars()
+            .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
+            .collect(),
+    )
+}
+
 fn failure(reason_code: &str) -> OpenAiResult {
     OpenAiResult::Failed(OpenAiFailure {
         reason_code: Some(reason_code.to_owned()),
+        detail: None,
     })
 }
 
@@ -621,6 +659,7 @@ fn converse_failure(reason_code: &str) -> OpenAiConverseResult {
         reason_code: reason_code.to_owned(),
         retryable,
         blocking,
+        detail: None,
     })
 }
 
@@ -644,7 +683,9 @@ mod tests {
     use solstone_core_generate::{ContentPart, ReasonCodeValue};
 
     use super::*;
-    use crate::{LaneOutcome, ProviderResultView, assess_provider_result, refusal_for};
+    use crate::{
+        LaneOutcome, ProviderResultView, ValidationFailure, assess_provider_result, refusal_for,
+    };
 
     #[derive(Default)]
     struct StubTransport {
@@ -732,7 +773,7 @@ mod tests {
     }
 
     fn parsed(body: Value) -> OpenAiGenerated {
-        generated(parse_response(&body.to_string()))
+        generated(parse_response(&body.to_string(), ""))
     }
 
     fn temp_journal() -> std::path::PathBuf {
@@ -957,6 +998,7 @@ mod tests {
             usage: &zero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         assert!(!journal.join("tokens").exists());
@@ -971,6 +1013,7 @@ mod tests {
             usage: &nonzero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         let files = fs::read_dir(journal.join("tokens")).unwrap().count();
@@ -1046,7 +1089,8 @@ mod tests {
         assert_eq!(
             result,
             OpenAiResult::Failed(OpenAiFailure {
-                reason_code: Some("provider_key_missing".into())
+                reason_code: Some("provider_key_missing".into()),
+                detail: None,
             })
         );
         assert!(transport.posts.is_empty());
@@ -1059,7 +1103,8 @@ mod tests {
             assert_eq!(
                 openai_generate_with(&request(), &config(key, None), &mut transport),
                 OpenAiResult::Failed(OpenAiFailure {
-                    reason_code: Some("provider_key_missing".into())
+                    reason_code: Some("provider_key_missing".into()),
+                    detail: None,
                 })
             );
             assert!(transport.posts.is_empty());
@@ -1084,6 +1129,93 @@ mod tests {
         let refusal = refusal_for(&LaneOutcome::OpenAiFailure(failure), "openai", None);
         assert!(!refusal.detail.contains(credential));
         assert_eq!(transport.api_keys, [credential]);
+    }
+
+    #[test]
+    fn non_context_window_http_error_body_reaches_refusal_detail() {
+        let body = r#"{"error":{"message":"invalid temperature distinctive-400-openai"}}"#;
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 400,
+                body: body.to_owned(),
+            })],
+            ..Default::default()
+        };
+        let OpenAiResult::Failed(failure) = openai_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("400 must fail");
+        };
+        assert_eq!(failure.detail.as_deref(), Some(body));
+        let refusal = refusal_for(&LaneOutcome::OpenAiFailure(failure), "openai", None);
+        assert_eq!(refusal.detail, body);
+        assert!(!refusal.detail.contains("fixture"));
+        assert_ne!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+    }
+
+    #[test]
+    fn captured_http_error_body_truncates_to_512_utf8_characters() {
+        let body = format!("I cannot {}", "界".repeat(600));
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 500,
+                body: body.clone(),
+            })],
+            ..Default::default()
+        };
+        let OpenAiResult::Failed(failure) = openai_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("server error must fail");
+        };
+        let detail = failure.detail.expect("captured body");
+        assert_eq!(detail.chars().count(), NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS);
+        assert!(detail.starts_with("I cannot "));
+        assert!(!detail.contains("fixture"));
+    }
+
+    #[test]
+    fn blank_extracted_text_keeps_distinctive_raw_snippet_on_refusal() {
+        let mut body = successful_body();
+        body["output"] = json!([{"content": [{"output_text": ""}]}]);
+        body["distinctive"] = json!("blank-visible-openai-xyz");
+        let generated = parsed(body);
+        assert!(generated.text.trim().is_empty());
+        let snippet = generated
+            .raw_response_snippet
+            .as_deref()
+            .expect("raw snippet");
+        assert!(snippet.contains("blank-visible-openai-xyz"));
+        let journal = temp_journal();
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &generated.model,
+            text: &generated.text,
+            finish_reason: &generated.finish_reason,
+            usage: &generated.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: generated.raw_response_snippet.as_deref(),
+        });
+        assert_eq!(
+            assessment.failure,
+            Some(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: generated.raw_response_snippet.clone(),
+            })
+        );
+        let refusal = refusal_for(
+            &LaneOutcome::ValidationFailure(assessment.failure.unwrap()),
+            "openai",
+            None,
+        );
+        assert!(refusal.detail.contains("blank-visible-openai-xyz"));
+        assert!(!refusal.detail.contains("fixture"));
+        let _ = fs::remove_dir_all(journal);
     }
 
     #[test]
@@ -1163,6 +1295,7 @@ mod tests {
                 "output":[{"content":[{"output_text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
             })
             .to_string(),
+            "",
         ) else {
             panic!("generated response expected")
         };
@@ -1204,6 +1337,7 @@ mod tests {
             usage: &unoffered.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(assessment.failure, None);
         let OpenAiConverseResult::Failed(invalid) = parse_converse_response(&json!({

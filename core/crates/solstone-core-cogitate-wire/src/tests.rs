@@ -478,6 +478,7 @@ fn terminal_outcomes_split_and_preserve_partial_error_result() {
                 reason_code: "provider_response_invalid".into(),
                 retryable: false,
                 blocking: false,
+                detail: None,
             }),
         },
         RunOutcome {
@@ -549,6 +550,7 @@ fn terminal_events_always_include_usage_on_finish_and_error() {
                 reason_code: "provider_key_missing".to_owned(),
                 retryable: false,
                 blocking: true,
+                detail: None,
             },
             usage,
             "corr-1".to_owned(),

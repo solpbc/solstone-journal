@@ -2653,6 +2653,7 @@ fn generate_response_for_request(
                             usage: &usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: None,
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2776,6 +2777,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2825,6 +2827,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2874,6 +2877,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2957,6 +2961,7 @@ fn endpoint_result_response(
                     usage: &usage,
                     json_output: request.json_output,
                     enforce_responsiveness: request.enforce_responsiveness,
+                    raw_response_snippet: None,
                 },
             );
             if let Some(error) = assessment.token_log_error {
@@ -6207,6 +6212,7 @@ mod tests {
                 usage: json!({"input_tokens": 1}),
                 finish_reason: "stop".into(),
                 thinking: Some(json!({"type": "thinking", "thinking": "work"})),
+                raw_response_snippet: None,
             },
             None,
         )
