@@ -824,7 +824,7 @@ fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
                 forbid_fields(&target.id, &windows_only, &mut unexpected);
                 if lane.is_empty() {
                     missing.insert(format!("{} lane", target.id));
-                } else if !KNOWN_TARGET_LANES.contains(&lane) {
+                } else if lane != "apple-native" {
                     unexpected.insert(format!("{} lane {lane}", target.id));
                 }
                 if !target.min_macos.is_empty() && parse_min_macos(&target.min_macos).is_none() {
@@ -837,7 +837,7 @@ fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
                 forbid_fields(&target.id, &macos_only, &mut unexpected);
                 if lane.is_empty() {
                     missing.insert(format!("{} lane", target.id));
-                } else if !KNOWN_TARGET_LANES.contains(&lane) {
+                } else if lane != "msvc-native" {
                     unexpected.insert(format!("{} lane {lane}", target.id));
                 }
             }
@@ -1305,6 +1305,117 @@ lane = "msvc-native"
         let error = parse(windows_without_triple).unwrap_err().to_string();
         assert!(error.contains("missing required target field"), "{error}");
         assert!(error.contains("windows-x86_64 triple_windows"), "{error}");
+
+        let macos_with_msvc_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "msvc-native"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let error = parse(macos_with_msvc_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("macos-arm64 lane msvc-native"), "{error}");
+
+        let windows_with_apple_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "apple-native"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_with_apple_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(
+            error.contains("windows-x86_64 lane apple-native"),
+            "{error}"
+        );
+
+        let windows_unknown_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "xcodebuild"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_unknown_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("windows-x86_64 lane xcodebuild"), "{error}");
+
+        let windows_empty_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_empty_lane).unwrap_err().to_string();
+        assert!(error.contains("missing required target field"), "{error}");
+        assert!(error.contains("windows-x86_64 lane"), "{error}");
+
+        let windows_with_apple_fields = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let error = parse(windows_with_apple_fields).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("windows-x86_64 triple_apple"), "{error}");
+        assert!(error.contains("windows-x86_64 min_macos"), "{error}");
 
         // The control: the committed inventory passes the same validator, so a
         // refusal above is the rule firing rather than the parser being broken.

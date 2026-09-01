@@ -717,9 +717,9 @@ struct FinishProduce<'a> {
     delivery_contract: Option<&'a DeliveryContract>,
 }
 
-/// Selection, binary inspection, staging and atomic promotion — identical for
-/// both platforms except for which inspector reads the binaries and which
-/// containers promotion emits.
+/// Selection, binary inspection, staging and atomic promotion. Linux inspects
+/// ELF and emits deb/rpm; macOS inspects Mach-O and emits a signed pkg. Windows
+/// produce is refused in this lode.
 fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceError> {
     let FinishProduce {
         args,
@@ -749,27 +749,38 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     let selection = select::select_artifacts(inventory, &args.target_id, artifacts)
         .map_err(|error| ProduceError::new(error.to_string()))?;
 
-    if target.is_macos() {
-        let cputype = macho::cputype_for_arch(&target.arch)
-            .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
-        let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
-            ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
-        })?;
-        for bin in &selection.bins {
-            let bytes = fs::read(&bin.path)?;
-            inspect_macho_bin(&bin.bin, &bin.lane, &bytes, cputype, ceiling)?;
-        }
-    } else {
-        let machine = match target.arch.as_str() {
-            "x86_64" => elf::machine_x86_64(),
-            "aarch64" => elf::machine_aarch64(),
-            other => {
-                return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+    match target.os.as_str() {
+        OS_MACOS => {
+            let cputype = macho::cputype_for_arch(&target.arch)
+                .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
+            let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
+                ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
+            })?;
+            for bin in &selection.bins {
+                let bytes = fs::read(&bin.path)?;
+                inspect_macho_bin(&bin.bin, &bin.lane, &bytes, cputype, ceiling)?;
             }
-        };
-        for bin in &selection.bins {
-            let bytes = fs::read(&bin.path)?;
-            inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
+        }
+        OS_LINUX => {
+            let machine = match target.arch.as_str() {
+                "x86_64" => elf::machine_x86_64(),
+                "aarch64" => elf::machine_aarch64(),
+                other => {
+                    return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+                }
+            };
+            for bin in &selection.bins {
+                let bytes = fs::read(&bin.path)?;
+                inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
+            }
+        }
+        OS_WINDOWS => {
+            return Err(ProduceError::new(
+                "windows produce is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(ProduceError::new(format!("unexpected:\n  os {other}")));
         }
     }
 
@@ -792,18 +803,29 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     // because it is not a binary: it is staged straight out of the pinned wheel
     // and never passes through `select`. A census that walked only `selection`
     // would report a clean tree with the loaded half never looked at.
-    if target.is_macos() {
-        archive_census::validate_staged_archives(&stage, inventory)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-        inspect_macos_payloads(&stage, target)?;
-        let prebuild = prebuild_input.ok_or_else(|| {
-            ProduceError::new("missing required:\n  macOS prebuild archive identity")
-        })?;
-        let delivery = delivery_contract.ok_or_else(|| {
-            ProduceError::new("missing required:\n  macOS archive delivery contract")
-        })?;
-        stage_chain(&stage, prebuild, delivery, commit, expected_lock)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
+    match target.os.as_str() {
+        OS_MACOS => {
+            archive_census::validate_staged_archives(&stage, inventory)
+                .map_err(|error| ProduceError::new(error.to_string()))?;
+            inspect_macos_payloads(&stage, target)?;
+            let prebuild = prebuild_input.ok_or_else(|| {
+                ProduceError::new("missing required:\n  macOS prebuild archive identity")
+            })?;
+            let delivery = delivery_contract.ok_or_else(|| {
+                ProduceError::new("missing required:\n  macOS archive delivery contract")
+            })?;
+            stage_chain(&stage, prebuild, delivery, commit, expected_lock)
+                .map_err(|error| ProduceError::new(error.to_string()))?;
+        }
+        OS_LINUX => {}
+        OS_WINDOWS => {
+            return Err(ProduceError::new(
+                "windows produce is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(ProduceError::new(format!("unexpected:\n  os {other}")));
+        }
     }
 
     let tree = tree_from_stage(&stage)?;
@@ -2053,6 +2075,25 @@ targets = ["windows-x86_64"]
         assert!(!dests.iter().any(|dest| dest.starts_with("share/")));
         assert!(!dests.iter().any(|dest| dest.starts_with("lib/")));
         assert!(!dests.iter().any(|dest| dest.starts_with("bin/")));
+    }
+
+    #[test]
+    fn windows_produce_run_refuses() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let error = match run(ProduceArgs {
+            target_id: "windows-x86_64".into(),
+            dest: PathBuf::from("/var/tmp/solstone-distribution-windows-produce-dest"),
+            start: repo,
+        }) {
+            Ok(_) => panic!("windows produce refuses"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("windows produce is not implemented in this lode"),
+            "{error}"
+        );
     }
 
     #[test]
