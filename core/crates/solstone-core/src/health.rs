@@ -764,6 +764,25 @@ mod tests {
     }
 
     #[test]
+    fn present_health_prefixes_ced_on_unsupported_platform() {
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let ced = CedVerdict::Unsupported {
+            os: "windows".to_owned(),
+            arch: "x86_64".to_owned(),
+        };
+        let rfdetr = RfdetrReadiness::Ready {
+            binary: PathBuf::from("rfdetr-cli"),
+            model: PathBuf::from("rfdetr-nano-f16.gguf"),
+        };
+        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        assert!(stdout.starts_with(
+            "ced install: unsupported platform windows/x86_64; skipping ced sound-tag assets\n"
+        ));
+        assert!(stderr.is_empty());
+        assert_eq!(code, std::process::ExitCode::SUCCESS);
+    }
+
+    #[test]
     fn renderer_appends_sanitized_reason_code_on_the_same_crashed_line() {
         let mut value = status_value();
         value["crashed"] = json!([
