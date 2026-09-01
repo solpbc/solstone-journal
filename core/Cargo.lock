@@ -3372,6 +3372,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-ced-analyze"
+version = "2.0.0"
+dependencies = [
+ "serde_json",
+ "solstone-core-ced-sys",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-ced-sys"
 version = "2.0.0"
 dependencies = [
@@ -4292,7 +4301,6 @@ dependencies = [
  "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
- "solstone-core-ced-sys",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "tar",
@@ -4748,7 +4756,6 @@ dependencies = [
  "log",
  "serde_json",
  "solstone-core-assets",
- "solstone-core-ced-sys",
  "solstone-core-local",
  "tempfile",
 ]

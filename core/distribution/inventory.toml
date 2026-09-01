@@ -164,6 +164,21 @@ mode = 0o755
 lane = "zig-gnu-2.27"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
+# Brief D: CED's ced.cpp engine is a dynamically-linked glibc shared object
+# (`libced.so`) that `solstone-core-ced-sys` `dlopen`s at runtime. A
+# musl-static process has no in-process dynamic loader and can never satisfy
+# that call, so -- like speakers-analyze and vad-analyze -- CED classification
+# and readiness probing run out of process in this gnu-lane helper instead of
+# inside `solstone-core`.
+[[entry]]
+kind = "bin"
+package = "solstone-core-ced-analyze"
+bin = "solstone-core-ced-analyze"
+dest = "bin/solstone-core-ced-analyze"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
 [[entry]]
 kind = "launcher"
 source = "scripts/root-launchers/solstone"
@@ -286,11 +301,11 @@ targets = ["macos-arm64"]
 
 [[deny]]
 bin = "solstone-transcribe"
-reason = "product-ish helper; not in the admitted ten; inventory allow-list decides"
+reason = "product-ish helper; not in the admitted eleven; inventory allow-list decides"
 
 [[deny]]
 bin = "solstone-brain"
-reason = "product-ish helper; not in the admitted ten"
+reason = "product-ish helper; not in the admitted eleven"
 
 [[deny]]
 bin = "setup-fixture-journal"
