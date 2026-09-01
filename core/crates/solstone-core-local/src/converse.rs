@@ -127,13 +127,9 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
         // owner text. This exists because a bare `tool_call_synthesized_as_prose`
         // says nothing about WHY recovery declined, and the difference between
         // "unterminated", "not JSON" and "missing name" decides the fix.
-        eprintln!(
-            "tool-call prose recovery declined: opens={} closes={} len={} first_open_at={:?}",
-            text.matches(TOOL_CALL_OPEN).count(),
-            text.matches(TOOL_CALL_CLOSE).count(),
-            text.len(),
-            text.find(TOOL_CALL_OPEN),
-        );
+        if let Err(why) = recover_prose_tool_calls_detailed(&text) {
+            eprintln!("tool-call prose recovery declined: {why}");
+        }
         return Err(LocalConverseError::ToolCallSynthesizedAsProse);
     }
     Ok(LocalConverseResponse {
@@ -259,31 +255,43 @@ const TOOL_CALL_CLOSE: &str = "</tool_call>";
 /// one). If ANY block fails these, this returns `None` and the caller keeps its
 /// original refusal -- guessing at a malformed tool call is worse than failing.
 fn recover_prose_tool_calls(text: &str) -> Option<(Vec<LocalConverseToolCall>, String)> {
+    recover_prose_tool_calls_detailed(text).ok()
+}
+
+/// Same as [`recover_prose_tool_calls`], but names the check that declined so the
+/// caller can say WHY. Structural only -- key names, never values.
+fn recover_prose_tool_calls_detailed(
+    text: &str,
+) -> Result<(Vec<LocalConverseToolCall>, String), String> {
     let mut calls = Vec::new();
     let mut remainder = String::new();
     let mut rest = text;
     while let Some(start) = rest.find(TOOL_CALL_OPEN) {
         remainder.push_str(&rest[..start]);
         let after = &rest[start + TOOL_CALL_OPEN.len()..];
-        let end = after.find(TOOL_CALL_CLOSE)?;
-        let payload: Value = serde_json::from_str(after[..end].trim()).ok()?;
-        let object = payload.as_object()?;
+        let end = after.find(TOOL_CALL_CLOSE).ok_or("unterminated")?;
+        let payload: Value =
+            serde_json::from_str(after[..end].trim()).map_err(|_| "payload is not JSON")?;
+        let object = payload.as_object().ok_or("payload is not an object")?;
+        let keys: Vec<&str> = object.keys().map(String::as_str).collect();
         let name = object
             .get("name")
             .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())?;
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| format!("no usable name; keys={keys:?}"))?;
         let arguments = match object.get("arguments") {
             Some(Value::Object(arguments)) => Value::Object(arguments.clone()),
             // Some servers double-encode the arguments exactly as the structured
             // field does; accept that spelling and nothing looser.
             Some(Value::String(encoded)) => {
-                let parsed: Value = serde_json::from_str(encoded).ok()?;
+                let parsed: Value =
+                    serde_json::from_str(encoded).map_err(|_| "arguments string is not JSON")?;
                 if !parsed.is_object() {
-                    return None;
+                    return Err("arguments string is not an object".to_owned());
                 }
                 parsed
             }
-            _ => return None,
+            _ => return Err(format!("no usable arguments; keys={keys:?}")),
         };
         calls.push(LocalConverseToolCall {
             id: format!("recovered-{}", calls.len()),
@@ -293,10 +301,10 @@ fn recover_prose_tool_calls(text: &str) -> Option<(Vec<LocalConverseToolCall>, S
         rest = &after[end + TOOL_CALL_CLOSE.len()..];
     }
     if calls.is_empty() {
-        return None;
+        return Err("no blocks".to_owned());
     }
     remainder.push_str(rest);
-    Some((calls, remainder.trim().to_owned()))
+    Ok((calls, remainder.trim().to_owned()))
 }
 
 fn parse_tool_calls(
