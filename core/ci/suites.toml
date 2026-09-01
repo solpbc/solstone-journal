@@ -3004,6 +3004,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-bin::journal_v2_self_upgrade"
+package = "solstone-core-journal-bin"
+target = "journal_v2_self_upgrade"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-bin::journal_native_process_contract"
 package = "solstone-core-journal-bin"
 target = "journal_native_process_contract"
