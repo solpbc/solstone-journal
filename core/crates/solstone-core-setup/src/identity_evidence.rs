@@ -171,6 +171,32 @@ pub fn gather_setup_artifact_evidence(
     }
 }
 
+/// Whether either managed wrapper's own recorded launch target has drifted
+/// from the executable directory this run resolved to.
+///
+/// A version swap moves `executable_dir` -- the running binary now lives
+/// under a different `versions/<ver>-<digest>/bin`, even though
+/// `resolve_identity_root_from_executable_dir` deliberately keeps the
+/// installation identity (and so every guard field) unchanged. That means the
+/// ordinary guard-field comparison in [`SetupArtifactEvidence::repair_steps`]
+/// never notices a version swap on its own: the wrapper is still guarded, and
+/// the guard still matches. Reading each wrapper's own `SOL_BIN=` line is the
+/// only place that swap is visible, and it is what lets `journal setup`
+/// repoint the wrapper -- and, forced alongside it, the service unit it
+/// installs -- onto the newly installed build instead of silently leaving
+/// both pinned to the version that was current at the last setup run.
+#[must_use]
+pub fn wrapper_targets_drifted(home_dir: &Path, executable_dir: &Path) -> bool {
+    let paths = wrapper_paths(home_dir);
+    [paths.solstone, paths.journal].into_iter().any(|path| {
+        fs::read_to_string(&path)
+            .ok()
+            .as_deref()
+            .and_then(parse_wrapper)
+            .is_some_and(|wrapper| wrapper.sol_bin.parent() != Some(executable_dir))
+    })
+}
+
 fn read_setup_wrapper(
     home_dir: &Path,
     path: &Path,
@@ -368,6 +394,61 @@ mod tests {
             ),
             ArtifactBindingEvidence::Guarded(original)
         );
+    }
+
+    /// A version swap leaves the guard fields untouched (see
+    /// `identity_root_uses_a_versioned_prefix_from_the_resolved_version_directory`
+    /// in `solstone-core-journal`) but does move `executable_dir`, so this is
+    /// the one signal that catches it: without it, `journal setup` would
+    /// report success after a respin while silently leaving the wrapper
+    /// pointed at the build it just replaced.
+    #[test]
+    fn wrapper_targets_drifted_detects_a_version_swap_the_guard_cannot_see() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-identity-wrapper-drift-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let bin = home.join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let old_executable_dir = root.join("versions/1.0.0-aaaaaaaa/bin");
+        let new_executable_dir = root.join("versions/2.0.0-bbbbbbbb/bin");
+        fs::create_dir_all(&old_executable_dir).unwrap();
+        fs::create_dir_all(&new_executable_dir).unwrap();
+
+        let guard = fields();
+        fs::write(
+            bin.join("journal"),
+            crate::wrapper::render_wrapper(
+                "journal",
+                Path::new("/journal"),
+                &old_executable_dir.join("journal"),
+                &guard,
+            ),
+        )
+        .unwrap();
+        fs::write(
+            bin.join("solstone"),
+            crate::wrapper::render_wrapper(
+                "solstone",
+                Path::new("/journal"),
+                &old_executable_dir.join("solstone"),
+                &guard,
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            !wrapper_targets_drifted(&home, &old_executable_dir),
+            "no drift while executable_dir still matches the wrapper's own SOL_BIN"
+        );
+        assert!(
+            wrapper_targets_drifted(&home, &new_executable_dir),
+            "a version swap must be visible even though the guard fields never changed"
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

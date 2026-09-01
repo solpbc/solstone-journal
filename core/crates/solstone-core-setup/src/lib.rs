@@ -25,7 +25,9 @@ use clean_uninstall::{
     clean_uninstall_refusal, run_clean_uninstall,
 };
 use events::{EventSink, JsonlEmitter, StepName};
-use identity_evidence::{gather_artifact_evidence, gather_setup_artifact_evidence};
+use identity_evidence::{
+    gather_artifact_evidence, gather_setup_artifact_evidence, wrapper_targets_drifted,
+};
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession, IdentityError,
@@ -214,7 +216,19 @@ fn admit_setup_identity(
         legacy_manifest: manifest,
         artifacts: artifacts.artifacts().clone(),
     })?;
-    let repair_steps = artifacts.repair_steps(admission.binding());
+    let mut repair_steps = artifacts.repair_steps(admission.binding());
+    if wrapper_targets_drifted(home_dir, executable_dir) {
+        // A version swap since the last setup run: the wrapper's own
+        // `SOL_BIN=` still names the old build even though identity admission
+        // above found nothing wrong (same namespace, same guard). Force both
+        // steps so the owner ends up on the build they just installed instead
+        // of a wrapper and service silently left pointed at the old one.
+        for step in [StepName::Wrapper, StepName::Service] {
+            if !repair_steps.contains(&step) {
+                repair_steps.push(step);
+            }
+        }
+    }
     let legacy_replacement = artifacts.legacy_transition();
     Ok(SetupIdentityAdmission {
         admission,
@@ -1110,6 +1124,94 @@ mod tests {
                 .expect("identity owner")
                 .path()
                 .exists()
+        );
+    }
+
+    /// Negative twin for the version-swap fix: a wrapper that is
+    /// well-formed and guarded, but bound to a genuinely different
+    /// installation's namespace, must still refuse rather than be silently
+    /// adopted. Recognising "current still points at this exact sibling
+    /// version directory" (the fix) must not widen into recognising an
+    /// unrelated installation's wrapper as this one's own.
+    #[test]
+    fn foreign_wrapper_from_a_different_installation_still_refuses() {
+        let root = root("identity-foreign-refusal");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::create_dir_all(&executable_dir).unwrap();
+
+        let foreign_root = root.join("a-completely-different-installation");
+        fs::create_dir_all(&foreign_root).unwrap();
+        let foreign_root_token = root_token_from_path(&foreign_root).unwrap();
+        let foreign_namespace = namespace_name(PlatformTag::current(), &foreign_root_token);
+        let foreign_guard = GuardFields {
+            namespace: foreign_namespace,
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .unwrap(),
+            generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
+            journal_token: journal_token_from_path(&root.join("journal")).unwrap(),
+        };
+        let wrapper_path = home.join(".local/bin/journal");
+        let wrapper_before = crate::wrapper::render_wrapper(
+            "journal",
+            Path::new("/journal"),
+            &executable_dir.join("journal"),
+            &foreign_guard,
+        );
+        fs::write(&wrapper_path, &wrapper_before).unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--journal".into(),
+                root.join("journal").display().to_string(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = run_owner_setup_with_io(
+            args,
+            home.clone(),
+            executable_dir,
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "no step may run after a refusal"
+        );
+        assert!(stdout.is_empty());
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(
+            stderr.contains("installation identity admission failed"),
+            "stderr: {stderr}"
+        );
+        assert!(
+            stderr.contains("bound to a different installation"),
+            "must name the foreign-binding reason rather than a generic refusal: {stderr}"
+        );
+        assert_eq!(
+            fs::read_to_string(&wrapper_path).unwrap(),
+            wrapper_before,
+            "a refused admission must never rewrite the foreign wrapper it could not vouch for"
         );
     }
 

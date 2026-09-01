@@ -1829,6 +1829,16 @@ fn validate_setup_evidence(
 }
 
 fn validate_initial_evidence(request: &SetupAdmissionRequest) -> Result<(), IdentityError> {
+    // `validate_setup_evidence` (called before this, in `admit_setup`) has
+    // already refused `Malformed` and `Ambiguous`, so only `Fresh`,
+    // `LegacyUnguarded`, `Guarded`, and `Foreign` ever reach here. Naming
+    // which of the last two applies is the structured half of the refusal:
+    // `Guarded` (an installation record has gone missing under an otherwise
+    // valid, matching wrapper -- point at identity storage) and `Foreign`
+    // (the wrapper names a different installation entirely -- point at the
+    // wrapper/service artifacts) call for different repairs, and collapsing
+    // them into one message threw that distinction away before it ever
+    // reached stderr or a JSONL consumer.
     match (&request.artifacts, request.legacy_manifest) {
         (ArtifactBindingEvidence::Fresh, _) => Ok(()),
         (
@@ -1837,6 +1847,12 @@ fn validate_initial_evidence(request: &SetupAdmissionRequest) -> Result<(), Iden
         ) => Ok(()),
         (ArtifactBindingEvidence::LegacyUnguarded, _) => Err(IdentityError::AdmissionRefused(
             "legacy artifacts need a valid provider-less schema-v1 manifest",
+        )),
+        (ArtifactBindingEvidence::Guarded(_), _) => Err(IdentityError::AdmissionRefused(
+            "existing wrapper or service artifacts are guarded, but no matching installation record exists in identity storage",
+        )),
+        (ArtifactBindingEvidence::Foreign, _) => Err(IdentityError::AdmissionRefused(
+            "existing wrapper or service artifacts are bound to a different installation",
         )),
         _ => Err(IdentityError::AdmissionRefused(
             "existing artifacts have no valid bootstrap evidence",
