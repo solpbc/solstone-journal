@@ -271,6 +271,17 @@ fn recover_prose_tool_calls_detailed(
         let after = &rest[start + TOOL_CALL_OPEN.len()..];
         let end = after.find(TOOL_CALL_CLOSE).ok_or("unterminated")?;
         let raw = after[..end].trim();
+        // Qwen 3.5 writes tool calls as an XML-ish block rather than JSON, so try that
+        // spelling before declaring the payload unusable.
+        if let Ok((name, arguments)) = parse_xml_tool_call(raw) {
+            calls.push(LocalConverseToolCall {
+                id: format!("recovered-{}", calls.len()),
+                name,
+                arguments,
+            });
+            rest = &after[end + TOOL_CALL_CLOSE.len()..];
+            continue;
+        }
         let payload: Value = serde_json::from_str(raw).map_err(|_| {
             // ⚠ Shape, not content: every alphanumeric becomes `x`, so punctuation and
             // structure survive and any owner text does not. That is enough to tell a
@@ -314,6 +325,72 @@ fn recover_prose_tool_calls_detailed(
     }
     remainder.push_str(rest);
     Ok((calls, remainder.trim().to_owned()))
+}
+
+/// Parse Qwen 3.5's XML-ish tool-call spelling.
+///
+/// ```text
+/// <function=emit_final>
+/// <parameter=content>
+/// OK
+/// </parameter>
+/// </function>
+/// ```
+///
+/// Measured verbatim on the founder's journal 2026-09-01: this is what the SPP lane
+/// returns inside `<tool_call>` when the server has no tool-call parser configured.
+/// It is not JSON, which is why the JSON-only recovery declined it.
+///
+/// 🔒 Strict: the block must be exactly a `<function=NAME>` wrapper containing only
+/// well-formed `<parameter=KEY>` elements. Any stray content, unterminated tag, or
+/// empty name is refused rather than guessed at. A zero-parameter call is legal and
+/// yields `{}`.
+///
+/// ⚠ A parameter value that parses as non-string JSON (`3`, `true`, `["a"]`) is
+/// carried through with that type, because a tool schema expecting a number will
+/// reject `"3"`. A value that does not parse -- the common case, ordinary prose --
+/// stays a string.
+fn parse_xml_tool_call(raw: &str) -> Result<(String, Value), &'static str> {
+    let rest = raw
+        .trim()
+        .strip_prefix("<function=")
+        .ok_or("not a function block")?;
+    let (name, rest) = rest.split_once('>').ok_or("unterminated function tag")?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("empty function name");
+    }
+    let body = rest
+        .trim()
+        .strip_suffix("</function>")
+        .ok_or("missing closing function tag")?;
+    let mut arguments = serde_json::Map::new();
+    let mut cursor = body.trim();
+    while !cursor.is_empty() {
+        let after_open = cursor
+            .strip_prefix("<parameter=")
+            .ok_or("unexpected content inside a function block")?;
+        let (key, after_key) = after_open
+            .split_once('>')
+            .ok_or("unterminated parameter tag")?;
+        let key = key.trim();
+        if key.is_empty() {
+            return Err("empty parameter name");
+        }
+        let (value, remainder) = after_key
+            .split_once("</parameter>")
+            .ok_or("missing closing parameter tag")?;
+        let value = value.trim();
+        let typed = match serde_json::from_str::<Value>(value) {
+            Ok(Value::String(_)) | Err(_) => Value::String(value.to_owned()),
+            Ok(other) => other,
+        };
+        if arguments.insert(key.to_owned(), typed).is_some() {
+            return Err("duplicate parameter");
+        }
+        cursor = remainder.trim();
+    }
+    Ok((name.to_owned(), Value::Object(arguments)))
 }
 
 fn parse_tool_calls(
@@ -504,6 +581,60 @@ mod tests {
         .expect("double-encoded arguments match the structured spelling");
         assert_eq!(parsed.tool_calls[0].arguments, json!({"a": 1}));
         assert_eq!(parsed.text, "thinkingdone");
+    }
+
+    /// The exact bytes the founder's SPP lane returns.
+    ///
+    /// Captured verbatim 2026-09-01 via a shape dump: Qwen 3.5 writes an XML-ish
+    /// block, not JSON, and SGLang without a tool-call parser passes it through.
+    #[test]
+    fn a_qwen_xml_tool_call_left_in_prose_is_recovered() {
+        let parsed = parse_converse_response(&json!({
+            "choices": [{
+                "message": {"content": "<tool_call>\n<function=emit_final>\n<parameter=content>\nOK\n</parameter>\n</function>\n</tool_call>"},
+                "finish_reason": "stop"
+            }]
+        }))
+        .expect("the SPP lane's real tool-call spelling must be recoverable");
+        assert_eq!(parsed.finish_reason, "tool_calls");
+        assert_eq!(parsed.tool_calls.len(), 1);
+        assert_eq!(parsed.tool_calls[0].name, "emit_final");
+        assert_eq!(parsed.tool_calls[0].arguments, json!({"content": "OK"}));
+    }
+
+    #[test]
+    fn xml_tool_calls_carry_types_and_allow_no_parameters() {
+        assert_eq!(
+            parse_xml_tool_call(
+                "<function=go>\n<parameter=count>\n3\n</parameter>\n<parameter=on>\ntrue\n</parameter>\n<parameter=note>\nhello there\n</parameter>\n</function>"
+            ),
+            Ok((
+                "go".to_owned(),
+                json!({"count": 3, "on": true, "note": "hello there"})
+            ))
+        );
+        // A zero-parameter call is legal.
+        assert_eq!(
+            parse_xml_tool_call("<function=ping>\n</function>"),
+            Ok(("ping".to_owned(), json!({})))
+        );
+    }
+
+    /// 🔒 Negative twins for the XML spelling -- strict, never guessed at.
+    #[test]
+    fn malformed_xml_tool_calls_are_refused() {
+        for raw in [
+            "<function=>\n</function>",                                  // empty name
+            "<function=go\n</function>",                                 // unterminated tag
+            "<function=go>\n<parameter=a>\nx\n</parameter>",             // no </function>
+            "<function=go>\n<parameter=>\nx\n</parameter>\n</function>", // empty parameter
+            "<function=go>\n<parameter=a>\nx\n</function>",              // no </parameter>
+            "<function=go>\nstray\n</function>",                         // stray content
+            "<function=go>\n<parameter=a>\n1\n</parameter>\n<parameter=a>\n2\n</parameter>\n</function>", // duplicate
+            "{\"name\": \"go\"}", // not this spelling at all
+        ] {
+            assert!(parse_xml_tool_call(raw).is_err(), "must refuse: {raw}");
+        }
     }
 
     /// 🔒 Negative twins. Recovery must stay conservative: a malformed block keeps the
