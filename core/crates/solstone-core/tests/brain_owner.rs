@@ -38,6 +38,7 @@ fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
         "local/qwen3.5-4b",
         cfg!(target_os = "macos"),
     );
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut input = serde_json::Map::from_iter([
         (
             "journal".into(),
