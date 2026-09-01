@@ -123,6 +123,17 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
                 usage: crate::generate::extract_usage(data),
             });
         }
+        // ⚠ Structural facts only -- never the content itself, which in real use is
+        // owner text. This exists because a bare `tool_call_synthesized_as_prose`
+        // says nothing about WHY recovery declined, and the difference between
+        // "unterminated", "not JSON" and "missing name" decides the fix.
+        eprintln!(
+            "tool-call prose recovery declined: opens={} closes={} len={} first_open_at={:?}",
+            text.matches(TOOL_CALL_OPEN).count(),
+            text.matches(TOOL_CALL_CLOSE).count(),
+            text.len(),
+            text.find(TOOL_CALL_OPEN),
+        );
         return Err(LocalConverseError::ToolCallSynthesizedAsProse);
     }
     Ok(LocalConverseResponse {
