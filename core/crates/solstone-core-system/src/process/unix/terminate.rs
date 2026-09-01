@@ -335,6 +335,43 @@ pub fn signal_exact_instance(
     }
 }
 
+/// Report a managed child that is already gone as the exit it is, not as a
+/// termination failure.
+///
+/// A managed child is routinely gone before termination even runs. systemd's
+/// `KillMode=control-group` — what `solstone.service` ships — SIGTERMs every
+/// process in the unit's cgroup, and the supervisor's parent-loss handshake
+/// separately asks children to retire and waits for their acknowledgement. Both
+/// happen before the shutdown loop reaches `terminate_exact`.
+///
+/// At that moment the exit is unreaped, so the child is a zombie — and the
+/// census drops zombies (`inspect_from_linux_stat` maps state `Z` to `Absent`,
+/// which `census_linux` discards). `snapshot` then cannot find the managed
+/// parent in its own census and fails with "managed parent not found", which
+/// the exact-termination paths turned into
+/// `ProcessTreeNotReaped { reason: "cleanup_unproven", survivors: [] }`.
+///
+/// That is a false negative, and the empty survivor list is its own tell: the
+/// error claimed a tree was not reaped while simultaneously proving nothing
+/// survived. The perverse part is that the better shutdown worked, the louder
+/// it reported failure — on the founder's journal every clean stop logged
+/// `failed to terminate {cortex,sense,convey} during shutdown`.
+///
+/// Checking for the exit first matches `ManagedProcess::exact_exited_outcome`,
+/// which already reports exactly this condition as `Graceful`; the exact paths
+/// simply never asked. ⚠ No verification is weakened — a child that is still
+/// alive takes the full snapshot/signal/verify path unchanged, and the previous
+/// behaviour performed no descendant cleanup on this branch either (it returned
+/// before sending any signal), so none is lost here.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn already_exited_outcome(child: &mut Child) -> io::Result<Option<TerminationOutcome>> {
+    Ok(child
+        .try_wait()?
+        .map(|status| TerminationOutcome::Graceful {
+            exit_code: Some(signal_aware_exit_code(&status)),
+        }))
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn terminate_exact_unix(
     child: &mut Child,
@@ -346,6 +383,9 @@ fn terminate_exact_unix(
         i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
     if i32::try_from(child.id()).ok() != Some(parent_pid) {
         return Err(TerminationError::ExactInstanceUnavailable);
+    }
+    if let Some(outcome) = already_exited_outcome(child)? {
+        return Ok(outcome);
     }
     let tree =
         snapshot(parent_pid, source, None).map_err(|_| TerminationError::ProcessTreeNotReaped {
@@ -394,6 +434,12 @@ fn terminate_exact_unix_until(
     deadline: Instant,
     source: &dyn ProcessInstanceSource,
 ) -> Result<TerminationOutcome, TerminationError> {
+    // Before the deadline check on purpose: a child that has already exited did
+    // not miss its graceful window, and reporting `ParentGraceTimeout` here would
+    // downgrade a clean shutdown to `ForcedAfterGraceTimeout` one level up.
+    if let Some(outcome) = already_exited_outcome(child)? {
+        return Ok(outcome);
+    }
     if Instant::now() >= deadline {
         return Err(TerminationError::ParentGraceTimeout);
     }
@@ -449,6 +495,13 @@ fn terminate_unix(
 ) -> Result<TerminationOutcome, TerminationError> {
     let parent_pid =
         i32::try_from(child.id()).map_err(|_| io::Error::other("invalid child pid"))?;
+    // Same class as the exact paths, and here it also removes a signal hazard:
+    // on a failed snapshot this path falls back to a degenerate tree whose pgid
+    // is the parent pid, then signals the whole group. If the child is already
+    // gone, that group may have been reused by an unrelated process.
+    if let Some(outcome) = already_exited_outcome(child)? {
+        return Ok(outcome);
+    }
     let source = SystemProcessInstanceSource;
     let snapshot_result = snapshot(parent_pid, &source, None);
     let snapshot_uncertain = snapshot_result.is_err();
