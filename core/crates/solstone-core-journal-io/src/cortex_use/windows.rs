@@ -15,7 +15,8 @@ use windows_sys::Win32::Storage::FileSystem::{FILE_READ_ATTRIBUTES, FILE_READ_DA
 
 use super::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
-    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
+    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, expected_active_use_id,
+    expected_completed_use_id, parse_cortex_use_request,
 };
 use crate::JournalRoot;
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
@@ -26,46 +27,83 @@ pub(super) fn read_cortex_use_request(
     talent_directory: &Path,
     active_leaf: &OsStr,
 ) -> CortexUseCandidateRead {
+    read_observed_request(
+        talent_directory,
+        active_leaf,
+        expected_active_use_id(active_leaf),
+    )
+}
+
+pub(super) fn read_cortex_use_completed_request(
+    talent_directory: &Path,
+    completed_leaf: &OsStr,
+) -> CortexUseCandidateRead {
+    read_observed_request(
+        talent_directory,
+        completed_leaf,
+        expected_completed_use_id(completed_leaf),
+    )
+}
+
+fn read_observed_request(
+    talent_directory: &Path,
+    leaf: &OsStr,
+    expected_use_id: Option<&str>,
+) -> CortexUseCandidateRead {
+    let first_row = match observe_stable_first_row(talent_directory, leaf) {
+        Ok(first_row) => first_row,
+        Err(refusal) => return refused(refusal),
+    };
+    let Some(expected_use_id) = expected_use_id else {
+        return refused(CortexUseRefusal::InvalidRequest);
+    };
+    parse_cortex_use_request(
+        talent_directory,
+        expected_use_id,
+        &first_row[..first_row.len() - 1],
+    )
+}
+
+fn observe_stable_first_row(
+    talent_directory: &Path,
+    leaf: &OsStr,
+) -> Result<Vec<u8>, CortexUseRefusal> {
     let directory = match JournalRoot::open(talent_directory).and_then(|directory| {
         directory.revalidate()?;
         Ok(directory)
     }) {
         Ok(directory) => directory,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
-    let path = talent_directory.join(active_leaf);
-    let mut file = match open_regular(&directory, active_leaf, &path) {
+    let path = talent_directory.join(leaf);
+    let mut file = match open_regular(&directory, leaf, &path) {
         Ok((file, _)) => file,
-        Err(refusal) => return refused(refusal),
+        Err(refusal) => return Err(refusal),
     };
     let expected = match file_identity(file.as_raw_handle()) {
         Ok(identity) => identity,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
     let first_row = match read_first_row(&mut file) {
         Ok(Some(row)) => row,
-        Ok(None) => return refused(CortexUseRefusal::InvalidRequest),
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Ok(None) => return Err(CortexUseRefusal::InvalidRequest),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
     match reread_first_row(&mut file, &first_row) {
         Ok(true) => {}
-        Ok(false) | Err(_) => return refused(CortexUseRefusal::CandidateIdentityChanged),
+        Ok(false) | Err(_) => return Err(CortexUseRefusal::CandidateIdentityChanged),
     }
     if file_identity(file.as_raw_handle()).ok() != Some(expected) {
-        return refused(CortexUseRefusal::CandidateIdentityChanged);
+        return Err(CortexUseRefusal::CandidateIdentityChanged);
     }
-    let final_identity = match open_regular(&directory, active_leaf, &path) {
+    let final_identity = match open_regular(&directory, leaf, &path) {
         Ok((_, identity)) => identity,
-        Err(_) => return refused(CortexUseRefusal::CandidateIdentityChanged),
+        Err(_) => return Err(CortexUseRefusal::CandidateIdentityChanged),
     };
     if final_identity != expected || directory.revalidate().is_err() {
-        return refused(CortexUseRefusal::CandidateIdentityChanged);
+        return Err(CortexUseRefusal::CandidateIdentityChanged);
     }
-    parse_cortex_use_request(
-        talent_directory,
-        active_leaf,
-        &first_row[..first_row.len() - 1],
-    )
+    Ok(first_row)
 }
 
 pub(super) fn check_cortex_use_destination(
@@ -168,4 +206,88 @@ fn reread_first_row(file: &mut File, expected: &[u8]) -> io::Result<bool> {
     let mut observed = vec![0; expected.len()];
     file.read_exact(&mut observed)?;
     Ok(observed == expected)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::ffi::OsStr;
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::cortex_use::{CortexUseCandidateRead, CortexUseRefusal};
+
+    fn active(directory: &Path, leaf: &str, row: &str) {
+        fs::write(
+            directory.join(leaf),
+            format!("{row}\n{{\"event\":\"tail\"}}\n"),
+        )
+        .unwrap();
+    }
+
+    fn request(name: &str, use_id: &str) -> String {
+        format!(r#"{{"name":"{name}","use_id":"{use_id}"}}"#)
+    }
+
+    #[test]
+    fn completed_reader_accepts_active_looking_leaf_when_content_matches_completed_id() {
+        let temporary = TempDir::new().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(
+            &directory,
+            "alpha_active.jsonl",
+            &request("conversation", "alpha_active"),
+        );
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new("alpha_active.jsonl")),
+            CortexUseCandidateRead::Accepted(CortexUseRequest {
+                use_id: "alpha_active".into()
+            })
+        );
+    }
+
+    #[test]
+    fn completed_reader_accepts_a_plain_completed_leaf() {
+        let temporary = TempDir::new().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, "alpha.jsonl", &request("conversation", "alpha"));
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new("alpha.jsonl")),
+            CortexUseCandidateRead::Accepted(CortexUseRequest {
+                use_id: "alpha".into()
+            })
+        );
+    }
+
+    #[test]
+    fn active_reader_refuses_when_the_active_id_cannot_be_derived() {
+        let temporary = TempDir::new().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, "foo.jsonl", &request("conversation", "foo"));
+        assert_eq!(
+            read_cortex_use_request(&directory, OsStr::new("foo.jsonl")),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn completed_reader_refuses_when_the_completed_id_cannot_be_derived() {
+        let temporary = TempDir::new().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, ".jsonl", &request("conversation", "dot"));
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new(".jsonl")),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+        );
+        active(&directory, "foo.txt", &request("conversation", "foo"));
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new("foo.txt")),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+        );
+    }
 }

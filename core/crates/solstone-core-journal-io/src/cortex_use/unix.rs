@@ -12,7 +12,8 @@ use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 
 use super::{
     CortexUseCandidateRead, CortexUseDestinationCheck, CortexUseFatal, CortexUseRefusal,
-    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, parse_cortex_use_request,
+    CortexUseRequest, CortexUseRootIdentity, MAXIMUM_FIRST_ROW_BYTES, expected_active_use_id,
+    expected_completed_use_id, parse_cortex_use_request,
 };
 use crate::JournalEntryKind;
 
@@ -74,7 +75,7 @@ thread_local! {
 }
 
 /// Run an operation with one injected Cortex-use read fault.
-#[cfg(all(unix, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_cortex_use_read_fault<T>(
     primitive: CortexUseReadPrimitive,
     ordinal: usize,
@@ -141,91 +142,108 @@ pub(super) fn read_cortex_use_request(
     talent_directory: &Path,
     active_leaf: &OsStr,
 ) -> CortexUseCandidateRead {
-    let directory = match open(talent_directory, DIRECTORY_FLAGS, Mode::empty()) {
-        Ok(directory) => directory,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
-    };
-    let initial = match observe_name(
-        &directory,
+    read_observed_request(
+        talent_directory,
         active_leaf,
-        CortexUseReadPrimitive::InitialNameObserve,
-    ) {
-        Ok(status) => status,
+        expected_active_use_id(active_leaf),
+    )
+}
+
+pub(super) fn read_cortex_use_completed_request(
+    talent_directory: &Path,
+    completed_leaf: &OsStr,
+) -> CortexUseCandidateRead {
+    read_observed_request(
+        talent_directory,
+        completed_leaf,
+        expected_completed_use_id(completed_leaf),
+    )
+}
+
+fn read_observed_request(
+    talent_directory: &Path,
+    leaf: &OsStr,
+    expected_use_id: Option<&str>,
+) -> CortexUseCandidateRead {
+    let first_row = match observe_stable_first_row(talent_directory, leaf) {
+        Ok(first_row) => first_row,
         Err(refusal) => return refused(refusal),
     };
+    let Some(expected_use_id) = expected_use_id else {
+        return refused(CortexUseRefusal::InvalidRequest);
+    };
+    parse_cortex_use_request(
+        talent_directory,
+        expected_use_id,
+        &first_row[..first_row.len() - 1],
+    )
+}
+
+fn observe_stable_first_row(
+    talent_directory: &Path,
+    leaf: &OsStr,
+) -> Result<Vec<u8>, CortexUseRefusal> {
+    let directory = match open(talent_directory, DIRECTORY_FLAGS, Mode::empty()) {
+        Ok(directory) => directory,
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
+    };
+    let initial = observe_name(&directory, leaf, CortexUseReadPrimitive::InitialNameObserve)?;
     if !is_regular(&initial) {
-        return refused(CortexUseRefusal::CandidateNonregular);
+        return Err(CortexUseRefusal::CandidateNonregular);
     }
     let expected = identity(&initial);
 
-    if let Err(refusal) = checkpoint(CortexUseReadPrimitive::Open) {
-        return refused(refusal);
-    }
-    let descriptor = match openat(&directory, active_leaf, FILE_FLAGS, Mode::empty()) {
+    checkpoint(CortexUseReadPrimitive::Open)?;
+    let descriptor = match openat(&directory, leaf, FILE_FLAGS, Mode::empty()) {
         Ok(descriptor) => descriptor,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
-    if let Err(refusal) = checkpoint(CortexUseReadPrimitive::OpenedHandleObserve) {
-        return refused(refusal);
-    }
+    checkpoint(CortexUseReadPrimitive::OpenedHandleObserve)?;
     let opened = match fstat(&descriptor) {
         Ok(status) => status,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
     if !is_regular(&opened) {
-        return refused(CortexUseRefusal::CandidateNonregular);
+        return Err(CortexUseRefusal::CandidateNonregular);
     }
     if identity(&opened) != expected {
-        return refused(CortexUseRefusal::CandidateIdentityChanged);
+        return Err(CortexUseRefusal::CandidateIdentityChanged);
     }
 
     let mut file = File::from(descriptor);
-    if let Err(refusal) = checkpoint(CortexUseReadPrimitive::FirstRowRead) {
-        return refused(refusal);
-    }
+    checkpoint(CortexUseReadPrimitive::FirstRowRead)?;
     let first_row = match read_first_row(&mut file) {
         Ok(Some(row)) => row,
-        Ok(None) => return refused(CortexUseRefusal::InvalidRequest),
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Ok(None) => return Err(CortexUseRefusal::InvalidRequest),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
-    if let Err(refusal) = checkpoint(CortexUseReadPrimitive::FirstRowReread) {
-        return refused(refusal);
-    }
+    checkpoint(CortexUseReadPrimitive::FirstRowReread)?;
     match reread_first_row(&mut file, &first_row) {
         Ok(true) => {}
-        Ok(false) => return refused(CortexUseRefusal::CandidateIdentityChanged),
+        Ok(false) => return Err(CortexUseRefusal::CandidateIdentityChanged),
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
-            return refused(CortexUseRefusal::CandidateIdentityChanged);
+            return Err(CortexUseRefusal::CandidateIdentityChanged);
         }
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     }
 
-    if let Err(refusal) = checkpoint(CortexUseReadPrimitive::FinalHandleObserve) {
-        return refused(refusal);
-    }
+    checkpoint(CortexUseReadPrimitive::FinalHandleObserve)?;
     let final_handle = match fstat(&file) {
         Ok(status) => status,
-        Err(_) => return refused(CortexUseRefusal::CandidateIo),
+        Err(_) => return Err(CortexUseRefusal::CandidateIo),
     };
     if !is_regular(&final_handle) || identity(&final_handle) != expected {
-        return refused(CortexUseRefusal::CandidateIdentityChanged);
+        return Err(CortexUseRefusal::CandidateIdentityChanged);
     }
-    let final_name = match observe_name(
-        &directory,
-        active_leaf,
-        CortexUseReadPrimitive::FinalNameObserve,
-    ) {
+    let final_name = match observe_name(&directory, leaf, CortexUseReadPrimitive::FinalNameObserve)
+    {
         Ok(status) => status,
-        Err(_) => return refused(CortexUseRefusal::CandidateIdentityChanged),
+        Err(_) => return Err(CortexUseRefusal::CandidateIdentityChanged),
     };
     if !is_regular(&final_name) || identity(&final_name) != expected {
-        return refused(CortexUseRefusal::CandidateIdentityChanged);
+        return Err(CortexUseRefusal::CandidateIdentityChanged);
     }
-    parse_cortex_use_request(
-        talent_directory,
-        active_leaf,
-        &first_row[..first_row.len() - 1],
-    )
+    Ok(first_row)
 }
 
 pub(super) fn check_cortex_use_destination(
@@ -435,6 +453,78 @@ mod tests {
             CortexUseCandidateRead::Accepted(CortexUseRequest {
                 use_id: "foo_active".into()
             })
+        );
+    }
+
+    #[test]
+    fn completed_reader_accepts_active_looking_leaf_when_content_matches_completed_id() {
+        let temporary = tempdir().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(
+            &directory,
+            "alpha_active.jsonl",
+            &request("conversation", "alpha_active"),
+        );
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new("alpha_active.jsonl")),
+            CortexUseCandidateRead::Accepted(CortexUseRequest {
+                use_id: "alpha_active".into()
+            })
+        );
+    }
+
+    #[test]
+    fn completed_reader_accepts_a_plain_completed_leaf() {
+        let temporary = tempdir().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, "alpha.jsonl", &request("conversation", "alpha"));
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new("alpha.jsonl")),
+            CortexUseCandidateRead::Accepted(CortexUseRequest {
+                use_id: "alpha".into()
+            })
+        );
+    }
+
+    #[test]
+    fn active_reader_refuses_when_the_active_id_cannot_be_derived() {
+        let temporary = tempdir().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, "foo.jsonl", &request("conversation", "foo"));
+        assert_eq!(
+            read(&directory, "foo.jsonl"),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn completed_reader_refuses_when_the_completed_id_cannot_be_derived() {
+        let temporary = tempdir().unwrap();
+        let directory = temporary.path().join("conversation");
+        fs::create_dir(&directory).unwrap();
+        active(&directory, ".jsonl", &request("conversation", "dot"));
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, OsStr::new(".jsonl")),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
+        );
+        use std::os::unix::ffi::OsStringExt;
+        let non_utf8 = std::ffi::OsString::from_vec(b"x-\xff.jsonl".to_vec());
+        active(
+            &directory,
+            "placeholder.jsonl",
+            &request("conversation", "placeholder"),
+        );
+        fs::rename(
+            directory.join("placeholder.jsonl"),
+            directory.join(&non_utf8),
+        )
+        .unwrap();
+        assert_eq!(
+            read_cortex_use_completed_request(&directory, &non_utf8),
+            CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest)
         );
     }
 

@@ -8,6 +8,8 @@ use std::path::{Component, Path};
 
 use serde_json::Value;
 
+mod admission;
+mod catalog;
 pub(crate) mod census;
 mod lock;
 mod namespace;
@@ -16,6 +18,20 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
+pub use admission::{
+    CortexAdmissionError, CortexAdmittedUse, CortexUseFileIdentity, admit_active_use,
+    complete_active_use,
+};
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub use admission::{
+    CortexAdmissionPrimitive, admit_active_use_with_test_timing,
+    complete_active_use_with_test_timing, run_with_cortex_admission_fault,
+};
+pub use catalog::{
+    CortexCatalogError, CortexRecoveryCandidate, CortexRecoveryCatalog, CortexRecoveryDisposition,
+    CortexRecoveryTalent, build_recovery_catalog,
+};
 #[cfg(any(test, feature = "test-hooks"))]
 #[doc(hidden)]
 pub use census::census_cortex_namespace_with_test_timing;
@@ -262,6 +278,21 @@ pub fn read_cortex_use_request(
     }
 }
 
+/// Admit one completed Cortex record by reading its bounded, identity-stable first row.
+pub fn read_cortex_use_completed_request(
+    talent_directory: &Path,
+    completed_leaf: &OsStr,
+) -> CortexUseCandidateRead {
+    #[cfg(unix)]
+    {
+        unix::read_cortex_use_completed_request(talent_directory, completed_leaf)
+    }
+    #[cfg(windows)]
+    {
+        windows::read_cortex_use_completed_request(talent_directory, completed_leaf)
+    }
+}
+
 /// Observe the completed-name destination immediately before a recovery mutation.
 pub fn check_cortex_use_destination(
     talent_directory: &Path,
@@ -304,9 +335,22 @@ pub fn revalidate_cortex_use_root(
     }
 }
 
+fn expected_active_use_id(leaf: &OsStr) -> Option<&str> {
+    leaf.to_str()
+        .and_then(|text| text.strip_suffix(".jsonl"))
+        .and_then(|stem| stem.strip_suffix("_active"))
+        .filter(|stem| !stem.is_empty())
+}
+
+fn expected_completed_use_id(leaf: &OsStr) -> Option<&str> {
+    leaf.to_str()
+        .and_then(|text| text.strip_suffix(".jsonl"))
+        .filter(|stem| !stem.is_empty())
+}
+
 fn parse_cortex_use_request(
     talent_directory: &Path,
-    active_leaf: &OsStr,
+    expected_use_id: &str,
     first_row: &[u8],
 ) -> CortexUseCandidateRead {
     let request = match serde_json::from_slice::<Value>(first_row) {
@@ -336,16 +380,7 @@ fn parse_cortex_use_request(
     if talent_directory_name(name) != directory_name {
         return CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest);
     }
-    let Some(active_leaf) = active_leaf.to_str() else {
-        return CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest);
-    };
-    let Some(expected_use_id) = active_leaf
-        .strip_suffix(".jsonl")
-        .and_then(|stem| stem.strip_suffix("_active"))
-    else {
-        return CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest);
-    };
-    if use_id != expected_use_id || active_leaf != format!("{use_id}_active.jsonl") {
+    if use_id != expected_use_id {
         return CortexUseCandidateRead::Refused(CortexUseRefusal::InvalidRequest);
     }
     CortexUseCandidateRead::Accepted(CortexUseRequest {
