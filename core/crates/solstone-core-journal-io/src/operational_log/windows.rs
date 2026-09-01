@@ -6,7 +6,7 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
-use std::mem::{offset_of, size_of};
+use std::mem::{align_of, offset_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle};
 
@@ -15,7 +15,7 @@ use windows_sys::Wdk::Storage::FileSystem::{
     FILE_SYNCHRONOUS_IO_NONALERT,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, HANDLE,
+    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, GENERIC_READ, HANDLE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_APPEND_DATA, FILE_DISPOSITION_INFO, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO,
@@ -160,7 +160,7 @@ pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
     let handle = match nt_create_relative(
         health.health().as_handle().as_raw_handle(),
         leaf,
-        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_OPEN,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     ) {
@@ -197,12 +197,21 @@ fn rename_open_stage_no_replace(
     let bytes = size_of::<FILE_RENAME_INFO>()
         .checked_add(extra)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "rename buffer too large"))?;
-    let mut buffer = vec![0_u8; bytes];
-    // SAFETY: buffer is zeroed, sized for FILE_RENAME_INFO plus the filename,
-    // and live for this synchronous SetFileInformationByHandle call.
+    let words = bytes.div_ceil(size_of::<u64>());
+    let mut buffer = vec![0_u64; words];
+    let pointer = buffer.as_mut_ptr();
+    debug_assert_eq!(
+        pointer
+            .cast::<u8>()
+            .align_offset(align_of::<FILE_RENAME_INFO>()),
+        0
+    );
+    // SAFETY: `buffer` is zeroed, aligned to `FILE_RENAME_INFO` (the `Vec<u64>`
+    // allocation is at least pointer-width), sized for the fixed header plus
+    // the inline filename, and live for this synchronous call.
     #[allow(unsafe_code)]
     unsafe {
-        let info = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+        let info = pointer.cast::<FILE_RENAME_INFO>();
         (*info).Anonymous.ReplaceIfExists = false;
         (*info).RootDirectory = health.health().as_handle().as_raw_handle() as HANDLE;
         (*info).FileNameLength = (wide.len() * size_of::<u16>()) as u32;
@@ -210,8 +219,8 @@ fn rename_open_stage_no_replace(
         let result = SetFileInformationByHandle(
             stage_file.as_raw_handle(),
             FileRenameInfo,
-            buffer.as_mut_ptr().cast(),
-            buffer.len() as u32,
+            pointer.cast(),
+            bytes as u32,
         );
         if result == 0 {
             Err(io::Error::last_os_error())

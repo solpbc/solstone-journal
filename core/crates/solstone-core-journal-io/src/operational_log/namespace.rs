@@ -25,6 +25,7 @@ const DIRECTORY_MODE: u32 = 0o700;
 /// Admitted `chronicle/<day>/health` directory for one local day.
 pub struct OplogDayHealth {
     day: String,
+    root: JournalRoot,
     #[cfg(unix)]
     health: FlatDirectory,
     #[cfg(windows)]
@@ -56,6 +57,21 @@ impl OplogDayHealth {
     #[cfg(windows)]
     pub fn health(&self) -> &WindowsFlatDirectory {
         &self.health
+    }
+
+    /// Re-resolve `chronicle/<day>/health` from the retained journal root.
+    ///
+    /// This is a fresh name lookup, not `fstat` of the already-open health
+    /// descriptor, so a path-level ancestor replacement is visible.
+    pub fn revalidate_binding(&self) -> Result<(), OplogNamespaceError> {
+        let fresh = admit_health_chain(&self.root, &self.day)?;
+        if fresh.identity() != self.health.identity() {
+            return Err(OplogNamespaceError::new(
+                OplogNamespaceStage::Health,
+                OplogNamespaceClass::IdentityChanged,
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -134,7 +150,7 @@ impl Error for OplogNamespaceError {
 
 /// Create or admit `chronicle/<day>/health` beneath `root`.
 pub fn admit_day_health_directory(
-    root: &JournalRoot,
+    root: JournalRoot,
     day: &str,
 ) -> Result<OplogDayHealth, OplogNamespaceError> {
     if !is_day_key(day) {
@@ -143,60 +159,62 @@ pub fn admit_day_health_directory(
             OplogNamespaceClass::Unsafe,
         ));
     }
+    let health = admit_health_chain(&root, day)?;
+    Ok(OplogDayHealth {
+        day: day.to_owned(),
+        root,
+        health,
+    })
+}
 
-    #[cfg(unix)]
-    {
-        let chronicle = create_or_open_flat_directory_bound(
-            root,
-            OsStr::new(CHRONICLE_DIR),
-            DIRECTORY_MODE,
-            root.canonical_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Chronicle, error))?;
-        let day_dir = create_or_open_flat_directory_bound(
-            &chronicle,
-            OsStr::new(day),
-            DIRECTORY_MODE,
-            chronicle.diagnostic_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Day, error))?;
-        let health = create_or_open_flat_directory_bound(
-            &day_dir,
-            OsStr::new(HEALTH_DIR),
-            DIRECTORY_MODE,
-            day_dir.diagnostic_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))?;
-        Ok(OplogDayHealth {
-            day: day.to_owned(),
-            health,
-        })
-    }
-    #[cfg(windows)]
-    {
-        let chronicle = create_or_open_windows_flat_directory_bound(
-            root,
-            OsStr::new(CHRONICLE_DIR),
-            root.canonical_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Chronicle, error))?;
-        let day_dir = create_or_open_windows_flat_directory_bound(
-            &chronicle,
-            OsStr::new(day),
-            chronicle.diagnostic_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Day, error))?;
-        let health = create_or_open_windows_flat_directory_bound(
-            &day_dir,
-            OsStr::new(HEALTH_DIR),
-            day_dir.diagnostic_path(),
-        )
-        .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))?;
-        Ok(OplogDayHealth {
-            day: day.to_owned(),
-            health,
-        })
-    }
+#[cfg(unix)]
+fn admit_health_chain(root: &JournalRoot, day: &str) -> Result<FlatDirectory, OplogNamespaceError> {
+    let chronicle = create_or_open_flat_directory_bound(
+        root,
+        OsStr::new(CHRONICLE_DIR),
+        DIRECTORY_MODE,
+        root.canonical_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Chronicle, error))?;
+    let day_dir = create_or_open_flat_directory_bound(
+        &chronicle,
+        OsStr::new(day),
+        DIRECTORY_MODE,
+        chronicle.diagnostic_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Day, error))?;
+    create_or_open_flat_directory_bound(
+        &day_dir,
+        OsStr::new(HEALTH_DIR),
+        DIRECTORY_MODE,
+        day_dir.diagnostic_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))
+}
+
+#[cfg(windows)]
+fn admit_health_chain(
+    root: &JournalRoot,
+    day: &str,
+) -> Result<WindowsFlatDirectory, OplogNamespaceError> {
+    let chronicle = create_or_open_windows_flat_directory_bound(
+        root,
+        OsStr::new(CHRONICLE_DIR),
+        root.canonical_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Chronicle, error))?;
+    let day_dir = create_or_open_windows_flat_directory_bound(
+        &chronicle,
+        OsStr::new(day),
+        chronicle.diagnostic_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Day, error))?;
+    create_or_open_windows_flat_directory_bound(
+        &day_dir,
+        OsStr::new(HEALTH_DIR),
+        day_dir.diagnostic_path(),
+    )
+    .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))
 }
 
 fn map_flat_directory_error(

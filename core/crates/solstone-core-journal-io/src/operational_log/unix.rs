@@ -117,13 +117,18 @@ pub(super) fn publish_name_based(
     staged: StagedFile,
     dest: &OsStr,
 ) -> Result<File, PublishOutcome> {
-    match nix::unistd::linkat(
-        health.health(),
-        staged.stage_name.as_os_str(),
-        health.health(),
-        dest,
-        AtFlags::empty(),
-    ) {
+    let linked = if super::create::force_name_based_link_io() {
+        Err(Errno::EIO)
+    } else {
+        nix::unistd::linkat(
+            health.health(),
+            staged.stage_name.as_os_str(),
+            health.health(),
+            dest,
+            AtFlags::empty(),
+        )
+    };
+    match linked {
         Ok(()) => match dest_identity(health, dest) {
             Ok(identity) if identity == staged.identity => {
                 unlink_stage_if_ours(health, staged.stage_name.as_os_str(), staged.identity);
@@ -142,11 +147,21 @@ pub(super) fn publish_name_based(
                 identity: staged.identity,
             })
         }
-        Err(_) => Err(PublishOutcome::NameBasedIo),
+        Err(_) => {
+            let _ = unlinkat(
+                health.health(),
+                staged.stage_name.as_os_str(),
+                UnlinkatFlags::NoRemoveDir,
+            );
+            Err(PublishOutcome::NameBasedIo)
+        }
     }
 }
 
 fn dest_identity(health: &OplogDayHealth, dest: &OsStr) -> io::Result<UnixIdentity> {
+    if super::create::force_dest_identity_io() {
+        return Err(io::Error::from_raw_os_error(nix::libc::EIO));
+    }
     let status = fstatat(health.health(), dest, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_io)?;
     Ok(UnixIdentity {
         dev: status.st_dev,

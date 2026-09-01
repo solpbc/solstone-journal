@@ -48,6 +48,7 @@ enum OplogCreateClass {
     LockIdentityChanged,
     LockBusy,
     LockIo,
+    AncestorReplaced,
 }
 
 impl OplogCreateClass {
@@ -63,6 +64,7 @@ impl OplogCreateClass {
             Self::LockIdentityChanged => "oplog_create_lock_identity_changed",
             Self::LockBusy => "oplog_create_lock_busy",
             Self::LockIo => "oplog_create_lock_io",
+            Self::AncestorReplaced => "oplog_create_ancestor_replaced",
         }
     }
 }
@@ -198,6 +200,10 @@ fn create_with_timing(
             rollback(health, &staged)?;
             return Err(error);
         }
+        if health.revalidate_binding().is_err() {
+            rollback(health, &staged)?;
+            return Err(OplogCreateError::new(OplogCreateClass::AncestorReplaced));
+        }
         let published = if force_name_based() {
             platform::publish_name_based(health, staged, dest_os)
         } else {
@@ -229,9 +235,11 @@ fn create_with_timing(
                 rollback(health, &staged)?;
                 return Err(OplogCreateError::io());
             }
-            Err(platform::PublishOutcome::NameBasedIo)
-            | Err(platform::PublishOutcome::IoAfterPublish { .. }) => {
+            Err(platform::PublishOutcome::NameBasedIo) => {
                 return Err(OplogCreateError::io());
+            }
+            Err(platform::PublishOutcome::IoAfterPublish { .. }) => {
+                return Err(OplogCreateError::own_residue());
             }
         }
     }
@@ -325,6 +333,8 @@ struct OplogCreateTraceState {
     name_based: bool,
     rollback_fail: bool,
     probe_indeterminate: bool,
+    dest_identity_io: bool,
+    name_based_link_io: bool,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -430,6 +440,36 @@ fn force_probe_indeterminate() -> bool {
     })
 }
 
+#[cfg(not(any(test, feature = "test-hooks")))]
+pub(super) fn force_dest_identity_io() -> bool {
+    false
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn force_dest_identity_io() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        trace
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.dest_identity_io)
+    })
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+pub(super) fn force_name_based_link_io() -> bool {
+    false
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn force_name_based_link_io() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        trace
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.name_based_link_io)
+    })
+}
+
 #[cfg(any(test, feature = "test-hooks"))]
 fn take_injected_file_id() -> Option<[u8; 16]> {
     OPLOG_CREATE_TRACE.with(|trace| {
@@ -450,6 +490,8 @@ fn empty_trace() -> OplogCreateTraceState {
         name_based: false,
         rollback_fail: false,
         probe_indeterminate: false,
+        dest_identity_io: false,
+        name_based_link_io: false,
     }
 }
 
@@ -568,6 +610,30 @@ fn with_trace<T>(
 }
 
 #[cfg(all(test, unix))]
+fn spawn_sleep_holding_oplog_stdout(stdio: std::process::Stdio) -> std::process::Child {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new("sleep");
+    command.arg("0.3").stdout(stdio).stderr(Stdio::null());
+    // SAFETY: `pre_exec` only flocks the already-wired stdout descriptor.
+    // SelfLease Drop issues LOCK_UN on the shared open-file description, so
+    // the parent drops before spawn; the child then holds the lease across
+    // exec until it exits. `Command` is dropped after spawn so the parent
+    // does not keep the inherited open-file description.
+    #[allow(unsafe_code)]
+    unsafe {
+        command.pre_exec(|| {
+            if nix::libc::flock(1, nix::libc::LOCK_EX) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.spawn().unwrap()
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use std::error::Error;
     use std::ffi::OsStr;
@@ -601,9 +667,8 @@ mod tests {
     }
 
     fn health_at(root: &Path) -> crate::operational_log::OplogDayHealth {
-        let journal = JournalRoot::open(root).unwrap();
         let (day, _) = derive_day_key_and_opened_field(instant());
-        admit_day_health_directory(&journal, &day).unwrap()
+        admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap()
     }
 
     fn create(health: &OplogDayHealth) -> Result<OplogWriter, OplogCreateError> {
@@ -890,6 +955,50 @@ mod tests {
     }
 
     #[test]
+    fn name_based_io_after_publish_is_own_residue_and_preserves_dest() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let id = [0x88; 16];
+        let dest = dest_for(id);
+        let error = with_trace(
+            OplogCreateTraceState {
+                name_based: true,
+                dest_identity_io: true,
+                file_ids: vec![id].into(),
+                ..empty_trace()
+            },
+            || create(&health),
+            |_| true,
+        )
+        .0
+        .unwrap_err();
+        expect_token(error, "oplog_create_own_residue");
+        let dir = health_dir(temporary.path());
+        assert_eq!(fs::read(dir.join(&dest)).unwrap(), b"");
+    }
+
+    #[test]
+    fn name_based_non_eexist_unlinks_stage() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let error = with_trace(
+            OplogCreateTraceState {
+                name_based: true,
+                name_based_link_io: true,
+                ..empty_trace()
+            },
+            || create(&health),
+            |_| true,
+        )
+        .0
+        .unwrap_err();
+        expect_token(error, "oplog_create_io");
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+    }
+
+    #[test]
     fn name_based_eexist_unlinks_stage_and_leaves_incumbent() {
         let temporary = temp();
         let health = health_at(temporary.path());
@@ -945,6 +1054,105 @@ mod tests {
     }
 
     #[test]
+    fn wrong_mode_lock_fails_before_stage_and_consumes_no_file_id() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
+        fs::write(&lock_path, b"unchanged").unwrap();
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o644)).unwrap();
+        let id = [0x56; 16];
+        let remaining = std::cell::Cell::new(0_usize);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: vec![id].into(),
+                ..empty_trace()
+            },
+            || create(&health),
+            |state| {
+                remaining.set(state.file_ids.len());
+                true
+            },
+        )
+        .0
+        .unwrap_err();
+        expect_token(error, "oplog_create_lock_unsafe");
+        assert_eq!(remaining.get(), 1);
+        assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
+        assert_eq!(fs::read(&lock_path).unwrap(), b"unchanged");
+    }
+
+    #[test]
+    fn replaced_lock_parent_fails_before_stage_and_consumes_no_file_id() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let dir = health_dir(temporary.path());
+        let lock_path = dir.join(".oplog-namespace.lock");
+        fs::write(&lock_path, b"original-lock").unwrap();
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::remove_file(&lock_path).unwrap();
+        fs::create_dir(&lock_path).unwrap();
+        // Bound acquire never re-opens the day-health parent by path, so a
+        // pathname swap of that directory cannot produce ParentChanged. The
+        // replacement the primitive *can* refuse before stage is a lock
+        // entry whose identity/kind no longer matches a 0o600 regular file
+        // — here the lock name is replaced with a directory, the same
+        // shape as cortex_use::lock's "directory" unsafe-entry fixture.
+        let id = [0x77; 16];
+        let remaining = std::cell::Cell::new(0_usize);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: vec![id].into(),
+                ..empty_trace()
+            },
+            || create(&health),
+            |state| {
+                remaining.set(state.file_ids.len());
+                true
+            },
+        )
+        .0
+        .unwrap_err();
+        expect_token(error, "oplog_create_lock_unsafe");
+        assert_eq!(remaining.get(), 1);
+        assert!(!dir.join(dest_for(id)).exists());
+        assert!(lock_path.is_dir());
+    }
+
+    #[test]
+    fn mid_flight_ancestor_replacement_does_not_escape() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let health = health_at(&root);
+        let outside = root.join("escape-target");
+        fs::create_dir(&outside).unwrap();
+        let error = run_with_oplog_create_barrier(
+            OplogCreatePrimitive::AfterLeaseBeforePublish,
+            {
+                let root = root.clone();
+                let outside = outside.clone();
+                move || {
+                    let dir = health_dir(&root);
+                    fs::rename(&dir, root.join("health-displaced")).unwrap();
+                    std::os::unix::fs::symlink(&outside, &dir).unwrap();
+                }
+            },
+            || create(&health),
+        )
+        .unwrap_err();
+        expect_token(error, "oplog_create_ancestor_replaced");
+        let displaced = root.join("health-displaced");
+        assert!(canonical_leaves(&displaced).is_empty());
+        assert!(canonical_leaves(&outside).is_empty());
+        assert!(!listing(&displaced).iter().any(|name| name.contains(".tmp")));
+        assert!(
+            fs::symlink_metadata(health_dir(&root))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
     fn invalid_originals_and_wrong_kind_namespace_do_not_create() {
         let temporary = temp();
         let health = health_at(temporary.path());
@@ -977,8 +1185,8 @@ mod tests {
         let root = temporary.path().join("other");
         fs::create_dir(&root).unwrap();
         std::os::unix::fs::symlink("elsewhere", root.join("chronicle")).unwrap();
-        let journal = JournalRoot::open(&root).unwrap();
-        let error = admit_day_health_directory(&journal, "20260901").unwrap_err();
+        let error =
+            admit_day_health_directory(JournalRoot::open(&root).unwrap(), "20260901").unwrap_err();
         assert_eq!(error.to_string(), "oplog_namespace_chronicle_unsafe");
         assert!(!root.join("elsewhere").exists());
     }
@@ -1064,6 +1272,29 @@ mod tests {
     }
 
     #[test]
+    fn child_process_exit_releases_lease() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let writer = create(&health).unwrap();
+        let dup = writer.try_clone_for_stdio().unwrap();
+        let leaf = writer.leaf_name().to_owned();
+        let stdio = dup.into_stdio();
+        drop(writer);
+        let mut child = super::spawn_sleep_holding_oplog_stdout(stdio);
+        assert_eq!(
+            probe_oplog_lease(&health, OsStr::new(&leaf)),
+            LeaseProbe::Active
+        );
+        let status = child.wait().unwrap();
+        assert!(status.success());
+        drop(child);
+        assert_eq!(
+            probe_oplog_lease(&health, OsStr::new(&leaf)),
+            LeaseProbe::Released
+        );
+    }
+
+    #[test]
     fn injected_probe_failure_is_indeterminate_without_companion_files() {
         let temporary = temp();
         let health = health_at(temporary.path());
@@ -1081,9 +1312,9 @@ mod tests {
     fn day_and_utc_come_from_the_same_instant() {
         let temporary = temp();
         let offset = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
-        let journal = JournalRoot::open(temporary.path()).unwrap();
         let (day, opened) = derive_day_key_and_opened_field(offset);
-        let health = admit_day_health_directory(&journal, &day).unwrap();
+        let health =
+            admit_day_health_directory(JournalRoot::open(temporary.path()).unwrap(), &day).unwrap();
         let writer = create_oplog_with_test_timing(
             &health,
             SOURCE,
@@ -1103,5 +1334,35 @@ mod tests {
                 .join("health")
                 .exists()
         );
+    }
+}
+
+#[cfg(test)]
+mod derivation_tests {
+    use chrono::DateTime;
+
+    use super::*;
+
+    /// DST here is two independent `FixedOffset` instants, not an IANA fold.
+    ///
+    /// Production only ever receives `DateTime<FixedOffset>`. This crate
+    /// depends on plain `chrono`, not `chrono-tz`, so a real zone database
+    /// transition is not available in tests. A caller who sampled
+    /// `Local::now()` across a spring-forward hands in two nearby instants
+    /// with different offsets; this checks that each call derives day-key
+    /// and UTC field from that instant alone, with no persistent state.
+    #[test]
+    fn dst_boundary_instants_derive_independently() {
+        let before = DateTime::parse_from_rfc3339("2026-03-08T01:30:00-05:00").unwrap();
+        let after = DateTime::parse_from_rfc3339("2026-03-08T03:30:00-04:00").unwrap();
+        let (day_before, opened_before) = derive_day_key_and_opened_field(before);
+        let (day_after, opened_after) = derive_day_key_and_opened_field(after);
+        assert_eq!(day_before, "20260308");
+        assert_eq!(opened_before, "20260308T063000.000000Z");
+        assert_eq!(day_after, "20260308");
+        assert_eq!(opened_after, "20260308T073000.000000Z");
+        let (day_before_again, opened_before_again) = derive_day_key_and_opened_field(before);
+        assert_eq!(day_before, day_before_again);
+        assert_eq!(opened_before, opened_before_again);
     }
 }

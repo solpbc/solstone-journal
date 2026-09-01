@@ -132,3 +132,88 @@ fn map_existing_parent_lock_error(error: ExistingParentLockError) -> OplogNamesp
     };
     OplogNamespaceLockError::new(class)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::ffi::OsString;
+    use std::io;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::errors::LockTimeout;
+
+    #[test]
+    fn mapper_is_exhaustive_and_bounded() {
+        let sentinel = PathBuf::from("controlled-secret");
+        for (error, expected) in [
+            (
+                ExistingParentLockError::InvalidLockPath {
+                    name: OsString::from("controlled-secret"),
+                },
+                "unsafe",
+            ),
+            (
+                ExistingParentLockError::MissingParent {
+                    parent: sentinel.clone(),
+                },
+                "unsafe",
+            ),
+            (
+                ExistingParentLockError::UnsafeParent {
+                    parent: sentinel.clone(),
+                    kind: "controlled-secret",
+                },
+                "unsafe",
+            ),
+            (
+                ExistingParentLockError::UnsafeLockEntry {
+                    path: sentinel.clone(),
+                    kind: "controlled-secret",
+                },
+                "unsafe",
+            ),
+            (
+                ExistingParentLockError::WrongMode {
+                    path: sentinel.clone(),
+                    observed: 0o644,
+                },
+                "unsafe",
+            ),
+            (
+                ExistingParentLockError::ParentChanged {
+                    parent: sentinel.clone(),
+                },
+                "identity_changed",
+            ),
+            (
+                ExistingParentLockError::NamespaceChanged {
+                    path: sentinel.clone(),
+                },
+                "identity_changed",
+            ),
+            (
+                ExistingParentLockError::Timeout(LockTimeout {
+                    path: sentinel.clone(),
+                    timeout: Duration::from_secs(3),
+                }),
+                "busy",
+            ),
+            (
+                ExistingParentLockError::Io {
+                    operation: "controlled-secret",
+                    path: sentinel,
+                    source: io::Error::other("controlled-secret"),
+                },
+                "io",
+            ),
+        ] {
+            let mapped = map_existing_parent_lock_error(error);
+            let expected = format!("oplog_namespace_lock_{expected}");
+            assert_eq!(mapped.to_string(), expected);
+            assert_eq!(format!("{mapped:?}"), expected);
+            assert!(mapped.source().is_none());
+        }
+    }
+}

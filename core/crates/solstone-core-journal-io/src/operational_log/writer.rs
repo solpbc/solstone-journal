@@ -118,6 +118,14 @@ impl OplogWriter {
     }
 }
 
+impl OplogStdioHandle {
+    /// Consume this handle into a stdio stream for a child process.
+    #[cfg(all(test, unix))]
+    pub(crate) fn into_stdio(self) -> std::process::Stdio {
+        std::process::Stdio::from(self.file)
+    }
+}
+
 impl Write for OplogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.file.write(buf)
