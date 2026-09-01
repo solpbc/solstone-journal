@@ -328,7 +328,10 @@ mod tests {
             ],
         );
         assert_eq!(output.exit_code, 1, "{}", output.stderr);
-        assert_eq!(output.stdout, "This talent would not run: no_embeddings\n");
+        // A read-only preview never creates the segment, so the segment really is
+        // absent and the preview now says so. It used to report `no_embeddings`,
+        // naming a cause the code had not reached.
+        assert_eq!(output.stdout, "This talent would not run: no_segment\n");
         assert!(
             !root
                 .path()
