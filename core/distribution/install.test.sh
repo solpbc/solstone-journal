@@ -336,6 +336,13 @@ expect_refuse digest-mismatch digest-bad \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$BASE/bad.sha256" --release "$REL"
 
+# a refusal must never touch the existing install
+if [ -x "$PREFIX/current/bin/journal" ] && [ "$(cat "$PREFIX/current/bin/journal")" = "ok" ]; then
+	pass "digest-mismatch refusal left previous current usable"
+else
+	fail "digest-mismatch refusal left previous current usable"
+fi
+
 REFUSAL_TMPDIR_PROBE=$BASE/tmpdir-refusal-probe
 mkdir -p "$REFUSAL_TMPDIR_PROBE"
 _status=0
@@ -366,7 +373,17 @@ expect_refuse version-mismatch version-other \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$BASE/other" --version 1.0.22 --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/other.release"
 
-# conflicting-digest: same version, different bytes
+# same version, different bytes: a respin before release, which install.sh
+# must accept as an upgrade in place -- not refuse. This used to be the
+# `conflicting-digest` refusal, and refusing it was the ship blocker: a
+# legitimate rebuild of the version already on disk could never be installed
+# by the documented route. install.sh's directories are content-addressed by
+# `${VERSION}-${DIGEST12}` (see DEST above), so two builds of one version are
+# never actually a collision on disk -- only a policy refusal that treated
+# them as one. The digest/release-record checks earlier in this file (see the
+# digest-mismatch and version-mismatch tests above) are what keep verifying a
+# tampered or foreign artifact; neither is touched by this change.
+_prev_current=$(readlink "$PREFIX/current")
 STAGE2=$BASE/stage2
 ARCHIVE2=$BASE/other.tar.gz
 SHA2=$BASE/other.sha256
@@ -377,17 +394,39 @@ chmod 755 "$STAGE2/bin/journal"
 tar -C "$STAGE2" -czf "$ARCHIVE2" bin
 sha_sidecar "$ARCHIVE2" "$SHA2"
 make_release "$REL2" 1.0.22 "$TARGET"
-expect_refuse conflicting-digest conflict \
-	env HOME="$HOME" \
-	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE2" --sha256 "$SHA2" --release "$REL2"
-
-# failed upgrade leaves previous current
-_prev=$(readlink "$PREFIX/current")
-if [ -x "$PREFIX/current/bin/journal" ] && [ "$(cat "$PREFIX/current/bin/journal")" = "ok" ]; then
-	pass "failed upgrade left previous current usable"
+if env HOME="$HOME" \
+	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE2" --sha256 "$SHA2" --release "$REL2" \
+	>"$BASE/respin.out" 2>&1; then
+	pass "same-version respin installs"
 else
-	fail "failed upgrade left previous current usable (current=$_prev)"
+	fail "same-version respin installs: $(cat "$BASE/respin.out")"
 fi
+if [ "$(cat "$PREFIX/current/bin/journal" 2>/dev/null)" = "other" ]; then
+	pass "same-version respin flips current to the new build"
+else
+	fail "same-version respin flips current to the new build"
+fi
+if [ -x "$PREFIX/$_prev_current/bin/journal" ] && [ "$(cat "$PREFIX/$_prev_current/bin/journal")" = "ok" ]; then
+	pass "same-version respin keeps the prior build's version directory"
+else
+	fail "same-version respin keeps the prior build's version directory"
+fi
+
+# negative twin: a tarball whose digest does not match its own .sha256 must
+# still be refused, even when it is a same-version respin sitting right next
+# to an installable one.
+printf '%s\n' "0000000000000000000000000000000000000000000000000000000000000000  other.tar.gz" >"$BASE/respin-bad.sha256"
+expect_refuse digest-mismatch respin-digest-bad \
+	env HOME="$HOME" \
+	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE2" --sha256 "$BASE/respin-bad.sha256" --release "$REL2"
+
+# negative twin: a .release record whose version disagrees with what was
+# requested must still be refused, even for a same-version respin.
+make_release "$BASE/respin-wrong-version.release" 9.9.9 "$TARGET"
+expect_refuse version-mismatch respin-version-mismatch \
+	env HOME="$HOME" \
+	"$INSTALL" --prefix "$PREFIX" --version 1.0.22 --archive "$ARCHIVE2" --sha256 "$SHA2" \
+	--release "$BASE/respin-wrong-version.release"
 
 # archive-absolute-path
 ABS=$BASE/abs

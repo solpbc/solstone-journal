@@ -20,7 +20,6 @@
 #   digest-mismatch
 #   release-invalid
 #   version-mismatch
-#   conflicting-digest
 #   lane-invalid
 #   latest-invalid
 
@@ -400,10 +399,18 @@ flip_current() {
 	_prefix=$1
 	_dest=$2
 	_current=${_prefix}/current
-	_tmp=${_prefix}/.current.new
 	_rel=versions/${_dest##*/versions/}
-	ln -s "$_rel" "$_tmp"
-	mv -f "$_tmp" "$_current"
+	# Not `ln -s "$_rel" "$_tmp"; mv -f "$_tmp" "$_current"`: once an install
+	# already exists, `$_current` is a symlink that resolves to a directory,
+	# and POSIX `mv` stats its destination -- following the symlink -- to
+	# decide whether to move the source INTO that directory rather than
+	# replace the link itself. On every upgrade over an existing install (not
+	# just a same-version respin) that silently left `current` pointed at the
+	# old build while reporting success. `ln -sfn` never dereferences
+	# `$_current` to decide that, so it replaces the link itself -- the same
+	# primitive this file's own failure-path already trusts to restore
+	# `$OLD_CURRENT` below.
+	ln -sfn "$_rel" "$_current"
 }
 
 write_profile() {
@@ -542,33 +549,33 @@ mkdir -p "$PREFIX/versions"
 DEST=$PREFIX/versions/${VERSION}-${DIGEST12}
 CURRENT=$PREFIX/current
 
-if [ -e "$DEST" ]; then
-	_existing=
-	for _cand in "$PREFIX"/versions/"${VERSION}"-*; do
-		[ -e "$_cand" ] || continue
-		if [ "$_cand" != "$DEST" ]; then
-			refuse conflicting-digest "$_cand"
+# A version directory is named `${VERSION}-${DIGEST12}`, so it is already
+# content-addressed: a rebuilt archive for the same version that carries
+# different bytes lands at a different, brand-new DEST rather than colliding
+# with one that exists. Two builds of one version living side by side under
+# `versions/` is therefore not a conflict to refuse -- it is exactly what a
+# respin before release looks like, and the documented upgrade route (this
+# script, then `journal setup`) depends on being able to install it. Refusing
+# it here is what made a legitimate newer build of an already-installed
+# version un-installable; the digest/release-record checks above this block
+# are what still catch a genuinely bad or foreign artifact, and neither one
+# is touched by removing this.
+#
+# The only case handled specially is a true no-op: this exact digest is
+# already installed AND `current` already points at it, so nothing on disk
+# needs to change.
+if [ -e "$DEST" ] && [ -L "$CURRENT" ]; then
+	_now=$(readlink "$CURRENT")
+	_want=versions/${VERSION}-${DIGEST12}
+	if [ "$_now" = "$_want" ]; then
+		# Validated no-op: re-read release, do not rewrite current.
+		validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
+		if [ "$NO_PATH" -eq 0 ]; then
+			write_profile "$PREFIX"
 		fi
-		_existing=$_cand
-	done
-	if [ -n "$_existing" ] && [ -L "$CURRENT" ]; then
-		_now=$(readlink "$CURRENT")
-		_want=versions/${VERSION}-${DIGEST12}
-		if [ "$_now" = "$_want" ]; then
-			# Validated no-op: re-read release, do not rewrite current.
-			validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
-			if [ "$NO_PATH" -eq 0 ]; then
-				write_profile "$PREFIX"
-			fi
-			report_success "$PREFIX"
-			exit 0
-		fi
+		report_success "$PREFIX"
+		exit 0
 	fi
-else
-	for _cand in "$PREFIX"/versions/"${VERSION}"-*; do
-		[ -e "$_cand" ] || continue
-		refuse conflicting-digest "$_cand"
-	done
 fi
 
 PARTIAL=$PREFIX/versions/.partial-${VERSION}-${DIGEST12}
