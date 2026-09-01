@@ -506,6 +506,15 @@ fn parse_status(line: &[u8]) -> Result<u16, ()> {
 ///
 /// ⛔ Never includes `InvalidJson`'s payload: that is the raw response body, which in
 /// real use carries the owner's speech.
+fn word_contract_detail(error: &WordContractError) -> String {
+    match error {
+        WordContractError::InvalidNumber { key, found } => {
+            format!("word `{key}` was not a finite number (found {found})")
+        }
+        other => word_contract_kind(other).to_owned(),
+    }
+}
+
 fn word_contract_kind(error: &WordContractError) -> &'static str {
     match error {
         WordContractError::InvalidJson(_) => "response was not JSON",
@@ -520,7 +529,8 @@ fn word_contract_kind(error: &WordContractError) -> &'static str {
             _ => "a word entry was missing a required key",
         },
         WordContractError::BlankWord => "a word entry was blank",
-        WordContractError::InvalidNumber => "a word timing was not a finite number",
+        // ⚠ Rendered by the caller with the key and type, so it is not folded here.
+        WordContractError::InvalidNumber { .. } => "a word number was not finite",
     }
 }
 
@@ -549,7 +559,7 @@ fn hosted_response(
                     "hosted_transcribe_contract_failed",
                     format!(
                         "hosted STT response violated the verbose JSON contract: {}",
-                        word_contract_kind(&error)
+                        word_contract_detail(&error)
                     ),
                 )
             })?;

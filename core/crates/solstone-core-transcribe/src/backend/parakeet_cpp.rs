@@ -63,7 +63,14 @@ pub(crate) enum WordContractError {
     WordNotObject,
     MissingKey(&'static str),
     BlankWord,
-    InvalidNumber,
+    /// A numeric field was present but not a finite number.
+    ///
+    /// Carries the key and the JSON type found -- both structural. ⛔ Never the
+    /// value, which for a transcript response is the owner's speech.
+    InvalidNumber {
+        key: &'static str,
+        found: &'static str,
+    },
 }
 
 /// Metadata retained in transcript headers for this backend.
@@ -206,7 +213,7 @@ fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, Tra
             format!("word timing missing key: {key}"),
         ),
         WordContractError::BlankWord => failure("contract_violation", "word timing text was blank"),
-        WordContractError::InvalidNumber => failure(
+        WordContractError::InvalidNumber { .. } => failure(
             "contract_violation",
             "word timing contains invalid numeric value",
         ),
@@ -261,10 +268,12 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     let probability = object
         .get("conf")
         .map(|value| {
-            value
-                .as_f64()
-                .filter(|value| value.is_finite())
-                .ok_or(WordContractError::InvalidNumber)
+            value.as_f64().filter(|value| value.is_finite()).ok_or(
+                WordContractError::InvalidNumber {
+                    key: "conf",
+                    found: json_type_name(value),
+                },
+            )
         })
         .transpose()?
         .unwrap_or(1.0);
@@ -278,13 +287,39 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
 
 fn finite_word_number(
     object: &serde_json::Map<String, Value>,
-    key: &str,
+    key: &'static str,
 ) -> Result<f64, WordContractError> {
-    object
-        .get(key)
-        .and_then(Value::as_f64)
+    let Some(value) = object.get(key) else {
+        return Err(WordContractError::InvalidNumber {
+            key,
+            found: "absent",
+        });
+    };
+    value
+        .as_f64()
         .filter(|value| value.is_finite())
-        .ok_or(WordContractError::InvalidNumber)
+        .ok_or(WordContractError::InvalidNumber {
+            key,
+            found: json_type_name(value),
+        })
+}
+
+/// The JSON type of a value, for diagnostics. ⛔ Structural only, never the value.
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(number) => {
+            if number.is_f64() {
+                "non-finite number"
+            } else {
+                "number"
+            }
+        }
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
 
 fn require_linux() -> Result<(), TranscribeError> {
@@ -469,7 +504,7 @@ mod tests {
                 | (3, WordContractError::TextWithoutTimings)
                 | (4, WordContractError::WordNotObject)
                 | (5, WordContractError::MissingKey("word"))
-                | (6, WordContractError::InvalidNumber)
+                | (6, WordContractError::InvalidNumber { .. })
                 | (7, WordContractError::BlankWord)
                 | (8, WordContractError::BlankWord) => {}
                 (_, marker) => panic!("unexpected contract marker: {marker:?}"),
