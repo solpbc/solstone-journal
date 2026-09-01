@@ -219,6 +219,18 @@ pub fn spec_for(key: &str) -> Option<&'static TargetSpec> {
     TARGETS.iter().find(|spec| spec.key == key)
 }
 
+#[must_use]
+pub fn staged_member_names(spec: &TargetSpec) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    names.insert(spec.library_name.to_owned());
+    for member in NOTICE_MEMBERS {
+        if let Some(name) = Path::new(member).file_name().and_then(|name| name.to_str()) {
+            names.insert(name.to_owned());
+        }
+    }
+    names
+}
+
 pub fn attestation_url() -> String {
     format!("{RELEASE_URL}/{ATTESTATION_NAME}")
 }
@@ -385,6 +397,16 @@ mod tests {
             mac.library_sha256,
             "df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9"
         );
+    }
+
+    #[test]
+    fn staged_member_names_are_library_plus_notice_basenames() {
+        let spec = spec_for("linux-x86_64").expect("linux-x86_64");
+        let names = staged_member_names(spec);
+        assert!(names.contains("libpdfium.so"));
+        assert!(names.contains("pdfium.txt"));
+        assert!(!names.contains("include/fpdfview.h"));
+        assert_eq!(names.len(), 1 + NOTICE_MEMBERS.len());
     }
 
     #[test]

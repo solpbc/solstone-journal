@@ -274,5 +274,7 @@ fn set_executable(path: &Path) -> Result<(), LaneError> {
         std::fs::set_permissions(path, permissions)
             .map_err(|error| LaneError::new(error.to_string()))?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }

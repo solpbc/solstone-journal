@@ -74,6 +74,16 @@ triple_apple = "aarch64-apple-darwin"
 # oldest macOS we claim.
 min_macos = "14.0"
 
+# Windows target is declared so inventory validation owns the field set. No
+# production entry is admitted for it in this lode; Windows dests live in
+# synthetic test inventories only.
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+
 [[entry]]
 kind = "bin"
 package = "solstone-core"

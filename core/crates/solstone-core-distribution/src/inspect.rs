@@ -6,7 +6,10 @@ use std::io;
 use std::path::Path;
 
 use crate::digest::sha256_hex;
-use crate::inventory::{artifact_sidecars, checksum_members_for_os, manifest_members_for_os};
+use crate::inventory::{
+    OS_LINUX, OS_MACOS, OS_WINDOWS, artifact_sidecars, checksum_members_for_os,
+    manifest_members_for_os,
+};
 
 #[derive(Clone, Copy)]
 pub struct ArchiveChainDigests<'a> {
@@ -30,11 +33,29 @@ pub fn write_sidecars(
     release: &ReleaseInfo<'_>,
     basename: &str,
 ) -> io::Result<()> {
+    match os {
+        OS_LINUX => {}
+        OS_MACOS => {}
+        OS_WINDOWS => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "windows archive/signing is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unexpected os {other}"),
+            ));
+        }
+    }
     let [sha256, manifest_name, release_name] = artifact_sidecars(basename);
     write_sidecar(&out_dir.join(&release_name), render_release(release))?;
 
     let mut checksums = String::new();
-    for name in checksum_members_for_os(os, basename) {
+    for name in checksum_members_for_os(os, basename)
+        .map_err(|msg| io::Error::new(io::ErrorKind::InvalidInput, msg))?
+    {
         let path = out_dir.join(&name);
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
@@ -53,7 +74,8 @@ pub fn write_sidecars(
     manifest.push_str(&format!("  \"version\": {:?},\n", release.version));
     manifest.push_str(&format!("  \"target\": {:?},\n", release.target));
     manifest.push_str("  \"files\": {\n");
-    let members = manifest_members_for_os(os, basename);
+    let members = manifest_members_for_os(os, basename)
+        .map_err(|msg| io::Error::new(io::ErrorKind::InvalidInput, msg))?;
     for (index, name) in members.iter().enumerate() {
         let path = out_dir.join(name);
         let metadata = fs::symlink_metadata(&path)?;
@@ -182,7 +204,7 @@ mod tests {
                 (name.to_owned(), digest.to_owned())
             })
             .collect::<BTreeMap<_, _>>();
-        let mut expected_checksum = checksum_members_for_os("macos", basename);
+        let mut expected_checksum = checksum_members_for_os("macos", basename).expect("macos");
         expected_checksum.sort();
         assert_eq!(
             checksum_members.keys().cloned().collect::<Vec<_>>(),
@@ -204,7 +226,7 @@ mod tests {
             .iter()
             .map(|(name, digest)| (name.clone(), digest.as_str().expect("digest").to_owned()))
             .collect::<BTreeMap<_, _>>();
-        let mut expected_manifest = manifest_members_for_os("macos", basename);
+        let mut expected_manifest = manifest_members_for_os("macos", basename).expect("macos");
         expected_manifest.sort();
         assert_eq!(files.keys().cloned().collect::<Vec<_>>(), expected_manifest);
         for (name, digest) in &files {
@@ -215,5 +237,30 @@ mod tests {
         }
         assert!(!files.contains_key(&format!("{basename}.manifest.json")));
         assert!(!files.contains_key(&format!("{basename}.manifest.json.minisig")));
+    }
+
+    #[test]
+    fn write_sidecars_refuses_windows() {
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary directory");
+        let out = temporary.path();
+        let basename = "solstone-journal-1.0.22-windows-x86_64";
+        let release = ReleaseInfo {
+            product: "solstone-journal",
+            version: "1.0.22",
+            target: "windows-x86_64",
+            commit: "commit",
+            lock_sha256: "lock",
+            archive_chain: None,
+        };
+        let error = write_sidecars(out, "windows", &release, basename).expect_err("windows");
+        assert!(
+            error
+                .to_string()
+                .contains("windows archive/signing is not implemented in this lode"),
+            "{error}"
+        );
+        assert!(!out.join(format!("{basename}.release")).exists());
+        assert!(!out.join(format!("{basename}.sha256")).exists());
+        assert!(!out.join(format!("{basename}.manifest.json")).exists());
     }
 }

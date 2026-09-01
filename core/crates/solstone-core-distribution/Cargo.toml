@@ -33,10 +33,12 @@ minisign.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-solstone-core-artifact-download.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
 tar.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
+
+[target.'cfg(not(windows))'.dependencies]
+solstone-core-artifact-download.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

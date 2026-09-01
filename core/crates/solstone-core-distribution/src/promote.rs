@@ -11,7 +11,7 @@ use crate::apple;
 use crate::archive_contract;
 use crate::deb::{DebMeta, write_deb};
 use crate::inspect::{ArchiveChainDigests, ReleaseInfo, write_sidecars};
-use crate::inventory::{Apple, OS_MACOS, artifact_archives};
+use crate::inventory::{Apple, OS_LINUX, OS_MACOS, OS_WINDOWS, artifact_archives};
 use crate::provenance::{Provenance, require_clean, require_commit, require_lock};
 use crate::rpm::{RpmMeta, write_rpm};
 use crate::stage::write_staged_file_mode;
@@ -57,21 +57,22 @@ impl PromoteStep {
     /// makes the injection a no-op, the promotion succeed, and the assertion
     /// fail — which is the honest outcome, but the useful one is a per-os list
     /// so every step that DOES run is still covered on both platforms.
-    #[must_use]
-    pub fn for_os(os: &str) -> Vec<Self> {
-        Self::ALL
-            .into_iter()
-            .filter(|step| {
-                let macos_only =
-                    matches!(step, Self::Sign | Self::Pkg | Self::Notarize | Self::Staple);
-                let linux_only = matches!(step, Self::Deb | Self::Rpm);
-                if os == OS_MACOS {
-                    !linux_only
-                } else {
-                    !macos_only
-                }
-            })
-            .collect()
+    pub fn for_os(os: &str) -> Result<Vec<Self>, &'static str> {
+        let macos_only =
+            |step: &Self| matches!(step, Self::Sign | Self::Pkg | Self::Notarize | Self::Staple);
+        let linux_only = |step: &Self| matches!(step, Self::Deb | Self::Rpm);
+        match os {
+            OS_MACOS => Ok(Self::ALL
+                .into_iter()
+                .filter(|step| !linux_only(step))
+                .collect()),
+            OS_LINUX => Ok(Self::ALL
+                .into_iter()
+                .filter(|step| !macos_only(step))
+                .collect()),
+            OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+            other => panic!("unexpected distribution os {other}"),
+        }
     }
 
     #[must_use]
@@ -165,6 +166,18 @@ pub fn isolated_target_dir(work: &Path) -> PathBuf {
 
 pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     require_clean(request.dirty).map_err(|error| PromoteError::new(error.to_string()))?;
+    match request.os.as_str() {
+        OS_LINUX => {}
+        OS_MACOS => {}
+        OS_WINDOWS => {
+            return Err(PromoteError::new(
+                "windows archive/signing is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(PromoteError::new(format!("unexpected os {other}")));
+        }
+    }
     checkpoint(request, PromoteStep::Compile)?;
 
     let stage = request.work.join("stage");
@@ -175,8 +188,8 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
             .map_err(|error| PromoteError::new(error.to_string()))?;
     }
     checkpoint(request, PromoteStep::Stage)?;
-    let archive_chain = if request.os == OS_MACOS {
-        Some(
+    let archive_chain = match request.os.as_str() {
+        OS_MACOS => Some(
             archive_contract::validate_staged_chain(
                 &stage,
                 &request.arch,
@@ -184,9 +197,14 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
                 &request.expected.lock_sha256,
             )
             .map_err(|error| PromoteError::new(error.to_string()))?,
-        )
-    } else {
-        None
+        ),
+        OS_LINUX => None,
+        OS_WINDOWS => {
+            return Err(PromoteError::new(
+                "windows archive/signing is not implemented in this lode",
+            ));
+        }
+        other => return Err(PromoteError::new(format!("unexpected os {other}"))),
     };
 
     let partial = request.work.join("out.partial");
@@ -198,10 +216,15 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     // registers tickets for what it encloses, and the `.tar.gz` so a bootstrap
     // install lands binaries Gatekeeper will admit. Signing a container after
     // the fact would leave the tarball's copies unsigned and identical-looking.
-    let mut signing = if request.os == OS_MACOS {
-        Some(sign_macos_tree(request, &stage)?)
-    } else {
-        None
+    let mut signing = match request.os.as_str() {
+        OS_MACOS => Some(sign_macos_tree(request, &stage)?),
+        OS_LINUX => None,
+        OS_WINDOWS => {
+            return Err(PromoteError::new(
+                "windows archive/signing is not implemented in this lode",
+            ));
+        }
+        other => return Err(PromoteError::new(format!("unexpected os {other}"))),
     };
     checkpoint(request, PromoteStep::Sign)?;
 
@@ -210,32 +233,41 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Tar)?;
 
-    if request.os == OS_MACOS {
-        if let Some(signing) = signing.as_mut() {
-            write_pkg(request, &stage, &partial, signing)?;
+    match request.os.as_str() {
+        OS_MACOS => {
+            if let Some(signing) = signing.as_mut() {
+                write_pkg(request, &stage, &partial, signing)?;
+            }
         }
-    } else {
-        let [_tar, deb_name, rpm_name] = artifact_archives(&request.basename);
-        write_deb(
-            &stage,
-            &partial.join(deb_name),
-            DebMeta {
-                version: &request.version,
-                arch: &request.deb_arch,
-            },
-        )
-        .map_err(|error| PromoteError::new(error.to_string()))?;
-        checkpoint(request, PromoteStep::Deb)?;
-        write_rpm(
-            &stage,
-            &partial.join(rpm_name),
-            RpmMeta {
-                version: &request.version,
-                arch: &request.rpm_arch,
-            },
-        )
-        .map_err(|error| PromoteError::new(error.to_string()))?;
-        checkpoint(request, PromoteStep::Rpm)?;
+        OS_LINUX => {
+            let [_tar, deb_name, rpm_name] = artifact_archives(&request.basename);
+            write_deb(
+                &stage,
+                &partial.join(deb_name),
+                DebMeta {
+                    version: &request.version,
+                    arch: &request.deb_arch,
+                },
+            )
+            .map_err(|error| PromoteError::new(error.to_string()))?;
+            checkpoint(request, PromoteStep::Deb)?;
+            write_rpm(
+                &stage,
+                &partial.join(rpm_name),
+                RpmMeta {
+                    version: &request.version,
+                    arch: &request.rpm_arch,
+                },
+            )
+            .map_err(|error| PromoteError::new(error.to_string()))?;
+            checkpoint(request, PromoteStep::Rpm)?;
+        }
+        OS_WINDOWS => {
+            return Err(PromoteError::new(
+                "windows archive/signing is not implemented in this lode",
+            ));
+        }
+        other => return Err(PromoteError::new(format!("unexpected os {other}"))),
     }
 
     let release = ReleaseInfo {
@@ -599,6 +631,83 @@ mod tests {
         assert!(!found.iter().any(|name| name.ends_with(".minisig")));
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn promote_refuses_windows_archives() {
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        let dest = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-windows-refuse-dest-{}",
+            std::process::id()
+        ));
+        let work = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-windows-refuse-work-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir_all(&work);
+        fs::create_dir_all(&dest).expect("dest");
+        fs::write(dest.join("marker"), b"prior").expect("marker");
+        let error = promote(&PromoteRequest {
+            dest: dest.clone(),
+            work: work.clone(),
+            tree: vec![(
+                "runtime/test-fixture-bin.exe".into(),
+                b"core".to_vec(),
+                0o755,
+            )],
+            version: "1.0.22".into(),
+            basename: "solstone-journal-1.0.22-windows-x86_64".into(),
+            os: "windows".into(),
+            arch: "windows-x86_64".into(),
+            deb_arch: String::new(),
+            rpm_arch: String::new(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+        })
+        .expect_err("windows promote refuses");
+        assert!(
+            error
+                .to_string()
+                .contains("windows archive/signing is not implemented in this lode"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read(dest.join("marker")).expect("marker remains"),
+            b"prior"
+        );
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn promote_step_for_os_refuses_windows() {
+        let error = super::PromoteStep::for_os("windows").unwrap_err();
+        assert!(
+            error.contains("windows archive/signing is not implemented in this lode"),
+            "{error}"
+        );
+        assert!(
+            !super::PromoteStep::for_os("linux")
+                .expect("linux")
+                .is_empty()
+        );
+        assert!(
+            !super::PromoteStep::for_os("macos")
+                .expect("macos")
+                .is_empty()
+        );
     }
 
     #[test]

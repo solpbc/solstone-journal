@@ -65,7 +65,7 @@ fn cleanroom_install_commands(inventory: &Inventory) -> Vec<String> {
     let mut commands = inventory
         .target
         .iter()
-        .filter(|target| !target.is_macos())
+        .filter(|target| target.os == crate::inventory::OS_LINUX)
         .map(|target| {
             let base = inventory
                 .artifact

@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::digest::sha256_hex;
@@ -148,8 +147,7 @@ fn package_files(stage: &Path) -> io::Result<Vec<PackageFile>> {
         let dirname_index = *directories.entry(dirname.clone()).or_insert(next_index);
         let path = stage.join(&dest);
         let bytes = fs::read(&path)?;
-        let mode =
-            (REGULAR_FILE_TYPE | (fs::metadata(&path)?.permissions().mode() & 0o7777)) as u16;
+        let mode = (REGULAR_FILE_TYPE | crate::stage::file_mode(&fs::metadata(&path)?)) as u16;
         prepared.push(PackageFile {
             archive,
             basename: dest.rsplit('/').next().unwrap_or(&dest).to_owned(),

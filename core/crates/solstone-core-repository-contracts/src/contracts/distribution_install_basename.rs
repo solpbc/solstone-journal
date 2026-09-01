@@ -170,7 +170,9 @@ fn drift(inventory: &str, install: &str) -> BTreeSet<String> {
     let install_targets = install_targets(install);
     let version = "VERSION";
     for (id, os, arch) in inventory_targets(inventory) {
-        if !install_targets.contains(&id) {
+        // Windows is a declared inventory target with no installer in this
+        // lode; install.sh must not grow a TARGET arm for it yet.
+        if os != "windows" && !install_targets.contains(&id) {
             unexpected.insert(format!("install TARGET {id}"));
         }
         let from_inventory = render_template(template, version, &os, &arch);

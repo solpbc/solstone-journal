@@ -318,7 +318,7 @@ fn rename_file_or_copy(src: &Path, dest: &Path) -> Result<(), PublishError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn spawn_sh_install(
     args: &[impl AsRef<std::ffi::OsStr>],
     envs: &[(&str, impl AsRef<std::ffi::OsStr>)],
@@ -331,7 +331,7 @@ fn spawn_sh_install(
     command.output().expect("run install.sh")
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

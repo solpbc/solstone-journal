@@ -14,6 +14,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 use serde::Serialize;
+#[cfg(not(windows))]
 use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::onnx_runtime;
@@ -65,6 +66,7 @@ impl From<pdfium::StageError> for AcquireError {
     }
 }
 
+#[cfg(not(windows))]
 impl From<solstone_core_artifact_download::ArchiveError> for AcquireError {
     fn from(error: solstone_core_artifact_download::ArchiveError) -> Self {
         Self::new(error.to_string())
@@ -182,19 +184,37 @@ fn load_builder_inputs(repo: &Path) -> Result<BuilderInputsFile, AcquireError> {
     Ok(parsed)
 }
 
+fn fetch_verified(
+    url: &str,
+    sha256: &str,
+    size: Option<u64>,
+    dest: &Path,
+) -> Result<bool, AcquireError> {
+    #[cfg(not(windows))]
+    {
+        Ok(ensure_verified_url(
+            url,
+            sha256,
+            size,
+            dest,
+            &BUILDER_INPUT_DOWNLOAD_POLICY,
+            |_, _| {},
+        )?)
+    }
+    #[cfg(windows)]
+    {
+        let _ = (url, sha256, size, dest);
+        Err(AcquireError::new(
+            "distribution acquire is not supported on windows",
+        ))
+    }
+}
+
 fn fetch_input(input: &FetchableInput, dest: &Path) -> Result<bool, AcquireError> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    let fetched = ensure_verified_url(
-        &input.url,
-        &input.sha256,
-        Some(input.size),
-        dest,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
-    )?;
-    Ok(fetched)
+    fetch_verified(&input.url, &input.sha256, Some(input.size), dest)
 }
 
 fn acquire_ffmpeg(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
@@ -255,14 +275,7 @@ fn acquire_onnx(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         .ok_or_else(|| AcquireError::new("onnx wheel url has no file name"))?;
     let wheel_path = cache_dir.join(wheel_name);
     let alias = cache_dir.join(format!("onnxruntime-{target}.whl"));
-    let fetched = ensure_verified_url(
-        spec.wheel_url,
-        spec.wheel_sha256,
-        None,
-        &wheel_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
-    )?;
+    let fetched = fetch_verified(spec.wheel_url, spec.wheel_sha256, None, &wheel_path)?;
     if alias != wheel_path {
         fs::copy(&wheel_path, &alias)?;
     }
@@ -366,7 +379,11 @@ fn write_onnx_link_dir(
     }
     for name in rest {
         let link_path = link_dir.join(name);
-        if std::os::unix::fs::symlink(primary, &link_path).is_err() {
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(primary, &link_path).is_ok();
+        #[cfg(not(unix))]
+        let linked = false;
+        if !linked {
             fs::copy(&primary_path, &link_path)?;
         }
     }
@@ -387,13 +404,11 @@ fn acquire_pdfium(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         .unwrap_or_else(|| repo.join(PDF_CACHE));
     fs::create_dir_all(&cache_dir)?;
     let archive_path = cache_dir.join(spec.archive_name);
-    let fetched = ensure_verified_url(
+    let fetched = fetch_verified(
         &spec.archive_url(),
         spec.archive_sha256,
         None,
         &archive_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
     )?;
     println!(
         "pdfium archive {} dest={}",
@@ -401,13 +416,11 @@ fn acquire_pdfium(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         archive_path.display()
     );
     let attestation_path = cache_dir.join(pdfium::ATTESTATION_NAME);
-    ensure_verified_url(
+    fetch_verified(
         &pdfium::attestation_url(),
         pdfium::ATTESTATION_SHA256,
         None,
         &attestation_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
     )?;
     let attestation = verify_pdfium_attestation(&archive_path)?;
     let archive = fs::read(&archive_path)?;
