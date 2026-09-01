@@ -263,6 +263,19 @@ pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> O
 /// uses the directory that owns `current`, not the version selected by that
 /// symlink, so an update or downgrade preserves the installation identity.
 /// Other layouts retain the ordinary installation-root meaning.
+///
+/// The versioned-prefix check recognises two shapes of `executable_dir`: the
+/// literal `<prefix>/current/bin` (what a caller can construct by hand, and
+/// what earlier tests fed it) and the fully-resolved
+/// `<prefix>/versions/<ver>-<digest>/bin` that a real running process
+/// actually reports. `std::env::current_exe()` on Linux reads
+/// `/proc/self/exe`, and the kernel keeps that target fully dereferenced, so
+/// a binary launched through `current/bin/journal` never sees `"current"` in
+/// its own executable dir -- it sees the versioned directory `current`
+/// points at. Missing that shape made the identity root -- and so the
+/// installation namespace -- change on every version swap, which is what
+/// let a legitimate reinstall of a newer build look like a foreign
+/// installation to the setup admission check.
 pub fn resolve_identity_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
     resolve_checkout_root_from_executable_dir(executable_dir)
         .or_else(|| versioned_prefix_from_executable_dir(executable_dir))
@@ -270,12 +283,25 @@ pub fn resolve_identity_root_from_executable_dir(executable_dir: &Path) -> Optio
 }
 
 fn versioned_prefix_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    let current = executable_dir.parent()?;
-    if executable_dir.file_name()? != OsStr::new("bin")
-        || current.file_name()? != OsStr::new("current")
-    {
+    if executable_dir.file_name()? != OsStr::new("bin") {
         return None;
     }
+    let parent = executable_dir.parent()?;
+    if parent.file_name()? == OsStr::new("current") {
+        return versioned_prefix_via_literal_current(parent);
+    }
+    // A real running process never actually presents the literal
+    // `<prefix>/current/bin` shape the arm above matches: `current_exe()` on
+    // Linux resolves `/proc/self/exe`, which the kernel keeps fully
+    // dereferenced, so the executable dir it reports is already
+    // `<prefix>/versions/<ver>-<digest>/bin` -- the same shape a stale or
+    // orphaned version directory would present. Recognise that shape too,
+    // but only when `current` still resolves to this exact versioned
+    // directory, so an orphaned sibling never borrows the stable identity.
+    versioned_prefix_via_resolved_version_dir(parent)
+}
+
+fn versioned_prefix_via_literal_current(current: &Path) -> Option<PathBuf> {
     let prefix = current.parent()?;
     if !fs::symlink_metadata(current).ok()?.file_type().is_symlink() {
         return None;
@@ -288,6 +314,25 @@ fn versioned_prefix_from_executable_dir(executable_dir: &Path) -> Option<PathBuf
     };
     (target.parent()?.file_name()? == OsStr::new("versions") && target.is_dir())
         .then(|| prefix.to_path_buf())
+}
+
+fn versioned_prefix_via_resolved_version_dir(version_dir: &Path) -> Option<PathBuf> {
+    let versions_dir = version_dir.parent()?;
+    if versions_dir.file_name()? != OsStr::new("versions") {
+        return None;
+    }
+    let prefix = versions_dir.parent()?;
+    let current = prefix.join("current");
+    if !fs::symlink_metadata(&current)
+        .ok()?
+        .file_type()
+        .is_symlink()
+    {
+        return None;
+    }
+    let resolved_current = fs::canonicalize(&current).ok()?;
+    let resolved_version_dir = fs::canonicalize(version_dir).ok()?;
+    (resolved_current == resolved_version_dir).then(|| prefix.to_path_buf())
 }
 
 /// Why [`resolve_installation_root_from_executable_dir`] returned `None`.
@@ -749,6 +794,58 @@ mod tests {
             "retries retain the stable prefix"
         );
         fs::remove_dir_all(root).expect("cleanup versioned prefix");
+    }
+
+    /// `std::env::current_exe()` on Linux reads `/proc/self/exe`, which the
+    /// kernel keeps fully dereferenced -- a binary launched through
+    /// `current/bin/journal` is reported at its resolved
+    /// `versions/<ver>-<digest>/bin` location, never at the literal
+    /// `current/bin` the test above feeds the resolver directly. Before this
+    /// was recognised, that meant the identity root (and so the installation
+    /// namespace) changed on every version swap even though `current` never
+    /// stopped pointing at a single, coherent installation -- which is what
+    /// made a legitimate newer build of an already-installed version read as
+    /// a foreign installation to setup admission.
+    #[cfg(unix)]
+    #[test]
+    fn identity_root_uses_a_versioned_prefix_from_the_resolved_version_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = unique_temp("identity-versioned-prefix-resolved");
+        let prefix = root.join("prefix");
+        let first = prefix.join("versions/1.0.0-aaaaaaaa");
+        let second = prefix.join("versions/2.0.0-bbbbbbbb");
+        fs::create_dir_all(first.join("bin")).expect("create first version");
+        fs::create_dir_all(second.join("bin")).expect("create second version");
+        symlink("versions/1.0.0-aaaaaaaa", prefix.join("current")).expect("link current first");
+
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&first.join("bin")),
+            Some(prefix.clone()),
+            "the version `current` points at inherits the stable prefix"
+        );
+
+        symlink("versions/2.0.0-bbbbbbbb", root.join("current-retarget")).unwrap();
+        fs::rename(root.join("current-retarget"), prefix.join("current"))
+            .expect("flip current onto the new build, like install.sh does");
+        assert_eq!(
+            resolve_identity_root_from_executable_dir(&second.join("bin")),
+            Some(prefix.clone()),
+            "a version swap keeps the same stable prefix as identity root"
+        );
+
+        // `first` is now a version `current` no longer points at -- an
+        // orphaned sibling, not the active installation. It must not borrow
+        // the stable prefix identity just because it lives in the same
+        // `versions/` directory; only the version `current` actually
+        // resolves to may.
+        assert_ne!(
+            resolve_identity_root_from_executable_dir(&first.join("bin")),
+            Some(prefix.clone()),
+            "an orphaned version directory current no longer points at must not borrow the stable identity"
+        );
+
+        fs::remove_dir_all(root).expect("cleanup resolved versioned prefix");
     }
 
     #[test]
