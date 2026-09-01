@@ -1696,26 +1696,9 @@ fn exercise_cortex_census_receipt(root: &Path) {
     // Child (leaf) replacement mid-listing: barrier fires after `delta`'s children are
     // enumerated but before they're observed; remove the one leaf in between.
     //
-    // PLATFORM DIVERGENCE, empirically confirmed against native Windows (`sol-winbuild`,
-    // Windows 11 Pro build 26200) on this exact fixture: the POSIX path
-    // (`flat_directory::list_native_entries`) special-cases an ENOENT `stat_entry` result
-    // into `FlatDirectoryError::EnumerationChanged`, which `map_listing` classifies as
-    // `IdentityChanged` -- so on POSIX (and in census.rs's own non-Windows
-    // `barrier_stage_errors` unit test) this scenario yields
-    // `cortex_census_talent_list_identity_changed`. The Windows path
-    // (`windows_sync_dir::list_windows_native_entries`) has no analogous ENOENT
-    // special-case: it unconditionally opens each previously-listed name via
-    // `open_relative_exact`, and a vanished name surfaces as a bare
-    // `FlatDirectoryError::Io` (NtCreateFile's not-found status, converted generically),
-    // which `map_listing` classifies as `Io`, not `IdentityChanged`. The real,
-    // native-observed token here is `cortex_census_talent_list_io`. This is a property
-    // of the already-landed F3 production code (`census.rs`/`windows_sync_dir.rs`,
-    // commit d6d8c51c9), not of this test; census.rs's own `#[cfg(windows)]
-    // windows_barrier_stage_errors` unit test currently asserts the POSIX token for this
-    // same scenario and has, as far as this validation could determine, never previously
-    // run on real Windows hardware -- flagged separately as a caller-owned finding, not
-    // fixed here (out of this receipt's scope, which is to record true observed
-    // behavior rather than the classification this project might prefer).
+    // Vanished-leaf opens in `list_windows_native_entries` were a real classification
+    // gap (bare Io). That is repaired; the token is now the spec-correct
+    // `cortex_census_talent_list_identity_changed`.
     {
         let census_root3 = census_root.join("cortex-census-child");
         fs::create_dir(&census_root3).unwrap();
@@ -1736,7 +1719,7 @@ fn exercise_cortex_census_receipt(root: &Path) {
         assert!(fired);
         assert_eq!(
             census_err(result, "child removal mid-listing must be refused, not silently reflected as a shorter-than-listed census").to_string(),
-            "cortex_census_talent_list_io"
+            "cortex_census_talent_list_identity_changed"
         );
     }
 

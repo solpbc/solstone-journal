@@ -5361,6 +5361,8 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-cogitate",
+ "solstone-core-cogitate-wire",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",

@@ -1142,9 +1142,9 @@ mod tests {
         assert_eq!(census.observed_entry_count(), 0);
         assert!(census.root_entries().is_empty());
         assert!(census.talents().is_empty());
+        drop(census);
         let after = snapshot_tree(empty.path());
         assert_accounted(before, &after, true, &[], &[]);
-        drop(census);
 
         let vacant = temp();
         fill_named(vacant.path(), &["keep"]);
@@ -1156,6 +1156,7 @@ mod tests {
         assert!(census.talents()[0].entries().is_empty());
         assert_eq!(census.root_entries().len(), 1);
         assert_eq!(census.observed_entry_count(), 1);
+        drop(census);
         let after = snapshot_tree(vacant.path());
         assert_accounted(before, &after, true, &[], &[]);
     }
@@ -1296,9 +1297,9 @@ mod tests {
                 .map(|talent| (talent.name().to_os_string(), talent.entries().to_vec()))
                 .collect::<Vec<_>>(),
         );
+        drop(census);
         let after = snapshot_tree(temporary.path());
         assert_accounted(before, &after, true, &[], &[]);
-        drop(census);
         let second = census_at(admit(temporary.path()), MAX).unwrap();
         assert_eq!(second.root_entries(), view.0);
         assert_eq!(
@@ -1485,6 +1486,7 @@ mod tests {
             census.revalidate_bindings().unwrap_err(),
             "cortex_census_talent_binding_identity_changed",
         );
+        drop(census);
         let after = snapshot_tree(temporary.path());
         assert_accounted(
             before,

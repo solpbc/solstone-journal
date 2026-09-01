@@ -4395,6 +4395,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-cogitate-wire::cogitate_oneshot_process_group"
+package = "solstone-core-cogitate-wire"
+target = "cogitate_oneshot_process_group"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-spp-ratls::attested_channels"
 package = "solstone-core-spp-ratls"
 target = "attested_channels"

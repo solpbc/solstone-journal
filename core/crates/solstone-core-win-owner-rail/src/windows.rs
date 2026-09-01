@@ -21,14 +21,15 @@ use solstone_core_win_owner_rail::{
     ProbeTaskDefinition, ProbeTokenGate, ProbeTokenSection, ProbeVerifyInput, ProbeXmlSection,
     RAIL_ROOT, RailError, ResultRecord, TaskRuntime, TerminalState, TokenAttestation,
     TokenElevationClass, classify_probe_sid, classify_terminal, classify_token_elevation_type,
-    com_hresult_proves_not_found, com_register_flag, folder_allows_ordinary_mutation, mint_nonce,
-    parse_probe_task_xml, parse_task_runtime_csv, parse_task_xml, priority_from_raw_value,
-    probe_com_folder_path, probe_com_task_name, probe_exits_successfully, probe_marker,
-    probe_token_gate, probe_xml_task_name, recovery_decision, render_probe_task_xml,
-    require_clean_worktree, schtasks_create_argv, schtasks_create_xml_argv, schtasks_delete_argv,
-    schtasks_query_proves_task_absent, schtasks_query_runtime_argv, schtasks_query_xml_argv,
-    schtasks_run_argv, select_probe_outcome, sha256_hex, verify_attestation,
-    verify_probe_task_definition, verify_result, verify_result_binding, verify_task_definition,
+    com_hresult_proves_not_found, com_register_flag, encode_probe_xml_utf16le,
+    folder_allows_ordinary_mutation, mint_nonce, parse_probe_task_xml, parse_task_runtime_csv,
+    parse_task_xml, priority_from_raw_value, probe_com_folder_path, probe_com_task_name,
+    probe_exits_successfully, probe_marker, probe_token_gate, probe_xml_task_name,
+    recovery_decision, render_probe_task_xml, require_clean_worktree, schtasks_create_argv,
+    schtasks_create_xml_argv, schtasks_delete_argv, schtasks_query_proves_task_absent,
+    schtasks_query_runtime_argv, schtasks_query_xml_argv, schtasks_run_argv, select_probe_outcome,
+    sha256_hex, verify_attestation, verify_persisted_probe_xml, verify_probe_task_definition,
+    verify_result, verify_result_binding, verify_task_definition,
 };
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
@@ -1098,13 +1099,17 @@ fn canonical(path: &str) -> Result<String, String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
-fn file_sha256(path: impl AsRef<Path>) -> Result<String, String> {
-    let mut file = File::open(path.as_ref())
-        .map_err(|error| format!("read {}: {error}", path.as_ref().display()))?;
+fn read_file_bytes(path: impl AsRef<Path>) -> Result<Vec<u8>, String> {
+    let path = path.as_ref();
+    let mut file = File::open(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let mut contents = Vec::new();
     file.read_to_end(&mut contents)
-        .map_err(|error| format!("read {}: {error}", path.as_ref().display()))?;
-    Ok(sha256_hex(&contents))
+        .map_err(|error| format!("read {}: {error}", path.display()))?;
+    Ok(contents)
+}
+
+fn file_sha256(path: impl AsRef<Path>) -> Result<String, String> {
+    Ok(sha256_hex(&read_file_bytes(path)?))
 }
 
 fn command_text(command: &mut Command) -> Result<String, String> {
@@ -1368,13 +1373,12 @@ fn run_xml_onlogon_route(
         priority: ProbePriority::Unavailable,
     };
     let xml = render_probe_task_xml(&definition);
-    section.submitted_xml = xml.clone();
-    section.definition_sha256 = sha256_hex(xml.as_bytes());
-    if let Err(error) = write_probe_xml_file(&xml_path_text, xml.as_bytes()) {
-        section.create = ProbeStage::failed(
-            win32_probe_error(0, &error),
-            ProbeResolutionAction::RepairSchedulerAccess,
-        );
+    if !persist_probe_xml_for_route(
+        &mut section,
+        &xml_path_text,
+        &xml,
+        &real_probe_xml_file_steps(),
+    ) {
         return section;
     }
     section.create_argv = schtasks_create_xml_argv(task_name, &xml_path_text);
@@ -2156,12 +2160,89 @@ fn lookup_sid_account(bytes: &[u8]) -> Result<(), ()> {
     if result == 0 { Err(()) } else { Ok(()) }
 }
 
-fn write_probe_xml_file(path: &str, xml: &[u8]) -> Result<(), String> {
-    let mut file = create_new(path)?;
+struct ProbeXmlFileSteps<C, W, S, R> {
+    create: C,
+    write: W,
+    sync: S,
+    readback: R,
+}
+
+fn write_probe_xml_bytes(file: &mut File, xml: &[u8]) -> Result<(), String> {
     file.write_all(xml)
-        .map_err(|error| format!("write probe xml: {error}"))?;
+        .map_err(|error| format!("write probe xml: {error}"))
+}
+
+fn sync_probe_xml_file(file: &File) -> Result<(), String> {
     file.sync_all()
         .map_err(|error| format!("sync probe xml: {error}"))
+}
+
+fn read_probe_xml_bytes(path: &str) -> Result<Vec<u8>, String> {
+    read_file_bytes(path)
+}
+
+fn real_probe_xml_file_steps() -> ProbeXmlFileSteps<
+    fn(&str) -> Result<File, String>,
+    fn(&mut File, &[u8]) -> Result<(), String>,
+    fn(&File) -> Result<(), String>,
+    fn(&str) -> Result<Vec<u8>, String>,
+> {
+    ProbeXmlFileSteps {
+        create: create_new,
+        write: write_probe_xml_bytes,
+        sync: sync_probe_xml_file,
+        readback: read_probe_xml_bytes,
+    }
+}
+
+fn persist_probe_xml_file<H, C, W, S, R>(
+    path: &str,
+    bytes: &[u8],
+    steps: &ProbeXmlFileSteps<C, W, S, R>,
+) -> Result<Vec<u8>, String>
+where
+    C: Fn(&str) -> Result<H, String>,
+    W: Fn(&mut H, &[u8]) -> Result<(), String>,
+    S: Fn(&H) -> Result<(), String>,
+    R: Fn(&str) -> Result<Vec<u8>, String>,
+{
+    let mut file = (steps.create)(path)?;
+    (steps.write)(&mut file, bytes)?;
+    (steps.sync)(&file)?;
+    drop(file);
+    (steps.readback)(path)
+}
+
+fn persist_probe_xml_for_route<H, C, W, S, R>(
+    section: &mut ProbeXmlSection,
+    path: &str,
+    xml: &str,
+    steps: &ProbeXmlFileSteps<C, W, S, R>,
+) -> bool
+where
+    C: Fn(&str) -> Result<H, String>,
+    W: Fn(&mut H, &[u8]) -> Result<(), String>,
+    S: Fn(&H) -> Result<(), String>,
+    R: Fn(&str) -> Result<Vec<u8>, String>,
+{
+    section.submitted_xml = xml.to_owned();
+    section.definition_sha256 = sha256_hex(xml.as_bytes());
+    let encoded = encode_probe_xml_utf16le(xml);
+    match persist_probe_xml_file(path, &encoded, steps)
+        .and_then(|bytes| verify_persisted_probe_xml(&bytes, xml))
+    {
+        Ok(digest) => {
+            section.persisted_sha256 = Some(digest);
+            true
+        }
+        Err(error) => {
+            section.create = ProbeStage::failed(
+                win32_probe_error(0, &error),
+                ProbeResolutionAction::RepairSchedulerAccess,
+            );
+            false
+        }
+    }
 }
 
 fn query_probe_xml(task_name: &str) -> Result<String, String> {
@@ -2422,5 +2503,216 @@ fn com_probe_error(error: &windows::core::Error, diagnostic: &str) -> ProbeApiEr
         space: ProbeApiErrorSpace::Hresult,
         code: error.code().0 as u32,
         diagnostic: format!("{diagnostic}: {error}"),
+    }
+}
+
+#[cfg(windows)]
+#[cfg(test)]
+mod persist_probe_xml_tests {
+    use super::{
+        ProbeXmlFileSteps, create_new, persist_probe_xml_for_route, read_probe_xml_bytes,
+        real_probe_xml_file_steps, sync_probe_xml_file, write_probe_xml_bytes,
+    };
+    use solstone_core_win_owner_rail::{
+        ProbeApiErrorSpace, ProbeResolutionAction, ProbeStageStatus, ProbeTaskDefinition,
+        ProbeXmlSection, TaskRunLevel, decode_probe_xml_utf16le, mint_nonce, render_probe_task_xml,
+        sha256_hex,
+    };
+    use std::fs::{self, File};
+    use std::io::Write;
+
+    struct TempXmlPath(String);
+
+    impl TempXmlPath {
+        fn new() -> Self {
+            let name = format!(
+                "solstone-onlogon-xml-{}-{}.xml",
+                std::process::id(),
+                mint_nonce().expect("nonce")
+            );
+            Self(
+                std::env::temp_dir()
+                    .join(name)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        }
+
+        fn as_str(&self) -> &str {
+            &self.0
+        }
+    }
+
+    impl Drop for TempXmlPath {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    fn probe_xml() -> String {
+        render_probe_task_xml(&ProbeTaskDefinition {
+            principal_sid: "S-1-5-21-100".to_owned(),
+            logon_type: "InteractiveToken".to_owned(),
+            run_level: TaskRunLevel::ExplicitLeastPrivilege,
+            command: r"C:\probe.exe".to_owned(),
+            arguments: "solstone-onlogon-probe:test".to_owned(),
+            working_directory: None,
+            description: Some("café 💩".to_owned()),
+            trigger_user_id: "S-1-5-21-100".to_owned(),
+            priority: solstone_core_win_owner_rail::ProbePriority::Unavailable,
+        })
+    }
+
+    fn persist_with_steps<H, C, W, S, R>(
+        path: &str,
+        xml: &str,
+        steps: &ProbeXmlFileSteps<C, W, S, R>,
+    ) -> ProbeXmlSection
+    where
+        C: Fn(&str) -> Result<H, String>,
+        W: Fn(&mut H, &[u8]) -> Result<(), String>,
+        S: Fn(&H) -> Result<(), String>,
+        R: Fn(&str) -> Result<Vec<u8>, String>,
+    {
+        let mut section = ProbeXmlSection::skipped();
+        persist_probe_xml_for_route(&mut section, path, xml, steps);
+        section
+    }
+
+    fn assert_persist_failed(section: &ProbeXmlSection, injected: &str) {
+        assert_eq!(section.create.status, ProbeStageStatus::Failed);
+        let error = section.create.error.as_ref().expect("create error");
+        assert_eq!(error.space, ProbeApiErrorSpace::Win32);
+        assert_eq!(error.code, 0);
+        assert!(
+            error.diagnostic.contains(injected),
+            "diagnostic={}",
+            error.diagnostic
+        );
+        assert_eq!(
+            section.create.resolution_action,
+            Some(ProbeResolutionAction::RepairSchedulerAccess)
+        );
+        assert!(section.create_argv.is_empty());
+        assert_eq!(section.persisted_sha256, None);
+    }
+
+    fn injected_create_failure(_path: &str) -> Result<File, String> {
+        Err("injected create failure".to_owned())
+    }
+
+    fn injected_write_failure(_file: &mut File, _bytes: &[u8]) -> Result<(), String> {
+        Err("injected write failure".to_owned())
+    }
+
+    fn injected_sync_failure(_file: &File) -> Result<(), String> {
+        Err("injected sync failure".to_owned())
+    }
+
+    fn injected_readback_failure(_path: &str) -> Result<Vec<u8>, String> {
+        Err("injected readback failure".to_owned())
+    }
+
+    #[test]
+    fn persist_probe_xml_injected_create_failure() {
+        let path = TempXmlPath::new();
+        let xml = probe_xml();
+        let steps = ProbeXmlFileSteps {
+            create: injected_create_failure,
+            write: write_probe_xml_bytes,
+            sync: sync_probe_xml_file,
+            readback: read_probe_xml_bytes,
+        };
+        let section = persist_with_steps(path.as_str(), &xml, &steps);
+        assert_persist_failed(&section, "injected create failure");
+        assert!(!section.submitted_xml.is_empty());
+        assert!(!section.definition_sha256.is_empty());
+    }
+
+    #[test]
+    fn persist_probe_xml_injected_write_failure() {
+        let path = TempXmlPath::new();
+        let xml = probe_xml();
+        let steps = ProbeXmlFileSteps {
+            create: create_new,
+            write: injected_write_failure,
+            sync: sync_probe_xml_file,
+            readback: read_probe_xml_bytes,
+        };
+        let section = persist_with_steps(path.as_str(), &xml, &steps);
+        assert_persist_failed(&section, "injected write failure");
+    }
+
+    #[test]
+    fn persist_probe_xml_injected_sync_failure() {
+        let path = TempXmlPath::new();
+        let xml = probe_xml();
+        let steps = ProbeXmlFileSteps {
+            create: create_new,
+            write: write_probe_xml_bytes,
+            sync: injected_sync_failure,
+            readback: read_probe_xml_bytes,
+        };
+        let section = persist_with_steps(path.as_str(), &xml, &steps);
+        assert_persist_failed(&section, "injected sync failure");
+    }
+
+    #[test]
+    fn persist_probe_xml_injected_readback_failure() {
+        let path = TempXmlPath::new();
+        let xml = probe_xml();
+        let steps = ProbeXmlFileSteps {
+            create: create_new,
+            write: write_probe_xml_bytes,
+            sync: sync_probe_xml_file,
+            readback: injected_readback_failure,
+        };
+        let section = persist_with_steps(path.as_str(), &xml, &steps);
+        assert_persist_failed(&section, "injected readback failure");
+    }
+
+    #[test]
+    fn persist_probe_xml_success_roundtrip() {
+        let path = TempXmlPath::new();
+        let xml = probe_xml();
+        let section = persist_with_steps(path.as_str(), &xml, &real_probe_xml_file_steps());
+        assert_eq!(section.create.status, ProbeStageStatus::Skipped);
+        assert!(section.create_argv.is_empty());
+        let bytes = fs::read(path.as_str()).expect("reads persisted xml");
+        assert_eq!(bytes[..2], [0xFF, 0xFE]);
+        assert_eq!(
+            decode_probe_xml_utf16le(&bytes).expect("decodes"),
+            section.submitted_xml
+        );
+        let digest = section.persisted_sha256.expect("persisted digest");
+        assert_ne!(digest, section.definition_sha256);
+        assert_eq!(digest, sha256_hex(&bytes));
+        assert_eq!(section.definition_sha256, sha256_hex(xml.as_bytes()));
+        assert_eq!(section.submitted_xml, xml);
+    }
+
+    #[test]
+    fn persist_probe_xml_create_new_collision_preserves_sentinel() {
+        let path = TempXmlPath::new();
+        let sentinel = b"sentinel-bytes-must-not-change";
+        {
+            let mut file = File::create(path.as_str()).expect("creates sentinel");
+            file.write_all(sentinel).expect("writes sentinel");
+            file.sync_all().expect("syncs sentinel");
+        }
+        let xml = probe_xml();
+        let section = persist_with_steps(path.as_str(), &xml, &real_probe_xml_file_steps());
+        assert_eq!(fs::read(path.as_str()).expect("reads sentinel"), sentinel);
+        assert_eq!(section.create.status, ProbeStageStatus::Failed);
+        let error = section.create.error.as_ref().expect("create error");
+        assert_eq!(error.space, ProbeApiErrorSpace::Win32);
+        assert!(section.create_argv.is_empty());
+        assert_eq!(section.persisted_sha256, None);
+        assert!(!section.submitted_xml.is_empty());
+        assert!(!section.definition_sha256.is_empty());
+        assert_eq!(
+            section.create.resolution_action,
+            Some(ProbeResolutionAction::RepairSchedulerAccess)
+        );
     }
 }
