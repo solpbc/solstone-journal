@@ -11,3 +11,4 @@ solstone-core-mcp-endpoint = "durable owner-identity bootstrap primitive registe
 solstone-core-mcp-audit = "dependency-pure MCP interaction writer reached only through the feature-gated endpoint service in a later implementation chunk"
 solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shipped product path depends on it"
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"
+solstone-core-win-dll-load = "portable Windows DLL-load policy primitive; no shipped path consumes it in this lode"

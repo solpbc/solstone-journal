@@ -5648,6 +5648,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-win-dll-load"
+version = "2.0.0"
+dependencies = [
+ "libloading",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "solstone-core-win-owner-rail"
 version = "2.0.0"
 dependencies = [

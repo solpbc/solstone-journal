@@ -21,6 +21,7 @@ members = [
     "crates/solstone-core-journal-archive",
     "crates/solstone-core-journal-io",
     "crates/solstone-core-win-owner-rail",
+    "crates/solstone-core-win-dll-load",
     "crates/solstone-core-transfer",
     "crates/solstone-core-transfer-manifest",
     "crates/solstone-core-system-health",
