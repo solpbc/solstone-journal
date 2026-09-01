@@ -32,6 +32,15 @@ const SAFETY_MARGIN_TOKENS: u32 = 256;
 const MIN_COMPLETION_TOKENS: u32 = 256;
 const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
 const RECLAMP_SLACK_TOKENS: u32 = 16;
+/// Completion ceiling used when the served window could not be resolved.
+///
+/// A known window clamps the completion budget against the room actually left by
+/// the prompt. When the window is unknown there is nothing to clamp against, and
+/// a talent that declares no `max_output_tokens` asks for 8192 * 6 tokens -- more
+/// completion than a small served model will accept, so the endpoint rejects the
+/// request outright rather than returning a short answer. An unknown window is
+/// not a licence to ask for an unbounded completion.
+const UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS: u32 = 8_192;
 const COMPLETION_ANCHOR: &str = "tokens for the completion";
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "exceeds the available context size",
@@ -500,7 +509,12 @@ fn prepare_endpoint_request(
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = request_contents(request);
     let (contents, input_budget, request_budget, max_tokens) = match served_window {
-        None => (contents, None, None, max_tokens),
+        None => (
+            contents,
+            None,
+            None,
+            max_tokens.min(UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS),
+        ),
         Some(window) => {
             let mut count = estimate_tokens;
             let (fitted_contents, input_budget) = fit_contents(
@@ -1388,6 +1402,45 @@ mod tests {
         ));
         assert_eq!(transport.posts.len(), 2);
         assert_eq!(transport.posts[1]["max_tokens"], 384);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    /// A talent that declares no `max_output_tokens` asks for 8192 * 6. With a
+    /// known window that is clamped against the room the prompt leaves; with an
+    /// unknown one there is nothing to clamp against, and the served model
+    /// rejects the request outright instead of answering briefly.
+    #[test]
+    fn an_unknown_served_window_caps_the_completion_budget() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut oversized = request(None);
+        oversized.max_output_tokens = 8192 * 6;
+        let mut transport = StubTransport {
+            // A models payload carrying no `max_model_len` leaves the window unknown.
+            get_script: vec![Ok(HttpResponse {
+                status: 200,
+                body: json!({"data": [{"id": "served"}]}).to_string(),
+            })],
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        assert!(matches!(
+            endpoint_generate_with(
+                &oversized,
+                &journal,
+                &endpoint("http://endpoint"),
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["max_tokens"],
+            UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS
+        );
         let _ = std::fs::remove_dir_all(journal);
     }
 
