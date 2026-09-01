@@ -637,6 +637,22 @@ fn kill_cogitate_child(child_pid: &AtomicI32) {
     }
 }
 
+/// Read the terminal outcome out of a `cogitate --one-shot` event stream.
+///
+/// 🔴 The discriminating field is **`event`**, not `kind`. It was `kind` here, and
+/// the cogitate wire has never emitted that name -- `event.rs` writes `"event"`,
+/// `validation.rs` reads `"event"`, and every wire test asserts `value["event"]`.
+/// So this lookup never matched, this function always returned `None`, and
+/// `cogitate_component` turned every outcome into the generic
+/// `cogitate_terminal_error`.
+///
+/// ⚠ That masked failures in **both** directions: the real `reason_code` never
+/// reached `brain.json`, and a genuinely successful probe could not report `ok`
+/// either -- so the thinking lane was permanently `unhealthy` for every owner
+/// regardless of whether thinking actually worked. Measured on the founder's
+/// journal, where `cogitate --one-shot` emitted
+/// `{"event":"error",...,"reason_code":"context_budget_exceeded"}` and `brain.json`
+/// recorded only `cogitate_terminal_error`.
 fn terminal_cogitate_reason(stdout: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(stdout).ok()?;
     let terminal = text
@@ -644,11 +660,11 @@ fn terminal_cogitate_reason(stdout: &[u8]) -> Option<String> {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|value| {
             matches!(
-                value.get("kind").and_then(Value::as_str),
+                value.get("event").and_then(Value::as_str),
                 Some("finish" | "error")
             )
         })?;
-    if terminal.get("kind").and_then(Value::as_str) == Some("finish")
+    if terminal.get("event").and_then(Value::as_str) == Some("finish")
         && terminal
             .get("result")
             .and_then(Value::as_str)
@@ -1144,21 +1160,65 @@ mod tests {
             map_provider_reason("generate", Some("probe_output_starved")),
             "probe_output_starved"
         );
+        // ⚠ These previously spelled the discriminator `kind`, which the cogitate
+        // wire has never emitted -- so they encoded the same wrong assumption as the
+        // code and passed while the probe was structurally broken.
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"finish","result":"OK","reason_code":null}"#)
+            terminal_cogitate_reason(br#"{"event":"finish","result":"OK","reason_code":null}"#)
                 .as_deref(),
             Some("ok")
         );
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"error","reason_code":"endpoint_unreachable"}"#)
+            terminal_cogitate_reason(br#"{"event":"error","reason_code":"endpoint_unreachable"}"#)
                 .as_deref(),
             Some("endpoint_unreachable")
         );
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"error","reason_code":"unrecognized"}"#)
+            terminal_cogitate_reason(br#"{"event":"error","reason_code":"unrecognized"}"#)
                 .as_deref(),
             Some("probe_internal_error")
         );
+        // 🔒 `kind` must NOT be accepted -- if it ever is, this function is matching a
+        // field the wire does not emit and the drift has come back.
+        assert_eq!(
+            terminal_cogitate_reason(br#"{"kind":"finish","result":"OK"}"#).as_deref(),
+            None,
+            "`kind` is not the wire's discriminator and must not be honoured"
+        );
+    }
+
+    /// 🔒 Anchor the probe's parser to the REAL serialized wire, not to a hand-written
+    /// literal. A literal can drift from the emitter silently; this cannot.
+    ///
+    /// This is exactly how the original defect survived: both the code and its tests
+    /// spelled the field `kind`, so they agreed with each other and disagreed with
+    /// the only thing that mattered.
+    #[test]
+    fn the_probe_parses_the_actual_cogitate_wire_terminal_events() {
+        let observed = br#"{"event":"error","ts":1788239790828,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":0,"output_tokens":0,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":0},"error":"context_budget_exceeded","reason_code":"context_budget_exceeded","provider_failure":{"reason_code":"context_budget_exceeded","retryable":true,"blocking":false}}"#;
+        // ⚠ The wire line IS now found and its reason extracted -- before the fix this
+        // returned `None` and the caller stamped `cogitate_terminal_error`. It maps to
+        // `probe_internal_error` because `context_budget_exceeded` is not in the
+        // cogitate evidence vocabulary (`fixtures/local_contract.json`); that bounded
+        // vocabulary is by design, and widening it needs a coordinated
+        // `reason_to_aggregate` entry, so it is deliberately left alone here.
+        assert_eq!(
+            terminal_cogitate_reason(observed).as_deref(),
+            Some("probe_internal_error"),
+            "the terminal line must be found and mapped, not missed entirely"
+        );
+        // A reason that IS in the vocabulary now reaches brain.json intact.
+        assert_eq!(
+            terminal_cogitate_reason(
+                br#"{"event":"error","terminal":true,"reason_code":"provider_unavailable"}"#
+            )
+            .as_deref(),
+            Some("provider_unavailable"),
+        );
+
+        // ...and a real success must be able to report `ok`, which it could not before.
+        let finished = br#"{"event":"finish","ts":1788239790828,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
+        assert_eq!(terminal_cogitate_reason(finished).as_deref(), Some("ok"));
     }
 
     #[test]
