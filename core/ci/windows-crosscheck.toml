@@ -15,12 +15,6 @@ reason = "The Unix-only health-marker backend still owns bump_stream_marker."
 expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_marker`"]
 
 [[exclusions]]
-package = "solstone-core-identity"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only append_text writer remains outside this backend slice."
-expected_stderr = ["unresolved import `solstone_core_journal_io::append_text`"]
-
-[[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
 reason = "The Unix-only health-marker and exclusive-write backends, plus retention's own Unix permissions read, remain."
@@ -29,8 +23,8 @@ expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "solstone_cor
 [[exclusions]]
 package = "solstone-core-segment"
 class = "sibling-owned-platform-backend"
-reason = "The Unix-only exclusive, text, and health-marker writers remain outside this backend slice."
-expected_stderr = ["solstone_core_journal_io::write_bytes_exclusive", "solstone_core_journal_io::write_text", "solstone_core_journal_io::bump_stream_marker"]
+reason = "The Unix-only exclusive and health-marker writers remain outside this backend slice."
+expected_stderr = ["solstone_core_journal_io::write_bytes_exclusive", "solstone_core_journal_io::bump_stream_marker"]
 
 [[exclusions]]
 package = "solstone-core-speaker-id"

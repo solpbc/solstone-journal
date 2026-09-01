@@ -26,7 +26,7 @@ fn sync_file(file: &fs::File) -> io::Result<()> {
 /// A successful return means exactly one complete record was appended and
 /// synced. A returned error can still leave a partial write on disk when the
 /// underlying single write reports a short byte count.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn append_text(path: impl AsRef<Path>, text: &str) -> Result<(), AppendError> {
     let mut contents = Vec::with_capacity(text.len() + 1);
     contents.extend_from_slice(text.as_bytes());
@@ -97,7 +97,6 @@ mod tests {
     use super::*;
     use crate::test_support::TempDir;
 
-    #[cfg(unix)]
     #[test]
     fn appends_one_complete_newline_terminated_record_per_call() {
         let temporary = TempDir::new();
@@ -130,5 +129,40 @@ mod tests {
             vec![r#"{"first":true}"#, r#"{"second":true}"#]
         );
         assert!(contents.ends_with('\n'));
+    }
+
+    #[test]
+    fn appends_empty_text_as_one_complete_newline_terminated_record() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_text(&path, "").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"\n");
+    }
+
+    #[test]
+    fn appends_nonempty_text_as_one_complete_newline_terminated_record() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_text(&path, "first").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"first\n");
+    }
+
+    #[test]
+    fn appends_repeated_text_records_accumulate_in_call_order() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_text(&path, "a").unwrap();
+        append_text(&path, "b").unwrap();
+        append_text(&path, "c").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"a\nb\nc\n");
+    }
+
+    #[test]
+    fn appends_text_into_a_missing_nested_parent_directory() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("nested/a/b/records.jsonl");
+        append_text(&path, "first").unwrap();
+        assert!(path.parent().unwrap().is_dir());
+        assert_eq!(fs::read(&path).unwrap(), b"first\n");
     }
 }

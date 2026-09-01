@@ -27,7 +27,8 @@ mod via_root {
 
     use serde_json::json;
     use solstone_core_journal_io::{
-        AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json,
+        AtomicWriteOptions, JsonWriteOptions, append_text, atomic_replace, write_json, write_jsonl,
+        write_text,
     };
 
     #[test]
@@ -59,6 +60,31 @@ mod via_root {
         let schedule_path = temporary.path().join("schedules.json");
         atomic_replace(&schedule_path, &bytes, AtomicWriteOptions::default()).unwrap();
         assert_eq!(fs::read(&schedule_path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn real_caller_text_and_jsonl_writers_publish() {
+        let temporary = super::temporary("generic-text-");
+
+        let history_path = temporary.path().join("history.jsonl");
+        append_text(&history_path, r#"{"op":"write"}"#).unwrap();
+        assert_eq!(fs::read(&history_path).unwrap(), b"{\"op\":\"write\"}\n");
+
+        let port_path = temporary.path().join("runtime.port");
+        write_text(&port_path, "5015", AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&port_path).unwrap(), b"5015");
+
+        let candidates_path = temporary.path().join("review-candidates.jsonl");
+        write_jsonl(
+            &candidates_path,
+            [json!({"id": 1}), json!({"id": 2})],
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(&candidates_path).unwrap(),
+            b"{\"id\":1}\n{\"id\":2}\n"
+        );
     }
 }
 

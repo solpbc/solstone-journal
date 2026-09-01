@@ -1015,7 +1015,7 @@ pub fn write_json<T: Serialize>(
 }
 
 /// Atomically replace a UTF-8 text file.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn write_text(
     path: impl AsRef<Path>,
     text: &str,
@@ -1025,7 +1025,7 @@ pub fn write_text(
 }
 
 /// Atomically replace a JSONL file with one record per line.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub fn write_jsonl<T: Serialize>(
     path: impl AsRef<Path>,
     records: impl IntoIterator<Item = T>,
@@ -1891,6 +1891,158 @@ mod tests {
             }) if observation.bytes == b"new" && source.kind() == io::ErrorKind::NotFound
         ));
         assert!(!target.exists());
+    }
+}
+
+#[cfg(test)]
+mod generic_writers {
+    use std::cell::Cell;
+    use std::fs;
+    use std::io;
+    use std::rc::Rc;
+
+    use serde::Serialize;
+    use serde_json::json;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    fn assert_only_destination(parent: &Path, destination_name: &OsStr) {
+        assert!(
+            fs::read_dir(parent)
+                .unwrap()
+                .all(|entry| { entry.unwrap().file_name() == destination_name })
+        );
+    }
+
+    struct CountedRecord {
+        value: u8,
+        serializations: Rc<Cell<usize>>,
+    }
+
+    impl Serialize for CountedRecord {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.serializations.set(self.serializations.get() + 1);
+            self.value.serialize(serializer)
+        }
+    }
+
+    struct FailOnSecond {
+        index: usize,
+    }
+
+    impl Serialize for FailOnSecond {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            if self.index == 1 {
+                return Err(serde::ser::Error::custom("intentional serialize failure"));
+            }
+            self.index.serialize(serializer)
+        }
+    }
+
+    #[test]
+    fn write_jsonl_publishes_an_empty_file_for_zero_records() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        write_jsonl(
+            &path,
+            std::iter::empty::<serde_json::Value>(),
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"");
+        assert_only_destination(temporary.path(), path.file_name().unwrap());
+    }
+
+    #[test]
+    fn write_jsonl_publishes_one_newline_terminated_record() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        write_jsonl(&path, [json!({"a": 1})], AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"a\":1}\n");
+    }
+
+    #[test]
+    fn write_jsonl_publishes_multiple_records_in_iterator_order() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        write_jsonl(
+            &path,
+            [json!({"a": 1}), json!({"b": 2})],
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"a\":1}\n{\"b\":2}\n");
+    }
+
+    #[test]
+    fn write_jsonl_creates_a_missing_nested_parent_directory() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("nested/a/b/records.jsonl");
+        write_jsonl(&path, [json!({"a": 1})], AtomicWriteOptions::default()).unwrap();
+        assert!(path.parent().unwrap().is_dir());
+        assert_eq!(fs::read(&path).unwrap(), b"{\"a\":1}\n");
+    }
+
+    #[test]
+    fn write_jsonl_serializes_each_record_exactly_once() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        let serializations = Rc::new(Cell::new(0));
+        let records = [
+            CountedRecord {
+                value: 1,
+                serializations: Rc::clone(&serializations),
+            },
+            CountedRecord {
+                value: 2,
+                serializations: Rc::clone(&serializations),
+            },
+            CountedRecord {
+                value: 3,
+                serializations: Rc::clone(&serializations),
+            },
+        ];
+        write_jsonl(&path, records, AtomicWriteOptions::default()).unwrap();
+        assert_eq!(serializations.get(), 3);
+        assert_eq!(fs::read(&path).unwrap(), b"1\n2\n3\n");
+    }
+
+    #[test]
+    fn write_jsonl_serialization_failure_does_not_publish_or_replace() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        fs::write(&path, b"keep-me-exactly").unwrap();
+        let error = write_jsonl(
+            &path,
+            [
+                FailOnSecond { index: 0 },
+                FailOnSecond { index: 1 },
+                FailOnSecond { index: 2 },
+            ],
+            AtomicWriteOptions::default(),
+        )
+        .expect_err("second record must fail to serialize");
+        match error {
+            AtomicWriteError::Io {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert_eq!(source.kind(), io::ErrorKind::InvalidData);
+            }
+        }
+        assert_eq!(fs::read(&path).unwrap(), b"keep-me-exactly");
+        assert_only_destination(temporary.path(), path.file_name().unwrap());
+    }
+
+    #[test]
+    fn write_text_publishes_the_given_bytes_exactly() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("notes.txt");
+        let text = "alpha\nbeta";
+        write_text(&path, text, AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), text.as_bytes());
     }
 }
 
