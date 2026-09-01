@@ -272,6 +272,7 @@ fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
     let fixture = root.join("fixture");
     fs::create_dir(&fixture).unwrap();
     let journal = fixture.join("journal");
+    fs::create_dir(&journal).unwrap();
     let executable_dir = root.join("bin");
     install_worker(&executable_dir);
     let (talent_root, apps_root, templates_dir) = package_roots(root);
