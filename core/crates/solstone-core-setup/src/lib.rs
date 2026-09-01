@@ -180,9 +180,17 @@ fn report_identity_failure<W: Write>(
         .iter()
         .map(|(path, flag)| format!("\n    rm {flag} {}", path.display()))
         .collect::<String>();
-    let stop_service = steps::service_artifact_path(home_dir)
-        .map(|_| "\n    systemctl --user disable --now solstone.service")
-        .unwrap_or_default();
+    // ⚠ Platform-specific, and it must follow the same cfg as
+    // `service_artifact_path` -- on macOS that path is a LaunchAgent plist, so a
+    // `systemctl` line here would tell a Mac owner to run a command their system
+    // does not have, next to an `rm` of a plist.
+    let stop_service = if steps::service_artifact_path(home_dir).is_none() {
+        ""
+    } else if cfg!(target_os = "macos") {
+        "\n    launchctl bootout gui/$(id -u)/org.solpbc.solstone"
+    } else {
+        "\n    systemctl --user disable --now solstone.service"
+    };
     let message = format!(
         "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup files, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
@@ -1178,10 +1186,24 @@ mod tests {
             text.contains("your journal itself is untouched"),
             "the remedy must state that the journal is untouched; got:\n{text}"
         );
-        // Stopping the service first, so the removed unit is not left running.
+        // Stopping the service first, so the removed unit is not left running --
+        // and with this platform's own command. ⛔ A macOS owner must never be
+        // handed `systemctl` next to an `rm` of a LaunchAgent plist.
+        let (expected_stop, foreign_stop) = if cfg!(target_os = "macos") {
+            ("launchctl bootout", "systemctl")
+        } else {
+            (
+                "systemctl --user disable --now solstone.service",
+                "launchctl",
+            )
+        };
         assert!(
-            text.contains("systemctl --user disable --now solstone.service"),
-            "the remedy must stop the service before removing its unit; got:\n{text}"
+            text.contains(expected_stop),
+            "the remedy must stop the service with this platform's command; got:\n{text}"
+        );
+        assert!(
+            !text.contains(foreign_stop),
+            "the remedy must not name another platform's service manager; got:\n{text}"
         );
         assert_eq!(format!("{exit:?}"), format!("{:?}", ExitCode::from(2)));
     }

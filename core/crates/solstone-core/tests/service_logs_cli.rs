@@ -831,13 +831,25 @@ fn metadata_then_missing_open_uses_the_real_exec_pid_and_fixed_tail_shape() {
     };
     assert_eq!(status.code(), Some(1));
     assert!(fs::read(&stdout_path).unwrap().is_empty());
-    assert_eq!(
-        fs::read(&stderr_path).unwrap(),
-        format!(
-            "tail: cannot open '{}' for reading: No such file or directory\ntail: no files remaining\n",
-            service_log.display(),
-        )
-        .as_bytes()
+    // `service_logs.rs` invokes `TAIL` by absolute path on purpose (no PATH lookup),
+    // and GNU coreutils prefixes its diagnostics with argv[0] as given -- so on Linux
+    // this reads "/usr/bin/tail: ..." while BSD tail, which uses getprogname(), reads
+    // "tail: ...". Pinning the bare spelling made this test pass only on macOS.
+    // Assert the part that is actually the contract: the two diagnostic lines and the
+    // path they name.
+    let stderr_text = String::from_utf8(fs::read(&stderr_path).unwrap()).expect("utf8 stderr");
+    let lines: Vec<&str> = stderr_text.lines().collect();
+    assert_eq!(lines.len(), 2, "stderr: {stderr_text}");
+    assert!(
+        lines[0].ends_with(&format!(
+            "tail: cannot open '{}' for reading: No such file or directory",
+            service_log.display()
+        )),
+        "stderr: {stderr_text}"
+    );
+    assert!(
+        lines[1].ends_with("tail: no files remaining"),
+        "stderr: {stderr_text}"
     );
     assert!(!Path::new(&format!("/proc/{pid}")).exists());
     assert!(!poison.marker.exists());
