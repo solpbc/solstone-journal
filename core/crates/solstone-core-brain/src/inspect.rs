@@ -623,4 +623,93 @@ mod tests {
             Some("local_runtime_fingerprint_mismatch")
         );
     }
+
+    fn unified(backend: &str, model_id: &str) -> String {
+        crate::fingerprint::bundled_runtime_desired_fingerprint(
+            backend,
+            model_id,
+            &"c".repeat(64),
+            Some("/var/tmp/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"),
+            "/var/tmp/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf",
+            Some("/var/tmp/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf"),
+        )
+        .unwrap()
+        .sha256
+    }
+
+    fn project(write_hash: &str, desired: &str) -> BrainProjection {
+        let fixture = crate::fixture::projection_fixture();
+        let now = DateTime::parse_from_rfc3339(&fixture.now)
+            .unwrap()
+            .with_timezone(&Utc);
+        let key: [u8; 32] = (0..fixture.hmac_key_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&fixture.hmac_key_hex[i..i + 2], 16).unwrap())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let config = fixture.configs["lane_bundled"].as_object().unwrap();
+        let brain = build_active_brain_fingerprint(
+            config,
+            &key,
+            Some(Value::String(write_hash.to_owned())),
+        )
+        .unwrap()
+        .unwrap();
+        let mut raw = fixture.records["lane_bundled/ready"].clone();
+        raw["fingerprint_sha256"] = json!(brain);
+        let mut runtime = fixture.runtime_health["ok_ready_fingerprint_b"].clone();
+        runtime["record"]["desired_fingerprint_sha256"] = json!(desired);
+        project_brain_state(
+            Some(&validate_brain_state_record(&raw, now).unwrap()),
+            config,
+            false,
+            Some(&key),
+            Some(&crate::runtime_health::inspection_from_fixture(&runtime)),
+            now,
+        )
+    }
+
+    #[test]
+    fn unified_formula_matches_projection_and_historical_six_field_is_unknown() {
+        let desired = unified("vulkan", "local/qwen3.5-4b");
+        let matched = project(&desired, &desired);
+        assert_ne!(matched.aggregate_state, "unknown");
+        assert_ne!(matched.reason_code.as_deref(), Some("brain_config_changed"));
+        let six = crate::fingerprint::canonical_fingerprint(
+            &crate::fingerprint::CanonicalInput::Json(json!({
+                "provider":"local","runtime":"llama.cpp","backend":"vulkan",
+                "backend_reason":"no NVIDIA GPU detected",
+                "runtime_pin":{"unit":"llama-server-vulkan","artifact_key":"x86_64-unknown-linux-gnu","release_tag":"b10068","filename":"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz","sha256":"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3","binary_name":"llama-server"},
+                "model_pin":{"unit":"local-model","model_id":"local/qwen3.5-4b"}
+            })),
+        )
+        .unwrap();
+        let stale = project(&six, &desired);
+        assert_eq!(stale.aggregate_state, "unknown");
+        assert_eq!(stale.reason_code.as_deref(), Some("brain_config_changed"));
+        let journal = TempJournal::new();
+        journal.write_runtime(json!({"phase":"ready","desired_fingerprint_sha256":desired}));
+        assert_eq!(
+            assess_bundled_runtime_prerequisite(&journal.0, Some(&desired)).reason_code,
+            None
+        );
+    }
+
+    #[test]
+    fn unified_formula_still_detects_real_input_drift() {
+        let vulkan = unified("vulkan", "local/qwen3.5-4b");
+        let cuda = unified("cuda", "local/qwen3.5-4b");
+        let drifted = project(&vulkan, &cuda);
+        assert_eq!(drifted.aggregate_state, "unknown");
+        assert_eq!(drifted.reason_code.as_deref(), Some("brain_config_changed"));
+        let journal = TempJournal::new();
+        journal.write_runtime(json!({"phase":"ready","desired_fingerprint_sha256":cuda}));
+        assert_eq!(
+            assess_bundled_runtime_prerequisite(&journal.0, Some(&vulkan))
+                .reason_code
+                .as_deref(),
+            Some("local_runtime_fingerprint_mismatch")
+        );
+    }
 }

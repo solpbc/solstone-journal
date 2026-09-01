@@ -1825,6 +1825,56 @@ mod tests {
     }
 
     #[test]
+    fn bundled_refresh_converges_on_one_shared_unified_runtime_hash() {
+        // backend_reason is no longer hashed, so same-backend flicker cannot
+        // Conflict. One matching begin/finish hash is the bound; a real
+        // cuda↔vulkan flip still Conflicts as drift protection.
+        let hash = crate::fingerprint::bundled_runtime_desired_fingerprint(
+            "vulkan",
+            "local/qwen3.5-4b",
+            &"c".repeat(64),
+            Some("/var/tmp/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"),
+            "/var/tmp/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf",
+            Some("/var/tmp/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf"),
+        )
+        .unwrap()
+        .sha256;
+        let journal = TestJournal::new();
+        journal.write_config("lane_bundled");
+        journal.write_fixture_key();
+        let now = fixture_now();
+        let permit = begin_refresh(
+            journal.path(),
+            now,
+            Some("unified".to_owned()),
+            None,
+            false,
+            Some(hash.clone()),
+        )
+        .unwrap()
+        .expect("permit");
+        finish_refresh(
+            journal.path(),
+            permit,
+            ready_outcome(),
+            now,
+            Some(hash.clone()),
+        )
+        .expect("matching unified hash must not Conflict");
+        fs::create_dir_all(journal.path().join("health/providers/runtime")).unwrap();
+        fs::write(
+            journal.path().join("health/providers/runtime/local.json"),
+            json!({"phase":"ready","desired_fingerprint_sha256":hash}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::inspect::assess_bundled_runtime_prerequisite(journal.path(), Some(&hash))
+                .reason_code,
+            None
+        );
+    }
+
+    #[test]
     fn fingerprint_key_is_reused_and_mode_is_private() {
         let journal = TestJournal::new();
         let first = generate_fingerprint_key(journal.path()).unwrap();

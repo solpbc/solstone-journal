@@ -6,7 +6,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use hmac::{Hmac, Mac};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::fixture::local_contract;
@@ -377,6 +377,37 @@ pub fn derive_active_brain_lane(config: &Map<String, Value>) -> LaneResolution {
             model,
         }
     }
+}
+
+/// The 7-field bundled-runtime object published as `desired_fingerprint_sha256`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BundledRuntimeDesired {
+    pub json: Value,
+    pub sha256: String,
+}
+
+/// Sole constructor for the bundled-runtime desired fingerprint.
+pub fn bundled_runtime_desired_fingerprint(
+    backend: &str,
+    model_id: &str,
+    artifact_target_fingerprint_sha256: &str,
+    binary_path: Option<&str>,
+    model_path: &str,
+    projector_path: Option<&str>,
+) -> Result<BundledRuntimeDesired, FingerprintError> {
+    let json = json!({
+        "provider": "local",
+        "backend": backend,
+        "model_id": model_id,
+        "artifact_target_fingerprint_sha256": artifact_target_fingerprint_sha256,
+        "binary_path": binary_path,
+        "model_path": model_path,
+        "projector_path": projector_path,
+    });
+    Ok(BundledRuntimeDesired {
+        sha256: canonical_fingerprint(&CanonicalInput::Json(json.clone()))?,
+        json,
+    })
 }
 
 pub fn build_active_brain_fingerprint(

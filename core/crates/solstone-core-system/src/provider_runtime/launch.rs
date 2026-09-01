@@ -16,7 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{CanonicalInput, canonical_fingerprint};
+use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{metal_candidate, pins, readiness::inspect_local};
 use solstone_core_local::nvidia::{
@@ -608,20 +608,19 @@ fn observe_truth(
         .and_then(|target| target.get("target_fingerprint_sha256"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    let desired = json!({
-        "provider":"local",
-        "backend":backend,
-        "model_id":model_id,
-        "artifact_target_fingerprint_sha256":artifact_target_fingerprint,
-        "binary_path":binary_path,
-        "model_path":model_path,
-        "projector_path":projector_path,
-    });
-    let Ok(fingerprint) = canonical_fingerprint(&CanonicalInput::Json(desired.clone())) else {
+    let Ok(desired) = bundled_runtime_desired_fingerprint(
+        backend,
+        &model_id,
+        artifact_target_fingerprint,
+        binary_path.as_deref(),
+        model_path,
+        projector_path.as_deref(),
+    ) else {
         return truth_unavailable();
     };
+    let fingerprint = desired.sha256.clone();
     let common = LocalLaunchCommon {
-        desired_fingerprint_json: desired,
+        desired_fingerprint_json: desired.json,
         desired_fingerprint_sha256: fingerprint.clone(),
         model_id,
         model_path: model_path.into(),

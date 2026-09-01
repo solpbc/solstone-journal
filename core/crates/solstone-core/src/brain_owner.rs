@@ -84,20 +84,80 @@ fn run_status(json_output: bool) -> ExitCode {
     brain_exit_code(&view)
 }
 
-fn current_bundled_runtime_fingerprint(journal: &Path) -> Option<String> {
-    #[cfg(target_os = "macos")]
-    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b", "backend": "metal"});
-    #[cfg(not(target_os = "macos"))]
-    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b"});
-    solstone_core_local::dispatch_install(
-        solstone_core_local::InstallVerb::FingerprintLocal,
-        payload,
+fn current_bundled_runtime_fingerprint(
+    journal: &Path,
+    config: &Map<String, Value>,
+    nvidia_probe: Option<solstone_core_local::NvidiaProbe>,
+) -> Option<String> {
+    let configured = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object)
+        .and_then(|active| active.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or("local/qwen3.5-4b");
+    let model_id = solstone_core_local::install::resolve_bundled_model_id(
+        configured,
+        cfg!(target_os = "macos"),
+    );
+    let readiness = bundled_runtime_readiness(journal, &model_id, nvidia_probe)?;
+    let artifacts = readiness.get("artifacts")?.as_object()?;
+    let model_path = artifacts.get("model_path")?.as_str()?;
+    let backend = readiness
+        .get("host")
+        .and_then(Value::as_object)
+        .and_then(|host| host.get("backend"))
+        .and_then(Value::as_str)
+        .unwrap_or("metal");
+    let artifact_target = readiness
+        .get("target")
+        .and_then(Value::as_object)
+        .and_then(|target| target.get("target_fingerprint_sha256"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    solstone_core_brain::bundled_runtime_desired_fingerprint(
+        backend,
+        &model_id,
+        artifact_target,
+        artifacts.get("binary_path").and_then(Value::as_str),
+        model_path,
+        artifacts.get("projector_path").and_then(Value::as_str),
     )
-    .ok()?
-    .result?
-    .get("target_fingerprint_sha256")?
-    .as_str()
-    .map(ToOwned::to_owned)
+    .ok()
+    .map(|desired| desired.sha256)
+}
+
+fn bundled_runtime_readiness(
+    journal: &Path,
+    model_id: &str,
+    nvidia_probe: Option<solstone_core_local::NvidiaProbe>,
+) -> Option<Value> {
+    let journal = journal.display().to_string();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = nvidia_probe;
+        solstone_core_local::install::metal_candidate::inspect(&Map::from_iter([
+            ("journal".into(), Value::String(journal)),
+            ("model_id".into(), Value::String(model_id.to_owned())),
+            ("backend".into(), Value::String("metal".into())),
+        ]))
+        .ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut input = Map::from_iter([
+            ("journal".into(), Value::String(journal)),
+            ("model_id".into(), Value::String(model_id.to_owned())),
+        ]);
+        if let Some(probe) = nvidia_probe {
+            input.insert("nvidia_probe".into(), serde_json::to_value(probe).ok()?);
+        }
+        Some(solstone_core_local::install::readiness::inspect_local(
+            input,
+        ))
+    }
 }
 
 /// The one full refresh path.  Unsafe prerequisite renewal delegates here.
@@ -115,7 +175,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
     // even when another lane is active. The writer ignores it for non-bundled
     // lanes, while having it already captured closes a config-change race into
     // bundled between this read and `begin_refresh`.
-    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal);
+    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal, &config, None);
     if let Some(expected) = options.expected_fingerprint.as_deref() {
         let actual = if options.expected_active_fingerprint {
             before.fingerprint_sha256.as_deref()
@@ -199,7 +259,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         now,
     );
     let finish_bundled_runtime_fingerprint = (lane == "bundled")
-        .then(|| current_bundled_runtime_fingerprint(&journal))
+        .then(|| current_bundled_runtime_fingerprint(&journal, &checking_config, None))
         .flatten();
     if solstone_core_brain::finish_refresh(
         &journal,
