@@ -12,6 +12,7 @@ pub mod archive_taxonomy;
 pub mod cleanroom;
 #[doc(hidden)]
 pub mod cli_sign;
+pub mod controlled_build;
 pub mod deb;
 pub mod digest;
 pub mod elf;
@@ -22,6 +23,7 @@ pub mod macho;
 pub mod manifest_verify;
 pub mod onnx_runtime;
 pub mod pdfium;
+pub mod pe;
 pub mod produce;
 pub mod promote;
 pub mod provenance;
