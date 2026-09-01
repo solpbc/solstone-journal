@@ -130,6 +130,15 @@ pub struct Check {
     pub detail: String,
     pub required_bytes: Option<u64>,
     pub available_bytes: Option<u64>,
+    /// The specific reason a `ced`/`rfdetr` check is Degraded (`absent`,
+    /// `integrity_invalid`, `unloadable`/`unrunnable`) -- `None` for every
+    /// other check and for a non-Degraded ced/rfdetr check. `detail` stays
+    /// the fixed owner-facing sentence (`CED_UNAVAILABLE_GUIDANCE` /
+    /// `RFDETR_UNAVAILABLE_GUIDANCE`) regardless of which cause fired, so
+    /// this is the only place the three causes are distinguishable; owner
+    /// copy is a separate, out-of-bounds change.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<&'static str>,
 }
 
 fn command_text(program: &str, args: &[&str]) -> Option<String> {
@@ -339,6 +348,7 @@ fn check(
         detail: detail.into(),
         required_bytes,
         available_bytes,
+        cause: None,
     }
 }
 fn label(bytes: u64) -> String {
@@ -451,17 +461,41 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         version: inputs.version.clone(),
     }
 }
+/// Stable diagnostic string for each CED degraded cause. Not owner-facing
+/// copy -- `CED_UNAVAILABLE_GUIDANCE` is the fixed sentence a person reads;
+/// this is what a future investigator (or `journal check --json`) reads to
+/// tell `Absent`, `IntegrityInvalid` and `Unloadable` apart, which the
+/// shared guidance sentence alone cannot do.
+fn ced_cause_str(cause: CedDegradedCause) -> &'static str {
+    match cause {
+        CedDegradedCause::Absent => "absent",
+        CedDegradedCause::IntegrityInvalid => "integrity_invalid",
+        CedDegradedCause::Unloadable => "unloadable",
+    }
+}
+/// Same as [`ced_cause_str`], for RF-DETR's degraded causes.
+fn rfdetr_cause_str(cause: RfdetrDegradedCause) -> &'static str {
+    match cause {
+        RfdetrDegradedCause::Absent => "absent",
+        RfdetrDegradedCause::IntegrityInvalid => "integrity_invalid",
+        RfdetrDegradedCause::Unrunnable => "unrunnable",
+    }
+}
 fn ced_check(inputs: &CheckInputs) -> Option<Check> {
     match &inputs.ced {
         CedCheckInput::Omit => None,
         CedCheckInput::Ready => Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None)),
-        CedCheckInput::Degraded { .. } => Some(check(
-            "ced",
-            Severity::Warning,
-            CED_UNAVAILABLE_GUIDANCE,
-            None,
-            None,
-        )),
+        CedCheckInput::Degraded { cause } => {
+            let mut item = check(
+                "ced",
+                Severity::Warning,
+                CED_UNAVAILABLE_GUIDANCE,
+                None,
+                None,
+            );
+            item.cause = Some(ced_cause_str(*cause));
+            Some(item)
+        }
     }
 }
 fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
@@ -474,13 +508,17 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
             None,
             None,
         )),
-        RfdetrCheckInput::Degraded { .. } => Some(check(
-            "rfdetr",
-            Severity::Blocked,
-            RFDETR_UNAVAILABLE_GUIDANCE,
-            None,
-            None,
-        )),
+        RfdetrCheckInput::Degraded { cause } => {
+            let mut item = check(
+                "rfdetr",
+                Severity::Blocked,
+                RFDETR_UNAVAILABLE_GUIDANCE,
+                None,
+                None,
+            );
+            item.cause = Some(rfdetr_cause_str(*cause));
+            Some(item)
+        }
     }
 }
 fn mac_memory(memory: &MemoryInput) -> Check {
@@ -708,7 +746,7 @@ pub fn exit_code(report: &CheckReport) -> u8 {
     }
 }
 pub fn json_output(report: &CheckReport) -> String {
-    let checks = report.checks.iter().map(|item| json!({"name": item.name, "severity": item.severity, "detail": item.detail, "required_bytes": item.required_bytes, "available_bytes": item.available_bytes})).collect::<Vec<_>>();
+    let checks = report.checks.iter().map(|item| json!({"name": item.name, "severity": item.severity, "detail": item.detail, "required_bytes": item.required_bytes, "available_bytes": item.available_bytes, "cause": item.cause})).collect::<Vec<_>>();
     let value: Value = json!({"platform":{"os":report.platform.os,"os_version":report.platform.os_version,"arch":report.platform.arch,"python":null,"supported":report.platform.supported},"checks":checks,"overall":report.overall,"feedback_url":FEEDBACK_URL,"version":report.version});
     format!(
         "{}\n",
@@ -798,16 +836,68 @@ mod tests {
 
     #[test]
     fn degraded_rfdetr_blocks_for_every_cause() {
-        for cause in [
-            RfdetrDegradedCause::Absent,
-            RfdetrDegradedCause::IntegrityInvalid,
-            RfdetrDegradedCause::Unrunnable,
+        for (cause, expected_cause_str) in [
+            (RfdetrDegradedCause::Absent, "absent"),
+            (RfdetrDegradedCause::IntegrityInvalid, "integrity_invalid"),
+            (RfdetrDegradedCause::Unrunnable, "unrunnable"),
         ] {
             let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
             let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
             assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
+            // Done condition 7: the owner-facing `detail` stays the single
+            // shared guidance sentence (unchanged, out of bounds to reword),
+            // but `cause` now distinguishes which of the three fired.
+            assert_eq!(rfdetr.detail, RFDETR_UNAVAILABLE_GUIDANCE);
+            assert_eq!(rfdetr.cause, Some(expected_cause_str), "{cause:?}");
             assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
         }
+    }
+
+    /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same
+    /// done-condition-7 guarantee (shared owner sentence, distinguishable
+    /// `cause`), for the three `CedDegradedCause` variants.
+    #[test]
+    fn degraded_ced_warns_and_surfaces_every_cause() {
+        for (cause, expected_cause_str) in [
+            (CedDegradedCause::Absent, "absent"),
+            (CedDegradedCause::IntegrityInvalid, "integrity_invalid"),
+            (CedDegradedCause::Unloadable, "unloadable"),
+        ] {
+            let inputs = check_inputs(CedCheckInput::Degraded { cause }, RfdetrCheckInput::Omit);
+            let ced = ced_check(&inputs).expect("degraded CED check");
+            assert_eq!(ced.severity, Severity::Warning, "{cause:?}");
+            assert_eq!(ced.detail, CED_UNAVAILABLE_GUIDANCE);
+            assert_eq!(ced.cause, Some(expected_cause_str), "{cause:?}");
+        }
+    }
+
+    /// Done condition 7, end to end: the distinguishing cause reaches the
+    /// actual diagnostic surface (`journal check --json`'s `cause` key),
+    /// not just the in-memory `Check` value -- and a Ready check (no cause
+    /// to report) serializes `cause` as `null` rather than omitting or
+    /// misreporting the field.
+    #[test]
+    fn json_output_surfaces_the_distinguishing_cause() {
+        let inputs = check_inputs(
+            CedCheckInput::Degraded {
+                cause: CedDegradedCause::Unloadable,
+            },
+            RfdetrCheckInput::Ready,
+        );
+        let report = build_check_report(&inputs);
+        let rendered = json_output(&report);
+        let parsed: Value = serde_json::from_str(&rendered).expect("valid JSON");
+        let checks = parsed["checks"].as_array().expect("checks array");
+        let ced = checks
+            .iter()
+            .find(|item| item["name"] == "ced")
+            .expect("ced check present");
+        assert_eq!(ced["cause"], json!("unloadable"), "{rendered}");
+        let rfdetr = checks
+            .iter()
+            .find(|item| item["name"] == "rfdetr")
+            .expect("rfdetr check present");
+        assert_eq!(rfdetr["cause"], Value::Null, "{rendered}");
     }
 
     /// Brief A, done condition 6: once both provider readiness verdicts are
