@@ -18,7 +18,9 @@ use solstone_core_spp_ratls::{
 };
 
 use crate::TranscribeError;
-use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, parse_verbose_json};
+use crate::backend::parakeet_cpp::{
+    ModelInfo, TranscriptionResponse, WordContractError, parse_verbose_json,
+};
 
 pub(crate) const CONFIDENTIAL_STT_MAX_AUDIO_SECONDS: f64 = 300.0;
 
@@ -475,6 +477,28 @@ fn parse_status(line: &[u8]) -> Result<u16, ()> {
         .ok_or(())
 }
 
+/// The structural name of a verbose-JSON contract violation.
+///
+/// ⛔ Never includes `InvalidJson`'s payload: that is the raw response body, which in
+/// real use carries the owner's speech.
+fn word_contract_kind(error: &WordContractError) -> &'static str {
+    match error {
+        WordContractError::InvalidJson(_) => "response was not JSON",
+        WordContractError::NotObject => "response was not an object",
+        WordContractError::MissingWords => "response had no words array",
+        WordContractError::TextWithoutTimings => "response had text but no word timings",
+        WordContractError::WordNotObject => "a word entry was not an object",
+        WordContractError::MissingKey(key) => match *key {
+            "word" => "a word entry was missing `word`",
+            "start" => "a word entry was missing `start`",
+            "end" => "a word entry was missing `end`",
+            _ => "a word entry was missing a required key",
+        },
+        WordContractError::BlankWord => "a word entry was blank",
+        WordContractError::InvalidNumber => "a word timing was not a finite number",
+    }
+}
+
 fn hosted_response(
     response: HttpResponse,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
@@ -489,10 +513,19 @@ fn hosted_response(
         )),
         200 => {
             let body = String::from_utf8_lossy(&response.body);
-            let transcription = parse_verbose_json(&body).map_err(|_| {
+            let transcription = parse_verbose_json(&body).map_err(|error| {
+                // ⚠ Name WHICH clause of the contract failed. This used to discard the
+                // error, so 20 refusals on the founder's journal said only "violated
+                // the verbose JSON contract" -- true, unactionable, and indistinguishable
+                // from a transport problem. The variant is structural; ⛔ the InvalidJson
+                // payload is deliberately not included, because it is the response body
+                // and in real use that is owner speech.
                 deferred(
                     "hosted_transcribe_contract_failed",
-                    "hosted STT response violated the verbose JSON contract",
+                    format!(
+                        "hosted STT response violated the verbose JSON contract: {}",
+                        word_contract_kind(&error)
+                    ),
                 )
             })?;
             Ok((
