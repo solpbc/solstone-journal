@@ -98,19 +98,40 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
     }
 }
 
-/// The managed artifacts an owner must clear to recover from a refused admission.
+/// The setup artifacts an owner must clear to recover from a refused admission.
 ///
 /// ⚠ Every path here is created by `journal setup` and rebuilt by it. 🔒 None of
-/// them is journal data — the journal itself is never touched by this remedy,
-/// and saying so is load-bearing: an owner who is not certain of that will not
-/// run the command, and this refusal is otherwise a dead end.
-fn identity_recovery_paths(home_dir: &std::path::Path) -> Vec<PathBuf> {
+/// them holds the owner's journal, and saying so in the copy is load-bearing: an
+/// owner who is not certain of that will not run the commands, and this refusal
+/// is otherwise a dead end.
+///
+/// 🔴 The identity entry is deliberately `installation-identity/v1/namespaces/
+/// <namespace>` and NEVER its parent. That directory is **owner-wide**: it holds
+/// one namespace entry per installation for this user, so removing the parent
+/// would destroy a second, healthy installation's record along with this one.
+/// When the namespace cannot be resolved, the identity entry is omitted rather
+/// than widened -- an incomplete remedy is recoverable, a destructive one is not.
+fn identity_recovery_paths(
+    home_dir: &std::path::Path,
+    namespace: Option<&str>,
+) -> Vec<(PathBuf, &'static str)> {
     let wrappers = wrapper::wrapper_paths(home_dir);
-    let mut paths = vec![wrappers.journal, wrappers.solstone];
+    // The `rm` flag is fixed per entry rather than probed from the filesystem, so
+    // the printed remedy is the same on every host and cannot change under us
+    // between rendering the message and the owner running it.
+    let mut paths = vec![(wrappers.journal, "-f"), (wrappers.solstone, "-f")];
     if let Some(service) = steps::service_artifact_path(home_dir) {
-        paths.push(service);
+        paths.push((service, "-f"));
     }
-    paths.push(installation_identity_dir(home_dir));
+    if let Some(namespace) = namespace {
+        paths.push((
+            installation_identity_dir(home_dir)
+                .join("v1")
+                .join("namespaces")
+                .join(namespace),
+            "-rf",
+        ));
+    }
     paths
 }
 
@@ -122,27 +143,48 @@ fn installation_identity_dir(home_dir: &std::path::Path) -> PathBuf {
     }
 }
 
+/// This installation's identity namespace, derived exactly as admission derives it.
+fn setup_identity_namespace(
+    executable_dir: &std::path::Path,
+    project_root: &std::path::Path,
+) -> Option<String> {
+    let root = resolve_identity_root(executable_dir, project_root);
+    let root_token = root_token_from_path(&root).ok()?;
+    Some(namespace_name(PlatformTag::current(), &root_token).to_string())
+}
+
 fn report_identity_failure<W: Write>(
     jsonl: bool,
     stdout: &mut W,
     stderr: &mut impl Write,
     error: &IdentityError,
     home_dir: &std::path::Path,
+    namespace: Option<&str>,
 ) -> ExitCode {
     let code = identity_error_code(error);
-    let recovery = identity_recovery_paths(home_dir);
-    // ⛔ `journal setup --clean-uninstall` is NOT the remedy here: it runs its own
-    // identity admission (`admit_clean_uninstall`) against the same registry that
-    // is refusing, so in this state it refuses too ("installation identity does
-    // not exist"). Naming it would send the owner in a circle. Verified on the
-    // founder's machine 2026-08-31: removing these paths by hand was the only
-    // route back, and no owner would have found it from the previous wording.
+    let recovery = identity_recovery_paths(home_dir, namespace);
+    // Shape follows the locked recovery copy in
+    // `vpx/design-system/journal-service-install-recovery-copy.md`: the owner-visible
+    // line first, the internal reason under `details:`.
+    //
+    // ⚠ It deliberately DIVERGES from that lock's prescribed second line ("run
+    // `journal setup` to check it. if setup finishes successfully, try again"),
+    // because for this particular refusal that instruction is a loop -- the
+    // admission is deterministic, so re-running setup fails identically. ⛔ And
+    // `--clean-uninstall` is not the way out either: `admit_clean_uninstall` runs
+    // against the same registry and answers "installation identity does not
+    // exist" in exactly this state. An amendment adding a row for the
+    // no-bootstrap-evidence state is filed with VPX; until it lands this string
+    // and the lock are knowingly in tension, which is better than a loop.
+    let steps = recovery
+        .iter()
+        .map(|(path, flag)| format!("\n    rm {flag} {}", path.display()))
+        .collect::<String>();
+    let stop_service = steps::service_artifact_path(home_dir)
+        .map(|_| "\n    systemctl --user disable --now solstone.service")
+        .unwrap_or_default();
     let message = format!(
-        "installation identity admission failed: {error}. Remove the managed setup artifacts below and re-run `journal setup`; setup recreates all of them.{}\n\nYour journal is NOT affected -- none of these is journal data.",
-        recovery
-            .iter()
-            .map(|path| format!("\n    rm -rf {}", path.display()))
-            .collect::<String>()
+        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup files, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
     if jsonl {
         let mut emitter = JsonlEmitter::new(stdout);
@@ -160,7 +202,7 @@ fn report_identity_failure<W: Write>(
                         "details": error.to_string(),
                         "remedy": recovery
                             .iter()
-                            .map(|path| path.display().to_string())
+                            .map(|(path, _)| path.display().to_string())
                             .collect::<Vec<_>>(),
                         "exit_code": 2,
                     }),
@@ -381,9 +423,20 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             let _ = writeln!(stderr, "{message}");
             return ExitCode::from(2);
         }
+        // Computed before `executable_dir` moves into the clean-uninstall context below.
+        let clean_namespace = setup_identity_namespace(&executable_dir, &project_root);
         let clean_session = match admit_clean_identity(&home_dir, &executable_dir, &project_root) {
             Ok(session) => session,
-            Err(error) => return report_identity_failure(false, stdout, stderr, &error, &home_dir),
+            Err(error) => {
+                return report_identity_failure(
+                    false,
+                    stdout,
+                    stderr,
+                    &error,
+                    &home_dir,
+                    setup_identity_namespace(&executable_dir, &project_root).as_deref(),
+                );
+            }
         };
         let clean_plan = clean_session.plan().clone();
         let journal = clean_plan.binding.journal_token.to_path_buf();
@@ -447,43 +500,56 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         if outcome.exit_code == 0
             && let Err(error) = clean_session.commit_tombstone()
         {
-            return report_identity_failure(false, stdout, stderr, &error, &home_dir);
+            return report_identity_failure(
+                false,
+                stdout,
+                stderr,
+                &error,
+                &home_dir,
+                clean_namespace.as_deref(),
+            );
         }
         return ExitCode::from(outcome.exit_code as u8);
     }
     let resolved = resolve_setup(&args, &resolution);
     let mode = resolve_mode(&args, stdin_is_tty, stdout_is_tty);
     let mut effective_resolved = resolved.clone();
-    let (admission, identity_guard_repair_steps, legacy_replacement) = if resolved
-        .should_short_circuit()
-    {
-        (None, Vec::new(), false)
-    } else {
-        let identity_admission =
-            match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
-                Ok(admission) => admission,
-                Err(error) => {
-                    return report_identity_failure(args.jsonl, stdout, stderr, &error, &home_dir);
+    let (admission, identity_guard_repair_steps, legacy_replacement) =
+        if resolved.should_short_circuit() {
+            (None, Vec::new(), false)
+        } else {
+            let identity_admission =
+                match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
+                    Ok(admission) => admission,
+                    Err(error) => {
+                        return report_identity_failure(
+                            args.jsonl,
+                            stdout,
+                            stderr,
+                            &error,
+                            &home_dir,
+                            setup_identity_namespace(&executable_dir, &project_root).as_deref(),
+                        );
+                    }
+                };
+            let effective_journal = identity_admission
+                .admission
+                .effective_journal()
+                .to_path_buf();
+            if effective_journal != effective_resolved.journal_path {
+                effective_resolved.journal_path = effective_journal.clone();
+                if let Some(serde_json::Value::Object(journal)) =
+                    effective_resolved.args_resolved.get_mut("journal")
+                {
+                    journal.insert("value".into(), serde_json::json!(effective_journal));
                 }
-            };
-        let effective_journal = identity_admission
-            .admission
-            .effective_journal()
-            .to_path_buf();
-        if effective_journal != effective_resolved.journal_path {
-            effective_resolved.journal_path = effective_journal.clone();
-            if let Some(serde_json::Value::Object(journal)) =
-                effective_resolved.args_resolved.get_mut("journal")
-            {
-                journal.insert("value".into(), serde_json::json!(effective_journal));
             }
-        }
-        (
-            Some(identity_admission.admission),
-            identity_admission.repair_steps,
-            identity_admission.legacy_replacement,
-        )
-    };
+            (
+                Some(identity_admission.admission),
+                identity_admission.repair_steps,
+                identity_admission.legacy_replacement,
+            )
+        };
     if !args.jsonl && resolved.should_short_circuit() {
         let plan_context = SetupContext {
             args: &args,
@@ -1066,7 +1132,7 @@ mod tests {
         assert!(
             String::from_utf8(stderr)
                 .expect("stderr")
-                .contains("installation identity admission failed")
+                .contains("this installation couldn't be verified")
         );
         assert!(
             home.join(".local/bin/solstone").exists(),
@@ -1078,12 +1144,13 @@ mod tests {
     ///
     /// Observed on the founder's machine 2026-08-31: the previous wording said
     /// only "Repair the managed wrapper/service artifacts or identity storage",
-    /// and the sole route back was hand-removing four paths nobody would guess.
+    /// and the sole route back was hand-removing paths nobody would guess.
     /// ⛔ `--clean-uninstall` is not the answer -- it runs the same admission and
     /// refuses in this exact state -- so the refusal has to carry the paths.
     #[test]
     fn a_refused_identity_admission_names_every_path_the_owner_must_clear() {
         let home = std::path::Path::new("/home/tester");
+        let namespace = "a".repeat(64);
         let mut stdout: Vec<u8> = Vec::new();
         let mut stderr: Vec<u8> = Vec::new();
         let exit = report_identity_failure(
@@ -1092,25 +1159,68 @@ mod tests {
             &mut stderr,
             &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
             home,
+            Some(namespace.as_str()),
         );
         let text = String::from_utf8(stderr).expect("stderr");
-        for path in identity_recovery_paths(home) {
+        for (path, flag) in identity_recovery_paths(home, Some(namespace.as_str())) {
             assert!(
-                text.contains(&path.display().to_string()),
-                "the remedy must name {}; got:\n{text}",
+                text.contains(&format!("rm {flag} {}", path.display())),
+                "the remedy must name `rm {flag} {}`; got:\n{text}",
                 path.display()
             );
         }
         assert!(
-            text.contains("re-run `journal setup`"),
+            text.contains("run `journal setup` again"),
             "the remedy must say what to run afterwards; got:\n{text}"
         );
-        // An owner who is not sure their journal is safe will not run the command.
+        // An owner who is not sure their journal is safe will not run the commands.
         assert!(
-            text.contains("journal is NOT affected"),
-            "the remedy must state that journal data is untouched; got:\n{text}"
+            text.contains("your journal itself is untouched"),
+            "the remedy must state that the journal is untouched; got:\n{text}"
+        );
+        // Stopping the service first, so the removed unit is not left running.
+        assert!(
+            text.contains("systemctl --user disable --now solstone.service"),
+            "the remedy must stop the service before removing its unit; got:\n{text}"
         );
         assert_eq!(format!("{exit:?}"), format!("{:?}", ExitCode::from(2)));
+    }
+
+    /// 🔴 The remedy must never tell an owner to remove the owner-wide registry.
+    ///
+    /// `installation-identity/v1/namespaces/` holds one entry per installation
+    /// for this user. Naming its parent would destroy a second, healthy
+    /// installation's record along with the broken one.
+    #[test]
+    fn the_remedy_scopes_identity_removal_to_this_installation_only() {
+        let home = std::path::Path::new("/home/tester");
+        let namespace = "b".repeat(64);
+        let registry = installation_identity_dir(home);
+
+        let scoped = identity_recovery_paths(home, Some(namespace.as_str()));
+        let identity: Vec<_> = scoped
+            .iter()
+            .filter(|(path, _)| path.starts_with(&registry))
+            .collect();
+        assert_eq!(identity.len(), 1, "exactly one identity path belongs here");
+        assert_eq!(
+            identity[0].0,
+            registry.join("v1").join("namespaces").join(&namespace),
+            "the identity path must be this installation's namespace directory"
+        );
+        for (path, _) in &scoped {
+            assert_ne!(
+                *path, registry,
+                "the owner-wide identity registry must never be a removal target"
+            );
+        }
+
+        // ...and when the namespace cannot be resolved, omit rather than widen.
+        let unscoped = identity_recovery_paths(home, None);
+        assert!(
+            !unscoped.iter().any(|(path, _)| path.starts_with(&registry)),
+            "an unresolvable namespace must drop the identity path, not broaden it"
+        );
     }
 
     #[test]
@@ -1198,7 +1308,7 @@ mod tests {
         assert!(
             String::from_utf8(stderr)
                 .unwrap()
-                .contains("installation identity admission failed")
+                .contains("this installation couldn't be verified")
         );
         assert!(
             !OwnerBase::at_home(home.clone(), PlatformTag::current())
@@ -1282,7 +1392,7 @@ mod tests {
         assert!(stdout.is_empty());
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(
-            stderr.contains("installation identity admission failed"),
+            stderr.contains("this installation couldn't be verified"),
             "stderr: {stderr}"
         );
         assert!(

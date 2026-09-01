@@ -509,9 +509,19 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
             None,
         )),
         RfdetrCheckInput::Degraded { cause } => {
+            // ⚠ Warning, not Blocked, and deliberately identical to `ced_check`.
+            // Object detection is an optional enhancement -- this check's own
+            // `RFDETR_UNAVAILABLE_GUIDANCE` says "Screen descriptions will
+            // continue" -- so a degraded RF-DETR must not set `overall`
+            // to Blocked, which renders as "Not ready -- this computer can't run
+            // the bundled local models yet." That sentence contradicts the
+            // detail beside it, and it was false on the founder's machine, where
+            // a working 2.0.0 journal reported `overall: blocked` and exit 2
+            // solely because a leftover V1-shaped RF-DETR sidecar failed its
+            // pinned-artifact comparison.
             let mut item = check(
                 "rfdetr",
-                Severity::Blocked,
+                Severity::Warning,
                 RFDETR_UNAVAILABLE_GUIDANCE,
                 None,
                 None,
@@ -834,8 +844,18 @@ mod tests {
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
     }
 
+    /// A degraded optional capability warns; it does not declare the machine unfit.
+    ///
+    /// ⚠ This test previously asserted `Blocked` for all three causes. That
+    /// expectation was wrong: `overall == Blocked` renders as "Not ready -- this
+    /// computer can't run the bundled local models yet", which contradicts this
+    /// check's own detail ("Screen descriptions will continue") and was false on
+    /// the founder's 2.0.0 journal, which ran normally while reporting
+    /// `overall: blocked` and exit 2 over a stale RF-DETR sidecar. CED is the
+    /// same class of optional inference asset and has always warned; the two
+    /// must agree.
     #[test]
-    fn degraded_rfdetr_blocks_for_every_cause() {
+    fn degraded_rfdetr_warns_for_every_cause_and_matches_ced() {
         for (cause, expected_cause_str) in [
             (RfdetrDegradedCause::Absent, "absent"),
             (RfdetrDegradedCause::IntegrityInvalid, "integrity_invalid"),
@@ -843,14 +863,34 @@ mod tests {
         ] {
             let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
             let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
-            assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
+            assert_eq!(rfdetr.severity, Severity::Warning, "{cause:?}");
             // Done condition 7: the owner-facing `detail` stays the single
             // shared guidance sentence (unchanged, out of bounds to reword),
             // but `cause` now distinguishes which of the three fired.
             assert_eq!(rfdetr.detail, RFDETR_UNAVAILABLE_GUIDANCE);
             assert_eq!(rfdetr.cause, Some(expected_cause_str), "{cause:?}");
-            assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
+            assert_eq!(overall(&[rfdetr]), Severity::Warning, "{cause:?}");
         }
+
+        // The two optional-asset checks must not disagree about severity.
+        let degraded_ced = ced_check(&check_inputs(
+            CedCheckInput::Degraded {
+                cause: CedDegradedCause::Unloadable,
+            },
+            RfdetrCheckInput::Omit,
+        ))
+        .expect("degraded CED check");
+        let degraded_rfdetr = rfdetr_check(&check_inputs(
+            CedCheckInput::Omit,
+            RfdetrCheckInput::Degraded {
+                cause: RfdetrDegradedCause::Unrunnable,
+            },
+        ))
+        .expect("degraded RF-DETR check");
+        assert_eq!(
+            degraded_rfdetr.severity, degraded_ced.severity,
+            "CED and RF-DETR are both optional inference assets and must agree"
+        );
     }
 
     /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same
