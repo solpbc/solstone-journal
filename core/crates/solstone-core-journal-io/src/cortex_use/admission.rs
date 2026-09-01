@@ -987,6 +987,33 @@ mod tests {
     }
 
     #[test]
+    fn overwritten_same_inode_content_refuses_complete() {
+        let temporary = temp();
+        let root = temporary.path();
+        let authority = authority(root);
+        let admitted =
+            admit_active_use_with_test_timing(&authority, TALENT, USE, &first_row(), ZERO, ZERO)
+                .unwrap();
+        let path = active_path(root);
+        let mut replacement = first_row();
+        replacement[2] = b'X';
+        replacement.push(b'\n');
+        fs::write(&path, &replacement).unwrap();
+        let error = complete_active_use_with_test_timing(
+            &authority,
+            TALENT,
+            USE,
+            admitted.identity(),
+            ZERO,
+            ZERO,
+        )
+        .unwrap_err();
+        expect_token(error, "cortex_admission_active_identity_changed");
+        assert!(path.exists());
+        assert!(!completed_path(root).exists());
+    }
+
+    #[test]
     fn appended_progress_events_still_complete() {
         let temporary = temp();
         let root = temporary.path();
