@@ -752,6 +752,32 @@ pub fn split_entries(block: &str) -> Vec<String> {
     entries
 }
 
+/// Longest character-suffix of `entry` whose token count fits `available`.
+///
+/// Returns `None` when not even one character fits.
+fn fit_entry_tail<F>(entry: &str, available: u32, count: &mut F) -> Option<String>
+where
+    F: FnMut(&str) -> u32,
+{
+    if available == 0 {
+        return None;
+    }
+    let characters = entry.chars().collect::<Vec<_>>();
+    let (mut low, mut high) = (0_usize, characters.len());
+    while low < high {
+        let middle = low + (high - low).div_ceil(2);
+        let candidate = characters[characters.len() - middle..]
+            .iter()
+            .collect::<String>();
+        if count(&candidate) <= available {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    (low > 0).then(|| characters[characters.len() - low..].iter().collect())
+}
+
 pub fn fit_contents<F>(
     contents: &Value,
     system_instruction: Option<&str>,
@@ -823,11 +849,28 @@ where
         running += tokens;
     }
     kept_reversed.reverse();
+    // Entries are kept whole, so a block with no `##` headers is one entry and
+    // nothing fits: the prompt would reduce to the truncation marker alone and the
+    // model would answer confidently about no content at all. Keep the tail of the
+    // most recent entry instead -- the part a reader would keep if forced to cut.
+    // Entries are kept whole, so a block with no `##` headers is one entry and
+    // nothing fits: the prompt would reduce to the truncation marker alone and the
+    // model would answer confidently about no content at all. Keep the tail of the
+    // most recent entry instead -- the part a reader would keep if forced to cut.
+    let mut partial_dropped_chars = 0;
+    if kept_reversed.is_empty()
+        && let Some(last) = entries.last()
+        && let Some(tail) = fit_entry_tail(last, available, count)
+    {
+        partial_dropped_chars = last.chars().count() - tail.chars().count();
+        kept_reversed.push(tail);
+    }
     let dropped_entries = entries.len() - kept_reversed.len();
     let dropped_chars = entries[..dropped_entries]
         .iter()
         .map(|entry| entry.chars().count())
-        .sum();
+        .sum::<usize>()
+        + partial_dropped_chars;
     let mut new_block = marker;
     new_block.push_str(&kept_reversed.concat());
     Ok((
@@ -1476,6 +1519,35 @@ mod tests {
             json!(format!("{TRUNCATION_MARKER}\n\n## newest\nb\n"))
         );
         assert_eq!(budget.unwrap().dropped_entries, 1);
+    }
+
+    /// A block with no `##` headers is a single entry, so keeping entries whole
+    /// leaves nothing and the prompt collapses to the marker alone. The model then
+    /// answers confidently about no content. Keep the tail of the entry instead.
+    #[test]
+    fn an_oversized_headerless_block_keeps_its_tail_rather_than_only_the_marker() {
+        let source = format!("{}TAIL-KEEP-ME", "a".repeat(8_000));
+        // One char per token keeps the arithmetic checkable: budget is
+        // 2048 - (min(256, 2048/4) + 256) = 1536, less the marker.
+        let (fitted, budget) = fit_contents(&json!(source), None, 256, 2_048, &mut |text| {
+            u32::try_from(text.len()).unwrap()
+        })
+        .unwrap();
+
+        let text = fitted.as_str().expect("fitted block is a string");
+        let marker = format!("{TRUNCATION_MARKER}\n\n");
+        assert!(text.starts_with(&marker));
+        // The newest characters survive rather than the whole entry being dropped.
+        assert!(text.ends_with("TAIL-KEEP-ME"), "tail was dropped: {text:?}");
+        let kept = text.len() - marker.len();
+        let available = 1_536 - marker.len();
+        assert!(
+            kept > available / 2 && kept <= available,
+            "kept {kept} of {available} available"
+        );
+        let budget = budget.expect("clipped");
+        assert!(budget.clipped);
+        assert_eq!(budget.dropped_chars, source.chars().count() - kept);
     }
 
     #[test]

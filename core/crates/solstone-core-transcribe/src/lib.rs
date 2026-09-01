@@ -217,30 +217,24 @@ where
     })
 }
 
-fn discover_audio_files(journal_path: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let Ok(days) = std::fs::read_dir(journal_path.join("chronicle")) else {
-        return files;
-    };
-    for day in days
-        .flatten()
-        .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-    {
-        let Ok(streams) = std::fs::read_dir(day.path()) else {
-            continue;
-        };
-        for stream in streams
-            .flatten()
-            .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-        {
-            let Ok(segments) = std::fs::read_dir(stream.path()) else {
-                continue;
-            };
-            for segment in segments
-                .flatten()
-                .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-            {
-                let Ok(entries) = std::fs::read_dir(segment.path()) else {
+/// Yield every transcribable audio file, one chronicle day at a time.
+///
+/// Collecting the whole journal before returning meant `--all` walked every day,
+/// stream and segment on disk before touching a single file. On an owner journal
+/// with hundreds of days that is minutes of directory walking during which the CLI
+/// looks idle and no audio is transcribed.
+///
+/// Streaming per day keeps the order identical: a full path begins with its day
+/// directory, so sorting the days and then sorting each day's own files yields the
+/// same sequence a single global sort produced.
+fn discover_audio_files(journal_path: &Path) -> impl Iterator<Item = PathBuf> + use<> {
+    let mut days = read_child_directories(&journal_path.join("chronicle"));
+    days.sort();
+    days.into_iter().flat_map(|day| {
+        let mut files = Vec::new();
+        for stream in read_child_directories(&day) {
+            for segment in read_child_directories(&stream) {
+                let Ok(entries) = std::fs::read_dir(&segment) else {
                     continue;
                 };
                 for entry in entries.flatten() {
@@ -260,9 +254,20 @@ fn discover_audio_files(journal_path: &Path) -> Vec<PathBuf> {
                 }
             }
         }
-    }
-    files.sort();
-    files
+        files.sort();
+        files
+    })
+}
+
+fn read_child_directories(parent: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect()
 }
 
 /// Errors currently emitted by the native transcription contract.
@@ -536,8 +541,48 @@ mod tests {
     use std::cell::Cell;
     use std::fs;
 
-    use super::{ModelAssetError, TranscribeError, run_all_with};
+    use super::{ModelAssetError, TranscribeError, discover_audio_files, run_all_with};
     use crate::speakers::SpeakerAnalyzeError;
+
+    /// The discovery order is the contract: `--all` used to build one global sorted
+    /// list. Streaming per day must produce exactly the same sequence, because a
+    /// full path sorts by its day directory first.
+    #[test]
+    fn discovery_streams_per_day_in_the_same_order_a_global_sort_produced() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let mut expected = Vec::new();
+        for day in ["20260902", "20260831", "20260901"] {
+            for stream in ["watch", "device_mobile"] {
+                for segment in ["101500_300", "090000_301"] {
+                    let dir = root.join("chronicle").join(day).join(stream).join(segment);
+                    fs::create_dir_all(&dir).unwrap();
+                    for name in ["audio.m4a", "notes.txt", "audio.wav"] {
+                        fs::write(dir.join(name), b"x").unwrap();
+                    }
+                    expected.push(dir.join("audio.m4a"));
+                    expected.push(dir.join("audio.wav"));
+                }
+            }
+        }
+        // The reference the previous implementation produced: one global sort.
+        expected.sort();
+
+        let streamed: Vec<_> = discover_audio_files(root).collect();
+        assert_eq!(streamed, expected);
+        // `notes.txt` is not transcribable and must not appear.
+        assert!(
+            streamed
+                .iter()
+                .all(|path| path.extension().is_some_and(|extension| extension != "txt"))
+        );
+    }
+
+    #[test]
+    fn discovery_yields_nothing_when_the_chronicle_is_absent() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        assert_eq!(discover_audio_files(temporary.path()).count(), 0);
+    }
 
     fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
         let path = temporary.path().join(name);
