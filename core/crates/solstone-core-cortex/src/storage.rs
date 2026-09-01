@@ -313,6 +313,40 @@ fn run_with_recovery_destination_io_fault<T>(operation: impl FnOnce() -> T) -> (
     (result, consumed)
 }
 
+#[cfg(test)]
+thread_local! {
+    static RECOVERY_REQUEST_MAP_IO_FAULT: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
+#[cfg(test)]
+fn recovery_request_map_check_checkpoint() -> Result<(), CortexUseRefusal> {
+    RECOVERY_REQUEST_MAP_IO_FAULT.with(|fault| {
+        (!fault.replace(false))
+            .then_some(())
+            .ok_or(CortexUseRefusal::CandidateIo)
+    })
+}
+
+#[cfg(not(test))]
+fn recovery_request_map_check_checkpoint() -> Result<(), CortexUseRefusal> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn run_with_recovery_request_map_io_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+    RECOVERY_REQUEST_MAP_IO_FAULT.with(|fault| {
+        assert!(
+            !fault.replace(true),
+            "recovery request map fault is already active"
+        );
+    });
+    let result = operation();
+    let consumed = RECOVERY_REQUEST_MAP_IO_FAULT.with(|fault| !fault.replace(false));
+    (result, consumed)
+}
+
 fn admit_recovery_namespace(journal: &Path) -> Result<CortexNamespaceAuthority, CortexUseFatal> {
     let root = JournalRoot::open(journal).map_err(|_| CortexUseFatal::RootInspectionFailed)?;
     create_or_admit_cortex_namespace(root).map_err(|_| CortexUseFatal::RootInspectionFailed)
@@ -350,6 +384,15 @@ impl CortexStore {
     }
 }
 
+fn read_active_request_map(path: &Path) -> Option<Map<String, Value>> {
+    let text = fs::read_to_string(path).ok()?;
+    let line = text.lines().next()?;
+    match serde_json::from_str::<Value>(line) {
+        Ok(Value::Object(map)) => Some(map),
+        _ => None,
+    }
+}
+
 fn recover_active_candidate(
     store: &CortexStore,
     authority: &CortexNamespaceAuthority,
@@ -376,11 +419,19 @@ fn recover_active_candidate(
             return;
         }
     }
+    let active_path = talent_directory.join(leaf);
+    if recovery_request_map_check_checkpoint().is_err() {
+        refusals.record(CortexUseRefusal::CandidateIo);
+        return;
+    }
+    let Some(request_map) = read_active_request_map(&active_path) else {
+        refusals.record(CortexUseRefusal::CandidateIo);
+        return;
+    };
     let error = synthesized_error(
         &request.use_id,
         "Recovered: Cortex restarted while talent was running",
     );
-    let active_path = talent_directory.join(leaf);
     match store.append_active(&active_path, &error) {
         Ok(true) => {}
         Ok(false) | Err(_) => {
@@ -389,7 +440,10 @@ fn recover_active_candidate(
         }
     }
     match recover_active_use(authority, talent_name, &request.use_id) {
-        Ok(()) => {}
+        Ok(()) => {
+            let completed_path = active_path.with_file_name(format!("{}.jsonl", request.use_id));
+            store.append_day_index(&request.use_id, &request_map, &completed_path);
+        }
         Err(error) if error.is_already_claimed() => {
             refusals.record(CortexUseRefusal::DestinationOccupied);
         }
@@ -672,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_does_not_create_day_index_or_repoint_symlink() {
+    fn recovery_creates_day_index_but_does_not_repoint_symlink() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request = recovery_request("one");
@@ -686,7 +740,9 @@ mod tests {
         let before = fs::read_link(&link).unwrap();
         let report = store.recover().unwrap();
         assert!(active.with_file_name("one.jsonl").exists());
-        assert!(!store.talents().join("19700101.jsonl").exists());
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["use_id"], "one");
         assert_eq!(fs::read_link(link).unwrap(), before);
         assert!(
             solstone_core_journal_io::cortex_use::format_cortex_use_summary(
@@ -1020,7 +1076,6 @@ mod tests {
         store.recover().unwrap();
         let recovered = first.with_file_name("one.jsonl");
         let recovered_text = fs::read_to_string(&recovered).unwrap();
-        store.append_day_index("one", &request, &recovered);
         fs::remove_file(&recovered).unwrap();
         let (rerun, identity) = store
             .claim("conversation", "one", &request)
@@ -1042,6 +1097,89 @@ mod tests {
                 .count(),
             2
         );
+        let two: Vec<_> = day_rows(&store, "19700101")
+            .into_iter()
+            .filter(|row| row["use_id"] == "two")
+            .collect();
+        assert_eq!(two.len(), 1);
+        assert_eq!(two[0]["status"], "error");
+        assert_eq!(
+            two[0]["error_message"],
+            "Recovered: Cortex restarted while talent was running"
+        );
+    }
+
+    #[test]
+    fn recovery_day_index_records_synthesized_error_status() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        claim_recovery_candidate(&store, "conversation", "one");
+        store.recover().unwrap();
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["use_id"], "one");
+        assert_eq!(rows[0]["name"], "conversation");
+        assert_eq!(rows[0]["day"], "19700101");
+        assert_eq!(rows[0]["status"], "error");
+        assert_eq!(
+            rows[0]["error_message"],
+            "Recovered: Cortex restarted while talent was running"
+        );
+    }
+
+    #[test]
+    fn recovery_refused_occupied_destination_does_not_write_day_index() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let occupied = claim_recovery_candidate(&store, "conversation", "occupied");
+        fs::write(
+            occupied.with_file_name("occupied.jsonl"),
+            b"existing completed record\n",
+        )
+        .unwrap();
+        let report = store.recover().unwrap();
+        assert_eq!(
+            report.refusals().get(CortexUseRefusal::DestinationOccupied),
+            1
+        );
+        assert!(!store.talents().join("19700101.jsonl").exists());
+    }
+
+    #[test]
+    fn recovery_writes_day_index_rows_per_talent_and_day() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        claim_recovery_candidate(&store, "conversation", "one");
+        claim_recovery_candidate(&store, "other", "two");
+        let mut third = recovery_request_named("conversation", "three");
+        third.insert("day".into(), Value::String("19700102".into()));
+        store
+            .claim("conversation", "three", &third)
+            .unwrap()
+            .unwrap();
+        store.recover().unwrap();
+        let day1 = day_rows(&store, "19700101");
+        assert_eq!(day1.len(), 2);
+        assert!(day1.iter().any(|row| row["use_id"] == "one"));
+        assert!(day1.iter().any(|row| row["use_id"] == "two"));
+        let day2 = day_rows(&store, "19700102");
+        assert_eq!(day2.len(), 1);
+        assert_eq!(day2[0]["use_id"], "three");
+    }
+
+    #[test]
+    fn recovery_counts_injected_request_map_io_and_preserves_active_bytes() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let active = claim_recovery_candidate(&store, "conversation", "one");
+        let before = fs::read(&active).unwrap();
+        let (report, injected) =
+            run_with_recovery_request_map_io_fault(|| store.recover().unwrap());
+        assert!(injected);
+        assert_eq!(report.refusals().get(CortexUseRefusal::CandidateIo), 1);
+        assert_eq!(fs::read(&active).unwrap(), before);
+        assert!(!active.with_file_name("one.jsonl").exists());
+        assert!(!store.talents().join("19700101.jsonl").exists());
     }
 
     #[test]
