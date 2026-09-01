@@ -850,7 +850,11 @@ mod tests {
                 .into_owned()
                 .into_bytes()
         } else if ft.is_file() {
-            fs::read(path).unwrap()
+            if path.file_name() == Some(OsStr::new("cortex-use.lock")) {
+                Vec::new()
+            } else {
+                fs::read(path).unwrap()
+            }
         } else {
             Vec::new()
         };
