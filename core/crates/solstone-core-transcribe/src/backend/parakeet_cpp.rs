@@ -53,6 +53,9 @@ pub(crate) struct TranscriptionResponse {
     pub(crate) text: String,
 }
 
+/// Confidence assumed when a word carries none.
+const DEFAULT_WORD_PROBABILITY: f64 = 1.0;
+
 /// Violations of the shared OpenAI-compatible verbose JSON word contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum WordContractError {
@@ -265,18 +268,26 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     }
     let start = finite_word_number(object, "start")?;
     let end = finite_word_number(object, "end")?;
-    let probability = object
-        .get("conf")
-        .map(|value| {
-            value.as_f64().filter(|value| value.is_finite()).ok_or(
-                WordContractError::InvalidNumber {
-                    key: "conf",
-                    found: json_type_name(value),
-                },
-            )
-        })
-        .transpose()?
-        .unwrap_or(1.0);
+    // 🔴 An ABSENT `conf` and an explicit `conf: null` carry the same information --
+    // no confidence available for this word -- so they must not have opposite
+    // outcomes. Absent already defaulted; null used to reject the WHOLE response.
+    //
+    // Measured on the founder's journal 2026-09-01: the confidential ASR shim returns
+    // `conf: null` for some words, and one such word threw away the entire transcript
+    // of a five-minute recording. That is the last layer of W8-25.
+    //
+    // 🔒 A `conf` that is present and non-null but not a finite number -- a string, a
+    // boolean -- is still a contract violation, and `start`/`end` stay strict, because
+    // word timings are load-bearing for the timeline.
+    let probability = match object.get("conf") {
+        None | Some(Value::Null) => DEFAULT_WORD_PROBABILITY,
+        Some(value) => value.as_f64().filter(|value| value.is_finite()).ok_or(
+            WordContractError::InvalidNumber {
+                key: "conf",
+                found: json_type_name(value),
+            },
+        )?,
+    };
     Ok(TranscriptionWord {
         word: format!(" {token}"),
         start,
@@ -423,6 +434,45 @@ mod tests {
     };
     use crate::TranscribeError;
     use crate::config::{parakeet_cpp_device, read_transcribe_config};
+
+    /// `conf: null` must behave exactly like an absent `conf`.
+    ///
+    /// Measured on the founder's journal: the confidential ASR shim emits
+    /// `conf: null` for some words, and one such word discarded the whole transcript
+    /// of a five-minute recording -- while an ABSENT `conf` on the same word would
+    /// have defaulted cleanly. Same information, opposite outcome.
+    #[test]
+    fn a_null_confidence_is_treated_as_absent() {
+        let with_null =
+            parse_verbose_json(r#"{"words":[{"word":"hi","start":0.0,"end":0.5,"conf":null}]}"#)
+                .expect("a null confidence must not discard the transcript");
+        let absent = parse_verbose_json(r#"{"words":[{"word":"hi","start":0.0,"end":0.5}]}"#)
+            .expect("an absent confidence already defaulted");
+        assert_eq!(with_null, absent);
+        assert!(
+            (with_null.words[0].probability - super::DEFAULT_WORD_PROBABILITY).abs() < f64::EPSILON
+        );
+    }
+
+    /// 🔒 Negative twins: only `null` is forgiven, and only for `conf`.
+    #[test]
+    fn other_non_numeric_word_fields_are_still_contract_violations() {
+        for payload in [
+            // conf present, non-null, not a number
+            r#"{"words":[{"word":"hi","start":0.0,"end":0.5,"conf":"high"}]}"#,
+            r#"{"words":[{"word":"hi","start":0.0,"end":0.5,"conf":true}]}"#,
+            // timings are load-bearing and stay strict
+            r#"{"words":[{"word":"hi","start":null,"end":0.5}]}"#,
+            r#"{"words":[{"word":"hi","start":0.0,"end":null}]}"#,
+            r#"{"words":[{"word":"hi","end":0.5}]}"#,
+        ] {
+            let error = parse_verbose_json(payload).unwrap_err();
+            assert!(
+                matches!(error, WordContractError::InvalidNumber { .. }),
+                "must refuse: {payload} (got {error:?})"
+            );
+        }
+    }
 
     #[test]
     fn missing_port_defers_with_no_port() {
