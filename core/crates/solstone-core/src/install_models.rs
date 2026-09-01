@@ -915,7 +915,7 @@ mod disclosure_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_local::install::ced_readiness::evaluate_ced_readiness_against;
+    use solstone_core_local::install::ced_readiness::evaluate_ced_readiness_against_with_probe;
     use std::fs;
 
     macro_rules! run_inner_with_test {
@@ -1017,15 +1017,30 @@ mod tests {
 
     fn seed_ready_ced(journal: &Path, os: &str, arch: &str) {
         let key = ced_install::ced_artifact_key(os, arch).expect("supported CED host");
-        assert!(
-            solstone_core_local::install::ced_fixture::write_ready_ced_install(journal, key),
-            "C compiler required for CED ready fixture"
-        );
+        solstone_core_local::install::ced_fixture::write_complete_ced_install(journal, key)
+            .expect("write complete CED install");
     }
 
+    /// CED's deep engine probe now runs out of process (Brief D:
+    /// `solstone-core-ced-sys` `dlopen`s a glibc shared object this
+    /// `musl-static` binary can never load in-process). This test module
+    /// only exercises `install_models`'s branching on a `CedReadiness`
+    /// value, not the probe itself, so it supplies the deep probe directly
+    /// via `evaluate_ced_readiness_against_with_probe` rather than spawning
+    /// (or faking the existence of) `solstone-core-ced-analyze`: the probe
+    /// closure only ever runs once `seed_ready_ced`'s fixture has already
+    /// passed the digest check, so it stands in exactly for "the engine
+    /// loaded", the fact `write_ready_ced_install`'s compiled native stub
+    /// used to prove by actually dlopen-ing in-process.
     fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedReadiness {
         match solstone_core_local::install::ced_fixture::ced_model_digest(journal) {
-            Ok(digest) => evaluate_ced_readiness_against(journal, os, arch, &digest),
+            Ok(digest) => evaluate_ced_readiness_against_with_probe(
+                journal,
+                os,
+                arch,
+                &digest,
+                |_library, _model| Ok(()),
+            ),
             Err(_) => evaluate_ced_readiness(journal, os, arch),
         }
     }

@@ -26,7 +26,6 @@ flate2.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-assets.workspace = true
-solstone-core-ced-sys.workspace = true
 solstone-core-artifact-download.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
