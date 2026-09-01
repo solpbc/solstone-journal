@@ -762,6 +762,12 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
                 response["detail"], "the configured provider could not produce a usable response",
                 "{vector_id} detail"
             );
+        } else if name == "unimplemented-provider" {
+            assert_eq!(
+                response["detail"],
+                "no generate implementation exists for the resolved provider lane",
+                "{vector_id} detail"
+            );
         } else {
             assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
         }
