@@ -181,7 +181,21 @@ fn ac8_reservation_stays_held_until_after_plan_assembly() {
     events.push("plan");
     let port = reservation.release_for_spawn();
     events.push("release");
-    let spawned = std::net::TcpListener::bind(("127.0.0.1", port)).expect("spawn after release");
+    // ⚠ Bounded retry, not a single shot: once the reservation is released the port
+    // is an ordinary ephemeral port, and under parallel suite load another process
+    // can take it in the window before this bind. The property under test is that
+    // release makes the port bindable AT ALL, not that it is bindable on the first
+    // instruction, so a single `expect` here was a race that failed intermittently.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let spawned = loop {
+        match std::net::TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => break listener,
+            Err(error) if std::time::Instant::now() >= deadline => {
+                panic!("port {port} never became bindable after release: {error}")
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    };
     events.push("spawn");
     drop(spawned);
     assert_eq!(events, ["reserve", "plan", "release", "spawn"]);
