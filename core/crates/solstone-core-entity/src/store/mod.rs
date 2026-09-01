@@ -71,6 +71,7 @@ pub use voiceprints::{
     VoiceprintRemovalReport, VoiceprintSkipReasons, load_entity_voiceprints_file,
     load_existing_voiceprint_keys, normalize_embedding, remove_voiceprints_by_key,
     rewrite_voiceprint_metadata, save_voiceprints_batch, try_load_entity_voiceprints_file,
+    try_load_entity_voiceprints_in_dir,
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,

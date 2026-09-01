@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use solstone_core_speaker_resolve::voiceprint_centroid::{
     VoiceprintCentroidCache, decay_weighted_centroid,
 };
@@ -38,6 +39,39 @@ impl Drop for TempDir {
 
 fn row(embedding: Vec<f32>, stream: &str, added_at: Value) -> (Vec<f32>, Value) {
     (embedding, json!({"stream": stream, "added_at": added_at}))
+}
+
+fn encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "test".to_owned(),
+        sha256: "0".repeat(64),
+        width: 256,
+    }
+}
+
+fn voiceprint_item() -> VoiceprintItem {
+    let mut embedding = vec![0.0; 256];
+    embedding[0] = 1.0;
+    VoiceprintItem {
+        embedding,
+        metadata: json!({"stream": "mic", "added_at": 1}),
+    }
+}
+
+fn write_identity(root: &Path, entity_dir: &str, entity_id: &str) {
+    let identity = root.join("entities").join(entity_dir).join("entity.json");
+    fs::create_dir_all(identity.parent().expect("identity parent")).expect("create entity");
+    fs::write(
+        identity,
+        json!({"id": entity_id, "name": entity_id}).to_string(),
+    )
+    .expect("write identity");
+}
+
+fn write_voiceprint(root: &Path, entity_id: &str) {
+    write_identity(root, entity_id, entity_id);
+    save_voiceprints_batch(root, entity_id, &[voiceprint_item()], &encoder())
+        .expect("write voiceprint");
 }
 
 #[test]
@@ -109,4 +143,87 @@ fn ac23_corrupt_voiceprint_produces_one_cached_gap() {
     assert_eq!(gaps[0].source, "voiceprint");
     assert_eq!(gaps[0].reason, "unreadable");
     assert_eq!(gaps[0].entity_id, "alice");
+}
+
+/// Resolving an entity id through the entity store rebuilds the journal identity
+/// map, which reads every `entities/*/entity.json` on disk. Attribution resolves
+/// one id per admissible person, so a per-lookup resolve is quadratic in journal
+/// size. The cache reads that map once and reuses it.
+///
+/// Removing an identity record after the first lookup makes the difference
+/// observable: a per-lookup resolve no longer places `bob`, the snapshot still
+/// does.
+#[test]
+fn entry_for_reads_the_identity_map_once_per_cache() {
+    let temporary = TempDir::new();
+    write_voiceprint(temporary.path(), "alice");
+    write_voiceprint(temporary.path(), "bob");
+
+    let mut cache = VoiceprintCentroidCache::default();
+    let mut gaps = Vec::new();
+    assert!(
+        cache
+            .entry_for(temporary.path(), "alice", "mic", 1, &mut gaps)
+            .usable
+    );
+
+    fs::remove_file(temporary.path().join("entities/bob/entity.json"))
+        .expect("remove bob identity");
+
+    assert!(
+        cache
+            .entry_for(temporary.path(), "bob", "mic", 1, &mut gaps)
+            .usable
+    );
+    assert!(gaps.is_empty());
+}
+
+/// The snapshot maps an effective id to its directory, which is not always the
+/// id itself. Reading `entities/<id>/` directly would silently miss the archive.
+#[test]
+fn entry_for_resolves_an_entity_whose_directory_is_not_its_id() {
+    let temporary = TempDir::new();
+    write_identity(temporary.path(), "legacy-0001", "alice");
+    save_voiceprints_batch(temporary.path(), "alice", &[voiceprint_item()], &encoder())
+        .expect("write voiceprint");
+
+    let mut cache = VoiceprintCentroidCache::default();
+    let mut gaps = Vec::new();
+    let entry = cache.entry_for(temporary.path(), "alice", "mic", 1, &mut gaps);
+
+    assert!(entry.usable);
+    assert_eq!(entry.embedding_count, 1);
+    assert!(
+        temporary
+            .path()
+            .join("entities/legacy-0001/voiceprints.npz")
+            .exists()
+    );
+    assert!(!temporary.path().join("entities/alice").exists());
+    assert!(gaps.is_empty());
+}
+
+/// An entity written after the snapshot is absent from it, and still resolves
+/// through a fresh lookup.
+#[test]
+fn entry_for_falls_back_for_an_entity_written_after_the_snapshot() {
+    let temporary = TempDir::new();
+    write_voiceprint(temporary.path(), "alice");
+
+    let mut cache = VoiceprintCentroidCache::default();
+    let mut gaps = Vec::new();
+    assert!(
+        cache
+            .entry_for(temporary.path(), "alice", "mic", 1, &mut gaps)
+            .usable
+    );
+
+    write_voiceprint(temporary.path(), "carol");
+
+    assert!(
+        cache
+            .entry_for(temporary.path(), "carol", "mic", 1, &mut gaps)
+            .usable
+    );
+    assert!(gaps.is_empty());
 }

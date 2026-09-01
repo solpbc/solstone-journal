@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_entity::{normalize_embedding, try_load_entity_voiceprints_file};
+use solstone_core_entity::{
+    normalize_embedding, read_identity_map, try_load_entity_voiceprints_file,
+    try_load_entity_voiceprints_in_dir,
+};
 
 use solstone_core_speaker_id::calibration::VP_DECAY_LAMBDA;
 
@@ -34,6 +37,13 @@ pub struct VoiceprintLoadGap {
 #[derive(Debug, Default)]
 pub struct VoiceprintCentroidCache {
     entries: HashMap<String, VoiceprintCentroidEntry>,
+    /// Effective entity id to on-disk entity directory, read once per call.
+    ///
+    /// Resolving an id through the entity store rebuilds this map from every
+    /// `entities/*/entity.json` on disk. Attribution resolves one id per
+    /// admissible person, so doing that per lookup is quadratic in the size of
+    /// the journal; holding the map here keeps it to a single scan.
+    directories: Option<HashMap<String, String>>,
 }
 
 impl VoiceprintCentroidCache {
@@ -49,7 +59,20 @@ impl VoiceprintCentroidCache {
         if let Some(entry) = self.entries.get(entity_id) {
             return entry.clone();
         }
-        let entry = match try_load_entity_voiceprints_file(journal_root, entity_id) {
+        let loaded = {
+            let directories = self.directories.get_or_insert_with(|| {
+                read_identity_map(journal_root)
+                    .map(|map| map.resolved)
+                    .unwrap_or_default()
+            });
+            match directories.get(entity_id) {
+                Some(entity_dir) => try_load_entity_voiceprints_in_dir(journal_root, entity_dir),
+                // Absent from the snapshot: fall back to a fresh resolve, which
+                // still sees an entity written after the snapshot was taken.
+                None => try_load_entity_voiceprints_file(journal_root, entity_id),
+            }
+        };
+        let entry = match loaded {
             Ok(None) => empty_entry(),
             Ok(Some(archive)) if archive.rows == 0 => empty_entry(),
             Ok(Some(archive)) => {
