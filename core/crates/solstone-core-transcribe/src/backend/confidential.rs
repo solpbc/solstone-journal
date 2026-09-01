@@ -22,7 +22,32 @@ use crate::backend::parakeet_cpp::{
     ModelInfo, TranscriptionResponse, WordContractError, parse_verbose_json,
 };
 
-pub(crate) const CONFIDENTIAL_STT_MAX_AUDIO_SECONDS: f64 = 300.0;
+/// The confidential ASR shim bounds a request by BYTES, not by duration.
+///
+/// `asr_shim.py` on the engine: `MAX_REQUEST_BYTES = 11 * 1024 * 1024`, commented
+/// "canonical 300s WAV is ~9.6 MB; allow validator tolerance + multipart framing".
+/// ⚠ There is **no** server-side duration limit. This client used to mirror that
+/// budget as a flat 300-second cap, which is a proxy rather than the contract -- and
+/// it refused 301-305 s recordings the server would have accepted, because a 302 s
+/// PCM16 WAV is about 9.7 MB with ~1.3 MB to spare.
+///
+/// Measured on the founder's journal 2026-09-01: 60 `confidential_audio_too_long`
+/// refusals, all just over the proxy and all comfortably inside the real budget.
+pub(crate) const CONFIDENTIAL_STT_MAX_REQUEST_BYTES: usize = 11 * 1024 * 1024;
+
+/// Headroom for the multipart envelope wrapped around the WAV payload.
+const CONFIDENTIAL_STT_ENVELOPE_BYTES: usize = 64 * 1024;
+
+/// The request size a PCM16 WAV of `samples` will occupy, envelope included.
+pub(crate) fn confidential_request_bytes(samples: usize) -> usize {
+    solstone_core_observe_audio::wav_bytes_for_samples(samples)
+        .saturating_add(CONFIDENTIAL_STT_ENVELOPE_BYTES)
+}
+
+/// Whether that request fits the shim's budget.
+pub(crate) fn confidential_request_fits(samples: usize) -> bool {
+    confidential_request_bytes(samples) <= CONFIDENTIAL_STT_MAX_REQUEST_BYTES
+}
 
 const ATTESTED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(120);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -575,7 +600,7 @@ mod tests {
     };
 
     use super::{
-        CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, ConfidentialCall, HttpResponse, attestation_reason,
+        CONFIDENTIAL_STT_MAX_REQUEST_BYTES, ConfidentialCall, HttpResponse, attestation_reason,
         confidential_channel_plausible, confidential_provenance, confidential_transcribe_with,
         hosted_response, multipart_boundary, refuse_confidential_egress,
     };
@@ -882,7 +907,7 @@ mod tests {
                 Some("attestation_stale")
             );
         }
-        assert_eq!(CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, 300.0);
+        assert_eq!(CONFIDENTIAL_STT_MAX_REQUEST_BYTES, 11 * 1024 * 1024);
     }
 
     #[test]

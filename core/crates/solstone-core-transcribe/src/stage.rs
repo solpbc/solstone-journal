@@ -216,7 +216,7 @@ pub(crate) fn process_one(
     // untouched, and audio still too long after reduction is still refused below.
     if backend == "confidential"
         && reduced_audio.is_none()
-        && audio_seconds > confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS
+        && !confidential::confidential_request_fits(full_audio.len())
         && let Some((audio, info)) = reduce_audio(&full_audio, &vad)
     {
         reduced_seconds = Some(audio.len() as f64 / f64::from(SAMPLE_RATE));
@@ -241,7 +241,8 @@ pub(crate) fn process_one(
         // 🔒 The limit itself is unchanged, and audio that is genuinely too long after
         // reduction is still refused.
         dispatch_confidential_with_cap(
-            confidential_capped_seconds(audio_seconds, reduced_seconds),
+            statement_audio.len(),
+            reduced_seconds.unwrap_or(audio_seconds),
             || {
                 asr_at = Some(Instant::now());
                 dispatch_backend(
@@ -411,29 +412,22 @@ where
     dispatch()
 }
 
-/// The duration the confidential cap must measure: the audio actually sent.
-///
-/// VAD reduction happens before dispatch, so when it produced something that is what
-/// goes over the wire. Measuring the unreduced segment instead refused recordings
-/// whose speech was well inside the limit.
-fn confidential_capped_seconds(audio_seconds: f64, reduced_seconds: Option<f64>) -> f64 {
-    reduced_seconds.unwrap_or(audio_seconds)
-}
-
 fn dispatch_confidential_with_cap<T, F>(
+    samples: usize,
     audio_seconds: f64,
     dispatch: F,
 ) -> Result<T, TranscribeError>
 where
     F: FnOnce() -> Result<T, TranscribeError>,
 {
-    if audio_seconds > confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS {
+    if !confidential::confidential_request_fits(samples) {
         return Err(TranscribeError::ConfidentialDeferred {
             reason: "confidential_audio_too_long".to_owned(),
             detail: format!(
-                "audio is {:.1}s; confidential STT accepts at most {:.1}s",
+                "audio is {:.1}s and would send {} bytes; confidential STT accepts at most {} bytes",
                 audio_seconds,
-                confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS,
+                confidential::confidential_request_bytes(samples),
+                confidential::CONFIDENTIAL_STT_MAX_REQUEST_BYTES,
             ),
         });
     }
@@ -1135,7 +1129,8 @@ mod tests {
     #[test]
     fn confidential_duration_cap_prevents_backend_dispatch() {
         let mut dispatched = false;
-        let error = super::dispatch_confidential_with_cap(300.1, || {
+        // Oversized by BYTES now, which is the shim's actual contract.
+        let error = super::dispatch_confidential_with_cap(usize::MAX / 4, 99_999.0, || {
             dispatched = true;
             Ok::<_, TranscribeError>(())
         })
@@ -1148,47 +1143,40 @@ mod tests {
         assert!(!dispatched);
     }
 
-    /// The cap must measure the audio that is SENT, not the whole segment.
+    /// The confidential guard must mirror the shim's REAL contract: request bytes.
     ///
-    /// Measured on the founder's journal: 134 of 176 recent segments (76%) run longer
-    /// than 300 s, and V2 had transcribed 14 of 37 long segments where V1 transcribed
-    /// 503 of 503. A 314 s recording holding a minute of speech was refused as
-    /// `confidential_audio_too_long` without the reduced audio ever being measured.
+    /// `asr_shim.py` bounds a request at `MAX_REQUEST_BYTES = 11 MiB` and has no
+    /// duration limit at all. The client mirrored that as a flat 300 s cap, which
+    /// refused 301-305 s recordings the server would have accepted -- 60 of them on
+    /// the founder's journal, every one comfortably inside the byte budget.
     #[test]
-    fn the_confidential_cap_measures_the_reduced_audio_that_is_sent() {
-        // A long segment whose speech is short is well inside the limit.
-        assert!(
-            (super::confidential_capped_seconds(314.2, Some(58.0)) - 58.0).abs() < f64::EPSILON
-        );
+    fn the_confidential_guard_uses_the_shims_byte_budget() {
+        let sample_rate = f64::from(solstone_core_observe_audio::SAMPLE_RATE);
+        // A 302s recording is what was being refused; it must now dispatch.
+        let samples_302s = (302.0 * sample_rate) as usize;
         let mut dispatched = false;
-        super::dispatch_confidential_with_cap(
-            super::confidential_capped_seconds(314.2, Some(58.0)),
-            || {
-                dispatched = true;
-                Ok::<_, TranscribeError>(())
-            },
-        )
-        .expect("reduced audio inside the limit must dispatch");
-        assert!(dispatched, "a 58s statement must reach the backend");
+        super::dispatch_confidential_with_cap(samples_302s, 302.0, || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .expect("a 302s recording fits the 11 MiB budget");
+        assert!(dispatched, "302s must reach the backend");
 
-        // 🔒 Negative twins. Nothing about the limit itself moved.
-        // Reduction that is still too long is still refused.
-        assert!(
-            super::dispatch_confidential_with_cap(
-                super::confidential_capped_seconds(900.0, Some(420.0)),
-                || Ok::<_, TranscribeError>(())
-            )
-            .is_err()
-        );
-        // With no reduction, the full duration governs, exactly as before.
-        assert!((super::confidential_capped_seconds(314.2, None) - 314.2).abs() < f64::EPSILON);
-        assert!(
-            super::dispatch_confidential_with_cap(
-                super::confidential_capped_seconds(314.2, None),
-                || Ok::<_, TranscribeError>(())
-            )
-            .is_err()
-        );
+        // 🔒 Negative twin: genuinely oversized audio is still refused. The founder's
+        // journal holds a 5626s segment, which is far past the budget.
+        let samples_5626s = (5626.0 * sample_rate) as usize;
+        let error = super::dispatch_confidential_with_cap(samples_5626s, 5626.0, || {
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+        let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
+            panic!("an oversized request must defer");
+        };
+        assert_eq!(reason, "confidential_audio_too_long");
+
+        // The boundary itself is the shim's, not a duration.
+        assert!(super::super::backend::confidential::confidential_request_fits(0));
+        assert!(!super::super::backend::confidential::confidential_request_fits(usize::MAX / 4));
     }
 
     #[test]

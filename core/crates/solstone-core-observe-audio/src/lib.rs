@@ -20,6 +20,7 @@ pub use nonspeech::{
 pub use reduce::{AudioReduction, SpeechInterval, SpeechSegment, VadResult, reduce_audio};
 pub use sidecar::write_f32le_exclusive;
 pub use wav::audio_to_wav_bytes;
+pub use wav::wav_bytes_for_samples;
 
 pub const SAMPLE_RATE: u32 = 16_000;
 
