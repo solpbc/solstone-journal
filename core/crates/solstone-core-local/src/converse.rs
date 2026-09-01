@@ -113,7 +113,16 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
     } else {
         normalize_converse_finish_reason(choice.get("finish_reason"))?
     };
-    if tool_calls.is_empty() && finish_reason == "stop" && text.contains("<tool_call>") {
+    if tool_calls.is_empty() && finish_reason == "stop" && text.contains(TOOL_CALL_OPEN) {
+        // The model DID call the tool; the server just did not structure it.
+        if let Some((recovered, remainder)) = recover_prose_tool_calls(&text) {
+            return Ok(LocalConverseResponse {
+                text: remainder,
+                tool_calls: recovered,
+                finish_reason: "tool_calls".to_owned(),
+                usage: crate::generate::extract_usage(data),
+            });
+        }
         return Err(LocalConverseError::ToolCallSynthesizedAsProse);
     }
     Ok(LocalConverseResponse {
@@ -214,6 +223,69 @@ fn assistant_tool_call_ids(message: &Value) -> BTreeSet<&str> {
         .flatten()
         .filter_map(|call| call.get("id").and_then(Value::as_str))
         .collect()
+}
+
+const TOOL_CALL_OPEN: &str = "<tool_call>";
+const TOOL_CALL_CLOSE: &str = "</tool_call>";
+
+/// Recover Qwen-style `<tool_call>` blocks that a server left inside message content.
+///
+/// Qwen emits tool calls as `<tool_call>{"name":..,"arguments":{..}}</tool_call>` in
+/// the text, and an OpenAI-compatible server is expected to lift them into the
+/// structured `tool_calls` field. Not every server does: SGLang and vLLM need an
+/// explicit tool-call-parser flag, and a BYO endpoint may have none at all. When that
+/// happens the model genuinely called the tool and the server simply did not parse it,
+/// so refusing the whole turn throws away a correct answer.
+///
+/// Measured on the founder's journal 2026-09-01: every `cogitate` probe against the
+/// SPP lane failed `tool_call_synthesized_as_prose`, which is raised only when the
+/// content contains `<tool_call>` and `tool_calls` is empty -- i.e. the model answered
+/// and the server passed the markup through verbatim. Thinking was down for that reason
+/// alone.
+///
+/// 🔒 Deliberately conservative. Every block must close, parse as JSON, carry a
+/// non-empty `name`, and carry `arguments` as an object (or a JSON string encoding
+/// one). If ANY block fails these, this returns `None` and the caller keeps its
+/// original refusal -- guessing at a malformed tool call is worse than failing.
+fn recover_prose_tool_calls(text: &str) -> Option<(Vec<LocalConverseToolCall>, String)> {
+    let mut calls = Vec::new();
+    let mut remainder = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(TOOL_CALL_OPEN) {
+        remainder.push_str(&rest[..start]);
+        let after = &rest[start + TOOL_CALL_OPEN.len()..];
+        let end = after.find(TOOL_CALL_CLOSE)?;
+        let payload: Value = serde_json::from_str(after[..end].trim()).ok()?;
+        let object = payload.as_object()?;
+        let name = object
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())?;
+        let arguments = match object.get("arguments") {
+            Some(Value::Object(arguments)) => Value::Object(arguments.clone()),
+            // Some servers double-encode the arguments exactly as the structured
+            // field does; accept that spelling and nothing looser.
+            Some(Value::String(encoded)) => {
+                let parsed: Value = serde_json::from_str(encoded).ok()?;
+                if !parsed.is_object() {
+                    return None;
+                }
+                parsed
+            }
+            _ => return None,
+        };
+        calls.push(LocalConverseToolCall {
+            id: format!("recovered-{}", calls.len()),
+            name: name.to_owned(),
+            arguments,
+        });
+        rest = &after[end + TOOL_CALL_CLOSE.len()..];
+    }
+    if calls.is_empty() {
+        return None;
+    }
+    remainder.push_str(rest);
+    Some((calls, remainder.trim().to_owned()))
 }
 
 fn parse_tool_calls(
@@ -365,6 +437,75 @@ mod tests {
         let body = build_converse_request_body(&request(&messages, &tools), None).expect("body");
         assert_eq!(body["messages"], messages);
         assert!(body.get("tools").is_none());
+    }
+
+    /// A tool call the server left as prose is still a tool call.
+    ///
+    /// Measured on the founder's journal: every `cogitate` probe on the SPP lane
+    /// failed `tool_call_synthesized_as_prose`, which fires only when the content
+    /// holds `<tool_call>` and `tool_calls` is empty -- the model answered and the
+    /// server passed the markup through. Thinking was down for that alone.
+    #[test]
+    fn a_tool_call_left_in_prose_is_recovered() {
+        let parsed = parse_converse_response(&json!({
+            "choices": [{
+                "message": {"content": "<tool_call>\n{\"name\": \"emit_final\", \"arguments\": {\"content\": \"OK\"}}\n</tool_call>"},
+                "finish_reason": "stop"
+            }]
+        }))
+        .expect("a well-formed prose tool call is recoverable");
+        assert_eq!(parsed.finish_reason, "tool_calls");
+        assert_eq!(parsed.tool_calls.len(), 1);
+        assert_eq!(parsed.tool_calls[0].name, "emit_final");
+        assert_eq!(parsed.tool_calls[0].arguments, json!({"content": "OK"}));
+        assert!(
+            !parsed.tool_calls[0].id.is_empty(),
+            "a tool call needs an id"
+        );
+        assert_eq!(parsed.text, "", "the markup must not be left in the text");
+    }
+
+    #[test]
+    fn recovered_prose_tool_calls_keep_surrounding_text_and_double_encoded_arguments() {
+        let parsed = parse_converse_response(&json!({
+            "choices": [{
+                "message": {"content": "thinking<tool_call>{\"name\": \"t\", \"arguments\": \"{\\\"a\\\": 1}\"}</tool_call>done"},
+                "finish_reason": "stop"
+            }]
+        }))
+        .expect("double-encoded arguments match the structured spelling");
+        assert_eq!(parsed.tool_calls[0].arguments, json!({"a": 1}));
+        assert_eq!(parsed.text, "thinkingdone");
+    }
+
+    /// 🔒 Negative twins. Recovery must stay conservative: a malformed block keeps the
+    /// original refusal, because guessing at a tool call is worse than failing.
+    #[test]
+    fn malformed_prose_tool_calls_still_refuse() {
+        for content in [
+            // unterminated block
+            "<tool_call>{\"name\": \"t\", \"arguments\": {}}",
+            // not JSON
+            "<tool_call>not json</tool_call>",
+            // missing name
+            "<tool_call>{\"arguments\": {}}</tool_call>",
+            // empty name
+            "<tool_call>{\"name\": \"\", \"arguments\": {}}</tool_call>",
+            // arguments not an object
+            "<tool_call>{\"name\": \"t\", \"arguments\": 5}</tool_call>",
+            // double-encoded arguments that do not decode to an object
+            "<tool_call>{\"name\": \"t\", \"arguments\": \"5\"}</tool_call>",
+            // one good block and one bad one: recover nothing
+            "<tool_call>{\"name\": \"t\", \"arguments\": {}}</tool_call><tool_call>bad</tool_call>",
+        ] {
+            assert_eq!(
+                parse_converse_response(&json!({
+                    "choices": [{"message": {"content": content}, "finish_reason": "stop"}]
+                })),
+                Err(LocalConverseError::ToolCallSynthesizedAsProse),
+                "must refuse: {content}"
+            );
+        }
     }
 
     #[test]
