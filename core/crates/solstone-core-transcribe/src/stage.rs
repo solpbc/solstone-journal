@@ -203,16 +203,32 @@ pub(crate) fn process_one(
     };
     let mut asr_at = None;
     let dispatched = if backend == "confidential" {
-        dispatch_confidential_with_cap(audio_seconds, || {
-            asr_at = Some(Instant::now());
-            dispatch_backend(
-                config,
-                journal_path,
-                &backend,
-                statement_audio,
-                attestation_state,
-            )
-        })
+        // 🔴 Cap on what is actually SENT, not on the whole segment. `statement_audio`
+        // below is the VAD-reduced audio, and speech is usually a fraction of a
+        // segment -- so capping on `audio_seconds` refused recordings whose speech
+        // was comfortably inside the limit.
+        //
+        // Measured on the founder's journal 2026-09-01: of 176 recent segments, 134
+        // (76%) run longer than 300 s, and V2 had transcribed only 14 of 37 long
+        // segments (38%) where V1 transcribed 503 of 503 (100%). Most of that gap is
+        // this line: a 314 s recording with a minute of speech was refused as
+        // `confidential_audio_too_long` without the reduced audio ever being measured.
+        //
+        // 🔒 The limit itself is unchanged, and audio that is genuinely too long after
+        // reduction is still refused.
+        dispatch_confidential_with_cap(
+            confidential_capped_seconds(audio_seconds, reduced_seconds),
+            || {
+                asr_at = Some(Instant::now());
+                dispatch_backend(
+                    config,
+                    journal_path,
+                    &backend,
+                    statement_audio,
+                    attestation_state,
+                )
+            },
+        )
     } else {
         asr_at = Some(Instant::now());
         dispatch_backend(
@@ -369,6 +385,15 @@ where
 {
     confidential::refuse_confidential_egress(config, backend, confidential_audio_enabled(config))?;
     dispatch()
+}
+
+/// The duration the confidential cap must measure: the audio actually sent.
+///
+/// VAD reduction happens before dispatch, so when it produced something that is what
+/// goes over the wire. Measuring the unreduced segment instead refused recordings
+/// whose speech was well inside the limit.
+fn confidential_capped_seconds(audio_seconds: f64, reduced_seconds: Option<f64>) -> f64 {
+    reduced_seconds.unwrap_or(audio_seconds)
 }
 
 fn dispatch_confidential_with_cap<T, F>(
@@ -1097,6 +1122,49 @@ mod tests {
         };
         assert_eq!(reason, "confidential_audio_too_long");
         assert!(!dispatched);
+    }
+
+    /// The cap must measure the audio that is SENT, not the whole segment.
+    ///
+    /// Measured on the founder's journal: 134 of 176 recent segments (76%) run longer
+    /// than 300 s, and V2 had transcribed 14 of 37 long segments where V1 transcribed
+    /// 503 of 503. A 314 s recording holding a minute of speech was refused as
+    /// `confidential_audio_too_long` without the reduced audio ever being measured.
+    #[test]
+    fn the_confidential_cap_measures_the_reduced_audio_that_is_sent() {
+        // A long segment whose speech is short is well inside the limit.
+        assert!(
+            (super::confidential_capped_seconds(314.2, Some(58.0)) - 58.0).abs() < f64::EPSILON
+        );
+        let mut dispatched = false;
+        super::dispatch_confidential_with_cap(
+            super::confidential_capped_seconds(314.2, Some(58.0)),
+            || {
+                dispatched = true;
+                Ok::<_, TranscribeError>(())
+            },
+        )
+        .expect("reduced audio inside the limit must dispatch");
+        assert!(dispatched, "a 58s statement must reach the backend");
+
+        // 🔒 Negative twins. Nothing about the limit itself moved.
+        // Reduction that is still too long is still refused.
+        assert!(
+            super::dispatch_confidential_with_cap(
+                super::confidential_capped_seconds(900.0, Some(420.0)),
+                || Ok::<_, TranscribeError>(())
+            )
+            .is_err()
+        );
+        // With no reduction, the full duration governs, exactly as before.
+        assert!((super::confidential_capped_seconds(314.2, None) - 314.2).abs() < f64::EPSILON);
+        assert!(
+            super::dispatch_confidential_with_cap(
+                super::confidential_capped_seconds(314.2, None),
+                || Ok::<_, TranscribeError>(())
+            )
+            .is_err()
+        );
     }
 
     #[test]
