@@ -32,6 +32,7 @@ use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write
 use crate::transcript::{
     FullTranscriptWrite, remove_orphan_npz, restore_statement_timestamps, write_full_transcript,
 };
+use solstone_core_observe_audio::reduce_audio;
 
 const SPEAKER_EVIDENCE_VERSION: &str = "speaker-evidence-v1";
 const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
@@ -168,11 +169,10 @@ pub(crate) fn process_one(
     if reduction.is_some() {
         timings.add_ms("reduce", elapsed_ms(reduce_at));
     }
-    let (reduced_audio, reduction) = reduction
+    let (mut reduced_audio, mut reduction) = reduction
         .map(|(audio, reduction)| (Some(audio), Some(reduction)))
         .unwrap_or((None, None));
-    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
-    let reduced_seconds = reduced_audio
+    let mut reduced_seconds = reduced_audio
         .as_ref()
         .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
 
@@ -201,6 +201,30 @@ pub(crate) fn process_one(
             return Err(error);
         }
     };
+    // 🔴 Reduce anyway when the confidential limit would otherwise refuse this audio.
+    //
+    // `reduce_audio_if_needed` declines when the VAD result is noisy AND speech-dense,
+    // which is a sensible default -- but the confidential STT refuses ANY request over
+    // its per-request limit, and the segmenter targets ~300 s, so real segments land
+    // 1-5 s over it constantly. Measured on the founder's journal 2026-09-01: 60
+    // `confidential_audio_too_long` refusals, the sampled ones 301-305 s, none of them
+    // reduced. That is the difference between a transcript and silently losing the
+    // recording, so when the alternative is refusal we reduce to speech-only -- which
+    // is what an STT wants regardless.
+    //
+    // 🔒 Confidential-only and last-resort: every other backend keeps the heuristic
+    // untouched, and audio still too long after reduction is still refused below.
+    if backend == "confidential"
+        && reduced_audio.is_none()
+        && audio_seconds > confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS
+        && let Some((audio, info)) = reduce_audio(&full_audio, &vad)
+    {
+        reduced_seconds = Some(audio.len() as f64 / f64::from(SAMPLE_RATE));
+        reduced_audio = Some(audio);
+        reduction = Some(info);
+    }
+    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
+
     let mut asr_at = None;
     let dispatched = if backend == "confidential" {
         // 🔴 Cap on what is actually SENT, not on the whole segment. `statement_audio`
