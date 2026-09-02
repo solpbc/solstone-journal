@@ -42,6 +42,14 @@
   padding-bottom: 18px;
 }
 
+.timeline-shell .timeline-artifact-note {
+  width: min(100%, 1160px);
+  margin: 12px auto 0;
+  padding: 0 clamp(14px, 4vw, 32px);
+  color: var(--muted);
+  font-size: .78rem;
+}
+
 .timeline-shell .timeline-empty-state {
   width: min(100%, 520px);
   margin: clamp(96px, 18vh, 180px) auto;
@@ -63,6 +71,43 @@
 .timeline-shell .timeline-empty-state .timeline-empty-icon svg {
   width: 32px;
   height: 32px;
+}
+
+.timeline-shell .timeline-truth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.35;
+}
+
+.timeline-shell .timeline-truth-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.timeline-shell .timeline-truth-current { color: #16715d; }
+.timeline-shell .timeline-truth-stale { color: #a65a00; }
+.timeline-shell .timeline-truth-missing { color: #ad3e33; }
+
+.timeline-shell .timeline-truth-detail {
+  color: var(--muted);
+}
+
+.timeline-shell .timeline-truth-action {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 .timeline-shell .timeline-history-view {

@@ -26,8 +26,8 @@
     return String(value).padStart(2, '0');
   }
 
-  function absoluteRollupTitle(generatedAt) {
-    const date = new Date(generatedAt * 1000);
+  function absoluteRollupTitle(generatedAtMs) {
+    const date = new Date(generatedAtMs);
     const hh = pad2(date.getHours());
     const mm = pad2(date.getMinutes());
     const y = date.getFullYear();
@@ -36,18 +36,34 @@
     return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;
   }
 
-  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {
-    if (!generatedAt || !model) return "";
-    const generatedMs = generatedAt * 1000;
-    const relative = global.relativeTime(nowMs - generatedMs);
-    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;
-    const title = absoluteRollupTitle(generatedAt);
+  function renderDayProvenance(generatedAtMs, provenance, nowMs = Date.now()) {
+    if (!generatedAtMs || !provenance?.model) return "";
+    const relative = global.relativeTime(nowMs - generatedAtMs);
+    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${provenance.model}`;
+    const title = absoluteRollupTitle(generatedAtMs);
     return `<p class="timeline-day-provenance" title="${escapeHtml(title)}">${escapeHtml(text)}</p>`;
+  }
+
+  function renderArtifactTruth(status, generatedAtMs, provenance, artifactOutcome) {
+    const normalized = ["current", "stale", "missing"].includes(status) ? status : "stale";
+    const label = normalized === "current" ? "current" : normalized === "stale" ? "refresh needed" : "missing";
+    const model = provenance?.model ? ` · ${provenance.model}` : "";
+    const generated = generatedAtMs ? ` · ${absoluteRollupTitle(generatedAtMs)}` : "";
+    const reason = artifactOutcome && artifactOutcome !== "current" ? ` (${artifactOutcome.replaceAll("_", " ")})` : "";
+    const recovery = normalized === "current"
+      ? ""
+      : '<a class="timeline-truth-action" href="/app/health">refresh timeline in system health →</a>';
+    return `<div class="timeline-truth timeline-truth-${normalized}" role="status">
+      <span class="timeline-truth-badge">${escapeHtml(label)}</span>
+      <span class="timeline-truth-detail">${escapeHtml(`${generated}${model}${reason}`.replace(/^ · /, ""))}</span>
+      ${recovery}
+    </div>`;
   }
 
   const TimelineProvenance = {
     absoluteRollupTitle,
     renderDayProvenance,
+    renderArtifactTruth,
   };
   global.TimelineProvenance = TimelineProvenance;
   if (typeof module !== 'undefined' && module.exports) {

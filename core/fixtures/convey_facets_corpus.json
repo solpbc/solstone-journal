@@ -2671,7 +2671,7 @@
       },
       {
         "body_bytes": 914,
-        "body_sha256": "3655aa455c95ec129034e82f733802cf67739273a7d09a85e94b7aeac85c4ac4",
+        "body_sha256": "78cdf94d273b1432305b7a4f4c25f6cec1a4f4296ea014c83a6a85f2ec2563d5",
         "body_sha256_basis": "raw-body",
         "body_text": "<link rel=\"stylesheet\" href=\"/app/timeline/static/timeline.css\">\n<script>\n(function() {\n  const { segment } = window.solPathContext();\n  let initial = { view: \"day\", day: segment, month: null };\n  if (segment === \"year\") {\n    initial = { view: \"year\", day: null, month: null };\n  } else if (/^\\d{6}$/.test(segment || \"\")) {\n    initial = { view: \"month\", day: null, month: segment };\n  } else if (!/^\\d{8}$/.test(segment || \"\")) {\n    initial = { view: \"day\", day: null, month: null };\n  }\n  window.timelineInitial = initial;\n})();\n</script>\n\n<div class=\"workspace-content-wide\">\n  <div data-date-nav></div>\n  <div id=\"timeline-shell\" class=\"timeline-shell\">\n    <section aria-label=\"Interactive timeline\">\n      <div id=\"timeline-root\"></div>\n    </section>\n  </div>\n</div>\n\n<script defer src=\"/app/timeline/static/timeline_provenance.js\"></script>\n<script defer src=\"/app/timeline/static/timeline.js\"></script>\n",
         "content_disposition": "inline; filename=workspace.html",
@@ -2683,9 +2683,9 @@
       },
       {
         "body_bytes": 2323,
-        "body_sha256": "78cf803cc3abf713aa298c1b1373fb3af96f073c8cddb0b9917c0da98496dd3a",
+        "body_sha256": "b8193248cf0ccd57e1ae203d810b9b1e05e088c3e3e851119c4310f9e1a0b86b",
         "body_sha256_basis": "raw-body",
-        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup-day\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup-day:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        return;\n      }\n      if (/^sched:maintenance:timeline:rollup-master:/.test(ref)) {\n        window.timelineRefresh?.index?.();\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
+        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        window.timelineRefresh?.index?.();\n        return;\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
         "content_disposition": "inline; filename=background.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -2738,8 +2738,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 65905,
-        "body_sha256": "3c4f21a11e6b4e95d2f62ec8667c26698082f912280e8d92caa16c3ecf432695",
+        "body_bytes": 66980,
+        "body_sha256": "c2b268f7acde63506c5d30c41244425d52e3f0a09532991978c47ec8743c540e",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -2750,7 +2750,7 @@
       },
       {
         "body_bytes": 40050,
-        "body_sha256": "ea305e3dddc309067e5c64d71adc44527736843c532267dd5344bd656df5dd91",
+        "body_sha256": "5811516b1d0b3d3319f428bf19c2d75926d5cf3754da8de167976e4f652ba8c1",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -2761,7 +2761,7 @@
       },
       {
         "body_bytes": 1829,
-        "body_sha256": "8618f15941f16a934dab87331c9df4c82266f01c1027c32e49fd5a821098d10b",
+        "body_sha256": "f7fbb5f14a55bbe6910237075b51b4de04100ccfc746a235a453508a271dba83",
         "body_sha256_basis": "raw-body",
         "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",
@@ -2773,7 +2773,7 @@
       },
       {
         "body_bytes": 226,
-        "body_sha256": "b7a8f5ede36f2200dcb3ebfcbfd6bce0099329df4e798231a299a535bc0f5eca",
+        "body_sha256": "0f5d76a8b975c5eda9629baacba087c170d1ed010dbb0373892ce31101ae4435",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2802,7 +2802,7 @@
       },
       {
         "body_bytes": 41,
-        "body_sha256": "083bf6687e24acfb248f86df1ae5fc49c61885f6b86126c4a893cd85679b1d42",
+        "body_sha256": "ca4bac4e30425b04747eb05ec6dd97f8e84350f1e80e9f3a8c74550b1a644fa8",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2873,7 +2873,7 @@
       },
       {
         "body_bytes": 120,
-        "body_sha256": "11ab9dbc144ef9eb0a1233df17c97a23e1baffcd443b07a7c288b3f136d939f4",
+        "body_sha256": "4810972fb104b4652c61e9d6e064a8684ae9fece1486daa48e80a7a6e11c98a6",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2884,12 +2884,12 @@
         "method": "GET",
         "normalized_fields": [],
         "path": "/app/timeline/api/month/202605",
-        "status": 404,
+        "status": 200,
         "why": "a month present in the master rollup"
       },
       {
         "body_bytes": 120,
-        "body_sha256": "fe33a6c41653259a3216567e9720818e8e98143d98e151f5984a86024aa6bf17",
+        "body_sha256": "79b1cc9a85ad3e06eb2ccacf1971daaeabfa0aafdc537077783090fa4c5382af",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2900,7 +2900,7 @@
         "method": "GET",
         "normalized_fields": [],
         "path": "/app/timeline/api/month/209912",
-        "status": 404,
+        "status": 200,
         "why": "a month absent from the rollup: 404 timeline_month_not_found"
       },
       {
@@ -2921,7 +2921,7 @@
       },
       {
         "body_bytes": 112,
-        "body_sha256": "d1c553f39ab495c6494eb890f57bfc098e424e8d2863ff32aea9a555eb79fad2",
+        "body_sha256": "6fa953716597f3fb69faa1d99756547bd199ad45ac71699a1e93f405782d8d23",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2941,7 +2941,7 @@
       },
       {
         "body_bytes": 112,
-        "body_sha256": "11f0c525a83ef224485bb166b859c1d7befad21639da9502e018bc78c7b42e07",
+        "body_sha256": "9abb106c4e70a1ebaa4dfe0fa682b17d965c673e7ae0393124d13dae33688cfc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2980,7 +2980,7 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "638de25c09e5f2d33ebcfe0b9fe4aff204f5be02329cff2ac0431c606cab4d50",
+        "body_sha256": "2dd77f50326cdfd6bcdc32fc643764ded34ed0c02e6ef218afa51209096c0b3a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3003,7 +3003,7 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "3ea8ddd56d077859c89e3517bb0c504dd1c6e8520d0991cbe25a5696db93b6bb",
+        "body_sha256": "edbe016843d10cfb6ae590fbe13549f34174d38113063236932b487cf4489102",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3026,7 +3026,7 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "ec263ce294e7b7e67fab10c1eddc40a5adaa199d5a5ca0a11122e9a493622873",
+        "body_sha256": "9e615477912fee44aea37f71e25635c7beb6d1dcd03507e75adc1f632977305b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3899,7 +3899,7 @@
       },
       {
         "body_bytes": 914,
-        "body_sha256": "3655aa455c95ec129034e82f733802cf67739273a7d09a85e94b7aeac85c4ac4",
+        "body_sha256": "78cdf94d273b1432305b7a4f4c25f6cec1a4f4296ea014c83a6a85f2ec2563d5",
         "body_sha256_basis": "raw-body",
         "body_text": "<link rel=\"stylesheet\" href=\"/app/timeline/static/timeline.css\">\n<script>\n(function() {\n  const { segment } = window.solPathContext();\n  let initial = { view: \"day\", day: segment, month: null };\n  if (segment === \"year\") {\n    initial = { view: \"year\", day: null, month: null };\n  } else if (/^\\d{6}$/.test(segment || \"\")) {\n    initial = { view: \"month\", day: null, month: segment };\n  } else if (!/^\\d{8}$/.test(segment || \"\")) {\n    initial = { view: \"day\", day: null, month: null };\n  }\n  window.timelineInitial = initial;\n})();\n</script>\n\n<div class=\"workspace-content-wide\">\n  <div data-date-nav></div>\n  <div id=\"timeline-shell\" class=\"timeline-shell\">\n    <section aria-label=\"Interactive timeline\">\n      <div id=\"timeline-root\"></div>\n    </section>\n  </div>\n</div>\n\n<script defer src=\"/app/timeline/static/timeline_provenance.js\"></script>\n<script defer src=\"/app/timeline/static/timeline.js\"></script>\n",
         "content_disposition": "inline; filename=workspace.html",
@@ -3911,9 +3911,9 @@
       },
       {
         "body_bytes": 2323,
-        "body_sha256": "78cf803cc3abf713aa298c1b1373fb3af96f073c8cddb0b9917c0da98496dd3a",
+        "body_sha256": "b8193248cf0ccd57e1ae203d810b9b1e05e088c3e3e851119c4310f9e1a0b86b",
         "body_sha256_basis": "raw-body",
-        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup-day\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup-day:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        return;\n      }\n      if (/^sched:maintenance:timeline:rollup-master:/.test(ref)) {\n        window.timelineRefresh?.index?.();\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
+        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        window.timelineRefresh?.index?.();\n        return;\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
         "content_disposition": "inline; filename=background.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -3966,8 +3966,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 65905,
-        "body_sha256": "3c4f21a11e6b4e95d2f62ec8667c26698082f912280e8d92caa16c3ecf432695",
+        "body_bytes": 66980,
+        "body_sha256": "c2b268f7acde63506c5d30c41244425d52e3f0a09532991978c47ec8743c540e",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -3978,7 +3978,7 @@
       },
       {
         "body_bytes": 40050,
-        "body_sha256": "ea305e3dddc309067e5c64d71adc44527736843c532267dd5344bd656df5dd91",
+        "body_sha256": "5811516b1d0b3d3319f428bf19c2d75926d5cf3754da8de167976e4f652ba8c1",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -3989,7 +3989,7 @@
       },
       {
         "body_bytes": 1829,
-        "body_sha256": "8618f15941f16a934dab87331c9df4c82266f01c1027c32e49fd5a821098d10b",
+        "body_sha256": "f7fbb5f14a55bbe6910237075b51b4de04100ccfc746a235a453508a271dba83",
         "body_sha256_basis": "raw-body",
         "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",
@@ -4001,7 +4001,7 @@
       },
       {
         "body_bytes": 371,
-        "body_sha256": "076f1d8cd8ab03e6376ade135a1ac8b860ef798f90beabffe3f004619d6490f1",
+        "body_sha256": "2d7382a1e922d9672886dc3d296aca9baf16fb4dff3fbf1b0b38f75449108558",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4041,7 +4041,7 @@
       },
       {
         "body_bytes": 86,
-        "body_sha256": "042b07397e7a8a541fe8279af4f7523aa9d2f12ea8a6130e2b9d0f5c1cdd58ad",
+        "body_sha256": "4edff57cb0bbc1e0dfb34e4deb90777e04a14cc6fc710992a39ec41c7afa68be",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4124,7 +4124,7 @@
       },
       {
         "body_bytes": 367,
-        "body_sha256": "c23d6af9545485ab9d321b10b2af5c1849aa63807bdee4691f6e45dfe3054479",
+        "body_sha256": "bab1129929aa80ef72956173400c68582bde6125bfecdc0f0ecc40ad917e2247",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4159,7 +4159,7 @@
       },
       {
         "body_bytes": 120,
-        "body_sha256": "fe33a6c41653259a3216567e9720818e8e98143d98e151f5984a86024aa6bf17",
+        "body_sha256": "5fc1494b9a8be8f074ca8009e16ed52f11137c865e4915ced23900964b818612",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4170,7 +4170,7 @@
         "method": "GET",
         "normalized_fields": [],
         "path": "/app/timeline/api/month/209912",
-        "status": 404,
+        "status": 200,
         "why": "a month absent from the rollup: 404 timeline_month_not_found"
       },
       {
@@ -4191,7 +4191,7 @@
       },
       {
         "body_bytes": 3848,
-        "body_sha256": "9cec5fe560eb14949dd00ff25dc650b42d76e7486c7f1543045e4c51c33e702d",
+        "body_sha256": "9a0e61494fe6cf23e258ef3897a92206e6380a83bff6075c3b021b0c8cb160b1",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4463,7 +4463,7 @@
       },
       {
         "body_bytes": 112,
-        "body_sha256": "11f0c525a83ef224485bb166b859c1d7befad21639da9502e018bc78c7b42e07",
+        "body_sha256": "9abb106c4e70a1ebaa4dfe0fa682b17d965c673e7ae0393124d13dae33688cfc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4499,7 +4499,7 @@
       },
       {
         "body_bytes": 403,
-        "body_sha256": "bf42142d8210716d07dee986d3740774d30cbf369d2f12fad7989681ad31255d",
+        "body_sha256": "2a758e0d26d0c0f99da22170a9d3bef7913a054a0f1db91da6e741f5514c4035",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4551,7 +4551,7 @@
       },
       {
         "body_bytes": 350,
-        "body_sha256": "077b8c328935a03deb4cb95c2ff758594571500ddb7563873e15912968a81277",
+        "body_sha256": "c84d67788d82aeb6d7c3cb878a8632f71fc7ec216add18623b11f336a1fd5865",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4588,7 +4588,7 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "ec263ce294e7b7e67fab10c1eddc40a5adaa199d5a5ca0a11122e9a493622873",
+        "body_sha256": "9e615477912fee44aea37f71e25635c7beb6d1dcd03507e75adc1f632977305b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {

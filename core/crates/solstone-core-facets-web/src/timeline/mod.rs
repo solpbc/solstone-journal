@@ -23,6 +23,7 @@ use crate::{
 
 mod browser;
 mod day;
+mod projection;
 mod rollup;
 mod segment;
 
@@ -126,14 +127,15 @@ async fn overview(root: PathBuf, clock: Clock) -> Response {
         .unwrap_or_else(|_| http::internal_error())
 }
 async fn grid(root: PathBuf) -> Response {
-    match rollup::load_master(&root) {
-        Ok(master) => json_response(date_nav::day_grid_payload(
-            &day_segment_counts(&root, None),
-            rollup::rollup_watermark(&master).as_deref(),
-            None,
-        )),
-        Err(_) => http::internal_error(),
-    }
+    let master = rollup::master(&root);
+    let mut payload = date_nav::day_grid_payload(
+        &day_segment_counts(&root, None),
+        rollup::rollup_watermark(&master).as_deref(),
+        None,
+    );
+    payload["timeline_status"] = Value::String(master.status.as_str().to_owned());
+    payload["timeline_artifact_outcome"] = Value::String(master.outcome.as_str().to_owned());
+    json_response(payload)
 }
 async fn index_api(root: PathBuf) -> Response {
     json_response(date_nav::date_nav_index(&day_segment_counts(&root, None)))
@@ -162,16 +164,9 @@ async fn month(root: PathBuf, ym: String) -> Response {
             StatusCode::BAD_REQUEST,
         );
     }
-    match rollup::month(&root, &ym) {
-        Ok(Some(value)) => json_response(value),
-        Ok(None) => http::error(
-            "timeline_month_not_found",
-            "I couldn't find that timeline month.",
-            format!("no data for {ym}"),
-            StatusCode::NOT_FOUND,
-        ),
-        Err(_) => http::internal_error(),
-    }
+    rollup::month(&root, &ym)
+        .map(json_response)
+        .unwrap_or_else(|_| http::internal_error())
 }
 async fn day(root: PathBuf, value: String) -> Response {
     if !is_day(&value) {
@@ -182,15 +177,10 @@ async fn day(root: PathBuf, value: String) -> Response {
             StatusCode::BAD_REQUEST,
         );
     }
-    match rollup::day_rollup(&root, &value) {
-        Ok(mut value_json) => {
-            value_json["day"] = Value::String(value.clone());
-            value_json["hours_avail"] =
-                day::hours_avail(&value, iter_segments(&root.join("chronicle").join(&value)));
-            json_response(value_json)
-        }
-        Err(_) => http::internal_error(),
-    }
+    let mut value_json = rollup::day_rollup(&root, &value);
+    value_json["hours_avail"] =
+        day::hours_avail(&value, iter_segments(&root.join("chronicle").join(&value)));
+    json_response(value_json)
 }
 async fn segment_api(root: PathBuf, day: String, stream: String, segment: String) -> Response {
     if !is_day(&day)
@@ -208,4 +198,50 @@ async fn segment_api(root: PathBuf, day: String, stream: String, segment: String
 }
 fn json_response(value: Value) -> Response {
     axum::Json(value).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    use super::routes;
+    use crate::test_support::{fixed_clock, phase_root, write};
+
+    #[tokio::test]
+    async fn day_api_uses_its_own_artifact_when_master_state_is_stale() {
+        let root = phase_root("populated");
+        let state_path = root.path().join("health/timeline/state.json");
+        let mut state: Value =
+            serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).expect("state JSON");
+        state["artifacts"]["master"]["input_digest"] = json!("stale-master");
+        write(
+            &state_path,
+            &serde_json::to_string(&state).expect("state JSON"),
+        );
+
+        let response = routes(root.path().to_path_buf(), fixed_clock())
+            .oneshot(
+                Request::get("/app/timeline/api/day/20260510")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let payload: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+
+        assert_eq!(payload["status"], "current");
+        assert_eq!(payload["day_top"][0]["binding"]["segment"], "100000_300");
+    }
 }

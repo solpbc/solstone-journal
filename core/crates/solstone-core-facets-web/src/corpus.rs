@@ -39,6 +39,7 @@ fn sort_json(value: &Value) -> Value {
         _ => value.clone(),
     }
 }
+
 fn ensure_ascii(value: &str) -> String {
     let mut output = String::new();
     for ch in value.chars() {
@@ -1037,41 +1038,50 @@ async fn ac4_clock_grows_populated_coverage_by_one_month() {
 }
 
 #[tokio::test]
-async fn ac17_unparseable_rollup_is_internal_error() {
+async fn ac17_unparseable_master_rollup_is_a_named_stale_outcome() {
     let root = phase_root("established_empty");
     write(&root.path().join("timeline.json"), "{");
     let router = routes(root.path().to_path_buf(), fixed_clock());
-    for path in [
-        "/app/timeline/api/overview",
-        "/app/timeline/api/grid",
-        "/app/timeline/api/month/202605",
-        "/app/timeline/api/day/20260510",
+    for (path, status, outcome) in [
+        ("/app/timeline/api/overview", "stale", "malformed"),
+        ("/app/timeline/api/grid", "stale", "malformed"),
+        ("/app/timeline/api/month/202605", "stale", "malformed"),
+        ("/app/timeline/api/day/20260510", "missing", "missing"),
     ] {
         let response = router
             .clone()
             .oneshot(Request::get(path).body(Body::empty()).expect("request"))
             .await
             .expect("response");
-        assert_eq!(
-            response.status(),
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR
-        );
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
-        assert_eq!(
-            to_bytes(response.into_body(), usize::MAX)
+        let payload: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
                 .await
                 .expect("body"),
-            r#"{"detail":"","error":"I couldn't complete that request.","reason_code":"internal_error"}"#
-        );
+        )
+        .expect("JSON");
+        let status_field = if path.ends_with("grid") {
+            &payload["timeline_status"]
+        } else {
+            &payload["status"]
+        };
+        let outcome_field = if path.ends_with("grid") {
+            &payload["timeline_artifact_outcome"]
+        } else {
+            &payload["artifact_outcome"]
+        };
+        assert_eq!(status_field, status, "{path}");
+        assert_eq!(outcome_field, outcome, "{path}");
     }
 }
 
 #[tokio::test]
-async fn ac17_semantically_invalid_rollup_month_is_internal_error() {
+async fn ac17_semantically_invalid_master_rollup_is_a_named_stale_outcome() {
     let root = phase_root("established_empty");
     write(
         &root.path().join("timeline.json"),
-        r#"{"months":{"202699":{}}}"#,
+        r#"{"schema_version":1,"kind":"day","source_digest":"input","generated_at_ms":1,"top_n":1,"months":{},"year_top":[],"year_curation":{"input_digest":"input","candidate_count":0,"picks":[],"rationale":"","error":null,"provenance":null}}"#,
     );
     let response = routes(root.path().to_path_buf(), fixed_clock())
         .oneshot(
@@ -1081,17 +1091,16 @@ async fn ac17_semantically_invalid_rollup_month_is_internal_error() {
         )
         .await
         .expect("response");
-    assert_eq!(
-        response.status(),
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
     assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
-    assert_eq!(
-        to_bytes(response.into_body(), usize::MAX)
+    let payload: Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body"),
-        r#"{"detail":"","error":"I couldn't complete that request.","reason_code":"internal_error"}"#
-    );
+    )
+    .expect("JSON");
+    assert_eq!(payload["status"], "stale");
+    assert_eq!(payload["artifact_outcome"], "invalid");
 }
 
 #[test]

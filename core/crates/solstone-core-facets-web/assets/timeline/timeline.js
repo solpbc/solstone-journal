@@ -10,6 +10,7 @@ let gridCache = null;
 let gridInflight = null;
 let gridGeneration = 0;
 let timelineUnit = null;
+let overviewArtifact = null;
 
 const ACCENT_ROTATION = ["blue", "teal", "amber", "coral"];
 const MONTH_FULL_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -94,6 +95,7 @@ async function loadIndex() {
       console.warn("/app/timeline/api/overview returned unreadable JSON; showing timeline error", e);
       return { state: "error" };
     }
+    overviewArtifact = idx;
     rebuildMonthsFromIndex(idx);
     const state = months.every((m) => !(m.day_count > 0)) ? "empty" : "data";
     console.info(`loaded /app/timeline/api/overview (${idx.months.length} months)`);
@@ -584,10 +586,12 @@ function renderEmptyState(headline, body, opts = {}) {
   const link = opts.href && opts.linkText
     ? `<a href="${escapeHtml(opts.href)}">${escapeHtml(opts.linkText)}</a>`
     : "";
+  const detail = opts.detailHtml || "";
   return `
     <div class="${classes}" data-timeline-state="empty">${icon}
       <h2>${escapeHtml(headline)}</h2>
       <p>${escapeHtml(body)}</p>
+      ${detail}
       ${link}
     </div>
   `;
@@ -601,6 +605,15 @@ function renderErrorState() {
       <a href="/app/health">system health →</a>
     </div>
   `;
+}
+
+function renderArtifactTruth(data) {
+  return window.TimelineProvenance.renderArtifactTruth(
+    data?.status,
+    data?.generated_at_ms,
+    data?.provenance,
+    data?.artifact_outcome,
+  );
 }
 
 function eventColumn(day, span, days) {
@@ -827,7 +840,11 @@ async function renderAllHistory() {
     timeline.innerHTML = renderEmptyState(
       "no timeline data yet",
       "once what you share from a day is in your journal, that day shows up here",
-      { href: "/app/health", linkText: "system health →" },
+      {
+        href: "/app/health",
+        linkText: "system health →",
+        detailHtml: renderArtifactTruth(overviewArtifact),
+      },
     );
     return;
   }
@@ -837,6 +854,7 @@ async function renderAllHistory() {
       <section class="timeline-history-lede" aria-label="timeline history summary">
         <h2>all history</h2>
         <p>${escapeHtml(summary.total)} across ${summary.activeDays} ${summary.activeDayLabel} since ${escapeHtml(summary.coverageStart)}</p>
+        ${renderArtifactTruth(overviewArtifact)}
       </section>
       <div class="timeline-history-grid" data-timeline-daygrid></div>
       <div class="timeline-history-legend" data-timeline-daygrid-legend></div>
@@ -868,6 +886,7 @@ async function renderMonth(index) {
     timeline.innerHTML = renderEmptyState(
       `nothing in your journal for ${month.name}`,
       "this month has no timeline rollups yet.",
+      { detailHtml: renderArtifactTruth(monthCache[month.ym]) },
     );
     return;
   }
@@ -888,6 +907,7 @@ async function renderMonth(index) {
           <button class="timeline-focus-node" type="button" data-month="${index}" aria-label="return to all history">
             ${month.short}
           </button>
+          ${renderArtifactTruth(monthCache[month.ym])}
         </div>
 
         <div class="events-lane timeline-top" aria-label="${month.name} highlighted events above the daily timeline">
@@ -939,6 +959,7 @@ async function renderDay(monthIndex, day) {
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
         href: "/app/health",
         linkText: "system health →",
+        detailHtml: renderArtifactTruth(data),
       },
     );
     return;
@@ -949,6 +970,7 @@ async function renderDay(monthIndex, day) {
     timeline.innerHTML = renderEmptyState(
       `rollup pending for ${dateLabel}`,
       `${segmentCount} ${noun} ${verb} ready for a timeline rollup.`,
+      { detailHtml: renderArtifactTruth(data) },
     );
     return;
   }
@@ -969,7 +991,8 @@ async function renderDay(monthIndex, day) {
           <button class="day-focus-node" type="button" data-month="${monthIndex}" data-return-month="true" aria-label="return to ${month.name} ${month.year || ""}">
             ${dayLabel}
           </button>
-          ${window.TimelineProvenance.renderDayProvenance(data.generated_at, data.model)}
+          ${renderArtifactTruth(data)}
+          ${window.TimelineProvenance.renderDayProvenance(data.generated_at_ms, data.provenance)}
         </div>
 
         <div class="hour-lane timeline-top" aria-label="${month.name} ${day} highlighted events above the hourly timeline">
@@ -1423,6 +1446,12 @@ async function renderFiveMinute(monthIndex, day, hour, minute) {
             <span class="seg-header-mid">${escapeHtml(meta.stream || "—")}</span>
             <span class="seg-header-end">${escapeHtml(setting)} setting</span>
           </div>
+          ${renderArtifactTruth({
+            ...primarySample,
+            generated_at_ms: primarySample.timeline?.generated_at_ms,
+            provenance: primarySample.timeline?.provenance,
+          })}
+          ${primarySample.timeline ? window.TimelineProvenance.renderDayProvenance(primarySample.timeline.generated_at_ms, primarySample.timeline.provenance) : ""}
           ${topics.length ? `<div class="seg-topics">${topics.map((t) => `<span class="topic-chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         </header>
 

@@ -4,18 +4,41 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
+use solstone_core_timeline::SegmentBindingV1;
 
 use crate::segments::DEFAULT_STREAM;
 
-use super::browser;
+use super::{browser, projection};
 
 pub fn load(root: &Path, day: &str, stream: &str, segment: &str) -> Value {
+    let binding = SegmentBindingV1 {
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        segment: segment.to_owned(),
+    };
+    let timeline = projection::segment(root, &binding);
     let dir = if stream == DEFAULT_STREAM {
         root.join("chronicle").join(day).join(segment)
     } else {
         root.join("chronicle").join(day).join(stream).join(segment)
     };
-    let mut payload = json!({"day": day, "stream": if stream == DEFAULT_STREAM { "" } else { stream }, "segment": segment, "audio": null, "screen": null, "browser": []});
+    let mut payload = json!({
+        "day": day,
+        "stream": if stream == DEFAULT_STREAM { "" } else { stream },
+        "segment": segment,
+        "status": timeline.status.as_str(),
+        "artifact_outcome": timeline.outcome.as_str(),
+        "timeline": timeline.value.as_ref().map(|value| json!({
+            "binding": value.binding,
+            "input_digest": value.input_digest,
+            "generated_at_ms": value.generated_at_ms,
+            "summary": value.summary,
+            "provenance": value.provenance,
+        })),
+        "audio": null,
+        "screen": null,
+        "browser": [],
+    });
     if !dir.is_dir() {
         payload["error"] = Value::String(format!("segment dir not found: {}", dir.display()));
         return payload;
@@ -139,7 +162,10 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use crate::segments::{DEFAULT_STREAM, origin};
+    use crate::{
+        segments::{DEFAULT_STREAM, origin},
+        test_support::phase_root,
+    };
 
     use super::{load, site_name};
 
@@ -206,6 +232,20 @@ mod tests {
         assert_eq!(
             site_name("browser_x.jsonl", Some(&json!({"adapter": "my adapter"}))),
             "My Adapter"
+        );
+    }
+
+    #[test]
+    fn segment_timeline_status_and_provenance_are_projected_from_v1_artifact() {
+        let root = phase_root("populated");
+        let payload = load(root.path(), "20260510", DEFAULT_STREAM, "100000_300");
+
+        assert_eq!(payload["status"], "current");
+        assert_eq!(payload["artifact_outcome"], "current");
+        assert_eq!(payload["timeline"]["summary"]["title"], "Both streams");
+        assert_eq!(
+            payload["timeline"]["provenance"]["model"],
+            "corpus-segment-model"
         );
     }
 }

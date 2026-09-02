@@ -159,79 +159,185 @@ fn chronicle(root: &Path) {
         &day.join("workstation.browser/140000_300/browser_docs-example-com.jsonl"),
         "{\"t\": \"segment_start\", \"ts\": 1770000300, \"site\": \"docs.example.com\", \"title\": \"Example docs\", \"adapter\": \"generic\", \"text\": \"The opening snapshot of the page.\"}\n{\"t\": \"change\", \"ts\": 1770000360, \"text\": \"A second paragraph appeared.\"}\n",
     );
-    write(&root.join("timeline.json"), MASTER);
+    write_timeline_artifacts(root, &day);
 }
 
-const MASTER: &str = r#"{
-  "generated_at": 1770000000,
-  "model": "corpus-model",
-  "top_n": 4,
-  "year_top": [
-    {
-      "month": "202605",
-      "title": "Timeline port",
-      "description": "The month the corpus describes.",
-      "origin": "20260510/100000_300"
+fn write_timeline_artifacts(root: &Path, day_path: &Path) {
+    let default = entry(
+        "Both streams",
+        "A default-stream segment with audio and screen.",
+        "_default",
+        "100000_300",
+    );
+    let browsing = entry(
+        "Browsing",
+        "A named browser stream.",
+        "workstation.browser",
+        "140000_300",
+    );
+    let day = serde_json::json!({
+        "schema_version": 1,
+        "kind": "day",
+        "day": "20260510",
+        "source_digest": "day-input",
+        "generated_at_ms": 1770000100000_i64,
+        "top_n": 4,
+        "segment_count": 3,
+        "hour_count": 2,
+        "hours": {
+            "10": hour("hour-10-input", 2, vec![default.clone()], "The only populated hour with both."),
+            "14": hour("hour-14-input", 1, vec![browsing.clone()], "The browser hour."),
+        },
+        "day_curation": timeline_curation("day-input", 3, vec![default.clone()], "One seeded day.", "corpus-day-model"),
+    });
+    write_json(&day_path.join("timeline.json"), &day);
+    for (path, digest, title, description, stream, segment) in [
+        (
+            day_path.join("100000_300/timeline.json"),
+            "segment-default-input",
+            "Both streams",
+            "A default-stream segment with audio and screen.",
+            "_default",
+            "100000_300",
+        ),
+        (
+            day_path.join("103000_300/timeline.json"),
+            "segment-second-input",
+            "Audio follow-up",
+            "A default-stream audio follow-up.",
+            "_default",
+            "103000_300",
+        ),
+        (
+            day_path.join("workstation.browser/140000_300/timeline.json"),
+            "segment-browser-input",
+            "Browsing",
+            "A named browser stream.",
+            "workstation.browser",
+            "140000_300",
+        ),
+    ] {
+        let summary = entry(title, description, stream, segment);
+        write_json(
+            &path,
+            &serde_json::json!({
+                "schema_version": 1,
+                "kind": "segment",
+                "binding": summary["binding"],
+                "input_digest": digest,
+                "generated_at_ms": 1770000050000_i64,
+                "summary": {
+                    "title": summary["title"],
+                    "description": summary["description"],
+                    "origin": summary["origin"],
+                    "continuation_of": null,
+                },
+                "provenance": provenance("corpus-segment-model"),
+            }),
+        );
     }
-  ],
-  "months": {
-    "202604": {
-      "month_top": [],
-      "month_rationale": "",
-      "day_count": 0,
-      "days_with_data": [],
-      "days": {}
-    },
-    "202605": {
-      "month_top": [
-        {
-          "title": "Timeline port",
-          "description": "The month the corpus describes.",
-          "origin": "20260510/100000_300"
-        }
-      ],
-      "month_rationale": "One seeded day with two streams.",
-      "day_count": 1,
-      "days_with_data": [
-        "20260510"
-      ],
-      "days": {
-        "20260510": {
-          "generated_at": 1770000100,
-          "model": "corpus-day-model",
-          "day_top": [
-            {
-              "title": "Both streams",
-              "description": "A default-stream segment with audio and screen.",
-              "origin": "20260510/100000_300"
-            }
-          ],
-          "day_rationale": "One seeded day.",
-          "hours": {
-            "10": {
-              "picks": [
-                {
-                  "title": "Both streams",
-                  "description": "Audio and screen together.",
-                  "origin": "20260510/100000_300"
-                }
-              ],
-              "rationale": "The only populated hour with both."
+    let master = serde_json::json!({
+        "schema_version": 1,
+        "kind": "master",
+        "source_digest": "master-input",
+        "generated_at_ms": 1770000000000_i64,
+        "top_n": 4,
+        "months": {
+            "202604": {
+                "day_count": 0,
+                "days": {},
+                "month_curation": timeline_curation("month-202604-input", 0, Vec::<serde_json::Value>::new(), "", "corpus-master-model"),
             },
-            "14": {
-              "picks": [
-                {
-                  "title": "Browsing",
-                  "description": "A named browser stream.",
-                  "origin": "20260510/workstation.browser/140000_300"
-                }
-              ],
-              "rationale": "The browser hour."
-            }
-          }
-        }
-      }
-    }
-  }
+            "202605": {
+                "day_count": 1,
+                "days": {"20260510": day},
+                "month_curation": timeline_curation("month-202605-input", 1, vec![default.clone()], "One seeded day with two streams.", "corpus-master-model"),
+            },
+        },
+        "year_top": [{"month": "202605", "entry": default.clone()}],
+        "year_curation": timeline_curation("master-input", 1, vec![default], "One seeded month.", "corpus-master-model"),
+    });
+    write_json(&root.join("timeline.json"), &master);
+    write_json(
+        &root.join("health/timeline/state.json"),
+        &serde_json::json!({
+            "schema_version": 1,
+            "revision": 1,
+            "artifacts": {
+                "master": artifact("master-input"),
+                "day:20260510": artifact("day-input"),
+                "segment:20260510/_default/100000_300": artifact("segment-default-input"),
+                "segment:20260510/_default/103000_300": artifact("segment-second-input"),
+                "segment:20260510/workstation.browser/140000_300": artifact("segment-browser-input"),
+            },
+            "attempts": {},
+        }),
+    );
 }
-"#;
+
+fn entry(title: &str, description: &str, stream: &str, segment: &str) -> serde_json::Value {
+    let origin = if stream == "_default" {
+        format!("20260510/{segment}")
+    } else {
+        format!("20260510/{stream}/{segment}")
+    };
+    serde_json::json!({
+        "title": title,
+        "description": description,
+        "origin": origin,
+        "binding": {"day": "20260510", "stream": stream, "segment": segment},
+    })
+}
+
+fn hour(
+    input_digest: &str,
+    segment_count: usize,
+    picks: Vec<serde_json::Value>,
+    rationale: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "source_digest": input_digest,
+        "segment_count": segment_count,
+        "curation": timeline_curation(input_digest, segment_count, picks, rationale, "corpus-day-model"),
+    })
+}
+
+fn timeline_curation(
+    input_digest: &str,
+    candidate_count: usize,
+    picks: Vec<serde_json::Value>,
+    rationale: &str,
+    model: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "input_digest": input_digest,
+        "candidate_count": candidate_count,
+        "picks": picks,
+        "rationale": rationale,
+        "error": null,
+        "provenance": provenance(model),
+    })
+}
+
+fn provenance(model: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "finish_reason": "stop",
+        "schema_validation": {"valid": true},
+        "inference": {},
+        "usage": {},
+    })
+}
+
+fn artifact(input_digest: &str) -> serde_json::Value {
+    serde_json::json!({
+        "input_digest": input_digest,
+        "artifact_sha256": "fixture",
+        "published_at_ms": 1770000000000_i64,
+        "generation": 1,
+    })
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) {
+    write(path, &serde_json::to_string(value).expect("timeline JSON"));
+}
