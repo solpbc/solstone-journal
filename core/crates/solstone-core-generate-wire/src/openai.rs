@@ -386,8 +386,8 @@ fn parse_response(body: &str, secret: &str) -> OpenAiResult {
             return failure("provider_response_invalid");
         };
         for block in content {
-            if let Some(value) = block.get("output_text") {
-                let Some(value) = value.as_str() else {
+            if block.get("type").and_then(Value::as_str) == Some("output_text") {
+                let Some(value) = block.get("text").and_then(Value::as_str) else {
                     return failure("provider_response_invalid");
                 };
                 text.push_str(value);
@@ -437,8 +437,8 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
             return converse_failure("provider_response_invalid");
         };
         for block in content {
-            if let Some(value) = block.get("output_text") {
-                let Some(value) = value.as_str() else {
+            if block.get("type").and_then(Value::as_str) == Some("output_text") {
+                let Some(value) = block.get("text").and_then(Value::as_str) else {
                     return converse_failure("provider_response_invalid");
                 };
                 text.push_str(value);
@@ -760,7 +760,7 @@ mod tests {
         json!({
             "model": "gpt-response-model",
             "status": "completed",
-            "output": [{"content": [{"output_text": "done"}]}],
+            "output": [{"content": [{"type": "output_text", "text": "done"}]}],
             "usage": {"input_tokens": 12, "output_tokens": 34, "total_tokens": 46},
         })
     }
@@ -845,10 +845,62 @@ mod tests {
     fn multiple_output_text_blocks_are_concatenated() {
         let mut body = successful_body();
         body["output"] = json!([
-            {"content": [{"output_text": "first "}, {"output_text": "second"}]},
-            {"content": [{"output_text": " third"}]},
+            {"content": [{"type": "output_text", "text": "first "}, {"type": "output_text", "text": "second"}]},
+            {"content": [{"type": "output_text", "text": " third"}]},
         ]);
         assert_eq!(parsed(body).text, "first second third");
+    }
+
+    #[test]
+    fn real_output_text_block_extracts_text_despite_extra_fields() {
+        let mut body = successful_body();
+        body["output"] = json!([{
+            "content": [{
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "Paris",
+            }],
+        }]);
+        body["usage"]["output_tokens_details"] = json!({"reasoning_tokens": 0});
+        assert_eq!(parsed(body).text, "Paris");
+    }
+
+    #[test]
+    fn converse_real_output_text_block_extracts_text_despite_extra_fields() {
+        let offered = BTreeSet::new();
+        let OpenAiConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "model": "gpt",
+                "status": "completed",
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 34,
+                    "total_tokens": 46,
+                    "output_tokens_details": {"reasoning_tokens": 0}
+                },
+                "output": [{
+                    "content": [{
+                        "type": "output_text",
+                        "annotations": [],
+                        "logprobs": [],
+                        "text": "Paris"
+                    }]
+                }]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("text turn expected")
+        };
+        assert_eq!(turn.text, "Paris");
+    }
+
+    #[test]
+    fn legacy_output_text_key_without_type_yields_empty_text() {
+        let mut body = successful_body();
+        body["output"] = json!([{"content": [{"output_text": "x"}]}]);
+        assert_eq!(parsed(body).text, "");
     }
 
     #[test]
@@ -1181,7 +1233,7 @@ mod tests {
     #[test]
     fn blank_extracted_text_keeps_distinctive_raw_snippet_on_refusal() {
         let mut body = successful_body();
-        body["output"] = json!([{"content": [{"output_text": ""}]}]);
+        body["output"] = json!([{"content": [{"type": "output_text", "text": ""}]}]);
         body["distinctive"] = json!("blank-visible-openai-xyz");
         let generated = parsed(body);
         assert!(generated.text.trim().is_empty());
@@ -1276,7 +1328,7 @@ mod tests {
         let offered = ["weather".to_owned()].into_iter().collect();
         let OpenAiConverseResult::Turn(turn) = parse_converse_response(&json!({
             "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
-            "output":[{"content":[{"output_text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
+            "output":[{"content":[{"type":"output_text","text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
         }).to_string(), &offered) else { panic!("tool turn expected") };
         assert_eq!(turn.finish_reason, "tool_calls");
         assert_eq!(turn.text, "before");
@@ -1292,7 +1344,7 @@ mod tests {
         let OpenAiResult::Generated(generated) = parse_response(
             &json!({
                 "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
-                "output":[{"content":[{"output_text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
+                "output":[{"content":[{"type":"output_text","text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
             })
             .to_string(),
             "",
@@ -1368,7 +1420,7 @@ mod tests {
         assert_eq!(truncated.finish_reason, "max_tokens");
         assert!(truncated.tool_calls.is_empty());
         let OpenAiConverseResult::Turn(text_only) = parse_converse_response(&json!({
-            "model":"gpt","status":"completed","usage":{},"output":[{"content":[{"output_text":"plain text"}]}]
+            "model":"gpt","status":"completed","usage":{},"output":[{"content":[{"type":"output_text","text":"plain text"}]}]
         }).to_string(), &offered) else { panic!("text turn expected") };
         assert_eq!(text_only.text, "plain text");
         assert!(text_only.tool_calls.is_empty());
