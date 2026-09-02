@@ -11,6 +11,21 @@
   font-family: var(--font-body);
 }
 
+/* convey-shell.md §3.2: the workspace header must reserve the small local
+   clearance needed to avoid collision with the shell's fixed #status-instrument
+   (top/right: var(--status-instrument-inset), height: var(--status-instrument-size)).
+   Every date-nav host renders this control near its own top with a small,
+   host-specific offset (as little as 8px in speakers, the tightest case), and
+   nothing upstream reserves room for the instrument, so the two collided.
+   Gated to >700px, matching .status-label's own hide breakpoint in app.css —
+   below that the instrument shrinks to an icon with no label to overlap, so no
+   extra clearance is needed and narrow layouts are left untouched. */
+@media (min-width: 701px) {
+  .date-nav-content {
+    margin-top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap) - 8px);
+  }
+}
+
 .date-nav-content__bar {
   display: inline-flex;
   align-items: center;
