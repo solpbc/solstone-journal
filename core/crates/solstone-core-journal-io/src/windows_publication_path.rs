@@ -474,7 +474,8 @@ mod windows_impl {
                 .0
         }
 
-        /// Admitted destination leaf name; this lode never opens or creates it.
+        /// Admitted destination leaf name; `WindowsPublicationPath` itself never opens or creates it —
+        /// callers publish onto it via a no-replace move.
         pub(crate) fn leaf_name(&self) -> &OsStr {
             &self.leaf
         }

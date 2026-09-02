@@ -17,6 +17,8 @@ const COMPETITOR: &[u8] = b"competitor-bytes";
 const PAYLOAD: &[u8] = b"exclusive-payload";
 const MAX_EXTENDED_PATH_UTF16: usize = 32_767;
 const VOLUME_GUID_ESTIMATE: usize = 49;
+const VOLUME_GUID_PREFIX_MIN: usize = 48;
+const VOLUME_GUID_PREFIX_MAX: usize = 64;
 const WORST_CASE_STAGE_UTF16: usize = 88;
 
 fn temporary(label: &str) -> tempfile::TempDir {
@@ -112,7 +114,10 @@ fn cwd_ancestor_contrib(cwd: &Path) -> usize {
 fn missing_ancestor_path(cwd: &Path, dest_leaf: &str) -> PathBuf {
     let target_parent = MAX_EXTENDED_PATH_UTF16 - 45;
     let base = VOLUME_GUID_ESTIMATE + cwd_ancestor_contrib(cwd);
-    let mut needed = target_parent.saturating_sub(base);
+    pad_relative_ancestors(target_parent.saturating_sub(base), dest_leaf)
+}
+
+fn pad_relative_ancestors(mut needed: usize, dest_leaf: &str) -> PathBuf {
     let mut path = PathBuf::new();
     path.push(format!("absent{}", "x".repeat(249)));
     needed = needed.saturating_sub(256);
@@ -127,6 +132,59 @@ fn missing_ancestor_path(cwd: &Path, dest_leaf: &str) -> PathBuf {
     }
     path.push(dest_leaf);
     path
+}
+
+fn relative_ancestor_units(path: &Path) -> usize {
+    let mut components = path
+        .components()
+        .map(|component| component.as_os_str().to_str().expect("UTF-8 component"))
+        .collect::<Vec<_>>();
+    components.pop();
+    components
+        .iter()
+        .map(|component| 1 + component.encode_utf16().count())
+        .sum()
+}
+
+fn leaf_units(path: &Path) -> usize {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .expect("UTF-8 leaf")
+        .encode_utf16()
+        .count()
+}
+
+fn spelling_units(guid_prefix: usize, cwd_units: usize, extra_units: usize, leaf: usize) -> usize {
+    guid_prefix + cwd_units + extra_units + 1 + leaf
+}
+
+fn dest_fits_stage_overflows_path(cwd: &Path, dest_leaf: &str) -> PathBuf {
+    let cwd_units = cwd_ancestor_contrib(cwd);
+    let needed = (MAX_EXTENDED_PATH_UTF16 - WORST_CASE_STAGE_UTF16)
+        .saturating_sub(VOLUME_GUID_PREFIX_MIN)
+        .saturating_sub(cwd_units);
+    pad_relative_ancestors(needed, dest_leaf)
+}
+
+fn assert_dest_only_fits_stage_overflows(cwd: &Path, dest: &Path) {
+    let cwd_units = cwd_ancestor_contrib(cwd);
+    let extra_units = relative_ancestor_units(dest);
+    let dest_leaf = leaf_units(dest);
+    let dest_only_max = spelling_units(VOLUME_GUID_PREFIX_MAX, cwd_units, extra_units, dest_leaf);
+    let stage_min = spelling_units(
+        VOLUME_GUID_PREFIX_MIN,
+        cwd_units,
+        extra_units,
+        WORST_CASE_STAGE_UTF16,
+    );
+    assert!(
+        dest_only_max <= MAX_EXTENDED_PATH_UTF16,
+        "precondition failed: dest-only spelling must fit even with the maximum local volume-GUID prefix ({VOLUME_GUID_PREFIX_MAX}); dest-only is {dest_only_max} UTF-16 units"
+    );
+    assert!(
+        stage_min > MAX_EXTENDED_PATH_UTF16,
+        "precondition failed: worst-case stage spelling must overflow even with the minimum local volume-GUID prefix ({VOLUME_GUID_PREFIX_MIN}); stage spelling is {stage_min} UTF-16 units"
+    );
 }
 
 #[test]
@@ -186,11 +244,8 @@ fn short_destination_with_over_budget_stage_does_not_mutate() {
     let _lock = cwd_test_lock();
     let temporary = temporary("create-only-stage-budget-");
     let _cwd = set_cwd(temporary.path());
-    let dest = missing_ancestor_path(temporary.path(), "z");
-    assert!(
-        WORST_CASE_STAGE_UTF16 > 1,
-        "worst-case stage leaf is longer than dest 'z'"
-    );
+    let dest = dest_fits_stage_overflows_path(temporary.path(), "z");
+    assert_dest_only_fits_stage_overflows(temporary.path(), &dest);
     let first = dest.components().next().unwrap().as_os_str();
 
     let bytes_error = write_bytes_exclusive(&dest, PAYLOAD, AtomicWriteOptions::default())
