@@ -796,7 +796,7 @@ fn default_model_for(provider: &str) -> &'static str {
     match provider {
         "google" => "gemini-3.5-flash",
         "openai" => "gpt-5.4-mini",
-        "anthropic" => "claude-sonnet-4-6",
+        "anthropic" => "claude-sonnet-5",
         "local" => local::default_model(),
         _ => "",
     }
@@ -1069,6 +1069,44 @@ mod tests {
             config["services"]["confidential"]["prior_active"]["model"],
             "gemini-3.5-flash"
         );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn provider_switch_without_a_model_falls_back_to_the_current_anthropic_mid_tier() {
+        let journal = temporary_journal(
+            "switch-anthropic-fallback",
+            json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"}}}),
+        );
+        let result = update_providers(
+            &journal,
+            ProviderUpdate {
+                lane: "byo".to_owned(),
+                provider: "anthropic".to_owned(),
+                model: None,
+                resolution_targets: vec![],
+            },
+            Value::Null,
+        );
+        assert!(result.is_ok(), "provider switch is allowed: {result:?}");
+        let config = read_config(&journal).expect("config reads");
+        assert_eq!(config["providers"]["active"]["model"], "claude-sonnet-5");
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn default_model_for_agrees_with_payload_mid_tier_for_every_cloud_provider() {
+        let journal = temporary_journal("default-model-mid-tier", json!({}));
+        let payload = super::payload(&journal, &Map::new(), "", Value::Null);
+        for provider in ["google", "openai", "anthropic"] {
+            let mid = payload["model_tiers"][provider]
+                .as_array()
+                .expect("model_tiers is an array")
+                .iter()
+                .find(|entry| entry["tier"] == "mid")
+                .and_then(|entry| entry["model"].as_str());
+            assert_eq!(mid, Some(super::default_model_for(provider)), "{provider}");
+        }
         let _ = fs::remove_dir_all(journal);
     }
 
