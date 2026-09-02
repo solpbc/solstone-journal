@@ -5375,6 +5375,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-system",
+ "solstone-core-timeline",
  "tempfile",
  "thiserror 2.0.20",
  "unicode-general-category",

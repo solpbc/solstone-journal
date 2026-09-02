@@ -65,6 +65,7 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 const W3C_CHECK_NAMES: &[&str] = &[
     "journal_sync",
     "journal_caught_up",
+    "timeline_divergence",
     "task_pace",
     "brain",
     "capture_health",
@@ -499,6 +500,12 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 stage_backlog_pending(&context);
             }
         }
+        "timeline_divergence" => {
+            if !ok {
+                fs::create_dir_all(&context.journal_path).unwrap();
+                fs::write(context.journal_path.join("timeline.json"), "{").unwrap();
+            }
+        }
         "task_pace" => {
             return if ok {
                 task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
@@ -619,6 +626,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                 e.check.name,
                 "journal_sync"
                     | "journal_caught_up"
+                    | "timeline_divergence"
                     | "task_pace"
                     | "brain"
                     | "capture_health"
@@ -640,6 +648,7 @@ fn check_severity_table_matches_reference() {
     for (name, severity) in [
         ("journal_sync", Severity::Blocker),
         ("journal_caught_up", Severity::Advisory),
+        ("timeline_divergence", Severity::Advisory),
         ("task_pace", Severity::Advisory),
         ("brain", Severity::Advisory),
         ("capture_health", Severity::Advisory),
@@ -667,6 +676,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
     let coverage = [
         ("journal_sync", SecondBranch::DifferentStatus),
         ("journal_caught_up", SecondBranch::DifferentStatus),
+        ("timeline_divergence", SecondBranch::DifferentStatus),
         ("task_pace", SecondBranch::DifferentStatus),
         ("brain", SecondBranch::DifferentStatus),
         ("capture_health", SecondBranch::DifferentStatus),
@@ -2065,6 +2075,7 @@ fn owner_boundary_guard_is_nonvacuous() {
     let owners = [
         ("journal_sync", "solstone_core_system"),
         ("journal_caught_up", "solstone_core_system_health"),
+        ("timeline_divergence", "solstone_core_system_health"),
         ("brain", "solstone_core_brain"),
         ("capture_health", "solstone_core_sol_link"),
         ("client_binding", "solstone_core_sol_link"),
