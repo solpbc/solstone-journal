@@ -6,7 +6,9 @@
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
-use std::fs::{self, DirBuilder, File};
+#[cfg(unix)]
+use std::fs::File;
+use std::fs::{self, DirBuilder};
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
@@ -14,14 +16,25 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::atomic::{STAGED_CANDIDATE_MARKER, fsync_dir, publication_candidate_name};
+#[cfg(unix)]
+use crate::atomic::fsync_dir;
+use crate::atomic::{STAGED_CANDIDATE_MARKER, publication_candidate_name};
 
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Options for a private staging and destination directory.
+///
+/// On Windows, [`Self::directory_mode`] is a no-op: there is no documented
+/// `DirBuilder` mode-bit primitive, and this type does not claim ACL
+/// equivalence with Unix directory mode bits.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StagedDirOptions {
     /// Directory mode applied atomically when the staging directory is created.
+    ///
+    /// On Unix, passed to [`DirBuilder::mode`] when `Some`. On Windows this
+    /// field is ignored. There is no documented equivalent of Unix `mkdir`
+    /// mode bits on `DirBuilder`, and this option does not claim ACL
+    /// equivalence.
     pub directory_mode: Option<u32>,
 }
 
@@ -63,6 +76,20 @@ impl Error for StagedWriteError {
 /// staging directory orphaned, but the destination remains absent; after rename
 /// it contains the complete, synced set. Parent-directory sync is best effort.
 ///
+/// On Windows, parent-directory sync after rename remains best effort: there is
+/// no documented directory-entry metadata flush on a directory handle opened
+/// for listing and attributes (`FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
+/// SYNCHRONIZE`, plus `FILE_TRAVERSE` on the publication-path capability) —
+/// neither includes `GENERIC_WRITE`/`FILE_WRITE_DATA`, which `FlushFileBuffers`
+/// requires. This primitive does not claim that flush. It also does not claim
+/// ACL equivalence with Unix [`StagedDirOptions::directory_mode`].
+///
+/// After the absence check, a late name at `fs::rename` is replace-or-refuse
+/// on Unix (an empty directory is replaced by the complete staged set; a
+/// regular file or non-empty directory is left untouched and publish fails).
+/// On Windows that same collision is platform- and filesystem-conditioned,
+/// not a guaranteed replace-or-refuse outcome.
+///
 /// This primitive does not hold a lock across its absence-check-and-rename
 /// sequence. Concurrent, uncoordinated callers targeting the same destination
 /// can race; callers needing strict mutual exclusion across multiple publishers
@@ -95,14 +122,20 @@ where
         source: Box::new(source),
     })?;
     pause_at("after-populate");
-    File::open(staging.path())
-        .and_then(|directory| directory.sync_all())
-        .map_err(|source| io_error(destination, source))?;
+    #[cfg(unix)]
+    {
+        File::open(staging.path())
+            .and_then(|directory| directory.sync_all())
+            .map_err(|source| io_error(destination, source))?;
+    }
     pause_at("after-staging-sync");
     fs::rename(staging.path(), destination).map_err(|source| io_error(destination, source))?;
     staging.disarm();
     pause_at("after-rename");
-    fsync_dir(parent);
+    #[cfg(unix)]
+    {
+        fsync_dir(parent);
+    }
     Ok(())
 }
 
@@ -374,5 +407,122 @@ mod tests {
         .unwrap();
         assert_eq!(fs::read(left.join("payload.bin")).unwrap(), b"alpha");
         assert_eq!(fs::read(right.join("payload.bin")).unwrap(), b"beta");
+    }
+
+    #[test]
+    fn publish_staged_dir_creates_missing_nested_parent_directory() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("nested/a/b/bundle");
+        assert!(!temporary.path().join("nested").exists());
+
+        publish_staged_dir(
+            &destination,
+            StagedDirOptions::default(),
+            write_complete_set,
+        )
+        .unwrap();
+
+        assert!(destination.parent().unwrap().is_dir());
+        assert_eq!(
+            fs::read(destination.join("manifest.json")).unwrap(),
+            b"{\"complete\":true}\n"
+        );
+        assert_eq!(
+            fs::read(destination.join("payload.bin")).unwrap(),
+            b"complete-payload"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publish_staged_dir_replaces_late_empty_directory_competitor() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("bundle");
+        let sibling = temporary.path().join("keep.txt");
+        fs::write(&sibling, b"sibling-bytes").unwrap();
+
+        publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
+            fs::create_dir(&destination)?;
+            write_complete_set(staging)
+        })
+        .unwrap();
+
+        assert_eq!(
+            fs::read(destination.join("manifest.json")).unwrap(),
+            b"{\"complete\":true}\n"
+        );
+        assert_eq!(
+            fs::read(destination.join("payload.bin")).unwrap(),
+            b"complete-payload"
+        );
+        assert_eq!(fs::read(&sibling).unwrap(), b"sibling-bytes");
+        assert!(
+            dir_names(temporary.path())
+                .iter()
+                .all(|name| !is_staging_candidate(name))
+        );
+        assert_eq!(
+            dir_names(temporary.path()),
+            BTreeSet::from([
+                destination.file_name().unwrap().to_os_string(),
+                sibling.file_name().unwrap().to_os_string()
+            ])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publish_staged_dir_leaves_late_regular_file_competitor_untouched() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("bundle");
+        let sibling = temporary.path().join("keep.txt");
+        fs::write(&sibling, b"sibling-bytes").unwrap();
+
+        let error = publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
+            fs::write(&destination, b"late-file-competitor")?;
+            write_complete_set(staging)
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, StagedWriteError::Io { .. }));
+        assert_eq!(fs::read(&destination).unwrap(), b"late-file-competitor");
+        assert_eq!(fs::read(&sibling).unwrap(), b"sibling-bytes");
+        assert_eq!(
+            dir_names(temporary.path()),
+            BTreeSet::from([
+                destination.file_name().unwrap().to_os_string(),
+                sibling.file_name().unwrap().to_os_string()
+            ])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publish_staged_dir_leaves_late_non_empty_directory_competitor_untouched() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("bundle");
+        let sibling = temporary.path().join("keep.txt");
+        fs::write(&sibling, b"sibling-bytes").unwrap();
+
+        let error = publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
+            fs::create_dir(&destination)?;
+            fs::write(destination.join("existing.txt"), b"late-dir-competitor")?;
+            write_complete_set(staging)
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, StagedWriteError::Io { .. }));
+        assert_eq!(
+            fs::read(destination.join("existing.txt")).unwrap(),
+            b"late-dir-competitor"
+        );
+        assert_eq!(fs::read(&sibling).unwrap(), b"sibling-bytes");
+        assert_eq!(
+            dir_names(temporary.path()),
+            BTreeSet::from([
+                destination.file_name().unwrap().to_os_string(),
+                sibling.file_name().unwrap().to_os_string()
+            ])
+        );
     }
 }

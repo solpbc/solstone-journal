@@ -1771,7 +1771,6 @@ fn inspect_destination(
 }
 
 pub(crate) const ATOMIC_CANDIDATE_MARKER: &str = "tmp";
-#[cfg(unix)]
 pub(crate) const STAGED_CANDIDATE_MARKER: &str = "stage";
 pub(crate) const CANDIDATE_SUFFIX: &str = ".tmp";
 
