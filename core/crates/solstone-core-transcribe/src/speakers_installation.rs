@@ -14,10 +14,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     JsonWriteOptions, LeaseOptions, MalformedPolicy, acquire_file_lease, read_json, write_json,
+};
+use solstone_core_system::process::{
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
+    SystemProcessInstanceSource,
 };
 
 use crate::args::{CliError, installation_error};
@@ -124,7 +128,7 @@ impl SpeakersAnalyzeGeneration {
 impl Drop for SpeakersAnalyzeGeneration {
     fn drop(&mut self) {
         if let Some(fd) = self.inherited_fd.take() {
-            let _ = nix::unistd::close(fd);
+            close_inherited_fd(fd);
         }
     }
 }
@@ -167,7 +171,8 @@ fn enter_impl(
     let generation_path = generation_path(journal);
     let lease_path = generation_lock_path(journal);
 
-    if let Some((id, fd, token)) = inherited.as_ref()
+    if role != SpeakersAnalyzeOwnerRole::Supervisor
+        && let Some((id, fd, token)) = inherited.as_ref()
         && borrowed_generation_matches(&generation_path, &lease_path, &proof, id, fd, token)
     {
         return Ok(SpeakersAnalyzeGeneration {
@@ -186,7 +191,7 @@ fn enter_impl(
         },
     )
     .map_err(|error| installation_error(format!("generation-lease: {error}")))?
-    .ok_or_else(|| installation_error("generation-lease-contended"))?;
+    .ok_or_else(|| generation_contention_error(journal))?;
 
     // A lease holder always validates the pinned bytes before publishing a
     // record that descendants may borrow.
@@ -204,8 +209,10 @@ fn enter_impl(
         "token": token,
         "proof": proof,
     });
-    write_json(&generation_path, &record, OWNER_WRITE_OPTIONS)
-        .map_err(|error| installation_error(format!("generation-record: {error}")))?;
+    if let Err(error) = write_json(&generation_path, &record, OWNER_WRITE_OPTIONS) {
+        close_inherited_fd(fd);
+        return Err(installation_error(format!("generation-record: {error}")));
+    }
     let _ = write_owner_record(journal, role, &id);
     Ok(SpeakersAnalyzeGeneration {
         _lease: Some(lease),
@@ -228,6 +235,10 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
     if record.get("schema").and_then(Value::as_str) != Some(INSTALL_GENERATION_SCHEMA) {
         return None;
     }
+    let current_token = fs::read_to_string(generation_lock_path(journal)).ok()?;
+    if record.get("token").and_then(Value::as_str) != Some(current_token.as_str()) {
+        return None;
+    }
     let owner = read_json(owner_path(journal), Value::Null, MalformedPolicy::Skip).ok()?;
     if owner.get("schema").and_then(Value::as_str) != Some(OWNER_SCHEMA) {
         return None;
@@ -240,11 +251,18 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
         .get("pid")
         .and_then(Value::as_u64)
         .and_then(|pid| u32::try_from(pid).ok().filter(|pid| *pid != 0))?;
-    if !process_exists(pid) {
+    let process_instance =
+        serde_json::from_value::<ProcessInstance>(owner.get("process_instance")?.clone()).ok()?;
+    if process_instance.pid != pid
+        || !matches!(
+            SystemProcessInstanceSource.observe(&process_instance),
+            InstanceVerdict::SameLive { .. }
+        )
+    {
         return None;
     }
     let started_at = owner.get("started_at").and_then(Value::as_str)?;
-    if started_at.is_empty() || DateTime::parse_from_rfc3339(started_at).is_err() {
+    if started_at != process_started_at(&process_instance)? {
         return None;
     }
     let install_generation_id = owner.get("install_generation_id").and_then(Value::as_str)?;
@@ -383,7 +401,8 @@ fn borrowed_generation_matches(
     fd: &str,
     token: &str,
 ) -> bool {
-    if !inherited_generation_ofd_holds_lock(fd)
+    if !generation_lock_path_is_held(lease_path)
+        || !inherited_generation_ofd_holds_lock(fd)
         || fs::read_to_string(lease_path).ok().as_deref() != Some(token)
     {
         return false;
@@ -407,6 +426,17 @@ fn duplicate_for_inheritance(lease: &solstone_core_journal_io::FileLease) -> Res
 #[cfg(not(unix))]
 fn duplicate_for_inheritance(_: &solstone_core_journal_io::FileLease) -> Result<i32, CliError> {
     Err(installation_error("generation-fd: unsupported platform"))
+}
+
+fn close_inherited_fd(fd: i32) {
+    #[cfg(unix)]
+    {
+        let _ = nix::unistd::close(fd);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = fd;
+    }
 }
 
 #[cfg(unix)]
@@ -455,26 +485,80 @@ fn inheritance_map(id: &str, fd: &str, token: &str) -> BTreeMap<OsString, OsStri
 }
 
 fn write_owner_record(journal: &Path, role: SpeakersAnalyzeOwnerRole, id: &str) -> Result<(), ()> {
+    let pid = std::process::id();
+    let InspectResult::Present {
+        instance: process_instance,
+        ..
+    } = SystemProcessInstanceSource.inspect(pid)
+    else {
+        return Err(());
+    };
+    let started_at = process_started_at(&process_instance).ok_or(())?;
     let record = json!({
         "schema": OWNER_SCHEMA,
         "role": role.as_str(),
-        "pid": std::process::id(),
-        "started_at": Utc::now().to_rfc3339(),
+        "pid": pid,
+        "process_instance": process_instance,
+        "started_at": started_at,
         "install_generation_id": id,
     });
     write_json(owner_path(journal), &record, OWNER_WRITE_OPTIONS).map_err(|_| ())
 }
 
+fn process_started_at(instance: &ProcessInstance) -> Option<String> {
+    let epoch_seconds = instance.birth.epoch_seconds()?;
+    if !epoch_seconds.is_finite() || epoch_seconds < 0.0 {
+        return None;
+    }
+    let mut seconds = epoch_seconds.floor() as i64;
+    let mut nanoseconds = ((epoch_seconds - seconds as f64) * 1_000_000_000.0).round() as u32;
+    if nanoseconds == 1_000_000_000 {
+        seconds = seconds.checked_add(1)?;
+        nanoseconds = 0;
+    }
+    DateTime::<Utc>::from_timestamp(seconds, nanoseconds)
+        .map(|value| value.to_rfc3339_opts(SecondsFormat::Nanos, true))
+}
+
+fn generation_contention_error(journal: &Path) -> CliError {
+    let message = match read_speakers_analyze_owner(journal) {
+        SpeakersAnalyzeOwnerView::Available {
+            role,
+            pid,
+            started_at,
+            install_generation_id,
+        } => {
+            let age = SpeakersAnalyzeOwnerView::Available {
+                role,
+                pid,
+                started_at: started_at.clone(),
+                install_generation_id: install_generation_id.clone(),
+            }
+            .age(Utc::now())
+            .map_or_else(
+                || "unavailable".to_owned(),
+                |age| age.num_seconds().to_string(),
+            );
+            format!(
+                "generation-lease-contended: owner_role={} owner_pid={pid} owner_started_at={started_at} install_generation_id={install_generation_id} owner_age_seconds={age}; use the supervised path or stop that process cleanly",
+                role.as_str()
+            )
+        }
+        SpeakersAnalyzeOwnerView::Unavailable => "generation-lease-contended: owner_details=unavailable; use the supervised path or stop the current process cleanly".to_owned(),
+    };
+    CliError::SpeakersInstallation { message }
+}
+
 fn generation_lock_is_held(journal: &Path) -> bool {
+    generation_lock_path_is_held(&generation_lock_path(journal))
+}
+
+fn generation_lock_path_is_held(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::fs::OpenOptions;
 
-        let Ok(file) = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(generation_lock_path(journal))
-        else {
+        let Ok(file) = OpenOptions::new().read(true).write(true).open(path) else {
             return false;
         };
         matches!(
@@ -484,29 +568,7 @@ fn generation_lock_is_held(journal: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = journal;
-        false
-    }
-}
-
-fn process_exists(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        let Ok(pid) = i32::try_from(pid) else {
-            return false;
-        };
-        if pid <= 0 {
-            return false;
-        }
-        match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None) {
-            Ok(()) => true,
-            Err(nix::errno::Errno::ESRCH) => false,
-            Err(_) => true,
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
+        let _ = path;
         false
     }
 }
@@ -639,9 +701,10 @@ mod tests {
         assert_eq!(record["role"], "think");
         assert_eq!(record["pid"], std::process::id());
         assert!(DateTime::parse_from_rfc3339(record["started_at"].as_str().unwrap()).is_ok());
+        assert_eq!(record["process_instance"]["pid"], std::process::id());
         let (id, _, _) = inherited_from(&generation);
         assert_eq!(record["install_generation_id"], id);
-        assert_eq!(record.as_object().map(|object| object.len()), Some(5));
+        assert_eq!(record.as_object().map(|object| object.len()), Some(6));
         let mode = fs::metadata(owner_path(journal.path()))
             .unwrap()
             .permissions()
@@ -706,6 +769,29 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn supervisor_never_borrows_an_inherited_generation() {
+        let journal = TempDir::new().unwrap();
+        let owner = enter_with_proof(
+            journal.path(),
+            SpeakersAnalyzeOwnerRole::Transcribe,
+            proof(),
+        )
+        .unwrap();
+        let error = enter_impl(
+            journal.path(),
+            SpeakersAnalyzeOwnerRole::Supervisor,
+            proof(),
+            false,
+            Some(inherited_from(&owner)),
+        )
+        .unwrap_err();
+        assert_eq!(error.exit_code(), 78);
+        assert!(contended_detail(&error).contains("generation-lease-contended"));
+        assert_eq!(owner_json(journal.path())["role"], "transcribe");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn independent_open_fd_does_not_borrow_and_contends() {
         use std::fs::OpenOptions;
         use std::os::unix::io::AsRawFd;
@@ -730,6 +816,37 @@ mod tests {
         let message = contended_detail(&error);
         assert!(message.contains("generation-lease-contended"), "{message}");
         assert_eq!(error.exit_code(), 78);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_unlocked_reopen_cannot_authenticate_a_borrow() {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        let journal = TempDir::new().unwrap();
+        let owner =
+            enter_with_proof(journal.path(), SpeakersAnalyzeOwnerRole::Sense, proof()).unwrap();
+        let (id, _, token) = inherited_from(&owner);
+        drop(owner);
+        let independent = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(generation_lock_path(journal.path()))
+            .unwrap();
+        let replacement = enter_impl(
+            journal.path(),
+            SpeakersAnalyzeOwnerRole::Transcribe,
+            proof(),
+            false,
+            Some((id, independent.as_raw_fd().to_string(), token)),
+        )
+        .unwrap();
+        assert!(
+            replacement._lease.is_some(),
+            "a reopened descriptor on an unlocked stale file must acquire and republish as a new root, not borrow"
+        );
+        assert_eq!(owner_json(journal.path())["role"], "transcribe");
     }
 
     #[cfg(unix)]
@@ -803,6 +920,12 @@ mod tests {
             .unwrap_err(),
         );
         assert!(message_before.contains("generation-lease-contended"));
+        assert!(message_before.contains("owner_role=supervisor"));
+        assert!(message_before.contains(&format!("owner_pid={}", std::process::id())));
+        assert!(message_before.contains("owner_started_at="));
+        assert!(message_before.contains(&format!("install_generation_id={id}")));
+        assert!(message_before.contains("owner_age_seconds="));
+        assert!(message_before.contains("use the supervised path or stop that process cleanly"));
 
         rewrite_owner(journal.path(), |record| {
             record["install_generation_id"] = json!("stale-generation-id");
@@ -819,7 +942,9 @@ mod tests {
             )
             .unwrap_err(),
         );
-        assert_eq!(message_stale, message_before);
+        assert!(message_stale.contains("generation-lease-contended"));
+        assert!(message_stale.contains("owner_details=unavailable"));
+        assert!(!message_stale.contains(&id));
 
         rewrite_owner(journal.path(), |record| {
             record["install_generation_id"] = json!(id);
@@ -837,6 +962,55 @@ mod tests {
         );
 
         drop(owner);
+        assert_eq!(
+            read_speakers_analyze_owner(journal.path()),
+            SpeakersAnalyzeOwnerView::Unavailable
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_diagnostics_require_the_generation_records_current_token() {
+        let journal = TempDir::new().unwrap();
+        let _generation = enter_with_proof(
+            journal.path(),
+            SpeakersAnalyzeOwnerRole::Supervisor,
+            proof(),
+        )
+        .unwrap();
+        fs::write(generation_lock_path(journal.path()), "replacement-token").unwrap();
+        assert_eq!(
+            read_speakers_analyze_owner(journal.path()),
+            SpeakersAnalyzeOwnerView::Unavailable
+        );
+        let message = contended_detail(
+            &enter_with_proof(
+                journal.path(),
+                SpeakersAnalyzeOwnerRole::Transcribe,
+                proof(),
+            )
+            .unwrap_err(),
+        );
+        assert!(message.contains("generation-lease-contended"));
+        assert!(message.contains("owner_details=unavailable"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pid_reuse_shaped_owner_identity_is_unavailable() {
+        let journal = TempDir::new().unwrap();
+        let _generation = enter_with_proof(
+            journal.path(),
+            SpeakersAnalyzeOwnerRole::Supervisor,
+            proof(),
+        )
+        .unwrap();
+        rewrite_owner(journal.path(), |record| {
+            let start_ticks = record["process_instance"]["birth"]["start_ticks"]
+                .as_u64()
+                .expect("Linux process birth has start_ticks");
+            record["process_instance"]["birth"]["start_ticks"] = json!(start_ticks + 1);
+        });
         assert_eq!(
             read_speakers_analyze_owner(journal.path()),
             SpeakersAnalyzeOwnerView::Unavailable
@@ -881,10 +1055,7 @@ mod tests {
                 json!((Utc::now() + chrono::TimeDelta::seconds(60)).to_rfc3339());
         });
         let view = read_speakers_analyze_owner(journal.path());
-        assert!(
-            matches!(view, SpeakersAnalyzeOwnerView::Available { .. }),
-            "future started_at remains a well-formed record"
-        );
+        assert_eq!(view, SpeakersAnalyzeOwnerView::Unavailable);
         assert_eq!(view.age(Utc::now()), None);
         assert_eq!(SpeakersAnalyzeOwnerView::Unavailable.age(Utc::now()), None);
     }
@@ -952,5 +1123,11 @@ mod tests {
             contended_detail(&error)
         );
         assert!(!owner_path(journal.path()).exists());
+        fs::remove_dir(generation_path(journal.path())).unwrap();
+        let reacquired = enter_with_proof(journal.path(), SpeakersAnalyzeOwnerRole::Sense, proof());
+        assert!(
+            reacquired.is_ok(),
+            "failed publication must not leak the duplicated lease descriptor: {reacquired:?}"
+        );
     }
 }
