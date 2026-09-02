@@ -1237,7 +1237,7 @@ fn generate_for_page(
         Ok(GenerateResponse::Refused(response)) => {
             Err(format!("model refused: {}", response.reason.as_str()))
         }
-        Err(error) => Err(collapse_line(&format!("{error:?}"))),
+        Err(error) => Err(collapse_line(&format!("{error}"))),
     }
 }
 
