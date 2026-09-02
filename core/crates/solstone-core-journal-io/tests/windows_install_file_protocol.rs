@@ -525,3 +525,9 @@ fn install_file_protocol_receipt_marker() {
         "JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass"
     );
 }
+
+#[test]
+#[ignore = "source-origin marker for the native Windows gate"]
+fn journal_win_ci_windows_install_file_protocol_marker() {
+    println!("JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL=executed/pass");
+}

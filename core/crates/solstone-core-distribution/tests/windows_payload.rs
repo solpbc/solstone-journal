@@ -103,3 +103,9 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
         );
     }
 }
+
+#[test]
+#[ignore = "source-origin marker for the native Windows gate"]
+fn journal_win_ci_windows_payload_marker() {
+    println!("JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD=executed/pass");
+}

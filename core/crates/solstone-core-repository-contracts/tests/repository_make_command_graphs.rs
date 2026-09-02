@@ -1796,7 +1796,7 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-const VALID_NATIVE_RECEIPTS: [(&str, &str); 17] = [
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
     (
         "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
         "executed/pass",
@@ -1808,6 +1808,24 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 17] = [
     ),
     ("JOURNAL_WIN_CI_JOB_PROCESS_OWNER", "executed/pass"),
     ("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE", "executed/pass"),
+    ("JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD", "executed/pass"),
+    ("JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE",
+        "executed/pass",
+    ),
     ("JOURNAL_WIN_CI_NTFS_PUBLICATION", "executed/pass"),
     ("JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM", "NTFS"),
     ("JOURNAL_WIN_CI_REFS_PUBLICATION", "executed/pass"),

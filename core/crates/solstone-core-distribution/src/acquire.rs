@@ -15,7 +15,7 @@ use std::process::Command;
 use serde::Deserialize;
 use serde::Serialize;
 #[cfg(not(windows))]
-use solstone_core_artifact_download::{ensure_verified_url, BUILDER_INPUT_DOWNLOAD_POLICY};
+use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::onnx_runtime;
 use crate::pdfium;

@@ -20,7 +20,7 @@
 
 use std::fs;
 use std::io;
-#[cfg(all(any(test, feature = "test-hooks"), unix))]
+#[cfg(all(test, unix))]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -248,13 +248,13 @@ impl ArchiveMemberSigner for RealArchiveMemberSigner<'_> {
     }
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(test)]
 pub(crate) struct FakeArchiveMemberSigner {
     marker: String,
     mutate_mode: bool,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(test)]
 impl FakeArchiveMemberSigner {
     pub(crate) fn new(marker: impl Into<String>) -> Self {
         Self {
@@ -272,7 +272,7 @@ impl FakeArchiveMemberSigner {
     }
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(test)]
 impl ArchiveMemberSigner for FakeArchiveMemberSigner {
     fn sign_executable(
         &self,

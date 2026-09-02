@@ -76,3 +76,8 @@ required-features = ["test-hooks"]
 name = "windows_install_file_protocol"
 path = "tests/windows_install_file_protocol.rs"
 required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_oplog_namespace"
+path = "tests/windows_oplog_namespace.rs"
+required-features = ["test-hooks"]

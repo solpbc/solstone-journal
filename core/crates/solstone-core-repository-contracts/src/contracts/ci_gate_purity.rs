@@ -1360,6 +1360,129 @@ fn make_ci_full_names_the_manual_rust_race_gate() {
 }
 
 #[test]
+fn operational_log_foundation_targets_have_exact_ci_routes() {
+    let registry = ci_registry(&repo_root());
+    let expected = [
+        (
+            "solstone-core-distribution::windows_payload",
+            vec!["linux", "macos", "windows"],
+            vec!["test-fixture-pin"],
+            None,
+        ),
+        (
+            "solstone-core-distribution::controlled_build_receipt_race",
+            vec!["linux", "macos"],
+            Vec::new(),
+            Some("host-contention"),
+        ),
+        (
+            "solstone-core-journal-io::windows_create_only",
+            vec!["windows"],
+            Vec::new(),
+            None,
+        ),
+        (
+            "solstone-core-journal-io::windows_create_only_protocol",
+            vec!["windows"],
+            vec!["test-hooks"],
+            None,
+        ),
+        (
+            "solstone-core-journal-io::windows_install_file",
+            vec!["windows"],
+            Vec::new(),
+            None,
+        ),
+        (
+            "solstone-core-journal-io::windows_install_file_protocol",
+            vec!["windows"],
+            vec!["test-hooks"],
+            None,
+        ),
+        (
+            "solstone-core-journal-io::windows_oplog_namespace",
+            vec!["windows"],
+            vec!["test-hooks"],
+            None,
+        ),
+    ];
+
+    for (id, platforms, required_features, serial_group) in expected {
+        let matches = registry
+            .suites
+            .iter()
+            .filter(|suite| suite.id == id)
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1, "{id} must have one CI route");
+        let suite = matches[0];
+        assert_eq!(suite.set, "component");
+        assert_eq!(
+            suite.areas,
+            [if id.contains("journal-io") {
+                "journal"
+            } else {
+                "repository"
+            }]
+        );
+        assert_eq!(suite.platforms, platforms);
+        assert_eq!(suite.prerequisites, ["cargo-cache"]);
+        assert_eq!(suite.timeout, "standard");
+        assert_eq!(suite.serial_group.as_deref(), serial_group);
+        assert!(suite.default_full);
+        assert_eq!(suite.required_features, required_features);
+        assert_eq!(suite.runtime, "none");
+    }
+}
+
+#[test]
+fn controlled_build_receipt_race_keeps_an_executing_parent_oracle() {
+    let source = fs::read_to_string(
+        repo_root()
+            .join("core/crates/solstone-core-distribution/tests/controlled_build_receipt_race.rs"),
+    )
+    .expect("read controlled-build receipt race source");
+    let parent = "fn controlled_build_receipt_two_process_same_path_has_one_unmodified_winner()";
+    let parent_at = source.find(parent).expect("nonignored race parent");
+    let attributes_at = source[..parent_at]
+        .rfind("\n\n")
+        .map(|index| index + 2)
+        .unwrap_or(0);
+    assert_eq!(
+        &source[attributes_at..parent_at],
+        "#[test]\n",
+        "the race parent must remain an ordinary, unconditionally executing test"
+    );
+    assert_eq!(
+        source
+            .matches("CONTROLLED_BUILD_RECEIPT_RACE_PARENT=executed/pass")
+            .count(),
+        1,
+        "the race parent must retain its source-originated post-assertion pass oracle"
+    );
+    let body_end = parent_at
+        + source[parent_at..]
+            .find("\n}\n")
+            .expect("bounded race parent body");
+    let body = &source[parent_at..body_end];
+    let final_assertion = body
+        .find("assert_eq!(names, vec![\"receipt.json\"]);")
+        .expect("final race artifact assertion");
+    let oracle = body
+        .find("CONTROLLED_BUILD_RECEIPT_RACE_PARENT=executed/pass")
+        .expect("race parent pass oracle");
+    assert!(
+        final_assertion < oracle,
+        "the race parent pass oracle must follow all correctness assertions"
+    );
+    assert!(
+        body.ends_with(
+            "    assert_eq!(names, vec![\"receipt.json\"]);\n    println!(\"CONTROLLED_BUILD_RECEIPT_RACE_PARENT=executed/pass\");"
+        ),
+        "the source-originated pass oracle must remain the final parent action"
+    );
+}
+
+#[test]
 fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
     let root = repo_root();
     let makefile = makefile_text(&root);

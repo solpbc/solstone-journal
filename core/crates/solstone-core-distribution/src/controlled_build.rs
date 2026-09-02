@@ -542,10 +542,6 @@ mod tests {
         DebugInfoKind, FixtureSpec, ImportSpec, PeSymbolSpec, fixture, fixture_pe32, parse_pe,
     };
     use serde_json::{Value, json};
-    use std::process::{Command, Stdio};
-
-    const RECEIPT_RACE_PATH: &str = "SOLSTONE_CONTROLLED_BUILD_RECEIPT_RACE_PATH";
-    const RECEIPT_RACE_WRITER: &str = "SOLSTONE_CONTROLLED_BUILD_RECEIPT_RACE_WRITER";
 
     fn sample_source() -> SourceIdentity {
         SourceIdentity {
@@ -1056,109 +1052,5 @@ mod tests {
             }
             other => panic!("Windows result must be published-but-not-durable, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn controlled_build_receipt_two_process_same_path_child() {
-        let Some(path) = std::env::var_os(RECEIPT_RACE_PATH) else {
-            return;
-        };
-        let writer = std::env::var(RECEIPT_RACE_WRITER).expect("race writer identity");
-        let mut receipt = receipt_with_real_pe_census();
-        receipt.builder.host = format!("receipt-race-{writer}");
-        match write_controlled_build_receipt_exclusive(PathBuf::from(path), &receipt) {
-            Ok(ControlledBuildReceiptPublication::Durable { .. }) => {
-                #[cfg(windows)]
-                panic!("Windows must not report durable receipt publication");
-                #[cfg(not(windows))]
-                println!("controlled-build-receipt-race={writer}:winner-durable");
-            }
-            Ok(ControlledBuildReceiptPublication::PublishedButNotDurable { .. }) => {
-                #[cfg(not(windows))]
-                panic!("non-Windows test filesystem must fully confirm publication");
-                #[cfg(windows)]
-                println!("controlled-build-receipt-race={writer}:winner-not-durable");
-            }
-            Ok(ControlledBuildReceiptPublication::PublicationUnconfirmed {
-                publication, ..
-            }) => {
-                panic!("race winner must have a confirmed final name and cleanup: {publication:?}");
-            }
-            Err(ControlledBuildReceiptPersistenceError::Publish { source, .. })
-                if source.source.kind() == io::ErrorKind::AlreadyExists =>
-            {
-                println!("controlled-build-receipt-race={writer}:loser-existing");
-            }
-            Err(other) => panic!("race writer failed unexpectedly: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn controlled_build_receipt_two_process_same_path_has_one_unmodified_winner() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
-        let path = temporary.path().join("receipt.json");
-        let executable = std::env::current_exe().expect("current test executable");
-        let child_name =
-            "controlled_build::tests::controlled_build_receipt_two_process_same_path_child";
-        let first = Command::new(&executable)
-            .arg("--exact")
-            .arg(child_name)
-            .arg("--nocapture")
-            .env(RECEIPT_RACE_PATH, &path)
-            .env(RECEIPT_RACE_WRITER, "first")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("first race writer");
-        let second = Command::new(&executable)
-            .arg("--exact")
-            .arg(child_name)
-            .arg("--nocapture")
-            .env(RECEIPT_RACE_PATH, &path)
-            .env(RECEIPT_RACE_WRITER, "second")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("second race writer");
-        let first_output = first.wait_with_output().expect("first result");
-        let second_output = second.wait_with_output().expect("second result");
-        assert!(
-            first_output.status.success(),
-            "first race writer failed: {}",
-            String::from_utf8_lossy(&first_output.stderr)
-        );
-        assert!(
-            second_output.status.success(),
-            "second race writer failed: {}",
-            String::from_utf8_lossy(&second_output.stderr)
-        );
-        let output = format!(
-            "{}{}",
-            String::from_utf8_lossy(&first_output.stdout),
-            String::from_utf8_lossy(&second_output.stdout)
-        );
-        assert_eq!(
-            output.matches(":loser-existing").count(),
-            1,
-            "exactly one writer must lose without modifying the winner: {output}"
-        );
-        assert_eq!(
-            output.matches(":winner-").count(),
-            1,
-            "exactly one writer must publish: {output}"
-        );
-
-        let winner = read_controlled_build_receipt(&path).expect("strict winner reread");
-        assert!(
-            ["receipt-race-first", "receipt-race-second"].contains(&winner.builder.host.as_str()),
-            "final receipt must equal one distinguishable writer's source value"
-        );
-        let expected = encode_controlled_build_receipt(&winner).expect("winner encoding");
-        assert_eq!(fs::read(&path).expect("final receipt bytes"), expected);
-        let names = fs::read_dir(temporary.path())
-            .expect("race directory")
-            .map(|entry| entry.expect("race entry").file_name())
-            .collect::<Vec<_>>();
-        assert_eq!(names, vec!["receipt.json"]);
     }
 }

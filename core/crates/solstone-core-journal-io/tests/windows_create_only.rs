@@ -339,3 +339,9 @@ fn reader_failure_leaves_destination_and_stage_absent() {
     assert!(!path.exists());
     directory_is_empty(temporary.path());
 }
+
+#[test]
+#[ignore = "source-origin marker for the native Windows gate"]
+fn journal_win_ci_windows_create_only_marker() {
+    println!("JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY=executed/pass");
+}

@@ -1337,14 +1337,14 @@ fn write_archive(
         Ok(()) => match fs::rename(&temporary, destination) {
             Ok(()) => Ok(()),
             Err(error) => {
-                if let Err(cleanup_error) = fs::remove_file(&temporary) {
-                    if cleanup_error.kind() != std::io::ErrorKind::NotFound {
-                        return Err(OnnxWindowsSourceError::new(format!(
-                            "could not publish ONNX archive {}: {error}; additionally could not remove incomplete archive {}: {cleanup_error}",
-                            destination.display(),
-                            temporary.display()
-                        )));
-                    }
+                if let Err(cleanup_error) = fs::remove_file(&temporary)
+                    && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                {
+                    return Err(OnnxWindowsSourceError::new(format!(
+                        "could not publish ONNX archive {}: {error}; additionally could not remove incomplete archive {}: {cleanup_error}",
+                        destination.display(),
+                        temporary.display()
+                    )));
                 }
                 Err(OnnxWindowsSourceError::new(format!(
                     "could not publish ONNX archive {}: {error}",
@@ -1353,13 +1353,13 @@ fn write_archive(
             }
         },
         Err(error) => {
-            if let Err(cleanup_error) = fs::remove_file(&temporary) {
-                if cleanup_error.kind() != std::io::ErrorKind::NotFound {
-                    return Err(OnnxWindowsSourceError::new(format!(
-                        "{error}; additionally could not remove incomplete ONNX archive {}: {cleanup_error}",
-                        temporary.display()
-                    )));
-                }
+            if let Err(cleanup_error) = fs::remove_file(&temporary)
+                && cleanup_error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(OnnxWindowsSourceError::new(format!(
+                    "{error}; additionally could not remove incomplete ONNX archive {}: {cleanup_error}",
+                    temporary.display()
+                )));
             }
             Err(error)
         }

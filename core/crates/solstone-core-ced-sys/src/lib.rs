@@ -129,9 +129,7 @@ impl CedLibrary {
 fn open_library(path: &Path) -> Result<Library, CedError> {
     #[cfg(windows)]
     {
-        use solstone_core_win_dll_load::{
-            LoadPolicy, load_dll, restrict_default_dll_directories,
-        };
+        use solstone_core_win_dll_load::{LoadPolicy, load_dll, restrict_default_dll_directories};
 
         restrict_default_dll_directories().map_err(|error| CedError::Library {
             detail: format!("could not restrict DLL search before loading CED: {error}"),

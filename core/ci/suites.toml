@@ -2507,6 +2507,33 @@ required_features = ["test-fixture-pin"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-distribution::windows_payload"
+package = "solstone-core-distribution"
+target = "windows_payload"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-fixture-pin"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-distribution::controlled_build_receipt_race"
+package = "solstone-core-distribution"
+target = "controlled_build_receipt_race"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-entity::entity_trust_lock_component"
 package = "solstone-core-entity"
 target = "entity_trust_lock_component"
@@ -3186,6 +3213,32 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-io::windows_create_only"
+package = "solstone-core-journal-io"
+target = "windows_create_only"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_create_only_protocol"
+package = "solstone-core-journal-io"
+target = "windows_create_only_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-io::windows_generic_writers"
 package = "solstone-core-journal-io"
 target = "windows_generic_writers"
@@ -3228,6 +3281,45 @@ runtime = "none"
 id = "solstone-core-journal-io::windows_ordinary_owner_inventory"
 package = "solstone-core-journal-io"
 target = "windows_ordinary_owner_inventory"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_install_file"
+package = "solstone-core-journal-io"
+target = "windows_install_file"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_install_file_protocol"
+package = "solstone-core-journal-io"
+target = "windows_install_file_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_oplog_namespace"
+package = "solstone-core-journal-io"
+target = "windows_oplog_namespace"
 set = "component"
 areas = ["journal"]
 platforms = ["windows"]

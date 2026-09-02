@@ -108,8 +108,10 @@ echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_atomic_detailed --features test-hooks || exit /b 1
-echo === cargo test --locked (journal-io create-only publication protocol) ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_create_only_protocol --features test-hooks -- --nocapture || exit /b 1
+call :run_source_marked_target "signed Windows payload verifier" "solstone-core-distribution" "windows_payload" "test-fixture-pin" "journal_win_ci_windows_payload_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD" || exit /b 1
+call :run_source_marked_target "journal-io create-only publication" "solstone-core-journal-io" "windows_create_only" "" "journal_win_ci_windows_create_only_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY" || exit /b 1
+call :run_source_marked_target "journal-io create-only publication protocol" "solstone-core-journal-io" "windows_create_only_protocol" "test-hooks" "journal_win_ci_windows_create_only_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL" || exit /b 1
+call :run_source_marked_target "journal-io install-file publication" "solstone-core-journal-io" "windows_install_file" "" "journal_win_ci_windows_install_file_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE" || exit /b 1
 echo === cargo test --locked (journal-io install-file publication protocol) ===
 set "JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG=core\target\journal-win-ci-install-protocol-%RANDOM%%RANDOM%.log"
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" 2>&1
@@ -118,6 +120,8 @@ powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_
 if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )
 type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%"
 del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1
+call :run_source_marker "journal-io install-file publication protocol" "solstone-core-journal-io" "windows_install_file_protocol" "test-hooks" "journal_win_ci_windows_install_file_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL" || exit /b 1
+call :run_source_marked_target "journal-io operational-log namespace" "solstone-core-journal-io" "windows_oplog_namespace" "test-hooks" "journal_win_ci_windows_oplog_namespace_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE" || exit /b 1
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
@@ -189,6 +193,31 @@ exit /b 0
 :require_journal_test
 set "JOURNAL_WIN_CI_TEST=%~1"
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --exact "%JOURNAL_WIN_CI_TEST%" 2>&1 | findstr /c:"test result: ok. 1 passed;" >nul || ( echo ERROR: required journal test %JOURNAL_WIN_CI_TEST% is missing ignored or failed & exit /b 1 )
+exit /b 0
+
+:run_source_marked_target
+echo === cargo test --locked (%~1) ===
+if "%~4"=="" (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" || exit /b 1
+) else (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" || exit /b 1
+)
+call :run_source_marker "%~1" "%~2" "%~3" "%~4" "%~5" "%~6" || exit /b 1
+exit /b 0
+
+:run_source_marker
+set "JOURNAL_WIN_CI_TARGET_LOG=core\target\journal-win-ci-target-%RANDOM%%RANDOM%.log"
+if "%~4"=="" (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+) else (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+)
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 source-marker test failed & exit /b 1 )
+set "JOURNAL_WIN_CI_TARGET_MARKER=%~6"
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_TARGET_LOG); $key = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER + '=executed/pass'); if ([regex]::Matches($text, '(?m)^' + $key + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 did not emit exactly one source-originated target marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_TARGET_LOG%"
+del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1
 exit /b 0
 
 :verify_source_binding

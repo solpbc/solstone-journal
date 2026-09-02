@@ -30,7 +30,7 @@ struct TargetIdentVisitor<'a> {
 impl TargetIdentVisitor<'_> {
     fn record_identifier(&mut self, raw: &str) {
         let normalized = raw.strip_prefix("r#").unwrap_or(raw);
-        if self.targets.iter().any(|target| *target == normalized) {
+        if self.targets.contains(&normalized) {
             self.hits.push(normalized.to_owned());
         }
     }

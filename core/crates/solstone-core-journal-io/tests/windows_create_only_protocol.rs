@@ -303,3 +303,9 @@ fn create_only_protocol_receipt_marker() {
         "JOURNAL_WIN_CI_CREATE_ONLY_PROTOCOL=late-collision/retry/sharing/cleanup/uncertainty/pass"
     );
 }
+
+#[test]
+#[ignore = "source-origin marker for the native Windows gate"]
+fn journal_win_ci_windows_create_only_protocol_marker() {
+    println!("JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL=executed/pass");
+}

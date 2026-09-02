@@ -287,43 +287,42 @@ fn converse_request_body(
     messages: &[ConverseMessage],
     tools: &[ConverseToolSpec],
 ) -> Value {
-    let contents =
-        messages
-            .iter()
-            .map(|message| match message {
-                ConverseMessage::User { text } => {
-                    json!({"role": "user", "parts": [{"text": text}]})
+    let contents = messages
+        .iter()
+        .map(|message| match message {
+            ConverseMessage::User { text } => {
+                json!({"role": "user", "parts": [{"text": text}]})
+            }
+            ConverseMessage::Assistant { text, tool_calls } => {
+                let mut parts = Vec::new();
+                if !text.is_empty() {
+                    parts.push(json!({"text": text}));
                 }
-                ConverseMessage::Assistant { text, tool_calls } => {
-                    let mut parts = Vec::new();
-                    if !text.is_empty() {
-                        parts.push(json!({"text": text}));
+                for call in tool_calls {
+                    let mut part = json!({
+                        "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
+                    });
+                    if let Some(signature) = &call.thought_signature {
+                        part["thoughtSignature"] = json!(signature);
                     }
-                    for call in tool_calls {
-                        let mut part = json!({
-                            "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
-                        });
-                        if let Some(signature) = &call.thought_signature {
-                            part["thoughtSignature"] = json!(signature);
-                        }
-                        parts.push(part);
-                    }
-                    json!({"role": "model", "parts": parts})
+                    parts.push(part);
                 }
-                ConverseMessage::ToolResult {
-                    tool_call_id,
-                    tool_name,
-                    output,
-                } => json!({
-                    "role": "user",
-                    "parts": [{"functionResponse": {
-                        "id": tool_call_id,
-                        "name": tool_name,
-                        "response": {"result": output},
-                    }}],
-                }),
-            })
-            .collect::<Vec<_>>();
+                json!({"role": "model", "parts": parts})
+            }
+            ConverseMessage::ToolResult {
+                tool_call_id,
+                tool_name,
+                output,
+            } => json!({
+                "role": "user",
+                "parts": [{"functionResponse": {
+                    "id": tool_call_id,
+                    "name": tool_name,
+                    "response": {"result": output},
+                }}],
+            }),
+        })
+        .collect::<Vec<_>>();
     let mut body = json!({
         "contents": contents,
         "tools": [{"functionDeclarations": tools.iter().map(|tool| json!({
@@ -1431,9 +1430,11 @@ mod tests {
                 "systemInstruction":{"parts":[{"text":"system"}]}
             }))
         );
-        assert!(body["contents"][2]["parts"][0]
-            .get("thoughtSignature")
-            .is_none());
+        assert!(
+            body["contents"][2]["parts"][0]
+                .get("thoughtSignature")
+                .is_none()
+        );
     }
 
     #[test]

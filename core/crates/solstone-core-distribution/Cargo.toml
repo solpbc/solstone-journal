@@ -63,3 +63,7 @@ required-features = ["test-fixture-pin"]
 name = "windows_payload"
 path = "tests/windows_payload.rs"
 required-features = ["test-fixture-pin"]
+
+[[test]]
+name = "controlled_build_receipt_race"
+path = "tests/controlled_build_receipt_race.rs"

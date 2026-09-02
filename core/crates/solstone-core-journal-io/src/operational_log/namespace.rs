@@ -696,11 +696,7 @@ mod tests {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use std::fs;
-    use std::os::windows::fs::MetadataExt;
     use std::path::Path;
-    use std::process::Command;
-
-    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
     use super::*;
 
@@ -708,24 +704,6 @@ mod windows_tests {
 
     fn temp() -> tempfile::TempDir {
         tempfile::TempDir::new().unwrap()
-    }
-
-    fn create_junction(link: &Path, target: &Path) {
-        let output = Command::new("cmd")
-            .args(["/d", "/c", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .output()
-            .expect("launch cmd.exe for native junction fixture");
-        assert!(
-            output.status.success(),
-            "create junction fixture {} -> {}: status={} stdout={} stderr={}",
-            link.display(),
-            target.display(),
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
     }
 
     fn chronicle_path(root: &Path) -> std::path::PathBuf {
@@ -738,13 +716,6 @@ mod windows_tests {
 
     fn health_path(root: &Path) -> std::path::PathBuf {
         day_path(root).join(HEALTH_DIR)
-    }
-
-    fn assert_reparse(path: &Path) {
-        assert_ne!(
-            fs::symlink_metadata(path).unwrap().file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT,
-            0
-        );
     }
 
     #[test]
@@ -766,33 +737,6 @@ mod windows_tests {
         assert!(chronicle_path(&root).is_dir());
         assert!(day_path(&root).is_file());
         assert!(!health_path(&root).exists());
-    }
-
-    #[test]
-    fn after_day_junction_health_is_unsafe() {
-        let temporary = temp();
-        let root = temporary.path().to_path_buf();
-        let target = root.join("junction-target");
-        fs::create_dir(&target).unwrap();
-        let error = run_with_oplog_namespace_barrier(
-            OplogNamespacePrimitive::AfterDay,
-            {
-                let root = root.clone();
-                let target = target.clone();
-                move || {
-                    create_junction(&health_path(&root), &target);
-                }
-            },
-            || admit_day_health_directory(JournalRoot::open(&root).unwrap(), DAY),
-        )
-        .unwrap_err();
-        assert_eq!(error.to_string(), "oplog_namespace_health_unsafe");
-        assert!(day_path(&root).is_dir());
-        assert_reparse(&health_path(&root));
-        assert!(
-            fs::read_dir(&target).unwrap().next().is_none(),
-            "admit must not create through the planted health junction"
-        );
     }
 
     #[test]

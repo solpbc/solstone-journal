@@ -407,3 +407,9 @@ fn pre_move_destination_directory_cleans_only_the_source() {
     assert_eq!(fs::read(destination.join("inside.bin")).unwrap(), b"inside");
     assert_eq!(fs::read(&sibling).unwrap(), SIBLING);
 }
+
+#[test]
+#[ignore = "source-origin marker for the native Windows gate"]
+fn journal_win_ci_windows_install_file_marker() {
+    println!("JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE=executed/pass");
+}
