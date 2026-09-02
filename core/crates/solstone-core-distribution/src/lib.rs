@@ -9,6 +9,7 @@ pub mod archive_census;
 pub mod archive_contract;
 pub mod archive_seal;
 pub mod archive_taxonomy;
+pub mod ced_windows;
 pub mod cleanroom;
 #[doc(hidden)]
 pub mod cli_sign;
