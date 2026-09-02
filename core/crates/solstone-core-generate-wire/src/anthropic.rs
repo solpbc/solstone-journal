@@ -309,8 +309,13 @@ fn converse_request_body(
     body
 }
 
+// Models that reject the `temperature` parameter (Anthropic API error:
+// "temperature is deprecated for this model"). This list is manually
+// reconciled against the `model_tiers` catalog in
+// solstone-core-thinking/src/providers.rs and must be revisited whenever
+// that catalog changes.
 fn model_supports_temperature(model: &str) -> bool {
-    model != "claude-opus-4-7"
+    !matches!(model, "claude-opus-4-7" | "claude-sonnet-5")
 }
 
 fn request_timeout(timeout_s: Option<f64>) -> Duration {
@@ -932,6 +937,21 @@ mod tests {
             &mut no_temperature,
         );
         assert!(no_temperature.posts[0].get("temperature").is_none());
+
+        let mut no_temperature_sonnet_5 = StubTransport {
+            responses: vec![Ok(success_response())],
+            ..Default::default()
+        };
+        let _ = anthropic_generate_with(
+            &request(),
+            &config(Some("configured-secret"), Some("claude-sonnet-5")),
+            &mut no_temperature_sonnet_5,
+        );
+        assert!(
+            no_temperature_sonnet_5.posts[0]
+                .get("temperature")
+                .is_none()
+        );
 
         let mut temperature = StubTransport {
             responses: vec![Ok(success_response())],
