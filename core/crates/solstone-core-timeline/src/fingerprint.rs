@@ -4,7 +4,9 @@
 use serde_json::{Map, Value, to_value};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint_preserving_array_order};
 
-use crate::{CURRENT_SCHEMA_VERSION, CurationRequestV1, TimelineEntryV1, TimelineError};
+use crate::{
+    CURRENT_SCHEMA_VERSION, CurationRequestV1, SegmentBindingV1, TimelineEntryV1, TimelineError,
+};
 
 pub fn curation_input_digest(
     candidates: &[TimelineEntryV1],
@@ -17,6 +19,25 @@ pub fn curation_input_digest(
     );
     envelope.insert("candidates".to_owned(), to_value(candidates)?);
     envelope.insert("request".to_owned(), to_value(request)?);
+    Ok(canonical_fingerprint_preserving_array_order(
+        &CanonicalInput::Json(Value::Object(envelope)),
+    )?)
+}
+
+pub fn segment_input_digest(
+    binding: &SegmentBindingV1,
+    activity_source: &str,
+) -> Result<String, TimelineError> {
+    let mut envelope = Map::new();
+    envelope.insert(
+        "schema_version".to_owned(),
+        Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    envelope.insert("binding".to_owned(), to_value(binding)?);
+    envelope.insert(
+        "activity_source".to_owned(),
+        Value::String(activity_source.to_owned()),
+    );
     Ok(canonical_fingerprint_preserving_array_order(
         &CanonicalInput::Json(Value::Object(envelope)),
     )?)
@@ -71,6 +92,20 @@ mod tests {
         assert_ne!(
             curation_input_digest(&first, &request()).unwrap(),
             curation_input_digest(&second, &request()).unwrap()
+        );
+    }
+
+    #[test]
+    fn segment_digest_changes_with_activity_source() {
+        let binding = SegmentBindingV1 {
+            day: "20260401".to_owned(),
+            stream: "_default".to_owned(),
+            segment: "080000_300".to_owned(),
+        };
+
+        assert_ne!(
+            segment_input_digest(&binding, "First activity.").unwrap(),
+            segment_input_digest(&binding, "Changed activity.").unwrap()
         );
     }
 }

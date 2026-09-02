@@ -412,6 +412,7 @@ pub(crate) fn generate_and_write(
     engine: EngineKind,
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
+    let mut stage = stage;
     let response = match engine {
         EngineKind::Generate => match generate.execute(&generate_request(prepared)) {
             Ok(GenerateResponse::Generated(response)) => {
@@ -422,6 +423,17 @@ pub(crate) fn generate_and_write(
                         talent: prepared.name.clone(),
                         validation: response.schema_validation.clone().unwrap_or(Value::Null),
                     };
+                }
+                if let Some((stage, state)) = stage.as_mut()
+                    && matches!(stage.stage, contract::StageId::TimelineSegmentSummary)
+                    && let Err(detail) = timeline::attach_generated_provenance(state, &response)
+                {
+                    return RuntimeOutcome::StageFailed(stage_error(
+                        "generate",
+                        "timeline:segment_summary",
+                        prepared,
+                        detail,
+                    ));
                 }
                 response.text.clone()
             }

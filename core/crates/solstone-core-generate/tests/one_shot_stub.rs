@@ -2,7 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::json;
@@ -10,6 +12,8 @@ use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, STDERR_LIMIT,
     STDOUT_LIMIT,
 };
+
+mod support;
 
 const MODE_ENV: &str = "SOLSTONE_GENERATE_ONE_SHOT_STUB_MODE";
 const OVERRIDES_PATH_ENV: &str = "SOLSTONE_GENERATE_ONE_SHOT_STUB_OVERRIDES_PATH";
@@ -130,6 +134,119 @@ fn client_for_mode(mode: &str, fixture: &Fixture) -> OneShotClient {
 
 fn argv_tail(arguments: &[String]) -> &[String] {
     arguments.get(1..).unwrap_or(&[])
+}
+
+#[cfg(unix)]
+fn copy_payload_file(fixture: &Fixture, relative: &str) {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let core = manifest_dir
+        .ancestors()
+        .nth(2)
+        .expect("core directory")
+        .to_path_buf();
+    let source = core.join("payload").join(relative);
+    let destination = fixture.path.join("share").join(relative);
+    fs::create_dir_all(destination.parent().expect("payload parent"))
+        .expect("payload parent creates");
+    fs::copy(&source, &destination).unwrap_or_else(|error| {
+        panic!(
+            "copy fixture payload {} to {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    });
+}
+
+#[cfg(unix)]
+fn install_talent_worker_wrapper(fixture: &Fixture) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    for relative in [
+        "solstone/talent/journal/contract/bundle.json",
+        "solstone/think/contract/layout.json",
+        "solstone/think/templates/segment_preamble.md",
+        "solstone/apps/timeline/talent/segment_summary.md",
+        "solstone/apps/timeline/talent/segment_summary.schema.json",
+    ] {
+        copy_payload_file(fixture, relative);
+    }
+
+    let bin = fixture.path.join("bin");
+    fs::create_dir_all(&bin).expect("worker binary directory creates");
+    let real = bin.join("solstone-core-real");
+    fs::copy(support::core_binary(), &real).expect("real core binary copies");
+    fs::set_permissions(&real, fs::Permissions::from_mode(0o700))
+        .expect("real core binary becomes executable");
+
+    let wrapper = bin.join("solstone-core");
+    fs::write(
+        &wrapper,
+        format!(
+            r##"#!/bin/sh
+if [ "$1" = "generate" ] && [ "$2" = "--one-shot" ]; then
+    cat >/dev/null
+    case "$(cat "$SOLSTONE_JOURNAL/config/journal.json")" in
+        *'"provider":"local"'*)
+            printf '%s\n' '{{"schema":"solstone-generate-response-v2","id":null,"outcome":"generated","text":"{{\"title\":\"Local\",\"description\":\"Local provider fixture.\"}}","model":"local/fixture","usage":{{}},"finish_reason":"stop","thinking":null,"schema_validation":{{"valid":true}},"input_budget":null,"request_budget":null,"inference":{{"reason_code":"manifest-missing","runtime_reason_code":"manifest-missing"}}}}'
+            ;;
+        *)
+            printf '%s\n' '{{"schema":"solstone-generate-response-v2","id":null,"outcome":"generated","text":"{{\"title\":\"BYO\",\"description\":\"Google provider fixture.\"}}","model":"google/gemini-fixture","usage":{{"input_tokens":1}},"finish_reason":"stop","thinking":null,"schema_validation":{{"valid":true}},"input_budget":null,"request_budget":null,"inference":{{"provider":"google"}}}}'
+            ;;
+    esac
+    exit 0
+fi
+exec '{}' "$@"
+"##,
+            real.display()
+        ),
+    )
+    .expect("worker wrapper writes");
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))
+        .expect("worker wrapper becomes executable");
+    wrapper
+}
+
+#[cfg(unix)]
+fn write_timeline_worker_journal(root: &std::path::Path, provider: &str, model: &str) {
+    let segment = root.join("chronicle/20260401/080000_300");
+    fs::create_dir_all(segment.join("talents")).expect("activity parent creates");
+    fs::write(
+        segment.join("talents/activity.md"),
+        "Completed fixture work.\n",
+    )
+    .expect("activity writes");
+    fs::create_dir_all(root.join("config")).expect("journal config parent creates");
+    fs::write(
+        root.join("config/journal.json"),
+        serde_json::to_vec(&json!({"providers":{"active":{"provider":provider,"model":model}}}))
+            .expect("journal config serializes"),
+    )
+    .expect("journal config writes");
+}
+
+#[cfg(unix)]
+fn launch_timeline_worker(
+    program: &std::path::Path,
+    journal: &std::path::Path,
+) -> std::process::Child {
+    let mut child = Command::new(program)
+        .arg("__talent-worker")
+        .env("SOLSTONE_JOURNAL", journal)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("real talent worker starts");
+    child
+        .stdin
+        .as_mut()
+        .expect("worker stdin")
+        .write_all(
+            br#"{"name":"timeline:segment_summary","day":"20260401","segment":"080000_300"}
+"#,
+        )
+        .expect("worker request writes");
+    child
 }
 
 #[cfg(unix)]
@@ -363,4 +480,59 @@ fn prefixed_invocation_records_generate_one_shot() {
         .execute(&request())
         .expect("prefixed stub response");
     assert_eq!(argv_tail(&fixture.read_argv()), ["generate", "--one-shot"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn concurrent_real_workers_keep_byo_timeline_provenance_separate_from_local_runtime_codes() {
+    let fixture = Fixture::new();
+    let worker = install_talent_worker_wrapper(&fixture);
+    let byo_journal = fixture.path.join("byo-journal");
+    let local_journal = fixture.path.join("local-journal");
+    write_timeline_worker_journal(&byo_journal, "google", "google/configured-model");
+    write_timeline_worker_journal(&local_journal, "local", "local/fixture");
+
+    let local = launch_timeline_worker(&worker, &local_journal);
+    let byo = launch_timeline_worker(&worker, &byo_journal);
+    let local_output = local.wait_with_output().expect("local worker waits");
+    let byo_output = byo.wait_with_output().expect("BYO worker waits");
+    assert!(
+        local_output.status.success(),
+        "local worker stderr: {}",
+        String::from_utf8_lossy(&local_output.stderr)
+    );
+    assert!(
+        byo_output.status.success(),
+        "BYO worker stderr: {}",
+        String::from_utf8_lossy(&byo_output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&byo_output.stdout).contains("\"event\":\"finish\""),
+        "BYO worker did not finish: {}",
+        String::from_utf8_lossy(&byo_output.stdout)
+    );
+
+    let timeline: serde_json::Value = serde_json::from_slice(
+        &fs::read(byo_journal.join("chronicle/20260401/080000_300/timeline.json"))
+            .expect("BYO timeline artifact reads"),
+    )
+    .expect("BYO timeline artifact parses");
+    assert_eq!(timeline["schema_version"], 1, "timeline: {timeline}");
+    assert_eq!(timeline["provenance"]["model"], "google/gemini-fixture");
+    assert_ne!(
+        timeline["provenance"]["model"], "google/configured-model",
+        "the persisted model must come from the BYO response, not configuration"
+    );
+    assert_eq!(
+        timeline["provenance"]["inference"],
+        json!({"provider":"google"})
+    );
+
+    let provenance = timeline["provenance"].to_string();
+    assert!(
+        !solstone_core_system::provider_runtime::KNOWN_REASON_CODES
+            .iter()
+            .any(|code| provenance.contains(code)),
+        "BYO provenance must not contain a local-provider runtime reason code: {provenance}"
+    );
 }

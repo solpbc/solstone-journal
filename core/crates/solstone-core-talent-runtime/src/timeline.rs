@@ -4,11 +4,17 @@
 //! Timeline segment-summary hook stage.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use serde_json::{Map, Value, json};
-use solstone_core_system_health::find_segment_dir;
+use serde_json::{Map, Value};
 use solstone_core_talent_config::is_truthy;
+use solstone_core_timeline::{
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, GenerationProvenanceV1,
+    SegmentBindingV1, SegmentSelectorV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
+    TimelineKind, origin_for_binding, publish_segment_timeline, resolve_segment_binding,
+    segment_directory, segment_input_digest,
+};
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -20,7 +26,12 @@ use crate::{
 pub struct TimelinePreState {
     activity_text: String,
     segment_rel_path: String,
+    binding: SegmentBindingV1,
+    input_digest: String,
+    provenance: Option<Box<GenerationProvenanceV1>>,
 }
+
+static ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn fields(prepared: &PreparedTalent) -> Option<(&str, &str, Option<&str>)> {
     let day = prepared.config.get("day")?.as_str()?;
@@ -32,25 +43,36 @@ fn fields(prepared: &PreparedTalent) -> Option<(&str, &str, Option<&str>)> {
     ))
 }
 
-fn segment_dir(journal: &Path, day: &str, segment: &str, stream: Option<&str>) -> Option<PathBuf> {
-    stream
-        .filter(|stream| !stream.is_empty())
-        .and_then(|stream| find_segment_dir(journal, day, segment, Some(stream)))
-        .or_else(|| find_segment_dir(journal, day, segment, None))
-}
-
 fn resolve_activity(
     journal: &Path,
     day: &str,
     segment: &str,
     stream: Option<&str>,
-) -> Option<(PathBuf, PathBuf)> {
-    let segment_dir = segment_dir(journal, day, segment, stream)?;
+) -> Result<Option<(SegmentBindingV1, std::path::PathBuf, std::path::PathBuf)>, TimelineError> {
+    let selector = SegmentSelectorV1 {
+        day: day.to_owned(),
+        segment: segment.to_owned(),
+        stream: stream.map(ToOwned::to_owned),
+    };
+    let binding = match resolve_segment_binding(journal, &selector) {
+        Ok(binding) => binding,
+        Err(
+            error @ TimelineError::SegmentNotFound {
+                stream: Some(_), ..
+            },
+        ) => {
+            return Err(error);
+        }
+        Err(TimelineError::SegmentNotFound { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let segment_dir = segment_directory(journal, &binding)?;
     ["talents/activity.md", "activity.md"]
         .into_iter()
         .map(|relative| segment_dir.join(relative))
         .find(|path| path.is_file())
-        .map(|activity| (segment_dir, activity))
+        .map(|activity| (binding, segment_dir, activity))
+        .map_or(Ok(None), |value| Ok(Some(value)))
 }
 
 pub fn gate(
@@ -60,9 +82,15 @@ pub fn gate(
     let Some((day, segment, stream)) = fields(prepared) else {
         return Ok(GateDecision::Skip("no_activity_md".to_owned()));
     };
-    let Some((segment_dir, activity_path)) =
-        resolve_activity(&context.journal, day, segment, stream)
-    else {
+    let resolved = resolve_activity(&context.journal, day, segment, stream).map_err(|error| {
+        stage_error(
+            "gate",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        )
+    })?;
+    let Some((_, segment_dir, activity_path)) = resolved else {
         return Ok(GateDecision::Skip("no_activity_md".to_owned()));
     };
     if segment_dir.join("timeline.json").exists()
@@ -83,20 +111,60 @@ pub fn build(
     let Some((day, segment, stream)) = fields(prepared) else {
         return Err(skipped(prepared));
     };
-    let Some((segment_dir, activity_path)) =
-        resolve_activity(&context.journal, day, segment, stream)
-    else {
+    let resolved = resolve_activity(&context.journal, day, segment, stream).map_err(|error| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        ))
+    })?;
+    let Some((binding, _, activity_path)) = resolved else {
         return Err(skipped(prepared));
     };
     let Ok(activity_text) = fs::read_to_string(activity_path) else {
         return Err(skipped(prepared));
     };
+    let input_digest = segment_input_digest(&binding, &activity_text).map_err(|error| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        ))
+    })?;
+    let segment_rel_path = origin_for_binding(&binding).map_err(|error| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        ))
+    })?;
     Ok(PrePostState::Timeline(TimelinePreState {
         activity_text,
-        segment_rel_path: solstone_core_maintenance::bodies::timeline::origin_for_segment(
-            &segment_dir,
-        ),
+        segment_rel_path,
+        binding,
+        input_digest,
+        provenance: None,
     }))
+}
+
+pub(crate) fn attach_generated_provenance(
+    state: &mut PrePostState,
+    response: &solstone_core_generate::GeneratedResponse,
+) -> Result<(), String> {
+    let PrePostState::Timeline(state) = state else {
+        return Err("missing timeline state".to_owned());
+    };
+    state.provenance = Some(Box::new(GenerationProvenanceV1 {
+        model: response.model.clone(),
+        finish_reason: response.finish_reason.clone(),
+        schema_validation: response.schema_validation.clone().unwrap_or(Value::Null),
+        inference: response.inference.clone().unwrap_or(Value::Null),
+        usage: response.usage.clone(),
+    }));
+    Ok(())
 }
 
 fn skipped(prepared: &PreparedTalent) -> RuntimeOutcome {
@@ -146,7 +214,7 @@ pub fn parse(
 pub fn commit(
     parsed: ParsedOutput,
     prepared: &PreparedTalent,
-    _: &PrePostState,
+    state: &PrePostState,
 ) -> Result<CommitPlan, StageError> {
     let ParsedOutput::Text(output) = parsed else {
         return Err(stage_error(
@@ -160,42 +228,70 @@ pub fn commit(
     let Ok(Value::Object(result)) = serde_json::from_str(&output) else {
         return Ok(CommitPlan::NoOutput);
     };
-    let Some((day, segment, stream)) = fields(prepared) else {
-        return Ok(CommitPlan::NoOutput);
+    let PrePostState::Timeline(state) = state else {
+        return Err(stage_error(
+            "commit",
+            "timeline:segment_summary",
+            prepared,
+            "missing timeline state",
+        ));
+    };
+    let Some(provenance) = state.provenance.clone() else {
+        return Err(stage_error(
+            "commit",
+            "timeline:segment_summary",
+            prepared,
+            "missing generated provenance",
+        ));
     };
     Ok(CommitPlan::Write(WriteIntent::TimelineSegmentSummary {
         result: Value::Object(result),
-        day: day.to_owned(),
-        segment: segment.to_owned(),
-        stream: stream.map(str::to_owned),
-        model: prepared
-            .config
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
+        binding: state.binding.clone(),
+        input_digest: state.input_digest.clone(),
+        provenance,
     }))
 }
 
 pub fn apply_result(
     journal: &Path,
     result: &Value,
-    day: &str,
-    segment: &str,
-    stream: Option<&str>,
-    model: &str,
+    binding: SegmentBindingV1,
+    input_digest: String,
+    provenance: GenerationProvenanceV1,
 ) -> Result<(), String> {
-    let Some(segment_dir) = segment_dir(journal, day, segment, stream) else {
-        return Ok(());
+    let generated_at_ms = chrono::Utc::now().timestamp_millis();
+    let timeline = SegmentTimelineV1 {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        kind: TimelineKind::Segment,
+        summary: SegmentSummaryV1 {
+            title: result
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            description: result
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            origin: origin_for_binding(&binding).map_err(|error| error.to_string())?,
+            continuation_of: None,
+        },
+        binding,
+        input_digest: input_digest.clone(),
+        generated_at_ms,
+        provenance: Some(provenance),
     };
-    let payload = json!({
-        "title": result.get("title").and_then(Value::as_str).unwrap_or_default(),
-        "description": result.get("description").and_then(Value::as_str).unwrap_or_default(),
-        "origin": solstone_core_maintenance::bodies::timeline::origin_for_segment(&segment_dir),
-        "model": model,
-        "generated_at": chrono::Utc::now().timestamp(),
-    });
-    solstone_core_maintenance::bodies::timeline::write_segment_timeline(&segment_dir, &payload)
+    let sequence = ATTEMPT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let attempt = AttemptStateV1 {
+        attempt_id: format!("segment-{}-{sequence}", std::process::id()),
+        input_digest,
+        started_at_ms: generated_at_ms,
+        finished_at_ms: None,
+        outcome: AttemptOutcome::Running,
+        detail: String::new(),
+    };
+    publish_segment_timeline(journal, &timeline, attempt).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -251,22 +347,6 @@ mod tests {
             prepared.config["prompt"],
             "Segment: 20260101/090000_300\nActivity: Completed focused work.\n"
         );
-        let plan = commit(
-            parse(
-                r#"{"title":"Focus complete","description":"Completes focused work."}"#,
-                &prepared,
-                &state,
-            )
-            .unwrap(),
-            &prepared,
-            &state,
-        )
-        .unwrap();
-        assert!(matches!(
-            plan,
-            CommitPlan::Write(WriteIntent::TimelineSegmentSummary { .. })
-        ));
-
         let client =
             solstone_core_generate::OneShotClient::at_path(crate::test_support::one_shot_stub(
                 root.path(),
@@ -292,7 +372,7 @@ mod tests {
                 ..
             }
         ));
-        let timeline: Value = serde_json::from_str(
+        let timeline: solstone_core_timeline::SegmentTimelineV1 = serde_json::from_str(
             &fs::read_to_string(
                 root.path()
                     .join("chronicle/20260101/090000_300/timeline.json"),
@@ -300,9 +380,15 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert_eq!(timeline["title"], "Focus complete");
-        assert_eq!(timeline["origin"], "20260101/090000_300");
-        assert_eq!(timeline["model"], "test-model");
+        assert_eq!(timeline.summary.title, "Focus complete");
+        assert_eq!(timeline.summary.origin, "20260101/090000_300");
+        let provenance = timeline.provenance.expect("generated provenance persists");
+        assert_eq!(provenance.model, "test-model");
+        assert_eq!(provenance.finish_reason, "stop");
+        assert_eq!(provenance.schema_validation, Value::Null);
+        assert_eq!(provenance.inference, Value::Null);
+        assert_eq!(provenance.usage, json!({}));
+        assert!(!timeline.input_digest.is_empty());
     }
 
     #[test]
@@ -333,8 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_stream_falls_back_to_the_matching_segment() {
-        // Derived from solstone/apps/timeline/talent/segment_summary.py:91-133.
+    fn explicit_stale_stream_does_not_fall_back_to_another_segment_layout() {
         let root = tempfile::tempdir().unwrap();
         let segment = root.path().join("chronicle/20260101/actual/090000_300");
         fs::create_dir_all(segment.join("talents")).unwrap();
@@ -345,45 +430,8 @@ mod tests {
         let mut prepared = prepared(false);
         prepared.config.insert("stream".to_owned(), json!("stale"));
 
-        assert_eq!(gate(&prepared, &context).unwrap(), GateDecision::Proceed);
-        let state = build(&mut prepared, &context).unwrap();
-        apply_prompt_override(&mut prepared, &state).unwrap();
         assert!(
-            prepared.config["prompt"]
-                .as_str()
-                .unwrap()
-                .contains("Segment: 20260101/actual/090000_300\nActivity: Recovered activity.")
-        );
-    }
-
-    #[test]
-    fn continuation_summary_is_publicly_reachable_from_maintenance() {
-        // Derived from solstone/apps/timeline/talent/segment_summary.py:70-88.
-        let root = tempfile::tempdir().unwrap();
-        let segment = root.path().join("chronicle/20260101/090000_300");
-        fs::create_dir_all(&segment).unwrap();
-
-        solstone_core_maintenance::bodies::timeline::write_continuation_summary(
-            &segment,
-            "080000_300",
-        )
-        .unwrap();
-        let timeline = segment.join("timeline.json");
-        let first = fs::read(&timeline).unwrap();
-        solstone_core_maintenance::bodies::timeline::write_continuation_summary(
-            &segment,
-            "080000_300",
-        )
-        .unwrap();
-        assert_eq!(fs::read(&timeline).unwrap(), first);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&first).unwrap(),
-            json!({
-                "title":"Continued",
-                "description":"Unchanged from the prior window.",
-                "origin":"20260101/090000_300",
-                "continuation_of":"080000_300",
-            })
+            matches!(gate(&prepared, &context), Err(StageError { detail, .. }) if detail.contains("not found"))
         );
     }
 }

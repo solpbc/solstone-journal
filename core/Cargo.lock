@@ -4176,6 +4176,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-system",
 ]
 
 [[package]]
@@ -5437,6 +5438,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
+ "solstone-core-timeline",
  "solstone-core-transcripts",
  "tempfile",
  "zip",

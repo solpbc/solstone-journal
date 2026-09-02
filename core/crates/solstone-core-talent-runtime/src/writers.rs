@@ -67,10 +67,9 @@ pub enum WriteIntent {
     },
     TimelineSegmentSummary {
         result: Value,
-        day: String,
-        segment: String,
-        stream: Option<String>,
-        model: String,
+        binding: solstone_core_timeline::SegmentBindingV1,
+        input_digest: String,
+        provenance: Box<solstone_core_timeline::GenerationProvenanceV1>,
     },
     SpeakerAttribution {
         output: String,
@@ -233,18 +232,16 @@ pub fn apply(
         }
         CommitPlan::Write(WriteIntent::TimelineSegmentSummary {
             result,
-            day,
-            segment,
-            stream,
-            model,
+            binding,
+            input_digest,
+            provenance,
         }) => {
             crate::timeline::apply_result(
                 &context.journal,
                 &result,
-                &day,
-                &segment,
-                stream.as_deref(),
-                &model,
+                binding,
+                input_digest,
+                *provenance,
             )
             .map_err(|detail| StageError {
                 phase: "write-intent",

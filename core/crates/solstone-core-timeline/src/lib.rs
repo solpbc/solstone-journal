@@ -15,7 +15,7 @@ pub use binding::{
     discover_day_segment_bindings, origin_for_binding, resolve_segment_binding, segment_directory,
 };
 pub use error::{InvalidSelectionReason, TimelineCurationStage, TimelineError};
-pub use fingerprint::curation_input_digest;
+pub use fingerprint::{curation_input_digest, segment_input_digest};
 pub use locks::{
     TimelineLockRequest, TimelineLockSet, TimelineLockSubject, acquire_timeline_locks,
     segment_attempt_lock_name,
