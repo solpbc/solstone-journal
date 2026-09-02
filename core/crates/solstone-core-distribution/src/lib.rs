@@ -30,6 +30,7 @@ pub mod onnx_runtime;
 pub mod onnx_windows;
 pub mod onnx_windows_source;
 pub mod parakeet_windows;
+pub mod parakeet_windows_source;
 pub mod pdfium;
 pub mod pe;
 pub mod produce;
