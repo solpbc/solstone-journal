@@ -195,7 +195,8 @@ try {
         'GGML_OPENMP' = 'ON'
     }
     foreach ($name in $requiredCache.Keys) {
-        if ($cacheText -notmatch "(?m)^$name(?::[A-Z_]+)?=$($requiredCache[$name])`$") {
+        $cachePattern = "(?m)^$([regex]::Escape($name))(?::[A-Z_]+)?=$([regex]::Escape($requiredCache[$name]))\r?$"
+        if ($cacheText -notmatch $cachePattern) {
             throw "CMake cache does not retain $name=$($requiredCache[$name])"
         }
     }
