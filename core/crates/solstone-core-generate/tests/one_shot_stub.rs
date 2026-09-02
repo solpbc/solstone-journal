@@ -215,6 +215,7 @@ fn protocol_failures_preserve_exit_status() {
     };
     assert_eq!(failure.error.reason, "stub_failure");
     assert_eq!(failure.status.exit_code, Some(70));
+    assert!(!failure.stdin_closed_early);
     assert_reaped(&fixture);
 
     let fixture = Fixture::new();
@@ -264,31 +265,39 @@ fn nonzero_non_protocol_stderr_is_unexpected_child() {
 }
 
 #[test]
-fn successful_malformed_stdout_is_decode() {
+fn successful_malformed_stdout_preserves_completed_process_evidence() {
     let fixture = Fixture::new();
     let error = client_for_mode("success_malformed", &fixture)
         .execute(&request())
         .expect_err("malformed success is decode");
-    assert!(
-        matches!(error, ClientError::Decode(_)),
-        "expected Decode, got {error:?}"
-    );
+    let ClientError::InvalidResponse(failure) = error else {
+        panic!("expected InvalidResponse, got {error:?}");
+    };
+    assert_eq!(failure.status.exit_code, Some(0));
+    assert_eq!(failure.stdout.bytes, b"not-json\n");
+    assert_eq!(failure.stderr.bytes, b"malformed diagnostic");
+    assert!(!failure.stdin_closed_early);
     assert_reaped(&fixture);
 }
 
 #[test]
-fn successful_oversized_stdout_is_decode() {
+fn successful_oversized_stdout_preserves_cap_and_completed_process_evidence() {
     let fixture = Fixture::new();
     let error = client_for_mode("success_oversized", &fixture)
         .execute(&request())
         .expect_err("oversized success is decode");
-    let ClientError::Decode(detail) = error else {
-        panic!("expected Decode, got {error:?}");
+    let ClientError::InvalidResponse(failure) = error else {
+        panic!("expected InvalidResponse, got {error:?}");
     };
     assert!(
-        detail.contains(&STDOUT_LIMIT.to_string()),
-        "decode names the cap: {detail}"
+        failure.detail.contains(&STDOUT_LIMIT.to_string()),
+        "decode names the cap: {}",
+        failure.detail
     );
+    assert_eq!(failure.status.exit_code, Some(0));
+    assert_eq!(failure.stdout.bytes.len(), STDOUT_LIMIT);
+    assert!(failure.stdout.truncated);
+    assert_eq!(failure.stderr.bytes, b"oversized diagnostic");
     assert_reaped(&fixture);
 }
 
@@ -315,9 +324,12 @@ fn early_stdin_close_on_a_large_payload_is_not_io() {
     let error = client_for_mode("close_stdin_early", &fixture)
         .execute(&request_with_text(&payload))
         .expect_err("early close classifies from the exit status");
+    let ClientError::UnexpectedChild(failure) = error else {
+        panic!("BrokenPipe must not become Io, got {error:?}");
+    };
     assert!(
-        matches!(error, ClientError::UnexpectedChild(_)),
-        "BrokenPipe must not become Io, got {error:?}"
+        failure.stdin_closed_early,
+        "large request must exercise the write-side early-close branch"
     );
     assert_reaped(&fixture);
 }

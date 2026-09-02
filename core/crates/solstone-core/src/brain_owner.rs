@@ -548,12 +548,21 @@ fn generate_component(now: DateTime<Utc>) -> Value {
             "generate",
             response.reason_code.as_ref().map(|value| value.as_wire()),
         ),
-        Err(ClientError::Protocol(failure)) => {
+        Err(error) => generate_client_failure_reason(&error),
+    };
+    // The frozen brain evidence contract intentionally admits no arbitrary diagnostic text for
+    // generate failures. Other generate-client adapters preserve bounded process evidence; this
+    // owner projection keeps the domain-specific reason translation contract-valid.
+    component_for_reason("generate", &reason, Map::new(), now)
+}
+
+fn generate_client_failure_reason(error: &ClientError) -> String {
+    match error {
+        ClientError::Protocol(failure) => {
             map_provider_reason("generate", Some(&failure.error.reason))
         }
-        Err(_) => "probe_internal_error".to_owned(),
-    };
-    component_for_reason("generate", &reason, Map::new(), now)
+        _ => "probe_internal_error".to_owned(),
+    }
 }
 
 fn classify_canned_generate(response: &GeneratedResponse) -> Option<&'static str> {
@@ -1108,6 +1117,36 @@ mod tests {
         assert_eq!(
             map_provider_reason("generate", Some("not-in-contract")),
             "probe_internal_error"
+        );
+    }
+
+    #[test]
+    fn generate_client_failures_remain_contract_valid_owner_evidence() {
+        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let resolution = ClientError::Resolve("missing sibling".to_owned());
+        let reason = generate_client_failure_reason(&resolution);
+        assert_eq!(reason, "probe_internal_error");
+        let component = component_for_reason("generate", &reason, Map::new(), now);
+        assert_eq!(component["reason_code"], "probe_internal_error");
+        assert_eq!(component["diagnostic"], json!({}));
+
+        let protocol = ClientError::Protocol(Box::new(solstone_core_generate::ProtocolFailure {
+            error: solstone_core_generate::ProtocolError {
+                id: None,
+                reason: "provider_key_invalid".to_owned(),
+                detail: "bounded provider diagnostic".to_owned(),
+            },
+            status: solstone_core_generate::ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: solstone_core_generate::CapturedStream::empty(),
+            stderr: solstone_core_generate::CapturedStream::empty(),
+            stdin_closed_early: false,
+        }));
+        assert_eq!(
+            generate_client_failure_reason(&protocol),
+            "provider_key_invalid"
         );
     }
 
