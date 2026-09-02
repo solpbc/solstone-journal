@@ -67,10 +67,25 @@ input_dir="$repo_root/target/parakeet-windows-inputs/$EXPECTED_WIN_COMMIT"
 slot="$repo_root/target/parakeet-windows-controlled-build/$EXPECTED_WIN_COMMIT"
 source_archive="$input_dir/parakeet.cpp-patched-source.tar.gz"
 cmake_archive="$repo_root/target/windows-builder-inputs/cmake-3.31.12-windows-x86_64.zip"
+server_patch="$repo_root/core/distribution/parakeet-windows-patches/0005-controlled-local-server-boundary.patch"
 [ ! -e "$input_dir" ] && [ ! -e "$slot" ] || {
   echo 'ERROR: refusing to reuse Parakeet input or output slot' >&2
   exit 1
 }
+[ -f "$server_patch" ] || {
+  echo 'ERROR: controlled Parakeet server patch is missing' >&2
+  exit 1
+}
+
+if "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" diff --quiet HEAD -- examples/server/main.cpp; then
+  "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" apply --check "$server_patch"
+  "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" apply "$server_patch"
+else
+  "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" diff --binary HEAD -- examples/server/main.cpp | cmp -s - "$server_patch" || {
+    echo 'ERROR: Parakeet source has a server patch other than the controlled boundary' >&2
+    exit 1
+  }
+fi
 
 cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- acquire cmake-windows
 mkdir -p "$input_dir"
