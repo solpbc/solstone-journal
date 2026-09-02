@@ -70,6 +70,7 @@ enum ResolveProbeProgramError {
     CurrentExeUnavailable,
     CurrentExeParentMissing,
     HelperMissing(PathBuf),
+    #[cfg(unix)]
     HelperNotExecutable(PathBuf),
 }
 
@@ -209,6 +210,8 @@ fn resolve_program(
                     return Err(ResolveProbeProgramError::HelperNotExecutable(path));
                 }
             }
+            #[cfg(not(unix))]
+            let _ = metadata;
             Ok(ResolvedProbeProgram {
                 executable: path,
                 args: Vec::new(),
@@ -392,6 +395,7 @@ mod tests {
         assert!(detect_gpus().is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn memoized_probe_uses_test_sibling_helper() {
         use std::fs;
@@ -419,6 +423,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn non_memoized_child_contract_distinguishes_clean_empty_from_failures() {
         let clean_empty = VulkanProbeConfig {

@@ -37,6 +37,7 @@ rustls-acme = { version = "0.15.4", default-features = false, features = ["ring"
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+socket2.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-journal-io.workspace = true

@@ -588,6 +588,8 @@ pub fn make_executable(path: &Path) -> Result<(), ArchiveError> {
         permissions.set_mode(permissions.mode() | 0o111);
         fs::set_permissions(path, permissions)?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
 pub fn clear_macos_quarantine(path: &Path) -> Result<(), ArchiveError> {

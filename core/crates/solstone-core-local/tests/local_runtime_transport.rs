@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::net::UnixDatagram;

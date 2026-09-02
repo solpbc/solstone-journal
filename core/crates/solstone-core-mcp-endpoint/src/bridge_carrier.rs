@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use ring::signature::Ed25519KeyPair;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
+use socket2::{SockRef, TcpKeepalive};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
@@ -180,6 +181,46 @@ const BRIDGE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const BRIDGE_TLS_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// 🔴 The carrier is *idle by design* between lease renewals — roughly eight
+/// minutes whenever no MCP client is connected, which is the ordinary state of
+/// an owner's journal. Every NAT and load balancer on the path holds its flow
+/// mapping on an idle timer far shorter than that (Azure's is four minutes,
+/// consumer CGNAT is often two), and when that timer fires the mapping is
+/// dropped **silently**: no RST, no ICMP. The bridge's next renewal challenge
+/// is then blackholed, both ends still believe the socket is ESTABLISHED, and
+/// nothing notices until the lease expires — a permanent ten-minute
+/// register/blackhole/expire/reconnect flap. Measured on the field-journal
+/// deployment 2026-09-02: ten retransmissions, `backoff:9`, `rto:107520`, zero
+/// bytes received for 605 seconds, on a socket whose peer process was alive
+/// and healthy.
+///
+/// ✅ Keepalive probes are real packets, so they refresh the mapping, and after
+/// `retries` failures the socket errors instead of hanging — which is also what
+/// lets a dead carrier be *detected* rather than waiting out the lease.
+///
+/// ⚠ These are deliberately the paired-device door's values
+/// (`solstone-core-convey-shell`'s `door.rs`), not new ones. That door is this
+/// journal's other long-lived NAT-traversing connection and it solved this
+/// exact problem first; the bridge carrier was built later and did not inherit
+/// it. Keep the two in step rather than tuning one in isolation.
+const BRIDGE_KEEPALIVE_IDLE: Duration = Duration::from_secs(30);
+const BRIDGE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+const BRIDGE_KEEPALIVE_RETRIES: u32 = 3;
+
+/// Keep the carrier's flow mapping alive across an idle renewal gap.
+///
+/// A failure here is not fatal: the carrier still works on a path with no
+/// idle timeout, so this degrades rather than fails closed.
+fn hold_carrier_flow_open(socket: &TcpStream) {
+    let keepalive = TcpKeepalive::new()
+        .with_time(BRIDGE_KEEPALIVE_IDLE)
+        .with_interval(BRIDGE_KEEPALIVE_INTERVAL)
+        .with_retries(BRIDGE_KEEPALIVE_RETRIES);
+    if SockRef::from(socket).set_tcp_keepalive(&keepalive).is_err() {
+        log::debug!("mcp bridge carrier could not configure TCP keepalive");
+    }
+}
+
 /// An authenticated carrier whose socket, authority, and key material remain opaque.
 pub(crate) struct McpBridgeCarrier {
     carrier: TlsStream<TcpStream>,
@@ -249,6 +290,7 @@ pub(crate) async fn establish_initial_bridge_carrier(
         },
     )
     .await?;
+    hold_carrier_flow_open(&socket);
     let tls_deadline = deadline.min(Instant::now() + BRIDGE_TLS_TIMEOUT);
     let server_name = ServerName::try_from(BRIDGE_ORIGIN_HOST.to_owned())
         .map_err(|_| McpBridgeCarrierError::Tls)?;

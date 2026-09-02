@@ -4,14 +4,16 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use super::metal_candidate;
 use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
-    flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest, metal_candidate,
+    flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest,
     parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
     write_parakeet_model_manifest,
 };
@@ -34,6 +36,10 @@ fn temp(name: &str) -> PathBuf {
     ));
     fs::create_dir_all(&path).unwrap();
     path
+}
+
+fn path_value(value: &Value) -> PathBuf {
+    PathBuf::from(value.as_str().expect("expected path string"))
 }
 
 fn contacted_only_origin_host(contacted: &BTreeSet<String>, expected_host: &str) -> bool {
@@ -227,6 +233,7 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
     }
 }
 
+#[cfg(unix)]
 fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
     serde_json::from_value(json!({
         "journal": root,
@@ -302,6 +309,7 @@ fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(unix)]
 #[test]
 fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
     let root = temp("metal-candidate-inspect");
@@ -553,6 +561,7 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
     ))
     .unwrap();
     let exported = pins::pins_json();
+    let journal = Path::new("/journal");
 
     for row in fixture["llama_server_vulkan"].as_array().unwrap() {
         let expected = &row["pin_identity"];
@@ -572,18 +581,17 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
             assert_eq!(actual[field], expected[field], "{field}");
         }
         let paths = pins::paths(
-            std::path::Path::new("/journal"),
+            journal,
             expected["artifact_key"].as_str().unwrap(),
             Some("local/qwen3.5-4b"),
         );
         assert_eq!(
-            paths["binary_path"],
-            format!(
-                "/journal/cache/providers/local/bin/{}/{}/{}",
-                expected["artifact_key"].as_str().unwrap(),
-                expected["release_tag"].as_str().unwrap(),
-                expected["binary_name"].as_str().unwrap(),
-            )
+            path_value(&paths["binary_path"]),
+            pins::cache_root(journal)
+                .join("bin")
+                .join(expected["artifact_key"].as_str().unwrap())
+                .join(expected["release_tag"].as_str().unwrap())
+                .join(expected["binary_name"].as_str().unwrap()),
         );
     }
     assert_eq!(
@@ -599,48 +607,38 @@ fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
     );
     for row in fixture["llama_server_cuda"].as_array().unwrap() {
         let identity = &row["pin_identity"];
-        let paths = pins::paths(
-            std::path::Path::new("/journal"),
-            identity["artifact_key"].as_str().unwrap(),
-            None,
-        );
+        let paths = pins::paths(journal, identity["artifact_key"].as_str().unwrap(), None);
         assert_eq!(
-            paths["cuda_binary_path"],
-            format!(
-                "/journal/cache/providers/local/cuda/{}/{}/llama-server",
-                identity["artifact_key"].as_str().unwrap(),
-                identity["sha256"].as_str().unwrap(),
-            )
+            path_value(&paths["cuda_binary_path"]),
+            pins::cache_root(journal)
+                .join("cuda")
+                .join(identity["artifact_key"].as_str().unwrap())
+                .join(identity["sha256"].as_str().unwrap())
+                .join("llama-server"),
         );
     }
     assert_eq!(
-        pins::paths(
-            std::path::Path::new("/journal"),
-            PARAKEET_TEST_KEY,
-            Some("local/qwen3.5-4b"),
-        )["model_dir"],
-        fixture["paths"]["local_model_dir"]
+        path_value(
+            &pins::paths(journal, PARAKEET_TEST_KEY, Some("local/qwen3.5-4b"),)["model_dir"]
+        ),
+        PathBuf::from(fixture["paths"]["local_model_dir"].as_str().unwrap())
     );
     for row in fixture["parakeet_server"].as_array().unwrap() {
         let identity = &row["pin_identity"];
-        let paths = pins::parakeet_paths(
-            std::path::Path::new("/journal"),
-            identity["artifact_key"].as_str().unwrap(),
-        );
+        let paths = pins::parakeet_paths(journal, identity["artifact_key"].as_str().unwrap());
         assert_eq!(
-            paths[format!("binary_path_{}", identity["backend"].as_str().unwrap())],
-            format!(
-                "/journal/cache/providers/parakeet/bin/{}/{}/{}/{}",
-                identity["artifact_key"].as_str().unwrap(),
-                identity["backend"].as_str().unwrap(),
-                identity["release_tag"].as_str().unwrap(),
-                identity["binary_name"].as_str().unwrap(),
-            )
+            path_value(&paths[format!("binary_path_{}", identity["backend"].as_str().unwrap())]),
+            pins::parakeet_cache_root(journal)
+                .join("bin")
+                .join(identity["artifact_key"].as_str().unwrap())
+                .join(identity["backend"].as_str().unwrap())
+                .join(identity["release_tag"].as_str().unwrap())
+                .join(identity["binary_name"].as_str().unwrap()),
         );
     }
     assert_eq!(
-        pins::parakeet_paths(std::path::Path::new("/journal"), PARAKEET_TEST_KEY)["model_path"],
-        fixture["paths"]["parakeet_model_path"]
+        path_value(&pins::parakeet_paths(journal, PARAKEET_TEST_KEY)["model_path"]),
+        PathBuf::from(fixture["paths"]["parakeet_model_path"].as_str().unwrap())
     );
 }
 
@@ -1139,6 +1137,7 @@ fn local_target_fingerprint_matches_python_vulkan_reference() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 fn fingerprint_transport_resolves_targets_without_writing_status() {
     let root = temp("fingerprint-transport");
@@ -1153,6 +1152,24 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
     assert_eq!(local_target["runtime"], "llama.cpp");
     assert!(local_target["runtime_pin"].is_object());
     assert!(local_target["model_pin"].is_object());
+    assert!(!status::status_path(&root, "local").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(windows)]
+#[test]
+fn fingerprint_transport_refuses_the_unpinned_windows_local_runtime_without_writing_status() {
+    let root = temp("fingerprint-transport-windows");
+    let error = dispatch(
+        InstallVerb::FingerprintLocal,
+        json!({"journal":root,"model_id":"local/qwen3.5-4b"}),
+    )
+    .expect_err("Windows has no local llama runtime pin");
+    assert_eq!(
+        error.envelope.error.as_ref().unwrap().reason_code,
+        "unsupported_platform"
+    );
     assert!(!status::status_path(&root, "local").exists());
 
     let _ = fs::remove_dir_all(root);
@@ -1185,18 +1202,22 @@ fn dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent() {
     .unwrap();
     let paths = result.result.unwrap();
     assert_eq!(
-        paths["binary_path_cpu"],
-        format!(
-            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/cpu/v0.5.0/parakeet-server",
-            root.display()
-        )
+        path_value(&paths["binary_path_cpu"]),
+        pins::parakeet_cache_root(&root)
+            .join("bin")
+            .join("aarch64-unknown-linux-gnu")
+            .join("cpu")
+            .join("v0.5.0")
+            .join("parakeet-server"),
     );
     assert_eq!(
-        paths["binary_path_vulkan"],
-        format!(
-            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/vulkan/v0.5.0/parakeet-server",
-            root.display()
-        )
+        path_value(&paths["binary_path_vulkan"]),
+        pins::parakeet_cache_root(&root)
+            .join("bin")
+            .join("aarch64-unknown-linux-gnu")
+            .join("vulkan")
+            .join("v0.5.0")
+            .join("parakeet-server"),
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -1358,7 +1379,10 @@ fn inspect_local_resolves_backend_and_exposes_supervisor_host_fields() {
     );
     assert_eq!(result["host"]["backend"], "vulkan");
     assert_eq!(result["host"]["backend_reason"], "no NVIDIA GPU detected");
-    assert_eq!(result["host"]["platform_supported"], true);
+    assert_eq!(
+        result["host"]["platform_supported"],
+        pins::vulkan_pin(&pins::platform_key()).is_some()
+    );
 
     let unsupported = readiness::inspect_local(
         serde_json::from_value(json!({
@@ -1956,24 +1980,34 @@ fn cuda_trust_handles_matching_missing_and_unreadable() {
 fn pin_tables_cover_every_pinned_platform() {
     assert_eq!(pins::LLAMA_SERVER_PINS.len(), 3);
     assert_eq!(pins::CUDA_ARTIFACTS.len(), 2);
-    let root = std::path::Path::new("/journal");
+    let root = Path::new("/journal");
     for (key, release, _filename, digest, binary) in pins::LLAMA_SERVER_PINS {
         let paths = pins::paths(root, key, Some("local/qwen3.5-4b"));
         assert_eq!(
-            paths["binary_path"],
-            format!("/journal/cache/providers/local/bin/{key}/{release}/{binary}")
+            path_value(&paths["binary_path"]),
+            pins::cache_root(root)
+                .join("bin")
+                .join(key)
+                .join(release)
+                .join(binary)
         );
         assert_eq!(
-            paths["model_dir"],
-            "/journal/cache/providers/local/models/local__qwen3.5-4b"
+            path_value(&paths["model_dir"]),
+            pins::cache_root(root)
+                .join("models")
+                .join("local__qwen3.5-4b")
         );
         assert_eq!(pins::vulkan_identity(key).unwrap()["sha256"], *digest);
     }
     for (key, _url, digest, _size) in pins::CUDA_ARTIFACTS {
         let paths = pins::paths(root, key, None);
         assert_eq!(
-            paths["cuda_binary_path"],
-            format!("/journal/cache/providers/local/cuda/{key}/{digest}/llama-server")
+            path_value(&paths["cuda_binary_path"]),
+            pins::cache_root(root)
+                .join("cuda")
+                .join(key)
+                .join(digest)
+                .join("llama-server")
         );
         assert_eq!(pins::cuda_identity(key).unwrap()["sha256"], *digest);
     }
@@ -1983,7 +2017,7 @@ fn pin_tables_cover_every_pinned_platform() {
 fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
     assert_eq!(pins::PARAKEET_VULKAN_PINS.len(), 2);
     assert_eq!(pins::PARAKEET_CPU_PINS.len(), 2);
-    let root = std::path::Path::new("/journal");
+    let root = Path::new("/journal");
     for (backend, table) in [
         ("vulkan", pins::PARAKEET_VULKAN_PINS),
         ("cpu", pins::PARAKEET_CPU_PINS),
@@ -1991,8 +2025,13 @@ fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
         for (key, release, _filename, digest, binary) in table {
             let paths = pins::parakeet_paths(root, key);
             assert_eq!(
-                paths[format!("binary_path_{backend}")],
-                format!("/journal/cache/providers/parakeet/bin/{key}/{backend}/{release}/{binary}")
+                path_value(&paths[format!("binary_path_{backend}")]),
+                pins::parakeet_cache_root(root)
+                    .join("bin")
+                    .join(key)
+                    .join(backend)
+                    .join(release)
+                    .join(binary)
             );
             assert_eq!(
                 pins::parakeet_backend_identity(key, backend).unwrap()["sha256"],
@@ -2002,11 +2041,12 @@ fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
     }
     let (repo, filename, revision, sha256, size_bytes) = pins::PARAKEET_MODEL;
     assert_eq!(
-        pins::parakeet_paths(root, "x86_64-unknown-linux-gnu")["model_path"],
-        format!(
-            "/journal/cache/providers/parakeet/models/{}/{revision}/{filename}",
-            repo.replace('/', "__")
-        )
+        path_value(&pins::parakeet_paths(root, "x86_64-unknown-linux-gnu")["model_path"]),
+        pins::parakeet_cache_root(root)
+            .join("models")
+            .join(repo.replace('/', "__"))
+            .join(revision)
+            .join(filename)
     );
     let model = pins::parakeet_model_identity();
     assert_eq!(model["repo"], repo);
@@ -2196,21 +2236,31 @@ fn registry_preserves_prechange_identity_literals() {
 
 #[test]
 fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
-    let journal = std::path::Path::new("/journal");
+    let journal = Path::new("/journal");
     let key = "x86_64-unknown-linux-gnu";
     let local_paths = pins::paths(journal, key, Some("local/qwen3.5-4b"));
     assert_eq!(
-        local_paths["binary_path"],
-        "/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"
+        path_value(&local_paths["binary_path"]),
+        pins::cache_root(journal)
+            .join("bin")
+            .join(key)
+            .join("b10068")
+            .join("llama-server")
     );
     assert_eq!(
-        local_paths["cuda_binary_path"],
-        "/journal/cache/providers/local/cuda/x86_64-unknown-linux-gnu/3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea/llama-server"
+        path_value(&local_paths["cuda_binary_path"]),
+        pins::cache_root(journal)
+            .join("cuda")
+            .join(key)
+            .join("3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea")
+            .join("llama-server")
     );
     let model_dir = PathBuf::from(local_paths["model_dir"].as_str().unwrap());
     assert_eq!(
         model_dir,
-        PathBuf::from("/journal/cache/providers/local/models/local__qwen3.5-4b")
+        pins::cache_root(journal)
+            .join("models")
+            .join("local__qwen3.5-4b")
     );
     let local_readiness = readiness::inspect_local(
         serde_json::from_value(json!({
@@ -2233,38 +2283,55 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
         .unwrap(),
     );
     assert_eq!(
-        local_readiness["artifacts"]["binary_path"],
-        "/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"
+        path_value(&local_readiness["artifacts"]["binary_path"]),
+        pins::cache_root(journal)
+            .join("bin")
+            .join(key)
+            .join("b10068")
+            .join("llama-server")
     );
     assert_eq!(
-        local_readiness["artifacts"]["model_path"],
-        "/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"
+        path_value(&local_readiness["artifacts"]["model_path"]),
+        model_dir.join("Qwen3.5-4B-Q4_K_M.gguf")
     );
     assert_eq!(
-        local_readiness["artifacts"]["projector_path"],
-        "/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf"
+        path_value(&local_readiness["artifacts"]["projector_path"]),
+        model_dir.join("mmproj-F16.gguf")
     );
     // `install_model` joins each pin filename inline immediately before its
     // network fetch; `pins::paths` above is its production root derivation.
     let local_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
     assert_eq!(
         model_dir.join(local_identity["filename"].as_str().unwrap()),
-        PathBuf::from(
-            "/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"
-        )
+        pins::cache_root(journal)
+            .join("models")
+            .join("local__qwen3.5-4b")
+            .join("Qwen3.5-4B-Q4_K_M.gguf")
     );
     assert_eq!(
         model_dir.join(local_identity["mmproj_filename"].as_str().unwrap()),
-        PathBuf::from("/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf")
+        pins::cache_root(journal)
+            .join("models")
+            .join("local__qwen3.5-4b")
+            .join("mmproj-F16.gguf")
     );
     let parakeet = pins::parakeet_paths(journal, key);
     assert_eq!(
-        parakeet["binary_path_cpu"],
-        "/journal/cache/providers/parakeet/bin/x86_64-unknown-linux-gnu/cpu/v0.5.0/parakeet-server"
+        path_value(&parakeet["binary_path_cpu"]),
+        pins::parakeet_cache_root(journal)
+            .join("bin")
+            .join(key)
+            .join("cpu")
+            .join("v0.5.0")
+            .join("parakeet-server")
     );
     assert_eq!(
-        parakeet["model_path"],
-        "/journal/cache/providers/parakeet/models/mudler__parakeet-cpp-gguf/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf"
+        path_value(&parakeet["model_path"]),
+        pins::parakeet_cache_root(journal)
+            .join("models")
+            .join("mudler__parakeet-cpp-gguf")
+            .join("bf0af9f425fa01809cadec671b3cb672709d13e9")
+            .join("tdt-0.6b-v3-q8_0.gguf")
     );
 }
 

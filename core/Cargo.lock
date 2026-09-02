@@ -4681,6 +4681,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "solstone-core-callosum",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",

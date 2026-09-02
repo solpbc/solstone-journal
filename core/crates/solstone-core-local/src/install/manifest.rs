@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use super::fingerprint;
 
 pub const MANIFEST_NAME: &str = ".solstone-provider-manifest.json";
+#[cfg(unix)]
 const PRIVATE_MODE: u32 = 0o600;
 
 pub fn artifact_manifest_path(root: &Path) -> PathBuf {
@@ -281,11 +282,11 @@ fn walk_files(
     }
     Ok(())
 }
-fn set_private(file: &File) -> std::io::Result<()> {
+fn set_private(_file: &File) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(PRIVATE_MODE))?;
+        _file.set_permissions(fs::Permissions::from_mode(PRIVATE_MODE))?;
     }
     Ok(())
 }
