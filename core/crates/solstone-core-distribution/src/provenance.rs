@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::digest::sha256_hex;
 use crate::select::ArtifactId;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     pub commit: String,
     pub lock_sha256: String,

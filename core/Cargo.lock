@@ -4013,6 +4013,7 @@ dependencies = [
  "sha2",
  "solstone-core-artifact-download",
  "solstone-core-ffmpeg-build-support",
+ "solstone-core-journal-io",
  "tar",
  "tempfile",
  "toml_edit",

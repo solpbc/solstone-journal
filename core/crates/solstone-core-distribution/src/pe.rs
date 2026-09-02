@@ -50,7 +50,8 @@ const IMPORT_NOT_UTF8: &str = "unexpected:\n  import name not utf-8";
 const EXPORT_NOT_UTF8: &str = "unexpected:\n  export name not utf-8";
 const EXPORT_ORDINAL_OVERFLOW: &str = "unexpected:\n  export ordinal overflow";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PeInfo {
     pub machine: u16,
     pub imports: Vec<ImportedLibrary>,
@@ -58,19 +59,20 @@ pub struct PeInfo {
     pub debug: Option<DebugInfoKind>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ImportedLibrary {
     pub name: String,
     pub symbols: Vec<PeSymbol>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PeSymbol {
     Named(String),
     Ordinal(u16),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DebugInfoKind {
     Coff,
     CodeView,

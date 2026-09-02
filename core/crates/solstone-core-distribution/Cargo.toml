@@ -34,6 +34,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
+solstone-core-journal-io.workspace = true
 tar.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
 
@@ -41,6 +42,7 @@ toml_edit = { workspace = true, features = ["serde"] }
 solstone-core-artifact-download.workspace = true
 
 [dev-dependencies]
+solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 tempfile = "3"
 
 [[test]]
