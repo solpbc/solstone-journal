@@ -93,6 +93,11 @@ pub use atomic::{
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_detailed};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use atomic::{
+    WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
+    run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
 #[cfg(any(unix, windows))]
 pub use atomic::{write_bytes_exclusive, write_reader_exclusive};
 #[cfg(any(unix, windows))]

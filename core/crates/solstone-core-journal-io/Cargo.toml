@@ -60,3 +60,8 @@ required-features = ["test-hooks"]
 name = "windows_atomic_detailed"
 path = "tests/windows_atomic_detailed.rs"
 required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_create_only_protocol"
+path = "tests/windows_create_only_protocol.rs"
+required-features = ["test-hooks"]

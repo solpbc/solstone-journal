@@ -571,6 +571,11 @@ mod windows_atomic;
 #[cfg(windows)]
 #[path = "windows_create_only.rs"]
 mod windows_create_only;
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_create_only::{
+    WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
+    run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_atomic::{

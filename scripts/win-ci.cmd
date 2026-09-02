@@ -92,6 +92,8 @@ echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_atomic_detailed --features test-hooks || exit /b 1
+echo === cargo test --locked (journal-io create-only publication protocol) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_create_only_protocol --features test-hooks -- --nocapture || exit /b 1
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )

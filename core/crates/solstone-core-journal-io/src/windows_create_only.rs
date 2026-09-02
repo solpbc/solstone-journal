@@ -47,6 +47,169 @@ const STAGE_OPTIONS: u32 =
     FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
 const STAGE_ACCESS: u32 = GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE;
 
+/// Checkpoints in the Windows create-only publication protocol.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowsCreateOnlyPrimitive {
+    /// A continuously held stage has been created.
+    StageReady,
+    /// Full admission is about to run immediately before a move attempt.
+    BeforeMove,
+    /// A create-only move is about to call `MoveFileExW`.
+    Move,
+    /// Failed-move reclassification is about to revalidate the path capability.
+    ReclassifyCapability,
+    /// Failed-move reclassification is about to inspect the destination.
+    ReclassifyDestination,
+    /// Failed-move reclassification is about to inspect the stage name.
+    ReclassifyStage,
+    /// Failure cleanup is about to mark the held stage handle for deletion.
+    Cleanup,
+    /// Successful publication is about to revalidate the path capability.
+    PostMoveCapability,
+    /// Successful publication is about to observe the destination identity.
+    PostMoveDestination,
+}
+
+/// Trace returned by the feature-gated Windows create-only test seam.
+#[cfg(any(test, feature = "test-hooks"))]
+#[derive(Debug)]
+pub struct WindowsCreateOnlyTrace {
+    /// Every checkpoint reached, in order.
+    pub attempted: Vec<WindowsCreateOnlyPrimitive>,
+    /// Calls that crossed the injection seam and invoked the real move API.
+    pub real_moves: usize,
+    /// Requested retry delays, recorded without sleeping.
+    pub backoffs: Vec<Duration>,
+    /// True only when every requested injected fault was consumed.
+    pub faults_consumed: bool,
+    /// True only when every requested barrier fired.
+    pub barriers_fired: bool,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct WindowsCreateOnlyTraceState {
+    attempted: Vec<WindowsCreateOnlyPrimitive>,
+    real_moves: usize,
+    backoffs: Vec<Duration>,
+    faults: Vec<WindowsCreateOnlyFault>,
+    barriers: Vec<WindowsCreateOnlyBarrier>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct WindowsCreateOnlyFault {
+    primitive: WindowsCreateOnlyPrimitive,
+    ordinal: usize,
+    raw_error: i32,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+struct WindowsCreateOnlyBarrier {
+    primitive: WindowsCreateOnlyPrimitive,
+    ordinal: usize,
+    callback: Box<dyn FnOnce()>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static WINDOWS_CREATE_ONLY_TRACE: std::cell::RefCell<Option<WindowsCreateOnlyTraceState>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run one operation with injected create-only faults and a complete trace.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_windows_create_only_faults<T>(
+    faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
+    op: impl FnOnce() -> T,
+) -> (T, WindowsCreateOnlyTrace) {
+    start_trace(faults, std::iter::empty());
+    let result = op();
+    (result, finish_trace())
+}
+
+/// Run one operation with a deterministic create-only barrier and a complete trace.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_windows_create_only_barrier<T>(
+    primitive: WindowsCreateOnlyPrimitive,
+    ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, WindowsCreateOnlyTrace) {
+    start_trace(
+        std::iter::empty(),
+        [(primitive, ordinal, Box::new(callback) as Box<dyn FnOnce()>)],
+    );
+    let result = op();
+    (result, finish_trace())
+}
+
+/// Run one operation with injected faults, one barrier, and a complete trace.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_windows_create_only_faults_and_barrier<T>(
+    faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
+    primitive: WindowsCreateOnlyPrimitive,
+    ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, WindowsCreateOnlyTrace) {
+    start_trace(
+        faults,
+        [(primitive, ordinal, Box::new(callback) as Box<dyn FnOnce()>)],
+    );
+    let result = op();
+    (result, finish_trace())
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn start_trace(
+    faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
+    barriers: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, Box<dyn FnOnce()>)>,
+) {
+    WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "Windows create-only trace is already active"
+        );
+        *trace.borrow_mut() = Some(WindowsCreateOnlyTraceState {
+            attempted: Vec::new(),
+            real_moves: 0,
+            backoffs: Vec::new(),
+            faults: faults
+                .into_iter()
+                .map(|(primitive, ordinal, raw_error)| WindowsCreateOnlyFault {
+                    primitive,
+                    ordinal,
+                    raw_error,
+                })
+                .collect(),
+            barriers: barriers
+                .into_iter()
+                .map(|(primitive, ordinal, callback)| WindowsCreateOnlyBarrier {
+                    primitive,
+                    ordinal,
+                    callback,
+                })
+                .collect(),
+        });
+    });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn finish_trace() -> WindowsCreateOnlyTrace {
+    let state = WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("Windows create-only trace remains active")
+    });
+    WindowsCreateOnlyTrace {
+        attempted: state.attempted,
+        real_moves: state.real_moves,
+        backoffs: state.backoffs,
+        faults_consumed: state.faults.is_empty(),
+        barriers_fired: state.barriers.is_empty(),
+    }
+}
+
 pub(super) fn write_bytes_exclusive(
     path: &Path,
     contents: &[u8],
@@ -143,7 +306,7 @@ pub(super) fn write_reader_exclusive(
                     AfterMove::Retry(failure, reclass) => {
                         match decide_create_only_retry(failure, reclass, attempt) {
                             CreateOnlyRetry::Retry { wait: true } => {
-                                thread::sleep(PUBLICATION_RETRY_DELAY);
+                                sleep_or_record_backoff(PUBLICATION_RETRY_DELAY);
                             }
                             CreateOnlyRetry::Retry { wait: false } => {}
                             CreateOnlyRetry::Stop => {
@@ -189,6 +352,7 @@ fn admit_before_move(
     stage: &File,
     expected: WindowsFileIdentity,
 ) -> io::Result<()> {
+    checkpoint(WindowsCreateOnlyPrimitive::BeforeMove)?;
     capability.revalidate().map_err(io::Error::other)?;
     if destination_present(capability.terminal_parent(), dest_name)? {
         return Err(io::Error::new(
@@ -257,13 +421,20 @@ fn reclassify(
     stage_name: &OsStr,
     expected: WindowsFileIdentity,
 ) -> CreateOnlyReclass {
-    if capability.revalidate().is_err() {
+    if checkpoint(WindowsCreateOnlyPrimitive::ReclassifyCapability)
+        .and_then(|()| capability.revalidate().map_err(io::Error::other))
+        .is_err()
+    {
         return CreateOnlyReclass::CapabilityChanged;
     }
-    match destination_present(capability.terminal_parent(), dest_name) {
+    match checkpoint(WindowsCreateOnlyPrimitive::ReclassifyDestination)
+        .and_then(|()| destination_present(capability.terminal_parent(), dest_name))
+    {
         Ok(true) => CreateOnlyReclass::DestinationOccupied,
         Err(_) => CreateOnlyReclass::Indeterminate,
-        Ok(false) => match inspect_stage(capability.terminal_parent(), stage_name) {
+        Ok(false) => match checkpoint(WindowsCreateOnlyPrimitive::ReclassifyStage)
+            .and_then(|()| inspect_stage(capability.terminal_parent(), stage_name))
+        {
             Ok(Some(identity)) if identity == expected => CreateOnlyReclass::StillHeld,
             Ok(None) => CreateOnlyReclass::StageMissing,
             Ok(Some(_)) | Err(_) => CreateOnlyReclass::Indeterminate,
@@ -296,11 +467,13 @@ fn finish_published(
     stage: &File,
     copied: u64,
 ) -> Result<u64, AtomicWriteError> {
-    if let Err(source) = capability.revalidate() {
+    if let Err(source) = checkpoint(WindowsCreateOnlyPrimitive::PostMoveCapability)
+        .and_then(|()| capability.revalidate().map_err(io::Error::other))
+    {
         return Err(AtomicWriteError::PublicationUncertain {
             path: path.to_path_buf(),
             operation: "revalidate publication path after move",
-            source: io::Error::other(source),
+            source,
         });
     }
     let live = match file_identity(stage.as_raw_handle()) {
@@ -313,7 +486,9 @@ fn finish_published(
             });
         }
     };
-    match destination_identity(capability.terminal_parent(), dest_name) {
+    match checkpoint(WindowsCreateOnlyPrimitive::PostMoveDestination)
+        .and_then(|()| destination_identity(capability.terminal_parent(), dest_name))
+    {
         Ok(Some(identity)) if identity == live => Ok(copied),
         Ok(Some(_)) => Err(AtomicWriteError::PublicationUncertain {
             path: path.to_path_buf(),
@@ -354,7 +529,11 @@ fn allocate_stage(parent: &OwnedHandle, destination: &OsStr) -> io::Result<(OsSt
             FILE_CREATE,
             STAGE_OPTIONS,
         ) {
-            Ok(handle) => return Ok((stage_name, File::from(handle))),
+            Ok(handle) => {
+                let stage = File::from(handle);
+                checkpoint(WindowsCreateOnlyPrimitive::StageReady)?;
+                return Ok((stage_name, stage));
+            }
             Err(error)
                 if matches!(
                     error.raw_os_error(),
@@ -381,6 +560,8 @@ fn move_stage(
 ) -> io::Result<()> {
     let source = join_move_spelling(capability.move_spelling(), stage_name)?;
     let destination = join_move_spelling(capability.move_spelling(), dest_name)?;
+    checkpoint(WindowsCreateOnlyPrimitive::Move)?;
+    record_real_move();
     // SAFETY: both buffers are NUL-terminated and remain live for the synchronous call.
     #[allow(unsafe_code)]
     let result = unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0) };
@@ -484,6 +665,7 @@ fn cleanup_stage(stage: &File, stage_name: &OsStr, primary: io::Error) -> io::Er
 }
 
 fn delete_by_handle(handle: &impl AsRawHandle) -> io::Result<()> {
+    checkpoint(WindowsCreateOnlyPrimitive::Cleanup)?;
     let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: `handle` remains live and was opened with DELETE; `disposition` is the exact
     // FileDispositionInfo buffer and remains live for the synchronous call.
@@ -501,6 +683,80 @@ fn delete_by_handle(handle: &impl AsRawHandle) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn checkpoint(primitive: WindowsCreateOnlyPrimitive) -> io::Result<()> {
+    let (fault, barrier) = WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return (None, None);
+        };
+        state.attempted.push(primitive);
+        let ordinal = state
+            .attempted
+            .iter()
+            .filter(|candidate| **candidate == primitive)
+            .count();
+        let fault = state
+            .faults
+            .iter()
+            .position(|fault| fault.primitive == primitive && fault.ordinal == ordinal)
+            .map(|index| state.faults.remove(index).raw_error);
+        if fault.is_some() {
+            return (fault, None);
+        }
+        let barrier = state
+            .barriers
+            .iter()
+            .position(|barrier| barrier.primitive == primitive && barrier.ordinal == ordinal)
+            .map(|index| state.barriers.remove(index).callback);
+        (None, barrier)
+    });
+    if let Some(raw_error) = fault {
+        return Err(io::Error::from_raw_os_error(raw_error));
+    }
+    if let Some(callback) = barrier {
+        callback();
+    }
+    Ok(())
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn checkpoint(_primitive: WindowsCreateOnlyPrimitive) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_real_move() {
+    WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
+        if let Some(state) = trace.borrow_mut().as_mut() {
+            state.real_moves += 1;
+        }
+    });
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn record_real_move() {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn sleep_or_record_backoff(delay: Duration) {
+    let recorded = WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return false;
+        };
+        state.backoffs.push(delay);
+        true
+    });
+    if !recorded {
+        thread::sleep(delay);
+    }
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn sleep_or_record_backoff(delay: Duration) {
+    thread::sleep(delay);
 }
 
 fn map_prepare_error(path: &Path, error: PublicationPathError) -> AtomicWriteError {
