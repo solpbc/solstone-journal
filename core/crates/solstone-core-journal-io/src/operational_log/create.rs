@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::io::Write;
 #[cfg(any(test, feature = "test-hooks"))]
 use std::time::Duration;
 
@@ -189,7 +190,15 @@ fn create_with_timing(
         let dest = format_oplog_name(&name);
         let dest_os = OsStr::new(&dest);
         checkpoint(OplogCreatePrimitive::Stage)?;
-        let staged = platform::stage_exclusive(health, dest_os)?;
+        let mut staged = platform::stage_exclusive(health, dest_os)?;
+        if let Err(error) = checkpoint(OplogCreatePrimitive::Admission) {
+            rollback(health, &staged)?;
+            return Err(error);
+        }
+        if write_admission(&mut staged.file, &name).is_err() {
+            rollback(health, &staged)?;
+            return Err(OplogCreateError::io());
+        }
         barrier(OplogCreatePrimitive::AfterStageBeforeLease);
         if let Err(error) = checkpoint(OplogCreatePrimitive::Lease) {
             rollback(health, &staged)?;
@@ -255,6 +264,17 @@ fn create_with_timing(
         }
     }
     Err(OplogCreateError::new(OplogCreateClass::RetryExhausted))
+}
+
+fn write_admission(
+    file: &mut std::fs::File,
+    name: &super::name::OplogName,
+) -> Result<(), OplogCreateError> {
+    let header = super::admission::encode_oplog_admission(name);
+    file.write_all(&header)
+        .map_err(|_| OplogCreateError::io())?;
+    file.sync_all().map_err(|_| OplogCreateError::io())?;
+    Ok(())
 }
 
 fn rollback(
@@ -336,6 +356,8 @@ pub fn probe_oplog_lease(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
 pub enum OplogCreatePrimitive {
     /// Exclusive stage allocation.
     Stage,
+    /// Admission-record write and file sync.
+    Admission,
     /// After staging, before taking the self-lease.
     AfterStageBeforeLease,
     /// Self-lease acquisition.
@@ -678,6 +700,7 @@ mod tests {
     use crate::operational_log::name::{OplogNameClassification, classify_oplog_name};
     use crate::operational_log::{
         OplogFormat, acquire_oplog_namespace_lock_with_test_timing, admit_day_health_directory,
+        validate_oplog_admission,
     };
 
     const ZERO: Duration = Duration::ZERO;
@@ -742,6 +765,12 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn payload_after_admission(path: &Path, leaf: &str) -> Vec<u8> {
+        let bytes = fs::read(path).unwrap();
+        let record = validate_oplog_admission(OsStr::new(leaf), &bytes).unwrap();
+        bytes[record.header_len()..].to_vec()
     }
 
     #[test]
@@ -920,6 +949,39 @@ mod tests {
     }
 
     #[test]
+    fn published_file_starts_with_admission_header_then_payload() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let mut writer = create(&health).unwrap();
+        writer.write_all(b"payload-line\n").unwrap();
+        writer.flush().unwrap();
+        let leaf = writer.leaf_name().to_owned();
+        drop(writer);
+        let bytes = fs::read(health_dir(temporary.path()).join(&leaf)).unwrap();
+        let record = validate_oplog_admission(OsStr::new(&leaf), &bytes).unwrap();
+        assert_eq!(&bytes[record.header_len()..], b"payload-line\n");
+    }
+
+    #[test]
+    fn admission_fault_leaves_unrelated_stage() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let (result, consumed) =
+            run_with_oplog_create_fault(OplogCreatePrimitive::Admission, || create(&health));
+        assert!(consumed);
+        expect_token(result.unwrap_err(), "oplog_create_io");
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert_eq!(
+            listing(&dir)
+                .iter()
+                .filter(|name| *name != ".oplog-namespace.lock")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn handle_bound_publish_ignores_stage_pathname_replacement() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
@@ -943,8 +1005,12 @@ mod tests {
         )
         .unwrap();
         let dir = health_dir(&root);
-        assert_eq!(fs::metadata(dir.join(writer.leaf_name())).unwrap().len(), 0);
-        assert_eq!(fs::read(dir.join("displaced-stage")).unwrap(), b"");
+        assert_eq!(
+            payload_after_admission(&dir.join(writer.leaf_name()), writer.leaf_name()),
+            b""
+        );
+        let displaced = fs::read(dir.join("displaced-stage")).unwrap();
+        assert!(displaced.starts_with(b"solstone.oplog.admission.v1\n"));
         assert_eq!(
             fs::read(
                 dir.join(
@@ -1019,8 +1085,10 @@ mod tests {
         .0
         .unwrap_err();
         expect_token(error, "oplog_create_own_residue");
-        let dir = health_dir(temporary.path());
-        assert_eq!(fs::read(dir.join(&dest)).unwrap(), b"");
+        let path = health_dir(temporary.path()).join(&dest);
+        let bytes = fs::read(&path).unwrap();
+        let record = validate_oplog_admission(OsStr::new(&dest), &bytes).unwrap();
+        assert_eq!(&bytes[record.header_len()..], b"");
     }
 
     #[test]
@@ -1296,7 +1364,10 @@ mod tests {
         writer.write_all(b"late\n").unwrap();
         writer.flush().unwrap();
         assert_eq!(probe_file_lease(&retained), LeaseProbe::Active);
-        assert_eq!(fs::read(dir.join("moved")).unwrap(), b"hello\nlate\n");
+        assert_eq!(
+            payload_after_admission(&dir.join("moved"), &leaf),
+            b"hello\nlate\n"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"replacement");
         drop(writer);
         assert_eq!(
@@ -1331,7 +1402,10 @@ mod tests {
         writer.write_all(b"three\n").unwrap();
         writer.flush().unwrap();
         dup.flush().unwrap();
-        let bytes = fs::read(health_dir(temporary.path()).join(writer.leaf_name())).unwrap();
+        let bytes = payload_after_admission(
+            &health_dir(temporary.path()).join(writer.leaf_name()),
+            writer.leaf_name(),
+        );
         assert_eq!(bytes, b"one\ntwo\nthree\n");
     }
 
@@ -1355,7 +1429,7 @@ mod tests {
             LeaseProbe::Released
         );
         assert_eq!(
-            fs::read(health_dir(temporary.path()).join(&leaf)).unwrap(),
+            payload_after_admission(&health_dir(temporary.path()).join(&leaf), &leaf),
             b"still\n"
         );
     }

@@ -3,6 +3,7 @@
 
 //! Exclusive operational-log create and canonical `oplog--` filename grammar.
 
+mod admission;
 mod create;
 mod lock;
 mod name;
@@ -17,6 +18,10 @@ mod windows;
 use chrono::{DateTime, FixedOffset, Local};
 
 pub use crate::lease::LeaseProbe;
+pub use admission::{
+    OPLOG_ADMISSION_MAX_BYTES, OplogAdmissionError, OplogAdmissionRecord, validate_oplog_admission,
+    validate_oplog_admission_set,
+};
 pub use create::{
     OPLOG_CREATE_ATTEMPTS, OPLOG_FILE_ID_DRAW_BUDGET, OplogCreateError, OplogCreatePrimitive,
     create_oplog, probe_oplog_lease,
