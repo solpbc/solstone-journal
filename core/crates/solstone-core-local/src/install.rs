@@ -207,7 +207,7 @@ pub mod test_hooks {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) mod test_support {
     use std::fs;
     use std::path::{Path, PathBuf};

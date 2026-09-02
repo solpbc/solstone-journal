@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+#[cfg(unix)]
 const STATUS_MODE: u32 = 0o600;
 pub const PROGRESS_COALESCE_SECONDS: Duration = Duration::from_secs(1);
 static ATTEMPT_COUNTER: AtomicU64 = AtomicU64::new(0);

@@ -233,6 +233,7 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
     }
 }
 
+#[cfg(unix)]
 fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
     serde_json::from_value(json!({
         "journal": root,

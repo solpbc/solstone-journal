@@ -70,6 +70,7 @@ enum ResolveProbeProgramError {
     CurrentExeUnavailable,
     CurrentExeParentMissing,
     HelperMissing(PathBuf),
+    #[cfg(unix)]
     HelperNotExecutable(PathBuf),
 }
 
