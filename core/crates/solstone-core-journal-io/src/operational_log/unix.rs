@@ -9,11 +9,12 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 
 use nix::errno::Errno;
-use nix::fcntl::{AtFlags, FcntlArg, OFlag, fcntl, openat};
-use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+use nix::fcntl::{FcntlArg, OFlag, fcntl, openat};
+use nix::sys::stat::{Mode, SFlag, fstat};
 
+use super::create::OplogCreatePrimitive;
 use super::namespace::OplogDayHealth;
-use super::reason::{NamedOccupant, OplogFileIdentity, StageError};
+use super::reason::{NamedOccupant, NamedOpen, OplogFileIdentity, StageError, StageLeftoverCause};
 use crate::atomic::allocate_bound_stage;
 use crate::lease::{LeaseProbe, SelfLease, acquire_self_lease, probe_file_lease};
 
@@ -43,26 +44,50 @@ pub(super) fn stage_exclusive(
     let diagnostic = health.health().diagnostic_path();
     let (stage_name, stage_file) = allocate_bound_stage(health.health(), dest, diagnostic)
         .map_err(|_| StageError::Allocate)?;
-    if stage_file
-        .set_permissions(std::fs::Permissions::from_mode(0o600))
-        .is_err()
+    super::create::barrier(OplogCreatePrimitive::AfterAllocateBeforePrepare);
+    if super::create::force_stage_permission_fail()
+        || stage_file
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+            .is_err()
     {
-        drop(stage_file);
-        return Err(StageError::Leftover(stage_name));
+        return Err(leftover(
+            stage_file,
+            stage_name,
+            StageLeftoverCause::Permission,
+        ));
     }
-    if set_append(&stage_file).is_err() {
-        drop(stage_file);
-        return Err(StageError::Leftover(stage_name));
+    if super::create::force_stage_append_fail() || set_append(&stage_file).is_err() {
+        return Err(leftover(stage_file, stage_name, StageLeftoverCause::Append));
+    }
+    if super::create::force_stage_identity_fail() {
+        return Err(leftover(
+            stage_file,
+            stage_name,
+            StageLeftoverCause::Identity,
+        ));
     }
     let Ok(identity) = identity_of(&stage_file) else {
-        drop(stage_file);
-        return Err(StageError::Leftover(stage_name));
+        return Err(leftover(
+            stage_file,
+            stage_name,
+            StageLeftoverCause::Identity,
+        ));
     };
     Ok(StagedFile {
         file: stage_file,
         stage_name,
         identity,
     })
+}
+
+fn leftover(file: File, name: OsString, cause: StageLeftoverCause) -> StageError {
+    let identity = identity_of(&file).ok();
+    drop(file);
+    StageError::Leftover {
+        name,
+        cause,
+        identity,
+    }
 }
 
 pub(super) fn lease_staged(file: &File) -> io::Result<Option<SelfLease>> {
@@ -81,15 +106,30 @@ pub(super) fn rename_stage(
 }
 
 pub(super) fn inspect_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<NamedOccupant> {
-    match fstatat(health.health(), name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Err(Errno::ENOENT) => Ok(NamedOccupant::Absent),
+    open_named(health, name).map(|opened| opened.occupant())
+}
+
+pub(super) fn open_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<NamedOpen> {
+    match openat(health.health(), name, FILE_FLAGS, Mode::empty()) {
+        Err(Errno::ENOENT) => Ok(NamedOpen::Absent),
         Err(error) => Err(errno_io(error)),
-        Ok(status) => {
-            if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT != SFlag::S_IFREG {
-                return Ok(NamedOccupant::Other);
+        Ok(descriptor) => {
+            let file = File::from(descriptor);
+            match fstat(&file) {
+                Ok(status)
+                    if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT
+                        == SFlag::S_IFREG =>
+                {
+                    let (identity, nlink) = identity_and_nlink_from_stat(&status);
+                    Ok(NamedOpen::Regular {
+                        file,
+                        identity,
+                        nlink,
+                    })
+                }
+                Ok(_) => Ok(NamedOpen::Other),
+                Err(error) => Err(errno_io(error)),
             }
-            let (identity, nlink) = identity_and_nlink_from_stat(&status);
-            Ok(NamedOccupant::Regular { identity, nlink })
         }
     }
 }

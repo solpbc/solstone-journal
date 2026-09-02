@@ -6,6 +6,7 @@
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
+use std::fs::File;
 
 use crate::journal_root::ObjectIdentity;
 
@@ -15,8 +16,8 @@ pub enum OplogCreateReason {
     EntropySource,
     EntropyExhausted,
     Clock,
-    Stage,
-    Admission,
+    Stage(OplogStageCause),
+    Admission(OplogAdmissionCause),
     LeaseFailed,
     LeaseIo,
     Namespace {
@@ -25,6 +26,20 @@ pub enum OplogCreateReason {
     },
     Lock(OplogCreateLockClass),
     Publish(OplogPublishReason),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OplogStageCause {
+    Allocate,
+    Permission,
+    Append,
+    Identity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OplogAdmissionCause {
+    Write,
+    Sync,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +76,14 @@ pub enum OplogPublishReason {
     AncestorRevalidation,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OplogAncestorComponent {
+    Root,
+    Chronicle,
+    Day,
+    Health,
+}
+
 impl OplogCreateReason {
     fn token(self) -> String {
         match self {
@@ -68,8 +91,8 @@ impl OplogCreateReason {
             Self::EntropySource => "oplog_create_entropy_source".to_owned(),
             Self::EntropyExhausted => "oplog_create_entropy_exhausted".to_owned(),
             Self::Clock => "oplog_create_clock".to_owned(),
-            Self::Stage => "oplog_create_stage".to_owned(),
-            Self::Admission => "oplog_create_admission".to_owned(),
+            Self::Stage(cause) => format!("oplog_create_stage_{}", cause.token()),
+            Self::Admission(cause) => format!("oplog_create_admission_{}", cause.token()),
             Self::LeaseFailed => "oplog_create_lease_failed".to_owned(),
             Self::LeaseIo => "oplog_create_lease_io".to_owned(),
             Self::Namespace { stage, class } => {
@@ -77,6 +100,26 @@ impl OplogCreateReason {
             }
             Self::Lock(class) => format!("oplog_create_lock_{}", class.token()),
             Self::Publish(reason) => format!("oplog_create_{}", reason.token()),
+        }
+    }
+}
+
+impl OplogStageCause {
+    const fn token(self) -> &'static str {
+        match self {
+            Self::Allocate => "allocate",
+            Self::Permission => "permission",
+            Self::Append => "append",
+            Self::Identity => "identity",
+        }
+    }
+}
+
+impl OplogAdmissionCause {
+    const fn token(self) -> &'static str {
+        match self {
+            Self::Write => "write",
+            Self::Sync => "sync",
         }
     }
 }
@@ -131,15 +174,34 @@ impl OplogPublishReason {
 pub enum OplogIdentityObservation {
     OwnNoncanonical(OplogVerifiedAt),
     OwnLanded(OplogVerifiedAt),
+    ForeignNoncanonical(OplogVerifiedAt),
     ForeignLanded(OplogVerifiedAt),
     OwnMultipleLinks {
         nlink: u64,
         verified_at: OplogVerifiedAt,
     },
-    NoVerifiedLeaf {
-        nlink: u64,
-        verified_at: OplogVerifiedAt,
-    },
+}
+
+impl OplogIdentityObservation {
+    pub(super) fn own_noncanonical(verified_at: OplogVerifiedAt) -> Self {
+        Self::OwnNoncanonical(verified_at)
+    }
+
+    pub(super) fn own_landed(verified_at: OplogVerifiedAt) -> Self {
+        Self::OwnLanded(verified_at)
+    }
+
+    pub(super) fn foreign_noncanonical(verified_at: OplogVerifiedAt) -> Self {
+        Self::ForeignNoncanonical(verified_at)
+    }
+
+    pub(super) fn foreign_landed(verified_at: OplogVerifiedAt) -> Self {
+        Self::ForeignLanded(verified_at)
+    }
+
+    pub(super) fn own_multiple_links(nlink: u64, verified_at: OplogVerifiedAt) -> Self {
+        Self::OwnMultipleLinks { nlink, verified_at }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,13 +232,27 @@ pub enum OplogEvidenceCheckpoint {
     Stage,
     Admission,
     Lease,
-    AncestorRevalidation,
-    Rename { ordinal: u8 },
-    AfterForeignCollision { ordinal: u8 },
+    AncestorRevalidation {
+        ordinal: u8,
+        component: OplogAncestorComponent,
+    },
+    Rename {
+        ordinal: u8,
+    },
+    DestinationInspection {
+        ordinal: u8,
+    },
+    AfterForeignCollision {
+        ordinal: u8,
+    },
     AfterRename,
     DirectorySync,
     RetainedHandle,
     FinalBinding,
+    FinalCandidateInspection {
+        ordinal: u8,
+    },
+    FinalStageInspection,
     FinalFailureClassification,
 }
 
@@ -277,6 +353,7 @@ pub enum OplogGapCause {
     UnobservableHandle,
     Changed,
     Inconsistent,
+    NoVerifiedLeaf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -386,10 +463,6 @@ impl OplogCreateEvidence {
         &mut self.collisions
     }
 
-    pub(super) fn observations(&self) -> &[OplogIdentityObservation] {
-        &self.observations
-    }
-
     pub(super) fn gap(&mut self, location: OplogEvidenceCheckpoint, cause: OplogGapCause) {
         self.gaps.push(OplogObservationGap::new(location, cause));
     }
@@ -414,7 +487,55 @@ pub(super) enum NamedOccupant {
     Other,
 }
 
+pub(super) enum NamedOpen {
+    Absent,
+    Other,
+    Regular {
+        file: File,
+        identity: OplogFileIdentity,
+        nlink: u64,
+    },
+}
+
+impl NamedOpen {
+    pub(super) fn occupant(&self) -> NamedOccupant {
+        match self {
+            Self::Absent => NamedOccupant::Absent,
+            Self::Other => NamedOccupant::Other,
+            Self::Regular {
+                identity, nlink, ..
+            } => NamedOccupant::Regular {
+                identity: *identity,
+                nlink: *nlink,
+            },
+        }
+    }
+}
+
 pub(super) enum StageError {
     Allocate,
-    Leftover(OsString),
+    Leftover {
+        name: OsString,
+        cause: StageLeftoverCause,
+        identity: Option<OplogFileIdentity>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StageLeftoverCause {
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Permission,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Append,
+    Identity,
+}
+
+impl StageLeftoverCause {
+    pub(super) const fn stage_cause(self) -> OplogStageCause {
+        match self {
+            Self::Permission => OplogStageCause::Permission,
+            Self::Append => OplogStageCause::Append,
+            Self::Identity => OplogStageCause::Identity,
+        }
+    }
 }

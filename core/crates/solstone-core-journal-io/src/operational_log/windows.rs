@@ -25,8 +25,9 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
+use super::create::OplogCreatePrimitive;
 use super::namespace::OplogDayHealth;
-use super::reason::{NamedOccupant, OplogFileIdentity, StageError};
+use super::reason::{NamedOccupant, NamedOpen, OplogFileIdentity, StageError, StageLeftoverCause};
 use crate::atomic::{ATOMIC_CANDIDATE_MARKER, publication_candidate_name};
 use crate::lease::{LeaseProbe, SelfLease, acquire_self_lease, probe_file_lease};
 use crate::windows_identity::file_link_count;
@@ -65,14 +66,27 @@ pub(super) fn stage_exclusive(
     )
     .map_err(|_| StageError::Allocate)?;
     let file = File::from(handle);
+    super::create::barrier(OplogCreatePrimitive::AfterAllocateBeforePrepare);
     let path = health
         .health()
         .diagnostic_entry_path(stage_name.as_os_str());
+    if super::create::force_stage_identity_fail() {
+        drop(file);
+        return Err(StageError::Leftover {
+            name: stage_name,
+            cause: StageLeftoverCause::Identity,
+            identity: None,
+        });
+    }
     let identity = match validate_windows_regular_handle(file.as_raw_handle(), &path) {
         Ok(identity) => identity,
         Err(_) => {
             drop(file);
-            return Err(StageError::Leftover(stage_name));
+            return Err(StageError::Leftover {
+                name: stage_name,
+                cause: StageLeftoverCause::Identity,
+                identity: None,
+            });
         }
     };
     Ok(StagedFile {
@@ -117,6 +131,10 @@ pub(super) fn classify_windows_rename_error(error: &io::Error) -> OplogRenameCla
 }
 
 pub(super) fn inspect_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<NamedOccupant> {
+    open_named(health, name).map(|opened| opened.occupant())
+}
+
+pub(super) fn open_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<NamedOpen> {
     let handle = match nt_create_relative(
         health.health().as_handle().as_raw_handle(),
         name,
@@ -132,17 +150,18 @@ pub(super) fn inspect_named(health: &OplogDayHealth, name: &OsStr) -> io::Result
                     if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
             ) =>
         {
-            return Ok(NamedOccupant::Absent);
+            return Ok(NamedOpen::Absent);
         }
         Err(error) => return Err(error),
     };
     let path = health.health().diagnostic_entry_path(name);
     let identity = match validate_windows_regular_handle(handle.as_raw_handle(), &path) {
         Ok(identity) => identity,
-        Err(_) => return Ok(NamedOccupant::Other),
+        Err(_) => return Ok(NamedOpen::Other),
     };
     let nlink = file_link_count(handle.as_raw_handle())?;
-    Ok(NamedOccupant::Regular {
+    Ok(NamedOpen::Regular {
+        file: File::from(handle),
         identity: OplogFileIdentity::from_windows(identity.volume_serial(), identity.file_id()),
         nlink,
     })
@@ -333,7 +352,7 @@ mod windows_tests {
                     OplogIdentityObservation::ForeignLanded(_)
                 ))
                 .count(),
-            8
+            16
         );
         assert_eq!(
             error.reason(),
@@ -342,7 +361,7 @@ mod windows_tests {
     }
 
     #[test]
-    fn reparse_point_at_candidate_is_reconciliation_not_a_foreign_collision() {
+    fn reparse_point_at_candidate_is_destination_inspection_not_a_foreign_collision() {
         let temporary = tempfile::TempDir::new().unwrap();
         let root = temporary.path();
         let (day, _) = derive_day_key_and_opened_field(instant());
@@ -371,7 +390,7 @@ mod windows_tests {
             )
         })
         .unwrap_err();
-        assert_eq!(error.to_string(), "oplog_create_reconciliation");
+        assert_eq!(error.to_string(), "oplog_create_destination_inspection");
         assert!(
             error.collisions().is_empty(),
             "a reparse occupant is not a proven-foreign collision"
@@ -382,7 +401,7 @@ mod windows_tests {
         ));
         assert_eq!(
             error.reason(),
-            OplogCreateReason::Publish(OplogPublishReason::Reconciliation)
+            OplogCreateReason::Publish(OplogPublishReason::DestinationInspection)
         );
     }
 

@@ -23,10 +23,10 @@ use super::name::{
 };
 use super::namespace::{OplogDayHealth, OplogNamespaceError, admit_day_health_directory};
 use super::reason::{
-    NamedOccupant, OplogCollisionOccupant, OplogCollisionRecord, OplogCreateError,
-    OplogCreateEvidence, OplogCreateLockClass, OplogCreateNamespaceClass,
-    OplogCreateNamespaceStage, OplogCreateReason, OplogEvidenceCheckpoint, OplogFileIdentity,
-    OplogGapCause, OplogIdentityObservation, OplogPublishReason, OplogVerifiedAt, StageError,
+    NamedOccupant, NamedOpen, OplogAdmissionCause, OplogCollisionOccupant, OplogCollisionRecord,
+    OplogCreateError, OplogCreateEvidence, OplogCreateReason, OplogEvidenceCheckpoint,
+    OplogFileIdentity, OplogGapCause, OplogIdentityObservation, OplogPublishReason,
+    OplogStageCause, OplogVerifiedAt, StageError,
 };
 use super::writer::OplogWriter;
 use crate::journal_root::JournalRoot;
@@ -133,20 +133,32 @@ fn create_with_timing(
     let first_dest = format_oplog_name(&names[0]);
     let mut staged = match platform::stage_exclusive(&health, OsStr::new(&first_dest)) {
         Ok(staged) => staged,
-        Err(StageError::Allocate) => return Err(evidence.fail(OplogCreateReason::Stage)),
-        Err(StageError::Leftover(name)) => {
-            observe_named(
-                &health,
-                &name,
-                None,
-                OplogEvidenceCheckpoint::Stage,
-                &mut evidence,
-            );
-            return Err(evidence.fail(OplogCreateReason::Stage));
+        Err(StageError::Allocate) => {
+            return Err(evidence.fail(OplogCreateReason::Stage(OplogStageCause::Allocate)));
+        }
+        Err(StageError::Leftover {
+            name,
+            cause,
+            identity,
+        }) => {
+            if let Some(identity) = identity {
+                observe_stage_leaf(
+                    &health,
+                    &name,
+                    identity,
+                    OplogEvidenceCheckpoint::Stage,
+                    &mut evidence,
+                );
+            } else {
+                evidence.gap(OplogEvidenceCheckpoint::Stage, OplogGapCause::Io);
+            }
+            return Err(evidence.fail(OplogCreateReason::Stage(cause.stage_cause())));
         }
     };
     let original_stage_name = staged.stage_name.clone();
     let original_identity = staged.identity;
+    let mut witnesses = Vec::with_capacity(OPLOG_CREATE_ATTEMPTS);
+    let mut attempted: Vec<(u8, OsString)> = Vec::new();
 
     if let Err(reason) = checkpoint(OplogCreatePrimitive::Admission) {
         return Err(fail_after_stage(
@@ -155,15 +167,19 @@ fn create_with_timing(
             &health,
             &staged,
             original_identity,
+            &attempted,
+            &witnesses,
         ));
     }
-    if write_admission(&mut staged.file, &header).is_err() {
+    if let Err(cause) = write_admission(&mut staged.file, &header) {
         return Err(fail_after_stage(
-            OplogCreateReason::Admission,
+            OplogCreateReason::Admission(cause),
             evidence,
             &health,
             &staged,
             original_identity,
+            &attempted,
+            &witnesses,
         ));
     }
     barrier(OplogCreatePrimitive::AfterStageBeforeLease);
@@ -174,6 +190,8 @@ fn create_with_timing(
             &health,
             &staged,
             original_identity,
+            &attempted,
+            &witnesses,
         ));
     }
     record_event(OplogCreateEvent::Lease);
@@ -186,6 +204,8 @@ fn create_with_timing(
                 &health,
                 &staged,
                 original_identity,
+                &attempted,
+                &witnesses,
             ));
         }
         Err(_) => {
@@ -195,28 +215,40 @@ fn create_with_timing(
                 &health,
                 &staged,
                 original_identity,
+                &attempted,
+                &witnesses,
             ));
         }
     };
     barrier(OplogCreatePrimitive::AfterLeaseBeforePublish);
 
-    if health.revalidate_binding().is_err() {
-        observe_named(
-            &health,
-            &staged.stage_name,
-            Some(original_identity),
-            OplogEvidenceCheckpoint::AncestorRevalidation,
-            &mut evidence,
-        );
-        return Err(evidence.fail(OplogCreateReason::Publish(
-            OplogPublishReason::AncestorRevalidation,
-        )));
-    }
-
     for (index, name) in names.iter().enumerate() {
         let ordinal = (index + 1) as u8;
         let dest = format_oplog_name(name);
         let dest_os = OsStr::new(&dest);
+        if let Err(component) = health.revalidate_publication_ancestors() {
+            observe_stage_leaf(
+                &health,
+                staged.stage_name.as_os_str(),
+                original_identity,
+                OplogEvidenceCheckpoint::Stage,
+                &mut evidence,
+            );
+            evidence.gap(
+                OplogEvidenceCheckpoint::AncestorRevalidation { ordinal, component },
+                OplogGapCause::Changed,
+            );
+            return Err(classify_failure(
+                OplogCreateReason::Publish(OplogPublishReason::AncestorRevalidation),
+                evidence,
+                &health,
+                &staged,
+                original_identity,
+                &attempted,
+                &witnesses,
+            ));
+        }
+        attempted.push((ordinal, OsString::from(&dest)));
         if let Err(reason) = checkpoint(OplogCreatePrimitive::Rename) {
             evidence.gap(
                 OplogEvidenceCheckpoint::Rename { ordinal },
@@ -228,6 +260,8 @@ fn create_with_timing(
                 &health,
                 &staged,
                 original_identity,
+                &attempted,
+                &witnesses,
             ));
         }
         let outcome = match platform::rename_stage(&health, &staged, dest_os) {
@@ -236,7 +270,27 @@ fn create_with_timing(
         };
         match outcome {
             RenameOutcome::Landed => {
-                return finish_landed(health, staged, lease, dest, original_identity, evidence);
+                if let Err(reason) = checkpoint(OplogCreatePrimitive::AfterRename) {
+                    return Err(fail_after_stage(
+                        reason,
+                        evidence,
+                        &health,
+                        &staged,
+                        original_identity,
+                        &attempted,
+                        &witnesses,
+                    ));
+                }
+                return finish_landed(
+                    health,
+                    staged,
+                    lease,
+                    dest,
+                    original_identity,
+                    evidence,
+                    &attempted,
+                    &witnesses,
+                );
             }
             RenameOutcome::Occupied => match handle_occupied(
                 &health,
@@ -247,10 +301,20 @@ fn create_with_timing(
                 original_identity,
                 original_stage_name.as_os_str(),
                 &mut evidence,
+                &mut witnesses,
             ) {
                 OccupiedAction::Continue => continue,
                 OccupiedAction::Landed => {
-                    return finish_landed(health, staged, lease, dest, original_identity, evidence);
+                    return finish_landed(
+                        health,
+                        staged,
+                        lease,
+                        dest,
+                        original_identity,
+                        evidence,
+                        &attempted,
+                        &witnesses,
+                    );
                 }
                 OccupiedAction::Fail(reason) => {
                     return Err(fail_after_stage(
@@ -259,6 +323,8 @@ fn create_with_timing(
                         &health,
                         &staged,
                         original_identity,
+                        &attempted,
+                        &witnesses,
                     ));
                 }
             },
@@ -269,6 +335,8 @@ fn create_with_timing(
                     &health,
                     &staged,
                     original_identity,
+                    &attempted,
+                    &witnesses,
                 ));
             }
             RenameOutcome::SourceAbsent | RenameOutcome::Ambiguous => {
@@ -281,6 +349,7 @@ fn create_with_timing(
                     original_identity,
                     original_stage_name.as_os_str(),
                     &mut evidence,
+                    &mut witnesses,
                 ) {
                     OccupiedAction::Continue => continue,
                     OccupiedAction::Landed => {
@@ -291,6 +360,8 @@ fn create_with_timing(
                             dest,
                             original_identity,
                             evidence,
+                            &attempted,
+                            &witnesses,
                         );
                     }
                     OccupiedAction::Fail(reason) => {
@@ -300,6 +371,8 @@ fn create_with_timing(
                             &health,
                             &staged,
                             original_identity,
+                            &attempted,
+                            &witnesses,
                         ));
                     }
                 }
@@ -313,6 +386,8 @@ fn create_with_timing(
         &health,
         &staged,
         original_identity,
+        &attempted,
+        &witnesses,
     ))
 }
 
@@ -352,6 +427,12 @@ enum OccupiedAction {
     Fail(OplogCreateReason),
 }
 
+struct CollisionWitness {
+    ordinal: u8,
+    identity: OplogFileIdentity,
+    file: std::fs::File,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_occupied(
     health: &OplogDayHealth,
@@ -362,6 +443,7 @@ fn handle_occupied(
     original_identity: OplogFileIdentity,
     original_stage_name: &OsStr,
     evidence: &mut OplogCreateEvidence,
+    witnesses: &mut Vec<CollisionWitness>,
 ) -> OccupiedAction {
     assert_eq!(staged.stage_name.as_os_str(), original_stage_name);
     assert_eq!(staged.identity, original_identity);
@@ -369,8 +451,12 @@ fn handle_occupied(
         platform::identity_of(&staged.file).ok(),
         Some(original_identity)
     );
-    match platform::inspect_named(health, dest) {
-        Ok(NamedOccupant::Regular { identity, .. }) if identity != original_identity => {
+    match platform::open_named(health, dest) {
+        Ok(NamedOpen::Regular {
+            file,
+            identity,
+            nlink: _,
+        }) if identity != original_identity => {
             let verified_at = OplogVerifiedAt::new(
                 Some(OsString::from(&dest_owned)),
                 OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
@@ -383,47 +469,50 @@ fn handle_occupied(
                     verified_at: verified_at.clone(),
                 },
             ));
-            evidence.observe(OplogIdentityObservation::ForeignLanded(verified_at));
+            evidence.observe(OplogIdentityObservation::foreign_landed(verified_at));
+            debug_assert!(witnesses.len() < OPLOG_CREATE_ATTEMPTS);
+            witnesses.push(CollisionWitness {
+                ordinal,
+                identity,
+                file,
+            });
             barrier(OplogCreatePrimitive::AfterForeignCollision);
             if let Err(reason) = checkpoint(OplogCreatePrimitive::AfterForeignCollision) {
                 return OccupiedAction::Fail(reason);
             }
             OccupiedAction::Continue
         }
-        Ok(NamedOccupant::Regular { identity, nlink }) if identity == original_identity => {
+        Ok(NamedOpen::Regular { identity, .. }) if identity == original_identity => {
             // Occupied while dest names our inode: the .tmp source still exists,
             // so the dest is another link to the same inode. That is Alias.
-            // An actually-landed rename reporting Occupied would have an absent
-            // stage name and is handled by the SourceAbsent/Ambiguous reconcile.
-            let dest_at = OplogVerifiedAt::new(
+            evidence.observe(OplogIdentityObservation::own_landed(OplogVerifiedAt::new(
                 Some(OsString::from(&dest_owned)),
-                OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
-            );
-            evidence.observe(OplogIdentityObservation::OwnLanded(dest_at));
-            if nlink > 1 {
-                evidence.observe(OplogIdentityObservation::OwnMultipleLinks {
-                    nlink,
-                    verified_at: OplogVerifiedAt::new(
-                        Some(OsString::from(&dest_owned)),
-                        OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
-                    ),
-                });
-            }
+                OplogEvidenceCheckpoint::DestinationInspection { ordinal },
+            )));
             OccupiedAction::Fail(OplogCreateReason::Publish(OplogPublishReason::Alias))
         }
-        Ok(NamedOccupant::Absent) | Ok(NamedOccupant::Other) => OccupiedAction::Fail(
-            OplogCreateReason::Publish(OplogPublishReason::Reconciliation),
-        ),
+        Ok(NamedOpen::Absent) => OccupiedAction::Fail(OplogCreateReason::Publish(
+            OplogPublishReason::Reconciliation,
+        )),
+        Ok(NamedOpen::Other) => {
+            evidence.gap(
+                OplogEvidenceCheckpoint::DestinationInspection { ordinal },
+                OplogGapCause::Changed,
+            );
+            OccupiedAction::Fail(OplogCreateReason::Publish(
+                OplogPublishReason::DestinationInspection,
+            ))
+        }
         Err(_) => {
             evidence.gap(
-                OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
+                OplogEvidenceCheckpoint::DestinationInspection { ordinal },
                 OplogGapCause::Io,
             );
             OccupiedAction::Fail(OplogCreateReason::Publish(
                 OplogPublishReason::DestinationInspection,
             ))
         }
-        Ok(NamedOccupant::Regular { .. }) => OccupiedAction::Fail(OplogCreateReason::Publish(
+        Ok(NamedOpen::Regular { .. }) => OccupiedAction::Fail(OplogCreateReason::Publish(
             OplogPublishReason::DestinationInspection,
         )),
     }
@@ -439,13 +528,14 @@ fn reconcile_rename(
     original_identity: OplogFileIdentity,
     original_stage_name: &OsStr,
     evidence: &mut OplogCreateEvidence,
+    witnesses: &mut Vec<CollisionWitness>,
 ) -> OccupiedAction {
     let stage_state = platform::inspect_named(health, original_stage_name);
     let dest_state = platform::inspect_named(health, dest);
     match (stage_state, dest_state) {
         (Err(_), _) | (_, Err(_)) => {
             evidence.gap(
-                OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
+                OplogEvidenceCheckpoint::DestinationInspection { ordinal },
                 OplogGapCause::Io,
             );
             OccupiedAction::Fail(OplogCreateReason::Publish(
@@ -473,6 +563,7 @@ fn reconcile_rename(
             original_identity,
             original_stage_name,
             evidence,
+            witnesses,
         ),
         (Ok(NamedOccupant::Regular { identity, .. }), Ok(NamedOccupant::Absent))
             if identity == original_identity =>
@@ -490,7 +581,7 @@ fn reconcile_rename(
             }),
         ) if stage_id == original_identity && dest_id == original_identity => {
             evidence.gap(
-                OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
+                OplogEvidenceCheckpoint::DestinationInspection { ordinal },
                 OplogGapCause::Inconsistent,
             );
             OccupiedAction::Fail(OplogCreateReason::Publish(
@@ -503,6 +594,7 @@ fn reconcile_rename(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_landed(
     health: OplogDayHealth,
     staged: platform::StagedFile,
@@ -510,6 +602,8 @@ fn finish_landed(
     dest: String,
     original_identity: OplogFileIdentity,
     mut evidence: OplogCreateEvidence,
+    attempted: &[(u8, OsString)],
+    witnesses: &[CollisionWitness],
 ) -> Result<OplogWriter, OplogCreateError> {
     if let Err(reason) = checkpoint(OplogCreatePrimitive::AfterRenameBeforeDirectorySync) {
         return Err(fail_after_stage(
@@ -518,6 +612,8 @@ fn finish_landed(
             &health,
             &staged,
             original_identity,
+            attempted,
+            witnesses,
         ));
     }
     if force_dest_identity_io() {
@@ -528,39 +624,27 @@ fn finish_landed(
             &health,
             &staged,
             original_identity,
+            attempted,
+            witnesses,
         ));
     }
     match platform::inspect_named(&health, OsStr::new(&dest)) {
         Ok(NamedOccupant::Regular { identity, nlink }) if identity == original_identity => {
-            evidence.observe(OplogIdentityObservation::OwnLanded(OplogVerifiedAt::new(
+            evidence.observe(OplogIdentityObservation::own_landed(OplogVerifiedAt::new(
                 Some(OsString::from(&dest)),
                 OplogEvidenceCheckpoint::AfterRename,
             )));
             if nlink != 1 {
-                evidence.observe(OplogIdentityObservation::OwnMultipleLinks {
-                    nlink,
-                    verified_at: OplogVerifiedAt::new(
-                        Some(OsString::from(&dest)),
-                        OplogEvidenceCheckpoint::AfterRename,
-                    ),
-                });
                 return Err(fail_after_stage(
                     OplogCreateReason::Publish(OplogPublishReason::Alias),
                     evidence,
                     &health,
                     &staged,
                     original_identity,
+                    attempted,
+                    witnesses,
                 ));
             }
-        }
-        Ok(NamedOccupant::Regular { .. }) => {
-            return Err(fail_after_stage(
-                OplogCreateReason::Publish(OplogPublishReason::DestinationInspection),
-                evidence,
-                &health,
-                &staged,
-                original_identity,
-            ));
         }
         Ok(_) => {
             return Err(fail_after_stage(
@@ -569,6 +653,8 @@ fn finish_landed(
                 &health,
                 &staged,
                 original_identity,
+                attempted,
+                witnesses,
             ));
         }
         Err(_) => {
@@ -579,6 +665,8 @@ fn finish_landed(
                 &health,
                 &staged,
                 original_identity,
+                attempted,
+                witnesses,
             ));
         }
     }
@@ -591,6 +679,8 @@ fn finish_landed(
             &health,
             &staged,
             original_identity,
+            attempted,
+            witnesses,
         ));
     }
     barrier(OplogCreatePrimitive::AfterRenameBeforeDirectorySync);
@@ -607,6 +697,8 @@ fn finish_landed(
             &health,
             &staged,
             original_identity,
+            attempted,
+            witnesses,
         ));
     }
     Ok(OplogWriter::new(staged.file, lease, dest))
@@ -619,18 +711,7 @@ fn final_binding_gate(
     original_identity: OplogFileIdentity,
     evidence: &mut OplogCreateEvidence,
 ) -> Result<(), OplogCreateReason> {
-    if health
-        .journal_root()
-        .revalidate_canonical_binding()
-        .is_err()
-    {
-        evidence.gap(
-            OplogEvidenceCheckpoint::FinalBinding,
-            OplogGapCause::Changed,
-        );
-        return Err(OplogCreateReason::Publish(OplogPublishReason::FinalBinding));
-    }
-    if health.revalidate_binding().is_err() {
+    if health.revalidate_publication_ancestors().is_err() {
         evidence.gap(
             OplogEvidenceCheckpoint::FinalBinding,
             OplogGapCause::Changed,
@@ -649,7 +730,15 @@ fn final_binding_gate(
     }
     match platform::inspect_named(health, staged.stage_name.as_os_str()) {
         Ok(NamedOccupant::Absent) => {}
-        Ok(NamedOccupant::Regular { identity, .. }) if identity != original_identity => {}
+        Ok(NamedOccupant::Regular { identity, .. }) if identity != original_identity => {
+            evidence.observe(OplogIdentityObservation::foreign_noncanonical(
+                OplogVerifiedAt::new(
+                    Some(staged.stage_name.clone()),
+                    OplogEvidenceCheckpoint::FinalBinding,
+                ),
+            ));
+            return Err(OplogCreateReason::Publish(OplogPublishReason::FinalBinding));
+        }
         Ok(_) => {
             return Err(OplogCreateReason::Publish(OplogPublishReason::FinalBinding));
         }
@@ -661,10 +750,10 @@ fn final_binding_gate(
     match platform::nlink_of(&staged.file) {
         Ok(1) => Ok(()),
         Ok(nlink) => {
-            evidence.observe(OplogIdentityObservation::OwnMultipleLinks {
+            evidence.observe(OplogIdentityObservation::own_multiple_links(
                 nlink,
-                verified_at: OplogVerifiedAt::new(None, OplogEvidenceCheckpoint::FinalBinding),
-            });
+                OplogVerifiedAt::new(None, OplogEvidenceCheckpoint::FinalBinding),
+            ));
             Err(OplogCreateReason::Publish(OplogPublishReason::FinalBinding))
         }
         Err(_) => {
@@ -683,17 +772,7 @@ fn final_binding_evidence_only(
     original_identity: OplogFileIdentity,
     evidence: &mut OplogCreateEvidence,
 ) {
-    if health
-        .journal_root()
-        .revalidate_canonical_binding()
-        .is_err()
-    {
-        evidence.gap(
-            OplogEvidenceCheckpoint::FinalBinding,
-            OplogGapCause::Changed,
-        );
-    }
-    if health.revalidate_binding().is_err() {
+    if health.revalidate_publication_ancestors().is_err() {
         evidence.gap(
             OplogEvidenceCheckpoint::FinalBinding,
             OplogGapCause::Changed,
@@ -706,12 +785,156 @@ fn final_binding_evidence_only(
     let _ = original_identity;
 }
 
+struct FinalLeafResult {
+    own_fact: bool,
+    conclusive: bool,
+}
+
+fn inspect_named_result(
+    health: &OplogDayHealth,
+    name: &OsStr,
+) -> Result<NamedOccupant, OplogGapCause> {
+    platform::inspect_named(health, name).map_err(|_| OplogGapCause::Io)
+}
+
+fn inspect_final_stage_leaf(
+    occupant: Result<NamedOccupant, OplogGapCause>,
+    original: OplogFileIdentity,
+    stage_name: &OsStr,
+    evidence: &mut OplogCreateEvidence,
+) -> FinalLeafResult {
+    record_leaf_identity(
+        occupant,
+        original,
+        Some(stage_name.to_os_string()),
+        OplogEvidenceCheckpoint::FinalStageInspection,
+        OplogIdentityObservation::own_noncanonical,
+        OplogIdentityObservation::foreign_noncanonical,
+        evidence,
+    )
+}
+
+fn inspect_final_candidate_leaf(
+    occupant: Result<NamedOccupant, OplogGapCause>,
+    original: OplogFileIdentity,
+    dest_name: &OsStr,
+    ordinal: u8,
+    evidence: &mut OplogCreateEvidence,
+) -> FinalLeafResult {
+    record_leaf_identity(
+        occupant,
+        original,
+        Some(dest_name.to_os_string()),
+        OplogEvidenceCheckpoint::FinalCandidateInspection { ordinal },
+        OplogIdentityObservation::own_landed,
+        OplogIdentityObservation::foreign_landed,
+        evidence,
+    )
+}
+
+fn observe_stage_leaf(
+    health: &OplogDayHealth,
+    name: &OsStr,
+    original: OplogFileIdentity,
+    checkpoint: OplogEvidenceCheckpoint,
+    evidence: &mut OplogCreateEvidence,
+) {
+    let _ = record_leaf_identity(
+        inspect_named_result(health, name),
+        original,
+        Some(name.to_os_string()),
+        checkpoint,
+        OplogIdentityObservation::own_noncanonical,
+        OplogIdentityObservation::foreign_noncanonical,
+        evidence,
+    );
+}
+
+fn record_leaf_identity(
+    occupant: Result<NamedOccupant, OplogGapCause>,
+    original: OplogFileIdentity,
+    native_leaf: Option<OsString>,
+    checkpoint: OplogEvidenceCheckpoint,
+    own: fn(OplogVerifiedAt) -> OplogIdentityObservation,
+    foreign: fn(OplogVerifiedAt) -> OplogIdentityObservation,
+    evidence: &mut OplogCreateEvidence,
+) -> FinalLeafResult {
+    match occupant {
+        Ok(NamedOccupant::Regular { identity, nlink: _ }) if identity == original => {
+            evidence.observe(own(OplogVerifiedAt::new(native_leaf, checkpoint)));
+            FinalLeafResult {
+                own_fact: true,
+                conclusive: true,
+            }
+        }
+        Ok(NamedOccupant::Regular { .. }) => {
+            evidence.observe(foreign(OplogVerifiedAt::new(native_leaf, checkpoint)));
+            FinalLeafResult {
+                own_fact: false,
+                conclusive: true,
+            }
+        }
+        Ok(NamedOccupant::Absent) | Ok(NamedOccupant::Other) => FinalLeafResult {
+            own_fact: false,
+            conclusive: true,
+        },
+        Err(cause) => {
+            evidence.gap(checkpoint, cause);
+            FinalLeafResult {
+                own_fact: false,
+                conclusive: false,
+            }
+        }
+    }
+}
+
+fn aggregate_retained_nlink(
+    own_fact_count: u8,
+    all_leaves_conclusive: bool,
+    retained_nlink: Result<u64, OplogGapCause>,
+    evidence: &mut OplogCreateEvidence,
+) {
+    if !all_leaves_conclusive {
+        return;
+    }
+    let nlink = match retained_nlink {
+        Ok(nlink) => nlink,
+        Err(cause) => {
+            evidence.gap(OplogEvidenceCheckpoint::RetainedHandle, cause);
+            return;
+        }
+    };
+    let own_facts = u64::from(own_fact_count);
+    if nlink < own_facts {
+        evidence.gap(
+            OplogEvidenceCheckpoint::RetainedHandle,
+            OplogGapCause::Inconsistent,
+        );
+        return;
+    }
+    if own_fact_count == 0 && nlink >= 1 {
+        evidence.gap(
+            OplogEvidenceCheckpoint::RetainedHandle,
+            OplogGapCause::NoVerifiedLeaf,
+        );
+    }
+    if nlink > 1 {
+        evidence.observe(OplogIdentityObservation::own_multiple_links(
+            nlink,
+            OplogVerifiedAt::new(None, OplogEvidenceCheckpoint::RetainedHandle),
+        ));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn classify_failure(
     reason: OplogCreateReason,
     mut evidence: OplogCreateEvidence,
     health: &OplogDayHealth,
     staged: &platform::StagedFile,
     original_identity: OplogFileIdentity,
+    attempted: &[(u8, OsString)],
+    witnesses: &[CollisionWitness],
 ) -> OplogCreateError {
     if checkpoint(OplogCreatePrimitive::BeforeFinalFailureClassification).is_err() {
         evidence.gap(
@@ -720,53 +943,65 @@ fn classify_failure(
         );
     }
     barrier(OplogCreatePrimitive::BeforeFinalFailureClassification);
-    refresh_collisions(health, &mut evidence);
-    observe_named(
-        health,
+    refresh_collisions(health, &mut evidence, witnesses);
+    let mut own_fact_count = 0_u8;
+    let mut conclusive = true;
+    let stage = inspect_final_stage_leaf(
+        inspect_named_result(health, staged.stage_name.as_os_str()),
+        original_identity,
         staged.stage_name.as_os_str(),
-        Some(original_identity),
-        OplogEvidenceCheckpoint::FinalFailureClassification,
         &mut evidence,
     );
-    match platform::nlink_of(&staged.file) {
-        Ok(nlink) => {
-            let saw_own_leaf = evidence.observations().iter().any(|observation| {
-                matches!(
-                    observation,
-                    OplogIdentityObservation::OwnNoncanonical(_)
-                        | OplogIdentityObservation::OwnLanded(_)
-                )
-            });
-            if !saw_own_leaf {
-                evidence.observe(OplogIdentityObservation::NoVerifiedLeaf {
-                    nlink,
-                    verified_at: OplogVerifiedAt::new(
-                        None,
-                        OplogEvidenceCheckpoint::RetainedHandle,
-                    ),
-                });
-            }
-        }
-        Err(_) => evidence.gap(
-            OplogEvidenceCheckpoint::RetainedHandle,
-            OplogGapCause::UnobservableHandle,
-        ),
+    if stage.own_fact {
+        own_fact_count = own_fact_count.saturating_add(1);
     }
+    conclusive &= stage.conclusive;
+    for (ordinal, dest) in attempted {
+        let candidate = inspect_final_candidate_leaf(
+            inspect_named_result(health, dest),
+            original_identity,
+            dest,
+            *ordinal,
+            &mut evidence,
+        );
+        if candidate.own_fact {
+            own_fact_count = own_fact_count.saturating_add(1);
+        }
+        conclusive &= candidate.conclusive;
+    }
+    let retained_nlink =
+        platform::nlink_of(&staged.file).map_err(|_| OplogGapCause::UnobservableHandle);
+    aggregate_retained_nlink(own_fact_count, conclusive, retained_nlink, &mut evidence);
     final_binding_evidence_only(health, staged, original_identity, &mut evidence);
     evidence.fail(reason)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fail_after_stage(
     reason: OplogCreateReason,
     evidence: OplogCreateEvidence,
     health: &OplogDayHealth,
     staged: &platform::StagedFile,
     original_identity: OplogFileIdentity,
+    attempted: &[(u8, OsString)],
+    witnesses: &[CollisionWitness],
 ) -> OplogCreateError {
-    classify_failure(reason, evidence, health, staged, original_identity)
+    classify_failure(
+        reason,
+        evidence,
+        health,
+        staged,
+        original_identity,
+        attempted,
+        witnesses,
+    )
 }
 
-fn refresh_collisions(health: &OplogDayHealth, evidence: &mut OplogCreateEvidence) {
+fn refresh_collisions(
+    health: &OplogDayHealth,
+    evidence: &mut OplogCreateEvidence,
+    witnesses: &[CollisionWitness],
+) {
     let mut unknown = Vec::new();
     for record in evidence.collisions_mut() {
         let recorded = match record.occupant() {
@@ -775,6 +1010,18 @@ fn refresh_collisions(health: &OplogDayHealth, evidence: &mut OplogCreateEvidenc
         };
         let dest = record.dest().to_os_string();
         let ordinal = record.ordinal();
+        let handle_ok = witnesses.iter().find(|witness| witness.ordinal == ordinal);
+        let handle_matches = match handle_ok {
+            Some(witness) => platform::identity_of(&witness.file)
+                .ok()
+                .is_some_and(|identity| identity == recorded && identity == witness.identity),
+            None => false,
+        };
+        if !handle_matches {
+            record.set_occupant(OplogCollisionOccupant::Unknown);
+            unknown.push(ordinal);
+            continue;
+        }
         match platform::inspect_named(health, &dest) {
             Ok(NamedOccupant::Regular { identity, .. }) if identity == recorded => {}
             Ok(NamedOccupant::Regular { .. }) => {
@@ -789,43 +1036,9 @@ fn refresh_collisions(health: &OplogDayHealth, evidence: &mut OplogCreateEvidenc
     }
     for ordinal in unknown {
         evidence.gap(
-            OplogEvidenceCheckpoint::AfterForeignCollision { ordinal },
+            OplogEvidenceCheckpoint::FinalCandidateInspection { ordinal },
             OplogGapCause::Io,
         );
-    }
-}
-
-fn observe_named(
-    health: &OplogDayHealth,
-    name: &OsStr,
-    expected: Option<OplogFileIdentity>,
-    checkpoint: OplogEvidenceCheckpoint,
-    evidence: &mut OplogCreateEvidence,
-) {
-    match platform::inspect_named(health, name) {
-        Ok(NamedOccupant::Regular { identity, nlink }) => {
-            let verified_at = OplogVerifiedAt::new(Some(name.to_os_string()), checkpoint);
-            let own = expected.is_none_or(|expected| expected == identity);
-            if own {
-                if nlink == 0 {
-                    evidence.gap(checkpoint, OplogGapCause::Inconsistent);
-                } else {
-                    evidence.observe(OplogIdentityObservation::OwnNoncanonical(
-                        verified_at.clone(),
-                    ));
-                    if nlink > 1 {
-                        evidence.observe(OplogIdentityObservation::OwnMultipleLinks {
-                            nlink,
-                            verified_at,
-                        });
-                    }
-                }
-            } else {
-                evidence.observe(OplogIdentityObservation::ForeignLanded(verified_at));
-            }
-        }
-        Ok(NamedOccupant::Absent) | Ok(NamedOccupant::Other) => {}
-        Err(_) => evidence.gap(checkpoint, OplogGapCause::Io),
     }
 }
 
@@ -843,25 +1056,19 @@ fn write_admission_bytes<W: Write>(writer: &mut W, header: &[u8]) -> io::Result<
     Ok(())
 }
 
-fn write_admission(file: &mut std::fs::File, header: &[u8]) -> io::Result<()> {
-    write_admission_bytes(file, header)?;
+fn write_admission(file: &mut std::fs::File, header: &[u8]) -> Result<(), OplogAdmissionCause> {
+    write_admission_bytes(file, header).map_err(|_| OplogAdmissionCause::Write)?;
     if force_sync_fail() {
-        return Err(io::Error::from_raw_os_error(nix_or_generic_io()));
+        return Err(OplogAdmissionCause::Sync);
     }
-    file.sync_all()?;
+    file.sync_all().map_err(|_| OplogAdmissionCause::Sync)?;
     record_event(OplogCreateEvent::SyncAll);
     Ok(())
 }
 
+#[cfg(unix)]
 fn nix_or_generic_io() -> i32 {
-    #[cfg(unix)]
-    {
-        nix::libc::EIO
-    }
-    #[cfg(windows)]
-    {
-        1117
-    }
+    nix::libc::EIO
 }
 
 fn sync_published(health: &OplogDayHealth) -> io::Result<()> {
@@ -894,65 +1101,14 @@ fn acquire_lock(
 }
 
 fn map_lock_error(error: OplogNamespaceLockError) -> OplogCreateReason {
-    let token = error.to_string();
-    let suffix = token
-        .strip_prefix("oplog_namespace_lock_")
-        .expect("OplogNamespaceLockError Display is oplog_namespace_lock_{class}");
-    let class = match suffix {
-        "unsafe" => OplogCreateLockClass::Unsafe,
-        "identity_changed" => OplogCreateLockClass::IdentityChanged,
-        "busy" => OplogCreateLockClass::Busy,
-        "io" => OplogCreateLockClass::Io,
-        _ => panic!("unknown OplogNamespaceLockError class {suffix}"),
-    };
-    OplogCreateReason::Lock(class)
+    OplogCreateReason::Lock(error.create_class())
 }
 
 fn map_namespace_error(error: OplogNamespaceError) -> OplogCreateReason {
-    let token = error.to_string();
-    let suffix = token
-        .strip_prefix("oplog_namespace_")
-        .expect("OplogNamespaceError Display is oplog_namespace_{stage}_{class}");
-    let (stage, class) = match suffix {
-        "chronicle_unsafe" => (
-            OplogCreateNamespaceStage::Chronicle,
-            OplogCreateNamespaceClass::Unsafe,
-        ),
-        "chronicle_identity_changed" => (
-            OplogCreateNamespaceStage::Chronicle,
-            OplogCreateNamespaceClass::IdentityChanged,
-        ),
-        "chronicle_io" => (
-            OplogCreateNamespaceStage::Chronicle,
-            OplogCreateNamespaceClass::Io,
-        ),
-        "day_unsafe" => (
-            OplogCreateNamespaceStage::Day,
-            OplogCreateNamespaceClass::Unsafe,
-        ),
-        "day_identity_changed" => (
-            OplogCreateNamespaceStage::Day,
-            OplogCreateNamespaceClass::IdentityChanged,
-        ),
-        "day_io" => (
-            OplogCreateNamespaceStage::Day,
-            OplogCreateNamespaceClass::Io,
-        ),
-        "health_unsafe" => (
-            OplogCreateNamespaceStage::Health,
-            OplogCreateNamespaceClass::Unsafe,
-        ),
-        "health_identity_changed" => (
-            OplogCreateNamespaceStage::Health,
-            OplogCreateNamespaceClass::IdentityChanged,
-        ),
-        "health_io" => (
-            OplogCreateNamespaceStage::Health,
-            OplogCreateNamespaceClass::Io,
-        ),
-        _ => panic!("unknown OplogNamespaceError class {suffix}"),
-    };
-    OplogCreateReason::Namespace { stage, class }
+    OplogCreateReason::Namespace {
+        stage: error.create_stage(),
+        class: error.create_class(),
+    }
 }
 
 fn draw_distinct_file_ids() -> Result<[[u8; 16]; OPLOG_CREATE_ATTEMPTS], OplogCreateError> {
@@ -1003,6 +1159,8 @@ pub fn probe_oplog_lease(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
 pub enum OplogCreatePrimitive {
     /// Exclusive stage allocation.
     Stage,
+    /// After exclusive allocate, before permission/append/identity prepare.
+    AfterAllocateBeforePrepare,
     /// Admission-record write and file sync.
     Admission,
     /// After staging, before taking the self-lease.
@@ -1013,6 +1171,8 @@ pub enum OplogCreatePrimitive {
     AfterLeaseBeforePublish,
     /// Per-candidate no-replace rename syscall.
     Rename,
+    /// After a successful kernel rename, before dest inspect.
+    AfterRename,
     /// After a proven-foreign dest collision.
     AfterForeignCollision,
     /// After a landed rename, before directory sync.
@@ -1041,7 +1201,13 @@ struct OplogCreateTraceState {
     dest_identity_io: bool,
     publish_io: bool,
     sync_fail: bool,
+    #[cfg(unix)]
     parent_sync_fail: bool,
+    #[cfg(unix)]
+    stage_permission_fail: bool,
+    #[cfg(unix)]
+    stage_append_fail: bool,
+    stage_identity_fail: bool,
     entropy_fault: Option<usize>,
     entropy_fault_consumed: bool,
     entropy_draws: usize,
@@ -1087,10 +1253,13 @@ fn checkpoint(primitive: OplogCreatePrimitive) -> Result<(), OplogCreateReason> 
     if fault {
         return Err(match primitive {
             OplogCreatePrimitive::Lease => OplogCreateReason::LeaseFailed,
-            OplogCreatePrimitive::Stage => OplogCreateReason::Stage,
-            OplogCreatePrimitive::Admission => OplogCreateReason::Admission,
+            OplogCreatePrimitive::Stage => OplogCreateReason::Stage(OplogStageCause::Allocate),
+            OplogCreatePrimitive::Admission => {
+                OplogCreateReason::Admission(OplogAdmissionCause::Write)
+            }
             OplogCreatePrimitive::Rename => OplogCreateReason::Publish(OplogPublishReason::Rename),
-            OplogCreatePrimitive::AfterForeignCollision
+            OplogCreatePrimitive::AfterRename
+            | OplogCreatePrimitive::AfterForeignCollision
             | OplogCreatePrimitive::AfterRenameBeforeDirectorySync => {
                 OplogCreateReason::Publish(OplogPublishReason::DestinationInspection)
             }
@@ -1104,10 +1273,10 @@ fn checkpoint(primitive: OplogCreatePrimitive) -> Result<(), OplogCreateReason> 
 }
 
 #[cfg(not(any(test, feature = "test-hooks")))]
-fn barrier(_primitive: OplogCreatePrimitive) {}
+pub(super) fn barrier(_primitive: OplogCreatePrimitive) {}
 
 #[cfg(any(test, feature = "test-hooks"))]
-fn barrier(primitive: OplogCreatePrimitive) {
+pub(super) fn barrier(primitive: OplogCreatePrimitive) {
     let callback = OPLOG_CREATE_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let state = trace.as_mut()?;
@@ -1122,12 +1291,12 @@ fn barrier(primitive: OplogCreatePrimitive) {
     }
 }
 
-#[cfg(not(any(test, feature = "test-hooks")))]
+#[cfg(all(unix, not(any(test, feature = "test-hooks"))))]
 fn force_parent_sync_fail() -> bool {
     false
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 fn force_parent_sync_fail() -> bool {
     OPLOG_CREATE_TRACE.with(|trace| {
         trace
@@ -1170,6 +1339,51 @@ pub(super) fn force_dest_identity_io() -> bool {
 #[cfg(not(any(test, feature = "test-hooks")))]
 pub(super) fn force_publish_io() -> bool {
     false
+}
+
+#[cfg(all(unix, not(any(test, feature = "test-hooks"))))]
+pub(super) fn force_stage_permission_fail() -> bool {
+    false
+}
+
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub(super) fn force_stage_permission_fail() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        trace
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.stage_permission_fail)
+    })
+}
+
+#[cfg(all(unix, not(any(test, feature = "test-hooks"))))]
+pub(super) fn force_stage_append_fail() -> bool {
+    false
+}
+
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub(super) fn force_stage_append_fail() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        trace
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.stage_append_fail)
+    })
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+pub(super) fn force_stage_identity_fail() -> bool {
+    false
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn force_stage_identity_fail() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        trace
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.stage_identity_fail)
+    })
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -1263,7 +1477,13 @@ fn empty_trace() -> OplogCreateTraceState {
         dest_identity_io: false,
         publish_io: false,
         sync_fail: false,
+        #[cfg(unix)]
         parent_sync_fail: false,
+        #[cfg(unix)]
+        stage_permission_fail: false,
+        #[cfg(unix)]
+        stage_append_fail: false,
+        stage_identity_fail: false,
         entropy_fault: None,
         entropy_fault_consumed: false,
         entropy_draws: 0,
@@ -1408,7 +1628,7 @@ pub fn run_with_oplog_sync_fail<T>(operation: impl FnOnce() -> T) -> T {
 }
 
 /// Fail the retained-directory durability sync after a landed rename.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub fn run_with_oplog_parent_sync_fail<T>(operation: impl FnOnce() -> T) -> T {
     with_trace(
         OplogCreateTraceState {
@@ -1472,8 +1692,9 @@ mod tests {
     use crate::lease::{DEFAULT_LEASE_RETRY_MAX, probe_file_lease};
     use crate::operational_log::name::{OplogNameClassification, classify_oplog_name};
     use crate::operational_log::{
-        OplogCollisionOccupant, OplogCreateError, OplogEvidenceCheckpoint, OplogFormat,
-        OplogGapCause, OplogIdentityObservation, OplogNamespacePrimitive, RetainedNamespaceState,
+        OplogAncestorComponent, OplogCollisionOccupant, OplogCreateError, OplogEvidenceCheckpoint,
+        OplogFileIdentity, OplogFormat, OplogGapCause, OplogIdentityObservation,
+        OplogNamespacePrimitive, RetainedNamespaceState,
         acquire_oplog_namespace_lock_with_test_timing, admit_day_health_directory,
         run_with_oplog_namespace_barrier, run_with_oplog_namespace_fault, validate_oplog_admission,
     };
@@ -1574,6 +1795,23 @@ mod tests {
             .collect()
     }
 
+    #[cfg(unix)]
+    fn open_fd_count_for(path: &Path) -> usize {
+        let target = match fs::canonicalize(path) {
+            Ok(path) => path,
+            Err(_) => return 0,
+        };
+        fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                fs::read_link(entry.path())
+                    .ok()
+                    .is_some_and(|linked| linked == target)
+            })
+            .count()
+    }
+
     fn leftover_unrelated(path: &Path) -> Vec<String> {
         listing(path)
             .into_iter()
@@ -1665,7 +1903,7 @@ mod tests {
     fn non_collision_errors_return_immediately() {
         let temporary = temp();
         for (primitive, token) in [
-            (OplogCreatePrimitive::Stage, "oplog_create_stage"),
+            (OplogCreatePrimitive::Stage, "oplog_create_stage_allocate"),
             (OplogCreatePrimitive::Rename, "oplog_create_rename"),
         ] {
             let (result, consumed) =
@@ -1780,10 +2018,86 @@ mod tests {
                 create(temporary.path())
             });
         assert!(consumed);
-        expect_token(&result.unwrap_err(), "oplog_create_admission");
+        expect_token(&result.unwrap_err(), "oplog_create_admission_write");
         let dir = health_dir(temporary.path());
         assert!(canonical_leaves(&dir).is_empty());
         assert_eq!(leftover_unrelated(&dir).len(), 1);
+    }
+
+    #[cfg(unix)]
+    fn stage_prepare_fault(
+        fail: impl Fn(&mut OplogCreateTraceState),
+    ) -> (OplogCreateError, tempfile::TempDir) {
+        let temporary = temp();
+        let error = with_trace(
+            {
+                let mut state = empty_trace();
+                fail(&mut state);
+                state
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        (error, temporary)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stage_permission_fault_after_allocate_is_stage_permission() {
+        let (error, temporary) = stage_prepare_fault(|state| state.stage_permission_fail = true);
+        expect_token(&error, "oplog_create_stage_permission");
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stage_append_fault_after_allocate_is_stage_append() {
+        let (error, temporary) = stage_prepare_fault(|state| state.stage_append_fail = true);
+        expect_token(&error, "oplog_create_stage_append");
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
+    }
+
+    #[test]
+    fn stage_identity_fault_after_allocate_is_stage_identity() {
+        let temporary = temp();
+        let error = with_trace(
+            OplogCreateTraceState {
+                stage_identity_fail: true,
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_stage_identity");
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
+    }
+
+    #[test]
+    fn after_allocate_before_prepare_stage_has_zero_length() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        run_with_oplog_create_barrier(
+            OplogCreatePrimitive::AfterAllocateBeforePrepare,
+            {
+                let dir = health_dir(&root);
+                move || {
+                    let leftover = leftover_unrelated(&dir);
+                    assert_eq!(leftover.len(), 1);
+                    assert_eq!(fs::metadata(dir.join(&leftover[0])).unwrap().len(), 0);
+                    assert!(canonical_leaves(&dir).is_empty());
+                }
+            },
+            || create(&root),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1916,7 +2230,26 @@ mod tests {
                 .iter()
                 .filter(|observation| matches!(
                     observation,
-                    OplogIdentityObservation::ForeignLanded(_)
+                    OplogIdentityObservation::ForeignLanded(verified)
+                        if matches!(
+                            verified.checkpoint(),
+                            OplogEvidenceCheckpoint::AfterForeignCollision { .. }
+                        )
+                ))
+                .count(),
+            OPLOG_CREATE_ATTEMPTS
+        );
+        assert_eq!(
+            error
+                .observations()
+                .iter()
+                .filter(|observation| matches!(
+                    observation,
+                    OplogIdentityObservation::ForeignLanded(verified)
+                        if matches!(
+                            verified.checkpoint(),
+                            OplogEvidenceCheckpoint::FinalCandidateInspection { .. }
+                        )
                 ))
                 .count(),
             OPLOG_CREATE_ATTEMPTS
@@ -2610,7 +2943,7 @@ mod tests {
             },
             || create(temporary.path()),
         );
-        expect_token(&result.unwrap_err(), "oplog_create_admission");
+        expect_token(&result.unwrap_err(), "oplog_create_admission_sync");
         assert_eq!(
             count_event(&state, OplogCreateEvent::AdmissionBytesAccepted),
             1
@@ -2862,6 +3195,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn first_collision_survives_directory_sync_fault() {
         let temporary = temp();
@@ -2915,8 +3249,12 @@ mod tests {
         occupy(temporary.path(), [ids[0]]);
         fs::create_dir(health_dir(temporary.path()).join(dest_for(ids[1]))).unwrap();
         let error = create_with_ids(temporary.path(), ids).unwrap_err();
-        expect_token(&error, "oplog_create_reconciliation");
+        expect_token(&error, "oplog_create_destination_inspection");
         assert_eq!(error.collisions().len(), 1);
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location() == OplogEvidenceCheckpoint::DestinationInspection { ordinal: 2 }
+                && gap.cause() == OplogGapCause::Changed
+        }));
     }
 
     #[test]
@@ -3000,71 +3338,119 @@ mod tests {
     }
 
     #[test]
-    fn table_cells_map_stage_dest_and_nlink_to_reasons() {
-        struct Case {
-            dest: &'static str,
-            nlink: &'static str,
-            token: &'static str,
+    fn table_cells_map_stage_dest_and_nlink_to_final_identity_evidence() {
+        #[derive(Clone, Copy, Debug)]
+        enum Leaf {
+            Own,
+            Foreign,
+            Absent,
         }
-        let cases = [
-            Case {
-                dest: "foreign",
-                nlink: "1",
-                token: "oplog_create_destination_exhaustion",
+        let original = OplogFileIdentity::from_unix(10, 20);
+        let foreign = OplogFileIdentity::from_unix(10, 21);
+        let occupant = |leaf| match leaf {
+            Leaf::Own => NamedOccupant::Regular {
+                identity: original,
+                nlink: 1,
             },
-            Case {
-                dest: "own",
-                nlink: ">1",
-                token: "oplog_create_alias",
+            Leaf::Foreign => NamedOccupant::Regular {
+                identity: foreign,
+                nlink: 1,
             },
-            Case {
-                dest: "other",
-                nlink: "1",
-                token: "oplog_create_reconciliation",
-            },
-        ];
-        for case in cases {
-            let temporary = temp();
-            let ids = ids_from(0xc0);
-            match (case.dest, case.nlink) {
-                ("foreign", _) => occupy(temporary.path(), ids.iter().copied()),
-                ("own", _) => {
-                    let root = temporary.path().to_path_buf();
-                    let dest = dest_for(ids[0]);
-                    let error = with_trace(
-                        OplogCreateTraceState {
-                            file_ids: ids.clone().into(),
-                            barriers: vec![(
-                                OplogCreatePrimitive::AfterLeaseBeforePublish,
-                                Box::new({
-                                    let dir = health_dir(&root);
-                                    move || {
-                                        let stage = fs::read_dir(&dir)
-                                            .unwrap()
-                                            .map(|entry| entry.unwrap().file_name())
-                                            .find(|name| name.to_string_lossy().contains(".tmp"))
-                                            .expect("stage");
-                                        fs::hard_link(dir.join(&stage), dir.join(&dest)).unwrap();
-                                    }
-                                }),
-                            )],
-                            ..empty_trace()
-                        },
-                        || create(temporary.path()),
-                    )
-                    .0
-                    .unwrap_err();
-                    expect_token(&error, case.token);
-                    continue;
+            Leaf::Absent => NamedOccupant::Absent,
+        };
+        let tag = |observation: &OplogIdentityObservation| match observation {
+            OplogIdentityObservation::OwnNoncanonical(_) => "SO",
+            OplogIdentityObservation::OwnLanded(_) => "CO",
+            OplogIdentityObservation::ForeignNoncanonical(_) => "SF",
+            OplogIdentityObservation::ForeignLanded(_) => "CF",
+            OplogIdentityObservation::OwnMultipleLinks { nlink, .. } => {
+                if *nlink == 2 {
+                    "M"
+                } else {
+                    "M?"
                 }
-                ("other", _) => {
-                    let _ = health_at(temporary.path());
-                    fs::create_dir(health_dir(temporary.path()).join(dest_for(ids[0]))).unwrap();
-                }
-                _ => unreachable!(),
             }
-            let error = create_with_ids(temporary.path(), ids).unwrap_err();
-            expect_token(&error, case.token);
+        };
+        let gap_tag = |gap: &crate::operational_log::OplogObservationGap| match gap.cause() {
+            OplogGapCause::Inconsistent => "I",
+            OplogGapCause::NoVerifiedLeaf => "N",
+            other => panic!("unexpected gap {other:?}"),
+        };
+        let expected = |stage: Leaf, dest: Leaf, nlink: u64| -> Vec<&'static str> {
+            match (stage, dest, nlink) {
+                (Leaf::Own, Leaf::Own, 0 | 1) => vec!["CO", "SO", "I"],
+                (Leaf::Own, Leaf::Own, _) => vec!["CO", "SO", "M"],
+                (Leaf::Own, Leaf::Foreign, 0) => vec!["CF", "SO", "I"],
+                (Leaf::Own, Leaf::Foreign, 1) => vec!["CF", "SO"],
+                (Leaf::Own, Leaf::Foreign, _) => vec!["CF", "SO", "M"],
+                (Leaf::Own, Leaf::Absent, 0) => vec!["SO", "I"],
+                (Leaf::Own, Leaf::Absent, 1) => vec!["SO"],
+                (Leaf::Own, Leaf::Absent, _) => vec!["SO", "M"],
+                (Leaf::Foreign, Leaf::Own, 0) => vec!["CO", "SF", "I"],
+                (Leaf::Foreign, Leaf::Own, 1) => vec!["CO", "SF"],
+                (Leaf::Foreign, Leaf::Own, _) => vec!["CO", "SF", "M"],
+                (Leaf::Foreign, Leaf::Foreign, 0) => vec!["CF", "SF"],
+                (Leaf::Foreign, Leaf::Foreign, 1) => vec!["CF", "SF", "N"],
+                (Leaf::Foreign, Leaf::Foreign, _) => vec!["CF", "SF", "N", "M"],
+                (Leaf::Foreign, Leaf::Absent, 0) => vec!["SF"],
+                (Leaf::Foreign, Leaf::Absent, 1) => vec!["SF", "N"],
+                (Leaf::Foreign, Leaf::Absent, _) => vec!["SF", "N", "M"],
+                (Leaf::Absent, Leaf::Own, 0) => vec!["CO", "I"],
+                (Leaf::Absent, Leaf::Own, 1) => vec!["CO"],
+                (Leaf::Absent, Leaf::Own, _) => vec!["CO", "M"],
+                (Leaf::Absent, Leaf::Foreign, 0) => vec!["CF"],
+                (Leaf::Absent, Leaf::Foreign, 1) => vec!["CF", "N"],
+                (Leaf::Absent, Leaf::Foreign, _) => vec!["CF", "N", "M"],
+                (Leaf::Absent, Leaf::Absent, 0) => vec![],
+                (Leaf::Absent, Leaf::Absent, 1) => vec!["N"],
+                (Leaf::Absent, Leaf::Absent, _) => vec!["N", "M"],
+            }
+        };
+        for stage in [Leaf::Own, Leaf::Foreign, Leaf::Absent] {
+            for dest in [Leaf::Own, Leaf::Foreign, Leaf::Absent] {
+                for nlink in [0_u64, 1, 2] {
+                    let mut evidence = OplogCreateEvidence::not_established();
+                    let stage_leaf = inspect_final_stage_leaf(
+                        Ok(occupant(stage)),
+                        original,
+                        OsStr::new("stage"),
+                        &mut evidence,
+                    );
+                    let dest_leaf = inspect_final_candidate_leaf(
+                        Ok(occupant(dest)),
+                        original,
+                        OsStr::new("dest"),
+                        1,
+                        &mut evidence,
+                    );
+                    let mut own_fact_count = 0_u8;
+                    if stage_leaf.own_fact {
+                        own_fact_count += 1;
+                    }
+                    if dest_leaf.own_fact {
+                        own_fact_count += 1;
+                    }
+                    aggregate_retained_nlink(
+                        own_fact_count,
+                        stage_leaf.conclusive && dest_leaf.conclusive,
+                        Ok(nlink),
+                        &mut evidence,
+                    );
+                    let snapshot = evidence.fail(OplogCreateReason::InvalidField);
+                    let mut got: Vec<&str> = snapshot.observations().iter().map(tag).collect();
+                    got.extend(snapshot.gaps().iter().map(gap_tag));
+                    let mut want = expected(stage, dest, nlink);
+                    got.sort_unstable();
+                    want.sort_unstable();
+                    assert_eq!(got, want, "stage={stage:?} dest={dest:?} nlink={nlink}");
+                    if nlink == 2 && !want.contains(&"I") && want.contains(&"M") {
+                        assert!(snapshot.observations().iter().any(|observation| matches!(
+                            observation,
+                            OplogIdentityObservation::OwnMultipleLinks { nlink: 2, .. }
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -3163,7 +3549,9 @@ mod tests {
     }
 
     #[test]
-    fn unlinked_stage_before_final_classify_is_no_verified_leaf_or_gap() {
+    fn exhaustion_after_removing_stage_tmp_with_zero_nlink_is_not_no_verified_leaf() {
+        // leftover_unrelated includes the `.tmp` stage (it is Unrelated, not oplog--).
+        // Removing it unlinks the only remaining name; the retained handle reports nlink 0.
         let temporary = temp();
         let root = temporary.path().to_path_buf();
         let ids = ids_from(0xf0);
@@ -3189,17 +3577,133 @@ mod tests {
         .0
         .unwrap_err();
         expect_token(&error, "oplog_create_destination_exhaustion");
-        let saw_leaf = error.observations().iter().any(|observation| {
+        assert!(error.observations().iter().any(|observation| {
+            matches!(observation, OplogIdentityObservation::ForeignLanded(_))
+        }));
+        assert!(!error.observations().iter().any(|observation| {
             matches!(
                 observation,
-                OplogIdentityObservation::NoVerifiedLeaf { .. }
-                    | OplogIdentityObservation::OwnNoncanonical(_)
+                OplogIdentityObservation::OwnNoncanonical(_)
+                    | OplogIdentityObservation::OwnLanded(_)
             )
-        });
-        let saw_gap = error.gaps().iter().any(|gap| {
-            gap.cause() == OplogGapCause::UnobservableHandle || gap.cause() == OplogGapCause::Io
-        });
-        assert!(saw_leaf || saw_gap);
+        }));
+        assert!(
+            !error
+                .gaps()
+                .iter()
+                .any(|gap| gap.cause() == OplogGapCause::NoVerifiedLeaf)
+        );
+    }
+
+    #[test]
+    fn unlinked_stage_with_extra_hard_link_is_no_verified_leaf() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let ids = ids_from(0xf1);
+        occupy(&root, ids.iter().copied());
+        let stage_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                barriers: vec![
+                    (
+                        OplogCreatePrimitive::AfterLeaseBeforePublish,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            move || {
+                                let stage = fs::read_dir(&dir)
+                                    .unwrap()
+                                    .map(|entry| entry.unwrap().file_name())
+                                    .find(|name| name.to_string_lossy().contains(".tmp"))
+                                    .expect("stage");
+                                fs::hard_link(dir.join(&stage), dir.join("hidden-stage")).unwrap();
+                                *stage_slot.lock().unwrap() =
+                                    Some(stage.to_string_lossy().into_owned());
+                            }
+                        }),
+                    ),
+                    (
+                        OplogCreatePrimitive::BeforeFinalFailureClassification,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            move || {
+                                let name = stage_slot.lock().unwrap().clone().expect("captured");
+                                fs::remove_file(dir.join(name)).unwrap();
+                            }
+                        }),
+                    ),
+                ],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_destination_exhaustion");
+        assert!(error.gaps().iter().any(|gap| {
+            gap.cause() == OplogGapCause::NoVerifiedLeaf
+                && gap.location() == OplogEvidenceCheckpoint::RetainedHandle
+        }));
+        assert!(!error.observations().iter().any(|observation| matches!(
+            observation,
+            OplogIdentityObservation::OwnNoncanonical(_) | OplogIdentityObservation::OwnLanded(_)
+        )));
+    }
+
+    #[test]
+    fn prior_own_landed_does_not_suppress_final_pass_no_verified_leaf() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let error = with_trace(
+            OplogCreateTraceState {
+                barriers: vec![
+                    (
+                        OplogCreatePrimitive::AfterLeaseBeforePublish,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            move || {
+                                let stage = fs::read_dir(&dir)
+                                    .unwrap()
+                                    .map(|entry| entry.unwrap().file_name())
+                                    .find(|name| name.to_string_lossy().contains(".tmp"))
+                                    .expect("stage");
+                                fs::hard_link(dir.join(&stage), dir.join("hidden-stage")).unwrap();
+                            }
+                        }),
+                    ),
+                    (
+                        OplogCreatePrimitive::BeforeFinalFailureClassification,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            move || {
+                                let dest = canonical_leaves(&dir)
+                                    .into_iter()
+                                    .next()
+                                    .expect("landed dest");
+                                fs::remove_file(dir.join(dest)).unwrap();
+                            }
+                        }),
+                    ),
+                ],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_alias");
+        assert!(
+            error
+                .observations()
+                .iter()
+                .any(|observation| matches!(observation, OplogIdentityObservation::OwnLanded(_)))
+        );
+        assert!(error.gaps().iter().any(|gap| {
+            gap.cause() == OplogGapCause::NoVerifiedLeaf
+                && gap.location() == OplogEvidenceCheckpoint::RetainedHandle
+        }));
     }
 
     #[test]
@@ -3375,6 +3879,133 @@ mod tests {
     }
 
     #[test]
+    fn foreign_regular_recreated_at_stage_leaf_after_rename_is_final_binding() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let stage_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let dest_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let error = with_trace(
+            OplogCreateTraceState {
+                barriers: vec![
+                    (
+                        OplogCreatePrimitive::AfterLeaseBeforePublish,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            move || {
+                                let stage = fs::read_dir(&dir)
+                                    .unwrap()
+                                    .map(|entry| entry.unwrap().file_name())
+                                    .find(|name| name.to_string_lossy().contains(".tmp"))
+                                    .expect("stage");
+                                *stage_slot.lock().unwrap() =
+                                    Some(stage.to_string_lossy().into_owned());
+                            }
+                        }),
+                    ),
+                    (
+                        OplogCreatePrimitive::AfterRenameBeforeDirectorySync,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            let dest_slot = std::sync::Arc::clone(&dest_slot);
+                            move || {
+                                let name = stage_slot.lock().unwrap().clone().expect("captured");
+                                let dest = canonical_leaves(&dir)
+                                    .into_iter()
+                                    .next()
+                                    .expect("landed dest");
+                                *dest_slot.lock().unwrap() = Some(dest.clone());
+                                fs::write(dir.join(name), b"foreign-stage").unwrap();
+                            }
+                        }),
+                    ),
+                ],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_final_binding");
+        let dir = health_dir(&root);
+        let dest = dest_slot.lock().unwrap().clone().expect("dest");
+        let dest_bytes = fs::read(dir.join(&dest)).unwrap();
+        assert!(dest_bytes.starts_with(b"{\"_solstone_oplog_v\":1"));
+        assert_ne!(dest_bytes, b"foreign-stage");
+        assert!(error.observations().iter().any(|observation| matches!(
+            observation,
+            OplogIdentityObservation::ForeignNoncanonical(_)
+        )));
+        assert!(!error.observations().iter().any(|observation| matches!(
+            observation,
+            OplogIdentityObservation::OwnNoncanonical(_)
+        )));
+        let stage = stage_slot.lock().unwrap().clone().expect("stage");
+        assert_eq!(fs::read(dir.join(stage)).unwrap(), b"foreign-stage");
+    }
+
+    #[test]
+    fn wrong_kind_recreated_at_stage_leaf_after_rename_is_final_binding() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let stage_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let dest_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let error = with_trace(
+            OplogCreateTraceState {
+                barriers: vec![
+                    (
+                        OplogCreatePrimitive::AfterLeaseBeforePublish,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            move || {
+                                let stage = fs::read_dir(&dir)
+                                    .unwrap()
+                                    .map(|entry| entry.unwrap().file_name())
+                                    .find(|name| name.to_string_lossy().contains(".tmp"))
+                                    .expect("stage");
+                                *stage_slot.lock().unwrap() =
+                                    Some(stage.to_string_lossy().into_owned());
+                            }
+                        }),
+                    ),
+                    (
+                        OplogCreatePrimitive::AfterRenameBeforeDirectorySync,
+                        Box::new({
+                            let dir = health_dir(&root);
+                            let stage_slot = std::sync::Arc::clone(&stage_slot);
+                            let dest_slot = std::sync::Arc::clone(&dest_slot);
+                            move || {
+                                let name = stage_slot.lock().unwrap().clone().expect("captured");
+                                let dest = canonical_leaves(&dir)
+                                    .into_iter()
+                                    .next()
+                                    .expect("landed dest");
+                                *dest_slot.lock().unwrap() = Some(dest);
+                                fs::create_dir(dir.join(name)).unwrap();
+                            }
+                        }),
+                    ),
+                ],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_final_binding");
+        let dest = dest_slot.lock().unwrap().clone().expect("dest");
+        let dest_bytes = fs::read(health_dir(&root).join(&dest)).unwrap();
+        assert!(dest_bytes.starts_with(b"{\"_solstone_oplog_v\":1"));
+        assert!(!error.observations().iter().any(|observation| matches!(
+            observation,
+            OplogIdentityObservation::ForeignNoncanonical(_)
+                | OplogIdentityObservation::OwnNoncanonical(_)
+        )));
+    }
+
+    #[test]
     fn new_hard_link_after_rename_is_final_binding() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
@@ -3428,6 +4059,7 @@ mod tests {
         assert_secret_free(&error);
     }
 
+    #[cfg(unix)]
     #[test]
     fn directory_sync_failure_after_first_collision() {
         let temporary = temp();
@@ -3466,6 +4098,321 @@ mod tests {
         .unwrap_err();
         expect_token(&error, "oplog_create_ancestor_revalidation");
         assert!(error.collisions().is_empty());
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location()
+                == OplogEvidenceCheckpoint::AncestorRevalidation {
+                    ordinal: 1,
+                    component: OplogAncestorComponent::Health,
+                }
+                && gap.cause() == OplogGapCause::Changed
+        }));
+    }
+
+    fn ancestor_replace_at_second_attempt(
+        replace: impl FnOnce(&Path) + 'static,
+    ) -> OplogCreateError {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let ids = ids_from(0x21);
+        occupy(&root, [ids[0]]);
+        let second = dest_for(ids[1]);
+        let dir = health_dir(&root);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                barriers: vec![(
+                    OplogCreatePrimitive::AfterForeignCollision,
+                    Box::new({
+                        let root = root.clone();
+                        move || replace(&root)
+                    }),
+                )],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        assert!(
+            !dir.join(&second).exists(),
+            "candidate-2 destination must not be created after ancestor failure"
+        );
+        error
+    }
+
+    #[test]
+    fn ancestor_revalidation_second_attempt_replacing_health_skips_candidate_two_rename() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let ids = ids_from(0x22);
+        occupy(&root, [ids[0]]);
+        let second = dest_for(ids[1]);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                barriers: vec![(
+                    OplogCreatePrimitive::AfterForeignCollision,
+                    Box::new({
+                        let root = root.clone();
+                        move || {
+                            let dir = health_dir(&root);
+                            fs::rename(&dir, root.join("health-displaced")).unwrap();
+                            fs::create_dir(&dir).unwrap();
+                        }
+                    }),
+                )],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_ancestor_revalidation");
+        assert_eq!(error.collisions().len(), 1);
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location()
+                == OplogEvidenceCheckpoint::AncestorRevalidation {
+                    ordinal: 2,
+                    component: OplogAncestorComponent::Health,
+                }
+        }));
+        assert!(!health_dir(&root).join(&second).exists());
+    }
+
+    #[test]
+    fn ancestor_revalidation_second_attempt_replacing_chronicle() {
+        let error = ancestor_replace_at_second_attempt(|root| {
+            let chronicle = root.join("chronicle");
+            fs::rename(&chronicle, root.join("chronicle-moved")).unwrap();
+            fs::create_dir(&chronicle).unwrap();
+        });
+        expect_token(&error, "oplog_create_ancestor_revalidation");
+        assert_eq!(error.collisions().len(), 1);
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location()
+                == OplogEvidenceCheckpoint::AncestorRevalidation {
+                    ordinal: 2,
+                    component: OplogAncestorComponent::Chronicle,
+                }
+        }));
+    }
+
+    #[test]
+    fn ancestor_revalidation_second_attempt_replacing_day() {
+        let error = ancestor_replace_at_second_attempt(|root| {
+            let day = health_dir(root).parent().unwrap().to_path_buf();
+            fs::rename(&day, root.join("day-moved")).unwrap();
+            fs::create_dir(&day).unwrap();
+        });
+        expect_token(&error, "oplog_create_ancestor_revalidation");
+        assert_eq!(error.collisions().len(), 1);
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location()
+                == OplogEvidenceCheckpoint::AncestorRevalidation {
+                    ordinal: 2,
+                    component: OplogAncestorComponent::Day,
+                }
+        }));
+    }
+
+    #[test]
+    fn ancestor_revalidation_second_attempt_replacing_root_ancestor() {
+        let temporary = temp();
+        let journal = temporary.path().join("outer/inner/journal");
+        fs::create_dir_all(&journal).unwrap();
+        let ids = ids_from(0x23);
+        occupy(&journal, [ids[0]]);
+        let second = dest_for(ids[1]);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                barriers: vec![(
+                    OplogCreatePrimitive::AfterForeignCollision,
+                    Box::new({
+                        let temporary = temporary.path().to_path_buf();
+                        move || {
+                            let inner = temporary.join("outer/inner");
+                            let moved = temporary.join("outer/inner-moved");
+                            fs::rename(&inner, &moved).unwrap();
+                            std::os::unix::fs::symlink(&moved, &inner).unwrap();
+                        }
+                    }),
+                )],
+                ..empty_trace()
+            },
+            || {
+                create_oplog_with_test_timing(
+                    JournalRoot::open(&journal).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Log,
+                    instant(),
+                    ZERO,
+                    ZERO,
+                )
+            },
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_ancestor_revalidation");
+        assert_eq!(error.collisions().len(), 1);
+        assert!(error.gaps().iter().any(|gap| {
+            gap.location()
+                == OplogEvidenceCheckpoint::AncestorRevalidation {
+                    ordinal: 2,
+                    component: OplogAncestorComponent::Root,
+                }
+        }));
+        assert!(!health_dir(&journal).join(&second).exists());
+    }
+
+    #[test]
+    fn after_successful_kernel_rename_fault_is_destination_inspection() {
+        let temporary = temp();
+        let (result, consumed) =
+            run_with_oplog_create_fault(OplogCreatePrimitive::AfterRename, || {
+                create(temporary.path())
+            });
+        assert!(consumed);
+        expect_token(&result.unwrap_err(), "oplog_create_destination_inspection");
+        assert_eq!(canonical_leaves(&health_dir(temporary.path())).len(), 1);
+    }
+
+    #[test]
+    fn before_kernel_rename_fault_leaves_no_canonical_leaf() {
+        let temporary = temp();
+        let (result, consumed) =
+            run_with_oplog_create_fault(OplogCreatePrimitive::Rename, || create(temporary.path()));
+        assert!(consumed);
+        expect_token(&result.unwrap_err(), "oplog_create_rename");
+        assert!(canonical_leaves(&health_dir(temporary.path())).is_empty());
+    }
+
+    #[test]
+    fn namespace_and_lock_mapping_uses_typed_fields_not_string_parsing() {
+        let source = include_str!("create.rs");
+        let production = source
+            .split("\n#[cfg(all(test")
+            .next()
+            .or_else(|| source.split("\n#[cfg(test)]\n").next())
+            .unwrap_or(source);
+        assert!(
+            !production.contains("strip_prefix"),
+            "create.rs still parses lock/namespace errors from Display tokens"
+        );
+        assert!(production.contains("error.create_class()"));
+        assert!(production.contains("error.create_stage()"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn eight_collision_exhaustion_closes_witness_fds_while_error_is_live() {
+        let temporary = temp();
+        let ids = ids_from(0x24);
+        occupy(temporary.path(), ids.iter().copied());
+        let dir = health_dir(temporary.path());
+        let first = dir.join(dest_for(ids[0]));
+        assert_eq!(open_fd_count_for(&first), 0);
+        let error = create_with_ids(temporary.path(), ids.clone()).unwrap_err();
+        expect_token(&error, "oplog_create_destination_exhaustion");
+        assert_eq!(error.collisions().len(), 8);
+        assert_eq!(open_fd_count_for(&first), 0);
+        for id in &ids {
+            assert_eq!(open_fd_count_for(&dir.join(dest_for(*id))), 0);
+            fs::remove_file(dir.join(dest_for(*id))).unwrap();
+        }
+        create_with_ids(temporary.path(), ids_from(0x30)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn success_after_one_collision_closes_witness_fd() {
+        let temporary = temp();
+        let _ = health_at(temporary.path());
+        let first_id = [0x11; 16];
+        let second_id = [0x22; 16];
+        let incumbent = dest_for(first_id);
+        let path = health_dir(temporary.path()).join(&incumbent);
+        fs::write(&path, b"incumbent").unwrap();
+        assert_eq!(open_fd_count_for(&path), 0);
+        let writer =
+            run_with_oplog_file_ids(vec![first_id, second_id], || create(temporary.path()))
+                .unwrap();
+        assert_eq!(writer.leaf_name(), dest_for(second_id));
+        assert_eq!(fs::read(&path).unwrap(), b"incumbent");
+        assert_eq!(open_fd_count_for(&path), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn early_failure_after_one_collision_closes_witness_fd() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let ids = ids_from(0x25);
+        occupy(&root, [ids[0]]);
+        let dest_name = dest_for(ids[0]);
+        let first = health_dir(&root).join(&dest_name);
+        assert_eq!(open_fd_count_for(&first), 0);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                barriers: vec![(
+                    OplogCreatePrimitive::AfterForeignCollision,
+                    Box::new({
+                        let root = root.clone();
+                        move || {
+                            let dir = health_dir(&root);
+                            fs::rename(&dir, root.join("health-displaced")).unwrap();
+                            fs::create_dir(&dir).unwrap();
+                        }
+                    }),
+                )],
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        )
+        .0
+        .unwrap_err();
+        expect_token(&error, "oplog_create_ancestor_revalidation");
+        assert_eq!(error.collisions().len(), 1);
+        let displaced = temporary.path().join("health-displaced").join(dest_name);
+        assert_eq!(open_fd_count_for(&displaced), 0);
+    }
+
+    #[test]
+    fn io_on_any_final_leaf_suppresses_no_verified_leaf() {
+        let original = OplogFileIdentity::from_unix(3, 4);
+        let mut evidence = OplogCreateEvidence::not_established();
+        let stage = inspect_final_stage_leaf(
+            Err(OplogGapCause::Io),
+            original,
+            OsStr::new("stage"),
+            &mut evidence,
+        );
+        let dest = inspect_final_candidate_leaf(
+            Ok(NamedOccupant::Absent),
+            original,
+            OsStr::new("dest"),
+            1,
+            &mut evidence,
+        );
+        aggregate_retained_nlink(
+            u8::from(stage.own_fact) + u8::from(dest.own_fact),
+            stage.conclusive && dest.conclusive,
+            Ok(1),
+            &mut evidence,
+        );
+        let snapshot = evidence.fail(OplogCreateReason::InvalidField);
+        assert!(snapshot.gaps().iter().any(|gap| {
+            gap.location() == OplogEvidenceCheckpoint::FinalStageInspection
+                && gap.cause() == OplogGapCause::Io
+        }));
+        assert!(
+            !snapshot
+                .gaps()
+                .iter()
+                .any(|gap| gap.cause() == OplogGapCause::NoVerifiedLeaf)
+        );
     }
 }
 

@@ -38,6 +38,8 @@ pub use crate::lease::LeaseProbe;
 pub use admission::{
     OPLOG_ADMISSION_MAX_BYTES, OplogAdmissionError, OplogAdmissionRecord, validate_oplog_admission,
 };
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub use create::run_with_oplog_parent_sync_fail;
 pub use create::{
     OPLOG_CREATE_ATTEMPTS, OPLOG_FILE_ID_DRAW_BUDGET, create_oplog, probe_oplog_lease,
 };
@@ -46,8 +48,8 @@ pub use create::{
     OplogCreatePrimitive, create_oplog_with_test_timing, run_with_oplog_create_barrier,
     run_with_oplog_create_fault, run_with_oplog_create_fault_at,
     run_with_oplog_entropy_source_fault, run_with_oplog_entropy_source_fault_at,
-    run_with_oplog_file_ids, run_with_oplog_parent_sync_fail, run_with_oplog_probe_indeterminate,
-    run_with_oplog_sampled_instant, run_with_oplog_sampler_fault, run_with_oplog_sync_fail,
+    run_with_oplog_file_ids, run_with_oplog_probe_indeterminate, run_with_oplog_sampled_instant,
+    run_with_oplog_sampler_fault, run_with_oplog_sync_fail,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lock::acquire_oplog_namespace_lock_with_test_timing;
@@ -62,11 +64,11 @@ pub use namespace::{
     OplogNamespacePrimitive, run_with_oplog_namespace_barrier, run_with_oplog_namespace_fault,
 };
 pub use reason::{
-    OplogCollisionOccupant, OplogCollisionRecord, OplogCreateError, OplogCreateLockClass,
-    OplogCreateNamespaceClass, OplogCreateNamespaceStage, OplogCreateReason,
-    OplogEvidenceCheckpoint, OplogFileIdentity, OplogGapCause, OplogIdentityObservation,
-    OplogNamespaceIdentity, OplogObservationGap, OplogPublishReason, OplogVerifiedAt,
-    RetainedNamespaceState,
+    OplogAdmissionCause, OplogAncestorComponent, OplogCollisionOccupant, OplogCollisionRecord,
+    OplogCreateError, OplogCreateLockClass, OplogCreateNamespaceClass, OplogCreateNamespaceStage,
+    OplogCreateReason, OplogEvidenceCheckpoint, OplogFileIdentity, OplogGapCause,
+    OplogIdentityObservation, OplogNamespaceIdentity, OplogObservationGap, OplogPublishReason,
+    OplogStageCause, OplogVerifiedAt, RetainedNamespaceState,
 };
 pub use writer::{OplogStdioHandle, OplogWriter, OplogWriterError};
 

@@ -9,15 +9,23 @@ use std::fmt;
 use std::io;
 
 use crate::errors::FlatDirectoryError;
-use crate::journal_root::JournalRoot;
+use crate::journal_root::{JournalRoot, ObjectIdentity};
 use crate::paths::is_day_key;
 
-use super::reason::OplogNamespaceIdentity;
+use super::reason::{
+    OplogAncestorComponent, OplogCreateNamespaceClass, OplogCreateNamespaceStage,
+    OplogNamespaceIdentity,
+};
 
 #[cfg(unix)]
-use crate::flat_directory::{FlatDirectory, create_or_open_flat_directory_bound};
+use crate::flat_directory::{
+    FlatDirectory, create_or_open_flat_directory_bound, open_flat_directory_bound,
+};
 #[cfg(windows)]
-use crate::windows_sync_dir::{WindowsFlatDirectory, create_or_open_windows_flat_directory_bound};
+use crate::windows_sync_dir::{
+    WindowsFlatDirectory, create_or_open_windows_flat_directory_bound,
+    open_windows_flat_directory_bound,
+};
 
 const CHRONICLE_DIR: &str = "chronicle";
 const HEALTH_DIR: &str = "health";
@@ -40,6 +48,8 @@ pub enum OplogNamespacePrimitive {
 pub struct OplogDayHealth {
     day: String,
     root: JournalRoot,
+    chronicle_identity: ObjectIdentity,
+    day_identity: ObjectIdentity,
     #[cfg(unix)]
     health: FlatDirectory,
     #[cfg(windows)]
@@ -73,10 +83,6 @@ impl OplogDayHealth {
         &self.health
     }
 
-    pub(super) fn journal_root(&self) -> &JournalRoot {
-        &self.root
-    }
-
     pub(super) fn identity(&self) -> OplogNamespaceIdentity {
         #[cfg(unix)]
         {
@@ -99,14 +105,31 @@ impl OplogDayHealth {
     /// This is a fresh name lookup, not `fstat` of the already-open health
     /// descriptor, so a path-level ancestor replacement is visible.
     pub fn revalidate_binding(&self) -> Result<(), OplogNamespaceError> {
-        let fresh = admit_health_chain(&self.root, &self.day)?;
-        if fresh.identity() != self.health.identity() {
-            return Err(OplogNamespaceError::new(
+        match self.revalidate_publication_ancestors() {
+            Ok(()) => Ok(()),
+            Err(OplogAncestorComponent::Root) | Err(OplogAncestorComponent::Chronicle) => {
+                Err(OplogNamespaceError::new(
+                    OplogNamespaceStage::Chronicle,
+                    OplogNamespaceClass::IdentityChanged,
+                ))
+            }
+            Err(OplogAncestorComponent::Day) => Err(OplogNamespaceError::new(
+                OplogNamespaceStage::Day,
+                OplogNamespaceClass::IdentityChanged,
+            )),
+            Err(OplogAncestorComponent::Health) => Err(OplogNamespaceError::new(
                 OplogNamespaceStage::Health,
                 OplogNamespaceClass::IdentityChanged,
-            ));
+            )),
         }
-        Ok(())
+    }
+
+    /// Lookup-only walk of root → chronicle → day → health. First mismatch wins.
+    pub(super) fn revalidate_publication_ancestors(&self) -> Result<(), OplogAncestorComponent> {
+        if self.root.revalidate_canonical_binding().is_err() {
+            return Err(OplogAncestorComponent::Root);
+        }
+        revalidate_health_chain(self)
     }
 }
 
@@ -156,6 +179,22 @@ impl OplogNamespaceError {
         Self { stage, class }
     }
 
+    pub(super) const fn create_stage(self) -> OplogCreateNamespaceStage {
+        match self.stage {
+            OplogNamespaceStage::Chronicle => OplogCreateNamespaceStage::Chronicle,
+            OplogNamespaceStage::Day => OplogCreateNamespaceStage::Day,
+            OplogNamespaceStage::Health => OplogCreateNamespaceStage::Health,
+        }
+    }
+
+    pub(super) const fn create_class(self) -> OplogCreateNamespaceClass {
+        match self.class {
+            OplogNamespaceClass::Unsafe => OplogCreateNamespaceClass::Unsafe,
+            OplogNamespaceClass::IdentityChanged => OplogCreateNamespaceClass::IdentityChanged,
+            OplogNamespaceClass::Io => OplogCreateNamespaceClass::Io,
+        }
+    }
+
     fn token(self) -> String {
         format!(
             "oplog_namespace_{}_{}",
@@ -194,16 +233,30 @@ pub fn admit_day_health_directory(
             OplogNamespaceClass::Unsafe,
         ));
     }
-    let health = admit_health_chain(&root, day)?;
+    let admitted = admit_health_chain(&root, day)?;
     Ok(OplogDayHealth {
         day: day.to_owned(),
         root,
-        health,
+        chronicle_identity: admitted.chronicle_identity,
+        day_identity: admitted.day_identity,
+        health: admitted.health,
     })
 }
 
+struct AdmittedHealthChain {
+    chronicle_identity: ObjectIdentity,
+    day_identity: ObjectIdentity,
+    #[cfg(unix)]
+    health: FlatDirectory,
+    #[cfg(windows)]
+    health: WindowsFlatDirectory,
+}
+
 #[cfg(unix)]
-fn admit_health_chain(root: &JournalRoot, day: &str) -> Result<FlatDirectory, OplogNamespaceError> {
+fn admit_health_chain(
+    root: &JournalRoot,
+    day: &str,
+) -> Result<AdmittedHealthChain, OplogNamespaceError> {
     let chronicle = create_or_open_flat_directory_bound(
         root,
         OsStr::new(CHRONICLE_DIR),
@@ -228,14 +281,18 @@ fn admit_health_chain(root: &JournalRoot, day: &str) -> Result<FlatDirectory, Op
     )
     .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))?;
     oplog_namespace_composition_checkpoint(OplogNamespacePrimitive::AfterHealth)?;
-    Ok(health)
+    Ok(AdmittedHealthChain {
+        chronicle_identity: chronicle.identity(),
+        day_identity: day_dir.identity(),
+        health,
+    })
 }
 
 #[cfg(windows)]
 fn admit_health_chain(
     root: &JournalRoot,
     day: &str,
-) -> Result<WindowsFlatDirectory, OplogNamespaceError> {
+) -> Result<AdmittedHealthChain, OplogNamespaceError> {
     let chronicle = create_or_open_windows_flat_directory_bound(
         root,
         OsStr::new(CHRONICLE_DIR),
@@ -257,7 +314,77 @@ fn admit_health_chain(
     )
     .map_err(|error| map_flat_directory_error(OplogNamespaceStage::Health, error))?;
     oplog_namespace_composition_checkpoint(OplogNamespacePrimitive::AfterHealth)?;
-    Ok(health)
+    Ok(AdmittedHealthChain {
+        chronicle_identity: windows_object_identity(&chronicle),
+        day_identity: windows_object_identity(&day_dir),
+        health,
+    })
+}
+
+#[cfg(unix)]
+fn revalidate_health_chain(health: &OplogDayHealth) -> Result<(), OplogAncestorComponent> {
+    let chronicle = match open_flat_directory_bound(
+        &health.root,
+        OsStr::new(CHRONICLE_DIR),
+        health.root.canonical_path(),
+    ) {
+        Ok(Some(directory)) if directory.identity() == health.chronicle_identity => directory,
+        _ => return Err(OplogAncestorComponent::Chronicle),
+    };
+    let day_dir = match open_flat_directory_bound(
+        &chronicle,
+        OsStr::new(&health.day),
+        chronicle.diagnostic_path(),
+    ) {
+        Ok(Some(directory)) if directory.identity() == health.day_identity => directory,
+        _ => return Err(OplogAncestorComponent::Day),
+    };
+    match open_flat_directory_bound(&day_dir, OsStr::new(HEALTH_DIR), day_dir.diagnostic_path()) {
+        Ok(Some(directory)) if directory.identity() == health.health.identity() => Ok(()),
+        _ => Err(OplogAncestorComponent::Health),
+    }
+}
+
+#[cfg(windows)]
+fn revalidate_health_chain(health: &OplogDayHealth) -> Result<(), OplogAncestorComponent> {
+    let chronicle = match open_windows_flat_directory_bound(
+        &health.root,
+        OsStr::new(CHRONICLE_DIR),
+        health.root.canonical_path(),
+    ) {
+        Ok(Some(directory)) if windows_object_identity(&directory) == health.chronicle_identity => {
+            directory
+        }
+        _ => return Err(OplogAncestorComponent::Chronicle),
+    };
+    let day_dir = match open_windows_flat_directory_bound(
+        &chronicle,
+        OsStr::new(&health.day),
+        chronicle.diagnostic_path(),
+    ) {
+        Ok(Some(directory)) if windows_object_identity(&directory) == health.day_identity => {
+            directory
+        }
+        _ => return Err(OplogAncestorComponent::Day),
+    };
+    match open_windows_flat_directory_bound(
+        &day_dir,
+        OsStr::new(HEALTH_DIR),
+        day_dir.diagnostic_path(),
+    ) {
+        Ok(Some(directory))
+            if windows_object_identity(&directory) == windows_object_identity(&health.health) =>
+        {
+            Ok(())
+        }
+        _ => Err(OplogAncestorComponent::Health),
+    }
+}
+
+#[cfg(windows)]
+fn windows_object_identity(directory: &WindowsFlatDirectory) -> ObjectIdentity {
+    let identity = directory.identity();
+    ObjectIdentity::from_volume_and_file_id(identity.volume_serial(), identity.file_id())
 }
 
 fn map_flat_directory_error(

@@ -10,6 +10,7 @@ use std::fmt;
 use std::time::Duration;
 
 use super::namespace::OplogDayHealth;
+use super::reason::OplogCreateLockClass;
 use crate::errors::ExistingParentLockError;
 use crate::locking::{
     BoundParentLock, DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT,
@@ -59,6 +60,15 @@ pub struct OplogNamespaceLockError {
 impl OplogNamespaceLockError {
     const fn new(class: OplogNamespaceLockClass) -> Self {
         Self { class }
+    }
+
+    pub(super) const fn create_class(self) -> OplogCreateLockClass {
+        match self.class {
+            OplogNamespaceLockClass::Unsafe => OplogCreateLockClass::Unsafe,
+            OplogNamespaceLockClass::IdentityChanged => OplogCreateLockClass::IdentityChanged,
+            OplogNamespaceLockClass::Busy => OplogCreateLockClass::Busy,
+            OplogNamespaceLockClass::Io => OplogCreateLockClass::Io,
+        }
     }
 
     fn token(self) -> String {
