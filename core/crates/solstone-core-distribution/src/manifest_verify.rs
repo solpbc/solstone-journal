@@ -353,23 +353,38 @@ pub fn verify_manifest_signature(
     manifest: &ManifestSource,
     signature: &SignatureSource,
 ) -> Result<(), ManifestVerifyError> {
-    let signature_text = std::str::from_utf8(&signature.bytes).map_err(|error| {
+    verify_pinned_signature(&manifest.bytes, &signature.path, &signature.bytes)
+}
+
+/// Verify arbitrary bytes against the pinned Journal release key.
+///
+/// The release-set verifier uses this for its top-level manifest.  Installed
+/// Windows payloads use the same product key, but their manifest lives inside
+/// a recursively checked package tree rather than beside a flat release set.
+/// Keeping the primitive here prevents a second pin or a second Minisign
+/// verification policy from appearing at the package boundary.
+pub fn verify_pinned_signature(
+    signed_bytes: &[u8],
+    signature_path: &Path,
+    signature_bytes: &[u8],
+) -> Result<(), ManifestVerifyError> {
+    let signature_text = std::str::from_utf8(signature_bytes).map_err(|error| {
         ManifestVerifyError::new(
             ManifestVerifyRefusal::UnparseableSignature,
-            format!("{}: {error}", signature.path.display()),
+            format!("{}: {error}", signature_path.display()),
         )
     })?;
     let signature_box = SignatureBox::from_string(signature_text).map_err(|error| {
         ManifestVerifyError::new(
             ManifestVerifyRefusal::UnparseableSignature,
-            format!("{}: {error}", signature.path.display()),
+            format!("{}: {error}", signature_path.display()),
         )
     })?;
     let pin = resolve_pin()?;
     minisign::verify(
         &pin,
         &signature_box,
-        Cursor::new(manifest.bytes.as_slice()),
+        Cursor::new(signed_bytes),
         true,
         false,
         false,
@@ -377,7 +392,7 @@ pub fn verify_manifest_signature(
     .map_err(|error| {
         ManifestVerifyError::new(
             ManifestVerifyRefusal::SignaturePinMismatch,
-            format!("{}: {error}", signature.path.display()),
+            format!("{}: {error}", signature_path.display()),
         )
     })
 }

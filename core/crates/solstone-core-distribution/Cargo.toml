@@ -58,3 +58,8 @@ required-features = ["test-fixture-pin"]
 name = "distribution_publish"
 path = "tests/distribution_publish.rs"
 required-features = ["test-fixture-pin"]
+
+[[test]]
+name = "windows_payload"
+path = "tests/windows_payload.rs"
+required-features = ["test-fixture-pin"]

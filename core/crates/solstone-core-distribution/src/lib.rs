@@ -41,6 +41,7 @@ pub mod select;
 pub mod sign;
 pub mod stage;
 pub mod tar;
+pub mod windows_payload;
 pub mod zip;
 
 use std::fs;
