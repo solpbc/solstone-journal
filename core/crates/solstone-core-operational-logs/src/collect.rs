@@ -5,10 +5,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use chrono::NaiveDateTime;
-use solstone_core_journal_io::{
-    JournalRoot,
-    operational_log::{catalog_oplogs, open_oplog_catalog_entry},
-};
+use solstone_core_journal_io::{JournalRoot, operational_log::catalog_oplogs};
 use solstone_core_system::operational_log_parse::{ParsedHealthLogRow, parse_health_log_row};
 use solstone_core_system_health::GrepPattern;
 
@@ -41,7 +38,7 @@ pub fn collect_health_logs(
         || query.grep.is_some();
     let mut rows = Vec::new();
 
-    for entry in snapshot.entries() {
+    for (entry, mut file) in snapshot.into_catalogued_entries() {
         if query
             .service
             .as_deref()
@@ -50,8 +47,6 @@ pub fn collect_health_logs(
         {
             continue;
         }
-        let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
-        let mut file = open_oplog_catalog_entry(root, entry).map_err(CollectError::Catalog)?;
         file.seek(SeekFrom::Start(entry.payload_offset() as u64))
             .map_err(|_| CollectError::CatalogIo)?;
         let mut bytes = Vec::new();

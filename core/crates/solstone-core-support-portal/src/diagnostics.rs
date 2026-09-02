@@ -14,10 +14,7 @@ use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use regex::Regex;
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::{
-    JournalRoot,
-    operational_log::{catalog_oplogs, open_oplog_catalog_entry},
-};
+use solstone_core_journal_io::{JournalRoot, operational_log::catalog_oplogs};
 
 const UNKNOWN_HEADLINE: &str = "thinking status unavailable";
 const RECENCY_WINDOW: Duration = Duration::hours(168);
@@ -284,11 +281,8 @@ pub fn collect_recent_errors(
         let root = JournalRoot::open(journal_root).map_err(|_| LogCollectionError::root())?;
         let snapshot =
             catalog_oplogs(root, &[day]).map_err(|error| LogCollectionError::catalog(&error))?;
-        for entry in snapshot.entries() {
+        for (entry, mut file) in snapshot.into_catalogued_entries() {
             let service = entry.name().source().display_slug().to_owned();
-            let root = JournalRoot::open(journal_root).map_err(|_| LogCollectionError::root())?;
-            let mut file = open_oplog_catalog_entry(root, entry)
-                .map_err(|error| LogCollectionError::catalog(&error))?;
             file.seek(SeekFrom::Start(entry.payload_offset() as u64))
                 .map_err(|_| LogCollectionError::io(&day_key))?;
             let fallback = file

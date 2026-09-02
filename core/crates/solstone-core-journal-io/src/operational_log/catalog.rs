@@ -42,6 +42,10 @@ thread_local! {
     static FORCED_UNSTABLE_ATTEMPTS: Cell<usize> = const { Cell::new(0) };
     static CATALOG_ONCE_CALLS: Cell<usize> = const { Cell::new(0) };
     static AFTER_INITIAL_LIST: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
+    static FORCE_UNSTABLE_AFTER_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static LIVE_RETAINED_DESCRIPTORS: Cell<usize> = const { Cell::new(0) };
+    static MAX_LIVE_RETAINED_DESCRIPTORS: Cell<usize> = const { Cell::new(0) };
+    static CATALOG_ENTRY_OPEN_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
 /// Maximum complete-census retries after an identity or enumeration race.
@@ -95,15 +99,62 @@ impl OplogCatalogEntry {
 }
 
 /// Complete ordered read-only view of requested local days.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct OplogCatalogSnapshot {
     entries: Vec<OplogCatalogEntry>,
+    descriptors: Vec<RetainedDescriptor>,
 }
 
 impl OplogCatalogSnapshot {
     /// Entries in deterministic day/leaf order.
     pub fn entries(&self) -> &[OplogCatalogEntry] {
         &self.entries
+    }
+
+    /// Consume this snapshot and transfer every admission-bound descriptor to
+    /// the caller in the same deterministic order as [`Self::entries`].
+    pub fn into_catalogued_entries(self) -> Vec<(OplogCatalogEntry, File)> {
+        self.entries
+            .into_iter()
+            .zip(self.descriptors)
+            .map(|(entry, descriptor)| (entry, descriptor.into_file()))
+            .collect()
+    }
+}
+
+/// A catalogued file held open from admission until a consuming caller adopts
+/// it.  Keeping this private preserves `OplogCatalogEntry` as cloneable
+/// metadata while making descriptor lifetime explicit in the snapshot.
+#[derive(Debug)]
+struct RetainedDescriptor {
+    file: Option<File>,
+}
+
+impl RetainedDescriptor {
+    fn new(file: File) -> Self {
+        #[cfg(test)]
+        LIVE_RETAINED_DESCRIPTORS.with(|live| {
+            let value = live.get() + 1;
+            live.set(value);
+            MAX_LIVE_RETAINED_DESCRIPTORS.with(|maximum| maximum.set(maximum.get().max(value)));
+        });
+        Self { file: Some(file) }
+    }
+
+    fn into_file(mut self) -> File {
+        let file = self.file.take().expect("retained descriptor holds a file");
+        #[cfg(test)]
+        LIVE_RETAINED_DESCRIPTORS.with(|live| live.set(live.get() - 1));
+        file
+    }
+}
+
+impl Drop for RetainedDescriptor {
+    fn drop(&mut self) {
+        if self.file.is_some() {
+            #[cfg(test)]
+            LIVE_RETAINED_DESCRIPTORS.with(|live| live.set(live.get() - 1));
+        }
     }
 }
 
@@ -141,6 +192,10 @@ impl OplogCatalogError {
 
     pub(crate) fn io_for_day(day: &str) -> Self {
         Self::new("oplog_catalog_io", Some(day))
+    }
+
+    pub(crate) fn kind_for_day(kind: &'static str, day: &str) -> Self {
+        Self::new(kind, Some(day))
     }
 
     pub fn root() -> Self {
@@ -191,45 +246,19 @@ pub fn catalog_oplogs(
     unreachable!("bounded catalog attempts either return or fail")
 }
 
-/// Reopen one catalogued leaf without trusting an authority-bearing path.
-pub fn open_oplog_catalog_entry(
-    root: JournalRoot,
-    entry: &OplogCatalogEntry,
-) -> Result<File, OplogCatalogError> {
-    let Some(health) = open_existing_day_health_directory(root, entry.day())? else {
-        return Err(OplogCatalogError::new(
-            "oplog_catalog_identity_changed",
-            Some(entry.day()),
-        ));
-    };
-    let opened = platform::open_named(&health, entry.leaf())
-        .map_err(|_| OplogCatalogError::new("oplog_catalog_io", Some(entry.day())))?;
-    match opened {
-        NamedOpen::Regular {
-            file,
-            identity,
-            nlink,
-        } if identity == entry.identity() && nlink == 1 => Ok(file),
-        _ => Err(OplogCatalogError::new(
-            "oplog_catalog_identity_changed",
-            Some(entry.day()),
-        )),
-    }
-}
-
-/// Probe the lease for a catalogued identity without trusting a pathname outside
-/// the admitted day-health directory.
-pub fn probe_oplog_catalog_entry_lease(root: JournalRoot, entry: &OplogCatalogEntry) -> LeaseProbe {
-    let Ok(Some(health)) = open_existing_day_health_directory(root, entry.day()) else {
-        return LeaseProbe::Indeterminate;
-    };
+/// Probe the writer lease through an admission-bound descriptor, never a name
+/// lookup. The identity is only needed by Windows' `OpenFileById` probe.
+pub fn probe_retained_oplog_lease(file: &File, identity: OplogFileIdentity) -> LeaseProbe {
     #[cfg(unix)]
     {
-        super::probe_oplog_lease(&health, entry.leaf(), entry.identity())
+        let _ = identity;
+        crate::lease::probe_file_lease(file)
     }
     #[cfg(windows)]
     {
-        super::probe_oplog_identity_lease(&health, entry.identity())
+        use std::os::windows::io::AsRawHandle;
+
+        super::windows_liveness::classify_liveness_by_id(file.as_raw_handle(), identity)
     }
 }
 
@@ -289,19 +318,26 @@ fn catalog_once(
             action();
         }
 
-        let mut candidates = 0_usize;
+        let candidates = listed
+            .iter()
+            .filter(|item| {
+                matches!(
+                    classify_oplog_name(&item.name),
+                    OplogNameClassification::Candidate(_)
+                )
+            })
+            .count();
+        if candidates > OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
+            return Err(OplogCatalogError::new(
+                "oplog_catalog_candidate_limit",
+                Some(day),
+            ));
+        }
         for item in &listed {
             let classification = classify_oplog_name(&item.name);
             let OplogNameClassification::Candidate(parsed) = classification else {
                 continue;
             };
-            candidates = candidates.saturating_add(1);
-            if candidates > OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
-                return Err(OplogCatalogError::new(
-                    "oplog_catalog_candidate_limit",
-                    Some(day),
-                ));
-            }
             let name =
                 parsed.map_err(|_| OplogCatalogError::new("oplog_catalog_malformed", Some(day)))?;
             if item.kind != JournalEntryKind::RegularFile {
@@ -310,6 +346,18 @@ fn catalog_once(
             entries.push(catalog_entry(&health, day, item, name)?);
         }
         listed_days.push(CataloguedDay { health, listed });
+    }
+
+    #[cfg(test)]
+    if FORCE_UNSTABLE_AFTER_ENTRIES.with(|remaining| {
+        let value = remaining.get();
+        remaining.set(value.saturating_sub(1));
+        value > 0
+    }) {
+        return Err(OplogCatalogError::new(
+            "oplog_catalog_identity_changed",
+            None,
+        ));
     }
 
     for catalogued in &listed_days {
@@ -338,14 +386,18 @@ fn catalog_once(
     }
     root.revalidate_canonical_binding()
         .map_err(|_| OplogCatalogError::new("oplog_catalog_identity_changed", None))?;
-    entries.sort_by(|left, right| {
+    entries.sort_by(|(left, _), (right, _)| {
         left.day.cmp(&right.day).then_with(|| {
             left.leaf
                 .as_encoded_bytes()
                 .cmp(right.leaf.as_encoded_bytes())
         })
     });
-    Ok(OplogCatalogSnapshot { entries })
+    let (entries, descriptors) = entries.into_iter().unzip();
+    Ok(OplogCatalogSnapshot {
+        entries,
+        descriptors,
+    })
 }
 
 fn catalog_entry(
@@ -353,17 +405,20 @@ fn catalog_entry(
     day: &str,
     item: &FlatDirectoryEntry,
     name: OplogName,
-) -> Result<OplogCatalogEntry, OplogCatalogError> {
+) -> Result<(OplogCatalogEntry, RetainedDescriptor), OplogCatalogError> {
     let opened = platform::open_named(health, &item.name)
         .map_err(|_| OplogCatalogError::new("oplog_catalog_io", Some(day)))?;
     let NamedOpen::Regular {
-        mut file,
+        file,
         identity,
         nlink,
     } = opened
     else {
         return Err(OplogCatalogError::new("oplog_catalog_unsafe", Some(day)));
     };
+    #[cfg(test)]
+    CATALOG_ENTRY_OPEN_CALLS.with(|calls| calls.set(calls.get() + 1));
+    let mut retained = RetainedDescriptor::new(file);
     if nlink != 1 {
         return Err(OplogCatalogError::new("oplog_catalog_unsafe", Some(day)));
     }
@@ -371,7 +426,10 @@ fn catalog_entry(
     let mut buffer = [0_u8; 256];
     while bytes.len() < OPLOG_ADMISSION_MAX_BYTES && !bytes.contains(&b'\n') {
         let wanted = (OPLOG_ADMISSION_MAX_BYTES - bytes.len()).min(buffer.len());
-        let read = file
+        let read = retained
+            .file
+            .as_mut()
+            .expect("retained descriptor holds a file")
             .read(&mut buffer[..wanted])
             .map_err(|_| OplogCatalogError::new("oplog_catalog_io", Some(day)))?;
         if read == 0 {
@@ -381,23 +439,43 @@ fn catalog_entry(
     }
     let admission = validate_oplog_admission(&item.name, &bytes)
         .map_err(|_| OplogCatalogError::new("oplog_catalog_admission", Some(day)))?;
-    if admission.leaf() != &name || platform::identity_of(&file).ok() != Some(identity) {
+    if admission.leaf() != &name
+        || platform::identity_of(
+            retained
+                .file
+                .as_ref()
+                .expect("retained descriptor holds a file"),
+        )
+        .ok()
+            != Some(identity)
+    {
         return Err(OplogCatalogError::new(
             "oplog_catalog_identity_changed",
             Some(day),
         ));
     }
-    if platform::nlink_of(&file).ok() != Some(1) {
+    if platform::nlink_of(
+        retained
+            .file
+            .as_ref()
+            .expect("retained descriptor holds a file"),
+    )
+    .ok()
+        != Some(1)
+    {
         return Err(OplogCatalogError::new("oplog_catalog_unsafe", Some(day)));
     }
-    Ok(OplogCatalogEntry {
-        day: day.to_owned(),
-        leaf: item.name.clone(),
-        name,
-        identity,
-        size: item.size,
-        payload_offset: admission.header_len(),
-    })
+    Ok((
+        OplogCatalogEntry {
+            day: day.to_owned(),
+            leaf: item.name.clone(),
+            name,
+            identity,
+            size: item.size,
+            payload_offset: admission.header_len(),
+        },
+        retained,
+    ))
 }
 
 /// Open the existing chain only. This deliberately has no create branch.
@@ -581,6 +659,13 @@ mod tests {
         (result, calls)
     }
 
+    fn with_forced_unstable_after_entries<T>(attempts: usize, operation: impl FnOnce() -> T) -> T {
+        FORCE_UNSTABLE_AFTER_ENTRIES.with(|cell| cell.set(attempts));
+        let result = operation();
+        FORCE_UNSTABLE_AFTER_ENTRIES.with(|cell| cell.set(0));
+        result
+    }
+
     fn with_after_initial_list<T>(
         action: impl FnOnce() + 'static,
         operation: impl FnOnce() -> T,
@@ -680,6 +765,19 @@ mod tests {
     }
 
     #[test]
+    fn unstable_attempts_drop_retained_descriptors_before_retrying() {
+        let temporary = tempfile::tempdir().unwrap();
+        create(&temporary);
+        LIVE_RETAINED_DESCRIPTORS.with(|count| count.set(0));
+        MAX_LIVE_RETAINED_DESCRIPTORS.with(|count| count.set(0));
+        let result = with_forced_unstable_after_entries(1, || snapshot(&temporary)).unwrap();
+        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 1);
+        assert_eq!(MAX_LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 1);
+        drop(result);
+        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 0);
+    }
+
+    #[test]
     fn replacement_between_listing_and_open_retries_without_a_stale_snapshot() {
         let temporary = tempfile::tempdir().unwrap();
         let leaf = create(&temporary);
@@ -719,9 +817,11 @@ mod tests {
         for _ in 0..=OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
             let _ = create(&temporary);
         }
+        CATALOG_ENTRY_OPEN_CALLS.with(|count| count.set(0));
         assert_eq!(
             snapshot(&temporary).unwrap_err().kind(),
             "oplog_catalog_candidate_limit"
         );
+        assert_eq!(CATALOG_ENTRY_OPEN_CALLS.with(Cell::get), 0);
     }
 }

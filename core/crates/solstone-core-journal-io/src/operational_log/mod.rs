@@ -45,8 +45,7 @@ pub use admission::{
 pub use catalog::{
     OPLOG_CATALOG_CENSUS_ATTEMPTS, OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY,
     OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS, OplogCatalogEntry, OplogCatalogError,
-    OplogCatalogSnapshot, catalog_oplogs, open_oplog_catalog_entry,
-    probe_oplog_catalog_entry_lease,
+    OplogCatalogSnapshot, catalog_oplogs, probe_retained_oplog_lease,
 };
 #[cfg(windows)]
 pub use create::probe_oplog_identity_lease;
@@ -65,9 +64,8 @@ pub use create::{
     run_with_oplog_sampler_fault, run_with_oplog_sync_fail,
 };
 pub use follow::{
-    OplogClock, OplogEntryReaderFactory, OplogFollowReader, OplogFollowState,
-    OplogFollowTickOutcome, OplogFollower, OplogIdentityProbe, OplogInitialDiscovery,
-    OplogSnapshotSource,
+    OPLOG_FOLLOW_MAX_RECORD_BYTES, OPLOG_FOLLOW_TICK_BYTE_BUDGET, OplogClock, OplogFollowState,
+    OplogFollowTick, OplogFollower, OplogInitialDiscovery, OplogSnapshotSource,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lock::acquire_oplog_namespace_lock_with_test_timing;
