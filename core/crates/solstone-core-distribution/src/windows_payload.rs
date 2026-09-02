@@ -29,6 +29,9 @@ pub const WINDOWS_CED_LIBRARY: &str = "bin/ced.dll";
 /// The PDFium engine is a signed private-library payload, never a system or
 /// mutable-journal lookup.
 pub const WINDOWS_PDFIUM_LIBRARY: &str = "lib/solstone-core-pdf/pdfium.dll";
+/// The PDF worker is a signed package executable, never a sibling discovered
+/// through an ambient search path.
+pub const WINDOWS_PDFIUM_WORKER: &str = "bin/solstone-core-pdf.exe";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -101,6 +104,16 @@ impl VerifiedWindowsPayload {
     pub fn pdfium_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_PDFIUM_LIBRARY).ok_or_else(|| {
             WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_LIBRARY)
+        })
+    }
+
+    /// Return the PDF worker only when the verified package declared it.
+    ///
+    /// Calling code must still establish its bounded process-owner scope before
+    /// it can execute this member.
+    pub fn pdfium_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_PDFIUM_WORKER).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_WORKER)
         })
     }
 }

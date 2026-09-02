@@ -23,6 +23,7 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
+pub mod pdfium_readiness;
 pub mod pins;
 pub mod readiness;
 pub(crate) mod rfdetr_compiled_expectation;

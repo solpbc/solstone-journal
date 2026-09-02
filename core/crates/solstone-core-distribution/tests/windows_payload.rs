@@ -8,7 +8,8 @@ use minisign::KeyPair;
 use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
 use solstone_core_distribution::windows_payload::{
     WINDOWS_CED_LIBRARY, WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
-    WINDOWS_PDFIUM_LIBRARY, render_windows_payload_manifest, verify_windows_payload,
+    WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER, render_windows_payload_manifest,
+    verify_windows_payload,
 };
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -19,6 +20,7 @@ fn fixture() -> tempfile::TempDir {
     fs::create_dir_all(root.path().join("bin")).expect("bin");
     fs::create_dir_all(root.path().join("lib/solstone-core-pdf")).expect("lib");
     fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("ced");
+    fs::write(root.path().join(WINDOWS_PDFIUM_WORKER), b"pdf worker").expect("pdf worker");
     fs::write(
         root.path().join("lib/solstone-core-pdf/pdfium.dll"),
         b"pdfium dll",
@@ -69,6 +71,12 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
             .pdfium_library_path()
             .expect("declared PDFium engine"),
         root.path().join(WINDOWS_PDFIUM_LIBRARY)
+    );
+    assert_eq!(
+        verified
+            .pdfium_worker_path()
+            .expect("declared PDFium worker"),
+        root.path().join(WINDOWS_PDFIUM_WORKER)
     );
     assert!(verified.declared_path("bin/not-admitted.dll").is_none());
 
