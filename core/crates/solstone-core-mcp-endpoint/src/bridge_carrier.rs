@@ -14,9 +14,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ring::signature::Ed25519KeyPair;
-use socket2::{SockRef, TcpKeepalive};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
+use socket2::{SockRef, TcpKeepalive};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
