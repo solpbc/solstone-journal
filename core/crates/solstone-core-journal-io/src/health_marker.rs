@@ -475,7 +475,9 @@ mod tests {
         fs::write(&stream, b"").unwrap();
         fs::write(&daily, b"").unwrap();
         let old = SystemTime::now() - Duration::from_secs(1);
-        fs::File::open(&daily)
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&daily)
             .unwrap()
             .set_times(fs::FileTimes::new().set_modified(old))
             .unwrap();
@@ -483,7 +485,9 @@ mod tests {
             day_marker_pair_status(temporary.path(), DAY).unwrap(),
             DayMarkerPairStatus::Dirty
         );
-        fs::File::open(&daily)
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&daily)
             .unwrap()
             .set_times(fs::FileTimes::new().set_modified(SystemTime::now()))
             .unwrap();
