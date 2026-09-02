@@ -18,7 +18,8 @@ use chrono::{DateTime, FixedOffset, Local};
 
 pub use crate::lease::LeaseProbe;
 pub use create::{
-    OPLOG_CREATE_ATTEMPTS, OplogCreateError, OplogCreatePrimitive, create_oplog, probe_oplog_lease,
+    OPLOG_CREATE_ATTEMPTS, OPLOG_FILE_ID_DRAW_BUDGET, OplogCreateError, OplogCreatePrimitive,
+    create_oplog, probe_oplog_lease,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use create::{

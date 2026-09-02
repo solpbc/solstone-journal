@@ -3,6 +3,7 @@
 
 //! Exclusive create, lease, and no-replace publish for one oplog leaf.
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -10,6 +11,8 @@ use std::fmt;
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
+
+use super::sample_local_instant;
 
 #[cfg(any(test, feature = "test-hooks"))]
 use super::lock::acquire_oplog_namespace_lock_with_test_timing;
@@ -27,8 +30,10 @@ use super::unix as platform;
 #[cfg(windows)]
 use super::windows as platform;
 
-/// Maximum dest-occupied retries, each drawing a fresh file id.
+/// Maximum dest-occupied retries, each consuming one pre-drawn file id.
 pub const OPLOG_CREATE_ATTEMPTS: usize = 8;
+/// Maximum `draw_file_id` calls used to collect [`OPLOG_CREATE_ATTEMPTS`] distinct ids.
+pub const OPLOG_FILE_ID_DRAW_BUDGET: usize = 64;
 
 /// Bounded failure while creating an operational log.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -44,6 +49,7 @@ enum OplogCreateClass {
     OwnResidue,
     ForeignResidue,
     RetryExhausted,
+    EntropyExhausted,
     LockUnsafe,
     LockIdentityChanged,
     LockBusy,
@@ -60,6 +66,7 @@ impl OplogCreateClass {
             Self::OwnResidue => "oplog_create_own_residue",
             Self::ForeignResidue => "oplog_create_foreign_residue",
             Self::RetryExhausted => "oplog_create_retry_exhausted",
+            Self::EntropyExhausted => "oplog_create_entropy_exhausted",
             Self::LockUnsafe => "oplog_create_lock_unsafe",
             Self::LockIdentityChanged => "oplog_create_lock_identity_changed",
             Self::LockBusy => "oplog_create_lock_busy",
@@ -117,8 +124,11 @@ pub fn create_oplog(
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
-    instant: DateTime<FixedOffset>,
 ) -> Result<OplogWriter, OplogCreateError> {
+    if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
+        return Err(OplogCreateError::new(OplogCreateClass::InvalidField));
+    }
+    let instant = sample_local_instant();
     create_with_timing(
         health,
         source_original,
@@ -165,9 +175,10 @@ fn create_with_timing(
     if day != health.day() {
         return Err(OplogCreateError::new(OplogCreateClass::InvalidField));
     }
+    let ids = draw_distinct_file_ids()?;
     let _lock = acquire_lock(health, timing)?;
-    for _ in 0..OPLOG_CREATE_ATTEMPTS {
-        let file_id = file_id_hex(&draw_file_id()?);
+    for file_id_bytes in ids {
+        let file_id = file_id_hex(&file_id_bytes);
         let name = oplog_name_from_parts(
             source_original,
             run_original,
@@ -284,6 +295,21 @@ fn map_lock_error(error: OplogNamespaceLockError) -> OplogCreateError {
         _ => panic!("unknown OplogNamespaceLockError class {suffix}"),
     };
     OplogCreateError::new(class)
+}
+
+fn draw_distinct_file_ids() -> Result<Vec<[u8; 16]>, OplogCreateError> {
+    let mut ids = Vec::with_capacity(OPLOG_CREATE_ATTEMPTS);
+    let mut seen = HashSet::with_capacity(OPLOG_CREATE_ATTEMPTS);
+    for _ in 0..OPLOG_FILE_ID_DRAW_BUDGET {
+        let id = draw_file_id()?;
+        if seen.insert(id) {
+            ids.push(id);
+            if ids.len() == OPLOG_CREATE_ATTEMPTS {
+                return Ok(ids);
+            }
+        }
+    }
+    Err(OplogCreateError::new(OplogCreateClass::EntropyExhausted))
 }
 
 fn draw_file_id() -> Result<[u8; 16], OplogCreateError> {
@@ -748,20 +774,21 @@ mod tests {
     fn exhausted_collisions_leave_incumbents_byte_identical() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let id = [0x33; 16];
-        let incumbent = dest_for(id);
-        let path = health_dir(temporary.path()).join(&incumbent);
-        fs::write(&path, b"same-bytes").unwrap();
-        let ids = vec![id; OPLOG_CREATE_ATTEMPTS];
+        let dir = health_dir(temporary.path());
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [index as u8; 16])
+            .collect();
+        let incumbents: Vec<String> = ids.iter().copied().map(dest_for).collect();
+        for incumbent in &incumbents {
+            fs::write(dir.join(incumbent), b"same-bytes").unwrap();
+        }
         let error = run_with_oplog_file_ids(ids, || create(&health)).unwrap_err();
         expect_token(error, "oplog_create_retry_exhausted");
-        assert_eq!(fs::read(&path).unwrap(), b"same-bytes");
-        assert!(canonical_leaves(&health_dir(temporary.path())) == vec![incumbent]);
-        assert!(
-            !listing(&health_dir(temporary.path()))
-                .iter()
-                .any(|name| name.contains(".tmp"))
-        );
+        for incumbent in &incumbents {
+            assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"same-bytes");
+        }
+        assert_eq!(canonical_leaves(&dir), incumbents);
+        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
     }
 
     #[test]
@@ -772,7 +799,26 @@ mod tests {
             run_with_oplog_create_fault(OplogCreatePrimitive::Random, || create(&health));
         assert!(consumed);
         expect_token(result.unwrap_err(), "oplog_create_io");
-        assert!(canonical_leaves(&health_dir(temporary.path())).is_empty());
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert!(
+            !listing(&dir)
+                .iter()
+                .any(|name| name == ".oplog-namespace.lock")
+        );
+        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+    }
+
+    #[test]
+    fn sixty_four_duplicate_ids_are_entropy_exhausted_with_zero_side_effects() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let id = [0x11; 16];
+        let error =
+            run_with_oplog_file_ids(vec![id; OPLOG_FILE_ID_DRAW_BUDGET], || create(&health))
+                .unwrap_err();
+        expect_token(error, "oplog_create_entropy_exhausted");
+        assert!(listing(&health_dir(temporary.path())).is_empty());
     }
 
     #[test]
@@ -1002,14 +1048,18 @@ mod tests {
     fn name_based_eexist_unlinks_stage_and_leaves_incumbent() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let id = [0x66; 16];
-        let incumbent = dest_for(id);
-        let path = health_dir(temporary.path()).join(&incumbent);
-        fs::write(&path, b"preexisting").unwrap();
+        let dir = health_dir(temporary.path());
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x66 + index as u8; 16])
+            .collect();
+        let incumbents: Vec<String> = ids.iter().copied().map(dest_for).collect();
+        for incumbent in &incumbents {
+            fs::write(dir.join(incumbent), b"preexisting").unwrap();
+        }
         let error = with_trace(
             OplogCreateTraceState {
                 name_based: true,
-                file_ids: vec![id; OPLOG_CREATE_ATTEMPTS].into(),
+                file_ids: ids.into(),
                 ..empty_trace()
             },
             || create(&health),
@@ -1018,12 +1068,10 @@ mod tests {
         .0
         .unwrap_err();
         expect_token(error, "oplog_create_retry_exhausted");
-        assert_eq!(fs::read(&path).unwrap(), b"preexisting");
-        assert!(
-            !listing(&health_dir(temporary.path()))
-                .iter()
-                .any(|name| name.contains(".tmp"))
-        );
+        for incumbent in &incumbents {
+            assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"preexisting");
+        }
+        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
     }
 
     #[test]
@@ -1042,29 +1090,18 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_lock_fails_before_stage_and_consumes_no_file_id() {
+    fn unsafe_lock_fails_before_stage() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
         std::os::unix::fs::symlink("outside", &lock_path).unwrap();
-        let id = [0x55; 16];
-        let error = run_with_oplog_file_ids(vec![id], || create(&health)).unwrap_err();
-        expect_token(error, "oplog_create_lock_unsafe");
-        assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
-    }
-
-    #[test]
-    fn wrong_mode_lock_fails_before_stage_and_consumes_no_file_id() {
-        let temporary = temp();
-        let health = health_at(temporary.path());
-        let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
-        fs::write(&lock_path, b"unchanged").unwrap();
-        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o644)).unwrap();
-        let id = [0x56; 16];
-        let remaining = std::cell::Cell::new(0_usize);
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x55 + index as u8; 16])
+            .collect();
+        let remaining = std::cell::Cell::new(usize::MAX);
         let error = with_trace(
             OplogCreateTraceState {
-                file_ids: vec![id].into(),
+                file_ids: ids.clone().into(),
                 ..empty_trace()
             },
             || create(&health),
@@ -1076,13 +1113,46 @@ mod tests {
         .0
         .unwrap_err();
         expect_token(error, "oplog_create_lock_unsafe");
-        assert_eq!(remaining.get(), 1);
-        assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
+        assert_eq!(remaining.get(), 0);
+        for id in ids {
+            assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
+        }
+    }
+
+    #[test]
+    fn wrong_mode_lock_fails_before_stage() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
+        fs::write(&lock_path, b"unchanged").unwrap();
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o644)).unwrap();
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x56 + index as u8; 16])
+            .collect();
+        let remaining = std::cell::Cell::new(usize::MAX);
+        let error = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.clone().into(),
+                ..empty_trace()
+            },
+            || create(&health),
+            |state| {
+                remaining.set(state.file_ids.len());
+                true
+            },
+        )
+        .0
+        .unwrap_err();
+        expect_token(error, "oplog_create_lock_unsafe");
+        assert_eq!(remaining.get(), 0);
+        for id in ids {
+            assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
+        }
         assert_eq!(fs::read(&lock_path).unwrap(), b"unchanged");
     }
 
     #[test]
-    fn replaced_lock_parent_fails_before_stage_and_consumes_no_file_id() {
+    fn replaced_lock_parent_fails_before_stage() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let dir = health_dir(temporary.path());
@@ -1097,11 +1167,13 @@ mod tests {
         // entry whose identity/kind no longer matches a 0o600 regular file
         // — here the lock name is replaced with a directory, the same
         // shape as cortex_use::lock's "directory" unsafe-entry fixture.
-        let id = [0x77; 16];
-        let remaining = std::cell::Cell::new(0_usize);
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x77 + index as u8; 16])
+            .collect();
+        let remaining = std::cell::Cell::new(usize::MAX);
         let error = with_trace(
             OplogCreateTraceState {
-                file_ids: vec![id].into(),
+                file_ids: ids.clone().into(),
                 ..empty_trace()
             },
             || create(&health),
@@ -1113,8 +1185,10 @@ mod tests {
         .0
         .unwrap_err();
         expect_token(error, "oplog_create_lock_unsafe");
-        assert_eq!(remaining.get(), 1);
-        assert!(!dir.join(dest_for(id)).exists());
+        assert_eq!(remaining.get(), 0);
+        for id in ids {
+            assert!(!dir.join(dest_for(id)).exists());
+        }
         assert!(lock_path.is_dir());
     }
 
@@ -1150,6 +1224,21 @@ mod tests {
                 .file_type()
                 .is_symlink()
         );
+    }
+
+    #[test]
+    fn production_create_rejects_invalid_originals_without_side_effects() {
+        let temporary = temp();
+        let health = health_at(temporary.path());
+        expect_token(
+            create_oplog(&health, "", RUN, OplogFormat::Log).unwrap_err(),
+            "oplog_create_invalid_field",
+        );
+        expect_token(
+            create_oplog(&health, "ok", "bad\0name", OplogFormat::Log).unwrap_err(),
+            "oplog_create_invalid_field",
+        );
+        assert!(listing(&health_dir(temporary.path())).is_empty());
     }
 
     #[test]
