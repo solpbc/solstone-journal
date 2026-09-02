@@ -717,7 +717,7 @@ async fn run_driver(
 
         if saw_renewal_window_bytes {
             saw_renewal_window_bytes = false;
-            log::info!("mcp bridge lease renewal: carrier bytes read inside the renewal window");
+            log::debug!("mcp bridge lease renewal: carrier bytes read inside the renewal window");
         }
 
         while let Some(control_bytes) = control_events.pop_front() {
@@ -739,7 +739,7 @@ async fn run_driver(
                 control.deadline = None;
                 continue;
             }
-            log::info!("mcp bridge lease renewal: draining a control event");
+            log::debug!("mcp bridge lease renewal: draining a control event");
             let frame = match control.append(control_bytes, expiry) {
                 Ok(frame) => frame,
                 Err(()) => {
@@ -750,7 +750,7 @@ async fn run_driver(
                 }
             };
             let Some(frame) = frame else {
-                log::info!(
+                log::debug!(
                     "mcp bridge lease renewal: control frame still incomplete; waiting for more bytes"
                 );
                 continue;
@@ -1224,7 +1224,7 @@ async fn write_output<W: AsyncWrite + Unpin>(
                 if queued.is_none_or(|total| total > MAX_CONTROL_FRAME_BYTES) {
                     return false;
                 }
-                log::info!("mcp bridge lease renewal: control bytes received from the bridge");
+                log::debug!("mcp bridge lease renewal: control bytes received from the bridge");
                 control_events.push_back(bytes);
             }
             MuxEvent::ReadClosed {

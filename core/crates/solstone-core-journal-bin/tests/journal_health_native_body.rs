@@ -272,7 +272,8 @@ fn health_and_service_log_real_native_bodies_survive_live_interpreter_poisons() 
             "health" => (
                 concat!(
                     "Sound tagging is degraded because its CED assets are unavailable. ",
-                    "Transcription will continue. Use `journal install-models` to check or repair the CED assets.\n",
+                    "Transcription will continue. Use `journal install-models` to check or repair the CED assets. ",
+                    "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
                     "Object detection is degraded because its RF-DETR assets are unavailable. ",
                     "Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.\n",
                 )

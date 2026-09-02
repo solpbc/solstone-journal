@@ -2491,7 +2491,8 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
         health.stdout,
         concat!(
             "Sound tagging is degraded because its CED assets are unavailable. ",
-            "Transcription will continue. Use `journal install-models` to check or repair the CED assets.\n",
+            "Transcription will continue. Use `journal install-models` to check or repair the CED assets. ",
+            "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
             "Object detection is degraded because its RF-DETR assets are unavailable. ",
             "Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.\n",
         )
