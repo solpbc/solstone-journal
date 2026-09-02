@@ -559,8 +559,8 @@ mod windows_impl {
     }
 
     impl AdmittedPublicationPath {
-        pub(crate) fn volume_serial(&self) -> u64 {
-            self.anchor_identity.volume_serial()
+        pub(crate) fn has_same_volume_root(&self, other: &Self) -> bool {
+            self.anchor_identity == other.anchor_identity
         }
 
         pub(crate) fn retain_ancestors(

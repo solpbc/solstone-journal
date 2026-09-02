@@ -37,6 +37,8 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vc
 
 echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
+echo === cargo check --locked (install-file production callers) ===
+cargo check --manifest-path core\Cargo.toml --locked -p solstone-core-body-rebuild -p solstone-core-import-web -p solstone-core-import-sources -p solstone-core-describe || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
@@ -94,6 +96,14 @@ echo === cargo test --locked (journal-io detailed atomic publication) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_atomic_detailed --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io create-only publication protocol) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_create_only_protocol --features test-hooks -- --nocapture || exit /b 1
+echo === cargo test --locked (journal-io install-file publication protocol) ===
+set "JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG=core\target\journal-win-ci-install-protocol-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG); $marker = 'JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL'; $pass = [regex]::Escape($marker + '=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%"
+del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
