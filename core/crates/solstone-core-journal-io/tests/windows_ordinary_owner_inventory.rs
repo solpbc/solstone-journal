@@ -30,12 +30,12 @@ use windows_sys::Win32::Security::{
     TokenPrivileges,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, ExtendedFileIdType, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_128,
-    FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0, FILE_ID_INFO, FILE_READ_ATTRIBUTES,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo,
-    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING, OpenFileById,
-    SYNCHRONIZE,
+    CreateFileW, ExtendedFileIdType, FILE_APPEND_DATA, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_128, FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0,
+    FILE_ID_INFO, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FileAttributeTagInfo, FileIdInfo, GetFileInformationByHandleEx, GetVolumeInformationByHandleW,
+    OPEN_EXISTING, OpenFileById, SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -308,7 +308,7 @@ fn file_identity(handle: RawHandle) -> io::Result<FILE_ID_INFO> {
     Ok(info)
 }
 
-fn open_by_extended_id_without_write_share(
+fn open_by_extended_id_for_append_probe(
     volume_hint: RawHandle,
     file_id: [u8; 16],
 ) -> io::Result<OwnedHandle> {
@@ -322,15 +322,16 @@ fn open_by_extended_id_without_write_share(
         },
     };
     // SAFETY: `volume_hint` is live on the target volume, `descriptor` identifies one file, and
-    // a successful return transfers exactly one owned handle. Omitting FILE_SHARE_WRITE is the
-    // deliberate liveness oracle under test.
+    // a successful return transfers exactly one owned handle. The append request is the deliberate
+    // liveness oracle: an admitted writer omits FILE_SHARE_WRITE, while the probe itself shares all
+    // access and closes without writing.
     #[allow(unsafe_code)]
     let raw = unsafe {
         OpenFileById(
             volume_hint,
             &descriptor,
-            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-            FILE_SHARE_READ | FILE_SHARE_DELETE,
+            FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             std::ptr::null(),
             FILE_FLAG_OPEN_REPARSE_POINT,
         )
@@ -377,6 +378,8 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         .join("20260902")
         .join("health")
         .join(writer.leaf_name());
+    let bytes_before_probe =
+        fs::read(&published).expect("snapshot operational-log bytes before liveness probes");
     let reader = metadata_handle(&published).expect("open retained metadata reader");
     let original = file_identity(reader.as_raw_handle()).expect("capture full oplog identity");
     let volume = file_identity(health.health().as_handle().as_raw_handle())
@@ -398,31 +401,29 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         "replacement control must install a different file identity"
     );
 
-    let active = open_by_extended_id_without_write_share(
+    let active = open_by_extended_id_for_append_probe(
         health.health().as_handle().as_raw_handle(),
         original.FileId.Identifier,
     )
-    .expect_err("the live product writer must conflict through omitted write sharing");
+    .expect_err("the live product writer must reject a second append-capable open");
     assert_eq!(
         active.raw_os_error(),
         Some(ERROR_SHARING_VIOLATION as i32),
-        "only the original identity's live write handle may establish Active"
+        "the original identity's write-sharing conflict must establish Active"
     );
 
     drop(writer);
     drop(
-        open_by_extended_id_without_write_share(
+        open_by_extended_id_for_append_probe(
             health.health().as_handle().as_raw_handle(),
             original.FileId.Identifier,
         )
         .expect("the original identity must become Released after its writer closes"),
     );
-    drop(
-        open_by_extended_id_without_write_share(
-            health.health().as_handle().as_raw_handle(),
-            original.FileId.Identifier,
-        )
-        .expect("a completed probe must not retain or leak a conflicting handle"),
+    assert_eq!(
+        fs::read(&renamed).expect("read original identity after append-capable probes"),
+        bytes_before_probe,
+        "successful liveness probes must not append or otherwise mutate bytes"
     );
     drop(replacement);
     drop(reader);
