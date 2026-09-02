@@ -292,8 +292,8 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
 
     let packages = makefile
         .lines()
-        .find(|line| line.starts_with("ONNX_HOST_TEST_PACKAGES :="))
-        .expect("ONNX_HOST_TEST_PACKAGES must be defined");
+        .find(|line| line.starts_with("RUST_NATIVE_ROUTINE_PACKAGES :="))
+        .expect("RUST_NATIVE_ROUTINE_PACKAGES must be defined");
     let tested = packages
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -307,6 +307,10 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
     );
 
     let onnx = target_body(&makefile, "check-rust-onnx-test");
+    assert!(
+        makefile.contains("ONNX_HOST_TEST_PACKAGES := $(RUST_NATIVE_ROUTINE_PACKAGES)"),
+        "the staged host route must share the native routine package authority"
+    );
     assert!(
         onnx.contains("$(ONNX_HOST_TEST_PACKAGES)"),
         "check-rust-onnx-test must run the excluded-crate package list, not a hand copy"
@@ -444,10 +448,16 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     }
 
     let unit = target_body(&makefile, "check-rust-unit");
-    let cargo_test = unit
+    let cargo_tests = unit
         .lines()
-        .find(|line| line.trim_start().starts_with("cargo test "))
-        .expect("check-rust-unit must execute cargo test");
+        .filter(|line| line.trim_start().starts_with("cargo test "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cargo_tests.len(),
+        2,
+        "check-rust-unit must keep one workspace route and one native runtime-free route"
+    );
+    let cargo_test = cargo_tests[0];
     for required in [
         "--manifest-path $(RUST_MANIFEST)",
         "--workspace",
@@ -477,6 +487,105 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
             "check-rust-unit widened beyond unit harnesses with {forbidden}"
         );
     }
+
+    let native_test = cargo_tests[1];
+    for required in [
+        "--manifest-path $(RUST_MANIFEST)",
+        "$(RUST_NATIVE_ROUTINE_PACKAGES)",
+        "--no-default-features",
+        "--lib",
+        "--locked",
+        "--offline",
+        "--no-fail-fast",
+        "-- --test-threads=1",
+    ] {
+        assert!(
+            native_test.contains(required),
+            "native routine route lost required selection: {required}"
+        );
+    }
+    for forbidden in [
+        "--workspace",
+        "--bins",
+        "--tests",
+        " --test ",
+        "--examples",
+        "--benches",
+        "--doc",
+        "--all-targets",
+        "--features",
+        "ORT_",
+        "stage",
+    ] {
+        assert!(
+            !native_test.contains(forbidden),
+            "native routine route widened or acquired runtime state with {forbidden}"
+        );
+    }
+
+    let clippy = target_body(&makefile, "check-rust-clippy");
+    let clippy_commands = clippy
+        .lines()
+        .filter(|line| line.trim_start().starts_with("cargo clippy "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        clippy_commands.len(),
+        3,
+        "routine Clippy must keep workspace, native production, and native runtime-free routes"
+    );
+    assert!(clippy_commands[0].contains("--workspace $(RUST_HOST_EXCLUDES) --lib --bins"));
+    assert!(
+        clippy_commands[1].contains("$(RUST_NATIVE_ROUTINE_PACKAGES) --lib --bins")
+            && !clippy_commands[1].contains("--no-default-features")
+    );
+    assert!(
+        clippy_commands[2].contains("$(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib")
+            && !clippy_commands[2].contains("--bins")
+    );
+    for command in clippy_commands {
+        for forbidden in ["ORT_", "stage", " --test ", "--tests", "--all-targets"] {
+            assert!(
+                !command.contains(forbidden),
+                "routine Clippy widened or acquired runtime state with {forbidden}: {command}"
+            );
+        }
+    }
+
+    let onnx = target_body(&makefile, "check-rust-onnx-test");
+    let onnx_test = onnx
+        .lines()
+        .find(|line| line.contains("cargo test "))
+        .expect("check-rust-onnx-test must execute the staged native full route");
+    for required in [
+        "$(VAD_ANALYZE_HOST_ORT_ENV)",
+        "$(ONNX_HOST_TEST_PACKAGES)",
+        "--features full-tests",
+        "--lib",
+        "--bins",
+        "--locked",
+        "-- --test-threads=1",
+    ] {
+        assert!(
+            onnx_test.contains(required),
+            "staged native full route lost required selection: {required}"
+        );
+    }
+    for forbidden in [
+        "--no-default-features",
+        "--workspace",
+        "--tests",
+        " --test ",
+        "--all-targets",
+    ] {
+        assert!(
+            !onnx_test.contains(forbidden),
+            "staged native full route widened with {forbidden}"
+        );
+    }
+    assert!(
+        onnx.contains("$(REQUIRE_ONNX_HOST_RUNTIME)"),
+        "native full route must validate the staged runtime before Cargo"
+    );
 }
 
 #[test]
@@ -498,6 +607,7 @@ fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables
     let report = target_body(&makefile, "report-rust-code-evidence");
     for required in [
         "$(RUST_ROUTINE_EXCLUDES)",
+        "$(RUST_NATIVE_ROUTINE_PACKAGES)",
         "$(RUST_CLASSIFIED_FULL_TEST_PACKAGES)",
         "$(filter-out",
     ] {
@@ -509,6 +619,12 @@ fn public_code_commands_keep_the_unit_boundary_and_report_it_from_make_variables
     );
     assert!(report.contains("RUST_CODE_EVIDENCE_VALID"));
     assert!(!makefile.contains("RUST_CODE_EVIDENCE_CLIPPY"));
+    assert!(report.contains("Runtime-free library unit tests ran for:"));
+    assert!(report.contains("$(filter ci,$(RUST_CODE_EVIDENCE_CONTEXT))"));
+    assert!(
+        report.contains("Clippy ran on the default production library and binary targets for:")
+    );
+    assert!(report.contains("Clippy did not run. Run 'make ci' to run it."));
     assert!(!report.contains("solstone-core-"));
     let workspace =
         fs::read_to_string(root.join("core/Cargo.toml")).expect("read workspace Cargo manifest");
@@ -535,10 +651,18 @@ fn classified_same_crate_packages_are_routine_and_have_package_specific_full_rou
         "solstone-core-facets",
         "solstone-core-mcp-endpoint",
         "solstone-core-sol-link",
+        "solstone-core-speakers-analyze",
+        "solstone-core-speakers-onnx",
+        "solstone-core-vad-analyze",
     ]);
     assert_eq!(classified, expected, "classified package authority drifted");
 
     let registry = ci_registry(&repo_root());
+    let native = BTreeSet::from([
+        "solstone-core-speakers-analyze",
+        "solstone-core-speakers-onnx",
+        "solstone-core-vad-analyze",
+    ]);
     for package in expected {
         let suite = registry
             .package_suites
@@ -549,22 +673,33 @@ fn classified_same_crate_packages_are_routine_and_have_package_specific_full_rou
             !suite.default_full,
             "{package} package suite would duplicate its classified full leg"
         );
-        let expected_target = format!(
-            "check-rust-classified-full-tests-{}",
-            package
-                .strip_prefix("solstone-core-")
-                .expect("package prefix")
-        );
-        let leg = registry
-            .legs
-            .iter()
-            .find(|leg| leg.make_target == expected_target)
-            .unwrap_or_else(|| panic!("{package} has no classified full leg"));
+        let leg = if native.contains(package) {
+            registry
+                .legs
+                .iter()
+                .find(|leg| leg.make_target == "check-rust-onnx-test")
+                .expect("native packages have no aggregate full leg")
+        } else {
+            let expected_target = format!(
+                "check-rust-classified-full-tests-{}",
+                package
+                    .strip_prefix("solstone-core-")
+                    .expect("package prefix")
+            );
+            registry
+                .legs
+                .iter()
+                .find(|leg| leg.make_target == expected_target)
+                .unwrap_or_else(|| panic!("{package} has no classified full leg"))
+        };
         assert!(
             leg.default_full,
             "{package} classified leg is not default full"
         );
-        assert_eq!(leg.packages, [package]);
+        assert!(
+            leg.packages.iter().any(|candidate| candidate == package),
+            "{package} is absent from its classified full leg"
+        );
     }
 }
 
@@ -579,10 +714,16 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
         ("solstone-core-describe", "describe"),
         ("solstone-core-mcp-endpoint", "mcp-endpoint"),
     ];
-    let expected_packages = packages
+    let native_packages = [
+        "solstone-core-speakers-analyze",
+        "solstone-core-speakers-onnx",
+        "solstone-core-vad-analyze",
+    ];
+    let mut expected_packages = packages
         .iter()
         .map(|(package, _)| (*package).to_owned())
         .collect::<BTreeSet<_>>();
+    expected_packages.extend(native_packages.into_iter().map(str::to_owned));
     let authority = makefile
         .lines()
         .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
@@ -608,7 +749,11 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             .map(str::trim)
             .collect::<Vec<_>>();
         if !mentions.is_empty() {
-            assert_eq!(mentions, ["full-tests = []"]);
+            if native_packages.contains(&owner.as_str()) {
+                assert_eq!(mentions, ["full-tests = [\"runtime\"]"]);
+            } else {
+                assert_eq!(mentions, ["full-tests = []"]);
+            }
             assert!(
                 expected_packages.contains(&owner),
                 "unapproved full-tests owner {owner}"
@@ -621,7 +766,7 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
     let mut source_files = 0;
     let mut routine_tests = 0;
     let mut full_tests = 0;
-    for (package, _) in packages {
+    for package in expected_packages.iter().map(String::as_str) {
         let source_root = root.join("core/crates").join(package).join("src");
         for path in rust_source_files(&source_root) {
             let mut counts = classified_test_counts(&path);
@@ -643,13 +788,13 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             }
         }
     }
-    assert_eq!(source_files, 102, "classified source discovery drifted");
-    assert_eq!(routine_tests, 321, "routine annotation census drifted");
-    assert_eq!(full_tests, 463, "classified full annotation census drifted");
+    assert_eq!(source_files, 109, "classified source discovery drifted");
+    assert_eq!(routine_tests, 372, "routine annotation census drifted");
+    assert_eq!(full_tests, 487, "classified full annotation census drifted");
 
     let mut integration_files = 0;
     let mut integration_tests = 0;
-    for (package, _) in packages {
+    for package in expected_packages.iter().map(String::as_str) {
         let tests = root.join("core/crates").join(package).join("tests");
         if !tests.exists() {
             continue;
@@ -662,12 +807,15 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
             }
         }
     }
-    assert_eq!(integration_files, 9, "integration target discovery drifted");
     assert_eq!(
-        integration_tests, 65,
+        integration_files, 10,
+        "integration target discovery drifted"
+    );
+    assert_eq!(
+        integration_tests, 68,
         "integration annotation census drifted"
     );
-    assert_eq!(routine_tests + full_tests + integration_tests, 849);
+    assert_eq!(routine_tests + full_tests + integration_tests, 927);
 
     let external_full_files = [
         ("solstone-core-sol-link", "http_tests.rs"),
@@ -848,8 +996,8 @@ fn classified_same_crate_topology_is_complete_and_nonduplicating() {
                 && line.contains("--features")
                 && line.contains("full-tests"))
             .count(),
-        14,
-        "full-tests may activate only on five test, five Clippy, and four macOS edges"
+        17,
+        "full-tests may activate only on five test, five Clippy, four macOS, and three aggregate native edges"
     );
 
     let registry = ci_registry(&root);
@@ -1249,8 +1397,8 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         .collect::<Vec<_>>();
     assert_eq!(
         cargo.len(),
-        5,
-        "macOS must compile default scope plus four classified scopes"
+        6,
+        "macOS must compile default scope plus five classified scopes"
     );
     let primary = cargo[0];
     for protected in [
@@ -1289,6 +1437,20 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         }
         assert!(!line.contains("--workspace") && !line.contains("--all-targets"));
     }
+    let native = cargo[5];
+    for required in [
+        "$(RUST_NATIVE_ROUTINE_PACKAGES)",
+        "--features full-tests",
+        "--all-targets",
+        "--no-run",
+        "--locked",
+    ] {
+        assert!(
+            native.contains(required),
+            "classified native macOS compile lost {required}"
+        );
+    }
+    assert!(!native.contains("--workspace"));
 }
 
 #[test]
