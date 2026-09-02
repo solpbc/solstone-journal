@@ -15,7 +15,11 @@ use solstone_core_system::schedule::{
 use crate::registry::RoutineDescriptor;
 
 const MAINTENANCE_PREFIX: &str = "maintenance:";
-const RETIRED_ENTRY: &str = "maintenance:health:release-raw";
+const RETIRED_ENTRIES: &[&str] = &[
+    "maintenance:health:release-raw",
+    "maintenance:timeline:rollup-day",
+    "maintenance:timeline:rollup-master",
+];
 
 /// A routine's relationship to its generated schedule entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,16 +101,20 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
     Ok(output)
 }
 
-/// Remove the retired entry, then add only currently missing generated entries.
+/// Remove retired entries, then add only currently missing generated entries.
 ///
 /// The removal and addition are intentionally separate lock-and-write
 /// transactions. A failed add can therefore leave a successful retirement
 /// published, which mirrors the Python operation and avoids rollback writes.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
     initialize_schedule_config(path).map_err(|error| error.to_string())?;
-    remove_schedule_entry(path, RETIRED_ENTRY).map_err(|error| error.to_string())?;
+    for entry in RETIRED_ENTRIES {
+        remove_schedule_entry(path, entry).map_err(|error| error.to_string())?;
+    }
     let raw = read_raw_schedules(path)?;
-    let classified = classify(routines, &raw);
+    let classified = classify(routines, &raw)
+        .into_iter()
+        .filter(|item| !is_retired_schedule_entry(item.descriptor.id));
     let mut summary = SyncSummary::default();
     let mut additions = BTreeMap::new();
     for item in classified {
@@ -165,11 +173,10 @@ pub fn schedule_name(id: &str) -> String {
 
 /// Build the generated raw config entry for one routine.
 pub fn expected_entry(descriptor: &RoutineDescriptor) -> Value {
+    let mut command = vec!["journal", "maintenance", "run", descriptor.id];
+    command.extend(descriptor.args);
     let mut entry = Map::from_iter([
-        (
-            "cmd".to_owned(),
-            json!(["journal", "maintenance", "run", descriptor.id]),
-        ),
+        ("cmd".to_owned(), json!(command)),
         (
             "every".to_owned(),
             Value::String(descriptor.cadence.as_str().to_owned()),
@@ -183,6 +190,11 @@ pub fn expected_entry(descriptor: &RoutineDescriptor) -> Value {
         );
     }
     Value::Object(entry)
+}
+
+fn is_retired_schedule_entry(id: &str) -> bool {
+    let name = schedule_name(id);
+    RETIRED_ENTRIES.contains(&name.as_str())
 }
 
 fn read_raw_schedules(path: &Path) -> Result<Map<String, Value>, String> {
@@ -243,7 +255,7 @@ fn classify_one(descriptor: &RoutineDescriptor, raw: Option<&Value>) -> Schedule
 #[cfg(test)]
 mod tests {
     use super::{ScheduleStatus, classify_one, expected_entry, sync};
-    use crate::registry::{Cadence, RoutineDescriptor};
+    use crate::registry::{Cadence, RoutineDescriptor, routines};
     use serde_json::{Value, json};
 
     const CAPPED: RoutineDescriptor = RoutineDescriptor {
@@ -251,12 +263,14 @@ mod tests {
         description: "capped",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
+        args: &[],
     };
     const UNCAPPED: RoutineDescriptor = RoutineDescriptor {
         id: "app:uncapped",
         description: "uncapped",
         cadence: Cadence::Weekly,
         max_runtime: None,
+        args: &[],
     };
 
     #[test]
@@ -313,5 +327,41 @@ mod tests {
             classify_one(&UNCAPPED, Some(&null_cap)),
             ScheduleStatus::Synced
         );
+    }
+
+    #[test]
+    fn sync_retires_independent_timeline_entries_and_adds_the_atomic_rollup() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let config = root.path().join("config/schedules.json");
+        std::fs::create_dir_all(config.parent().expect("config directory"))
+            .expect("config directory");
+        std::fs::write(
+            &config,
+            json!({
+                "maintenance:timeline:rollup-day": {"enabled": true},
+                "maintenance:timeline:rollup-master": {"enabled": false},
+            })
+            .to_string(),
+        )
+        .expect("schedule config");
+
+        let summary = sync(&config, routines()).expect("sync");
+        assert!(summary.added.contains(&"timeline:rollup".to_owned()));
+        assert!(!summary.added.contains(&"timeline:rollup-day".to_owned()));
+        assert!(!summary.added.contains(&"timeline:rollup-master".to_owned()));
+        let raw: Value = serde_json::from_slice(&std::fs::read(&config).expect("schedule config"))
+            .expect("json");
+        assert_eq!(
+            raw["maintenance:timeline:rollup"]["cmd"],
+            json!([
+                "journal",
+                "maintenance",
+                "run",
+                "timeline:rollup",
+                "--commit"
+            ])
+        );
+        assert!(raw.get("maintenance:timeline:rollup-day").is_none());
+        assert!(raw.get("maintenance:timeline:rollup-master").is_none());
     }
 }

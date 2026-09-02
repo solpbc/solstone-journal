@@ -81,6 +81,10 @@ pub(crate) fn run(
     services: &TimelineServices<'_>,
 ) -> CliRun {
     match id {
+        "timeline:rollup" => match parse_day_args(args) {
+            Ok(options) => rollup(journal, options, services),
+            Err(error) => usage_error(id, &error),
+        },
         "timeline:rollup-day" => match parse_day_args(args) {
             Ok(options) => rollup_day(journal, options, services),
             Err(error) => usage_error(id, &error),
@@ -217,6 +221,26 @@ fn parse_usize(value: Option<&String>, name: &str) -> Result<usize, String> {
     value
         .parse()
         .map_err(|_| format!("argument {name}: invalid int value: '{value}'"))
+}
+
+fn rollup(journal: &Path, options: DayOptions, services: &TimelineServices<'_>) -> CliRun {
+    let master_options = MasterOptions {
+        top: options.top,
+        jobs: options.jobs,
+        commit: options.commit,
+        force: options.force,
+        dry_run: options.dry_run,
+        months: None,
+    };
+    let day = rollup_day(journal, options, services);
+    if !day_is_ready_for_master(&day) {
+        return day;
+    }
+    rollup_master(journal, master_options, services)
+}
+
+fn day_is_ready_for_master(result: &CliRun) -> bool {
+    result.exit_code == 0 && (result.stdout.contains("[current]") || result.stdout.contains("[ok "))
 }
 
 fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'_>) -> CliRun {
@@ -1234,7 +1258,7 @@ fn failure(error: String) -> CliRun {
 
 fn usage_error(id: &str, detail: &str) -> CliRun {
     let usage = match id {
-        "timeline:rollup-day" => {
+        "timeline:rollup" | "timeline:rollup-day" => {
             " [--day YYYYMMDD] [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS]"
         }
         _ => " [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS] [--months MONTHS]",
@@ -1813,6 +1837,139 @@ mod tests {
             read_json(&journal.path().join("chronicle/20260301/timeline.json"))["day"],
             "20260301"
         );
+    }
+
+    #[test]
+    fn orchestration_stops_after_a_day_failure_without_running_master() {
+        let journal = tempfile::tempdir().unwrap();
+        for index in 0..5 {
+            write_segment(
+                journal.path(),
+                "20260301",
+                "field.audio",
+                &format!("08{index:02}00_{index}"),
+                json!({"title":"bad event", "description":"fails day curation"}),
+            );
+        }
+        write_day_rollup(
+            journal.path(),
+            "20260302",
+            (0..5)
+                .map(|index| {
+                    day_entry(
+                        "20260302",
+                        "Other",
+                        "master input",
+                        &format!("09{index:02}00_{index}"),
+                    )
+                })
+                .collect(),
+        );
+        let picker = Picker::error_when("bad event");
+        let model = Model::new("model");
+
+        let result = run(
+            "timeline:rollup",
+            &[
+                "--day".to_owned(),
+                "20260301".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(result.exit_code, 1);
+        assert_eq!(picker.call_count(), 1);
+        assert!(!journal.path().join("timeline.json").exists());
+    }
+
+    #[test]
+    fn orchestration_runs_master_after_a_current_day() {
+        let journal = tempfile::tempdir().unwrap();
+        write_segment(
+            journal.path(),
+            "20260301",
+            "field.audio",
+            "080000_1",
+            json!({"title":"Current", "description":"day"}),
+        );
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        let day = run(
+            "timeline:rollup-day",
+            &[
+                "--day".to_owned(),
+                "20260301".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(day.exit_code, 0);
+
+        let result = run(
+            "timeline:rollup",
+            &[
+                "--day".to_owned(),
+                "20260301".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(result.exit_code, 0);
+        assert!(journal.path().join("timeline.json").exists());
+    }
+
+    #[test]
+    fn orchestration_publishes_day_then_master_and_preview_never_writes() {
+        let journal = tempfile::tempdir().unwrap();
+        write_segment(
+            journal.path(),
+            "20260301",
+            "field.audio",
+            "080000_1",
+            json!({"title":"New", "description":"day"}),
+        );
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        let preview = run(
+            "timeline:rollup",
+            &["--day".to_owned(), "20260301".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(preview.exit_code, 0);
+        assert!(preview.stdout.contains("[would_publish]"));
+        assert_eq!(picker.call_count(), 0);
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260301/timeline.json")
+                .exists()
+        );
+        assert!(!journal.path().join("timeline.json").exists());
+
+        let committed = run(
+            "timeline:rollup",
+            &[
+                "--day".to_owned(),
+                "20260301".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(committed.exit_code, 0);
+        assert!(
+            journal
+                .path()
+                .join("chronicle/20260301/timeline.json")
+                .exists()
+        );
+        assert!(journal.path().join("timeline.json").exists());
     }
 
     #[test]

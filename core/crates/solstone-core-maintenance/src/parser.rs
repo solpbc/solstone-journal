@@ -152,7 +152,7 @@ fn run_routine(
     }
     if matches!(
         id.as_str(),
-        "timeline:rollup-day" | "timeline:rollup-master"
+        "timeline:rollup" | "timeline:rollup-day" | "timeline:rollup-master"
     ) {
         return match timeline_services {
             Some(timeline_services) => {

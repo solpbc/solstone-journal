@@ -526,6 +526,7 @@ mod composed_tests {
             ("backup:offload", "backup offload:", 0),
             ("health:mark-raw", "new items: 0", 0),
             ("health:prune-logs", "prune-logs: disabled", 0),
+            ("timeline:rollup", "no verified segment timeline.json", 66),
             (
                 "timeline:rollup-day",
                 "no verified segment timeline.json",
@@ -537,7 +538,7 @@ mod composed_tests {
             if id == "backup:offload" {
                 args.push("--dry-run");
             }
-            if id == "timeline:rollup-day" {
+            if matches!(id, "timeline:rollup" | "timeline:rollup-day") {
                 args.extend(["--day", "20260301"]);
             }
             let result = run(&args);
