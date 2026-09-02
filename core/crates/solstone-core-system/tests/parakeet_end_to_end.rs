@@ -119,6 +119,8 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
             gpu_index: None,
             binary_path: PathBuf::from(FIXTURE),
             model_path: PathBuf::from("test-ready"),
+            package_root: None,
+            journal_path: journal.clone(),
             threads: 4,
             desired_fingerprint_json: "{}".to_owned(),
             desired_fingerprint_sha256: "desired-a".to_owned(),

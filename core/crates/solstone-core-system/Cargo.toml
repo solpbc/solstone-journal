@@ -46,6 +46,7 @@ filetime = "0.2.29"
 tempfile = "3.24.0"
 
 [target.'cfg(windows)'.dependencies]
+solstone-core-local = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_System_Pipes"] }
 
 [[bin]]
