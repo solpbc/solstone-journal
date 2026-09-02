@@ -731,7 +731,8 @@ mod tests {
             "disk",
             FitSeverity::Unknown,
             format!(
-                "available disk space could not be verified at /journal/cache/providers/local: disk unavailable; {unknown}"
+                "available disk space could not be verified at {}: disk unavailable; {unknown}",
+                pins::cache_root(Path::new("/journal")).display(),
             ),
         );
         assert_branch(

@@ -422,6 +422,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn non_memoized_child_contract_distinguishes_clean_empty_from_failures() {
         let clean_empty = VulkanProbeConfig {
