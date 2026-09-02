@@ -50,11 +50,43 @@ pub fn needs_dedup_key(item: &Value) -> String {
 
 pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
     (capture.is_object() && capture.get("status").and_then(Value::as_str) == Some("degraded")).then(
-        || {
-            "the solstone app on one of your devices is having trouble adding to your journal."
-                .to_owned()
+        || match named_attention_sources(capture) {
+            Some(sources) => format!(
+                "the solstone app on one of your devices is having trouble adding {sources} to your journal."
+            ),
+            None => {
+                "the solstone app on one of your devices is having trouble adding to your journal."
+                    .to_owned()
+            }
         },
     )
+}
+
+pub(crate) fn source_display_name(source: &str) -> &str {
+    if source.is_empty() { "default" } else { source }
+}
+
+pub(crate) fn named_attention_sources(capture: &Value) -> Option<String> {
+    let clients = capture.get("clients")?.as_array()?;
+    let mut names = Vec::new();
+    for client in clients {
+        let Some(map) = client.get("source_delivery").and_then(Value::as_object) else {
+            continue;
+        };
+        if map.len() <= 1 {
+            continue;
+        }
+        for (source, row) in map {
+            if row.get("state").and_then(Value::as_str) == Some("needs_attention") {
+                names.push(source_display_name(source).to_owned());
+            }
+        }
+    }
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.join(", "))
+    }
 }
 
 fn classify_attention(value: &Value) -> Option<Value> {
@@ -120,6 +152,66 @@ mod tests {
         assert_eq!(
             needs_dedup_key(&json!({"text":"  A   Need "})),
             "text:a need"
+        );
+    }
+
+    #[test]
+    fn degraded_capture_line_stays_unnamed_for_single_source() {
+        let unnamed =
+            "the solstone app on one of your devices is having trouble adding to your journal.";
+        for capture in [
+            json!({"status": "degraded"}),
+            json!({
+                "status": "degraded",
+                "clients": [{
+                    "source_delivery": {
+                        "audio": {"state": "needs_attention"}
+                    }
+                }]
+            }),
+            json!({
+                "status": "degraded",
+                "clients": [{
+                    "source_delivery": {
+                        "": {"state": "needs_attention"}
+                    }
+                }]
+            }),
+        ] {
+            assert_eq!(
+                format_degraded_capture_line(&capture).as_deref(),
+                Some(unnamed)
+            );
+        }
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{
+                    "source_delivery": {
+                        "audio": {"state": "current"},
+                        "location": {"state": "needs_attention"}
+                    }
+                }]
+            }))
+            .as_deref(),
+            Some(
+                "the solstone app on one of your devices is having trouble adding location to your journal."
+            )
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{
+                    "source_delivery": {
+                        "audio": {"state": "current"},
+                        "": {"state": "needs_attention"}
+                    }
+                }]
+            }))
+            .as_deref(),
+            Some(
+                "the solstone app on one of your devices is having trouble adding default to your journal."
+            )
         );
     }
 }

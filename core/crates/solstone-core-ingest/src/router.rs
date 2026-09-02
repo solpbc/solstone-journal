@@ -511,14 +511,16 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
                             StatusCode::SERVICE_UNAVAILABLE,
                             "location ingest is temporarily unavailable; retry the request",
                         ),
-                    ),
+                    )
+                    .with_source(Some(envelope.source.clone())),
                 );
             }
         }
     } else {
         None
     };
-    let completion = write_envelope_inner(state, cid, envelope);
+    let source = Some(envelope.source.clone());
+    let completion = write_envelope_inner(state, cid, envelope).with_source(source);
     finish_ingest_completion(state, cid, completion)
 }
 
@@ -1003,6 +1005,7 @@ enum IngestActivity {
 struct IngestCompletion {
     response: Response,
     activity: IngestActivity,
+    source: Option<String>,
 }
 
 impl IngestCompletion {
@@ -1010,6 +1013,7 @@ impl IngestCompletion {
         Self {
             response,
             activity: IngestActivity::Accepted(AcceptedSegment { day, name }),
+            source: None,
         }
     }
 
@@ -1017,7 +1021,13 @@ impl IngestCompletion {
         Self {
             response,
             activity: IngestActivity::Rejected(code),
+            source: None,
         }
+    }
+
+    fn with_source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
     }
 }
 
@@ -1040,18 +1050,27 @@ fn finish_ingest_completion(
     cid: &str,
     completion: IngestCompletion,
 ) -> Response {
-    let IngestCompletion { response, activity } = completion;
-    record_ingest_activity(state, cid, activity);
+    let IngestCompletion {
+        response,
+        activity,
+        source,
+    } = completion;
+    record_ingest_activity(state, cid, activity, source.as_deref());
     response
 }
 
-fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivity) {
+fn record_ingest_activity(
+    state: &IngestState,
+    cid: &str,
+    activity: IngestActivity,
+    source: Option<&str>,
+) {
     let timestamp = activity_timestamp((state.now_ms)());
     let mut ledger = AuthorizationLedger::new(&state.journal_root);
     let (operation, result) = match activity {
         IngestActivity::Accepted(segment) => (
             "ingest_success",
-            ledger.record_accepted_ingest(cid, &timestamp, segment),
+            ledger.record_accepted_ingest(cid, &timestamp, segment, source),
         ),
         IngestActivity::Rejected(code) => {
             // A rejection previously landed only in the per-client ledger (devices.json),
@@ -1061,7 +1080,7 @@ fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivi
             log::warn!("ingest_rejection reason={}", code.as_str());
             (
                 "ingest_rejection",
-                ledger.record_ingest_rejection(cid, &timestamp, code.as_str()),
+                ledger.record_ingest_rejection(cid, &timestamp, code.as_str(), source),
             )
         }
     };
@@ -1106,7 +1125,8 @@ mod tests {
     use crate::model::IncomingFile;
     use solstone_core_segment::{SegmentError, hold_source_mutation};
     use solstone_core_sol_link::ledger::{
-        AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, read_device_activity,
+        AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, SourceRecord,
+        read_device_activity,
     };
 
     const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1635,7 +1655,7 @@ mod tests {
         let journal = directory.path().to_path_buf();
         seed_authorized_client(&journal, CID_A);
         AuthorizationLedger::new(&journal)
-            .record_ingest_rejection(CID_A, "2026-01-02T00:00:00Z", "event_append_failed")
+            .record_ingest_rejection(CID_A, "2026-01-02T00:00:00Z", "event_append_failed", None)
             .unwrap();
         let (_now, clock) = frozen_clock(1_700_000_000_000);
         let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
@@ -1660,6 +1680,69 @@ mod tests {
             body["segment"].as_str().unwrap()
         );
         assert_eq!(activity.ingest_rejection, None);
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at,
+                    activity.last_accepted_ingest_at
+                );
+                assert_eq!(source.last_accepted_segment, activity.last_accepted_segment);
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source recorded, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn sourced_accept_and_rejection_record_independent_source_activity() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        let (_now, clock) = frozen_clock(1_700_000_000_000);
+        let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
+        let audio = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "audio",
+            "files": [{"submitted": "audio.flac"}],
+        });
+        let (status, _) = call_upload(&app, audio, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+
+        fs::remove_dir_all(journal.join("streams")).unwrap();
+        fs::write(journal.join("streams"), b"not a directory").unwrap();
+        let location = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "location",
+            "files": [{"submitted": "location.json"}],
+        });
+        let (status, body) = call_upload(&app, location, "location.json", b"location").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "location_lock_unavailable");
+
+        let activity = activity_for(&journal, CID_A);
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert!(source.last_accepted_ingest_at.is_some());
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source accepted, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.ingest_rejection.as_ref().unwrap().reason_code,
+                    "location_lock_unavailable"
+                );
+                assert_eq!(source.last_accepted_ingest_at, None);
+            }
+            other => panic!("location source rejected, got {other:?}"),
+        }
+        assert_eq!(
+            activity.ingest_rejection.as_ref().unwrap().reason_code,
+            "location_lock_unavailable"
+        );
     }
 
     #[tokio::test]
@@ -1683,13 +1766,14 @@ mod tests {
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["reason_code"], "protocol_version_required");
+        let activity = activity_for(&journal, CID_A);
         assert_eq!(
-            activity_for(&journal, CID_A)
-                .ingest_rejection
-                .as_ref()
-                .unwrap()
-                .reason_code,
+            activity.ingest_rejection.as_ref().unwrap().reason_code,
             "protocol_version_required"
+        );
+        assert!(
+            activity.sources.is_empty(),
+            "pre-parse refusal must not invent a source key"
         );
     }
 

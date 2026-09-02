@@ -15,7 +15,7 @@ use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
@@ -85,6 +85,8 @@ pub struct ClientActivity {
     pub last_accepted_segment: Option<AcceptedSegment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingest_rejection: Option<IngestRejection>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, SourceRecord>,
 }
 
 impl ClientActivity {
@@ -94,6 +96,7 @@ impl ClientActivity {
             last_accepted_ingest_at: None,
             last_accepted_segment: None,
             ingest_rejection: None,
+            sources: BTreeMap::new(),
         }
     }
 }
@@ -114,6 +117,60 @@ pub struct IngestRejection {
     pub first: String,
     pub latest: String,
     pub active_count: u64,
+}
+
+/// Per-source ingest history for one `(device, source)` key.
+///
+/// Connection liveness stays on [`ClientActivity::last_seen_at`]; this record
+/// only tracks accepted delivery and an active rejection streak.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceActivity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_ingest_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_segment: Option<AcceptedSegment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingest_rejection: Option<IngestRejection>,
+}
+
+/// One `sources` map entry. A malformed value is retained so a later sibling
+/// write cannot drop it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceRecord {
+    Valid(SourceActivity),
+    Malformed(Value),
+}
+
+impl<'de> Deserialize<'de> for SourceRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        Ok(parse_source_record(value))
+    }
+}
+
+impl Serialize for SourceRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Valid(activity) => activity.serialize(serializer),
+            Self::Malformed(value) => value.serialize(serializer),
+        }
+    }
+}
+
+fn parse_source_record(value: Value) -> SourceRecord {
+    match serde_json::from_value::<SourceActivity>(value.clone()) {
+        Ok(activity)
+            if validate_ingest_timestamps(
+                activity.last_accepted_ingest_at.as_deref(),
+                activity.ingest_rejection.as_ref(),
+            )
+            .is_ok() =>
+        {
+            SourceRecord::Valid(activity)
+        }
+        _ => SourceRecord::Malformed(value),
+    }
 }
 
 impl ClientEntry {
@@ -639,6 +696,7 @@ impl AuthorizationLedger {
         cid: &str,
         accepted_at: &str,
         segment: AcceptedSegment,
+        source: Option<&str>,
     ) -> Result<bool, AuthorizedClientsMutationError> {
         if parse_rfc3339_utc(accepted_at).is_none() {
             return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
@@ -652,7 +710,7 @@ impl AuthorizationLedger {
             return Ok(false);
         }
         self.set_cached(clients);
-        record_accepted_device(&self.devices_path, cid, accepted_at, segment)
+        record_accepted_device(&self.devices_path, cid, accepted_at, segment, source)
             .map_err(AuthorizedClientsMutationError::Device)?;
         Ok(true)
     }
@@ -667,6 +725,7 @@ impl AuthorizationLedger {
         cid: &str,
         at: &str,
         reason_code: &str,
+        source: Option<&str>,
     ) -> Result<bool, AuthorizedClientsMutationError> {
         if parse_rfc3339_utc(at).is_none() {
             return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
@@ -680,7 +739,7 @@ impl AuthorizationLedger {
             return Ok(false);
         }
         self.set_cached(clients);
-        record_device_rejection(&self.devices_path, cid, at, reason_code)
+        record_device_rejection(&self.devices_path, cid, at, reason_code, source)
             .map_err(AuthorizedClientsMutationError::Device)?;
         Ok(true)
     }
@@ -963,19 +1022,88 @@ fn remove_device(path: &Path, fingerprint: &str) -> Result<bool, DevicesMutation
     })
 }
 
+fn apply_accepted(
+    last_accepted_ingest_at: &mut Option<String>,
+    last_accepted_segment: &mut Option<AcceptedSegment>,
+    ingest_rejection: &mut Option<IngestRejection>,
+    accepted_at: &str,
+    segment: AcceptedSegment,
+) {
+    *last_accepted_ingest_at = Some(accepted_at.to_owned());
+    *last_accepted_segment = Some(segment);
+    *ingest_rejection = None;
+}
+
+fn apply_rejected(ingest_rejection: &mut Option<IngestRejection>, at: &str, reason_code: &str) {
+    *ingest_rejection = Some(match ingest_rejection.take() {
+        Some(mut rejection) => {
+            rejection.reason_code = reason_code.to_owned();
+            rejection.latest = at.to_owned();
+            rejection.active_count = rejection.active_count.saturating_add(1);
+            rejection
+        }
+        None => IngestRejection {
+            reason_code: reason_code.to_owned(),
+            first: at.to_owned(),
+            latest: at.to_owned(),
+            active_count: 1,
+        },
+    });
+}
+
+fn source_activity_for_mutation<'a>(
+    sources: &'a mut BTreeMap<String, SourceRecord>,
+    source: &str,
+) -> &'a mut SourceActivity {
+    let reset = !matches!(sources.get(source), Some(SourceRecord::Valid(_)));
+    if reset {
+        sources.insert(
+            source.to_owned(),
+            SourceRecord::Valid(SourceActivity::default()),
+        );
+    }
+    match sources.get_mut(source) {
+        Some(SourceRecord::Valid(activity)) => activity,
+        _ => unreachable!("source activity just inserted as Valid"),
+    }
+}
+
 fn record_accepted_device(
     path: &Path,
     cid: &str,
     accepted_at: &str,
     segment: AcceptedSegment,
+    source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
         let activity = devices
             .entry(cid.to_owned())
             .or_insert_with(|| ClientActivity::new(accepted_at));
-        activity.last_accepted_ingest_at = Some(accepted_at.to_owned());
-        activity.last_accepted_segment = Some(segment);
-        activity.ingest_rejection = None;
+        if let Some(source) = source {
+            apply_accepted(
+                &mut activity.last_accepted_ingest_at,
+                &mut activity.last_accepted_segment,
+                &mut activity.ingest_rejection,
+                accepted_at,
+                segment.clone(),
+            );
+            let source_activity = source_activity_for_mutation(&mut activity.sources, source);
+            apply_accepted(
+                &mut source_activity.last_accepted_ingest_at,
+                &mut source_activity.last_accepted_segment,
+                &mut source_activity.ingest_rejection,
+                accepted_at,
+                segment,
+            );
+        } else {
+            apply_accepted(
+                &mut activity.last_accepted_ingest_at,
+                &mut activity.last_accepted_segment,
+                &mut activity.ingest_rejection,
+                accepted_at,
+                segment,
+            );
+        }
         ((), true)
     })
 }
@@ -985,25 +1113,17 @@ fn record_device_rejection(
     cid: &str,
     at: &str,
     reason_code: &str,
+    source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
         let activity = devices
             .entry(cid.to_owned())
             .or_insert_with(|| ClientActivity::new(at));
-        activity.ingest_rejection = Some(match activity.ingest_rejection.take() {
-            Some(mut rejection) => {
-                rejection.reason_code = reason_code.to_owned();
-                rejection.latest = at.to_owned();
-                rejection.active_count = rejection.active_count.saturating_add(1);
-                rejection
-            }
-            None => IngestRejection {
-                reason_code: reason_code.to_owned(),
-                first: at.to_owned(),
-                latest: at.to_owned(),
-                active_count: 1,
-            },
-        });
+        apply_rejected(&mut activity.ingest_rejection, at, reason_code);
+        if let Some(source) = source {
+            let source_activity = source_activity_for_mutation(&mut activity.sources, source);
+            apply_rejected(&mut source_activity.ingest_rejection, at, reason_code);
+        }
         ((), true)
     })
 }
@@ -1082,6 +1202,7 @@ fn parse_devices(
             "last_accepted_ingest_at",
             "last_accepted_segment",
             "ingest_rejection",
+            "sources",
         ] {
             if device.get(field).is_some_and(Value::is_null) {
                 return Err(Box::new(io::Error::new(
@@ -1089,6 +1210,15 @@ fn parse_devices(
                     format!("{field} must be omitted or have its declared shape"),
                 )));
             }
+        }
+        if device
+            .get("sources")
+            .is_some_and(|sources| !sources.is_object())
+        {
+            return Err(Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "sources must be omitted or be a JSON object",
+            )));
         }
         let activity = serde_json::from_value::<ClientActivity>(value.clone())
             .map_err(|source| Box::new(source) as Box<dyn Error + Send + Sync>)?;
@@ -1098,24 +1228,33 @@ fn parse_devices(
     Ok(devices)
 }
 
+fn validate_ingest_timestamps(
+    last_accepted_ingest_at: Option<&str>,
+    ingest_rejection: Option<&IngestRejection>,
+) -> Result<(), &'static str> {
+    if last_accepted_ingest_at.is_some_and(|value| parse_rfc3339_utc(value).is_none()) {
+        return Err("last_accepted_ingest_at");
+    }
+    if ingest_rejection.is_some_and(|rejection| {
+        parse_rfc3339_utc(&rejection.first).is_none()
+            || parse_rfc3339_utc(&rejection.latest).is_none()
+    }) {
+        return Err("ingest_rejection");
+    }
+    Ok(())
+}
+
 fn validate_activity(activity: &ClientActivity) -> Result<(), Box<dyn Error + Send + Sync>> {
     for (field, value) in [("last_seen_at", &activity.last_seen_at)] {
         if parse_rfc3339_utc(value).is_none() {
             return Err(invalid_activity_field(field));
         }
     }
-    if activity
-        .last_accepted_ingest_at
-        .as_deref()
-        .is_some_and(|value| parse_rfc3339_utc(value).is_none())
-    {
-        return Err(invalid_activity_field("last_accepted_ingest_at"));
-    }
-    if activity.ingest_rejection.as_ref().is_some_and(|rejection| {
-        parse_rfc3339_utc(&rejection.first).is_none()
-            || parse_rfc3339_utc(&rejection.latest).is_none()
-    }) {
-        return Err(invalid_activity_field("ingest_rejection"));
+    if let Err(field) = validate_ingest_timestamps(
+        activity.last_accepted_ingest_at.as_deref(),
+        activity.ingest_rejection.as_ref(),
+    ) {
+        return Err(invalid_activity_field(field));
     }
     Ok(())
 }
@@ -1321,7 +1460,7 @@ mod tests {
             .unwrap();
         ledger.touch_last_seen_at("a", NOW).unwrap();
         ledger
-            .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "event_append_failed")
+            .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "event_append_failed", None)
             .unwrap();
 
         assert!(
@@ -1333,6 +1472,7 @@ mod tests {
                         day: "20260419".to_owned(),
                         name: "180512_1".to_owned(),
                     },
+                    None,
                 )
                 .unwrap()
         );
@@ -1365,12 +1505,12 @@ mod tests {
             .unwrap();
         assert!(
             ledger
-                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .record_ingest_rejection("a", NOW, "event_append_failed", None)
                 .unwrap()
         );
         assert!(
             ledger
-                .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "stream_advance_failed")
+                .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "stream_advance_failed", None)
                 .unwrap()
         );
 
@@ -1404,7 +1544,7 @@ mod tests {
         .unwrap();
         assert!(
             ledger
-                .record_ingest_rejection("a", "2026-04-19T18:05:12Z", "next")
+                .record_ingest_rejection("a", "2026-04-19T18:05:12Z", "next", None)
                 .unwrap()
         );
         let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
@@ -1439,7 +1579,7 @@ mod tests {
             .unwrap();
         assert!(
             !ledger
-                .record_ingest_rejection("missing", NOW, "event_append_failed")
+                .record_ingest_rejection("missing", NOW, "event_append_failed", None)
                 .unwrap()
         );
         assert!(
@@ -1451,6 +1591,7 @@ mod tests {
                         day: "20260419".to_owned(),
                         name: "180312_1".to_owned(),
                     },
+                    None,
                 )
                 .unwrap()
         );
@@ -1468,7 +1609,7 @@ mod tests {
 
         assert!(
             ledger
-                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .record_ingest_rejection("a", NOW, "event_append_failed", None)
                 .is_err()
         );
         assert!(ledger.devices_path().is_dir());
@@ -1852,6 +1993,347 @@ mod tests {
         assert_eq!(meaningful["client_label"], "tablet-host");
         assert_eq!(meaningful["label_ordinal"], 2);
         assert_eq!(meaningful["platform"], "linux");
+    }
+
+    #[test]
+    fn sourced_deliveries_on_one_device_read_back_independently() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some(""),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        assert_eq!(
+            activity.last_accepted_ingest_at.as_deref(),
+            Some("2026-04-19T18:06:12Z")
+        );
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:05:12Z")
+                );
+                assert_eq!(
+                    source.last_accepted_segment,
+                    Some(AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    })
+                );
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:06:12Z")
+                );
+            }
+            other => panic!("empty source valid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn device_level_only_activity_without_sources_key_still_loads() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            json!({"a": {
+                "last_seen_at": NOW,
+                "last_accepted_ingest_at": NOW,
+                "last_accepted_segment": {"day": "20260419", "name": "180312_1"},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(&path) else {
+            panic!("activity present");
+        };
+        assert!(activity["a"].sources.is_empty());
+        assert_eq!(activity["a"].last_accepted_ingest_at.as_deref(), Some(NOW));
+        assert_eq!(
+            activity["a"].last_accepted_segment,
+            Some(AcceptedSegment {
+                day: "20260419".to_owned(),
+                name: "180312_1".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn malformed_source_entry_does_not_fail_the_device_or_sibling() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            json!({"a": {
+                "last_seen_at": NOW,
+                "sources": {
+                    "audio": {
+                        "last_accepted_ingest_at": NOW,
+                        "unknown": true
+                    },
+                    "location": {
+                        "last_accepted_ingest_at": "not-a-timestamp"
+                    },
+                    "screen": {
+                        "last_accepted_ingest_at": NOW,
+                        "last_accepted_segment": {"day": "20260419", "name": "180312_1"}
+                    }
+                }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(&path) else {
+            panic!("activity present, not whole-file malformed");
+        };
+        assert!(matches!(
+            activity["a"].sources.get("audio"),
+            Some(SourceRecord::Malformed(_))
+        ));
+        assert!(matches!(
+            activity["a"].sources.get("location"),
+            Some(SourceRecord::Malformed(_))
+        ));
+        match activity["a"].sources.get("screen") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.last_accepted_ingest_at.as_deref(), Some(NOW));
+            }
+            other => panic!("screen source valid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accept_and_reject_on_different_sources_do_not_interfere() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    "event_append_failed",
+                    Some("location"),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:05:12Z")
+                );
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.last_accepted_ingest_at, None);
+                assert_eq!(
+                    source.ingest_rejection,
+                    Some(IngestRejection {
+                        reason_code: "event_append_failed".to_owned(),
+                        first: "2026-04-19T18:06:12Z".to_owned(),
+                        latest: "2026-04-19T18:06:12Z".to_owned(),
+                        active_count: 1,
+                    })
+                );
+            }
+            other => panic!("location source valid, got {other:?}"),
+        }
+        assert_eq!(
+            activity
+                .ingest_rejection
+                .as_ref()
+                .map(|row| row.reason_code.as_str()),
+            Some("event_append_failed")
+        );
+    }
+
+    #[test]
+    fn source_rejection_streak_accumulates_and_clears_independently() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_ingest_rejection("a", NOW, "event_append_failed", Some("audio"))
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:04:12Z",
+                    "stream_advance_failed",
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    "notify_failed",
+                    Some("location"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.ingest_rejection, None);
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:06:12Z")
+                );
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.ingest_rejection,
+                    Some(IngestRejection {
+                        reason_code: "notify_failed".to_owned(),
+                        first: "2026-04-19T18:05:12Z".to_owned(),
+                        latest: "2026-04-19T18:05:12Z".to_owned(),
+                        active_count: 1,
+                    })
+                );
+            }
+            other => panic!("location source valid, got {other:?}"),
+        }
+        assert_eq!(activity.ingest_rejection, None);
+    }
+
+    #[test]
+    fn sibling_source_mutation_preserves_malformed_source_json() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        let malformed_audio = json!({
+            "last_accepted_ingest_at": NOW,
+            "unknown": true
+        });
+        fs::write(
+            ledger.devices_path(),
+            json!({"a": {
+                "last_seen_at": NOW,
+                "sources": {
+                    "audio": malformed_audio,
+                }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some("location"),
+                )
+                .unwrap()
+        );
+
+        let stored =
+            serde_json::from_slice::<Value>(&fs::read(ledger.devices_path()).unwrap()).unwrap();
+        assert_eq!(stored["a"]["sources"]["audio"], malformed_audio);
+        assert_eq!(
+            stored["a"]["sources"]["location"]["last_accepted_ingest_at"],
+            "2026-04-19T18:06:12Z"
+        );
+        let activity = present_activity(&ledger, "a");
+        assert!(matches!(
+            activity.sources.get("audio"),
+            Some(SourceRecord::Malformed(_))
+        ));
+    }
+
+    fn present_activity(ledger: &AuthorizationLedger, cid: &str) -> ClientActivity {
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        activity.get(cid).cloned().expect("activity for client")
     }
 
     fn entry(fingerprint: &str, label: &str, role: ClientRole) -> ClientEntry {

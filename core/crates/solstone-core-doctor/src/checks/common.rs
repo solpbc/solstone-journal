@@ -7,7 +7,7 @@ use crate::vocabulary::{
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection, ClientReach,
-    ConnectionFreshness, inspect_clients_at,
+    ConnectionFreshness, SourceDelivery, inspect_clients_at,
 };
 pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> {
     let read = read_journal_config(&context.journal_path).map_err(|error| error.to_string())?;
@@ -170,6 +170,39 @@ pub(crate) fn delivery_reach_clause(reach: ClientReach) -> &'static str {
             "it is still running, but it isn't adding to your journal"
         }
         ClientReach::Offline => "the device appears offline and may be asleep",
+    }
+}
+
+pub(crate) fn source_display_name(source: &str) -> &str {
+    if source.is_empty() { "default" } else { source }
+}
+
+/// Names of `NeedsAttention` sources on a multi-source device. Empty when the
+/// device has at most one source, so single-source wording stays unchanged.
+pub(crate) fn needs_attention_source_names(row: &ClientAssessment) -> Vec<String> {
+    if row.source_delivery.len() <= 1 {
+        return Vec::new();
+    }
+    row.source_delivery
+        .iter()
+        .filter(|(_, delivery)| delivery.state == SourceDelivery::NeedsAttention)
+        .map(|(source, _)| source_display_name(source).to_owned())
+        .collect()
+}
+
+pub(crate) fn format_attention_sources(names: &[String]) -> Option<String> {
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.join(", "))
+    }
+}
+
+pub(crate) fn with_source_attention(base: String, names: &[String]) -> String {
+    match format_attention_sources(names) {
+        Some(sources) if names.len() == 1 => format!("{base} ({sources} needs attention)"),
+        Some(sources) => format!("{base} ({sources} need attention)"),
+        None => base,
     }
 }
 

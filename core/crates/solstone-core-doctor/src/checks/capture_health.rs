@@ -41,31 +41,34 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
             "rollup=no_senders; the solstone app hasn't added anything to your journal yet",
             None::<String>,
         )
-    } else if common::assessed_capture_rows(&inspection)
-        .expect("available assessment rows")
-        .iter()
-        .all(|row| row.capture_state == ClientCaptureState::Active)
-    {
-        make_result(
-            check,
-            Status::Ok,
-            "rollup=active; the solstone app on every device that has added to your journal is current",
-            None::<String>,
-        )
     } else {
-        let clauses: Vec<String> = common::assessed_capture_rows(&inspection)
-            .expect("available assessment rows")
-            .into_iter()
-            .filter(|row| row.capture_state != ClientCaptureState::Active)
-            .map(capture_clause)
+        let rows = common::assessed_capture_rows(&inspection).expect("available assessment rows");
+        let clauses: Vec<String> = rows
+            .iter()
+            .filter_map(|row| {
+                if row.capture_state != ClientCaptureState::Active {
+                    Some(capture_clause(row))
+                } else {
+                    source_attention_clause(row)
+                }
+            })
             .collect();
-        let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
-        make_result(
-            check,
-            Status::Warn,
-            truncate(&detail, 400),
-            Some("open /app/health to inspect each device"),
-        )
+        if clauses.is_empty() {
+            make_result(
+                check,
+                Status::Ok,
+                "rollup=active; the solstone app on every device that has added to your journal is current",
+                None::<String>,
+            )
+        } else {
+            let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
+            make_result(
+                check,
+                Status::Warn,
+                truncate(&detail, 400),
+                Some("open /app/health to inspect each device"),
+            )
+        }
     };
     result.client_delivery = Some(facts);
     result
@@ -83,6 +86,8 @@ fn capture_clause(row: &ClientAssessment) -> String {
             common::client_name(row)
         ),
     };
+    let names = common::needs_attention_source_names(row);
+    let base = common::with_source_attention(base, &names);
     if matches!(
         row.capture_state,
         ClientCaptureState::Stale | ClientCaptureState::Offline
@@ -95,4 +100,13 @@ fn capture_clause(row: &ClientAssessment) -> String {
     } else {
         base
     }
+}
+
+fn source_attention_clause(row: &ClientAssessment) -> Option<String> {
+    let names = common::needs_attention_source_names(row);
+    let sources = common::format_attention_sources(&names)?;
+    Some(format!(
+        "the solstone app on {} is having trouble adding {sources}",
+        common::client_name(row)
+    ))
 }
