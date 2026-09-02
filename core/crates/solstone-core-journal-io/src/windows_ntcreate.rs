@@ -54,6 +54,52 @@ fn nt_create_relative_with_attributes(
     options: u32,
     object_attributes: u32,
 ) -> io::Result<OwnedHandle> {
+    nt_create_relative_raw(
+        parent,
+        name,
+        desired_access,
+        disposition,
+        options,
+        object_attributes,
+        windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
+            | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE
+            | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
+    )
+}
+
+/// Open or create one native-name child without sharing `DELETE`.
+#[allow(
+    dead_code,
+    reason = "consumed by publication-path prepare, itself consumed by the create-only writer in the next lode"
+)]
+pub(crate) fn nt_create_relative_deny_delete_sharing(
+    parent: RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<OwnedHandle> {
+    nt_create_relative_raw(
+        parent,
+        name,
+        desired_access,
+        disposition,
+        options,
+        OBJ_CASE_INSENSITIVE,
+        windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
+            | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
+    )
+}
+
+fn nt_create_relative_raw(
+    parent: RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+    object_attributes: u32,
+    share_access: u32,
+) -> io::Result<OwnedHandle> {
     let wide = name.encode_wide().collect::<Vec<_>>();
     let byte_length = wide
         .len()
@@ -87,9 +133,7 @@ fn nt_create_relative_with_attributes(
             &mut status,
             std::ptr::null(),
             0,
-            windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
-                | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE
-                | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
+            share_access,
             disposition,
             options,
             std::ptr::null(),

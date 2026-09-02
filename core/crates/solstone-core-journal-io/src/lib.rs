@@ -66,6 +66,8 @@ mod windows_managed_log_resolve;
 mod windows_managed_log_test_hooks;
 #[cfg(windows)]
 mod windows_ntcreate;
+// Parser is host-neutral (AC1); Windows prepare/revalidate are cfg'd inside.
+mod windows_publication_path;
 #[cfg(windows)]
 pub mod windows_sync_dir;
 
