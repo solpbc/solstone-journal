@@ -38,6 +38,15 @@ fn main() {
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
         #[cfg(windows)]
+        "current-directory" => {
+            println!(
+                "{}",
+                std::env::current_dir()
+                    .expect("read child current directory")
+                    .display()
+            );
+        }
+        #[cfg(windows)]
         "exit-code" => {
             let code = args
                 .next()
