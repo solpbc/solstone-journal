@@ -253,7 +253,10 @@ try {
     ) | Set-Content -LiteralPath $validation -Encoding utf8
 
     $cmakeVersion = (& $cmake --version | Select-Object -First 1).Trim()
-    $clVersion = (& $cl 2>&1 | Select-Object -First 1).ToString().Trim()
+    $clVersion = (Get-Item -LiteralPath $cl).VersionInfo.ProductVersion
+    if ([string]::IsNullOrWhiteSpace($clVersion)) {
+        throw 'cl.exe file version is absent'
+    }
     $toolchain = "$cmakeVersion; $clVersion"
     $evidence = Join-Path $ReportRoot 'ced-build-evidence.json'
     $receipt = Join-Path $ReportRoot 'ced-build-receipt.json'
