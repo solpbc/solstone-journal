@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use solstone_core_distribution::acquire;
+use solstone_core_distribution::ced_windows_source;
 use solstone_core_distribution::cleanroom::{
     bind_loopback, plan_text_from_inventory_path, serve_directory, serve_generation_fixture,
     serve_root_from_args,
@@ -15,7 +16,7 @@ use solstone_core_distribution::produce::{self, ProduceArgs};
 use solstone_core_distribution::publish;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|publish|sign|acquire|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -47,6 +48,19 @@ fn main() -> ExitCode {
             let rest = args.collect::<Vec<_>>();
             match acquire::run(&rest) {
                 Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("ced-windows") => {
+            let rest = args.collect::<Vec<_>>();
+            match ced_windows_source::run_cli(&rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
                 Err(error) => {
                     eprintln!("{error}");
                     ExitCode::from(2)

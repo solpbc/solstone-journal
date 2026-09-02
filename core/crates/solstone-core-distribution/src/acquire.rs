@@ -102,6 +102,20 @@ struct VersionedFetchableInput {
     input: FetchableInput,
 }
 
+/// The exact CMake archive admitted into a Windows controlled-build slot.
+///
+/// Acquisition and the CED receipt path share this one parsed identity so a
+/// future builder-input edit cannot silently desynchronize download admission
+/// from the bytes recorded beside the produced DLL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WindowsCmakeArchiveInput {
+    pub version: String,
+    pub filename: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Default)]
 struct Flags {
     dest: Option<PathBuf>,
@@ -193,6 +207,19 @@ fn load_builder_inputs(repo: &Path) -> Result<BuilderInputsFile, AcquireError> {
     Ok(parsed)
 }
 
+pub(crate) fn windows_cmake_archive_input(
+    repo: &Path,
+) -> Result<WindowsCmakeArchiveInput, AcquireError> {
+    let input = load_builder_inputs(repo)?.cmake_windows_x86_64;
+    Ok(WindowsCmakeArchiveInput {
+        version: input.version,
+        filename: input.input.filename,
+        url: input.input.url,
+        sha256: input.input.sha256,
+        size: input.input.size,
+    })
+}
+
 fn fetch_verified(
     url: &str,
     sha256: &str,
@@ -272,13 +299,12 @@ fn acquire_builder_inputs(repo: &Path, dest: Option<&Path>) -> Result<(), Acquir
 /// input that must be transferred into a Windows slot before its network deny
 /// boundary is armed.
 fn acquire_cmake_windows(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
-    let inputs = load_builder_inputs(repo)?;
-    let cmake = &inputs.cmake_windows_x86_64;
+    let cmake = windows_cmake_archive_input(repo)?;
     let dest = dest.map(Path::to_path_buf).unwrap_or_else(|| {
         repo.join("target/windows-builder-inputs")
-            .join(&cmake.input.filename)
+            .join(&cmake.filename)
     });
-    let fetched = fetch_input(&cmake.input, &dest)?;
+    let fetched = fetch_verified(&cmake.url, &cmake.sha256, Some(cmake.size), &dest)?;
     println!(
         "cmake {} version={} dest={}",
         if fetched { "fetched" } else { "cached" },

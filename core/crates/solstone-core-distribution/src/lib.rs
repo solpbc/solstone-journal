@@ -11,6 +11,7 @@ pub mod archive_seal;
 pub mod archive_taxonomy;
 pub mod artifact_verify;
 pub mod ced_windows;
+pub mod ced_windows_source;
 pub mod cleanroom;
 #[doc(hidden)]
 pub mod cli_sign;

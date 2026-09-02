@@ -28,6 +28,7 @@ pub const CED_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1: &str = "solstone.ced-windows-bui
 pub const CED_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/ced-build-evidence.json";
 pub const CED_WINDOWS_SOURCE_ARCHIVE_LABEL: &str = "sources/ced.cpp-with-ggml.tar.gz";
+pub const CED_WINDOWS_CMAKE_ARCHIVE_LABEL: &str = "tools/cmake-windows-x86_64.zip";
 
 pub const CED_WINDOWS_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 pub const CED_WINDOWS_BUILD_PROFILE: &str = "Release";
@@ -92,6 +93,7 @@ const FORBIDDEN_IMPORT_NEEDLES: &[&str] = &[
 pub struct CedWindowsBuildEvidence {
     pub schema: String,
     pub source_archive: InputIdentityEntry,
+    pub cmake_archive: InputIdentityEntry,
     pub ggml: DependencySource,
     pub export_definition_sha256: String,
     pub cmake_cache_sha256: String,
@@ -285,6 +287,21 @@ impl CedWindowsBuildEvidence {
             });
         }
         require_sha256("CED source archive SHA-256", &self.source_archive.sha256)?;
+        if self.cmake_archive.label != CED_WINDOWS_CMAKE_ARCHIVE_LABEL {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CMake archive label",
+                expected: CED_WINDOWS_CMAKE_ARCHIVE_LABEL.to_owned(),
+                found: self.cmake_archive.label.clone(),
+            });
+        }
+        if self.cmake_archive.size == 0 {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CMake archive size",
+                expected: "nonzero".to_owned(),
+                found: "0".to_owned(),
+            });
+        }
+        require_sha256("CMake archive SHA-256", &self.cmake_archive.sha256)?;
         provenance::require_repository(CED_GGML_REPOSITORY, &self.ggml.repository)
             .map_err(|source| CedWindowsBuildEvidenceError::Source { source })?;
         provenance::require_commit(GGML_COMMIT, &self.ggml.revision)
@@ -467,7 +484,7 @@ pub fn assemble_receipt_draft(
     let evidence_digest = evidence.digest()?;
     Ok(ControlledBuildReceiptDraft {
         source: Some(source),
-        inputs: Some(vec![evidence.source_archive]),
+        inputs: Some(vec![evidence.source_archive, evidence.cmake_archive]),
         builder: Some(builder),
         configuration: Some(ced_windows_build_configuration()),
         outputs: Some(outputs),
@@ -508,6 +525,11 @@ mod tests {
             source_archive: InputIdentityEntry {
                 label: CED_WINDOWS_SOURCE_ARCHIVE_LABEL.to_owned(),
                 sha256: source.windows_dependency.content_sha256.clone(),
+                size: 1,
+            },
+            cmake_archive: InputIdentityEntry {
+                label: CED_WINDOWS_CMAKE_ARCHIVE_LABEL.to_owned(),
+                sha256: "d".repeat(64),
                 size: 1,
             },
             ggml: DependencySource {
@@ -621,7 +643,7 @@ mod tests {
         let evidence_digest = evidence.digest().expect("evidence digest");
         let draft = assemble_receipt_draft(source, evidence, dummy_builder(), good_outputs())
             .expect("bound receipt draft");
-        assert_eq!(draft.inputs.expect("source input").len(), 1);
+        assert_eq!(draft.inputs.expect("build inputs").len(), 2);
         assert_eq!(
             draft.supporting.expect("build evidence sidecar").as_slice(),
             [SupportingArtifactRef {
