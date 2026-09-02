@@ -610,7 +610,7 @@ fn is_unsupported_no_replace_errno(raw: i32) -> bool {
     raw == libc::ENOSYS || raw == libc::EOPNOTSUPP || raw == libc::ENOTSUP || raw == libc::EINVAL
 }
 
-fn no_replace_primitive() -> NoReplacePrimitive {
+pub(crate) fn no_replace_primitive() -> NoReplacePrimitive {
     #[cfg(target_os = "linux")]
     {
         NoReplacePrimitive::LinuxRenameAt2
@@ -625,7 +625,11 @@ fn no_replace_primitive() -> NoReplacePrimitive {
     }
 }
 
-fn rename_no_replace(directory: &FlatDirectory, from: &OsStr, to: &OsStr) -> Result<(), io::Error> {
+pub(crate) fn rename_no_replace(
+    directory: &FlatDirectory,
+    from: &OsStr,
+    to: &OsStr,
+) -> Result<(), io::Error> {
     let from = CString::new(from.as_bytes()).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -648,7 +652,7 @@ fn rename_no_replace(directory: &FlatDirectory, from: &OsStr, to: &OsStr) -> Res
 
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
-fn platform_rename_no_replace(
+pub(crate) fn platform_rename_no_replace(
     directory: i32,
     from: &CString,
     to: &CString,
@@ -668,7 +672,7 @@ fn platform_rename_no_replace(
 
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
-fn platform_rename_no_replace(
+pub(crate) fn platform_rename_no_replace(
     directory: i32,
     from: &CString,
     to: &CString,
@@ -686,7 +690,7 @@ fn platform_rename_no_replace(
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn platform_rename_no_replace(
+pub(crate) fn platform_rename_no_replace(
     _directory: i32,
     _from: &CString,
     _to: &CString,
