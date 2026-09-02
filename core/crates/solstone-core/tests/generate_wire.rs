@@ -722,12 +722,6 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
     let cases = [
         ("none", json!({}), "refused-no-engine-configured", true),
         (
-            "attestation",
-            json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}}),
-            "refused-attestation-not-verified",
-            true,
-        ),
-        (
             "google-missing-key",
             json!({"providers": {"active": {"provider": "google"}}}),
             "refused-provider-response-invalid",
@@ -797,6 +791,34 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         assert!(!journal.join("tokens").exists());
         let _ = std::fs::remove_dir_all(journal);
     }
+}
+
+#[test]
+fn confidential_lane_refuses_regardless_of_nvattest_network_outcome() {
+    let config = json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}});
+    let journal = root("attestation");
+    write_config(&journal, config);
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    let response = stdout_json(&output);
+    let vector_id = match response["reason"].as_str() {
+        Some("attestation-not-verified") => "refused-attestation-not-verified",
+        Some("attestation-failed") => "refused-attestation-failed",
+        other => panic!("unexpected confidential reason: {other:?}"),
+    };
+    let expected = &fixture_vector(vector_id)["response"];
+    assert_eq!(response["reason"], expected["reason"], "{vector_id} reason");
+    assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
+    assert_eq!(
+        response["provider"], expected["provider"],
+        "{vector_id} provider"
+    );
+    for name in ["reason_code", "retryable", "blocking"] {
+        assert_eq!(response[name], expected[name], "{vector_id} {name}");
+    }
+    assert!(!journal.join("tokens").exists());
+    let _ = std::fs::remove_dir_all(journal);
 }
 
 #[test]
@@ -1228,7 +1250,15 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     assert_eq!(output.status.code(), Some(0));
     let response = stdout_json(&output);
     assert_eq!(response["outcome"], "refused");
-    assert_eq!(response["reason"], "attestation-not-verified");
+    let vector_id = match response["reason"].as_str() {
+        Some("attestation-not-verified") => "refused-attestation-not-verified",
+        Some("attestation-failed") => "refused-attestation-failed",
+        other => panic!("unexpected confidential reason: {other:?}"),
+    };
+    assert_eq!(
+        response["reason"],
+        fixture_vector(vector_id)["response"]["reason"]
+    );
     let _ = std::fs::remove_dir_all(journal);
     let _ = std::fs::remove_dir_all(confidential_journal);
 }

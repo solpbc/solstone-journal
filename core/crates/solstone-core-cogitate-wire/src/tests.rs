@@ -333,6 +333,48 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
     )
     .expect("confidential provider constructs");
     let failure = provider
+        .converse_confidential_with_controls(
+            "request-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+            std::time::UNIX_EPOCH,
+            |_| solstone_core_spp_ratls::NvattestEnsureStatus::Unavailable,
+            |_, _| panic!("channel establishment must not run after failed readiness"),
+        )
+        .expect_err("attestation prerequisite refuses confidential lane");
+    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+}
+
+#[test]
+fn converse_dispatches_confidential_arm_without_downgrading() {
+    let missing_nvattest_dir =
+        std::env::temp_dir().join("solstone-missing-nvattest-confidential-dispatch");
+    let config = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": "http://127.0.0.1:1",
+                "served_model_id": "configured-model"
+            }
+        },
+        "services": {"confidential": {"nvattest_dir": missing_nvattest_dir}}
+    })
+    .as_object()
+    .expect("config is an object")
+    .clone();
+    let (_, lane) = resolve_lane(&config);
+    let mut provider = DispatchConverseProvider::from_lane(
+        &request(),
+        config,
+        lane,
+        EndpointOverrides::from_values(None, None),
+    )
+    .expect("confidential provider constructs");
+    let failure = provider
         .converse(
             "request-model",
             None,
@@ -343,7 +385,10 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
             std::time::Duration::from_secs(1),
         )
         .expect_err("attestation prerequisite refuses confidential lane");
-    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+    assert!(matches!(
+        failure.reason_code.as_str(),
+        "attestation_not_yet_verified" | "attestation_failed"
+    ));
 }
 
 #[test]
