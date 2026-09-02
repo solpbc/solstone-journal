@@ -86,3 +86,11 @@ required-features = ["test-hooks"]
 name = "windows_oplog_namespace"
 path = "tests/windows_oplog_namespace.rs"
 required-features = ["test-hooks"]
+
+# Share-mode liveness and child-capture behavior need the feature-gated runtime
+# trace/barrier API, which automatic test discovery cannot declare as a target
+# requirement.
+[[test]]
+name = "windows_oplog_liveness"
+path = "tests/windows_oplog_liveness.rs"
+required-features = ["test-hooks"]

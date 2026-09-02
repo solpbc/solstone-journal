@@ -28,7 +28,7 @@ use super::reason::{
     OplogFileIdentity, OplogGapCause, OplogIdentityObservation, OplogPublishReason,
     OplogStageCause, OplogVerifiedAt, StageError,
 };
-use super::writer::OplogWriter;
+use super::writer::{OplogWriter, StagedLease};
 use crate::journal_root::JournalRoot;
 use crate::lease::LeaseProbe;
 
@@ -182,24 +182,12 @@ fn create_with_timing(
             &witnesses,
         ));
     }
-    barrier(OplogCreatePrimitive::AfterStageBeforeLease);
-    if let Err(reason) = checkpoint(OplogCreatePrimitive::Lease) {
-        return Err(fail_after_stage(
-            reason,
-            evidence,
-            &health,
-            &staged,
-            original_identity,
-            &attempted,
-            &witnesses,
-        ));
-    }
-    record_event(OplogCreateEvent::Lease);
-    let lease = match platform::lease_staged(&staged.file) {
-        Ok(Some(lease)) => lease,
-        Ok(None) => {
+    #[cfg(unix)]
+    let lease: StagedLease = {
+        barrier(OplogCreatePrimitive::AfterStageBeforeLease);
+        if let Err(reason) = checkpoint(OplogCreatePrimitive::Lease) {
             return Err(fail_after_stage(
-                OplogCreateReason::LeaseFailed,
+                reason,
                 evidence,
                 &health,
                 &staged,
@@ -208,19 +196,39 @@ fn create_with_timing(
                 &witnesses,
             ));
         }
-        Err(_) => {
-            return Err(fail_after_stage(
-                OplogCreateReason::LeaseIo,
-                evidence,
-                &health,
-                &staged,
-                original_identity,
-                &attempted,
-                &witnesses,
-            ));
-        }
+        record_event(OplogCreateEvent::Lease);
+        let lease = match platform::lease_staged(&staged.file) {
+            Ok(Some(lease)) => lease,
+            Ok(None) => {
+                return Err(fail_after_stage(
+                    OplogCreateReason::LeaseFailed,
+                    evidence,
+                    &health,
+                    &staged,
+                    original_identity,
+                    &attempted,
+                    &witnesses,
+                ));
+            }
+            Err(_) => {
+                return Err(fail_after_stage(
+                    OplogCreateReason::LeaseIo,
+                    evidence,
+                    &health,
+                    &staged,
+                    original_identity,
+                    &attempted,
+                    &witnesses,
+                ));
+            }
+        };
+        barrier(OplogCreatePrimitive::AfterLeaseBeforePublish);
+        lease
     };
-    barrier(OplogCreatePrimitive::AfterLeaseBeforePublish);
+    #[cfg(windows)]
+    let lease: StagedLease = {
+        barrier(OplogCreatePrimitive::AfterAdmissionBeforePublish);
+    };
 
     for (index, name) in names.iter().enumerate() {
         let ordinal = (index + 1) as u8;
@@ -598,7 +606,7 @@ fn reconcile_rename(
 fn finish_landed(
     health: OplogDayHealth,
     staged: platform::StagedFile,
-    lease: crate::lease::SelfLease,
+    lease: StagedLease,
     dest: String,
     original_identity: OplogFileIdentity,
     mut evidence: OplogCreateEvidence,
@@ -701,7 +709,12 @@ fn finish_landed(
             witnesses,
         ));
     }
-    Ok(OplogWriter::new(staged.file, lease, dest))
+    Ok(OplogWriter::new(
+        staged.file,
+        lease,
+        original_identity,
+        dest,
+    ))
 }
 
 fn final_binding_gate(
@@ -1147,11 +1160,24 @@ fn fill_oplog_file_id() -> Result<[u8; 16], OplogCreateError> {
 }
 
 /// Bound no-follow lease probe of one leaf under the admitted day-health directory.
-pub fn probe_oplog_lease(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
+pub fn probe_oplog_lease(
+    health: &OplogDayHealth,
+    leaf: &OsStr,
+    identity: OplogFileIdentity,
+) -> LeaseProbe {
     if force_probe_indeterminate() {
         return LeaseProbe::Indeterminate;
     }
-    platform::probe_named(health, leaf)
+    platform::probe_named(health, leaf, identity)
+}
+
+/// Test-only identity liveness probe. Windows share-mode authority; no pathname bind.
+#[cfg(all(windows, any(test, feature = "test-hooks")))]
+pub fn probe_oplog_identity(health: &OplogDayHealth, identity: OplogFileIdentity) -> LeaseProbe {
+    if force_probe_indeterminate() {
+        return LeaseProbe::Indeterminate;
+    }
+    platform::probe_identity(health, identity)
 }
 
 /// Ordered checkpoints for one create call.
@@ -1164,11 +1190,17 @@ pub enum OplogCreatePrimitive {
     /// Admission-record write and file sync.
     Admission,
     /// After staging, before taking the self-lease.
+    #[cfg_attr(windows, allow(dead_code))]
     AfterStageBeforeLease,
     /// Self-lease acquisition.
+    #[cfg_attr(windows, allow(dead_code))]
     Lease,
     /// After lease, before the dest-rename loop.
+    #[cfg_attr(windows, allow(dead_code))]
     AfterLeaseBeforePublish,
+    /// After admission write/sync, before dest-rename. Windows has no lease step to bracket.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    AfterAdmissionBeforePublish,
     /// Per-candidate no-replace rename syscall.
     Rename,
     /// After a successful kernel rename, before dest inspect.
@@ -1186,6 +1218,7 @@ enum OplogCreateEvent {
     EntropyDraw,
     AdmissionBytesAccepted,
     SyncAll,
+    #[cfg_attr(windows, allow(dead_code))]
     Lease,
     Publish,
 }
@@ -1663,18 +1696,6 @@ fn with_trace<T>(
 }
 
 #[cfg(all(test, unix))]
-fn spawn_sleep_holding_oplog_stdout(stdio: std::process::Stdio) -> std::process::Child {
-    use std::process::{Command, Stdio};
-
-    Command::new("sleep")
-        .arg("0.3")
-        .stdout(stdio)
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap()
-}
-
-#[cfg(all(test, unix))]
 mod tests {
     use std::error::Error;
     use std::ffi::OsStr;
@@ -1760,10 +1781,10 @@ mod tests {
 
     // A concurrent test's forked child can briefly inherit this writer's OFD across
     // fork-to-exec (CLOEXEC applies at exec, not fork); the lock self-releases.
-    fn assert_lease_released(health: &OplogDayHealth, leaf: &OsStr) {
+    fn assert_lease_released(health: &OplogDayHealth, leaf: &OsStr, identity: OplogFileIdentity) {
         let deadline = std::time::Instant::now() + DEFAULT_LEASE_RETRY_MAX;
         loop {
-            if probe_oplog_lease(health, leaf) == LeaseProbe::Released {
+            if probe_oplog_lease(health, leaf, identity) == LeaseProbe::Released {
                 return;
             }
             assert!(
@@ -1989,12 +2010,13 @@ mod tests {
         let health = health_at(temporary.path());
         let writer = create(temporary.path()).unwrap();
         let leaf = writer.leaf_name().to_owned();
+        let identity = writer.identity();
         assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
+            probe_oplog_lease(&health, OsStr::new(&leaf), identity),
             LeaseProbe::Active
         );
         drop(writer);
-        assert_lease_released(&health, OsStr::new(&leaf));
+        assert_lease_released(&health, OsStr::new(&leaf), identity);
     }
 
     #[test]
@@ -2483,8 +2505,9 @@ mod tests {
             b"hello\nlate\n"
         );
         assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        let identity = writer.identity();
         drop(writer);
-        assert_lease_released(&health, OsStr::new("moved"));
+        assert_lease_released(&health, OsStr::new("moved"), identity);
     }
 
     #[test]
@@ -2505,7 +2528,7 @@ mod tests {
     fn stdio_duplicates_append_exactly_once() {
         let temporary = temp();
         let mut writer = create(temporary.path()).unwrap();
-        let mut dup = writer.try_clone_for_stdio().unwrap();
+        let mut dup = writer.try_clone_for_write().unwrap();
         writer.write_all(b"one\n").unwrap();
         dup.write_all(b"two\n").unwrap();
         writer.write_all(b"three\n").unwrap();
@@ -2523,17 +2546,18 @@ mod tests {
         let temporary = temp();
         let health = health_at(temporary.path());
         let writer = create(temporary.path()).unwrap();
-        let mut dup = writer.try_clone_for_stdio().unwrap();
+        let mut dup = writer.try_clone_for_write().unwrap();
         let leaf = writer.leaf_name().to_owned();
+        let identity = writer.identity();
         drop(writer);
         assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
+            probe_oplog_lease(&health, OsStr::new(&leaf), identity),
             LeaseProbe::Active
         );
         dup.write_all(b"still\n").unwrap();
         dup.flush().unwrap();
         drop(dup);
-        assert_lease_released(&health, OsStr::new(&leaf));
+        assert_lease_released(&health, OsStr::new(&leaf), identity);
         assert_eq!(
             payload_after_admission(&health_dir(temporary.path()).join(&leaf), &leaf),
             b"still\n"
@@ -2541,31 +2565,14 @@ mod tests {
     }
 
     #[test]
-    fn child_process_exit_releases_lease() {
-        let temporary = temp();
-        let health = health_at(temporary.path());
-        let writer = create(temporary.path()).unwrap();
-        let leaf = writer.leaf_name().to_owned();
-        let stdio = writer.duplicate_locked_stdio().unwrap();
-        drop(writer);
-        let mut child = super::spawn_sleep_holding_oplog_stdout(stdio);
-        assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
-            LeaseProbe::Active
-        );
-        let status = child.wait().unwrap();
-        assert!(status.success());
-        drop(child);
-        assert_lease_released(&health, OsStr::new(&leaf));
-    }
-
-    #[test]
     fn injected_probe_failure_is_indeterminate_without_companion_files() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let writer = create(temporary.path()).unwrap();
+        let identity = writer.identity();
         let leaf = OsStr::new(writer.leaf_name());
-        let probe = run_with_oplog_probe_indeterminate(|| probe_oplog_lease(&health, leaf));
+        let probe =
+            run_with_oplog_probe_indeterminate(|| probe_oplog_lease(&health, leaf, identity));
         assert_eq!(probe, LeaseProbe::Indeterminate);
         let names = listing(&health_dir(temporary.path()));
         assert!(names.contains(&".oplog-namespace.lock".to_owned()));
