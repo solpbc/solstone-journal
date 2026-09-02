@@ -12,11 +12,12 @@ use solstone_core_distribution::cleanroom::{
     serve_root_from_args,
 };
 use solstone_core_distribution::discover_and_validate_inventory;
+use solstone_core_distribution::onnx_windows_source;
 use solstone_core_distribution::produce::{self, ProduceArgs};
 use solstone_core_distribution::publish;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|onnx-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -57,6 +58,19 @@ fn main() -> ExitCode {
         Some("ced-windows") => {
             let rest = args.collect::<Vec<_>>();
             match ced_windows_source::run_cli(&rest) {
+                Ok(line) => {
+                    println!("{line}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("onnx-windows") => {
+            let rest = args.collect::<Vec<_>>();
+            match onnx_windows_source::run_cli(&rest) {
                 Ok(line) => {
                     println!("{line}");
                     ExitCode::SUCCESS

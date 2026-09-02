@@ -28,6 +28,7 @@ pub mod macho;
 pub mod manifest_verify;
 pub mod onnx_runtime;
 pub mod onnx_windows;
+pub mod onnx_windows_source;
 pub mod parakeet_windows;
 pub mod pdfium;
 pub mod pe;
