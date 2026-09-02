@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
 
+use super::admission::encode_oplog_admission;
 use super::sample_local_instant;
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -22,8 +23,9 @@ use super::name::{
     OplogFormat, derive_day_key_and_opened_field, file_id_hex, format_oplog_name,
     oplog_name_from_parts, original_is_admissible,
 };
-use super::namespace::OplogDayHealth;
+use super::namespace::{OplogDayHealth, OplogNamespaceError, admit_day_health_directory};
 use super::writer::OplogWriter;
+use crate::journal_root::JournalRoot;
 use crate::lease::LeaseProbe;
 
 #[cfg(unix)]
@@ -57,6 +59,15 @@ enum OplogCreateClass {
     LockBusy,
     LockIo,
     AncestorReplaced,
+    NamespaceChronicleUnsafe,
+    NamespaceChronicleIdentityChanged,
+    NamespaceChronicleIo,
+    NamespaceDayUnsafe,
+    NamespaceDayIdentityChanged,
+    NamespaceDayIo,
+    NamespaceHealthUnsafe,
+    NamespaceHealthIdentityChanged,
+    NamespaceHealthIo,
 }
 
 impl OplogCreateClass {
@@ -75,6 +86,19 @@ impl OplogCreateClass {
             Self::LockBusy => "oplog_create_lock_busy",
             Self::LockIo => "oplog_create_lock_io",
             Self::AncestorReplaced => "oplog_create_ancestor_replaced",
+            Self::NamespaceChronicleUnsafe => "oplog_create_namespace_chronicle_unsafe",
+            Self::NamespaceChronicleIdentityChanged => {
+                "oplog_create_namespace_chronicle_identity_changed"
+            }
+            Self::NamespaceChronicleIo => "oplog_create_namespace_chronicle_io",
+            Self::NamespaceDayUnsafe => "oplog_create_namespace_day_unsafe",
+            Self::NamespaceDayIdentityChanged => "oplog_create_namespace_day_identity_changed",
+            Self::NamespaceDayIo => "oplog_create_namespace_day_io",
+            Self::NamespaceHealthUnsafe => "oplog_create_namespace_health_unsafe",
+            Self::NamespaceHealthIdentityChanged => {
+                "oplog_create_namespace_health_identity_changed"
+            }
+            Self::NamespaceHealthIo => "oplog_create_namespace_health_io",
         }
     }
 }
@@ -121,9 +145,9 @@ enum LockTiming {
     Explicit(Duration, Duration),
 }
 
-/// Create one exclusive append-only operational log under `health`.
+/// Create one exclusive append-only operational log under `root`.
 pub fn create_oplog(
-    health: &OplogDayHealth,
+    root: JournalRoot,
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
@@ -133,7 +157,7 @@ pub fn create_oplog(
     }
     let instant = sample_local_instant();
     create_with_timing(
-        health,
+        root,
         source_original,
         run_original,
         format,
@@ -145,7 +169,7 @@ pub fn create_oplog(
 /// Create with caller-supplied namespace-lock timing.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn create_oplog_with_test_timing(
-    health: &OplogDayHealth,
+    root: JournalRoot,
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
@@ -154,7 +178,7 @@ pub fn create_oplog_with_test_timing(
     poll_interval: Duration,
 ) -> Result<OplogWriter, OplogCreateError> {
     create_with_timing(
-        health,
+        root,
         source_original,
         run_original,
         format,
@@ -164,7 +188,7 @@ pub fn create_oplog_with_test_timing(
 }
 
 fn create_with_timing(
-    health: &OplogDayHealth,
+    root: JournalRoot,
     source_original: &str,
     run_original: &str,
     format: OplogFormat,
@@ -175,61 +199,61 @@ fn create_with_timing(
         return Err(OplogCreateError::new(OplogCreateClass::InvalidField));
     }
     let (day, opened) = derive_day_key_and_opened_field(instant);
-    if day != health.day() {
-        return Err(OplogCreateError::new(OplogCreateClass::InvalidField));
-    }
     let ids = draw_distinct_file_ids()?;
-    let _lock = acquire_lock(health, timing)?;
-    for file_id_bytes in ids {
-        let file_id = file_id_hex(&file_id_bytes);
-        let name = oplog_name_from_parts(
+    let names = ids.map(|file_id_bytes| {
+        oplog_name_from_parts(
             source_original,
             run_original,
             opened.clone(),
-            file_id,
+            file_id_hex(&file_id_bytes),
             format,
-        );
-        let dest = format_oplog_name(&name);
+        )
+    });
+    let header = encode_oplog_admission(&names);
+    let health = admit_day_health_directory(root, &day).map_err(map_namespace_error)?;
+    let _lock = acquire_lock(&health, timing)?;
+    for name in &names {
+        let dest = format_oplog_name(name);
         let dest_os = OsStr::new(&dest);
         checkpoint(OplogCreatePrimitive::Stage)?;
-        let mut staged = platform::stage_exclusive(health, dest_os)?;
+        let mut staged = platform::stage_exclusive(&health, dest_os)?;
         if let Err(error) = checkpoint(OplogCreatePrimitive::Admission) {
-            rollback(health, &staged)?;
+            rollback(&health, &staged)?;
             return Err(error);
         }
-        if write_admission(&mut staged.file, &name).is_err() {
-            rollback(health, &staged)?;
+        if write_admission(&mut staged.file, &header).is_err() {
+            rollback(&health, &staged)?;
             return Err(OplogCreateError::io());
         }
         barrier(OplogCreatePrimitive::AfterStageBeforeLease);
         if let Err(error) = checkpoint(OplogCreatePrimitive::Lease) {
-            rollback(health, &staged)?;
+            rollback(&health, &staged)?;
             return Err(error);
         }
         let lease = match platform::lease_staged(&staged.file) {
             Ok(Some(lease)) => lease,
             Ok(None) => {
-                rollback(health, &staged)?;
+                rollback(&health, &staged)?;
                 return Err(OplogCreateError::new(OplogCreateClass::LeaseFailed));
             }
             Err(error) => {
-                rollback(health, &staged)?;
+                rollback(&health, &staged)?;
                 return Err(error);
             }
         };
         barrier(OplogCreatePrimitive::AfterLeaseBeforePublish);
         if let Err(error) = checkpoint(OplogCreatePrimitive::Publish) {
-            rollback(health, &staged)?;
+            rollback(&health, &staged)?;
             return Err(error);
         }
         if health.revalidate_binding().is_err() {
-            rollback(health, &staged)?;
+            rollback(&health, &staged)?;
             return Err(OplogCreateError::new(OplogCreateClass::AncestorReplaced));
         }
-        let published = platform::publish_handle_bound(health, staged, dest_os);
+        let published = platform::publish_handle_bound(&health, staged, dest_os);
         match published {
             Ok(file) => {
-                if sync_published(health).is_err() {
+                if sync_published(&health).is_err() {
                     return Err(OplogCreateError::io());
                 }
                 if health.revalidate_binding().is_err() {
@@ -238,8 +262,8 @@ fn create_with_timing(
                 return Ok(OplogWriter::new(file, lease, dest));
             }
             Err(platform::PublishOutcome::Occupied(staged)) => {
-                let foreign = platform::dest_is_foreign(health, dest_os, staged.identity)?;
-                rollback(health, &staged)?;
+                let foreign = platform::dest_is_foreign(&health, dest_os, staged.identity)?;
+                rollback(&health, &staged)?;
                 if !foreign {
                     return Err(OplogCreateError::io());
                 }
@@ -255,7 +279,7 @@ fn create_with_timing(
                 return Err(OplogCreateError::new(OplogCreateClass::Aliased));
             }
             Err(platform::PublishOutcome::Io(staged)) => {
-                rollback(health, &staged)?;
+                rollback(&health, &staged)?;
                 return Err(OplogCreateError::io());
             }
             Err(platform::PublishOutcome::IoAfterPublish { file }) => {
@@ -267,13 +291,8 @@ fn create_with_timing(
     Err(OplogCreateError::new(OplogCreateClass::RetryExhausted))
 }
 
-fn write_admission(
-    file: &mut std::fs::File,
-    name: &super::name::OplogName,
-) -> Result<(), OplogCreateError> {
-    let header = super::admission::encode_oplog_admission(name);
-    file.write_all(&header)
-        .map_err(|_| OplogCreateError::io())?;
+fn write_admission(file: &mut std::fs::File, header: &[u8]) -> Result<(), OplogCreateError> {
+    file.write_all(header).map_err(|_| OplogCreateError::io())?;
     file.sync_all().map_err(|_| OplogCreateError::io())?;
     Ok(())
 }
@@ -330,7 +349,27 @@ fn map_lock_error(error: OplogNamespaceLockError) -> OplogCreateError {
     OplogCreateError::new(class)
 }
 
-fn draw_distinct_file_ids() -> Result<Vec<[u8; 16]>, OplogCreateError> {
+fn map_namespace_error(error: OplogNamespaceError) -> OplogCreateError {
+    let token = error.to_string();
+    let suffix = token
+        .strip_prefix("oplog_namespace_")
+        .expect("OplogNamespaceError Display is oplog_namespace_{stage}_{class}");
+    let class = match suffix {
+        "chronicle_unsafe" => OplogCreateClass::NamespaceChronicleUnsafe,
+        "chronicle_identity_changed" => OplogCreateClass::NamespaceChronicleIdentityChanged,
+        "chronicle_io" => OplogCreateClass::NamespaceChronicleIo,
+        "day_unsafe" => OplogCreateClass::NamespaceDayUnsafe,
+        "day_identity_changed" => OplogCreateClass::NamespaceDayIdentityChanged,
+        "day_io" => OplogCreateClass::NamespaceDayIo,
+        "health_unsafe" => OplogCreateClass::NamespaceHealthUnsafe,
+        "health_identity_changed" => OplogCreateClass::NamespaceHealthIdentityChanged,
+        "health_io" => OplogCreateClass::NamespaceHealthIo,
+        _ => panic!("unknown OplogNamespaceError class {suffix}"),
+    };
+    OplogCreateError::new(class)
+}
+
+fn draw_distinct_file_ids() -> Result<[[u8; 16]; OPLOG_CREATE_ATTEMPTS], OplogCreateError> {
     let mut ids = Vec::with_capacity(OPLOG_CREATE_ATTEMPTS);
     let mut seen = HashSet::with_capacity(OPLOG_CREATE_ATTEMPTS);
     for _ in 0..OPLOG_FILE_ID_DRAW_BUDGET {
@@ -338,7 +377,9 @@ fn draw_distinct_file_ids() -> Result<Vec<[u8; 16]>, OplogCreateError> {
         if seen.insert(id) {
             ids.push(id);
             if ids.len() == OPLOG_CREATE_ATTEMPTS {
-                return Ok(ids);
+                return Ok(ids
+                    .try_into()
+                    .expect("exactly OPLOG_CREATE_ATTEMPTS distinct ids"));
             }
         }
     }
@@ -346,11 +387,11 @@ fn draw_distinct_file_ids() -> Result<Vec<[u8; 16]>, OplogCreateError> {
 }
 
 fn draw_file_id() -> Result<[u8; 16], OplogCreateError> {
+    checkpoint(OplogCreatePrimitive::Random)?;
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(bytes) = take_injected_file_id() {
         return Ok(bytes);
     }
-    checkpoint(OplogCreatePrimitive::Random)?;
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|_| OplogCreateError::io())?;
     Ok(bytes)
@@ -387,8 +428,9 @@ pub enum OplogCreatePrimitive {
 
 #[cfg(any(test, feature = "test-hooks"))]
 struct OplogCreateTraceState {
-    fault: Option<OplogCreatePrimitive>,
+    fault: Option<(OplogCreatePrimitive, usize)>,
     fault_consumed: bool,
+    attempted: Vec<OplogCreatePrimitive>,
     barriers: Vec<(OplogCreatePrimitive, Box<dyn FnOnce()>)>,
     file_ids: std::collections::VecDeque<[u8; 16]>,
     rollback_fail: bool,
@@ -416,7 +458,13 @@ fn checkpoint(primitive: OplogCreatePrimitive) -> Result<(), OplogCreateError> {
         let Some(state) = trace.as_mut() else {
             return false;
         };
-        if state.fault == Some(primitive) {
+        state.attempted.push(primitive);
+        let ordinal = state
+            .attempted
+            .iter()
+            .filter(|candidate| **candidate == primitive)
+            .count();
+        if state.fault == Some((primitive, ordinal)) {
             state.fault = None;
             state.fault_consumed = true;
             true
@@ -528,6 +576,7 @@ fn empty_trace() -> OplogCreateTraceState {
     OplogCreateTraceState {
         fault: None,
         fault_consumed: false,
+        attempted: Vec::new(),
         barriers: Vec::new(),
         file_ids: std::collections::VecDeque::new(),
         rollback_fail: false,
@@ -537,15 +586,25 @@ fn empty_trace() -> OplogCreateTraceState {
     }
 }
 
-/// Run `operation` with one injected create fault.
+/// Run `operation` with one injected create fault at the first occurrence.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn run_with_oplog_create_fault<T>(
     primitive: OplogCreatePrimitive,
     operation: impl FnOnce() -> T,
 ) -> (T, bool) {
+    run_with_oplog_create_fault_at(primitive, 1, operation)
+}
+
+/// Run `operation` with one injected create fault at a 1-based primitive ordinal.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_create_fault_at<T>(
+    primitive: OplogCreatePrimitive,
+    ordinal: usize,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
     with_trace(
         OplogCreateTraceState {
-            fault: Some(primitive),
+            fault: Some((primitive, ordinal)),
             ..empty_trace()
         },
         operation,
@@ -653,8 +712,9 @@ mod tests {
     use crate::lease::{DEFAULT_LEASE_RETRY_MAX, probe_file_lease};
     use crate::operational_log::name::{OplogNameClassification, classify_oplog_name};
     use crate::operational_log::{
-        OplogFormat, acquire_oplog_namespace_lock_with_test_timing, admit_day_health_directory,
-        validate_oplog_admission,
+        OplogFormat, OplogNamespacePrimitive, acquire_oplog_namespace_lock_with_test_timing,
+        admit_day_health_directory, run_with_oplog_namespace_barrier,
+        run_with_oplog_namespace_fault, validate_oplog_admission,
     };
 
     const ZERO: Duration = Duration::ZERO;
@@ -674,8 +734,16 @@ mod tests {
         admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap()
     }
 
-    fn create(health: &OplogDayHealth) -> Result<OplogWriter, OplogCreateError> {
-        create_oplog_with_test_timing(health, SOURCE, RUN, OplogFormat::Log, instant(), ZERO, ZERO)
+    fn create(root: &Path) -> Result<OplogWriter, OplogCreateError> {
+        create_oplog_with_test_timing(
+            JournalRoot::open(root).unwrap(),
+            SOURCE,
+            RUN,
+            OplogFormat::Log,
+            instant(),
+            ZERO,
+            ZERO,
+        )
     }
 
     fn dest_for(file_id: [u8; 16]) -> String {
@@ -759,9 +827,8 @@ mod tests {
     #[test]
     fn two_creates_at_the_same_instant_get_distinct_file_ids() {
         let temporary = temp();
-        let health = health_at(temporary.path());
-        let first = create(&health).unwrap();
-        let second = create(&health).unwrap();
+        let first = create(temporary.path()).unwrap();
+        let second = create(temporary.path()).unwrap();
         assert_ne!(first.leaf_name(), second.leaf_name());
         let dir = health_dir(temporary.path());
         assert_eq!(canonical_leaves(&dir).len(), 2);
@@ -770,14 +837,15 @@ mod tests {
     #[test]
     fn injected_file_id_collision_retries_without_touching_incumbent() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let first_id = [0x11; 16];
         let second_id = [0x22; 16];
         let incumbent = dest_for(first_id);
         let path = health_dir(temporary.path()).join(&incumbent);
         fs::write(&path, b"incumbent").unwrap();
         let writer =
-            run_with_oplog_file_ids(vec![first_id, second_id], || create(&health)).unwrap();
+            run_with_oplog_file_ids(vec![first_id, second_id], || create(temporary.path()))
+                .unwrap();
         assert_eq!(writer.leaf_name(), dest_for(second_id));
         assert_eq!(fs::read(&path).unwrap(), b"incumbent");
     }
@@ -785,7 +853,7 @@ mod tests {
     #[test]
     fn exhausted_collisions_leave_incumbents_byte_identical() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let dir = health_dir(temporary.path());
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [index as u8; 16])
@@ -794,7 +862,7 @@ mod tests {
         for incumbent in &incumbents {
             fs::write(dir.join(incumbent), b"same-bytes").unwrap();
         }
-        let error = run_with_oplog_file_ids(ids, || create(&health)).unwrap_err();
+        let error = run_with_oplog_file_ids(ids, || create(temporary.path())).unwrap_err();
         expect_token(error, "oplog_create_retry_exhausted");
         for incumbent in &incumbents {
             assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"same-bytes");
@@ -806,39 +874,31 @@ mod tests {
     #[test]
     fn random_source_failure_does_not_retry() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let (result, consumed) =
-            run_with_oplog_create_fault(OplogCreatePrimitive::Random, || create(&health));
+            run_with_oplog_create_fault(OplogCreatePrimitive::Random, || create(temporary.path()));
         assert!(consumed);
         expect_token(result.unwrap_err(), "oplog_create_io");
-        let dir = health_dir(temporary.path());
-        assert!(canonical_leaves(&dir).is_empty());
-        assert!(
-            !listing(&dir)
-                .iter()
-                .any(|name| name == ".oplog-namespace.lock")
-        );
-        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+        assert!(!temporary.path().join("chronicle").exists());
     }
 
     #[test]
     fn sixty_four_duplicate_ids_are_entropy_exhausted_with_zero_side_effects() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let id = [0x11; 16];
-        let error =
-            run_with_oplog_file_ids(vec![id; OPLOG_FILE_ID_DRAW_BUDGET], || create(&health))
-                .unwrap_err();
+        let error = run_with_oplog_file_ids(vec![id; OPLOG_FILE_ID_DRAW_BUDGET], || {
+            create(temporary.path())
+        })
+        .unwrap_err();
         expect_token(error, "oplog_create_entropy_exhausted");
-        assert!(listing(&health_dir(temporary.path())).is_empty());
+        assert!(!temporary.path().join("chronicle").exists());
     }
 
     #[test]
     fn non_collision_errors_return_immediately() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         for primitive in [OplogCreatePrimitive::Stage, OplogCreatePrimitive::Publish] {
-            let (result, consumed) = run_with_oplog_create_fault(primitive, || create(&health));
+            let (result, consumed) =
+                run_with_oplog_create_fault(primitive, || create(temporary.path()));
             assert!(consumed);
             expect_token(result.unwrap_err(), "oplog_create_io");
             assert!(canonical_leaves(&health_dir(temporary.path())).is_empty());
@@ -848,9 +908,8 @@ mod tests {
     #[test]
     fn lease_failure_rolls_back_only_the_stage() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let (result, consumed) =
-            run_with_oplog_create_fault(OplogCreatePrimitive::Lease, || create(&health));
+            run_with_oplog_create_fault(OplogCreatePrimitive::Lease, || create(temporary.path()));
         assert!(consumed);
         expect_token(result.unwrap_err(), "oplog_create_lease_failed");
         let dir = health_dir(temporary.path());
@@ -862,14 +921,13 @@ mod tests {
     #[test]
     fn injected_rollback_failure_is_own_residue_and_unrelated_native_name() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let error = with_trace(
             OplogCreateTraceState {
-                fault: Some(OplogCreatePrimitive::Lease),
+                fault: Some((OplogCreatePrimitive::Lease, 1)),
                 rollback_fail: true,
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |state| state.fault_consumed,
         )
         .0
@@ -895,7 +953,6 @@ mod tests {
         ] {
             let isolated = temp();
             let root = isolated.path().to_path_buf();
-            let health = health_at(&root);
             run_with_oplog_create_barrier(
                 primitive,
                 {
@@ -910,7 +967,10 @@ mod tests {
                         assert_eq!(error.to_string(), "oplog_namespace_lock_busy");
                     }
                 },
-                || create(&health),
+                {
+                    let root = root.clone();
+                    move || create(&root)
+                },
             )
             .unwrap();
         }
@@ -920,7 +980,7 @@ mod tests {
     fn probe_is_active_after_publish_and_released_after_drop() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let writer = create(&health).unwrap();
+        let writer = create(temporary.path()).unwrap();
         let leaf = writer.leaf_name().to_owned();
         assert_eq!(
             probe_oplog_lease(&health, OsStr::new(&leaf)),
@@ -933,8 +993,7 @@ mod tests {
     #[test]
     fn published_file_starts_with_admission_header_then_payload() {
         let temporary = temp();
-        let health = health_at(temporary.path());
-        let mut writer = create(&health).unwrap();
+        let mut writer = create(temporary.path()).unwrap();
         writer.write_all(b"payload-line\n").unwrap();
         writer.flush().unwrap();
         let leaf = writer.leaf_name().to_owned();
@@ -947,9 +1006,10 @@ mod tests {
     #[test]
     fn admission_fault_leaves_unrelated_stage() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let (result, consumed) =
-            run_with_oplog_create_fault(OplogCreatePrimitive::Admission, || create(&health));
+            run_with_oplog_create_fault(OplogCreatePrimitive::Admission, || {
+                create(temporary.path())
+            });
         assert!(consumed);
         expect_token(result.unwrap_err(), "oplog_create_io");
         let dir = health_dir(temporary.path());
@@ -961,7 +1021,6 @@ mod tests {
     fn extra_hard_link_before_publish_is_aliased() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
-        let health = health_at(&root);
         let error = run_with_oplog_create_barrier(
             OplogCreatePrimitive::AfterLeaseBeforePublish,
             {
@@ -975,7 +1034,7 @@ mod tests {
                     fs::hard_link(dir.join(&stage), dir.join("alias-link")).unwrap();
                 }
             },
-            || create(&health),
+            || create(&root),
         )
         .unwrap_err();
         expect_token(error, "oplog_create_aliased");
@@ -988,7 +1047,6 @@ mod tests {
     fn stage_pathname_replacement_is_foreign_residue() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
-        let health = health_at(&root);
         let id = [0x44; 16];
         let dest = dest_for(id);
         let error = with_trace(
@@ -1012,7 +1070,7 @@ mod tests {
                 )],
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |_| true,
         )
         .0
@@ -1021,13 +1079,12 @@ mod tests {
         let dir = health_dir(&root);
         assert_eq!(fs::read(dir.join(&dest)).unwrap(), b"replacement");
         let displaced = fs::read(dir.join("displaced-stage")).unwrap();
-        assert!(displaced.starts_with(b"solstone.oplog.admission.v1\n"));
+        assert!(displaced.starts_with(b"{\"kind\":\"solstone.oplog.admission.v1\""));
     }
 
     #[test]
     fn dest_identity_io_after_publish_is_own_residue_and_preserves_dest() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let id = [0x88; 16];
         let dest = dest_for(id);
         let error = with_trace(
@@ -1036,7 +1093,7 @@ mod tests {
                 file_ids: vec![id].into(),
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |_| true,
         )
         .0
@@ -1051,13 +1108,12 @@ mod tests {
     #[test]
     fn publish_io_leaves_unrelated_stage_residue() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         let error = with_trace(
             OplogCreateTraceState {
                 publish_io: true,
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |_| true,
         )
         .0
@@ -1071,7 +1127,7 @@ mod tests {
     #[test]
     fn occupied_retries_leave_unrelated_stage_residue() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let dir = health_dir(temporary.path());
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [0x66 + index as u8; 16])
@@ -1080,7 +1136,7 @@ mod tests {
         for incumbent in &incumbents {
             fs::write(dir.join(incumbent), b"preexisting").unwrap();
         }
-        let error = run_with_oplog_file_ids(ids, || create(&health)).unwrap_err();
+        let error = run_with_oplog_file_ids(ids, || create(temporary.path())).unwrap_err();
         expect_token(error, "oplog_create_retry_exhausted");
         for incumbent in &incumbents {
             assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"preexisting");
@@ -1107,7 +1163,7 @@ mod tests {
     #[test]
     fn unsafe_lock_fails_before_stage() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
         std::os::unix::fs::symlink("outside", &lock_path).unwrap();
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
@@ -1119,7 +1175,7 @@ mod tests {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |state| {
                 remaining.set(state.file_ids.len());
                 true
@@ -1137,7 +1193,7 @@ mod tests {
     #[test]
     fn wrong_mode_lock_fails_before_stage() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
         fs::write(&lock_path, b"unchanged").unwrap();
         fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -1150,7 +1206,7 @@ mod tests {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |state| {
                 remaining.set(state.file_ids.len());
                 true
@@ -1169,7 +1225,7 @@ mod tests {
     #[test]
     fn replaced_lock_parent_fails_before_stage() {
         let temporary = temp();
-        let health = health_at(temporary.path());
+        let _ = health_at(temporary.path());
         let dir = health_dir(temporary.path());
         let lock_path = dir.join(".oplog-namespace.lock");
         fs::write(&lock_path, b"original-lock").unwrap();
@@ -1191,7 +1247,7 @@ mod tests {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
-            || create(&health),
+            || create(temporary.path()),
             |state| {
                 remaining.set(state.file_ids.len());
                 true
@@ -1211,7 +1267,6 @@ mod tests {
     fn mid_flight_ancestor_replacement_does_not_escape() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
-        let health = health_at(&root);
         let outside = root.join("escape-target");
         fs::create_dir(&outside).unwrap();
         let error = run_with_oplog_create_barrier(
@@ -1225,7 +1280,7 @@ mod tests {
                     std::os::unix::fs::symlink(&outside, &dir).unwrap();
                 }
             },
-            || create(&health),
+            || create(&root),
         )
         .unwrap_err();
         expect_token(error, "oplog_create_ancestor_replaced");
@@ -1244,25 +1299,35 @@ mod tests {
     #[test]
     fn production_create_rejects_invalid_originals_without_side_effects() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         expect_token(
-            create_oplog(&health, "", RUN, OplogFormat::Log).unwrap_err(),
+            create_oplog(
+                JournalRoot::open(temporary.path()).unwrap(),
+                "",
+                RUN,
+                OplogFormat::Log,
+            )
+            .unwrap_err(),
             "oplog_create_invalid_field",
         );
         expect_token(
-            create_oplog(&health, "ok", "bad\0name", OplogFormat::Log).unwrap_err(),
+            create_oplog(
+                JournalRoot::open(temporary.path()).unwrap(),
+                "ok",
+                "bad\0name",
+                OplogFormat::Log,
+            )
+            .unwrap_err(),
             "oplog_create_invalid_field",
         );
-        assert!(listing(&health_dir(temporary.path())).is_empty());
+        assert!(!temporary.path().join("chronicle").exists());
     }
 
     #[test]
     fn invalid_originals_and_wrong_kind_namespace_do_not_create() {
         let temporary = temp();
-        let health = health_at(temporary.path());
         expect_token(
             create_oplog_with_test_timing(
-                &health,
+                JournalRoot::open(temporary.path()).unwrap(),
                 "",
                 RUN,
                 OplogFormat::Log,
@@ -1275,7 +1340,7 @@ mod tests {
         );
         expect_token(
             create_oplog_with_test_timing(
-                &health,
+                JournalRoot::open(temporary.path()).unwrap(),
                 "ok",
                 "bad\0name",
                 OplogFormat::Log,
@@ -1286,6 +1351,7 @@ mod tests {
             .unwrap_err(),
             "oplog_create_invalid_field",
         );
+        assert!(!temporary.path().join("chronicle").exists());
         let root = temporary.path().join("other");
         fs::create_dir(&root).unwrap();
         std::os::unix::fs::symlink("elsewhere", root.join("chronicle")).unwrap();
@@ -1299,7 +1365,7 @@ mod tests {
     fn reader_survives_pathname_replacement_and_drop_releases() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let mut writer = create(&health).unwrap();
+        let mut writer = create(temporary.path()).unwrap();
         writer.write_all(b"hello\n").unwrap();
         writer.flush().unwrap();
         let dir = health_dir(temporary.path());
@@ -1324,8 +1390,7 @@ mod tests {
     fn owner_only_mode_under_permissive_umask() {
         let temporary = temp();
         let previous = umask(Mode::from_bits_truncate(0o022));
-        let health = health_at(temporary.path());
-        let writer = create(&health).unwrap();
+        let writer = create(temporary.path()).unwrap();
         umask(previous);
         let mode = fs::metadata(health_dir(temporary.path()).join(writer.leaf_name()))
             .unwrap()
@@ -1338,8 +1403,7 @@ mod tests {
     #[test]
     fn stdio_duplicates_append_exactly_once() {
         let temporary = temp();
-        let health = health_at(temporary.path());
-        let mut writer = create(&health).unwrap();
+        let mut writer = create(temporary.path()).unwrap();
         let mut dup = writer.try_clone_for_stdio().unwrap();
         writer.write_all(b"one\n").unwrap();
         dup.write_all(b"two\n").unwrap();
@@ -1357,7 +1421,7 @@ mod tests {
     fn dropping_writer_keeps_duplicate_active() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let writer = create(&health).unwrap();
+        let writer = create(temporary.path()).unwrap();
         let mut dup = writer.try_clone_for_stdio().unwrap();
         let leaf = writer.leaf_name().to_owned();
         drop(writer);
@@ -1379,7 +1443,7 @@ mod tests {
     fn child_process_exit_releases_lease() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let writer = create(&health).unwrap();
+        let writer = create(temporary.path()).unwrap();
         let leaf = writer.leaf_name().to_owned();
         let stdio = writer.duplicate_locked_stdio().unwrap();
         drop(writer);
@@ -1398,7 +1462,7 @@ mod tests {
     fn injected_probe_failure_is_indeterminate_without_companion_files() {
         let temporary = temp();
         let health = health_at(temporary.path());
-        let writer = create(&health).unwrap();
+        let writer = create(temporary.path()).unwrap();
         let leaf = OsStr::new(writer.leaf_name());
         let probe = run_with_oplog_probe_indeterminate(|| probe_oplog_lease(&health, leaf));
         assert_eq!(probe, LeaseProbe::Indeterminate);
@@ -1413,10 +1477,8 @@ mod tests {
         let temporary = temp();
         let offset = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
         let (day, opened) = derive_day_key_and_opened_field(offset);
-        let health =
-            admit_day_health_directory(JournalRoot::open(temporary.path()).unwrap(), &day).unwrap();
         let writer = create_oplog_with_test_timing(
-            &health,
+            JournalRoot::open(temporary.path()).unwrap(),
             SOURCE,
             RUN,
             OplogFormat::Log,
@@ -1434,6 +1496,112 @@ mod tests {
                 .join("health")
                 .exists()
         );
+    }
+
+    #[test]
+    fn entropy_fault_at_every_draw_ordinal_leaves_no_chronicle() {
+        for ordinal in 1..=OPLOG_FILE_ID_DRAW_BUDGET {
+            let temporary = temp();
+            let (result, consumed) = with_trace(
+                OplogCreateTraceState {
+                    fault: Some((OplogCreatePrimitive::Random, ordinal)),
+                    file_ids: vec![[0x11; 16]; ordinal.saturating_sub(1)].into(),
+                    ..empty_trace()
+                },
+                || create(temporary.path()),
+                |state| state.fault_consumed,
+            );
+            assert!(consumed, "ordinal {ordinal}");
+            expect_token(result.unwrap_err(), "oplog_create_io");
+            assert!(
+                !temporary.path().join("chronicle").exists(),
+                "ordinal {ordinal} must not admit the namespace"
+            );
+        }
+    }
+
+    #[test]
+    fn preexisting_symlink_chronicle_maps_to_create_namespace_unsafe() {
+        let temporary = temp();
+        let root = temporary.path();
+        std::os::unix::fs::symlink("elsewhere", root.join("chronicle")).unwrap();
+        let error = create(root).unwrap_err();
+        expect_token(error, "oplog_create_namespace_chronicle_unsafe");
+        assert!(!root.join("elsewhere").exists());
+        assert!(
+            fs::symlink_metadata(root.join("chronicle"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(!root.join("chronicle").join("20260901").exists());
+    }
+
+    #[test]
+    fn after_chronicle_wrong_kind_day_maps_to_create_namespace_day_unsafe() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let error = run_with_oplog_namespace_barrier(
+            OplogNamespacePrimitive::AfterChronicle,
+            {
+                let root = root.clone();
+                move || {
+                    fs::write(health_dir(&root).parent().unwrap(), b"not-a-directory").unwrap();
+                }
+            },
+            {
+                let root = root.clone();
+                move || create(&root)
+            },
+        )
+        .unwrap_err();
+        expect_token(error, "oplog_create_namespace_day_unsafe");
+        assert!(root.join("chronicle").is_dir());
+        assert!(root.join("chronicle").join("20260901").is_file());
+        assert!(!health_dir(&root).exists());
+    }
+
+    #[test]
+    fn after_day_symlink_health_maps_to_create_namespace_health_unsafe() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let error = run_with_oplog_namespace_barrier(
+            OplogNamespacePrimitive::AfterDay,
+            {
+                let root = root.clone();
+                move || {
+                    std::os::unix::fs::symlink("outside", health_dir(&root)).unwrap();
+                }
+            },
+            {
+                let root = root.clone();
+                move || create(&root)
+            },
+        )
+        .unwrap_err();
+        expect_token(error, "oplog_create_namespace_health_unsafe");
+        assert!(
+            fs::symlink_metadata(health_dir(&root))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(!root.join("outside").exists());
+    }
+
+    #[test]
+    fn namespace_fault_after_chronicle_maps_to_create_io_without_leaves() {
+        let temporary = temp();
+        let root = temporary.path().to_path_buf();
+        let (result, consumed) =
+            run_with_oplog_namespace_fault(OplogNamespacePrimitive::AfterChronicle, {
+                let root = root.clone();
+                move || create(&root)
+            });
+        assert!(consumed);
+        expect_token(result.unwrap_err(), "oplog_create_namespace_chronicle_io");
+        assert!(root.join("chronicle").is_dir());
+        assert!(!root.join("chronicle").join("20260901").exists());
     }
 }
 
