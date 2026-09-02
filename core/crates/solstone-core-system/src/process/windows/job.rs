@@ -250,8 +250,12 @@ impl WindowsJobApi for SystemWindowsJobApi {
         }
 
         let limit_flags = extended.BasicLimitInformation.LimitFlags;
+        // SAFETY: this query initialized the CPU-rate information structure for
+        // the matching information class immediately above.
+        #[allow(unsafe_code)]
+        let cpu_rate_per_10_000 = unsafe { cpu.Anonymous.CpuRate };
         Ok(JobResourceLimitReceipt {
-            cpu_rate_per_10_000: cpu.Anonymous.CpuRate,
+            cpu_rate_per_10_000,
             committed_memory_bytes: extended.JobMemoryLimit,
             process_memory_enforced: limit_flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY != 0,
             job_memory_enforced: limit_flags & JOB_OBJECT_LIMIT_JOB_MEMORY != 0,
