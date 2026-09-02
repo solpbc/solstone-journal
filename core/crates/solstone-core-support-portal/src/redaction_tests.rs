@@ -2,9 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+use std::io::Write;
 
 use chrono::{Local, TimeZone, Utc};
 use serde_json::json;
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, create_oplog_at},
+};
 use tempfile::TempDir;
 
 use super::*;
@@ -26,6 +31,18 @@ fn write(root: &TempDir, path: &str, contents: &str) {
     let path = root.path().join(path);
     fs::create_dir_all(path.parent().expect("parent")).expect("directory");
     fs::write(path, contents).expect("write");
+}
+
+fn write_oplog(root: &TempDir, source: &str, at: chrono::DateTime<Local>, contents: &[u8]) {
+    let mut writer = create_oplog_at(
+        JournalRoot::open(root.path()).expect("journal root"),
+        source,
+        "support-test",
+        OplogFormat::Log,
+        at.fixed_offset(),
+    )
+    .expect("canonical oplog");
+    writer.write_all(contents).expect("payload");
 }
 
 #[test]
@@ -99,18 +116,19 @@ fn secret_key_substrings_and_non_descending_redaction_match_reference() {
 #[test]
 fn diagnostics_collector_order_and_aware_timestamp_omit_match_reference() {
     let root = root();
-    write(
-        &root,
-        "health/service.log",
-        "2026-01-02T03:04:05+00:00 ERROR boom\n",
-    );
     let now = Local
         .with_ymd_and_hms(2026, 1, 2, 4, 0, 0)
         .single()
         .expect("now");
+    write_oplog(
+        &root,
+        "service",
+        now,
+        b"2026-01-02T03:04:05+00:00 ERROR boom\n",
+    );
     assert_eq!(
-        collect_recent_errors(root.path(), now).unwrap_err(),
-        "offset-aware timestamp cannot compare to naive local cutoff"
+        collect_recent_errors(root.path(), now).unwrap_err().kind(),
+        "oplog_catalog_timestamp"
     );
     let all = collect_all(root.path(), now, platform());
     assert!(!all.contains_key("recent_errors"));
@@ -121,12 +139,13 @@ fn diagnostics_collector_order_and_aware_timestamp_omit_match_reference() {
             "revision",
             "platform",
             "services",
+            "log_collection_error",
             "config",
             "brain_health"
         ]
     );
-    fs::remove_file(root.path().join("health/service.log")).expect("remove aware log");
-    let all = collect_all(root.path(), now, platform());
+    let fresh = TempDir::new().expect("empty journal");
+    let all = collect_all(fresh.path(), now, platform());
     assert_eq!(
         all.keys().collect::<Vec<_>>(),
         [
@@ -173,7 +192,7 @@ fn services_and_recent_errors_keep_reference_shapes_and_ordering() {
             time.format("%Y-%m-%dT%H:%M:%S")
         ));
     }
-    write(&root, "health/svc.log", &lines.join("\n"));
+    write_oplog(&root, "svc", seed, lines.join("\n").as_bytes());
     let errors = collect_recent_errors(root.path(), Local::now() + chrono::Duration::minutes(2))
         .expect("naive local lines");
     let errors = errors.as_array().expect("array");
@@ -209,12 +228,10 @@ fn recent_errors_decodes_lossily_and_accepts_python_naive_iso_forms() {
     let now = Local::now();
     let spaced = (now - chrono::Duration::seconds(2)).format("%Y-%m-%d %H:%M:%S");
     let basic = (now - chrono::Duration::seconds(3)).format("%Y%m%dT%H%M%S");
-    let path = root.path().join("health/lossy.log");
-    fs::create_dir_all(path.parent().expect("parent")).expect("directory");
     let mut bytes = format!("{spaced} ERROR bad-utf8: ").into_bytes();
     bytes.push(0xff);
     bytes.extend_from_slice(format!("\n{basic} ERROR basic-naive\n").as_bytes());
-    fs::write(path, bytes).expect("lossy log");
+    write_oplog(&root, "lossy", now, &bytes);
     let errors = collect_recent_errors(root.path(), now + chrono::Duration::minutes(1))
         .expect("naive ISO forms");
     let errors = errors.as_array().expect("array");
@@ -229,6 +246,52 @@ fn recent_errors_decodes_lossily_and_accepts_python_naive_iso_forms() {
             .as_str()
             .is_some_and(|message| message.contains("basic-naive"))
     }));
+}
+
+#[test]
+fn canonical_multiday_errors_are_redacted_and_catalog_failure_keeps_the_bundle_usable() {
+    let root = root();
+    let now = Local
+        .with_ymd_and_hms(2026, 8, 8, 12, 0, 0)
+        .single()
+        .expect("now");
+    let prior = now - chrono::Duration::days(1);
+    let outside = now - chrono::Duration::hours(169);
+    write_oplog(
+        &root,
+        "prior-source",
+        prior,
+        format!(
+            "{} ERROR MY_TOKEN=abc /private\n",
+            prior.format("%Y-%m-%dT%H:%M:%S")
+        )
+        .as_bytes(),
+    );
+    write_oplog(
+        &root,
+        "outside-source",
+        outside,
+        format!("{} ERROR old\n", outside.format("%Y-%m-%dT%H:%M:%S")).as_bytes(),
+    );
+    let errors = collect_recent_errors(root.path(), now).expect("complete catalog");
+    let errors = errors.as_array().expect("array");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["service"], "prior-source");
+    assert_eq!(errors[0]["message"], "ERROR <secret> <path>");
+    assert!(!errors[0].to_string().contains("oplog--"));
+
+    let health = root.path().join("chronicle/20260808/health");
+    fs::create_dir_all(&health).expect("health");
+    fs::write(health.join("oplog--broken.log"), b"broken").expect("malformed leaf");
+    let all = collect_all(root.path(), now, platform());
+    assert_eq!(
+        all["log_collection_error"]["kind"],
+        "oplog_catalog_malformed"
+    );
+    assert!(all.get("recent_errors").is_none());
+    assert!(all.contains_key("version"));
+    assert!(all.contains_key("config"));
+    assert!(all.contains_key("brain_health"));
 }
 
 #[test]

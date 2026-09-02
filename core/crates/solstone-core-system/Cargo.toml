@@ -76,6 +76,12 @@ path = "tests/launch_authority.rs"
 name = "system_lifecycle"
 path = "tests/system_lifecycle.rs"
 
+# Managed-process output drains are a real child-process boundary and therefore
+# remain an explicit target while autotest discovery is disabled.
+[[test]]
+name = "managed_process"
+path = "tests/managed_process.rs"
+
 # Native Windows lifecycle receipts need the feature-gated checkpoint seam;
 # system_lifecycle's unconditional composed suite must not require test-hooks.
 [[test]]

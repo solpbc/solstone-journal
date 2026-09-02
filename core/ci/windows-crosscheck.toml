@@ -15,12 +15,6 @@ reason = "Retention's compact_log still reads Unix file permissions via std::os:
 expected_stderr = ["cannot find `unix` in `os`"]
 
 [[exclusions]]
-package = "solstone-core-pdf"
-class = "preserved-production-guarantee"
-reason = "The worker enforces Unix address-space and CPU resource limits; a Windows Job Object equivalent belongs to the later backend lane."
-expected_stderr = ["could not compile `solstone-core-pdf`", "RLIMIT_AS"]
-
-[[exclusions]]
 package = "ring"
 version = "0.17.14"
 class = "native-msvc-build-oracle"

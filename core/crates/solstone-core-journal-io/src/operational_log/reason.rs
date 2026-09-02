@@ -300,7 +300,7 @@ pub enum OplogCollisionOccupant {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct OplogFileIdentity {
     #[cfg(unix)]
     pub(super) dev: u64,
