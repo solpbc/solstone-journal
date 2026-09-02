@@ -15,6 +15,14 @@ pub(crate) fn protected_resource(resource_origin: &str) -> HttpResponse {
 }
 
 /// RFC 8414 authorization-server metadata for `{resource_origin}`.
+///
+/// `client_id_metadata_document_supported` is advertised because CIMD-first
+/// clients read it before deciding how to identify themselves: Zed and Goose
+/// both hold a hardcoded CIMD document URL and check this field first, and
+/// omitting it sends them down dynamic registration instead of the CIMD path
+/// this endpoint implements. `registration_endpoint` stays published beside
+/// it, because Claude Code fails hard on an authorization server that offers
+/// neither.
 pub(crate) fn authorization_server(resource_origin: &str) -> HttpResponse {
     json_no_store(serde_json::json!({
         "issuer": resource_origin,
@@ -26,6 +34,7 @@ pub(crate) fn authorization_server(resource_origin: &str) -> HttpResponse {
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "authorization_response_iss_parameter_supported": true,
+        "client_id_metadata_document_supported": true,
     }))
 }
 
@@ -90,7 +99,16 @@ mod tests {
                 "code_challenge_methods_supported": ["S256"],
                 "token_endpoint_auth_methods_supported": ["none"],
                 "authorization_response_iss_parameter_supported": true,
+                "client_id_metadata_document_supported": true,
             })
         );
+    }
+
+    /// CIMD-first clients branch on this field, so its presence is contract.
+    #[test]
+    fn authorization_server_advertises_cimd_alongside_dynamic_registration() {
+        let body = json_body(&authorization_server(ORIGIN));
+        assert_eq!(body["client_id_metadata_document_supported"], true);
+        assert_eq!(body["registration_endpoint"], "https://mcp.test/register");
     }
 }
