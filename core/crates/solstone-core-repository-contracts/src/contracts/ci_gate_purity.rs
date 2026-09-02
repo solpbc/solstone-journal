@@ -1405,6 +1405,12 @@ fn operational_log_foundation_targets_have_exact_ci_routes() {
             vec!["test-hooks"],
             None,
         ),
+        (
+            "solstone-core-journal-io::windows_oplog_liveness",
+            vec!["windows"],
+            vec!["test-hooks"],
+            None,
+        ),
     ];
 
     for (id, platforms, required_features, serial_group) in expected {

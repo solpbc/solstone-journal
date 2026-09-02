@@ -31,6 +31,8 @@ mod writer;
 mod unix;
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+mod windows_liveness;
 
 use chrono::{DateTime, FixedOffset, Local};
 
@@ -38,6 +40,8 @@ pub use crate::lease::LeaseProbe;
 pub use admission::{
     OPLOG_ADMISSION_MAX_BYTES, OplogAdmissionError, OplogAdmissionRecord, validate_oplog_admission,
 };
+#[cfg(windows)]
+pub use create::probe_oplog_identity;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub use create::run_with_oplog_parent_sync_fail;
 pub use create::{
@@ -70,7 +74,9 @@ pub use reason::{
     OplogIdentityObservation, OplogNamespaceIdentity, OplogObservationGap, OplogPublishReason,
     OplogStageCause, OplogVerifiedAt, RetainedNamespaceState,
 };
-pub use writer::{OplogStdioHandle, OplogWriter, OplogWriterError};
+pub use writer::{OplogChildCapture, OplogWriteHandle, OplogWriter, OplogWriterError};
+#[cfg(any(test, feature = "test-hooks"))]
+pub use writer::{run_with_oplog_capture_stderr_fault, run_with_oplog_capture_stdout_fault};
 
 /// Sample one local instant for day-key and UTC-field derivation.
 fn sample_local_instant() -> Result<DateTime<FixedOffset>, OplogCreateError> {
