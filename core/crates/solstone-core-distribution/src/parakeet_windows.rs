@@ -927,10 +927,7 @@ mod tests {
             import_census: Some(census_with_imports(
                 &PARAKEET_WINDOWS_IMPORT_ALLOWLIST
                     .iter()
-                    .map(|name| ImportSpec {
-                        name: *name,
-                        symbols: &[],
-                    })
+                    .map(|name| ImportSpec { name, symbols: &[] })
                     .collect::<Vec<_>>(),
             )),
             notices: Some(pinned_notices()),
