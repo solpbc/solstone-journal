@@ -5517,6 +5517,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-timeline"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-brain",
+ "solstone-core-journal-io",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "solstone-core-top"
 version = "2.0.0"
 dependencies = [
