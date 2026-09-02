@@ -427,9 +427,15 @@ fn main() {
 }
 
 fn fixture_ready_marker() -> String {
+    // The trailing pid field must stay last: some callers extract it via
+    // `rsplit(':').next()`. The speakers-analyze generation-id field is
+    // inserted before it (never appended after) so that extraction, and the
+    // `"ready:1"` prefix substring check some callers use, both keep working
+    // unchanged.
     format!(
-        "ready:{}:{}",
+        "ready:{}:{}:{}",
         std::env::var("SOL_SUPERVISOR_SPAWNED").unwrap_or_default(),
+        u8::from(std::env::var_os("SOL_SPEAKERS_ANALYZE_INSTALL_GENERATION_ID").is_some()),
         std::process::id()
     )
 }

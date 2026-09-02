@@ -322,6 +322,16 @@ fn native_foundation_targets_run_before_source_markers_and_are_host_required() {
             "core/crates/solstone-core-journal-io/tests/windows_oplog_namespace.rs",
             true,
         ),
+        (
+            "journal-io operational-log liveness",
+            "solstone-core-journal-io",
+            "windows_oplog_liveness",
+            "test-hooks",
+            "journal_win_ci_windows_oplog_liveness_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS",
+            "core/crates/solstone-core-journal-io/tests/windows_oplog_liveness.rs",
+            true,
+        ),
     ];
 
     for (label, package, target, features, marker_test, marker, source_path, runs_target) in targets

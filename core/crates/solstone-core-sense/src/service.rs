@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
@@ -41,13 +43,18 @@ pub fn run_native_service(
     journal: PathBuf,
     options: SenseOptions,
 ) -> Result<(), NativeServiceError> {
-    run_native_service_with_hosted_parent(journal, options, None)
+    run_native_service_with_hosted_parent(journal, options, BTreeMap::new(), None)
 }
 
 /// Run Sense with an optional birth-admitted hosted parent lifetime.
+///
+/// `child_environment` is forwarded unchanged to
+/// [`SenseDispatcher::new_with_hosted_parent`] — see that constructor's doc
+/// comment for what it carries.
 pub fn run_native_service_with_hosted_parent(
     journal: PathBuf,
     options: SenseOptions,
+    child_environment: BTreeMap<OsString, OsString>,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), NativeServiceError> {
     tokio::runtime::Builder::new_multi_thread()
@@ -55,12 +62,13 @@ pub fn run_native_service_with_hosted_parent(
         .thread_name("sense-service")
         .build()
         .map_err(|_| NativeServiceError::Runtime)?
-        .block_on(run(journal, options, hosted_parent))
+        .block_on(run(journal, options, child_environment, hosted_parent))
 }
 
 async fn run(
     journal: PathBuf,
     options: SenseOptions,
+    child_environment: BTreeMap<OsString, OsString>,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), NativeServiceError> {
     let connection =
@@ -71,6 +79,7 @@ async fn run(
         options.verbose,
         options.debug,
         outbound,
+        child_environment,
         hosted_parent.clone(),
     ));
     let outcome = run_until_with_shutdown_status(

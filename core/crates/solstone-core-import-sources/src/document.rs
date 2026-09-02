@@ -10,10 +10,14 @@ use std::io::{Cursor, Read};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(windows))]
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(windows))]
+use std::time::Instant;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::{DateTime, Local};
@@ -38,9 +42,13 @@ const PAGE_IMAGE_DESCRIBE_MIN: f64 = 0.10;
 const MODEL_CALLS_MAX_PER_DOCUMENT: u64 = 50;
 const RENDER_DPI: i32 = 150;
 // The sol-pdf/1 worker protocol emits exactly one JSON response object on stdout.
-const PDF_WORKER_STDOUT_MAX_BYTES: usize = 8 * 1024 * 1024;
+pub const PDF_WORKER_STDOUT_MAX_BYTES: usize = 8 * 1024 * 1024;
 // Worker stderr is diagnostic-only, never protocol-bearing.
-const PDF_WORKER_STDERR_MAX_BYTES: usize = 64 * 1024;
+pub const PDF_WORKER_STDERR_MAX_BYTES: usize = 64 * 1024;
+#[cfg(windows)]
+pub const PDF_WORKER_CPU_RATE_PER_10_000: u32 = 2_500;
+#[cfg(windows)]
+pub const PDF_WORKER_COMMITTED_MEMORY_BYTES: usize = 2 * 1024 * 1024 * 1024;
 const STREAM: &str = "import.document";
 const TRANSCRIPT: &str = "document_transcript.md";
 const ORIGINAL: &str = "original.pdf";
@@ -184,181 +192,182 @@ impl SystemPdfWorker {
 
 impl PdfWorker for SystemPdfWorker {
     fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
-        let mut command = Command::new(&self.executable);
-        command
-            .arg(request.command.as_str())
-            .arg(&request.source)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(password) = &request.password {
-            command.arg("--password").arg(password);
-        }
-        if let Some(render) = &request.render {
-            command
-                .arg("--render-pages")
-                .arg(
-                    render
-                        .pages
-                        .iter()
-                        .map(usize::to_string)
-                        .collect::<Vec<_>>()
-                        .join(","),
-                )
-                .arg("--render-dir")
-                .arg(&render.render_dir)
-                .arg("--dpi")
-                .arg(render.dpi.to_string());
-        }
-        let mut child = command.spawn().map_err(|error| WorkerFailure::Process {
-            exit_code: Some(1),
-            error: "worker spawn failed".to_owned(),
-            detail: Some(error.to_string()),
-        })?;
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let stderr = child.stderr.take().expect("stderr is piped");
-        let mut stdout_reader = Some(thread::spawn(move || {
-            read_worker_stream(stdout, PDF_WORKER_STDOUT_MAX_BYTES)
-        }));
-        let mut stderr_reader = Some(thread::spawn(move || {
-            read_worker_stream(stderr, PDF_WORKER_STDERR_MAX_BYTES)
-        }));
-        let mut stdout_bytes = None;
-        let mut stderr_bytes = None;
-        let started = Instant::now();
-        enum WaitOutcome {
-            Exited(std::process::ExitStatus),
-            TimedOut,
-            Failed(String),
-        }
-        let outcome = loop {
-            if stdout_bytes.is_none()
-                && stdout_reader
-                    .as_ref()
-                    .is_some_and(thread::JoinHandle::is_finished)
-            {
-                let reader = stdout_reader.take().expect("stdout reader is present");
-                match finish_worker_reader(reader, "stdout", PDF_WORKER_STDOUT_MAX_BYTES) {
-                    Ok(bytes) => stdout_bytes = Some(bytes),
-                    Err(failure) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        if let Some(reader) = stderr_reader.take() {
-                            let _ =
-                                finish_worker_reader(reader, "stderr", PDF_WORKER_STDERR_MAX_BYTES);
-                        }
-                        return Err(failure);
-                    }
-                }
-            }
-            if stderr_bytes.is_none()
-                && stderr_reader
-                    .as_ref()
-                    .is_some_and(thread::JoinHandle::is_finished)
-            {
-                let reader = stderr_reader.take().expect("stderr reader is present");
-                match finish_worker_reader(reader, "stderr", PDF_WORKER_STDERR_MAX_BYTES) {
-                    Ok(bytes) => stderr_bytes = Some(bytes),
-                    Err(failure) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        if let Some(reader) = stdout_reader.take() {
-                            let _ =
-                                finish_worker_reader(reader, "stdout", PDF_WORKER_STDOUT_MAX_BYTES);
-                        }
-                        return Err(failure);
-                    }
-                }
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break WaitOutcome::Exited(status),
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break WaitOutcome::Failed(error.to_string());
-                }
-                Ok(None) if started.elapsed() >= self.timeout => {
-                    let _ = child.kill();
-                    break match child.wait() {
-                        Ok(_) => WaitOutcome::TimedOut,
-                        Err(error) => WaitOutcome::Failed(error.to_string()),
-                    };
-                }
-                Ok(None) => thread::sleep(Duration::from_millis(10)),
-            }
-        };
-        let stdout = match stdout_bytes {
-            Some(bytes) => Ok(bytes),
-            None => finish_worker_reader(
-                stdout_reader.take().expect("stdout reader is unresolved"),
-                "stdout",
-                PDF_WORKER_STDOUT_MAX_BYTES,
-            ),
-        };
-        let stderr = match stderr_bytes {
-            Some(bytes) => Ok(bytes),
-            None => finish_worker_reader(
-                stderr_reader.take().expect("stderr reader is unresolved"),
-                "stderr",
-                PDF_WORKER_STDERR_MAX_BYTES,
-            ),
-        };
-        let stdout = stdout?;
-        let stderr = stderr?;
-        let status = match outcome {
-            WaitOutcome::Exited(status) => status,
-            WaitOutcome::TimedOut => {
-                return Err(WorkerFailure::TimedOut {
-                    timeout: self.timeout,
-                });
-            }
-            WaitOutcome::Failed(detail) => {
-                return Err(WorkerFailure::Process {
-                    exit_code: Some(1),
-                    error: "worker wait failed".to_owned(),
-                    detail: Some(detail),
-                });
-            }
-        };
-        if status.success() {
-            let payload =
-                serde_json::from_slice(&stdout).map_err(|error| WorkerFailure::Process {
-                    exit_code: status.code(),
-                    error: "worker response decode failed".to_owned(),
-                    detail: Some(error.to_string()),
-                })?;
-            validate_worker_payload(&payload, request.command)
-                .map_err(|detail| WorkerFailure::ProtocolViolation { detail })?;
-            return Ok(payload);
-        }
-        if status.code().is_none() {
+        #[cfg(windows)]
+        {
+            let _ = request;
             return Err(WorkerFailure::Process {
-                exit_code: None,
-                error: "PDF worker terminated by signal".to_owned(),
-                detail: Some(worker_termination_detail(&status, &stderr)),
+                exit_code: Some(1),
+                error: "Windows PDF worker requires the bounded package owner".to_owned(),
+                detail: None,
             });
         }
-        #[derive(Deserialize)]
-        struct ErrorBody {
-            error: Option<String>,
-            detail: Option<String>,
+        #[cfg(not(windows))]
+        {
+            let mut command = Command::new(&self.executable);
+            command
+                .arg(request.command.as_str())
+                .arg(&request.source)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if let Some(password) = &request.password {
+                command.arg("--password").arg(password);
+            }
+            if let Some(render) = &request.render {
+                command
+                    .arg("--render-pages")
+                    .arg(
+                        render
+                            .pages
+                            .iter()
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    )
+                    .arg("--render-dir")
+                    .arg(&render.render_dir)
+                    .arg("--dpi")
+                    .arg(render.dpi.to_string());
+            }
+            let mut child = command.spawn().map_err(|error| WorkerFailure::Process {
+                exit_code: Some(1),
+                error: "worker spawn failed".to_owned(),
+                detail: Some(error.to_string()),
+            })?;
+            let stdout = child.stdout.take().expect("stdout is piped");
+            let stderr = child.stderr.take().expect("stderr is piped");
+            let mut stdout_reader = Some(thread::spawn(move || {
+                read_worker_stream(stdout, PDF_WORKER_STDOUT_MAX_BYTES)
+            }));
+            let mut stderr_reader = Some(thread::spawn(move || {
+                read_worker_stream(stderr, PDF_WORKER_STDERR_MAX_BYTES)
+            }));
+            let mut stdout_bytes = None;
+            let mut stderr_bytes = None;
+            let started = Instant::now();
+            enum WaitOutcome {
+                Exited(std::process::ExitStatus),
+                TimedOut,
+                Failed(String),
+            }
+            let outcome = loop {
+                if stdout_bytes.is_none()
+                    && stdout_reader
+                        .as_ref()
+                        .is_some_and(thread::JoinHandle::is_finished)
+                {
+                    let reader = stdout_reader.take().expect("stdout reader is present");
+                    match finish_worker_reader(reader, "stdout", PDF_WORKER_STDOUT_MAX_BYTES) {
+                        Ok(bytes) => stdout_bytes = Some(bytes),
+                        Err(failure) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            if let Some(reader) = stderr_reader.take() {
+                                let _ = finish_worker_reader(
+                                    reader,
+                                    "stderr",
+                                    PDF_WORKER_STDERR_MAX_BYTES,
+                                );
+                            }
+                            return Err(failure);
+                        }
+                    }
+                }
+                if stderr_bytes.is_none()
+                    && stderr_reader
+                        .as_ref()
+                        .is_some_and(thread::JoinHandle::is_finished)
+                {
+                    let reader = stderr_reader.take().expect("stderr reader is present");
+                    match finish_worker_reader(reader, "stderr", PDF_WORKER_STDERR_MAX_BYTES) {
+                        Ok(bytes) => stderr_bytes = Some(bytes),
+                        Err(failure) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            if let Some(reader) = stdout_reader.take() {
+                                let _ = finish_worker_reader(
+                                    reader,
+                                    "stdout",
+                                    PDF_WORKER_STDOUT_MAX_BYTES,
+                                );
+                            }
+                            return Err(failure);
+                        }
+                    }
+                }
+                match child.try_wait() {
+                    Ok(Some(status)) => break WaitOutcome::Exited(status),
+                    Err(error) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break WaitOutcome::Failed(error.to_string());
+                    }
+                    Ok(None) if started.elapsed() >= self.timeout => {
+                        let _ = child.kill();
+                        break match child.wait() {
+                            Ok(_) => WaitOutcome::TimedOut,
+                            Err(error) => WaitOutcome::Failed(error.to_string()),
+                        };
+                    }
+                    Ok(None) => thread::sleep(Duration::from_millis(10)),
+                }
+            };
+            let stdout = match stdout_bytes {
+                Some(bytes) => Ok(bytes),
+                None => finish_worker_reader(
+                    stdout_reader.take().expect("stdout reader is unresolved"),
+                    "stdout",
+                    PDF_WORKER_STDOUT_MAX_BYTES,
+                ),
+            };
+            let stderr = match stderr_bytes {
+                Some(bytes) => Ok(bytes),
+                None => finish_worker_reader(
+                    stderr_reader.take().expect("stderr reader is unresolved"),
+                    "stderr",
+                    PDF_WORKER_STDERR_MAX_BYTES,
+                ),
+            };
+            let stdout = stdout?;
+            let stderr = stderr?;
+            let status = match outcome {
+                WaitOutcome::Exited(status) => status,
+                WaitOutcome::TimedOut => {
+                    return Err(WorkerFailure::TimedOut {
+                        timeout: self.timeout,
+                    });
+                }
+                WaitOutcome::Failed(detail) => {
+                    return Err(WorkerFailure::Process {
+                        exit_code: Some(1),
+                        error: "worker wait failed".to_owned(),
+                        detail: Some(detail),
+                    });
+                }
+            };
+            if status.code().is_none() {
+                return Err(WorkerFailure::Process {
+                    exit_code: None,
+                    error: "PDF worker terminated by signal".to_owned(),
+                    detail: Some(worker_termination_detail(&status, &stderr)),
+                });
+            }
+            parse_worker_response(
+                request.command,
+                status.code().expect("non-signal status has an exit code"),
+                &stdout,
+                &stderr,
+            )
         }
-        let body = serde_json::from_slice::<ErrorBody>(&stdout).unwrap_or(ErrorBody {
-            error: None,
-            detail: Some(String::from_utf8_lossy(&stderr).into_owned()),
-        });
-        Err(WorkerFailure::Process {
-            exit_code: status.code(),
-            error: body.error.unwrap_or_else(|| "PDF worker failed".to_owned()),
-            detail: body.detail,
-        })
     }
 }
 
+#[cfg(not(windows))]
 enum WorkerStreamRead {
     Complete(Vec<u8>),
     LimitExceeded,
 }
 
+#[cfg(not(windows))]
 fn read_worker_stream(
     mut stream: impl Read,
     maximum_bytes: usize,
@@ -375,6 +384,7 @@ fn read_worker_stream(
     }
 }
 
+#[cfg(not(windows))]
 fn finish_worker_reader(
     reader: thread::JoinHandle<std::io::Result<WorkerStreamRead>>,
     stream: &'static str,
@@ -398,6 +408,7 @@ fn finish_worker_reader(
     }
 }
 
+#[cfg(not(windows))]
 fn worker_termination_detail(status: &std::process::ExitStatus, stderr: &[u8]) -> String {
     let mut detail = "PDF worker terminated by signal".to_owned();
     #[cfg(unix)]
@@ -412,6 +423,42 @@ fn worker_termination_detail(status: &std::process::ExitStatus, stderr: &[u8]) -
         detail.push_str(&stderr);
     }
     detail
+}
+
+/// Decode and validate a bounded `sol-pdf/1` response.
+///
+/// Process owners use this after they have established their own launch,
+/// containment, and output-capture guarantees.
+pub fn parse_worker_response(
+    command: PdfCommand,
+    exit_code: i32,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Result<PdfPayload, WorkerFailure> {
+    if exit_code == 0 {
+        let payload = serde_json::from_slice(stdout).map_err(|error| WorkerFailure::Process {
+            exit_code: Some(exit_code),
+            error: "worker response decode failed".to_owned(),
+            detail: Some(error.to_string()),
+        })?;
+        validate_worker_payload(&payload, command)
+            .map_err(|detail| WorkerFailure::ProtocolViolation { detail })?;
+        return Ok(payload);
+    }
+    #[derive(Deserialize)]
+    struct ErrorBody {
+        error: Option<String>,
+        detail: Option<String>,
+    }
+    let body = serde_json::from_slice::<ErrorBody>(stdout).unwrap_or(ErrorBody {
+        error: None,
+        detail: Some(String::from_utf8_lossy(stderr).into_owned()),
+    });
+    Err(WorkerFailure::Process {
+        exit_code: Some(exit_code),
+        error: body.error.unwrap_or_else(|| "PDF worker failed".to_owned()),
+        detail: body.detail,
+    })
 }
 
 fn validate_worker_payload(payload: &PdfPayload, command: PdfCommand) -> Result<(), String> {

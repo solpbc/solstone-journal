@@ -19,6 +19,8 @@ use tokio::sync::oneshot;
 
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
+#[path = "support/speakers_analyze_stub.rs"]
+mod speakers_analyze_stub;
 #[path = "support/supervisor_guard.rs"]
 mod supervisor_guard;
 
@@ -115,6 +117,7 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> S
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
         .env("HOME", home);
+    speakers_analyze_stub::apply(&mut command);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }
@@ -405,6 +408,134 @@ fn app_fixture_receives_supervisor_spawned_environment() {
     );
 }
 
+/// When the supervisor's own speakers-analyze generation acquisition fails
+/// (here: no stubbed helper/model-asset override, so a real acquisition
+/// attempt in this sandboxed build cannot succeed), the supervisor refuses
+/// before any lifecycle admission artifact exists and exits 78 — distinct
+/// from the ordinary `EXIT_TEMPFAIL=75` mapping every other named boot
+/// refusal uses.
+#[test]
+fn speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact() {
+    let journal = TempJournal::new();
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let home = installation_binding::admit_for(&journal.0);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
+        .args(["supervisor", "--journal"])
+        .arg(&journal.0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env("SOLSTONE_LOCAL_BINARY", fixture)
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
+        .env("HOME", home);
+    // Deliberately no speakers_analyze_stub::apply(...) here: this sandboxed
+    // build has neither a real speakers-analyze helper binary next to
+    // `solstone-core` nor (without the override) discoverable model assets,
+    // so the supervisor's own acquisition attempt fails. Every other fixture
+    // env var above is still set so `preflight_journal_binary` short-circuits
+    // (app_fixture_binary().is_some()) and the boot actually reaches the new
+    // speakers-analyze gate instead of failing at an unrelated earlier step.
+    let output = command.output().expect("supervisor runs to completion");
+    assert_eq!(
+        output.status.code(),
+        Some(78),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for path in [
+        "health/supervisor.ready",
+        "health/supervisor.pid",
+        "health/callosum.sock",
+        "health/direct-door.json",
+    ] {
+        assert!(
+            !journal.0.join(path).exists(),
+            "unexpected artifact: {path}"
+        );
+    }
+    assert!(
+        !journal.0.join("health/parent-loss").exists(),
+        "unexpected parent-loss lifecycle artifacts"
+    );
+}
+
+/// The supervisor acquires its own speakers-analyze generation before
+/// spawning any app process, then Sense's spawn environment carries that
+/// generation's real inherited descriptor. This spawns the real
+/// speakers-analyze-generation-holder binary as Sense's process and proves,
+/// via its own `enter_speakers_analyze_generation` call, that it genuinely
+/// borrowed the supervisor's generation rather than merely inheriting
+/// environment strings.
+#[test]
+fn sense_fixture_borrows_the_supervisors_speakers_analyze_generation() {
+    let journal = TempJournal::new();
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let holder = env!("CARGO_BIN_EXE_solstone-core-speakers-analyze-generation-holder");
+    let home = installation_binding::admit_for(&journal.0);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
+        .args(["supervisor", "--journal"])
+        .arg(&journal.0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env("SOLSTONE_LOCAL_BINARY", fixture)
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
+        .env("SOLSTONE_SUPERVISOR_SENSE_GENERATION_HOLDER", holder)
+        .env("HOME", home);
+    speakers_analyze_stub::apply(&mut command);
+    let _child = SupervisorGuard::new(command.spawn().expect("supervisor starts"));
+
+    wait_for_markers(&journal, &["sense", "cortex"]);
+    let marker: Value = serde_json::from_slice(
+        &fs::read(journal.marker("sense")).expect("read sense generation-holder marker"),
+    )
+    .expect("marker is JSON");
+    assert_eq!(marker["ok"], true, "holder failed to enter: {marker}");
+    assert_eq!(
+        marker["borrowed"], true,
+        "holder must borrow an inherited generation, not acquire its own: {marker}"
+    );
+    let install_generation_id = marker["install_generation_id"]
+        .as_str()
+        .expect("install_generation_id present");
+
+    let record: Value = serde_json::from_slice(
+        &fs::read(
+            journal
+                .0
+                .join("health/speakers-analyze/install-generation.json"),
+        )
+        .expect("read supervisor's generation record"),
+    )
+    .expect("generation record is JSON");
+    assert_eq!(
+        record["id"], install_generation_id,
+        "the borrowed generation id must match the supervisor's own acquired generation"
+    );
+
+    // AC20/AC22 exclusion: Cortex talent workers cannot reach transcription
+    // (denied by the cogitate CLI allowlist), so Cortex's spawn environment
+    // must never carry the speakers-analyze generation, unlike Sense's above.
+    let cortex_marker =
+        fs::read_to_string(journal.marker("cortex")).expect("read Cortex fixture marker");
+    let has_generation_field = cortex_marker
+        .trim()
+        .split(':')
+        .nth(2)
+        .expect("marker has a generation-presence field");
+    assert_eq!(
+        has_generation_field, "0",
+        "Cortex must not receive speakers-analyze generation env vars: {cortex_marker}"
+    );
+}
+
 #[test]
 fn shutdown_terminates_all_app_fixture_children() {
     let journal = TempJournal::new();
@@ -530,6 +661,7 @@ fn start_with_app_binary(
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", app_binary)
         .env("HOME", home);
+    speakers_analyze_stub::apply(&mut command);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Windows exclusive stage, handle-bound no-replace rename, and bound lease probe.
+//! Windows exclusive stage, handle-bound no-replace rename, and share-mode liveness probe.
 
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
@@ -28,8 +28,9 @@ use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 use super::create::OplogCreatePrimitive;
 use super::namespace::OplogDayHealth;
 use super::reason::{NamedOccupant, NamedOpen, OplogFileIdentity, StageError, StageLeftoverCause};
+use super::windows_liveness::{classify_liveness_by_id, on_disk_leaf_matches};
 use crate::atomic::{ATOMIC_CANDIDATE_MARKER, publication_candidate_name};
-use crate::lease::{LeaseProbe, SelfLease, acquire_self_lease, probe_file_lease};
+use crate::lease::LeaseProbe;
 use crate::windows_identity::file_link_count;
 use crate::windows_ntcreate::{nt_create_relative, nt_create_relative_share_read_delete};
 use crate::windows_sync_dir::validate_windows_regular_handle;
@@ -57,12 +58,11 @@ pub(super) fn stage_exclusive(
     let handle = nt_create_relative_share_read_delete(
         health.health().as_handle().as_raw_handle(),
         stage_name.as_os_str(),
-        // `LockFileEx` requires a handle opened with generic read or write
-        // access. `FILE_APPEND_DATA` alone admits the append writer but is not
-        // sufficient for the self-lease that guards this live stage. The live
-        // writer grants read and delete sharing so it can be observed and
-        // renamed, but withholds write sharing: a handle-based liveness probe
-        // can distinguish this still-live original from a pathname replacement.
+        // Share-mode is the Windows liveness authority: this create withholds
+        // FILE_SHARE_WRITE so an append-capable OpenFileById probe reports
+        // Active until every handle of this open, including inherited child
+        // stdio, is closed. GENERIC_READ remains so identity queries on the
+        // live writer do not need a second open.
         GENERIC_READ | FILE_APPEND_DATA | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_CREATE,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
@@ -97,10 +97,6 @@ pub(super) fn stage_exclusive(
         stage_name,
         identity: OplogFileIdentity::from_windows(identity.volume_serial(), identity.file_id()),
     })
-}
-
-pub(super) fn lease_staged(file: &File) -> io::Result<Option<SelfLease>> {
-    acquire_self_lease(file).map_err(|error| io::Error::other(error.to_string()))
 }
 
 pub(super) fn rename_stage(
@@ -170,11 +166,15 @@ pub(super) fn open_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<Na
     })
 }
 
-pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
+pub(super) fn probe_named(
+    health: &OplogDayHealth,
+    leaf: &OsStr,
+    identity: OplogFileIdentity,
+) -> LeaseProbe {
     let handle = match nt_create_relative(
         health.health().as_handle().as_raw_handle(),
         leaf,
-        GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_OPEN,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     ) {
@@ -195,7 +195,22 @@ pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
         return LeaseProbe::Indeterminate;
     }
     let file = File::from(handle);
-    probe_file_lease(&file)
+    let Ok(actual) = identity_of(&file) else {
+        return LeaseProbe::Indeterminate;
+    };
+    if actual != identity {
+        return LeaseProbe::Indeterminate;
+    }
+    if !on_disk_leaf_matches(file.as_raw_handle(), leaf) {
+        return LeaseProbe::Indeterminate;
+    }
+    drop(file);
+    classify_liveness_by_id(health.health().as_handle().as_raw_handle(), identity)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn probe_identity(health: &OplogDayHealth, identity: OplogFileIdentity) -> LeaseProbe {
+    classify_liveness_by_id(health.health().as_handle().as_raw_handle(), identity)
 }
 
 pub(super) fn identity_of(file: &File) -> io::Result<OplogFileIdentity> {

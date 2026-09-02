@@ -379,6 +379,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         let (local, parakeet) = stopped_providers(journal.path());
         let mut app_processes = Vec::new();
@@ -426,6 +427,7 @@ mod tests {
                 status_interval: Duration::from_secs(5),
             },
             parent_loss_coordinator: None,
+            sense_child_environment: BTreeMap::new(),
         };
         Fixture {
             driver: SupervisorShutdownDriver::new(
