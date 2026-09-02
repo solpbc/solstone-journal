@@ -462,7 +462,7 @@ fn write_owner_record(journal: &Path, role: SpeakersAnalyzeOwnerRole, id: &str) 
         "started_at": Utc::now().to_rfc3339(),
         "install_generation_id": id,
     });
-    write_json(&owner_path(journal), &record, OWNER_WRITE_OPTIONS).map_err(|_| ())
+    write_json(owner_path(journal), &record, OWNER_WRITE_OPTIONS).map_err(|_| ())
 }
 
 fn generation_lock_is_held(journal: &Path) -> bool {
