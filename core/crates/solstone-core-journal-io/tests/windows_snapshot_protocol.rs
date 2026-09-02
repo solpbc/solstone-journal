@@ -104,12 +104,9 @@ fn assert_reparse(path: &Path) {
 
 fn create_junction(link: &Path, target: &Path) {
     let output = Command::new("cmd")
-        .args(["/d", "/s", "/c"])
-        .arg(format!(
-            r#"mklink /J "{}" "{}""#,
-            link.display(),
-            target.display()
-        ))
+        .args(["/d", "/c", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
         .output()
         .expect("cmd must launch to create the directory junction fixture");
     assert!(
