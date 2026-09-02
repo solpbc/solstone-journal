@@ -27,6 +27,26 @@ pub struct OneShotClient {
     environment: BTreeMap<String, String>,
 }
 
+fn resolve_sibling_executable(current: &Path) -> Result<PathBuf, ClientError> {
+    let parent = current
+        .parent()
+        .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
+    let path = parent.join("solstone-core");
+    if Path::new(&path).is_file() {
+        Ok(path)
+    } else {
+        Err(ClientError::Resolve(format!(
+            "missing sibling executable {}",
+            path.display()
+        )))
+    }
+}
+
+pub fn sibling_executable() -> Result<PathBuf, ClientError> {
+    let current = env::current_exe().map_err(|error| ClientError::Resolve(error.to_string()))?;
+    resolve_sibling_executable(&current)
+}
+
 impl OneShotClient {
     pub fn at_path(path: impl Into<PathBuf>) -> Self {
         Self {
@@ -50,20 +70,7 @@ impl OneShotClient {
     }
 
     pub fn sibling() -> Result<Self, ClientError> {
-        let current =
-            env::current_exe().map_err(|error| ClientError::Resolve(error.to_string()))?;
-        let parent = current
-            .parent()
-            .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
-        let path = parent.join("solstone-core");
-        if Path::new(&path).is_file() {
-            Ok(Self::at_path(path))
-        } else {
-            Err(ClientError::Resolve(format!(
-                "missing sibling executable {}",
-                path.display()
-            )))
-        }
+        sibling_executable().map(Self::at_path)
     }
 
     pub fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
@@ -101,5 +108,70 @@ impl OneShotClient {
                 .map_err(ClientError::Decode)?,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            let base = std::env::temp_dir();
+            loop {
+                let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let path = base.join(format!(
+                    "solstone-core-generate-client-{}-{counter}",
+                    std::process::id()
+                ));
+                match fs::create_dir(&path) {
+                    Ok(()) => return Self { path },
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => panic!("create temporary test directory: {error}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn resolve_sibling_executable_selects_regular_sibling_file() {
+        let temp = TempDir::new();
+        let current = temp.path.join("journal");
+        let sibling = temp.path.join("solstone-core");
+        fs::write(&current, "journal executable").expect("write current executable fixture");
+        fs::write(&sibling, "solstone-core executable").expect("write sibling executable fixture");
+
+        assert_eq!(
+            resolve_sibling_executable(&current).expect("resolve sibling executable"),
+            sibling
+        );
+    }
+
+    #[test]
+    fn resolve_sibling_executable_requires_sibling_file() {
+        let temp = TempDir::new();
+        let current = temp.path.join("journal");
+        fs::write(&current, "journal executable").expect("write current executable fixture");
+
+        assert!(matches!(
+            resolve_sibling_executable(&current),
+            Err(ClientError::Resolve(_))
+        ));
     }
 }

@@ -21,6 +21,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{JournalBrainOwnerCommand, JournalBrainRefreshOptions};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient,
+    sibling_executable,
 };
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
@@ -600,7 +601,7 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
     let Ok(input) = serde_json::to_vec(&request) else {
         return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
     };
-    let Ok(executable) = env::current_exe() else {
+    let Ok(executable) = sibling_executable() else {
         return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
     };
     let reason = match run_cogitate_with_outer_timeout(executable, input) {
@@ -1180,6 +1181,21 @@ mod tests {
         assert_eq!(
             cogitate_run_error_reason(CogitateRunError::Io),
             "probe_internal_error"
+        );
+    }
+
+    #[test]
+    fn owner_cogitate_resolution_failure_keeps_probe_internal_error() {
+        assert!(
+            solstone_core_generate::sibling_executable().is_err(),
+            "cargo test must run without a sibling solstone-core binary"
+        );
+        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let config = Map::new();
+
+        assert_eq!(
+            cogitate_component(Path::new("unused-journal"), &config, now),
+            component_for_reason("cogitate", "probe_internal_error", Map::new(), now)
         );
     }
 

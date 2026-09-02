@@ -499,14 +499,20 @@ pub(crate) fn drain_with_deadline_observed(
                 }
             }
         }
-        Err(_) => {
-            let cause = blocked_runtime_reason(&context.journal)
-                .unwrap_or_else(|| "unavailable".to_owned());
+        // The wait error was previously dropped on the floor and every pending use was
+        // reported as `(unavailable)` — the literal fallback for "no reason known". That
+        // renders "we don't know" as if it were a cause: an operator reading
+        // `documents (unavailable)` cannot tell a blocked runtime from a dead socket from a
+        // read failure, and nothing else records it. Keep the error and let `failure_cause`
+        // consult the same sources the completion arms already use, falling back to the
+        // wait error itself rather than a word that says nothing.
+        Err(error) => {
+            let wait_error = format!("wait failed: {error:?}");
             for item in pending {
                 result.failed += 1;
                 result.failed_names.push(named_failure(
                     &item_label(&item.name, item.facet.as_deref()),
-                    &cause,
+                    &failure_cause(&context.journal, &item.use_id, &wait_error),
                 ));
                 observer(&item, DrainOutcome::Fail("wait_failed"));
             }
@@ -540,7 +546,24 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{blocked_runtime_reason, named_failure};
+    use super::{blocked_runtime_reason, failure_cause, named_failure};
+
+    // AC: when nothing else knows why a use failed, the caller's fallback is reported --
+    // not a generic word. The wait-failure arm of `drain_with_deadline_observed` relies on
+    // this to surface the real cortex error instead of the literal "unavailable", which
+    // rendered "we don't know" as though it were a cause.
+    #[test]
+    fn failure_cause_reports_the_callers_fallback_when_nothing_else_knows() {
+        let journal = tempfile::tempdir().expect("journal");
+        assert_eq!(
+            failure_cause(journal.path(), "1788358659849", "wait failed: Dispatch(Closed)"),
+            "wait failed: Dispatch(Closed)"
+        );
+        assert_eq!(
+            named_failure("documents", "wait failed: Dispatch(Closed)"),
+            "documents (wait failed: Dispatch(Closed))"
+        );
+    }
 
     #[test]
     fn blocked_runtime_reason_reads_the_same_health_record() {

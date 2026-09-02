@@ -69,8 +69,20 @@ pub const PARAKEET_WINDOWS_IMPORT_ALLOWLIST: &[&str] = &[
     "KERNEL32.dll",
     "ADVAPI32.dll",
     "WS2_32.dll",
+    "MSVCP140.dll",
+    "VCOMP140.dll",
     "VCRUNTIME140.dll",
     "VCRUNTIME140_1.dll",
+    "api-ms-win-crt-runtime-l1-1-0.dll",
+    "api-ms-win-crt-string-l1-1-0.dll",
+    "api-ms-win-crt-heap-l1-1-0.dll",
+    "api-ms-win-crt-convert-l1-1-0.dll",
+    "api-ms-win-crt-stdio-l1-1-0.dll",
+    "api-ms-win-crt-filesystem-l1-1-0.dll",
+    "api-ms-win-crt-math-l1-1-0.dll",
+    "api-ms-win-crt-environment-l1-1-0.dll",
+    "api-ms-win-crt-process-l1-1-0.dll",
+    "api-ms-win-crt-locale-l1-1-0.dll",
     "ucrtbase.dll",
     "ntdll.dll",
     "bcrypt.dll",
@@ -912,10 +924,15 @@ mod tests {
             attention_context: Some(AttentionContext::Forced(PARAKEET_ATT_CONTEXT)),
             model: Some(pinned_model()),
             layout: Some(pinned_layout()),
-            import_census: Some(census_with_imports(&[ImportSpec {
-                name: "KERNEL32.dll",
-                symbols: &[],
-            }])),
+            import_census: Some(census_with_imports(
+                &PARAKEET_WINDOWS_IMPORT_ALLOWLIST
+                    .iter()
+                    .map(|name| ImportSpec {
+                        name: *name,
+                        symbols: &[],
+                    })
+                    .collect::<Vec<_>>(),
+            )),
             notices: Some(pinned_notices()),
             provenance: Some(pinned_provenance()),
             sbom: Some(pinned_sbom()),
