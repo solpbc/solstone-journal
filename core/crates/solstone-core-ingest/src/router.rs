@@ -1046,10 +1046,17 @@ fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivi
             "ingest_success",
             ledger.record_accepted_ingest(cid, &timestamp, segment),
         ),
-        IngestActivity::Rejected(code) => (
-            "ingest_rejection",
-            ledger.record_ingest_rejection(cid, &timestamp, code.as_str()),
-        ),
+        IngestActivity::Rejected(code) => {
+            // A rejection previously landed only in the per-client ledger (devices.json),
+            // never in the log stream — a rejected segment upload was invisible to anyone
+            // reading convey.log, indistinguishable from an upload that was never attempted
+            // at all. Every rejection now gets a visible line regardless of ledger outcome.
+            log::warn!("ingest_rejection reason={}", code.as_str());
+            (
+                "ingest_rejection",
+                ledger.record_ingest_rejection(cid, &timestamp, code.as_str()),
+            )
+        }
     };
     if result.is_err() {
         log::warn!("client_activity_write_failed operation={operation}");
