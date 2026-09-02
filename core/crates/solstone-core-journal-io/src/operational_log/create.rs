@@ -1570,6 +1570,26 @@ pub fn run_with_oplog_create_barrier<T>(
     .0
 }
 
+/// Run `operation` with the supplied create-barrier callbacks.
+///
+/// A trace is one thread-local operation scope. Tests that need to observe
+/// several independent checkpoints must install them together rather than
+/// nesting the single-barrier helper.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_create_barriers<T>(
+    barriers: Vec<(OplogCreatePrimitive, Box<dyn FnOnce()>)>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    with_trace(
+        OplogCreateTraceState {
+            barriers,
+            ..empty_trace()
+        },
+        operation,
+    )
+    .0
+}
+
 /// Inject file ids consumed in order before falling back to `getrandom`.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn run_with_oplog_file_ids<T>(ids: Vec<[u8; 16]>, operation: impl FnOnce() -> T) -> T {

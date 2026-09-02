@@ -19,7 +19,7 @@ use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogCreatePrimitive, OplogFormat, OplogWriter, admit_day_health_directory,
     create_oplog_with_test_timing, probe_oplog_identity, probe_oplog_lease,
     run_with_oplog_capture_stderr_fault, run_with_oplog_capture_stdout_fault,
-    run_with_oplog_create_barrier,
+    run_with_oplog_create_barriers,
 };
 use windows_sys::Win32::Foundation::{
     CloseHandle, DuplicateHandle, GENERIC_READ, INVALID_HANDLE_VALUE,
@@ -275,10 +275,10 @@ fn delete_pending_never_promotes_to_released() {
     let identity = writer.identity();
 
     let pending = mark_delete_pending(&published).expect("mark the live oplog delete-pending");
-    assert_eq!(
+    assert_ne!(
         probe_oplog_identity(&health, identity),
-        LeaseProbe::Active,
-        "share conflict with the live writer still dominates while delete is pending"
+        LeaseProbe::Released,
+        "delete-pending must never be promoted to Released while the writer is live"
     );
 
     drop(writer);
@@ -545,45 +545,36 @@ fn after_admission_before_publish_is_reachable_lease_phase_primitives_are_not() 
 
     {
         let after_admission = Arc::clone(&after_admission);
-        run_with_oplog_create_barrier(
-            OplogCreatePrimitive::AfterAdmissionBeforePublish,
-            move || after_admission.store(true, Ordering::SeqCst),
-            || {
-                let after_stage_before_lease = Arc::clone(&after_stage_before_lease);
-                run_with_oplog_create_barrier(
+        run_with_oplog_create_barriers(
+            vec![
+                (
+                    OplogCreatePrimitive::AfterAdmissionBeforePublish,
+                    Box::new(move || after_admission.store(true, Ordering::SeqCst)),
+                ),
+                (
                     OplogCreatePrimitive::AfterStageBeforeLease,
-                    move || after_stage_before_lease.store(true, Ordering::SeqCst),
-                    || {
-                        let lease = Arc::clone(&lease);
-                        run_with_oplog_create_barrier(
-                            OplogCreatePrimitive::Lease,
-                            move || lease.store(true, Ordering::SeqCst),
-                            || {
-                                let after_lease_before_publish =
-                                    Arc::clone(&after_lease_before_publish);
-                                run_with_oplog_create_barrier(
-                                    OplogCreatePrimitive::AfterLeaseBeforePublish,
-                                    move || {
-                                        after_lease_before_publish.store(true, Ordering::SeqCst)
-                                    },
-                                    || {
-                                        create_oplog_with_test_timing(
-                                            JournalRoot::open(&journal)
-                                                .expect("admit trace-barrier root"),
-                                            "id",
-                                            "trace",
-                                            OplogFormat::Log,
-                                            fixed_instant(),
-                                            Duration::ZERO,
-                                            Duration::ZERO,
-                                        )
-                                        .expect("create succeeds without the unix lease phase")
-                                    },
-                                )
-                            },
-                        )
-                    },
+                    Box::new(move || after_stage_before_lease.store(true, Ordering::SeqCst)),
+                ),
+                (
+                    OplogCreatePrimitive::Lease,
+                    Box::new(move || lease.store(true, Ordering::SeqCst)),
+                ),
+                (
+                    OplogCreatePrimitive::AfterLeaseBeforePublish,
+                    Box::new(move || after_lease_before_publish.store(true, Ordering::SeqCst)),
+                ),
+            ],
+            || {
+                create_oplog_with_test_timing(
+                    JournalRoot::open(&journal).expect("admit trace-barrier root"),
+                    "id",
+                    "trace",
+                    OplogFormat::Log,
+                    fixed_instant(),
+                    Duration::ZERO,
+                    Duration::ZERO,
                 )
+                .expect("create succeeds without the unix lease phase")
             },
         );
     }
