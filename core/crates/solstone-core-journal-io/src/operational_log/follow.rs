@@ -127,7 +127,32 @@ impl OplogFollower {
             return Ok(OplogFollowTickOutcome::Stopped);
         }
         let mut remaining = OPLOG_FOLLOW_MAX_LINES_PER_TICK;
-        for tracked in self.state.tracked.values_mut() {
+        let mut identities = self.state.tracked.keys().copied().collect::<Vec<_>>();
+        identities.sort_by(|left, right| {
+            let left = &self
+                .state
+                .tracked
+                .get(left)
+                .expect("tracked identity exists")
+                .entry;
+            let right = &self
+                .state
+                .tracked
+                .get(right)
+                .expect("tracked identity exists")
+                .entry;
+            left.day().cmp(right.day()).then_with(|| {
+                left.leaf()
+                    .as_encoded_bytes()
+                    .cmp(right.leaf().as_encoded_bytes())
+            })
+        });
+        for identity in identities {
+            let tracked = self
+                .state
+                .tracked
+                .get_mut(&identity)
+                .expect("tracked identity exists");
             while remaining > 0 {
                 if stop() {
                     return Ok(OplogFollowTickOutcome::Stopped);
@@ -177,10 +202,11 @@ impl OplogFollower {
             }) {
                 return Err(OplogCatalogError::identity_for_day(entry.day()));
             }
-            if let Some(existing) = self.state.tracked.get(&entry.identity())
-                && (existing.entry.leaf() != entry.leaf() || existing.entry.size() != entry.size())
-            {
-                return Err(OplogCatalogError::identity_for_day(entry.day()));
+            if let Some(existing) = self.state.tracked.get_mut(&entry.identity()) {
+                if existing.entry.leaf() != entry.leaf() || entry.size() < existing.entry.size() {
+                    return Err(OplogCatalogError::identity_for_day(entry.day()));
+                }
+                existing.entry = entry.clone();
             }
             if let Some(tombstone) = self.state.tombstones.get(&entry.identity())
                 && (tombstone.leaf() != entry.leaf() || tombstone.size() != entry.size())
@@ -544,15 +570,17 @@ mod tests {
     }
 
     #[test]
-    fn changed_catalogued_size_for_a_live_identity_fails_closed() {
+    fn live_identity_accepts_monotonic_catalogued_growth_across_ticks() {
         use std::io::Write;
 
         let temporary = tempfile::tempdir().unwrap();
-        let snapshot = add(&temporary, "sized", date());
+        let snapshot = add(&temporary, "growing", date());
         let entry = snapshot.entries()[0].clone();
         let queues = Rc::new(RefCell::new(HashMap::new()));
         let source = Source::new(snapshot);
-        let factory = ReaderFactory { queues };
+        let factory = ReaderFactory {
+            queues: queues.clone(),
+        };
         let clock = Clock(Cell::new(date()));
         let initial = OplogFollower::discover_initial(&source, &factory, &clock).unwrap();
         let mut follower = OplogFollower::from_state(initial.state);
@@ -562,11 +590,88 @@ mod tests {
             .join(entry.day())
             .join("health")
             .join(entry.leaf());
+        let probe = Probe(Cell::new(LeaseProbe::Active));
+        let mut emitted = Vec::new();
+        let mut sizes = Vec::new();
+
+        for line in ["first", "second", "third"] {
+            writeln!(
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&path)
+                    .unwrap(),
+                "{line}"
+            )
+            .unwrap();
+            let fresh =
+                catalog_oplogs(JournalRoot::open(temporary.path()).unwrap(), &[date()]).unwrap();
+            sizes.push(fresh.entries()[0].size());
+            source.snapshot.replace(fresh);
+            push(&queues, &entry, [Step::Line(line)]);
+            assert_eq!(
+                follower
+                    .tick(
+                        &source,
+                        &factory,
+                        &probe,
+                        &clock,
+                        &|| false,
+                        &mut |_, line| emitted.push(line),
+                    )
+                    .unwrap(),
+                OplogFollowTickOutcome::Continued
+            );
+        }
+
+        assert_eq!(emitted, ["first", "second", "third"]);
+        assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(
+            follower
+                .state
+                .tracked
+                .get(&entry.identity())
+                .unwrap()
+                .entry
+                .size(),
+            *sizes.last().unwrap()
+        );
+    }
+
+    #[test]
+    fn shrinking_catalogued_size_for_a_live_identity_fails_closed() {
+        use std::io::Write;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let initial_snapshot = add(&temporary, "sized", date());
+        let initial_entry = initial_snapshot.entries()[0].clone();
+        let path = temporary
+            .path()
+            .join("chronicle")
+            .join(initial_entry.day())
+            .join("health")
+            .join(initial_entry.leaf());
+        writeln!(
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap(),
+            "late"
+        )
+        .unwrap();
+        let snapshot =
+            catalog_oplogs(JournalRoot::open(temporary.path()).unwrap(), &[date()]).unwrap();
+        let entry = snapshot.entries()[0].clone();
+        let queues = Rc::new(RefCell::new(HashMap::new()));
+        let source = Source::new(snapshot);
+        let factory = ReaderFactory { queues };
+        let clock = Clock(Cell::new(date()));
+        let initial = OplogFollower::discover_initial(&source, &factory, &clock).unwrap();
+        let mut follower = OplogFollower::from_state(initial.state);
         std::fs::OpenOptions::new()
-            .append(true)
+            .write(true)
             .open(path)
             .unwrap()
-            .write_all(b"late\n")
+            .set_len(entry.payload_offset() as u64)
             .unwrap();
         source.snapshot.replace(
             catalog_oplogs(JournalRoot::open(temporary.path()).unwrap(), &[date()]).unwrap(),
@@ -576,6 +681,50 @@ mod tests {
             follower
                 .tick(&source, &factory, &probe, &clock, &|| false, &mut |_, _| {})
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn tracked_entries_drain_in_catalog_order() {
+        let temporary = tempfile::tempdir().unwrap();
+        let _ = add(&temporary, "alpha", date());
+        let snapshot = add(&temporary, "beta", date());
+        let entries = snapshot.entries().to_vec();
+        let queues = Rc::new(RefCell::new(HashMap::new()));
+        let source = Source::new(snapshot);
+        let factory = ReaderFactory {
+            queues: queues.clone(),
+        };
+        let clock = Clock(Cell::new(date()));
+        let initial = OplogFollower::discover_initial(&source, &factory, &clock).unwrap();
+        let mut follower = OplogFollower::from_state(initial.state);
+        for (entry, line) in entries.iter().zip(["first", "second"]) {
+            push(&queues, entry, [Step::Line(line)]);
+        }
+        let probe = Probe(Cell::new(LeaseProbe::Active));
+        let mut emitted = Vec::new();
+        follower
+            .tick(
+                &source,
+                &factory,
+                &probe,
+                &clock,
+                &|| false,
+                &mut |entry, line| {
+                    emitted.push((entry.name().source().display_slug().to_owned(), line));
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            emitted,
+            entries
+                .iter()
+                .zip(["first", "second"])
+                .map(|(entry, line)| (
+                    entry.name().source().display_slug().to_owned(),
+                    line.to_owned()
+                ))
+                .collect::<Vec<_>>()
         );
     }
 

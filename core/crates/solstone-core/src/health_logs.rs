@@ -169,14 +169,6 @@ impl SafeDiagnostic {
     fn dynamic(value: impl AsRef<str>) -> Self {
         Self(sanitize_for_terminal(value.as_ref()))
     }
-
-    fn path_source(path: &std::path::Path, source: &dyn std::fmt::Display) -> Self {
-        Self(format!(
-            "{}: {}",
-            terminal_path(path),
-            sanitize_for_terminal(&source.to_string())
-        ))
-    }
 }
 
 fn collect_error_message(error: CollectError) -> SafeDiagnostic {
@@ -224,29 +216,13 @@ fn grep_error(error: GrepCompileError) -> String {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::fmt;
     use std::os::unix::ffi::OsStringExt;
     use std::path::PathBuf;
 
     use super::*;
 
-    struct HostileSource;
-
-    impl fmt::Display for HostileSource {
-        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("source\\\n\x1b\u{202e}")
-        }
-    }
-
     #[test]
-    fn safe_diagnostics_escape_each_dynamic_constituent_once() {
-        let path = PathBuf::from(std::ffi::OsString::from_vec(
-            b"/tmp/path\\\xff\n\x1b".to_vec(),
-        ));
-        assert_eq!(
-            SafeDiagnostic::path_source(&path, &HostileSource).0,
-            "/tmp/path\\\\\\xff\\n\\x1b: source\\\\\\n\\x1b\\u{202e}"
-        );
+    fn safe_diagnostics_escape_dynamic_text_once() {
         assert_eq!(
             SafeDiagnostic::dynamic("ordinary source").0,
             "ordinary source"

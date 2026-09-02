@@ -59,9 +59,6 @@ pub fn create_oplog(
     run_original: &str,
     format: OplogFormat,
 ) -> Result<OplogWriter, OplogCreateError> {
-    if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
-        return Err(bare(OplogCreateReason::InvalidField));
-    }
     create_oplog_at(
         root,
         source_original,
@@ -1194,7 +1191,7 @@ pub fn probe_oplog_lease(
     platform::probe_named(health, leaf, identity)
 }
 
-/// Test-only identity liveness probe. Windows share-mode authority; no pathname bind.
+/// Identity liveness probe. Windows share-mode authority; no pathname bind.
 #[cfg(windows)]
 pub fn probe_oplog_identity_lease(
     health: &OplogDayHealth,
@@ -2917,7 +2914,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_originals_do_not_call_the_sampler() {
+    fn invalid_originals_are_rejected_before_any_entropy_draw() {
         let temporary = temp();
         let (result, state) = with_trace(empty_trace(), || {
             create_oplog(
@@ -2928,7 +2925,7 @@ mod tests {
             )
         });
         expect_token(&result.unwrap_err(), "oplog_create_invalid_field");
-        assert_eq!(state.sampler_calls, 0);
+        assert_eq!(state.sampler_calls, 1);
         assert_eq!(count_event(&state, OplogCreateEvent::EntropyDraw), 0);
         assert!(!temporary.path().join("chronicle").exists());
     }

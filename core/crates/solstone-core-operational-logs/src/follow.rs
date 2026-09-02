@@ -13,8 +13,9 @@ use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{
         LeaseProbe, OplogCatalogEntry, OplogCatalogError, OplogClock, OplogEntryReaderFactory,
-        OplogFollowReader, OplogFollower, OplogIdentityProbe, OplogSnapshotSource, catalog_oplogs,
-        open_oplog_catalog_entry, probe_oplog_catalog_entry_lease,
+        OplogFollowReader, OplogFollowTickOutcome, OplogFollower, OplogIdentityProbe,
+        OplogSnapshotSource, catalog_oplogs, open_oplog_catalog_entry,
+        probe_oplog_catalog_entry_lease,
     },
 };
 
@@ -130,24 +131,35 @@ pub fn run_follow(
     let mut follower = OplogFollower::from_state(initial.state);
     let mut last_service = None;
     while !stop() {
-        follower
-            .tick(
-                &source,
-                &factory,
-                &probe,
-                &clock,
-                stop,
-                &mut |entry, line| {
-                    let _ = render_stream_row(
+        let mut output_failure = None;
+        let outcome = follower.tick(
+            &source,
+            &factory,
+            &probe,
+            &clock,
+            stop,
+            &mut |entry, line| {
+                if output_failure.is_none()
+                    && let Err(error) = render_stream_row(
                         output,
                         &line,
                         Some(entry.name().source().display_slug()),
                         is_tty,
                         &mut last_service,
-                    );
-                },
-            )
-            .map_err(|_| fatal(journal_root, "catalog"))?;
+                    )
+                {
+                    output_failure = Some(error);
+                }
+            },
+        );
+        if let Some(error) = output_failure {
+            return Err(output_error(error));
+        }
+        let outcome = outcome.map_err(|_| fatal(journal_root, "catalog"))?;
+        output.flush().map_err(output_error)?;
+        if outcome == OplogFollowTickOutcome::Stopped {
+            return Ok(());
+        }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
     Ok(())
@@ -158,5 +170,13 @@ fn fatal(path: &Path, operation: &'static str) -> FollowFatalError {
         path: path.to_path_buf(),
         operation,
         source: None,
+    }
+}
+
+fn output_error(source: io::Error) -> FollowFatalError {
+    FollowFatalError {
+        path: PathBuf::from("<stdout>"),
+        operation: "output",
+        source: Some(source),
     }
 }
