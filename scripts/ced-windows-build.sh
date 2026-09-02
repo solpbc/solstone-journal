@@ -84,39 +84,41 @@ fi
 # and prove the current host rail before this distinct dependency slot starts.
 make win-host-ci
 
-remote_inputs_rel="ced-windows-inputs/$EXPECTED_WIN_COMMIT"
 remote_slot_rel="ced-windows-controlled-build/$EXPECTED_WIN_COMMIT"
-remote_inputs="$WIN_REMOTE_HOME\\ced-windows-inputs\\$EXPECTED_WIN_COMMIT"
+remote_source_rel="ced-input-$EXPECTED_WIN_COMMIT.tar.gz"
+remote_cmake_rel="ced-cmake-$EXPECTED_WIN_COMMIT.zip"
+remote_source="$WIN_REMOTE_HOME\\$remote_source_rel"
+remote_cmake="$WIN_REMOTE_HOME\\$remote_cmake_rel"
 remote_slot="$WIN_REMOTE_HOME\\ced-windows-controlled-build\\$EXPECTED_WIN_COMMIT"
 remote_repo="$WIN_REMOTE_HOME\\sjbuild"
 
-remote_prepare="\$ErrorActionPreference = 'Stop'
-\$input = '$remote_inputs'
-\$slot = '$remote_slot'
-if (Test-Path -LiteralPath \$input) { throw 'remote CED input slot already exists' }
-if (Test-Path -LiteralPath \$slot) { throw 'remote CED output slot already exists' }
-New-Item -ItemType Directory -Path \$input | Out-Null"
+remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote CED source input already exists' }; if (Test-Path -LiteralPath '$remote_cmake') { throw 'remote CED CMake input already exists' }; if (Test-Path -LiteralPath '$remote_slot') { throw 'remote CED output slot already exists' }"
 "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \
   -o ControlPersist=60s \
   "$WIN_REMOTE_HOST" \
-  "powershell -NoProfile -Command \"$remote_prepare\""
+  "powershell -NoProfile -Command \"$remote_guard\""
 
 "$SCP" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \
   -o ControlPersist=60s \
   "$source_archive" \
+  "$WIN_REMOTE_HOST:$remote_source_rel"
+"$SCP" \
+  -o ControlMaster=auto \
+  -o "ControlPath=/tmp/sj-%r@%h:%p" \
+  -o ControlPersist=60s \
   "$cmake_archive" \
-  "$WIN_REMOTE_HOST:$remote_inputs_rel/"
+  "$WIN_REMOTE_HOST:$remote_cmake_rel"
 
 remote_command="& '$remote_repo\\core\\distribution\\ced-windows-build.ps1' \
   -RepositoryRoot '$remote_repo' \
-  -SourceArchive '$remote_inputs\\ced.cpp-with-ggml.tar.gz' \
+  -SourceArchive '$remote_source' \
   -SourceSha256 '$source_sha256' \
   -SourceSize $source_size \
-  -CmakeArchive '$remote_inputs\\cmake-3.31.12-windows-x86_64.zip' \
+  -CmakeArchive '$remote_cmake' \
   -WorkRoot '$remote_slot\\work' \
   -OutputRoot '$remote_slot\\output' \
   -ReportRoot '$remote_slot\\report' \
@@ -150,7 +152,8 @@ cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin so
   ced-windows verify --receipt "$local_slot/report/ced-build-receipt.json" --output-root "$local_slot/output"
 
 remote_cleanup="\$ErrorActionPreference = 'Stop'
-Remove-Item -LiteralPath '$remote_inputs' -Recurse -Force
+Remove-Item -LiteralPath '$remote_source' -Force
+Remove-Item -LiteralPath '$remote_cmake' -Force
 Remove-Item -LiteralPath '$remote_slot' -Recurse -Force"
 "$SSH" \
   -o ControlMaster=auto \
