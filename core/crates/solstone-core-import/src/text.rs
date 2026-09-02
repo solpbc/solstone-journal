@@ -96,7 +96,7 @@ impl fmt::Display for TextImportError {
             }
             Self::InvalidTime { value } => write!(formatter, "invalid transcript time: {value}"),
             Self::Wire { phase, source } => {
-                write!(formatter, "{phase:?} generate wire failed: {source:?}")
+                write!(formatter, "{phase:?} generate wire failed: {source}")
             }
             Self::NegativeDuration {
                 duration,

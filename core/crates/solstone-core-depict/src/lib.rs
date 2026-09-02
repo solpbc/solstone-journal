@@ -330,15 +330,14 @@ fn interpret_generate(
             refusal.blocking,
             refusal.reason_code.map(|code| code.as_wire().to_owned()),
         )),
-        Err(ClientError::Protocol(failure)) => Err(wire_error(
-            format!("{}: {}", failure.error.reason, failure.error.detail),
-            true,
-            None,
-        )),
+        Err(error @ ClientError::Protocol(_)) => Err(wire_error(error.to_string(), true, None)),
         Err(ClientError::Decode(detail)) => Err(wire_error(detail, true, None)),
-        Err(error @ (ClientError::Io { .. } | ClientError::UnexpectedChild(_))) => {
-            Err(wire_error(error.to_string(), true, None))
-        }
+        Err(
+            error @ (ClientError::Io { .. }
+            | ClientError::ProcessIo(_)
+            | ClientError::InvalidResponse(_)
+            | ClientError::UnexpectedChild(_)),
+        ) => Err(wire_error(error.to_string(), true, None)),
         Err(ClientError::Resolve(detail)) => Err(wire_error(detail, true, None)),
     }
 }
@@ -840,6 +839,7 @@ mod tests {
             },
             stdout: CapturedStream::empty(),
             stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
         }))))
         .expect_err("protocol error must not produce a description");
         assert!(matches!(
@@ -863,6 +863,7 @@ mod tests {
                 },
                 stdout: CapturedStream::empty(),
                 stderr: CapturedStream::empty(),
+                stdin_closed_early: false,
             })),
         ] {
             assert!(matches!(

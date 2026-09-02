@@ -73,6 +73,18 @@ fn main() {
             );
         }
         #[cfg(windows)]
+        "environment-empty" => {
+            let name = args.next().expect("environment variable name");
+            println!(
+                "{}",
+                match std::env::var_os(name) {
+                    Some(value) if value.is_empty() => "empty",
+                    Some(_) => "present",
+                    None => "absent",
+                }
+            );
+        }
+        #[cfg(windows)]
         "current-directory" => {
             println!(
                 "{}",

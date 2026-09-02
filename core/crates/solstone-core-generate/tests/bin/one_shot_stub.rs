@@ -56,12 +56,14 @@ fn main() {
         }
         "success_oversized" => {
             let stdout = vec![b'x'; STDOUT_LIMIT + 1];
+            eprint!("oversized diagnostic");
             io::stdout()
                 .write_all(&stdout)
                 .expect("oversized stdout writes");
             return;
         }
         "success_malformed" => {
+            eprint!("malformed diagnostic");
             println!("not-json");
             return;
         }
