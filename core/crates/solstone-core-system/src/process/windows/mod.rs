@@ -26,6 +26,8 @@ use super::{
 };
 
 #[cfg(any(windows, test))]
+mod bounded;
+#[cfg(any(windows, test))]
 mod command_line;
 #[cfg(any(windows, test))]
 mod environment;
@@ -51,6 +53,11 @@ mod resolve;
 mod startup_info;
 #[cfg(any(windows, test))]
 mod user_path;
+#[cfg(windows)]
+pub use bounded::{
+    BoundedHelperBudget, BoundedHelperError, BoundedHelperOutput, BoundedHelperRequest,
+    BoundedHelperResourceLimits, run_bounded_helper,
+};
 #[cfg(windows)]
 pub use managed::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,

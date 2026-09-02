@@ -8,7 +8,7 @@ use minisign::KeyPair;
 use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
 use solstone_core_distribution::windows_payload::{
     WINDOWS_CED_LIBRARY, WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
-    render_windows_payload_manifest, verify_windows_payload,
+    WINDOWS_PDFIUM_LIBRARY, render_windows_payload_manifest, verify_windows_payload,
 };
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -63,6 +63,12 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
     assert_eq!(
         verified.ced_library_path().expect("declared CED engine"),
         root.path().join(WINDOWS_CED_LIBRARY)
+    );
+    assert_eq!(
+        verified
+            .pdfium_library_path()
+            .expect("declared PDFium engine"),
+        root.path().join(WINDOWS_PDFIUM_LIBRARY)
     );
     assert!(verified.declared_path("bin/not-admitted.dll").is_none());
 

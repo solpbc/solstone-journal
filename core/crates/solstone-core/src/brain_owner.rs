@@ -536,9 +536,7 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         exclusive_admission: false,
         transport_retries: Some(0),
     };
-    let result = OneShotClient::sibling()
-        .map(|client| client.with_prefix_arguments(["generate".into()]))
-        .and_then(|client| client.execute(&request));
+    let result = OneShotClient::sibling().and_then(|client| client.execute(&request));
     let reason = match result {
         Ok(GenerateResponse::Generated(response)) => {
             let Some(reason) = classify_canned_generate(&response) else {
@@ -550,7 +548,9 @@ fn generate_component(now: DateTime<Utc>) -> Value {
             "generate",
             response.reason_code.as_ref().map(|value| value.as_wire()),
         ),
-        Err(ClientError::Protocol(error)) => map_provider_reason("generate", Some(&error.reason)),
+        Err(ClientError::Protocol(failure)) => {
+            map_provider_reason("generate", Some(&failure.error.reason))
+        }
         Err(_) => "probe_internal_error".to_owned(),
     };
     component_for_reason("generate", &reason, Map::new(), now)

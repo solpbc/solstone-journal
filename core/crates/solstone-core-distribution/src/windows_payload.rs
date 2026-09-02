@@ -26,6 +26,9 @@ pub const WINDOWS_PAYLOAD_SIGNATURE: &str = "share/provenance/windows-payload.js
 /// The CED engine is a signed application-directory payload, never mutable
 /// journal state.
 pub const WINDOWS_CED_LIBRARY: &str = "bin/ced.dll";
+/// The PDFium engine is a signed private-library payload, never a system or
+/// mutable-journal lookup.
+pub const WINDOWS_PDFIUM_LIBRARY: &str = "lib/solstone-core-pdf/pdfium.dll";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,6 +89,18 @@ impl VerifiedWindowsPayload {
     pub fn ced_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_CED_LIBRARY).ok_or_else(|| {
             WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_CED_LIBRARY)
+        })
+    }
+
+    /// Return the PDFium engine only when the verified package declared it.
+    ///
+    /// The caller still owns the private-directory loader policy. This
+    /// capability binds that future load to the exact signed tree checked by
+    /// [`verify_windows_payload`]; it neither loads the DLL nor permits an
+    /// ambient fallback.
+    pub fn pdfium_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_PDFIUM_LIBRARY).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_LIBRARY)
         })
     }
 }

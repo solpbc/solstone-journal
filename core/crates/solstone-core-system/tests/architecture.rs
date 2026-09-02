@@ -35,6 +35,7 @@ const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
 const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
 const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
+const PROCESS_WINDOWS_BOUNDED: &str = include_str!("../src/process/windows/bounded.rs");
 const PROCESS_WINDOWS_MANAGED: &str = include_str!("../src/process/windows/managed.rs");
 const PROCESS_WINDOWS_HANDLE: &str = include_str!("../src/process/windows/handle.rs");
 const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
@@ -299,6 +300,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             .collect()
     );
     let windows_process_modules = [
+        ("bounded", PROCESS_WINDOWS_BOUNDED),
         ("managed", PROCESS_WINDOWS_MANAGED),
         ("handle", PROCESS_WINDOWS_HANDLE),
         ("identity", PROCESS_WINDOWS_IDENTITY),

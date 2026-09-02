@@ -357,10 +357,10 @@ struct ProductionRollupPicker;
 
 impl RollupPicker for ProductionRollupPicker {
     fn pick(&self, request: &GenerateRequest) -> Result<String, String> {
-        let client = OneShotClient::sibling().map_err(|error| format!("{error:?}"))?;
+        let client = OneShotClient::sibling().map_err(|error| format!("{error}"))?;
         match client
             .execute(request)
-            .map_err(|error| format!("{error:?}"))?
+            .map_err(|error| format!("{error}"))?
         {
             GenerateResponse::Generated(response) => Ok(response.text),
             GenerateResponse::Refused(response) => Err(response.detail),

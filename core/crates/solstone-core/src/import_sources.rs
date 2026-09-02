@@ -92,9 +92,7 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         return success(cli_render::source_preview(dispatch.source, &preview));
     }
     let model = match OneShotClient::sibling() {
-        Ok(client) => document::SystemDocumentModelClient::new(
-            client.with_prefix_arguments(["generate".into()]),
-        ),
+        Ok(client) => document::SystemDocumentModelClient::new(client),
         Err(error) => return failure(format!("{}\n", error_text(error))),
     };
     let import_dir = journal.join("imports").join(&dispatch.timestamp);
@@ -294,9 +292,19 @@ fn pdf_worker_sibling() -> Result<PathBuf, String> {
 fn error_text(error: solstone_core_generate::ClientError) -> String {
     match error {
         solstone_core_generate::ClientError::Resolve(detail)
-        | solstone_core_generate::ClientError::Io(detail)
         | solstone_core_generate::ClientError::Decode(detail) => detail,
-        solstone_core_generate::ClientError::Protocol(detail) => detail.detail,
+        solstone_core_generate::ClientError::Io {
+            primary,
+            cleanup: None,
+        } => primary,
+        solstone_core_generate::ClientError::Io {
+            primary,
+            cleanup: Some(cleanup),
+        } => format!("{primary} (cleanup: {cleanup})"),
+        solstone_core_generate::ClientError::Protocol(failure) => failure.error.detail,
+        unexpected @ solstone_core_generate::ClientError::UnexpectedChild(_) => {
+            unexpected.to_string()
+        }
     }
 }
 

@@ -9,7 +9,10 @@ mod fixture;
 mod session;
 mod types;
 
-pub use client::{ClientError, OneShotClient, sibling_executable};
+pub use client::{
+    CapturedStream, ChildStatus, ClientError, OneShotClient, ProtocolFailure, STDERR_LIMIT,
+    STDOUT_LIMIT, UnexpectedChildFailure, sibling_executable,
+};
 pub use codec::{
     SessionCorrelation, SessionError, decode_one_shot_request, decode_one_shot_response,
     decode_protocol_error, decode_session_request_line, decode_session_response_line,

@@ -16,9 +16,12 @@ use super::environment::{
 use super::resolve::{
     WindowsCandidateProbe, WindowsDirectoryLookup, WindowsResolveError, resolve_executable,
 };
-use super::user_path::WindowsFullPathName;
+use super::user_path::{WindowsFullPathError, WindowsFullPathName, to_user_path};
 
 const NUL: u16 = 0;
+const BACKSLASH: u16 = b'\\' as u16;
+const SLASH: u16 = b'/' as u16;
+const COLON: u16 = b':' as u16;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(super) enum WindowsLaunchPrepError {
@@ -26,6 +29,10 @@ pub(super) enum WindowsLaunchPrepError {
     EmptyCommand,
     #[error("Windows launch input contains an interior NUL")]
     InteriorNul,
+    #[error("managed helper current directory must be an absolute Windows path")]
+    CurrentDirectoryNotAbsolute,
+    #[error("invalid managed helper current directory: {0}")]
+    CurrentDirectory(WindowsFullPathError),
     #[error(transparent)]
     Environment(#[from] WindowsEnvironmentError),
     #[error(transparent)]
@@ -117,12 +124,13 @@ impl WideEnvironmentBlock {
     }
 }
 
-/// The three owned buffers needed by a future `CreateProcessW` call.
+/// The owned buffers needed by a future `CreateProcessW` call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct WindowsLaunchSpec {
     application_name: WideNulConst,
     command_line: WideNulMut,
     environment: WideEnvironmentBlock,
+    current_directory: Option<WideNulConst>,
 }
 
 impl WindowsLaunchSpec {
@@ -140,6 +148,27 @@ impl WindowsLaunchSpec {
 
     pub(super) fn environment(&self) -> &WideEnvironmentBlock {
         &self.environment
+    }
+
+    /// Set an explicit, absolute Windows current directory for this child.
+    ///
+    /// The caller must pass an absolute path. Keeping this value in the owned
+    /// launch specification prevents it from falling back to a process-global
+    /// current directory between validation and `CreateProcessW`.
+    pub(super) fn set_current_directory<F: WindowsFullPathName>(
+        &mut self,
+        current_directory: &[u16],
+        full_path: &F,
+    ) -> Result<(), WindowsLaunchPrepError> {
+        self.current_directory = Some(prepare_windows_current_directory(
+            current_directory,
+            full_path,
+        )?);
+        Ok(())
+    }
+
+    pub(super) fn current_directory(&self) -> Option<&WideNulConst> {
+        self.current_directory.as_ref()
     }
 }
 
@@ -191,7 +220,33 @@ pub(super) fn prepare_windows_launch_spec<F: WindowsFullPathName>(
         application_name: WideNulConst::from_terminated(application_name)?,
         command_line: WideNulMut::from_unterminated(command_line)?,
         environment: WideEnvironmentBlock::from_environment_plan(environment.block)?,
+        current_directory: None,
     })
+}
+
+/// Prepare an explicit helper current directory for `CreateProcessW`.
+///
+/// Windows drive-relative paths (for example `C:bin`) resolve through mutable
+/// per-drive state, and root-relative paths resolve through mutable drive
+/// selection. Neither is acceptable for a package-owned helper boundary.
+pub(super) fn prepare_windows_current_directory<F: WindowsFullPathName>(
+    current_directory: &[u16],
+    full_path: &F,
+) -> Result<WideNulConst, WindowsLaunchPrepError> {
+    if !is_windows_absolute_path(current_directory) {
+        return Err(WindowsLaunchPrepError::CurrentDirectoryNotAbsolute);
+    }
+    let current_directory = to_user_path(current_directory, full_path)
+        .map_err(WindowsLaunchPrepError::CurrentDirectory)?;
+    WideNulConst::from_terminated(current_directory)
+}
+
+fn is_windows_absolute_path(path: &[u16]) -> bool {
+    matches!(
+        path,
+        [drive, COLON, BACKSLASH | SLASH, ..]
+            if *drive != BACKSLASH && *drive != SLASH
+    ) || matches!(path, [BACKSLASH | SLASH, BACKSLASH | SLASH, _, ..])
 }
 
 fn string_to_wide(value: &str) -> Result<Vec<u16>, WindowsLaunchPrepError> {
@@ -322,6 +377,10 @@ mod tests {
 
     fn wide_terminated(value: &str) -> Vec<u16> {
         value.encode_utf16().chain([NUL]).collect()
+    }
+
+    fn wide(value: &str) -> Vec<u16> {
+        value.encode_utf16().collect()
     }
 
     fn adapters<'a>(
@@ -485,6 +544,70 @@ mod tests {
             prepare_windows_launch_spec(&[], &BTreeMap::new(), &adapters, &FakeFullPath),
             Err(WindowsLaunchPrepError::EmptyCommand)
         );
+    }
+
+    #[test]
+    fn current_directory_is_owned_and_absolute_before_create_process() {
+        let probe = FakeProbe::new();
+        let directories = FakeDirectories;
+        let ordinal = FakeOrdinal;
+        let inherited = FakeInherited {
+            entries: Vec::new(),
+        };
+        let encoder = FakeWideEncoder;
+        let adapters = adapters(&probe, &directories, &ordinal, &inherited, &encoder);
+        let mut spec = prepare_windows_launch_spec(
+            &direct_command(),
+            &BTreeMap::new(),
+            &adapters,
+            &FakeFullPath,
+        )
+        .unwrap();
+
+        spec.set_current_directory(&wide(r"C:\package\bin"), &FakeFullPath)
+            .unwrap();
+
+        assert_eq!(
+            spec.current_directory().map(WideNulConst::units),
+            Some(wide_terminated(r"C:\package\bin").as_slice())
+        );
+    }
+
+    #[test]
+    fn current_directory_rejects_relative_and_interior_nul_paths() {
+        for current_directory in ["relative", r"C:relative", r"\root-relative", r"\\"] {
+            assert_eq!(
+                prepare_windows_current_directory(&wide(current_directory), &FakeFullPath),
+                Err(WindowsLaunchPrepError::CurrentDirectoryNotAbsolute),
+                "{current_directory}"
+            );
+        }
+
+        let mut interior_nul = wide(r"C:\package");
+        interior_nul.push(NUL);
+        interior_nul.extend(wide("bin"));
+        assert_eq!(
+            prepare_windows_current_directory(&interior_nul, &FakeFullPath),
+            Err(WindowsLaunchPrepError::CurrentDirectory(
+                WindowsFullPathError::InteriorNul
+            ))
+        );
+    }
+
+    #[test]
+    fn current_directory_accepts_unc_and_normalizes_verbatim_absolute_forms() {
+        for (current_directory, expected) in [
+            (r"\\server\share\package", r"\\server\share\package"),
+            (r"\\?\C:\package", r"C:\package"),
+        ] {
+            assert_eq!(
+                prepare_windows_current_directory(&wide(current_directory), &FakeFullPath)
+                    .unwrap()
+                    .units(),
+                wide_terminated(expected),
+                "{current_directory}"
+            );
+        }
     }
 
     #[test]

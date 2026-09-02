@@ -3,7 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -11,6 +11,8 @@ use std::time::Duration;
 use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
 use solstone_core_system::lifecycle::{SupervisorLifecycle, WriterId};
 use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
+#[cfg(unix)]
+use std::path::Path;
 
 fn writer_id() -> WriterId {
     WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID")
@@ -37,6 +39,48 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        #[cfg(windows)]
+        "echo-stdin" => {
+            let mut input = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut input)
+                .expect("read bounded helper input");
+            std::io::stdout()
+                .write_all(&input)
+                .expect("write bounded helper output");
+        }
+        #[cfg(windows)]
+        "write-stdout" => {
+            let count = args
+                .next()
+                .expect("output byte count")
+                .parse::<usize>()
+                .expect("numeric output byte count");
+            std::io::stdout()
+                .write_all(&vec![b'x'; count])
+                .expect("write bounded stdout fixture");
+        }
+        #[cfg(windows)]
+        "environment-present" => {
+            let name = args.next().expect("environment variable name");
+            println!(
+                "{}",
+                if std::env::var_os(name).is_some() {
+                    "present"
+                } else {
+                    "absent"
+                }
+            );
+        }
+        #[cfg(windows)]
+        "current-directory" => {
+            println!(
+                "{}",
+                std::env::current_dir()
+                    .expect("read child current directory")
+                    .display()
+            );
+        }
         #[cfg(windows)]
         "exit-code" => {
             let code = args
