@@ -289,8 +289,8 @@ mod windows_impl {
         FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT,
     };
     use windows_sys::Win32::Foundation::{
-        ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
-        INVALID_HANDLE_VALUE,
+        ERROR_ALREADY_EXISTS, ERROR_DIRECTORY, ERROR_FILE_EXISTS, ERROR_FILE_NOT_FOUND,
+        ERROR_PATH_NOT_FOUND, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -699,6 +699,9 @@ mod windows_impl {
                 Ok((handle, identity))
             }
             Err(source) if is_not_found(&source) => create_then_reopen_ancestor(parent, name),
+            Err(source) if is_not_directory(&source) => Err(PublicationPathError::NotDirectory {
+                component: name.to_owned(),
+            }),
             Err(source) => Err(PublicationPathError::Io {
                 operation: "open publication-path ancestor",
                 source,
@@ -844,6 +847,10 @@ mod windows_impl {
             Some(code)
                 if code == ERROR_FILE_EXISTS as i32 || code == ERROR_ALREADY_EXISTS as i32
         )
+    }
+
+    fn is_not_directory(error: &io::Error) -> bool {
+        error.raw_os_error() == Some(ERROR_DIRECTORY as i32)
     }
 }
 
@@ -1240,6 +1247,18 @@ mod tests {
     use std::fs;
     #[cfg(windows)]
     use std::path::{Path, PathBuf};
+    #[cfg(windows)]
+    use std::sync::{Mutex, MutexGuard};
+
+    #[cfg(windows)]
+    static CWD_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(windows)]
+    fn cwd_test_lock() -> MutexGuard<'static, ()> {
+        CWD_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[cfg(windows)]
     struct RestoreCwd(PathBuf);
@@ -1305,6 +1324,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_volume_guid_move_spelling() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path(r"a\b\leaf").unwrap();
@@ -1317,6 +1337,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_cwd_direct_retains_anchor() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path("leaf").unwrap();
@@ -1332,6 +1353,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_multicomponent_retains_full_chain() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path(r"a\b\leaf").unwrap();
@@ -1366,6 +1388,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_refuses_file_at_ancestor() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         fs::write(temporary.path().join("a"), b"not-a-directory").unwrap();
@@ -1383,6 +1406,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_refuses_reparse_at_ancestor() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let target = temporary.path().join("target");
@@ -1401,6 +1425,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_leaves_prefix_on_later_refusal() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         fs::create_dir(temporary.path().join("a")).unwrap();
@@ -1409,7 +1434,10 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("expected a file ancestor to be refused"),
         };
-        assert!(matches!(error, PublicationPathError::NotDirectory { .. }));
+        assert!(matches!(
+            error,
+            PublicationPathError::NotDirectory { ref component } if component == "b"
+        ));
         assert!(temporary.path().join("a").is_dir());
         assert!(temporary.path().join("a").join("b").is_file());
     }
@@ -1417,6 +1445,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn revalidate_ok_on_real_chain() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path(r"a\b\leaf").unwrap();
@@ -1428,6 +1457,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn prepare_beyond_max_path_still_succeeds() {
+        let _cwd_serial = cwd_test_lock();
         let temporary = TempDir::new();
         let mut current = temporary.path().to_path_buf();
         while current.to_str().map(str::len).unwrap_or(0) < 220 {
@@ -1444,6 +1474,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn share_mode_blocks_rename_and_delete_while_live() {
+        let _cwd_serial = cwd_test_lock();
         let original = TempDir::new();
         let elsewhere = TempDir::new();
         let _restore = set_cwd(original.path());
