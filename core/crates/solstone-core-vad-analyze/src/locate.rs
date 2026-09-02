@@ -27,44 +27,16 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::process;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    struct TestDir {
-        root: PathBuf,
-    }
-
-    impl TestDir {
-        fn new() -> Self {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos();
-            let root = std::env::temp_dir().join(format!(
-                "solstone-vad-locate-test-{}-{nonce}",
-                process::id()
-            ));
-            fs::create_dir(&root).expect("create test dir");
-            Self { root }
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.root);
-        }
-    }
 
     #[test]
     fn explicit_env_override_is_returned_verbatim() {
-        let dir = TestDir::new();
-        let override_path = dir.root.join("elsewhere/custom-vad");
+        let base = PathBuf::from("base");
+        let override_path = PathBuf::from("elsewhere/custom-vad");
 
-        let resolved = resolve_vad_binary(&dir.root, |name| {
+        let resolved = resolve_vad_binary(&base, |name| {
             assert_eq!(name, VAD_BINARY_ENV);
             Some(override_path.to_string_lossy().into_owned())
         });
@@ -74,19 +46,19 @@ mod tests {
 
     #[test]
     fn unset_env_joins_base_dir_and_binary_name() {
-        let dir = TestDir::new();
+        let base = PathBuf::from("base");
 
-        let resolved = resolve_vad_binary(&dir.root, |_name| None);
+        let resolved = resolve_vad_binary(&base, |_name| None);
 
-        assert_eq!(resolved, dir.root.join(VAD_BINARY_NAME));
+        assert_eq!(resolved, base.join(VAD_BINARY_NAME));
     }
 
     #[test]
     fn empty_env_override_falls_back_to_base_dir() {
-        let dir = TestDir::new();
+        let base = PathBuf::from("base");
 
-        let resolved = resolve_vad_binary(&dir.root, |_name| Some(String::new()));
+        let resolved = resolve_vad_binary(&base, |_name| Some(String::new()));
 
-        assert_eq!(resolved, dir.root.join(VAD_BINARY_NAME));
+        assert_eq!(resolved, base.join(VAD_BINARY_NAME));
     }
 }

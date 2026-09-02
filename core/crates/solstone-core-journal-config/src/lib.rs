@@ -22,7 +22,9 @@ pub use direct_port::{
 };
 pub use mcp_endpoint::{
     MCP_ENDPOINT_LOOPBACK_PORT, McpEndpointCapability, McpEndpointCapabilityError,
-    mcp_endpoint_capability,
+    McpEndpointCertificateEnvironment, McpEndpointCertificateEnvironmentError,
+    McpEndpointForceStagingRenewalError, mcp_endpoint_capability,
+    mcp_endpoint_certificate_environment, mcp_endpoint_force_staging_renewal,
 };
 pub use name::is_path_shaped_name;
 pub use notification_labels::{

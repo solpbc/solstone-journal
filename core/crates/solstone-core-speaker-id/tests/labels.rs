@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -89,6 +90,7 @@ fn ac2_full_rewrite_matches_python_bytes_and_creates_file() {
 
     assert_eq!(fs::read(&path).expect("labels are readable"), FULL);
     assert!(path.exists());
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&path)
             .expect("metadata is readable")
@@ -115,6 +117,7 @@ fn ac3_stub_matches_python_bytes_and_creates_file() {
 
     assert_eq!(fs::read(&path).expect("labels are readable"), STUB);
     assert!(path.exists());
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&path)
             .expect("metadata is readable")
@@ -439,6 +442,7 @@ fn ac13_patch_insert_sorts_valid_ids_before_sidless_rows() {
     assert_eq!(labels[2]["sentence_id"], 10);
     assert!(labels[3].get("sentence_id").is_none());
     assert!(path.exists());
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&path)
             .expect("metadata is readable")

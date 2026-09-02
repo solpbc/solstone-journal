@@ -1,0 +1,62 @@
+{
+  "audited_consumer_revisions": [],
+  "bundle_schema_identity": "solstone.pairing-contract-bundle.schema.v1",
+  "bundle_semver": "1.0.0",
+  "component_closure": [
+    "Error",
+    "PairRequest",
+    "PairResponse"
+  ],
+  "consumer_identifiers": [],
+  "files": [
+    {
+      "path": "consumer-audit.json",
+      "sha256": "fd00b8ffb512ba15e050f147d690718d4dde039dfa2df7096511a3d2ac7999e8"
+    },
+    {
+      "path": "fixtures/wire-behavior.json",
+      "sha256": "cf2a8b9d06f52c2616f54a9d2e87fce3ae28164eadee0d15be02528cceead2c0"
+    },
+    {
+      "path": "projection.openapi.json",
+      "sha256": "949e81fd7b976de96a55bb17fd575fb8d6c73af259aa87df8b1f4867315aaec3"
+    },
+    {
+      "path": "vectors.json",
+      "sha256": "e2d7afd8ec1ae2b55c829d17ad133a6ea280dc6b5844440ad93f1344fd8bd038"
+    }
+  ],
+  "generator_identity": "solstone.repository_contracts.pairing_contract_bundle.v1",
+  "generator_inputs": [
+    {
+      "id": "openapi.pairing_contract_authority",
+      "path": "core/crates/solstone-core-repository-contracts/src/contracts/pairing_contract_authority.json",
+      "role": "openapi_source",
+      "sha256": "34a0ca85485e7fbdeb8397fb33a1d0fb6e6d3845d85d0a7f8219dfd335affdda"
+    }
+  ],
+  "openapi_document_version": "1.0.0",
+  "openapi_spec_version": "3.1.0",
+  "operation_ids": [
+    "client.pair"
+  ],
+  "projection_path": "projection.openapi.json",
+  "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
+  "scope_rationale": "This pairing-identity bundle projects only POST /app/network/pair. Consumer-audit arrays are empty because the native joiner still sends empty additional_fields and no shipped consumer has adopted client_label/platform yet.",
+  "vocabularies": [
+    {
+      "classification": "closed",
+      "id": "PairRequest.platform",
+      "source_pointer": "/components/schemas/PairRequest/properties/platform",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "linux",
+        "macos",
+        "windows",
+        "ios",
+        "android"
+      ]
+    }
+  ],
+  "windows_linux_rollout_targets": []
+}

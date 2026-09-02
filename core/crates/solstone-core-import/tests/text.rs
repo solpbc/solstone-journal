@@ -246,7 +246,10 @@ fn stream_marker_advances_before_a_later_segment_wire_failure() {
             "",
             "",
         )),
-        Err(ClientError::Io("second conversion failed".to_owned())),
+        Err(ClientError::Io {
+            primary: "second conversion failed".to_owned(),
+            cleanup: None,
+        }),
     ]);
 
     let error = run(&source, &day, &wire, None).unwrap_err();
@@ -518,7 +521,10 @@ fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
     assert_eq!(written[1]["text"], "one\ntwo\nthree");
     assert_eq!(written[1]["start"], "00:00:00");
 
-    let boundary_failure = RecordingWire::new(vec![Err(ClientError::Io("down".to_owned()))]);
+    let boundary_failure = RecordingWire::new(vec![Err(ClientError::Io {
+        primary: "down".to_owned(),
+        cleanup: None,
+    })]);
     assert!(matches!(
         run(&source, &day, &boundary_failure, None),
         Err(TextImportError::Wire {
@@ -529,7 +535,10 @@ fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
 
     let conversion_failure = RecordingWire::new(vec![
         generated(boundaries(&["12:00:00"])),
-        Err(ClientError::Io("down".to_owned())),
+        Err(ClientError::Io {
+            primary: "down".to_owned(),
+            cleanup: None,
+        }),
     ]);
     assert!(matches!(
         run(&source, &day, &conversion_failure, None),

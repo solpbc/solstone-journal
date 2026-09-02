@@ -526,7 +526,7 @@ impl CallosumSocketConnection {
             return;
         };
         if timeout(CLIENT_STOP_JOIN_TIMEOUT, &mut task).await.is_err() {
-            eprintln!("callosum wire: connection drain continues after stop returns");
+            log::warn!("callosum wire: connection drain continues after stop returns");
         }
     }
 

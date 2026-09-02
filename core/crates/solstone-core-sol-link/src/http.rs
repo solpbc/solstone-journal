@@ -172,6 +172,13 @@ async fn devices(State(state): State<LinkHttpState>) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
+        AuthorizedClientsRead::DuplicateCid => error_envelope(
+            "authorization_ledger_duplicate_cid",
+            "Service Unavailable",
+            "authorized-client ledger contains a duplicate client identifier",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .into_response(),
     }
 }
 
@@ -605,7 +612,7 @@ fn now_ms() -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod access_tests {
     use super::is_local;
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};

@@ -136,16 +136,22 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
     ) -> Self {
-        Self::new_with_hosted_parent(journal, verbose, debug, outbound, None)
+        Self::new_with_hosted_parent(journal, verbose, debug, outbound, BTreeMap::new(), None)
     }
 
     /// Construct a dispatcher whose service-like children participate in the
     /// hosted generation that admitted this Sense service.
+    ///
+    /// `child_environment` carries the inherited speakers-analyze generation
+    /// (see `solstone-core-transcribe::SpeakersAnalyzeGeneration`) so native
+    /// transcribe children spawned by this dispatcher borrow the hosted
+    /// owner's generation instead of each attempting their own acquisition.
     pub fn new_with_hosted_parent(
         journal: PathBuf,
         verbose: bool,
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
+        child_environment: BTreeMap<OsString, OsString>,
         hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         Self::new_with_admission(
@@ -154,6 +160,7 @@ impl SenseDispatcher {
             debug,
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
+            child_environment,
             hosted_parent,
         )
     }
@@ -164,6 +171,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
+        child_environment: BTreeMap<OsString, OsString>,
         hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         Self::new_inner(
@@ -173,7 +181,10 @@ impl SenseDispatcher {
             outbound,
             admission,
             resolve_program_from_current_exe(),
-            BatchContext::default(),
+            BatchContext {
+                child_environment,
+                ..BatchContext::default()
+            },
             hosted_parent,
         )
     }

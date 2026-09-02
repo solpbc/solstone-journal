@@ -91,7 +91,7 @@ fn send(journal: &Path, row: &serde_json::Value) {
     let _ = stream.write_all(format!("{row}\n").as_bytes());
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::path::Path;
 

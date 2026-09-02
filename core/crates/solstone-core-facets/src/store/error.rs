@@ -186,6 +186,10 @@ fn write_error_is_io(error: &FacetWriteError) -> bool {
         | FacetWriteError::EntityLinkWrite(AtomicWriteError::Io { .. })
         | FacetWriteError::ContentWrite(AtomicWriteError::Io { .. })
         | FacetWriteError::EntityLinkRemoval(PathError::Io { .. }) => true,
+        #[cfg(windows)]
+        FacetWriteError::DeclarationWrite(AtomicWriteError::PublicationUncertain { .. })
+        | FacetWriteError::EntityLinkWrite(AtomicWriteError::PublicationUncertain { .. })
+        | FacetWriteError::ContentWrite(AtomicWriteError::PublicationUncertain { .. }) => false,
         FacetWriteError::DeclarationMissing { .. } | FacetWriteError::EntityLinkRemoval(_) => false,
     }
 }

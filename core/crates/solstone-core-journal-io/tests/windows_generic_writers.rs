@@ -8,7 +8,10 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::json;
-use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_bytes_exclusive, write_json,
+    write_reader_exclusive,
+};
 
 fn temporary(label: &str) -> tempfile::TempDir {
     tempfile::Builder::new().prefix(label).tempdir().unwrap()
@@ -27,7 +30,8 @@ mod via_root {
 
     use serde_json::json;
     use solstone_core_journal_io::{
-        AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json,
+        AtomicWriteOptions, JsonWriteOptions, append_text, atomic_replace, write_bytes_exclusive,
+        write_json, write_jsonl, write_reader_exclusive, write_text,
     };
 
     #[test]
@@ -59,6 +63,45 @@ mod via_root {
         let schedule_path = temporary.path().join("schedules.json");
         atomic_replace(&schedule_path, &bytes, AtomicWriteOptions::default()).unwrap();
         assert_eq!(fs::read(&schedule_path).unwrap(), bytes);
+
+        let exclusive_path = temporary.path().join("exclusive.bin");
+        write_bytes_exclusive(
+            &exclusive_path,
+            b"exclusive-bytes",
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&exclusive_path).unwrap(), b"exclusive-bytes");
+
+        let reader_path = temporary.path().join("exclusive-reader.bin");
+        let mut reader = &b"reader-bytes"[..];
+        write_reader_exclusive(&reader_path, &mut reader, AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&reader_path).unwrap(), b"reader-bytes");
+    }
+
+    #[test]
+    fn real_caller_text_and_jsonl_writers_publish() {
+        let temporary = super::temporary("generic-text-");
+
+        let history_path = temporary.path().join("history.jsonl");
+        append_text(&history_path, r#"{"op":"write"}"#).unwrap();
+        assert_eq!(fs::read(&history_path).unwrap(), b"{\"op\":\"write\"}\n");
+
+        let port_path = temporary.path().join("runtime.port");
+        write_text(&port_path, "5015", AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&port_path).unwrap(), b"5015");
+
+        let candidates_path = temporary.path().join("review-candidates.jsonl");
+        write_jsonl(
+            &candidates_path,
+            [json!({"id": 1}), json!({"id": 2})],
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(&candidates_path).unwrap(),
+            b"{\"id\":1}\n{\"id\":2}\n"
+        );
     }
 }
 
@@ -164,4 +207,15 @@ fn writers_create_missing_nested_parents() {
         fs::read(&json_path).unwrap(),
         b"{\n  \"state\": \"json\"\n}\n"
     );
+
+    let exclusive_path = temporary.path().join("exclusive/a/b/value.bin");
+    write_bytes_exclusive(&exclusive_path, b"exclusive", AtomicWriteOptions::default()).unwrap();
+    assert!(exclusive_path.parent().unwrap().is_dir());
+    assert_eq!(fs::read(&exclusive_path).unwrap(), b"exclusive");
+
+    let reader_path = temporary.path().join("exclusive-reader/a/b/value.bin");
+    let mut reader = &b"reader"[..];
+    write_reader_exclusive(&reader_path, &mut reader, AtomicWriteOptions::default()).unwrap();
+    assert!(reader_path.parent().unwrap().is_dir());
+    assert_eq!(fs::read(&reader_path).unwrap(), b"reader");
 }

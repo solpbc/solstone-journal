@@ -15,10 +15,12 @@ use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
+
+use crate::pairing_identity::{PairingIdentityFields, Platform};
 
 const CERT_KIND: &str = "cert";
 
@@ -65,6 +67,7 @@ pub struct ClientEntry {
     pub client_label: String,
     pub label_ordinal: u32,
     pub kind: String,
+    pub platform: Option<Platform>,
 }
 
 /// Non-authoritative activity retained for one authorized certificate client.
@@ -82,6 +85,8 @@ pub struct ClientActivity {
     pub last_accepted_segment: Option<AcceptedSegment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingest_rejection: Option<IngestRejection>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, SourceRecord>,
 }
 
 impl ClientActivity {
@@ -91,6 +96,7 @@ impl ClientActivity {
             last_accepted_ingest_at: None,
             last_accepted_segment: None,
             ingest_rejection: None,
+            sources: BTreeMap::new(),
         }
     }
 }
@@ -113,6 +119,60 @@ pub struct IngestRejection {
     pub active_count: u64,
 }
 
+/// Per-source ingest history for one `(device, source)` key.
+///
+/// Connection liveness stays on [`ClientActivity::last_seen_at`]; this record
+/// only tracks accepted delivery and an active rejection streak.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceActivity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_ingest_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_accepted_segment: Option<AcceptedSegment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingest_rejection: Option<IngestRejection>,
+}
+
+/// One `sources` map entry. A malformed value is retained so a later sibling
+/// write cannot drop it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceRecord {
+    Valid(SourceActivity),
+    Malformed(Value),
+}
+
+impl<'de> Deserialize<'de> for SourceRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        Ok(parse_source_record(value))
+    }
+}
+
+impl Serialize for SourceRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Valid(activity) => activity.serialize(serializer),
+            Self::Malformed(value) => value.serialize(serializer),
+        }
+    }
+}
+
+fn parse_source_record(value: Value) -> SourceRecord {
+    match serde_json::from_value::<SourceActivity>(value.clone()) {
+        Ok(activity)
+            if validate_ingest_timestamps(
+                activity.last_accepted_ingest_at.as_deref(),
+                activity.ingest_rejection.as_ref(),
+            )
+            .is_ok() =>
+        {
+            SourceRecord::Valid(activity)
+        }
+        _ => SourceRecord::Malformed(value),
+    }
+}
+
 impl ClientEntry {
     pub fn new(
         fingerprint: impl Into<String>,
@@ -131,6 +191,7 @@ impl ClientEntry {
             client_label: String::new(),
             label_ordinal: 1,
             kind: CERT_KIND.to_owned(),
+            platform: None,
         }
     }
 
@@ -159,6 +220,7 @@ pub enum AuthorizedClientsRead {
     Missing,
     Unreadable,
     Malformed,
+    DuplicateCid,
 }
 
 /// Strict failure while loading an existing authorization ledger for mutation.
@@ -184,12 +246,18 @@ pub enum AuthorizedClientsLoadError {
         path: PathBuf,
         source: Box<dyn Error + Send + Sync>,
     },
+    DuplicateCid {
+        path: PathBuf,
+        fingerprint: String,
+    },
 }
 
 impl fmt::Display for AuthorizedClientsLoadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let path = match self {
-            Self::Unreadable { path, .. } | Self::Malformed { path, .. } => path,
+            Self::Unreadable { path, .. }
+            | Self::Malformed { path, .. }
+            | Self::DuplicateCid { path, .. } => path,
         };
         write!(
             formatter,
@@ -204,6 +272,7 @@ impl Error for AuthorizedClientsLoadError {
         match self {
             Self::Unreadable { source, .. } => Some(source),
             Self::Malformed { source, .. } => Some(source.as_ref()),
+            Self::DuplicateCid { .. } => None,
         }
     }
 }
@@ -309,6 +378,7 @@ pub struct RemoveOutcome {
 #[derive(Clone, Debug, Default)]
 struct Clients {
     entries: Vec<ClientEntry>,
+    pairing: BTreeMap<String, PairingIdentityFields>,
 }
 
 impl Clients {
@@ -318,7 +388,26 @@ impl Clients {
             .find(|entry| entry.fingerprint == fingerprint)
     }
 
+    fn pairing(&self, fingerprint: &str) -> Option<&PairingIdentityFields> {
+        self.pairing.get(fingerprint)
+    }
+
+    fn upsert_parsed(&mut self, entry: ClientEntry, pairing: PairingIdentityFields) {
+        self.pairing.insert(entry.fingerprint.clone(), pairing);
+        self.upsert_entry(entry);
+    }
+
     fn upsert(&mut self, entry: ClientEntry) {
+        // Mutations do not re-parse disk JSON. Keep a lossless pairing row in
+        // lockstep: existing fingerprints keep the parse-time fields
+        // (first-write-wins), new fingerprints derive from the written object.
+        self.pairing
+            .entry(entry.fingerprint.clone())
+            .or_insert_with(|| pairing_from_entry(&entry));
+        self.upsert_entry(entry);
+    }
+
+    fn upsert_entry(&mut self, entry: ClientEntry) {
         if let Some(index) = self
             .entries
             .iter()
@@ -339,6 +428,7 @@ impl Clients {
             return false;
         };
         self.entries.remove(index);
+        self.pairing.remove(fingerprint);
         true
     }
 }
@@ -392,7 +482,32 @@ impl AuthorizationLedger {
         {
             return false;
         }
-        self.set_read_state(read_authorized_clients(&self.authorized_clients_path));
+        // Parse through `read_authorized` so the lossless pairing cache is
+        // rebuilt with the ClientEntry vec, not reconstructed from the lossy
+        // `AuthorizedClientsRead::Present` payload.
+        match read_authorized(&self.authorized_clients_path) {
+            Ok(Some(clients)) => {
+                self.read_state = AuthorizedClientsRead::Present(clients.entries.clone());
+                self.cached = clients;
+            }
+            Ok(None) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Missing;
+            }
+            Err(AuthorizedClientsLoadError::Unreadable { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Unreadable;
+            }
+            Err(AuthorizedClientsLoadError::Malformed { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Malformed;
+            }
+            Err(AuthorizedClientsLoadError::DuplicateCid { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::DuplicateCid;
+            }
+        }
+        self.reload_key = reload_key(&self.authorized_clients_path);
         true
     }
 
@@ -417,6 +532,25 @@ impl AuthorizationLedger {
         self.cached.get(fingerprint).cloned()
     }
 
+    /// Lossless pairing-identity read-back for one fingerprint.
+    ///
+    /// `Ok(None)` means the ledger is readable and has no row for `fingerprint`
+    /// (a missing file is treated the same: there is no row). `Err` is the same
+    /// unreadable / malformed / duplicate-cid state `read_state` reports after
+    /// `get()` on a broken file — `get()` itself collapses those to `None`.
+    pub fn get_pairing_identity_fields(
+        &mut self,
+        fingerprint: &str,
+    ) -> Result<Option<PairingIdentityFields>, AuthorizedClientsRead> {
+        self.reload_if_stale();
+        match &self.read_state {
+            AuthorizedClientsRead::Present(_) | AuthorizedClientsRead::Missing => {
+                Ok(self.cached.pairing(fingerprint).cloned())
+            }
+            other => Err(other.clone()),
+        }
+    }
+
     pub fn add(
         &mut self,
         mut entry: ClientEntry,
@@ -424,6 +558,10 @@ impl AuthorizationLedger {
         let _authorization_lock = lock(&self.authorized_clients_path)?;
         let mut clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
+        if let Some(existing) = clients.get(&entry.fingerprint) {
+            entry.client_label = existing.client_label.clone();
+            entry.platform = existing.platform;
+        }
         entry.kind = CERT_KIND.to_owned();
         entry.label_ordinal =
             allocate_label_ordinal(&clients, entry.base_label(), &entry.fingerprint);
@@ -558,6 +696,7 @@ impl AuthorizationLedger {
         cid: &str,
         accepted_at: &str,
         segment: AcceptedSegment,
+        source: Option<&str>,
     ) -> Result<bool, AuthorizedClientsMutationError> {
         if parse_rfc3339_utc(accepted_at).is_none() {
             return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
@@ -571,7 +710,7 @@ impl AuthorizationLedger {
             return Ok(false);
         }
         self.set_cached(clients);
-        record_accepted_device(&self.devices_path, cid, accepted_at, segment)
+        record_accepted_device(&self.devices_path, cid, accepted_at, segment, source)
             .map_err(AuthorizedClientsMutationError::Device)?;
         Ok(true)
     }
@@ -586,6 +725,7 @@ impl AuthorizationLedger {
         cid: &str,
         at: &str,
         reason_code: &str,
+        source: Option<&str>,
     ) -> Result<bool, AuthorizedClientsMutationError> {
         if parse_rfc3339_utc(at).is_none() {
             return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
@@ -599,7 +739,7 @@ impl AuthorizationLedger {
             return Ok(false);
         }
         self.set_cached(clients);
-        record_device_rejection(&self.devices_path, cid, at, reason_code)
+        record_device_rejection(&self.devices_path, cid, at, reason_code, source)
             .map_err(AuthorizedClientsMutationError::Device)?;
         Ok(true)
     }
@@ -632,19 +772,6 @@ impl AuthorizationLedger {
         })
     }
 
-    fn set_read_state(&mut self, read: AuthorizedClientsRead) {
-        self.cached = match &read {
-            AuthorizedClientsRead::Present(entries) => Clients {
-                entries: entries.clone(),
-            },
-            AuthorizedClientsRead::Missing
-            | AuthorizedClientsRead::Unreadable
-            | AuthorizedClientsRead::Malformed => Clients::default(),
-        };
-        self.read_state = read;
-        self.reload_key = reload_key(&self.authorized_clients_path);
-    }
-
     fn set_cached(&mut self, clients: Clients) {
         self.read_state = AuthorizedClientsRead::Present(clients.entries.clone());
         self.cached = clients;
@@ -658,6 +785,7 @@ pub fn read_authorized_clients(path: &Path) -> AuthorizedClientsRead {
         Ok(None) => AuthorizedClientsRead::Missing,
         Err(AuthorizedClientsLoadError::Unreadable { .. }) => AuthorizedClientsRead::Unreadable,
         Err(AuthorizedClientsLoadError::Malformed { .. }) => AuthorizedClientsRead::Malformed,
+        Err(AuthorizedClientsLoadError::DuplicateCid { .. }) => AuthorizedClientsRead::DuplicateCid,
     }
 }
 
@@ -748,30 +876,43 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
                 )),
             });
         };
+        if clients.get(fingerprint).is_some() {
+            return Err(AuthorizedClientsLoadError::DuplicateCid {
+                path: path.to_path_buf(),
+                fingerprint: fingerprint.to_owned(),
+            });
+        }
         let label_ordinal = item
             .get("label_ordinal")
             .and_then(Value::as_u64)
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value > 0)
             .unwrap_or(1);
-        clients.upsert(ClientEntry {
-            fingerprint: fingerprint.to_owned(),
-            device_label: json_string(item.get("device_label")),
-            paired_at: json_string(item.get("paired_at")),
-            instance_id: json_string(item.get("instance_id")),
-            role: ClientRole::from_wire(item.get("role").and_then(Value::as_str)),
-            network: item
-                .get("network")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-            client_label: item
-                .get("client_label")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            label_ordinal,
-            kind: CERT_KIND.to_owned(),
-        });
+        clients.upsert_parsed(
+            ClientEntry {
+                fingerprint: fingerprint.to_owned(),
+                device_label: json_string(item.get("device_label")),
+                paired_at: json_string(item.get("paired_at")),
+                instance_id: json_string(item.get("instance_id")),
+                role: ClientRole::from_wire(item.get("role").and_then(Value::as_str)),
+                network: item
+                    .get("network")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                client_label: item
+                    .get("client_label")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                label_ordinal,
+                kind: CERT_KIND.to_owned(),
+                platform: item
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .and_then(Platform::from_wire),
+            },
+            PairingIdentityFields::from_object(item),
+        );
     }
     if dropped_non_cert {
         log::warn!(
@@ -808,6 +949,11 @@ fn write_authorized_clients(
     )
 }
 
+fn pairing_from_entry(entry: &ClientEntry) -> PairingIdentityFields {
+    let value = client_to_json(entry);
+    PairingIdentityFields::from_object(value.as_object().expect("client JSON is an object"))
+}
+
 fn client_to_json(entry: &ClientEntry) -> Value {
     let mut object = Map::from_iter([
         ("fingerprint".to_owned(), json!(entry.fingerprint)),
@@ -826,6 +972,9 @@ fn client_to_json(entry: &ClientEntry) -> Value {
     }
     if !entry.client_label.is_empty() {
         object.insert("client_label".to_owned(), json!(entry.client_label));
+    }
+    if let Some(platform) = entry.platform {
+        object.insert("platform".to_owned(), json!(platform.as_wire()));
     }
     if entry.label_ordinal != 1 {
         object.insert("label_ordinal".to_owned(), json!(entry.label_ordinal));
@@ -873,19 +1022,88 @@ fn remove_device(path: &Path, fingerprint: &str) -> Result<bool, DevicesMutation
     })
 }
 
+fn apply_accepted(
+    last_accepted_ingest_at: &mut Option<String>,
+    last_accepted_segment: &mut Option<AcceptedSegment>,
+    ingest_rejection: &mut Option<IngestRejection>,
+    accepted_at: &str,
+    segment: AcceptedSegment,
+) {
+    *last_accepted_ingest_at = Some(accepted_at.to_owned());
+    *last_accepted_segment = Some(segment);
+    *ingest_rejection = None;
+}
+
+fn apply_rejected(ingest_rejection: &mut Option<IngestRejection>, at: &str, reason_code: &str) {
+    *ingest_rejection = Some(match ingest_rejection.take() {
+        Some(mut rejection) => {
+            rejection.reason_code = reason_code.to_owned();
+            rejection.latest = at.to_owned();
+            rejection.active_count = rejection.active_count.saturating_add(1);
+            rejection
+        }
+        None => IngestRejection {
+            reason_code: reason_code.to_owned(),
+            first: at.to_owned(),
+            latest: at.to_owned(),
+            active_count: 1,
+        },
+    });
+}
+
+fn source_activity_for_mutation<'a>(
+    sources: &'a mut BTreeMap<String, SourceRecord>,
+    source: &str,
+) -> &'a mut SourceActivity {
+    let reset = !matches!(sources.get(source), Some(SourceRecord::Valid(_)));
+    if reset {
+        sources.insert(
+            source.to_owned(),
+            SourceRecord::Valid(SourceActivity::default()),
+        );
+    }
+    match sources.get_mut(source) {
+        Some(SourceRecord::Valid(activity)) => activity,
+        _ => unreachable!("source activity just inserted as Valid"),
+    }
+}
+
 fn record_accepted_device(
     path: &Path,
     cid: &str,
     accepted_at: &str,
     segment: AcceptedSegment,
+    source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
         let activity = devices
             .entry(cid.to_owned())
             .or_insert_with(|| ClientActivity::new(accepted_at));
-        activity.last_accepted_ingest_at = Some(accepted_at.to_owned());
-        activity.last_accepted_segment = Some(segment);
-        activity.ingest_rejection = None;
+        if let Some(source) = source {
+            apply_accepted(
+                &mut activity.last_accepted_ingest_at,
+                &mut activity.last_accepted_segment,
+                &mut activity.ingest_rejection,
+                accepted_at,
+                segment.clone(),
+            );
+            let source_activity = source_activity_for_mutation(&mut activity.sources, source);
+            apply_accepted(
+                &mut source_activity.last_accepted_ingest_at,
+                &mut source_activity.last_accepted_segment,
+                &mut source_activity.ingest_rejection,
+                accepted_at,
+                segment,
+            );
+        } else {
+            apply_accepted(
+                &mut activity.last_accepted_ingest_at,
+                &mut activity.last_accepted_segment,
+                &mut activity.ingest_rejection,
+                accepted_at,
+                segment,
+            );
+        }
         ((), true)
     })
 }
@@ -895,25 +1113,17 @@ fn record_device_rejection(
     cid: &str,
     at: &str,
     reason_code: &str,
+    source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
         let activity = devices
             .entry(cid.to_owned())
             .or_insert_with(|| ClientActivity::new(at));
-        activity.ingest_rejection = Some(match activity.ingest_rejection.take() {
-            Some(mut rejection) => {
-                rejection.reason_code = reason_code.to_owned();
-                rejection.latest = at.to_owned();
-                rejection.active_count = rejection.active_count.saturating_add(1);
-                rejection
-            }
-            None => IngestRejection {
-                reason_code: reason_code.to_owned(),
-                first: at.to_owned(),
-                latest: at.to_owned(),
-                active_count: 1,
-            },
-        });
+        apply_rejected(&mut activity.ingest_rejection, at, reason_code);
+        if let Some(source) = source {
+            let source_activity = source_activity_for_mutation(&mut activity.sources, source);
+            apply_rejected(&mut source_activity.ingest_rejection, at, reason_code);
+        }
         ((), true)
     })
 }
@@ -992,6 +1202,7 @@ fn parse_devices(
             "last_accepted_ingest_at",
             "last_accepted_segment",
             "ingest_rejection",
+            "sources",
         ] {
             if device.get(field).is_some_and(Value::is_null) {
                 return Err(Box::new(io::Error::new(
@@ -999,6 +1210,15 @@ fn parse_devices(
                     format!("{field} must be omitted or have its declared shape"),
                 )));
             }
+        }
+        if device
+            .get("sources")
+            .is_some_and(|sources| !sources.is_object())
+        {
+            return Err(Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "sources must be omitted or be a JSON object",
+            )));
         }
         let activity = serde_json::from_value::<ClientActivity>(value.clone())
             .map_err(|source| Box::new(source) as Box<dyn Error + Send + Sync>)?;
@@ -1008,24 +1228,33 @@ fn parse_devices(
     Ok(devices)
 }
 
+fn validate_ingest_timestamps(
+    last_accepted_ingest_at: Option<&str>,
+    ingest_rejection: Option<&IngestRejection>,
+) -> Result<(), &'static str> {
+    if last_accepted_ingest_at.is_some_and(|value| parse_rfc3339_utc(value).is_none()) {
+        return Err("last_accepted_ingest_at");
+    }
+    if ingest_rejection.is_some_and(|rejection| {
+        parse_rfc3339_utc(&rejection.first).is_none()
+            || parse_rfc3339_utc(&rejection.latest).is_none()
+    }) {
+        return Err("ingest_rejection");
+    }
+    Ok(())
+}
+
 fn validate_activity(activity: &ClientActivity) -> Result<(), Box<dyn Error + Send + Sync>> {
     for (field, value) in [("last_seen_at", &activity.last_seen_at)] {
         if parse_rfc3339_utc(value).is_none() {
             return Err(invalid_activity_field(field));
         }
     }
-    if activity
-        .last_accepted_ingest_at
-        .as_deref()
-        .is_some_and(|value| parse_rfc3339_utc(value).is_none())
-    {
-        return Err(invalid_activity_field("last_accepted_ingest_at"));
-    }
-    if activity.ingest_rejection.as_ref().is_some_and(|rejection| {
-        parse_rfc3339_utc(&rejection.first).is_none()
-            || parse_rfc3339_utc(&rejection.latest).is_none()
-    }) {
-        return Err(invalid_activity_field("ingest_rejection"));
+    if let Err(field) = validate_ingest_timestamps(
+        activity.last_accepted_ingest_at.as_deref(),
+        activity.ingest_rejection.as_ref(),
+    ) {
+        return Err(invalid_activity_field(field));
     }
     Ok(())
 }
@@ -1062,7 +1291,7 @@ fn rfc3339_utc(timestamp: OffsetDateTime) -> String {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     #[cfg(unix)]
@@ -1231,7 +1460,7 @@ mod tests {
             .unwrap();
         ledger.touch_last_seen_at("a", NOW).unwrap();
         ledger
-            .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "event_append_failed")
+            .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "event_append_failed", None)
             .unwrap();
 
         assert!(
@@ -1243,6 +1472,7 @@ mod tests {
                         day: "20260419".to_owned(),
                         name: "180512_1".to_owned(),
                     },
+                    None,
                 )
                 .unwrap()
         );
@@ -1275,12 +1505,12 @@ mod tests {
             .unwrap();
         assert!(
             ledger
-                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .record_ingest_rejection("a", NOW, "event_append_failed", None)
                 .unwrap()
         );
         assert!(
             ledger
-                .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "stream_advance_failed")
+                .record_ingest_rejection("a", "2026-04-19T18:04:12Z", "stream_advance_failed", None)
                 .unwrap()
         );
 
@@ -1314,7 +1544,7 @@ mod tests {
         .unwrap();
         assert!(
             ledger
-                .record_ingest_rejection("a", "2026-04-19T18:05:12Z", "next")
+                .record_ingest_rejection("a", "2026-04-19T18:05:12Z", "next", None)
                 .unwrap()
         );
         let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
@@ -1349,7 +1579,7 @@ mod tests {
             .unwrap();
         assert!(
             !ledger
-                .record_ingest_rejection("missing", NOW, "event_append_failed")
+                .record_ingest_rejection("missing", NOW, "event_append_failed", None)
                 .unwrap()
         );
         assert!(
@@ -1361,6 +1591,7 @@ mod tests {
                         day: "20260419".to_owned(),
                         name: "180312_1".to_owned(),
                     },
+                    None,
                 )
                 .unwrap()
         );
@@ -1378,7 +1609,7 @@ mod tests {
 
         assert!(
             ledger
-                .record_ingest_rejection("a", NOW, "event_append_failed")
+                .record_ingest_rejection("a", NOW, "event_append_failed", None)
                 .is_err()
         );
         assert!(ledger.devices_path().is_dir());
@@ -1590,7 +1821,7 @@ mod tests {
     }
 
     #[test]
-    fn load_preserves_array_order_with_last_duplicate_record_winning() {
+    fn load_preserves_array_order_of_unique_fingerprints() {
         let temporary = TempDir::new();
         let path = temporary
             .path()
@@ -1600,9 +1831,8 @@ mod tests {
         fs::write(
             &path,
             json!([
-                {"fingerprint":"a","device_label":"old","paired_at":"1","instance_id":"i"},
-                {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"},
-                {"fingerprint":"a","device_label":"new","paired_at":"3","instance_id":"i"}
+                {"fingerprint":"a","device_label":"first","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"}
             ])
             .to_string(),
         )
@@ -1616,7 +1846,102 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["a", "b"]
         );
-        assert_eq!(entries[0].device_label, "new");
+        assert_eq!(entries[0].device_label, "first");
+    }
+
+    #[test]
+    fn duplicate_fingerprint_makes_the_read_unavailable() {
+        let temporary = TempDir::new();
+        let path = temporary
+            .path()
+            .join("link")
+            .join("authorized_clients.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = json!([
+            {"fingerprint":"a","device_label":"old","paired_at":"1","instance_id":"i"},
+            {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"},
+            {"fingerprint":"a","device_label":"new","paired_at":"3","instance_id":"i"}
+        ])
+        .to_string();
+        fs::write(&path, &original).unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::DuplicateCid);
+        assert!(!ledger.is_authorized("a"));
+        assert!(!ledger.is_authorized("b"));
+        for result in [
+            ledger
+                .add(entry("c", "phone", ClientRole::Roleless))
+                .map(|_| ()),
+            ledger.remove("a").map(|_| ()),
+            ledger.update_label("a", "renamed").map(|_| ()),
+            ledger.touch_last_seen_at("a", NOW).map(|_| ()),
+        ] {
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains("were NOT changed"));
+            assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+        }
+    }
+
+    #[test]
+    fn add_preserves_existing_pairing_identity_on_the_same_fingerprint() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        let mut first = entry("a", "phone", ClientRole::Roleless);
+        first.client_label = "host-a".to_owned();
+        first.platform = Some(Platform::Linux);
+        ledger.add(first).unwrap();
+        let mut second = entry("a", "tablet", ClientRole::Roleless);
+        second.client_label = "replaced".to_owned();
+        second.platform = Some(Platform::Ios);
+        let stored = ledger.add(second).unwrap();
+        assert_eq!(stored.device_label, "tablet");
+        assert_eq!(stored.client_label, "host-a");
+        assert_eq!(stored.platform, Some(Platform::Linux));
+        let payload = serde_json::from_slice::<Vec<Value>>(
+            &fs::read(ledger.authorized_clients_path()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(payload[0]["client_label"], "host-a");
+        assert_eq!(payload[0]["platform"], "linux");
+    }
+
+    #[test]
+    fn update_label_and_ordinal_repair_preserve_pairing_identity() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        let mut first = entry("a", "iPhone", ClientRole::Roleless);
+        first.client_label = "host-a".to_owned();
+        first.platform = Some(Platform::Macos);
+        ledger.add(first).unwrap();
+        let mut second = entry("b", "IPHONE", ClientRole::Roleless);
+        second.client_label = "host-b".to_owned();
+        second.platform = Some(Platform::Ios);
+        ledger.add(second).unwrap();
+
+        let updated = ledger.update_label("a", "Studio").unwrap().unwrap();
+        assert_eq!(updated.device_label, "Studio");
+        assert_eq!(updated.client_label, "host-a");
+        assert_eq!(updated.platform, Some(Platform::Macos));
+        assert_eq!(ledger.get("b").unwrap().client_label, "host-b");
+        assert_eq!(ledger.get("b").unwrap().platform, Some(Platform::Ios));
+
+        let payload = json!([
+            {"fingerprint":"c","device_label":"Phone","paired_at":"2026-04-19T00:00:03Z","instance_id":"i","label_ordinal":1,"client_label":"host-c","platform":"android"},
+            {"fingerprint":"d","device_label":"phone","paired_at":"2026-04-19T00:00:01Z","instance_id":"i","label_ordinal":1,"client_label":"host-d","platform":"windows"}
+        ]);
+        write_json(
+            ledger.authorized_clients_path(),
+            &payload,
+            JsonWriteOptions::default(),
+        )
+        .unwrap();
+        assert!(ledger.backfill_label_ordinals().unwrap());
+        let repaired_c = ledger.get("c").unwrap();
+        let repaired_d = ledger.get("d").unwrap();
+        assert_eq!(repaired_c.client_label, "host-c");
+        assert_eq!(repaired_c.platform, Some(Platform::Android));
+        assert_eq!(repaired_d.client_label, "host-d");
+        assert_eq!(repaired_d.platform, Some(Platform::Windows));
     }
 
     #[test]
@@ -1645,6 +1970,7 @@ mod tests {
         meaningful.network = Some("local".to_owned());
         meaningful.client_label = "tablet-host".to_owned();
         meaningful.label_ordinal = 2;
+        meaningful.platform = Some(Platform::Linux);
         ledger.add(meaningful).unwrap();
         let payload = serde_json::from_slice::<Vec<Value>>(
             &fs::read(ledger.authorized_clients_path()).unwrap(),
@@ -1657,6 +1983,7 @@ mod tests {
         assert_eq!(legacy["kind"], CERT_KIND);
         assert!(legacy.get("network").is_none());
         assert!(legacy.get("client_label").is_none());
+        assert!(legacy.get("platform").is_none());
         assert!(legacy.get("label_ordinal").is_none());
         let meaningful = payload
             .iter()
@@ -1665,6 +1992,348 @@ mod tests {
         assert_eq!(meaningful["network"], "local");
         assert_eq!(meaningful["client_label"], "tablet-host");
         assert_eq!(meaningful["label_ordinal"], 2);
+        assert_eq!(meaningful["platform"], "linux");
+    }
+
+    #[test]
+    fn sourced_deliveries_on_one_device_read_back_independently() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some(""),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        assert_eq!(
+            activity.last_accepted_ingest_at.as_deref(),
+            Some("2026-04-19T18:06:12Z")
+        );
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:05:12Z")
+                );
+                assert_eq!(
+                    source.last_accepted_segment,
+                    Some(AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    })
+                );
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:06:12Z")
+                );
+            }
+            other => panic!("empty source valid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn device_level_only_activity_without_sources_key_still_loads() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            json!({"a": {
+                "last_seen_at": NOW,
+                "last_accepted_ingest_at": NOW,
+                "last_accepted_segment": {"day": "20260419", "name": "180312_1"},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(&path) else {
+            panic!("activity present");
+        };
+        assert!(activity["a"].sources.is_empty());
+        assert_eq!(activity["a"].last_accepted_ingest_at.as_deref(), Some(NOW));
+        assert_eq!(
+            activity["a"].last_accepted_segment,
+            Some(AcceptedSegment {
+                day: "20260419".to_owned(),
+                name: "180312_1".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn malformed_source_entry_does_not_fail_the_device_or_sibling() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("link/devices.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            json!({"a": {
+                "last_seen_at": NOW,
+                "sources": {
+                    "audio": {
+                        "last_accepted_ingest_at": NOW,
+                        "unknown": true
+                    },
+                    "location": {
+                        "last_accepted_ingest_at": "not-a-timestamp"
+                    },
+                    "screen": {
+                        "last_accepted_ingest_at": NOW,
+                        "last_accepted_segment": {"day": "20260419", "name": "180312_1"}
+                    }
+                }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        let DeviceActivityRead::Present(activity) = read_device_activity(&path) else {
+            panic!("activity present, not whole-file malformed");
+        };
+        assert!(matches!(
+            activity["a"].sources.get("audio"),
+            Some(SourceRecord::Malformed(_))
+        ));
+        assert!(matches!(
+            activity["a"].sources.get("location"),
+            Some(SourceRecord::Malformed(_))
+        ));
+        match activity["a"].sources.get("screen") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.last_accepted_ingest_at.as_deref(), Some(NOW));
+            }
+            other => panic!("screen source valid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accept_and_reject_on_different_sources_do_not_interfere() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180512_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    "event_append_failed",
+                    Some("location"),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:05:12Z")
+                );
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.last_accepted_ingest_at, None);
+                assert_eq!(
+                    source.ingest_rejection,
+                    Some(IngestRejection {
+                        reason_code: "event_append_failed".to_owned(),
+                        first: "2026-04-19T18:06:12Z".to_owned(),
+                        latest: "2026-04-19T18:06:12Z".to_owned(),
+                        active_count: 1,
+                    })
+                );
+            }
+            other => panic!("location source valid, got {other:?}"),
+        }
+        assert_eq!(
+            activity
+                .ingest_rejection
+                .as_ref()
+                .map(|row| row.reason_code.as_str()),
+            Some("event_append_failed")
+        );
+    }
+
+    #[test]
+    fn source_rejection_streak_accumulates_and_clears_independently() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        assert!(
+            ledger
+                .record_ingest_rejection("a", NOW, "event_append_failed", Some("audio"))
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:04:12Z",
+                    "stream_advance_failed",
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:05:12Z",
+                    "notify_failed",
+                    Some("location"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+
+        let activity = present_activity(&ledger, "a");
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(source.ingest_rejection, None);
+                assert_eq!(
+                    source.last_accepted_ingest_at.as_deref(),
+                    Some("2026-04-19T18:06:12Z")
+                );
+            }
+            other => panic!("audio source valid, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.ingest_rejection,
+                    Some(IngestRejection {
+                        reason_code: "notify_failed".to_owned(),
+                        first: "2026-04-19T18:05:12Z".to_owned(),
+                        latest: "2026-04-19T18:05:12Z".to_owned(),
+                        active_count: 1,
+                    })
+                );
+            }
+            other => panic!("location source valid, got {other:?}"),
+        }
+        assert_eq!(activity.ingest_rejection, None);
+    }
+
+    #[test]
+    fn sibling_source_mutation_preserves_malformed_source_json() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        let malformed_audio = json!({
+            "last_accepted_ingest_at": NOW,
+            "unknown": true
+        });
+        fs::write(
+            ledger.devices_path(),
+            json!({"a": {
+                "last_seen_at": NOW,
+                "sources": {
+                    "audio": malformed_audio,
+                }
+            }})
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:06:12Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180612_1".to_owned(),
+                    },
+                    Some("location"),
+                )
+                .unwrap()
+        );
+
+        let stored =
+            serde_json::from_slice::<Value>(&fs::read(ledger.devices_path()).unwrap()).unwrap();
+        assert_eq!(stored["a"]["sources"]["audio"], malformed_audio);
+        assert_eq!(
+            stored["a"]["sources"]["location"]["last_accepted_ingest_at"],
+            "2026-04-19T18:06:12Z"
+        );
+        let activity = present_activity(&ledger, "a");
+        assert!(matches!(
+            activity.sources.get("audio"),
+            Some(SourceRecord::Malformed(_))
+        ));
+    }
+
+    fn present_activity(ledger: &AuthorizationLedger, cid: &str) -> ClientActivity {
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        activity.get(cid).cloned().expect("activity for client")
     }
 
     fn entry(fingerprint: &str, label: &str, role: ClientRole) -> ClientEntry {
@@ -1689,6 +2358,204 @@ mod tests {
             &self.path
         }
     }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+#[cfg(all(test, not(feature = "full-tests")))]
+mod pairing_identity_read_tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::pairing_identity::{ClientLabelState, Platform, PlatformState};
+
+    #[test]
+    fn get_pairing_identity_fields_preserves_distinctions_that_get_collapses() {
+        let temporary = TempDir::new();
+        let path = authorized_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let long = "a".repeat(254);
+        fs::write(
+            &path,
+            json!([
+                {"fingerprint":"absent-label","device_label":"p","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"empty-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":""},
+                {"fingerprint":"valid-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":"phone"},
+                {"fingerprint":"long-label","device_label":"p","paired_at":"1","instance_id":"i","client_label": long},
+                {"fingerprint":"malformed-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":1},
+                {"fingerprint":"absent-platform","device_label":"p","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"linux","device_label":"p","paired_at":"1","instance_id":"i","platform":"linux"},
+                {"fingerprint":"macos","device_label":"p","paired_at":"1","instance_id":"i","platform":"macos"},
+                {"fingerprint":"windows","device_label":"p","paired_at":"1","instance_id":"i","platform":"windows"},
+                {"fingerprint":"ios","device_label":"p","paired_at":"1","instance_id":"i","platform":"ios"},
+                {"fingerprint":"android","device_label":"p","paired_at":"1","instance_id":"i","platform":"android"},
+                {"fingerprint":"empty-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":""},
+                {"fingerprint":"unknown-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":"plan9"},
+                {"fingerprint":"malformed-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":true}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("absent-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Absent
+        );
+        assert_eq!(ledger.get("absent-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("empty-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Empty
+        );
+        assert_eq!(ledger.get("empty-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("valid-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Valid("phone".to_owned())
+        );
+        assert_eq!(ledger.get("valid-label").unwrap().client_label, "phone");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("long-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Unprojectable("a".repeat(254))
+        );
+        assert_eq!(
+            ledger.get("long-label").unwrap().client_label,
+            "a".repeat(254)
+        );
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("malformed-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Malformed
+        );
+        assert_eq!(ledger.get("malformed-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("absent-platform")
+                .unwrap()
+                .unwrap()
+                .platform,
+            PlatformState::Absent
+        );
+        assert_eq!(ledger.get("absent-platform").unwrap().platform, None);
+
+        for (fingerprint, platform) in [
+            ("linux", Platform::Linux),
+            ("macos", Platform::Macos),
+            ("windows", Platform::Windows),
+            ("ios", Platform::Ios),
+            ("android", Platform::Android),
+        ] {
+            assert_eq!(
+                ledger
+                    .get_pairing_identity_fields(fingerprint)
+                    .unwrap()
+                    .unwrap()
+                    .platform,
+                PlatformState::Valid(platform)
+            );
+            assert_eq!(ledger.get(fingerprint).unwrap().platform, Some(platform));
+        }
+
+        for fingerprint in ["empty-platform", "unknown-platform", "malformed-platform"] {
+            assert_eq!(
+                ledger
+                    .get_pairing_identity_fields(fingerprint)
+                    .unwrap()
+                    .unwrap()
+                    .platform,
+                PlatformState::Malformed
+            );
+            assert_eq!(ledger.get(fingerprint).unwrap().platform, None);
+        }
+
+        assert_eq!(
+            ledger.get_pairing_identity_fields("missing-row").unwrap(),
+            None
+        );
+        assert_eq!(ledger.get("missing-row"), None);
+    }
+
+    #[test]
+    fn get_pairing_identity_fields_and_get_agree_on_a_broken_ledger() {
+        let temporary = TempDir::new();
+        let path = authorized_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{bad").unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.get("a"), None);
+        assert_eq!(
+            ledger.get_pairing_identity_fields("a"),
+            Err(AuthorizedClientsRead::Malformed)
+        );
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::Malformed);
+
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.get("a"), None);
+        assert_eq!(
+            ledger.get_pairing_identity_fields("a"),
+            Err(AuthorizedClientsRead::Unreadable)
+        );
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::Unreadable);
+    }
+
+    fn authorized_path(root: &Path) -> PathBuf {
+        root.join("link").join("authorized_clients.json")
+    }
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "sol-link-pairing-read-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);

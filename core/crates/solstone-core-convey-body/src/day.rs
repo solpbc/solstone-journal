@@ -1763,7 +1763,7 @@ pub(crate) fn grouped_signed(value: i64) -> String {
         .to_owned()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, feature = "full-tests"))]
+
 //! Shared assertions for replaying the recorded Body convey corpus.
 
 use std::collections::BTreeSet;

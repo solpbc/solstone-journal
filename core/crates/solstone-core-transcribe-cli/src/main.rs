@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_path};
@@ -16,7 +16,15 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match run_cli(env::args().skip(1), &journal) {
+    let mut on_day = |day: &Path| {
+        println!(
+            "{}",
+            day.file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
+        );
+    };
+    match run_cli(env::args().skip(1), &journal, &mut on_day) {
         Ok(result) => {
             if let Some(summary) = result.summary {
                 println!("{summary}");

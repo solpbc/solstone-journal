@@ -32,6 +32,7 @@ host = [
     "dep:time",
     "dep:x509-parser",
 ]
+full-tests = []
 test-hooks = ["solstone-core-journal-io?/test-hooks"]
 
 [dependencies]

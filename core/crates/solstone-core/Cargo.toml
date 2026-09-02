@@ -92,6 +92,11 @@ name = "solstone-core-hosted-supervisor-fixture"
 path = "tests/bin/hosted_supervisor_fixture.rs"
 test = false
 
+[[bin]]
+name = "solstone-core-speakers-analyze-generation-holder"
+path = "tests/bin/speakers_analyze_generation_holder.rs"
+test = false
+
 [dependencies]
 chrono.workspace = true
 env_logger.workspace = true

@@ -96,7 +96,7 @@ impl fmt::Display for TextImportError {
             }
             Self::InvalidTime { value } => write!(formatter, "invalid transcript time: {value}"),
             Self::Wire { phase, source } => {
-                write!(formatter, "{phase:?} generate wire failed: {source:?}")
+                write!(formatter, "{phase:?} generate wire failed: {source}")
             }
             Self::NegativeDuration {
                 duration,
@@ -152,9 +152,7 @@ pub struct SystemWireClient;
 
 impl WireClient for SystemWireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        OneShotClient::sibling()?
-            .with_prefix_arguments(["generate".into()])
-            .execute(request)
+        OneShotClient::sibling()?.execute(request)
     }
 }
 

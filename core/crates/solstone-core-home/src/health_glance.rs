@@ -265,7 +265,16 @@ fn capture_issue(capture: &Value) -> Option<Value> {
         ),
         Some("offline") => (OFFLINE_ISSUE.to_owned(), "red"),
         Some("stale") => (STALE_ISSUE.to_owned(), "amber"),
-        _ => return None,
+        _ => {
+            let sources = crate::needs_you::named_attention_sources(capture)?;
+            return Some(json!({
+                "text": format!(
+                    "the solstone app on one of your devices is having trouble adding {sources} to your journal."
+                ),
+                "severity": "amber",
+                "href": "/app/health",
+            }));
+        }
     };
     let text = match capture.get("status").and_then(Value::as_str) {
         Some("stale" | "offline") => match affected_reach_sentence(capture) {
@@ -753,5 +762,77 @@ mod tests {
         assert_eq!(second["severity"], "neutral");
         assert!(first["cta"].is_null());
         assert!(second["cta"].is_null());
+    }
+
+    #[test]
+    fn active_rollup_still_surfaces_a_named_source_that_needs_attention() {
+        let capture = json!({
+            "status": "active",
+            "clients": [{
+                "name": "phone",
+                "status": "active",
+                "reach": "active",
+                "source_delivery": {
+                    "audio": {"state": "current", "elapsed_ms": 1000},
+                    "location": {"state": "needs_attention", "elapsed_ms": 700000}
+                }
+            }],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        let g = glance(&capture);
+        assert_eq!(g["verdict"], "attention");
+        assert_eq!(g["severity"], "amber");
+        assert_eq!(
+            g["issues"][0]["text"],
+            "the solstone app on one of your devices is having trouble adding location to your journal."
+        );
+    }
+
+    #[test]
+    fn single_source_active_rollup_does_not_invent_a_source_issue() {
+        for source_delivery in [
+            json!({"audio": {"state": "needs_attention"}}),
+            json!({"": {"state": "needs_attention"}}),
+        ] {
+            let capture = json!({
+                "status": "active",
+                "clients": [{
+                    "name": "phone",
+                    "status": "active",
+                    "reach": "active",
+                    "source_delivery": source_delivery
+                }],
+                "unassessed": [],
+                "registry": "registry_complete",
+            });
+            let g = glance(&capture);
+            assert_eq!(g["verdict"], "ok", "{capture}");
+            assert_eq!(g["issues"].as_array().unwrap().len(), 0);
+        }
+    }
+
+    #[test]
+    fn empty_source_is_named_default_on_a_multi_source_active_rollup() {
+        let capture = json!({
+            "status": "active",
+            "clients": [{
+                "name": "phone",
+                "status": "active",
+                "reach": "active",
+                "source_delivery": {
+                    "audio": {"state": "current", "elapsed_ms": 1000},
+                    "": {"state": "needs_attention", "elapsed_ms": 700000}
+                }
+            }],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        let g = glance(&capture);
+        assert_eq!(g["verdict"], "attention");
+        assert_eq!(
+            g["issues"][0]["text"],
+            "the solstone app on one of your devices is having trouble adding default to your journal."
+        );
     }
 }

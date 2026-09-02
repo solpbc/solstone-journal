@@ -15,7 +15,7 @@ use solstone_core_distribution::inventory;
 use solstone_core_distribution::promote::{PromoteRequest, promote};
 use solstone_core_distribution::provenance::Provenance;
 
-pub const BINARY: &str = env!("CARGO_BIN_EXE_solstone-distribution");
+pub const BINARY: &str = env!("CARGO_BIN_EXE_solstone-distribution-fixture");
 pub const PASSPHRASE: &str = "fixture-pass";
 const HEX_COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HEX_LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -118,11 +118,7 @@ pub fn build_fixture(label: &str, version: &str) -> Fixture {
 
 fn publisher_identity() -> &'static (PublicKey, PathBuf, PathBuf) {
     PUBLISHER_IDENTITY.get_or_init(|| {
-        let root = PathBuf::from(format!(
-            "/var/tmp/solstone-distribution-publisher-identity-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).expect("publisher identity directory");
+        let root = scratch("publisher-identity");
         write_identity(&root, PASSPHRASE)
     })
 }
@@ -174,12 +170,11 @@ pub fn sign_dir(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn sign");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin)
-        .expect("write stdin");
+    if let Err(error) = child.stdin.take().expect("stdin").write_all(stdin)
+        && error.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        panic!("write stdin: {error}");
+    }
     child.wait_with_output().expect("wait sign")
 }
 

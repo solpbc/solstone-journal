@@ -16,7 +16,7 @@ use solstone_core_generate_wire::{
 use crate::config::{RunConfig, RunInput};
 use crate::events::{BudgetLadder, BudgetStage, RecordingEventSink, RuntimeEvent};
 use crate::ladders::{ResourceLadder, TurnLadder};
-use crate::outcome::{TailState, compose_tail};
+use crate::outcome::{RunOutcome, TailState, compose_tail};
 use crate::provider::{ConverseProvider, ProviderResponse};
 use crate::runtime::run_cogitate;
 use crate::stuck::{HistoryEntry, StuckDetector};
@@ -127,6 +127,7 @@ fn call(name: &str, arguments: Value) -> ConverseToolCall {
         name: name.to_owned(),
         arguments,
         not_offered: false,
+        thought_signature: None,
     }
 }
 
@@ -787,6 +788,7 @@ fn monologues_trip_stuck_and_provider_failures_are_terminal_passthroughs() {
         reason_code: "provider_quota_exceeded".to_owned(),
         retryable: true,
         blocking: false,
+        detail: None,
     };
     let mut provider = ScriptedProvider::new([Err(failure.clone())]);
     let outcome = run_cogitate(
@@ -801,6 +803,31 @@ fn monologues_trip_stuck_and_provider_failures_are_terminal_passthroughs() {
     );
     assert_eq!(outcome.provider_failure, Some(failure));
     assert!(outcome.terminal);
+}
+
+#[test]
+fn provider_failure_error_text_prefers_detail_then_reason_code() {
+    let with_detail = ConverseFailure {
+        reason_code: "provider_unavailable".to_owned(),
+        retryable: true,
+        blocking: false,
+        detail: Some("upstream said distinctive-detail".to_owned()),
+    };
+    let outcome = RunOutcome::provider_failure(with_detail, Usage::default(), "corr".to_owned());
+    assert_eq!(
+        outcome.error_text.as_deref(),
+        Some("upstream said distinctive-detail")
+    );
+    assert_eq!(outcome.reason_code.as_deref(), Some("provider_unavailable"));
+
+    let without_detail = ConverseFailure {
+        reason_code: "provider_unavailable".to_owned(),
+        retryable: true,
+        blocking: false,
+        detail: None,
+    };
+    let outcome = RunOutcome::provider_failure(without_detail, Usage::default(), "corr".to_owned());
+    assert_eq!(outcome.error_text.as_deref(), Some("provider_unavailable"));
 }
 
 #[test]

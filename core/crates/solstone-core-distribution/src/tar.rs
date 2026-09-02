@@ -3,7 +3,6 @@
 
 use std::fs;
 use std::io::{self, Read};
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use flate2::read::GzDecoder;
@@ -27,7 +26,7 @@ pub fn write_tar_gz(stage: &Path, dest: &Path) -> io::Result<()> {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.as_str()))?;
         let path = stage.join(&dest_path);
         let bytes = fs::read(&path)?;
-        let mode = fs::metadata(&path)?.permissions().mode() & 0o7777;
+        let mode = crate::stage::file_mode(&fs::metadata(&path)?);
         append_file(&mut builder, &dest_path, &bytes, mode)?;
     }
     builder.finish()?;

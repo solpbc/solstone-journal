@@ -158,6 +158,7 @@ fn queue(
         process_sink: process_sink.map(|sink| sink as Arc<dyn ProcessEventSink>),
         ready,
         before_deadline_commit: None,
+        child_environment: BTreeMap::new(),
     })
 }
 
@@ -175,6 +176,7 @@ fn queue_with_probe(
         process_sink: None,
         ready: true,
         before_deadline_commit: hook,
+        child_environment: BTreeMap::new(),
     })
 }
 
@@ -187,6 +189,7 @@ fn queue_with_event_sink(bed: &Bed, cap: Duration, sink: Arc<dyn TaskQueueEventS
         process_sink: None,
         ready: true,
         before_deadline_commit: None,
+        child_environment: BTreeMap::new(),
     })
 }
 
@@ -909,6 +912,7 @@ fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
         process_sink: None,
         ready: true,
         before_deadline_commit: None,
+        child_environment: BTreeMap::new(),
     });
     let blocked_ready = bed.root.join("blocked-ready");
     let count = bed.root.join("count");

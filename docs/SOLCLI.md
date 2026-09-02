@@ -198,6 +198,75 @@ the owner approved the call.
 Command names are lowercase single words, or hyphenated multi-word
 (`list-nudges-due`, `list-candidates`).
 
+## Journal MCP Endpoint
+
+The journal MCP endpoint is a loopback-only, TLS-protected MCP server for the
+journal's read-only `search` and `fetch` tools. It is available only in builds
+compiled with the `journal-mcp-endpoint` Cargo feature and only when the journal
+runtime capability is enabled; without either condition, the endpoint does not
+start.
+
+### Enable or disable the endpoint
+
+The capability is stored in the journal's `config/journal.json` as:
+
+```json
+{
+  "mcp_endpoint": {
+    "enabled": true
+  }
+}
+```
+
+Use the journal-config transactional surface to preserve the file's locking and
+compare-and-swap protection: read the current object with `solstone-core
+journal-config read [--journal PATH]`, make the change to its `config` object,
+then send the complete replacement object on standard input to `solstone-core
+journal-config commit [--journal PATH] --expect sha256:<value returned by
+read>`. Use `--expect absent` when creating an absent configuration file. Set
+`mcp_endpoint.enabled` to `false` (or remove the block) to disable the runtime
+capability. A build that omits `journal-mcp-endpoint` also cannot start the
+endpoint. The supervisor reads this capability when it constructs its hosted
+process inventory and does not re-evaluate it on each tick; restart the
+supervisor after changing it to enable or disable the endpoint.
+
+When both gates are satisfied, the listener is fixed at `127.0.0.1:7658`; the
+address and port are not configurable.
+
+### Tokens and status
+
+Create an agent credential with `journal mcp token create --label <label>`.
+The command displays the bearer secret once only; it cannot be recovered later.
+Use `journal mcp token list` to view labels and creation times, and `journal
+mcp token revoke --label <label>` to disable a credential immediately.
+Local pairing and OAuth client registration are documented in
+[MCP OAuth](MCP_OAUTH.md) (`journal mcp pairing` and `journal mcp oauth`).
+`journal mcp status` reports the compiled capability, the current journal
+configuration result, and token count. It is capability/configuration status,
+not a listener-liveness check.
+
+### MCP client connection
+
+The Streamable HTTP target is `/mcp`. The listener physically binds the
+loopback address and fixed port above, but TLS requires the account-authorized
+hostname as both the TLS server name (SNI) and certificate-validation name; a
+client that sends `127.0.0.1`, `localhost`, or no SNI will not complete the
+handshake. A client that dials loopback must therefore support configuring its
+connection address independently from its TLS server name and HTTP host.
+
+That account-authorized hostname is intentionally opaque and is not exposed by
+`journal mcp status` or another operator command. Direct loopback setup for a
+generic MCP client is consequently not currently practical from the local CLI;
+use the account bridge/tunnel path rather than assuming `127.0.0.1:7658` is a
+drop-in HTTPS URL. In either connection mode, send `Authorization: Bearer
+<token>` on every request, where `<token>` is a static MCP token or an OAuth
+access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
+`Mcp-Session-Id` response header, then call `tools/list` or `tools/call` with
+that header. The server advertises exactly the read-only `search` and `fetch`
+tools.
+
+The Journal MCP endpoint is listed in the [current command inventory](#current-command-inventory).
+
 ## Journal Doctor
 
 `journal doctor` diagnoses journal-host health. It is role-aware: on a machine
@@ -339,7 +408,7 @@ not the codebase. See [APPS.md](APPS.md).
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `maint` |
 | Schedule (read-only) | `schedule` |
-| Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter` |
+| Specialized | `config`, `mcp` ([endpoint](#journal-mcp-endpoint)), `skills`, `streams`, `journal-stats`, `reprocess`, `formatter` |
 | Installation | `doctor` |
 | Help | `help` |
 

@@ -8,6 +8,8 @@ use std::ffi::{CString, c_char, c_int, c_ulong, c_void};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::sync::OnceLock;
 
 use image::{ImageBuffer, Rgb};
 use libloading::Library;
@@ -23,9 +25,13 @@ const EXIT_ENCRYPTED: i32 = 3;
 const EXIT_CORRUPT: i32 = 4;
 const EXIT_RENDER_IO: i32 = 5;
 
+#[cfg(unix)]
 const ENV_RLIMIT_AS_MB: &str = "SOLSTONE_PDF_WORKER_RLIMIT_AS_MB";
+#[cfg(unix)]
 const ENV_RLIMIT_CPU_SECONDS: &str = "SOLSTONE_PDF_WORKER_RLIMIT_CPU_SECONDS";
+#[cfg(unix)]
 const DEFAULT_RLIMIT_AS_MB: u64 = 2048;
+#[cfg(unix)]
 const DEFAULT_RLIMIT_CPU_SECONDS: u64 = 60;
 
 const FPDF_ERR_FILE: c_ulong = 2;
@@ -104,8 +110,7 @@ struct Pdfium {
 impl Pdfium {
     fn load() -> Result<Self, String> {
         let library_path = pdfium_library_path()?;
-        let library = unsafe { Library::new(&library_path) }
-            .map_err(|error| format!("load PDFium {}: {error}", library_path.display()))?;
+        let library = open_pdfium_library(&library_path)?;
         macro_rules! symbol {
             ($name:literal, $kind:ty) => {{
                 let symbol = unsafe { library.get::<$kind>(concat!($name, "\0").as_bytes()) }
@@ -154,6 +159,70 @@ impl Pdfium {
     fn destroy(&self) {
         unsafe { (self.destroy_library)() };
     }
+}
+
+fn open_pdfium_library(path: &Path) -> Result<Library, String> {
+    #[cfg(windows)]
+    {
+        restrict_default_dll_directories()?;
+        if !path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::CurDir | std::path::Component::ParentDir
+                )
+            })
+        {
+            return Err(format!(
+                "load PDFium {}: expected an absolute path without traversal",
+                path.display()
+            ));
+        }
+        // SAFETY: the bounded package owner has verified this exact private
+        // payload member before supplying the child environment. The flags
+        // search only the DLL's directory and System32 for dependencies.
+        let library =
+            unsafe { libloading::os::windows::Library::load_with_flags(path, 0x0000_0900) }
+                .map_err(|error| format!("load PDFium {}: {error}", path.display()))?;
+        Ok(Library::from(library))
+    }
+
+    #[cfg(not(windows))]
+    {
+        // SAFETY: Unix callers retain the established explicit-path dynamic-load contract.
+        unsafe { Library::new(path) }
+            .map_err(|error| format!("load PDFium {}: {error}", path.display()))
+    }
+}
+
+#[cfg(windows)]
+fn restrict_default_dll_directories() -> Result<(), String> {
+    static RESTRICTED: OnceLock<Result<(), String>> = OnceLock::new();
+    match RESTRICTED.get_or_init(|| {
+        // Application-directory and System32 are the only default DLL
+        // search locations. The actual PDFium load adds its private
+        // library directory explicitly through LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR.
+        const APPLICATION_DIR_AND_SYSTEM32: u32 = 0x0000_0200 | 0x0000_0800;
+        // SAFETY: this documented process-wide restriction only changes
+        // the default DLL search locations for later loads.
+        let ok = unsafe { SetDefaultDllDirectories(APPLICATION_DIR_AND_SYSTEM32) };
+        if ok == 0 {
+            return Err(format!(
+                "restrict DLL search before loading PDFium: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        Ok(())
+    }) {
+        Ok(()) => Ok(()),
+        Err(error) => Err(error.clone()),
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn SetDefaultDllDirectories(directory_flags: u32) -> i32;
 }
 
 #[derive(Debug)]
@@ -989,7 +1058,7 @@ fn sha256_file(path: &Path) -> io::Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-/// Resolves the development override before the installed-wheel sibling path.
+/// Resolve PDFium only from its platform's approved location.
 pub fn pdfium_library_path() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("SOLSTONE_CORE_PDF_LIBRARY") {
         return Ok(PathBuf::from(path));
@@ -1023,6 +1092,7 @@ fn absolute_path(path: &Path) -> PathBuf {
     }
 }
 
+#[cfg(unix)]
 fn apply_rlimits_from_env() -> Result<(), String> {
     let address_space = positive_env_int(ENV_RLIMIT_AS_MB, DEFAULT_RLIMIT_AS_MB)?;
     let cpu = positive_env_int(ENV_RLIMIT_CPU_SECONDS, DEFAULT_RLIMIT_CPU_SECONDS)?;
@@ -1036,12 +1106,19 @@ fn apply_rlimits_from_env() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
+fn apply_rlimits_from_env() -> Result<(), String> {
+    // Windows receives the equivalent CPU and committed-memory limits from the
+    // parent-owned Job before the worker's first instruction.
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
 fn address_space_limit(budget: u64) -> Result<u64, String> {
     Ok(budget)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(unix, target_os = "macos"))]
 #[allow(
     deprecated,
     reason = "libc's wrapper is deprecated in favor of a new crate, not a different Darwin API"
@@ -1050,7 +1127,7 @@ fn current_task() -> libc::mach_port_t {
     unsafe { libc::mach_task_self() }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(unix, target_os = "macos"))]
 fn address_space_limit(budget: u64) -> Result<u64, String> {
     let mut info = std::mem::MaybeUninit::<libc::mach_task_basic_info>::zeroed();
     let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
@@ -1077,6 +1154,7 @@ fn address_space_limit(budget: u64) -> Result<u64, String> {
         .ok_or_else(|| "Darwin address-space limit overflow".to_owned())
 }
 
+#[cfg(unix)]
 fn positive_env_int(name: &str, default: u64) -> Result<Option<u64>, String> {
     let value = match std::env::var(name) {
         Ok(value) => value
@@ -1092,11 +1170,12 @@ fn positive_env_int(name: &str, default: u64) -> Result<Option<u64>, String> {
 /// declares `__rlimit_resource_t` (u32), Darwin declares plain `c_int`. Naming
 /// the Linux type unconditionally is what kept this crate -- and therefore the
 /// whole workspace build -- from compiling on macOS at all.
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, target_os = "linux"))]
 type RlimitResource = libc::__rlimit_resource_t;
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 type RlimitResource = libc::c_int;
 
+#[cfg(unix)]
 fn set_limit(kind: RlimitResource, limit: u64) -> Result<(), String> {
     let mut current = libc::rlimit {
         rlim_cur: 0,

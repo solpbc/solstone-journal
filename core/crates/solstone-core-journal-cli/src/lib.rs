@@ -447,10 +447,10 @@ mod tests {
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 53);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 54);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 39);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 40);
     }
 
     #[test]

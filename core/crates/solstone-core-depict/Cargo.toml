@@ -12,7 +12,9 @@ publish = false
 [dependencies]
 base64 = "0.22.1"
 chrono.workspace = true
+env_logger.workspace = true
 image.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-assets.workspace = true

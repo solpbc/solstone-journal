@@ -77,7 +77,7 @@ pub fn has_chronicle_day(journal_root: impl AsRef<Path>, day: &str) -> bool {
     journal_root.as_ref().join("chronicle").join(day).is_dir()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

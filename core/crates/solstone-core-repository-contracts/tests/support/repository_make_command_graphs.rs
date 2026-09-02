@@ -71,6 +71,26 @@ fn write_executable(path: &Path, script: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make fixture executable");
 }
 
+fn isolate_local_ci_fixture(command: &mut Command) {
+    command
+        .env_remove("HOPPER_LID")
+        .env_remove("SOLSTONE_CI_CLOUD");
+}
+
+fn seed_and_isolate_local_ci_fixture(command: &mut Command) {
+    command
+        .env("HOPPER_LID", "fixture-lode")
+        .env("SOLSTONE_CI_CLOUD", "1");
+    isolate_local_ci_fixture(command);
+    for key in ["HOPPER_LID", "SOLSTONE_CI_CLOUD"] {
+        let removed = command
+            .get_envs()
+            .find(|(candidate, _)| *candidate == std::ffi::OsStr::new(key))
+            .is_some_and(|(_, value)| value.is_none());
+        assert!(removed, "local CI fixture did not remove {key}");
+    }
+}
+
 fn write_native_cargo_shim(path: &Path) {
     if cfg!(target_os = "macos") {
         let source = path.with_extension("c");
@@ -80,7 +100,7 @@ fn write_native_cargo_shim(path: &Path) {
 #include <stdlib.h>
 #include <string.h>
 int main(int argc, char **argv) {
-    FILE *args = fopen(getenv("SOLSTONE_CARGO_ARGV"), "wb");
+    FILE *args = fopen(getenv("SOLSTONE_CARGO_ARGV"), "ab");
     for (int i = 1; i < argc; i++) fwrite(argv[i], 1, strlen(argv[i]) + 1, args);
     fclose(args);
     FILE *env = fopen(getenv("SOLSTONE_CARGO_ENV"), "w");
@@ -110,7 +130,7 @@ int main(int argc, char **argv) {
     }
     write_executable(
         path,
-        "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${ORT_PREFER_DYNAMIC_LINK-}\" \"${ORT_LIB_PATH-}\" \"${DYLD_LIBRARY_PATH-}\" \"${LD_LIBRARY_PATH-}\" > \"$SOLSTONE_CARGO_ENV\"\n",
+        "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" >> \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${ORT_PREFER_DYNAMIC_LINK-}\" \"${ORT_LIB_PATH-}\" \"${DYLD_LIBRARY_PATH-}\" \"${LD_LIBRARY_PATH-}\" > \"$SOLSTONE_CARGO_ENV\"\n",
     );
 }
 
@@ -345,7 +365,8 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
         shim_dir.display(),
         env::var("PATH").expect("PATH must be set for nested Rust gate")
     );
-    let output = Command::new("make")
+    let mut command = Command::new("make");
+    command
         .arg(gate)
         .arg(format!("VENV={}", venv_dir.display()))
         .arg(format!("VENV_BIN={}", venv_bin.display()))
@@ -355,9 +376,9 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
         .env("SOLSTONE_CI_SENTINEL", &sentinel)
         .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
         .env("SOLSTONE_CI_PURITY_REENTRY", "1")
-        .env("CARGO_TARGET_DIR", &writable_dir)
-        .output()
-        .expect("nested Rust gate should execute");
+        .env("CARGO_TARGET_DIR", &writable_dir);
+    seed_and_isolate_local_ci_fixture(&mut command);
+    let output = command.output().expect("nested Rust gate should execute");
 
     assert!(
         output.status.success(),

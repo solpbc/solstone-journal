@@ -7,6 +7,8 @@ pub mod cadence;
 pub mod error;
 pub mod fresh;
 pub mod nvattest;
+mod nvattest_authority;
+mod nvattest_install;
 pub mod ratls;
 pub mod state;
 
@@ -24,6 +26,10 @@ pub use fresh::{FreshAttestedChannel, perform_fresh_reattest};
 pub use nvattest::{
     NvattestEnsureStatus, classify_channel_failure, classify_nvattest_prerequisite,
 };
+pub use nvattest_install::ensure_nvattest_installed;
+#[cfg(all(unix, feature = "test-hooks"))]
+#[doc(hidden)]
+pub use nvattest_install::ensure_nvattest_installed_with_for_tests as ensure_nvattest_installed_with;
 pub use ratls::{
     channel::{
         AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo, RatlsEndpoint,

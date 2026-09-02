@@ -27,7 +27,7 @@ use crate::{
     friendly_type_name, read_body_import_inventory,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 thread_local! {
     static TEST_ARCHIVE_ENTRY_TOTAL_DELTA: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
@@ -208,7 +208,7 @@ fn build_archive(
     recent: &SourcesSnapshot,
 ) -> Result<Value, StoreError> {
     let entry_total = stats.total;
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     let entry_total = entry_total + TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(std::cell::Cell::get);
     let months = stats.by_month.keys().cloned().collect::<Vec<_>>();
     let days = stats.by_day.keys().cloned().collect::<Vec<_>>();
@@ -455,12 +455,12 @@ fn later_timestamp(candidate: &str, current: &str) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 struct ArchiveEntryTotalPerturbation {
     previous: u64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 impl ArchiveEntryTotalPerturbation {
     fn add(delta: u64) -> Self {
         let previous = TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(|current| current.replace(delta));
@@ -468,7 +468,7 @@ impl ArchiveEntryTotalPerturbation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 impl Drop for ArchiveEntryTotalPerturbation {
     fn drop(&mut self) {
         TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(|current| current.set(self.previous));
@@ -505,7 +505,7 @@ fn month_range_label(first: Option<&str>, last: Option<&str>) -> Option<String> 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::panic::{AssertUnwindSafe, catch_unwind};

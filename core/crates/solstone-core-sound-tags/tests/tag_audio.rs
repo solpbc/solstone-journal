@@ -20,8 +20,9 @@ use solstone_core_local::install::ced_fixture::{
 use solstone_core_local::install::ced_install::{
     ced_artifact_key, ced_library_path, ced_model_path,
 };
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CedDegradedCause, CedReadiness, evaluate_ced_readiness,
+    CedVerdict, evaluate_ced_readiness,
     evaluate_ced_readiness_against_with_probe,
 };
 use solstone_core_local::install::ced_runtime::CedAnalyzeProgram;
@@ -41,10 +42,7 @@ fn integrity_invalid_model_degrades() {
     let journal = tempfile::tempdir().expect("temporary journal");
     write_complete_ced_install(journal.path(), key).expect("complete install");
     match evaluate_ced_readiness(journal.path(), host_os(), host_arch()) {
-        CedReadiness::Degraded {
-            cause: CedDegradedCause::IntegrityInvalid,
-            ..
-        } => {}
+        CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { .. }) => {}
         other => panic!("expected integrity-invalid, got {other:?}"),
     }
     assert_eq!(tag_audio(&one_second(), journal.path()), None);
@@ -52,10 +50,10 @@ fn integrity_invalid_model_degrades() {
 
 #[test]
 fn unloadable_ready_verdict_degrades_tag_audio_to_none() {
-    let readiness = CedReadiness::Degraded {
-        cause: CedDegradedCause::Unloadable,
+    let readiness = CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
+        capability: "ced".to_owned(),
         detail: "stub: engine refused to load".to_owned(),
-    };
+    });
     assert_eq!(
         tag_audio_with_readiness_and_program(
             &one_second(),
@@ -175,7 +173,7 @@ fn ready_layout_maps_linux_x64_linux_arm64_and_macos_metal() {
             &digest,
             |_library, _model| Ok(()),
         ) {
-            CedReadiness::Ready {
+            CedVerdict::Ready {
                 library: ready_library,
                 model,
             } => {
@@ -211,8 +209,8 @@ fn assets() -> Option<Assets> {
     })
 }
 
-fn ready_verdict(assets: &Assets) -> CedReadiness {
-    CedReadiness::Ready {
+fn ready_verdict(assets: &Assets) -> CedVerdict {
+    CedVerdict::Ready {
         library: assets.library.clone(),
         model: assets.model.clone(),
     }

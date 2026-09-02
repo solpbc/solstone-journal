@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg_attr(all(not(feature = "runtime"), not(test)), allow(dead_code))]
+
 //! Native one-record speaker analysis command contract.
 //!
 //! Scalar and vector response fields such as `statement_ids`, `durations_s`,
@@ -18,23 +20,29 @@ use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
+#[cfg(feature = "runtime")]
+use std::io::Write;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_speakers::diarization::{
-    DiarizationError, FrameLogProbs, MIN_INTERVAL_S, SentenceTiming, SpeakerInterval,
-    assign_sentences, cluster_embeddings as cluster_diarization_embeddings, find_intervals,
+    DiarizationError, SentenceTiming, SpeakerInterval, assign_sentences,
+    cluster_embeddings as cluster_diarization_embeddings,
 };
+#[cfg(feature = "runtime")]
+use solstone_core_speakers::diarization::{FrameLogProbs, MIN_INTERVAL_S, find_intervals};
 use solstone_core_speakers::discovery::{
     DiscoveryClusteringError, cluster_embeddings as cluster_discovery_embeddings,
 };
+#[cfg(feature = "runtime")]
 use solstone_core_speakers::{
     PYANNOTE_CLASS_COUNT, PYANNOTE_DIARIZE_STRIDE_S, SpeakerEvidence, SpeakerFeatureError,
-    SpeakerSegmentationError, SpeakerWindowStats, StatementSpan, WESPEAKER_EMBEDDING_SIZE,
-    WESPEAKER_SAMPLE_RATE_HZ, admit_statement_features, compute_wespeaker_filterbank_cmn,
-    decide_speaker_evidence, run_pyannote_segmentation_pass,
+    SpeakerSegmentationError, SpeakerWindowStats, admit_statement_features,
+    compute_wespeaker_filterbank_cmn, decide_speaker_evidence, run_pyannote_segmentation_pass,
 };
+use solstone_core_speakers::{StatementSpan, WESPEAKER_EMBEDDING_SIZE, WESPEAKER_SAMPLE_RATE_HZ};
+#[cfg(feature = "runtime")]
 use solstone_core_speakers_onnx::{
     PlatformDescriptor, PyannoteSegmenter, SpeakerOnnxError, WespeakerEmbedder,
     default_speaker_execution_providers,
@@ -268,10 +276,12 @@ pub fn error_line_for_analyze_error(error: &AnalyzeError) -> String {
     error_json_line(error.reason(), &error.detail())
 }
 
+#[cfg(feature = "runtime")]
 pub fn run_request(input: &str) -> Result<Value, AnalyzeError> {
     run_command_request(Command::Run, input)
 }
 
+#[cfg(feature = "runtime")]
 pub fn run_command_request(command: Command, input: &str) -> Result<Value, AnalyzeError> {
     match command {
         Command::Run => run_analyze_request(input),
@@ -279,6 +289,7 @@ pub fn run_command_request(command: Command, input: &str) -> Result<Value, Analy
     }
 }
 
+#[cfg(feature = "runtime")]
 fn run_analyze_request(input: &str) -> Result<Value, AnalyzeError> {
     let request = parse_request(input)?;
     analyze_request(&request)
@@ -328,13 +339,19 @@ struct PayloadWrite {
     bytes: Vec<u8>,
 }
 
-fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
-    if request.sample_rate_hz != WESPEAKER_SAMPLE_RATE_HZ {
+fn validate_sample_rate(sample_rate_hz: u32) -> Result<(), AnalyzeError> {
+    if sample_rate_hz != WESPEAKER_SAMPLE_RATE_HZ {
         return Err(AnalyzeError::UnsupportedSampleRate {
             expected: WESPEAKER_SAMPLE_RATE_HZ,
-            actual: request.sample_rate_hz,
+            actual: sample_rate_hz,
         });
     }
+    Ok(())
+}
+
+#[cfg(feature = "runtime")]
+fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
+    validate_sample_rate(request.sample_rate_hz)?;
 
     let full_audio = read_audio_f32le(&request.full_audio_f32le_path)?;
     let reduced_audio = match &request.reduced_audio_f32le_path {
@@ -854,6 +871,7 @@ fn malformed(detail: impl Into<String>) -> AnalyzeError {
     }
 }
 
+#[cfg(feature = "runtime")]
 fn read_audio_f32le(path: &str) -> Result<Vec<f32>, AnalyzeError> {
     let mut file = fs::File::open(path).map_err(|error| AnalyzeError::AudioUnreadable {
         path: path.to_string(),
@@ -947,6 +965,7 @@ fn read_embedding_payload_f32le(
     Ok(values)
 }
 
+#[cfg(feature = "runtime")]
 fn preflight_model_path(field: &'static str, path: &str) -> Result<(), AnalyzeError> {
     let metadata = fs::metadata(path).map_err(|_error| AnalyzeError::ModelUnreadable {
         field,
@@ -966,6 +985,7 @@ fn preflight_model_path(field: &'static str, path: &str) -> Result<(), AnalyzeEr
         })
 }
 
+#[cfg(feature = "runtime")]
 fn interval_features(
     audio: &[f32],
     sample_rate_hz: u32,
@@ -1029,6 +1049,7 @@ fn gate_declined_diarization_value() -> Value {
     })
 }
 
+#[cfg(feature = "runtime")]
 fn no_intervals_diarization_value() -> Value {
     json!({
         "intervals": [],
@@ -1122,6 +1143,7 @@ fn embedding_payload_bytes(values: &[f32]) -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "runtime")]
 fn write_payloads(payloads: &[PayloadWrite]) -> Result<(), AnalyzeError> {
     for payload in payloads {
         let mut file =
@@ -1138,6 +1160,7 @@ fn write_payloads(payloads: &[PayloadWrite]) -> Result<(), AnalyzeError> {
     Ok(())
 }
 
+#[cfg(feature = "runtime")]
 fn span_ids_value(spans: &[StatementSpan]) -> Value {
     Value::Array(
         spans
@@ -1147,6 +1170,7 @@ fn span_ids_value(spans: &[StatementSpan]) -> Value {
     )
 }
 
+#[cfg(feature = "runtime")]
 fn spans_value(spans: &[StatementSpan]) -> Value {
     Value::Array(
         spans
@@ -1161,6 +1185,7 @@ fn spans_value(spans: &[StatementSpan]) -> Value {
     )
 }
 
+#[cfg(feature = "runtime")]
 fn option_f64_value(value: Option<f64>) -> Value {
     value.map_or(Value::Null, |value| json!(value))
 }
@@ -1189,6 +1214,7 @@ fn intervals_value(intervals: &[SpeakerInterval]) -> Value {
     )
 }
 
+#[cfg(feature = "runtime")]
 fn window_stats_value(stats: &[SpeakerWindowStats]) -> Value {
     Value::Array(
         stats
@@ -1204,6 +1230,7 @@ fn window_stats_value(stats: &[SpeakerWindowStats]) -> Value {
     )
 }
 
+#[cfg(feature = "runtime")]
 fn map_feature_error(path: &str, error: SpeakerFeatureError) -> AnalyzeError {
     match error {
         SpeakerFeatureError::UnsupportedSampleRate { expected, actual } => {
@@ -1221,6 +1248,7 @@ fn map_feature_error(path: &str, error: SpeakerFeatureError) -> AnalyzeError {
     }
 }
 
+#[cfg(feature = "runtime")]
 fn map_segmentation_error(
     path: &str,
     error: SpeakerSegmentationError<SpeakerOnnxError>,
@@ -1284,6 +1312,7 @@ fn map_discovery_clustering_error(path: &str, error: DiscoveryClusteringError) -
     }
 }
 
+#[cfg(feature = "runtime")]
 fn map_open_onnx_error(field: &'static str, error: SpeakerOnnxError) -> AnalyzeError {
     match error {
         // Reserved under the current fixed provider plan:
@@ -1311,6 +1340,7 @@ fn map_open_onnx_error(field: &'static str, error: SpeakerOnnxError) -> AnalyzeE
     }
 }
 
+#[cfg(feature = "runtime")]
 fn map_runtime_onnx_error(operation: &'static str, error: SpeakerOnnxError) -> AnalyzeError {
     match error {
         // Reserved under the current fixed provider plan:
@@ -1340,8 +1370,9 @@ fn map_runtime_onnx_error(operation: &'static str, error: SpeakerOnnxError) -> A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
+    #[cfg(feature = "full-tests")]
     use std::process;
+    #[cfg(feature = "full-tests")]
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn base_request() -> Value {
@@ -1386,572 +1417,538 @@ mod tests {
         serde_json::to_string(&value).expect("request JSON")
     }
 
-    #[test]
-    fn parse_full_buffer_request_selects_full_statement_audio() {
-        let request = parse_request(&request_string(base_request())).expect("request");
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_request {
+        use super::*;
 
-        assert_eq!(request.reduced_audio_f32le_path, None);
-        assert_eq!(
-            request.statement_spans[1],
-            StatementSpan {
-                statement_id: 2,
-                start_s: None,
-                end_s: Some(1.0),
-            }
-        );
-    }
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn parse_full_buffer_request_selects_full_statement_audio() {
+            let request = parse_request(&request_string(base_request())).expect("request");
 
-    #[test]
-    fn parse_reduced_buffer_request_selects_reduced_statement_audio() {
-        let mut request = base_request();
-        request["reduced_audio_f32le_path"] = json!("/tmp/reduced.f32");
+            assert_eq!(request.reduced_audio_f32le_path, None);
+            assert_eq!(
+                request.statement_spans[1],
+                StatementSpan {
+                    statement_id: 2,
+                    start_s: None,
+                    end_s: Some(1.0),
+                }
+            );
+        }
 
-        let request = parse_request(&request_string(request)).expect("request");
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn parse_reduced_buffer_request_selects_reduced_statement_audio() {
+            let mut request = base_request();
+            request["reduced_audio_f32le_path"] = json!("/tmp/reduced.f32");
 
-        assert_eq!(
-            request.reduced_audio_f32le_path,
-            Some("/tmp/reduced.f32".to_string())
-        );
-    }
+            let request = parse_request(&request_string(request)).expect("request");
 
-    #[test]
-    fn statement_embedding_uses_reduced_buffer_not_full_buffer() {
-        let mut request = base_request();
-        request["full_audio_f32le_path"] = json!("/tmp/full-is-not-selected.f32");
-        request["reduced_audio_f32le_path"] = json!("/tmp/reduced-is-selected.f32");
+            assert_eq!(
+                request.reduced_audio_f32le_path,
+                Some("/tmp/reduced.f32".to_string())
+            );
+        }
 
-        let request = parse_request(&request_string(request)).expect("request");
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn statement_embedding_uses_reduced_buffer_not_full_buffer() {
+            let mut request = base_request();
+            request["full_audio_f32le_path"] = json!("/tmp/full-is-not-selected.f32");
+            request["reduced_audio_f32le_path"] = json!("/tmp/reduced-is-selected.f32");
 
-        assert_eq!(
-            statement_audio_buffer_for_request(&request),
-            StatementAudioBuffer::Reduced
-        );
-    }
+            let request = parse_request(&request_string(request)).expect("request");
 
-    #[test]
-    fn parse_request_keeps_two_span_planes() {
-        let request = parse_request(&request_string(base_request())).expect("request");
+            assert_eq!(
+                statement_audio_buffer_for_request(&request),
+                StatementAudioBuffer::Reduced
+            );
+        }
 
-        assert_eq!(request.statement_spans[0].start_s, Some(0.0));
-        assert_eq!(request.diarization_spans[0].start_s, Some(10.0));
-    }
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn parse_request_keeps_two_span_planes() {
+            let request = parse_request(&request_string(base_request())).expect("request");
 
-    #[test]
-    fn argv_accepts_discovery_cluster_subcommand() {
-        assert_eq!(
-            evaluate_args(&[OsString::from(DISCOVERY_CLUSTER_COMMAND)]),
-            Ok(Command::DiscoveryCluster)
-        );
-    }
+            assert_eq!(request.statement_spans[0].start_s, Some(0.0));
+            assert_eq!(request.diarization_spans[0].start_s, Some(10.0));
+        }
 
-    #[test]
-    fn argv_rejects_unknown_argument_as_usage() {
-        // Bare invocation is still Command::Run and no existing caller passes
-        // argv today, so accepting the new discovery-cluster token is additive.
-        let error = evaluate_args(&[OsString::from("--help")]).unwrap_err();
-        let line = error_line_for_usage(&error);
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn argv_accepts_discovery_cluster_subcommand() {
+            assert_eq!(
+                evaluate_args(&[OsString::from(DISCOVERY_CLUSTER_COMMAND)]),
+                Ok(Command::DiscoveryCluster)
+            );
+        }
 
-        assert!(line.contains("\"reason\":\"usage\""));
-        assert!(line.contains("Usage: solstone-core-speakers-analyze"));
-    }
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn argv_rejects_unknown_argument_as_usage() {
+            // Bare invocation is still Command::Run and no existing caller passes
+            // argv today, so accepting the new discovery-cluster token is additive.
+            let error = evaluate_args(&[OsString::from("--help")]).unwrap_err();
+            let line = error_line_for_usage(&error);
 
-    #[test]
-    fn request_with_unknown_schema_is_rejected() {
-        let mut request = base_request();
-        request["schema"] = json!("solstone-speaker-analyze-request-v2");
+            assert!(line.contains("\"reason\":\"usage\""));
+            assert!(line.contains("Usage: solstone-core-speakers-analyze"));
+        }
 
-        let error = parse_request(&request_string(request)).unwrap_err();
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_unknown_schema_is_rejected() {
+            let mut request = base_request();
+            request["schema"] = json!("solstone-speaker-analyze-request-v2");
 
-        assert_eq!(error.reason(), "unknown-schema");
-        assert_eq!(error.exit_code(), 64);
-    }
+            let error = parse_request(&request_string(request)).unwrap_err();
 
-    #[test]
-    fn discovery_cluster_unknown_schema_is_rejected() {
-        let dir = TestDir::new();
-        let mut request = base_discovery_cluster_request(&dir.path("embeddings.f32"), 0, 2);
-        request["schema"] = json!("solstone-speaker-discovery-cluster-request-v2");
+            assert_eq!(error.reason(), "unknown-schema");
+            assert_eq!(error.exit_code(), 64);
+        }
 
-        let error =
-            run_command_request(Command::DiscoveryCluster, &request_string(request)).unwrap_err();
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn discovery_cluster_unknown_schema_is_rejected() {
+            let mut request = base_discovery_cluster_request("/not/read/embeddings.f32", 0, 2);
+            request["schema"] = json!("solstone-speaker-discovery-cluster-request-v2");
 
-        assert_eq!(error.reason(), "unknown-schema");
-        assert_eq!(error.exit_code(), 64);
-    }
+            let error = run_discovery_cluster_request(&request_string(request)).unwrap_err();
 
-    #[test]
-    fn discovery_cluster_missing_payload_path_reports_payload_unreadable() {
-        let dir = TestDir::new();
-        let request = base_discovery_cluster_request(&dir.path("missing.f32"), 6, 2);
-
-        let error =
-            run_command_request(Command::DiscoveryCluster, &request_string(request)).unwrap_err();
-
-        assert_eq!(error.reason(), "payload-unreadable");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn discovery_cluster_byte_length_mismatch_reports_payload_invalid() {
-        let dir = TestDir::new();
-        let path = dir.path("embeddings.f32");
-        write_f32le(&path, &[0.0_f32, 1.0]);
-        let request = base_discovery_cluster_request(&path, 2, 2);
-
-        let error =
-            run_command_request(Command::DiscoveryCluster, &request_string(request)).unwrap_err();
-
-        assert_eq!(error.reason(), "payload-invalid");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn discovery_cluster_happy_path_returns_labels_and_counts() {
-        let dir = TestDir::new();
-        let path = dir.path("embeddings.f32");
-        write_f32le(
-            &path,
-            &unit_rows_2d(&[
-                (1.0, 0.0),
-                (1.0, 0.03),
-                (1.0, -0.03),
-                (-1.0, 0.0),
-                (-1.0, 0.03),
-                (-1.0, -0.03),
-            ]),
-        );
-        let request = base_discovery_cluster_request(&path, 6, 2);
-
-        let response = run_command_request(Command::DiscoveryCluster, &request_string(request))
-            .expect("response");
-
-        assert_eq!(response["schema"], DISCOVERY_CLUSTER_RESPONSE_SCHEMA);
-        assert_eq!(response["labels"], json!([0, 0, 0, 1, 1, 1]));
-        assert_eq!(response["cluster_count"], 2);
-        assert_eq!(response["noise_count"], 0);
-        assert_eq!(response["parameters"]["min_cluster_size"], 3);
-        assert_eq!(response["parameters"]["min_samples"], 2);
-        assert_eq!(response["algorithm"], DISCOVERY_CLUSTER_ALGORITHM);
-    }
-
-    #[test]
-    fn discovery_cluster_path_does_not_preflight_models() {
-        let dir = TestDir::new();
-        let path = dir.path("embeddings.f32");
-        write_f32le(
-            &path,
-            &unit_rows_2d(&[
-                (1.0, 0.0),
-                (1.0, 0.03),
-                (1.0, -0.03),
-                (-1.0, 0.0),
-                (-1.0, 0.03),
-                (-1.0, -0.03),
-            ]),
-        );
-        let mut request = base_discovery_cluster_request(&path, 6, 2);
-        request["models"] = json!({
-            "pyannote_segmentation_onnx_path": dir.path("absent-pyannote.onnx"),
-            "wespeaker_onnx_path": dir.path("absent-wespeaker.onnx"),
-        });
-
-        // lib.rs:651-668 preflights model paths for the analyze path. These
-        // intentionally absent model paths prove the cluster path does not route
-        // through that preflight despite the ONNX crate import at module scope.
-        let response = run_command_request(Command::DiscoveryCluster, &request_string(request))
-            .expect("response");
-
-        assert_eq!(response["schema"], DISCOVERY_CLUSTER_RESPONSE_SCHEMA);
-        assert_eq!(response["labels"], json!([0, 0, 0, 1, 1, 1]));
-    }
-
-    #[test]
-    fn payload_paths_may_not_collide_with_each_other() {
-        let mut request = base_request();
-        request["interval_embedding_payload_f32le_path"] = json!("/tmp/statements.f32");
-
-        let error = parse_request(&request_string(request)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert_eq!(error.exit_code(), 64);
-        let detail = error.detail();
-        assert!(detail.contains("output_payload_f32le_path"));
-        assert!(detail.contains("interval_embedding_payload_f32le_path"));
-    }
-
-    #[test]
-    fn payload_path_may_not_collide_with_an_input_path() {
-        let mut audio_collision = base_request();
-        audio_collision["output_payload_f32le_path"] = json!("/tmp/full.f32");
-
-        let error = parse_request(&request_string(audio_collision)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert_eq!(error.exit_code(), 64);
-        let detail = error.detail();
-        assert!(detail.contains("output_payload_f32le_path"));
-        assert!(detail.contains("full_audio_f32le_path"));
-
-        let mut model_collision = base_request();
-        model_collision["interval_embedding_payload_f32le_path"] = json!("/models/wespeaker.onnx");
-
-        let error = parse_request(&request_string(model_collision)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert_eq!(error.exit_code(), 64);
-        let detail = error.detail();
-        assert!(detail.contains("interval_embedding_payload_f32le_path"));
-        assert!(detail.contains("models.wespeaker_onnx_path"));
-    }
-
-    #[test]
-    fn response_gate_declined_uses_null_diarization_fields() {
-        let value = gate_declined_diarization_value();
-
-        for field in [
-            "intervals",
-            "valid_intervals",
-            "interval_embeddings",
-            "cluster_labels",
-            "statement_labels",
-            "silhouette_k",
-            "effective_k",
-        ] {
-            assert!(value[field].is_null(), "{field} should be null");
+            assert_eq!(error.reason(), "unknown-schema");
+            assert_eq!(error.exit_code(), 64);
         }
     }
 
-    #[test]
-    fn interval_embedding_payload_omitted_when_path_null() {
-        let (value, payload) =
-            interval_embedding_payload_value(None, &[1.0_f32; WESPEAKER_EMBEDDING_SIZE], 1, &[2]);
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_discovery {
+        use super::*;
 
-        assert!(value.is_null());
-        assert!(payload.is_none());
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn discovery_cluster_missing_payload_path_reports_payload_unreadable() {
+            let dir = TestDir::new();
+            let request = base_discovery_cluster_request(&dir.path("missing.f32"), 6, 2);
+
+            let error = run_command_request(Command::DiscoveryCluster, &request_string(request))
+                .unwrap_err();
+
+            assert_eq!(error.reason(), "payload-unreadable");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn discovery_cluster_byte_length_mismatch_reports_payload_invalid() {
+            let dir = TestDir::new();
+            let path = dir.path("embeddings.f32");
+            write_f32le(&path, &[0.0_f32, 1.0]);
+            let request = base_discovery_cluster_request(&path, 2, 2);
+
+            let error = run_command_request(Command::DiscoveryCluster, &request_string(request))
+                .unwrap_err();
+
+            assert_eq!(error.reason(), "payload-invalid");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn discovery_cluster_happy_path_returns_labels_and_counts() {
+            let dir = TestDir::new();
+            let path = dir.path("embeddings.f32");
+            write_f32le(
+                &path,
+                &unit_rows_2d(&[
+                    (1.0, 0.0),
+                    (1.0, 0.03),
+                    (1.0, -0.03),
+                    (-1.0, 0.0),
+                    (-1.0, 0.03),
+                    (-1.0, -0.03),
+                ]),
+            );
+            let request = base_discovery_cluster_request(&path, 6, 2);
+
+            let response = run_command_request(Command::DiscoveryCluster, &request_string(request))
+                .expect("response");
+
+            assert_eq!(response["schema"], DISCOVERY_CLUSTER_RESPONSE_SCHEMA);
+            assert_eq!(response["labels"], json!([0, 0, 0, 1, 1, 1]));
+            assert_eq!(response["cluster_count"], 2);
+            assert_eq!(response["noise_count"], 0);
+            assert_eq!(response["parameters"]["min_cluster_size"], 3);
+            assert_eq!(response["parameters"]["min_samples"], 2);
+            assert_eq!(response["algorithm"], DISCOVERY_CLUSTER_ALGORITHM);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn discovery_cluster_path_does_not_preflight_models() {
+            let dir = TestDir::new();
+            let path = dir.path("embeddings.f32");
+            write_f32le(
+                &path,
+                &unit_rows_2d(&[
+                    (1.0, 0.0),
+                    (1.0, 0.03),
+                    (1.0, -0.03),
+                    (-1.0, 0.0),
+                    (-1.0, 0.03),
+                    (-1.0, -0.03),
+                ]),
+            );
+            let mut request = base_discovery_cluster_request(&path, 6, 2);
+            request["models"] = json!({
+                "pyannote_segmentation_onnx_path": dir.path("absent-pyannote.onnx"),
+                "wespeaker_onnx_path": dir.path("absent-wespeaker.onnx"),
+            });
+
+            // lib.rs:651-668 preflights model paths for the analyze path. These
+            // intentionally absent model paths prove the cluster path does not route
+            // through that preflight despite the ONNX crate import at module scope.
+            let response = run_command_request(Command::DiscoveryCluster, &request_string(request))
+                .expect("response");
+
+            assert_eq!(response["schema"], DISCOVERY_CLUSTER_RESPONSE_SCHEMA);
+            assert_eq!(response["labels"], json!([0, 0, 0, 1, 1, 1]));
+        }
     }
 
-    #[test]
-    fn interval_embedding_payload_written_with_interval_indices() {
-        let path = "/tmp/intervals.f32";
-        let (value, payload) = interval_embedding_payload_value(
-            Some(path),
-            &[1.0_f32; WESPEAKER_EMBEDDING_SIZE],
-            1,
-            &[2],
-        );
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_response {
+        use super::*;
 
-        assert_eq!(value["payload_path"], path);
-        assert_eq!(value["shape"], json!([1, WESPEAKER_EMBEDDING_SIZE]));
-        assert_eq!(value["byte_count"], WESPEAKER_EMBEDDING_SIZE * 4);
-        assert_eq!(value["interval_indices"], json!([2]));
-        assert_eq!(
-            payload.expect("payload").bytes.len(),
-            WESPEAKER_EMBEDDING_SIZE * 4
-        );
-    }
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn payload_paths_may_not_collide_with_each_other() {
+            let mut request = base_request();
+            request["interval_embedding_payload_f32le_path"] = json!("/tmp/statements.f32");
 
-    #[test]
-    fn interval_embedding_payload_not_written_when_gate_declines() {
-        let value = gate_declined_diarization_value();
+            let error = parse_request(&request_string(request)).unwrap_err();
 
-        assert!(value["interval_embeddings"].is_null());
-    }
+            assert_eq!(error.reason(), "malformed-request");
+            assert_eq!(error.exit_code(), 64);
+            let detail = error.detail();
+            assert!(detail.contains("output_payload_f32le_path"));
+            assert!(detail.contains("interval_embedding_payload_f32le_path"));
+        }
 
-    #[test]
-    fn synthetic_frame_matrix_emits_diarization_fields() {
-        let intervals = [
-            SpeakerInterval {
-                start_s: 0.0,
-                end_s: 0.6,
-                local_class: 1,
-            },
-            SpeakerInterval {
-                start_s: 0.7,
-                end_s: 1.3,
-                local_class: 2,
-            },
-            SpeakerInterval {
-                start_s: 1.4,
-                end_s: 2.0,
-                local_class: 2,
-            },
-        ];
-        let spans = [
-            StatementSpan {
-                statement_id: 1,
-                start_s: Some(0.1),
-                end_s: Some(0.5),
-            },
-            StatementSpan {
-                statement_id: 2,
-                start_s: Some(0.8),
-                end_s: Some(1.8),
-            },
-        ];
-        let mut embeddings = Vec::new();
-        for row in 0..3 {
-            for col in 0..WESPEAKER_EMBEDDING_SIZE {
-                embeddings.push(if col == row { 1.0 } else { 0.0 });
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn payload_path_may_not_collide_with_an_input_path() {
+            let mut audio_collision = base_request();
+            audio_collision["output_payload_f32le_path"] = json!("/tmp/full.f32");
+
+            let error = parse_request(&request_string(audio_collision)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+            assert_eq!(error.exit_code(), 64);
+            let detail = error.detail();
+            assert!(detail.contains("output_payload_f32le_path"));
+            assert!(detail.contains("full_audio_f32le_path"));
+
+            let mut model_collision = base_request();
+            model_collision["interval_embedding_payload_f32le_path"] =
+                json!("/models/wespeaker.onnx");
+
+            let error = parse_request(&request_string(model_collision)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+            assert_eq!(error.exit_code(), 64);
+            let detail = error.detail();
+            assert!(detail.contains("interval_embedding_payload_f32le_path"));
+            assert!(detail.contains("models.wespeaker_onnx_path"));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn response_gate_declined_uses_null_diarization_fields() {
+            let value = gate_declined_diarization_value();
+
+            for field in [
+                "intervals",
+                "valid_intervals",
+                "interval_embeddings",
+                "cluster_labels",
+                "statement_labels",
+                "silhouette_k",
+                "effective_k",
+            ] {
+                assert!(value[field].is_null(), "{field} should be null");
             }
         }
 
-        let (value, payload) = diarization_with_interval_embeddings(
-            &intervals,
-            &intervals,
-            &[0, 1, 2],
-            &embeddings,
-            &spans,
-            Some("/tmp/intervals.f32"),
-        )
-        .expect("diarization");
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn interval_embedding_payload_omitted_when_path_null() {
+            let (value, payload) = interval_embedding_payload_value(
+                None,
+                &[1.0_f32; WESPEAKER_EMBEDDING_SIZE],
+                1,
+                &[2],
+            );
 
-        assert_eq!(value["intervals"].as_array().unwrap().len(), 3);
-        assert_eq!(value["valid_intervals"].as_array().unwrap().len(), 3);
-        assert_eq!(
-            value["interval_embeddings"]["interval_indices"],
-            json!([0, 1, 2])
-        );
-        assert_eq!(value["cluster_labels"].as_array().unwrap().len(), 3);
-        assert_eq!(value["statement_labels"].as_array().unwrap().len(), 2);
-        assert!(payload.is_some());
-    }
+            assert!(value.is_null());
+            assert!(payload.is_none());
+        }
 
-    #[test]
-    fn all_statement_spans_skipped_writes_zero_row_payload() {
-        let request = parse_request(&request_string(base_request())).expect("request");
-        let value = statement_embeddings_value(
-            &request,
-            StatementAudioBuffer::Full,
-            Vec::new(),
-            Vec::new(),
-            0,
-            0,
-            request.statement_spans.len(),
-        );
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn interval_embedding_payload_written_with_interval_indices() {
+            let path = "/tmp/intervals.f32";
+            let (value, payload) = interval_embedding_payload_value(
+                Some(path),
+                &[1.0_f32; WESPEAKER_EMBEDDING_SIZE],
+                1,
+                &[2],
+            );
 
-        assert_eq!(value["shape"], json!([0, WESPEAKER_EMBEDDING_SIZE]));
-        assert_eq!(value["byte_count"], 0);
-        assert_eq!(value["admitted_count"], 0);
-        assert_eq!(value["skipped_count"], 2);
-    }
+            assert_eq!(value["payload_path"], path);
+            assert_eq!(value["shape"], json!([1, WESPEAKER_EMBEDDING_SIZE]));
+            assert_eq!(value["byte_count"], WESPEAKER_EMBEDDING_SIZE * 4);
+            assert_eq!(value["interval_indices"], json!([2]));
+            assert_eq!(
+                payload.expect("payload").bytes.len(),
+                WESPEAKER_EMBEDDING_SIZE * 4
+            );
+        }
 
-    #[test]
-    fn missing_model_path_reports_model_unreadable() {
-        let dir = TestDir::new();
-        let audio_path = dir.path("audio.f32");
-        write_f32le(&audio_path, &[0.0; 16]);
-        let mut request = base_request();
-        request["full_audio_f32le_path"] = json!(audio_path);
-        request["models"]["pyannote_segmentation_onnx_path"] = json!(dir.path("missing.onnx"));
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn interval_embedding_payload_not_written_when_gate_declines() {
+            let value = gate_declined_diarization_value();
 
-        let error = run_request(&request_string(request)).unwrap_err();
+            assert!(value["interval_embeddings"].is_null());
+        }
 
-        assert_eq!(error.reason(), "model-unreadable");
-        assert_eq!(error.exit_code(), 69);
-    }
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn synthetic_frame_matrix_emits_diarization_fields() {
+            let intervals = [
+                SpeakerInterval {
+                    start_s: 0.0,
+                    end_s: 0.6,
+                    local_class: 1,
+                },
+                SpeakerInterval {
+                    start_s: 0.7,
+                    end_s: 1.3,
+                    local_class: 2,
+                },
+                SpeakerInterval {
+                    start_s: 1.4,
+                    end_s: 2.0,
+                    local_class: 2,
+                },
+            ];
+            let spans = [
+                StatementSpan {
+                    statement_id: 1,
+                    start_s: Some(0.1),
+                    end_s: Some(0.5),
+                },
+                StatementSpan {
+                    statement_id: 2,
+                    start_s: Some(0.8),
+                    end_s: Some(1.8),
+                },
+            ];
+            let mut embeddings = Vec::new();
+            for row in 0..3 {
+                for col in 0..WESPEAKER_EMBEDDING_SIZE {
+                    embeddings.push(if col == row { 1.0 } else { 0.0 });
+                }
+            }
 
-    #[test]
-    fn unreadable_audio_path_reports_audio_unreadable() {
-        let dir = TestDir::new();
-        let mut request = base_request();
-        request["full_audio_f32le_path"] = json!(dir.path("missing.f32"));
-
-        let error = run_request(&request_string(request)).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-unreadable");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn unsupported_sample_rate_reports_unsupported_sample_rate() {
-        let mut request = base_request();
-        request["sample_rate_hz"] = json!(8000);
-
-        let error = run_request(&request_string(request)).unwrap_err();
-
-        assert_eq!(error.reason(), "unsupported-sample-rate");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn unwritable_output_path_reports_output_unwritable() {
-        let dir = TestDir::new();
-        let payload = PayloadWrite {
-            path: dir.root.to_string_lossy().into_owned(),
-            bytes: vec![1, 2, 3],
-        };
-
-        let error = write_payloads(&[payload]).unwrap_err();
-
-        assert_eq!(error.reason(), "output-unwritable");
-        assert_eq!(error.exit_code(), 75);
-    }
-
-    #[test]
-    fn shipping_closure_excludes_speaker_crates() {
-        let packages = parse_lock_packages(
-            &fs::read_to_string(repo_root().join("core/Cargo.lock")).expect("lock"),
-        );
-        let closure = dependency_closure("solstone-core", &packages);
-
-        assert!(!closure.contains("solstone-core-speakers"));
-        assert!(!closure.contains("solstone-core-speakers-onnx"));
-        assert!(!closure.contains("solstone-core-speakers-analyze"));
-    }
-
-    #[test]
-    fn real_models_short_synthetic_declined_e2e() {
-        let dir = TestDir::new();
-        let audio_path = dir.path("audio.f32");
-        let statement_payload_path = dir.path("statements.f32");
-        let interval_payload_path = dir.path("intervals.f32");
-        write_f32le(&audio_path, &vec![0.0_f32; 8_000]);
-        let root = repo_root();
-        let pyannote_model = root
-            .join("core/models/assets/pyannote-segmentation-3.0.onnx")
-            .to_string_lossy()
-            .into_owned();
-        let wespeaker_model = root
-            .join("core/models/assets/wespeaker-resnet34-256.onnx")
-            .to_string_lossy()
-            .into_owned();
-        let request = json!({
-            "schema": REQUEST_SCHEMA,
-            "sample_rate_hz": 16000,
-            "full_audio_f32le_path": audio_path,
-            "reduced_audio_f32le_path": Value::Null,
-            "models": {
-                "pyannote_segmentation_onnx_path": pyannote_model,
-                "wespeaker_onnx_path": wespeaker_model,
-            },
-            "output_payload_f32le_path": statement_payload_path,
-            "interval_embedding_payload_f32le_path": interval_payload_path.clone(),
-            "statement_embedding": {
-                "spans": [
-                    {"statement_id": 1, "start_s": 0.0, "end_s": 0.5}
-                ],
-            },
-            "diarization": {
-                "spans": [
-                    {"statement_id": 1, "start_s": 0.0, "end_s": 0.5}
-                ],
-            },
-        });
-
-        let response = run_request(&request_string(request)).expect("response");
-
-        assert_eq!(response["schema"], RESPONSE_SCHEMA);
-        let shape = response["statement_embeddings"]["shape"]
-            .as_array()
-            .expect("shape");
-        let rows = shape[0].as_u64().expect("rows") as usize;
-        let cols = shape[1].as_u64().expect("cols") as usize;
-        let reported_bytes = response["statement_embeddings"]["byte_count"]
-            .as_u64()
-            .expect("byte count") as usize;
-        assert_eq!(reported_bytes, rows * cols * 4);
-        assert_eq!(
-            fs::metadata(
-                response["statement_embeddings"]["payload_path"]
-                    .as_str()
-                    .unwrap()
+            let (value, payload) = diarization_with_interval_embeddings(
+                &intervals,
+                &intervals,
+                &[0, 1, 2],
+                &embeddings,
+                &spans,
+                Some("/tmp/intervals.f32"),
             )
-            .expect("statement payload")
-            .len() as usize,
-            reported_bytes
-        );
-        assert!(response["diarization"]["intervals"].is_null());
-        assert!(!Path::new(&interval_payload_path).exists());
+            .expect("diarization");
+
+            assert_eq!(value["intervals"].as_array().unwrap().len(), 3);
+            assert_eq!(value["valid_intervals"].as_array().unwrap().len(), 3);
+            assert_eq!(
+                value["interval_embeddings"]["interval_indices"],
+                json!([0, 1, 2])
+            );
+            assert_eq!(value["cluster_labels"].as_array().unwrap().len(), 3);
+            assert_eq!(value["statement_labels"].as_array().unwrap().len(), 2);
+            assert!(payload.is_some());
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn all_statement_spans_skipped_writes_zero_row_payload() {
+            let request = parse_request(&request_string(base_request())).expect("request");
+            let value = statement_embeddings_value(
+                &request,
+                StatementAudioBuffer::Full,
+                Vec::new(),
+                Vec::new(),
+                0,
+                0,
+                request.statement_spans.len(),
+            );
+
+            assert_eq!(value["shape"], json!([0, WESPEAKER_EMBEDDING_SIZE]));
+            assert_eq!(value["byte_count"], 0);
+            assert_eq!(value["admitted_count"], 0);
+            assert_eq!(value["skipped_count"], 2);
+        }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_filesystem {
+        use super::*;
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn missing_model_path_reports_model_unreadable() {
+            let dir = TestDir::new();
+            let audio_path = dir.path("audio.f32");
+            write_f32le(&audio_path, &[0.0; 16]);
+            let mut request = base_request();
+            request["full_audio_f32le_path"] = json!(audio_path);
+            request["models"]["pyannote_segmentation_onnx_path"] = json!(dir.path("missing.onnx"));
+
+            let error = run_request(&request_string(request)).unwrap_err();
+
+            assert_eq!(error.reason(), "model-unreadable");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn unreadable_audio_path_reports_audio_unreadable() {
+            let dir = TestDir::new();
+            let mut request = base_request();
+            request["full_audio_f32le_path"] = json!(dir.path("missing.f32"));
+
+            let error = run_request(&request_string(request)).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-unreadable");
+            assert_eq!(error.exit_code(), 69);
+        }
+    }
+
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_validation {
+        use super::*;
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn unsupported_sample_rate_reports_unsupported_sample_rate() {
+            let error = validate_sample_rate(8000).unwrap_err();
+
+            assert_eq!(error.reason(), "unsupported-sample-rate");
+            assert_eq!(error.exit_code(), 69);
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_runtime {
+        use super::*;
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn unwritable_output_path_reports_output_unwritable() {
+            let dir = TestDir::new();
+            let payload = PayloadWrite {
+                path: dir.root.to_string_lossy().into_owned(),
+                bytes: vec![1, 2, 3],
+            };
+
+            let error = write_payloads(&[payload]).unwrap_err();
+
+            assert_eq!(error.reason(), "output-unwritable");
+            assert_eq!(error.exit_code(), 75);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn real_models_short_synthetic_declined_e2e() {
+            let dir = TestDir::new();
+            let audio_path = dir.path("audio.f32");
+            let statement_payload_path = dir.path("statements.f32");
+            let interval_payload_path = dir.path("intervals.f32");
+            write_f32le(&audio_path, &vec![0.0_f32; 8_000]);
+            let root = repo_root();
+            let pyannote_model = root
+                .join("core/models/assets/pyannote-segmentation-3.0.onnx")
+                .to_string_lossy()
+                .into_owned();
+            let wespeaker_model = root
+                .join("core/models/assets/wespeaker-resnet34-256.onnx")
+                .to_string_lossy()
+                .into_owned();
+            let request = json!({
+                "schema": REQUEST_SCHEMA,
+                "sample_rate_hz": 16000,
+                "full_audio_f32le_path": audio_path,
+                "reduced_audio_f32le_path": Value::Null,
+                "models": {
+                    "pyannote_segmentation_onnx_path": pyannote_model,
+                    "wespeaker_onnx_path": wespeaker_model,
+                },
+                "output_payload_f32le_path": statement_payload_path,
+                "interval_embedding_payload_f32le_path": interval_payload_path.clone(),
+                "statement_embedding": {
+                    "spans": [
+                        {"statement_id": 1, "start_s": 0.0, "end_s": 0.5}
+                    ],
+                },
+                "diarization": {
+                    "spans": [
+                        {"statement_id": 1, "start_s": 0.0, "end_s": 0.5}
+                    ],
+                },
+            });
+
+            let response = run_request(&request_string(request)).expect("response");
+
+            assert_eq!(response["schema"], RESPONSE_SCHEMA);
+            let shape = response["statement_embeddings"]["shape"]
+                .as_array()
+                .expect("shape");
+            let rows = shape[0].as_u64().expect("rows") as usize;
+            let cols = shape[1].as_u64().expect("cols") as usize;
+            let reported_bytes = response["statement_embeddings"]["byte_count"]
+                .as_u64()
+                .expect("byte count") as usize;
+            assert_eq!(reported_bytes, rows * cols * 4);
+            assert_eq!(
+                fs::metadata(
+                    response["statement_embeddings"]["payload_path"]
+                        .as_str()
+                        .unwrap()
+                )
+                .expect("statement payload")
+                .len() as usize,
+                reported_bytes
+            );
+            assert!(response["diarization"]["intervals"].is_null());
+            assert!(!Path::new(&interval_payload_path).exists());
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
     fn repo_root() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
     }
 
-    #[derive(Debug, Clone)]
-    struct LockPackage {
-        name: String,
-        deps: Vec<String>,
-    }
-
-    fn parse_lock_packages(input: &str) -> Vec<LockPackage> {
-        let mut packages = Vec::new();
-        let mut current_name: Option<String> = None;
-        let mut current_deps = Vec::new();
-        let mut in_package = false;
-        let mut in_deps = false;
-        for line in input.lines() {
-            let trimmed = line.trim();
-            if trimmed == "[[package]]" {
-                if in_package {
-                    packages.push(LockPackage {
-                        name: current_name.take().expect("package name"),
-                        deps: current_deps,
-                    });
-                    current_deps = Vec::new();
-                }
-                in_package = true;
-                in_deps = false;
-            } else if let Some(value) = trimmed.strip_prefix("name = ") {
-                if in_package && current_name.is_none() {
-                    current_name = Some(unquote(value));
-                }
-            } else if trimmed == "dependencies = [" {
-                in_deps = true;
-            } else if in_deps && trimmed == "]" {
-                in_deps = false;
-            } else if in_deps {
-                let dep = trimmed.trim_end_matches(',').trim();
-                if dep.starts_with('"') {
-                    current_deps.push(
-                        unquote(dep)
-                            .split_whitespace()
-                            .next()
-                            .expect("dependency name")
-                            .to_string(),
-                    );
-                }
-            }
-        }
-        if in_package {
-            packages.push(LockPackage {
-                name: current_name.expect("package name"),
-                deps: current_deps,
-            });
-        }
-        packages
-    }
-
-    fn dependency_closure(root: &str, packages: &[LockPackage]) -> HashSet<String> {
-        let by_name: HashMap<&str, &LockPackage> = packages
-            .iter()
-            .map(|package| (package.name.as_str(), package))
-            .collect();
-        assert!(by_name.contains_key(root), "root package {root} not found");
-        let mut visited = HashSet::new();
-        let mut stack = vec![root.to_string()];
-        while let Some(name) = stack.pop() {
-            if !visited.insert(name.clone()) {
-                continue;
-            }
-            let package = by_name
-                .get(name.as_str())
-                .unwrap_or_else(|| panic!("dependency package {name} not found"));
-            for dep in &package.deps {
-                stack.push(dep.clone());
-            }
-        }
-        visited
-    }
-
-    fn unquote(input: &str) -> String {
-        input.trim().trim_matches('"').to_string()
-    }
-
+    #[cfg(feature = "full-tests")]
     struct TestDir {
         root: std::path::PathBuf,
     }
 
+    #[cfg(feature = "full-tests")]
     impl TestDir {
         fn new() -> Self {
             let nonce = SystemTime::now()
@@ -1971,12 +1968,14 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
     impl Drop for TestDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
 
+    #[cfg(feature = "full-tests")]
     fn write_f32le(path: &str, values: &[f32]) {
         let mut bytes = Vec::new();
         for value in values {
@@ -1985,6 +1984,7 @@ mod tests {
         fs::write(path, bytes).expect("write audio");
     }
 
+    #[cfg(feature = "full-tests")]
     fn unit_rows_2d(points: &[(f32, f32)]) -> Vec<f32> {
         let mut out = Vec::with_capacity(points.len() * 2);
         for (x, y) in points {

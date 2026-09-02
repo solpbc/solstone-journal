@@ -46,11 +46,13 @@ pub enum ReasonCode {
     MalformedEvidenceRow,
     AmbiguousSegmentFileName,
     ForeignStreamBinding,
+    PairingIdentityUnavailable,
+    StreamBindingIncomplete,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 40] = [
+    const ALL: [Self; 42] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -91,6 +93,8 @@ impl ReasonCode {
         Self::MalformedEvidenceRow,
         Self::AmbiguousSegmentFileName,
         Self::ForeignStreamBinding,
+        Self::PairingIdentityUnavailable,
+        Self::StreamBindingIncomplete,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -135,6 +139,8 @@ impl ReasonCode {
             Self::MalformedEvidenceRow => "malformed_evidence_row",
             Self::AmbiguousSegmentFileName => "ambiguous_segment_file_name",
             Self::ForeignStreamBinding => "foreign_stream_binding",
+            Self::PairingIdentityUnavailable => "pairing_identity_unavailable",
+            Self::StreamBindingIncomplete => "stream_binding_incomplete",
         }
     }
 }

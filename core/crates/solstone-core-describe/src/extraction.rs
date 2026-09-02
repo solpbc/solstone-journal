@@ -105,7 +105,7 @@ fn find_category<'a>(categories: &'a [CategoryMeta], name: &str) -> Option<&'a C
         .find(|category| category.name == name && category.extractable)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{categories_for_analysis, find_category, parse_response};
     use crate::categories::{CATEGORIES_META, CategoryMeta, OutputKind};

@@ -62,6 +62,7 @@ pub enum HostedServiceKind {
     Sense,
     Cortex,
     Spl,
+    Mcp,
 }
 
 #[cfg(unix)]

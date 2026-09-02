@@ -26,7 +26,7 @@ SERVICE_SENTINELS = frozenset({"think", "setup"})
 NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
 # Commands introduced after the pinned Python oracle that are native journal
 # host commands rather than root-native primitives.
-NATIVE_ADDITIONAL_HOST_COMMANDS = frozenset({"thinking"})
+NATIVE_ADDITIONAL_HOST_COMMANDS = frozenset({"mcp", "thinking"})
 # Commands that remain in the pinned Python oracle but have been retired from
 # the live journal host grammar.
 RETIRED_HOST_COMMANDS = frozenset({"export", "warm", "maint", "observer", "restart-convey"})

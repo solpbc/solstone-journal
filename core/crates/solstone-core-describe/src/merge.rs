@@ -172,7 +172,7 @@ pub(crate) fn build_incremental_merge_plan(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;

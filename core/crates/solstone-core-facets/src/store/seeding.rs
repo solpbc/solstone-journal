@@ -562,7 +562,7 @@ fn add_seed_observation(
     content: &str,
     source_day: Option<&str>,
 ) -> Result<(Vec<Value>, usize), ObservationWriteError> {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     if take_forced_observation_timeout() {
         return Err(forced_observation_timeout());
     }
@@ -576,23 +576,23 @@ fn add_seed_observation(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 use std::cell::Cell;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 thread_local! { static FORCE_OBSERVATION_TIMEOUT: Cell<bool> = const { Cell::new(false) }; }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn take_forced_observation_timeout() -> bool {
     FORCE_OBSERVATION_TIMEOUT.with(|forced| forced.replace(false))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn set_forced_observation_timeout() {
     FORCE_OBSERVATION_TIMEOUT.with(|forced| forced.set(true));
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn forced_observation_timeout() -> ObservationWriteError {
     use std::time::Duration;
 
@@ -606,7 +606,7 @@ fn forced_observation_timeout() -> ObservationWriteError {
     )))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::store_tests::TempDir;

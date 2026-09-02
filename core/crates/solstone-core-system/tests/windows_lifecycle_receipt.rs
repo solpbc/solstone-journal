@@ -10,6 +10,7 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use filetime::{FileTime, set_file_mtime};
 use solstone_core_system::lifecycle::{
@@ -20,7 +21,8 @@ use solstone_core_system::lifecycle::{
     run_with_windows_lifecycle_deletion_failure, supervisor_liveness, v2_heartbeat_filename,
 };
 use solstone_core_system::process::{
-    windows_filetime_value_from_raw_for_test,
+    Disposition, ManagedLaunchRequest, ManagedProcess, SpawnOptions, TerminationError,
+    TerminationOutcome, launch_managed_request, windows_filetime_value_from_raw_for_test,
     windows_job_duplicate_handle_negative_control_for_test,
     windows_job_process_no_inheritance_premise_for_test,
     windows_job_process_owner_receipt_for_test,
@@ -643,4 +645,72 @@ fn windows_job_last_handle_negative_receipt() {
     windows_job_duplicate_handle_negative_control_for_test()
         .expect("prove the final Job handle owns the complete process tree");
     println!("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass");
+}
+
+#[test]
+#[ignore = "requires native Windows Job and process APIs"]
+fn windows_managed_process_facade_receipt() {
+    let root = tempfile::tempdir().expect("create managed-process receipt root");
+    let fixture = env!("CARGO_BIN_EXE_solstone-system-test-child");
+    let options = |reference: &str| SpawnOptions {
+        journal_root: root.path().to_path_buf(),
+        reference: reference.to_owned(),
+        day: Some("20260902".to_owned()),
+        sink: None,
+        environment: Default::default(),
+    };
+
+    let mut lines = ManagedProcess::spawn(
+        vec![fixture.to_owned(), "lines".to_owned()],
+        options("windows-managed-lines"),
+    )
+    .expect("public managed-process facade launches fixture");
+    assert!(lines.pid() > 0, "managed Job root has a nonzero PID");
+    let name = lines.name().to_owned();
+    assert_eq!(lines.wait().expect("wait for line fixture"), 0);
+    lines.cleanup();
+    let log = fs::read_to_string(lines.log_path()).expect("read managed operational log");
+    assert!(log.contains(&format!("[{name}:stdout] stdout-line")));
+    assert!(log.contains(&format!("[{name}:stderr] stderr-line")));
+
+    let authority = launch_managed_request(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(2),
+        },
+        ManagedLaunchRequest {
+            command: vec![fixture.to_owned(), "sleep".to_owned()],
+            options: options("windows-managed-authority"),
+        },
+    )
+    .expect("managed launch request is admitted through the public facade");
+    let mut sleeping = authority
+        .into_managed()
+        .expect("managed launch authority retains its Job process");
+    let expired = sleeping
+        .terminate_exact_until(Instant::now())
+        .expect_err("expired deadline must not start a Job termination");
+    assert!(matches!(
+        expired,
+        TerminationError::Io(ref error) if error.kind() == io::ErrorKind::TimedOut
+    ));
+    assert!(
+        sleeping
+            .poll()
+            .expect("query helper after expired deadline")
+            .is_none(),
+        "expired deadline leaves the Job-owned helper alive"
+    );
+    assert!(matches!(
+        sleeping
+            .terminate(Duration::from_secs(2))
+            .expect("Job-owned helper terminates within its bounded window"),
+        TerminationOutcome::EscalatedAndReaped { exit_code: Some(_) }
+    ));
+    assert!(
+        sleeping.poll().expect("query terminated helper").is_some(),
+        "terminated helper is reaped"
+    );
+    sleeping.cleanup();
+
+    println!("JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE=executed/pass");
 }

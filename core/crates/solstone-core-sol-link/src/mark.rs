@@ -242,7 +242,7 @@ impl MarkAssets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use crate::ca::jid_from_spki;
 

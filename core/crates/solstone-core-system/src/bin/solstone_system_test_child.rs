@@ -3,7 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -13,6 +13,8 @@ use solstone_core_system::lifecycle::{
     acknowledge_hosted_child_admission, arm_parent_loss_coordinator_termination_guard,
 };
 use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
+#[cfg(unix)]
+use std::path::Path;
 
 fn writer_id() -> WriterId {
     WriterId::parse("0123456789abcdef0123456789abcdef").expect("writer ID")
@@ -46,6 +48,60 @@ fn main() {
                 .expect("arm parent-loss termination guard");
             std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
+        }
+        #[cfg(windows)]
+        "echo-stdin" => {
+            let mut input = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut input)
+                .expect("read bounded helper input");
+            std::io::stdout()
+                .write_all(&input)
+                .expect("write bounded helper output");
+        }
+        #[cfg(windows)]
+        "write-stdout" => {
+            let count = args
+                .next()
+                .expect("output byte count")
+                .parse::<usize>()
+                .expect("numeric output byte count");
+            std::io::stdout()
+                .write_all(&vec![b'x'; count])
+                .expect("write bounded stdout fixture");
+        }
+        #[cfg(windows)]
+        "environment-present" => {
+            let name = args.next().expect("environment variable name");
+            println!(
+                "{}",
+                if std::env::var_os(name).is_some() {
+                    "present"
+                } else {
+                    "absent"
+                }
+            );
+        }
+        #[cfg(windows)]
+        "environment-empty" => {
+            let name = args.next().expect("environment variable name");
+            println!(
+                "{}",
+                match std::env::var_os(name) {
+                    Some(value) if value.is_empty() => "empty",
+                    Some(_) => "present",
+                    None => "absent",
+                }
+            );
+        }
+        #[cfg(windows)]
+        "current-directory" => {
+            println!(
+                "{}",
+                std::env::current_dir()
+                    .expect("read child current directory")
+                    .display()
+            );
         }
         #[cfg(windows)]
         "exit-code" => {
@@ -381,9 +437,15 @@ fn main() {
 }
 
 fn fixture_ready_marker() -> String {
+    // The trailing pid field must stay last: some callers extract it via
+    // `rsplit(':').next()`. The speakers-analyze generation-id field is
+    // inserted before it (never appended after) so that extraction, and the
+    // `"ready:1"` prefix substring check some callers use, both keep working
+    // unchanged.
     format!(
-        "ready:{}:{}",
+        "ready:{}:{}:{}",
         std::env::var("SOL_SUPERVISOR_SPAWNED").unwrap_or_default(),
+        u8::from(std::env::var_os("SOL_SPEAKERS_ANALYZE_INSTALL_GENERATION_ID").is_some()),
         std::process::id()
     )
 }

@@ -9,17 +9,30 @@ pub mod archive_census;
 pub mod archive_contract;
 pub mod archive_seal;
 pub mod archive_taxonomy;
+pub mod artifact_verify;
+pub mod ced_windows;
+pub mod ced_windows_source;
 pub mod cleanroom;
+#[doc(hidden)]
+pub mod cli_sign;
+pub mod controlled_build;
 pub mod deb;
 pub mod digest;
 pub mod elf;
+pub mod import_policy;
 pub mod inspect;
 pub mod inventory;
 pub mod lanes;
+pub mod layout;
 pub mod macho;
 pub mod manifest_verify;
 pub mod onnx_runtime;
+pub mod onnx_windows;
+pub mod onnx_windows_source;
+pub mod parakeet_windows;
+pub mod parakeet_windows_source;
 pub mod pdfium;
+pub mod pe;
 pub mod produce;
 pub mod promote;
 pub mod provenance;
@@ -31,6 +44,7 @@ pub mod select;
 pub mod sign;
 pub mod stage;
 pub mod tar;
+pub mod windows_payload;
 pub mod zip;
 
 use std::fs;
@@ -354,7 +368,11 @@ fn arch_mapping_modes_and_clean_package_depends() {
         0o644,
     )
     .unwrap();
-    for target in inventory.target.iter().filter(|target| !target.is_macos()) {
+    for target in inventory
+        .target
+        .iter()
+        .filter(|target| target.os == inventory::OS_LINUX)
+    {
         let out = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-arch-out-{}",
             target.id
@@ -785,7 +803,7 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
 #[test]
 fn promotion_is_atomic_after_each_successive_write() {
     let prior = b"previous-tree";
-    for step in promote::PromoteStep::for_os("linux") {
+    for step in promote::PromoteStep::for_os("linux").expect("linux") {
         let dest = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-promote-dest-{}",
             step.as_str()
@@ -901,7 +919,7 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             && inventory.artifact.basename.contains("{arch}"),
         "inventory basename must stay a template"
     );
-    assert_eq!(inventory.target.len(), 3);
+    assert_eq!(inventory.target.len(), 4);
     assert_eq!(
         inventory
             .target
@@ -910,7 +928,11 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             .count(),
         1
     );
-    for target in inventory.target.iter().filter(|target| !target.is_macos()) {
+    for target in inventory
+        .target
+        .iter()
+        .filter(|target| target.os == inventory::OS_LINUX)
+    {
         let dest = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-basename-dest-{}",
             target.id

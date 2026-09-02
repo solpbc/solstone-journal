@@ -75,6 +75,7 @@ pub struct LockOptions {
 mod windows_tests {
     use std::fs::{self, File};
     use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::fs::symlink_file;
     use std::os::windows::io::AsRawHandle;
     use std::time::Duration;
 
@@ -90,6 +91,17 @@ mod windows_tests {
         let locks = temporary.path().join("locks");
         fs::create_dir(&locks).unwrap();
         (temporary, locks)
+    }
+
+    fn path_identity(path: &Path) -> LockEntryIdentity {
+        let file = open_windows_path(
+            path,
+            FILE_READ_ATTRIBUTES,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap();
+        lock_entry_identity_windows(&file).unwrap()
     }
 
     #[test]
@@ -265,6 +277,123 @@ mod windows_tests {
         );
         assert!(fresh.is_ok());
     }
+
+    #[test]
+    fn stable_directory_lock_entry_is_unsafe() {
+        let (_temporary, locks) = layout();
+        fs::create_dir(locks.join("entry")).unwrap();
+        let error = acquire_existing_parent_lock(
+            &locks,
+            OsStr::new("entry"),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            ExistingParentLockError::UnsafeLockEntry {
+                kind: "directory",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn wrong_kind_replacement_between_observations_is_not_unsafe() {
+        let (_temporary, locks) = layout();
+        let entry = locks.join("entry");
+        let displaced = locks.join("displaced");
+        let replacement = locks.join("replacement");
+        fs::create_dir(&entry).unwrap();
+        fs::write(entry.join("sentinel"), b"old").unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(replacement.join("sentinel"), b"new").unwrap();
+
+        let (result, consumed) = with_windows_wrong_kind_replacement_hook(
+            entry.clone(),
+            displaced.clone(),
+            replacement,
+            || {
+                acquire_existing_parent_lock(
+                    &locks,
+                    OsStr::new("entry"),
+                    Duration::from_secs(1),
+                    Duration::from_millis(10),
+                )
+            },
+        );
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(ExistingParentLockError::NamespaceChanged { .. })
+        ));
+        assert_eq!(fs::read(displaced.join("sentinel")).unwrap(), b"old");
+        assert_eq!(fs::read(entry.join("sentinel")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn successful_reparse_open_still_checks_the_second_named_observation() {
+        let (_temporary, locks) = layout();
+        let entry = locks.join("entry");
+        let displaced = locks.join("displaced");
+        let replacement = locks.join("replacement");
+        let old_target = locks.join("old-target");
+        let new_target = locks.join("new-target");
+        fs::write(&old_target, b"old").unwrap();
+        fs::write(&new_target, b"new").unwrap();
+        symlink_file(&old_target, &entry).unwrap();
+        symlink_file(&new_target, &replacement).unwrap();
+        let old_link_identity = path_identity(&entry);
+        let new_link_identity = path_identity(&replacement);
+        let (result, consumed) = with_windows_wrong_kind_replacement_hook(
+            entry.clone(),
+            displaced.clone(),
+            replacement,
+            || {
+                acquire_existing_parent_lock(
+                    &locks,
+                    OsStr::new("entry"),
+                    Duration::from_secs(1),
+                    Duration::from_millis(10),
+                )
+            },
+        );
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(ExistingParentLockError::NamespaceChanged { .. })
+        ));
+        assert_eq!(path_identity(&displaced), old_link_identity);
+        assert_eq!(path_identity(&entry), new_link_identity);
+        assert_eq!(fs::read(&old_target).unwrap(), b"old");
+        assert_eq!(fs::read(&new_target).unwrap(), b"new");
+    }
+
+    #[test]
+    fn successful_reparse_open_classification_failures_remain_io() {
+        for ordinal in [2, 3] {
+            let (_temporary, locks) = layout();
+            let target = locks.join("target");
+            let entry = locks.join("entry");
+            fs::write(&target, b"target").unwrap();
+            symlink_file(&target, &entry).unwrap();
+            let link_identity = path_identity(&entry);
+            let target_identity = path_identity(&target);
+            let (result, consumed) = with_windows_lock_entry_observation_fault(ordinal, || {
+                acquire_existing_parent_lock(
+                    &locks,
+                    OsStr::new("entry"),
+                    Duration::from_secs(1),
+                    Duration::from_millis(10),
+                )
+            });
+            assert!(consumed, "classification fault ordinal {ordinal}");
+            assert!(matches!(result, Err(ExistingParentLockError::Io { .. })));
+            assert_eq!(path_identity(&entry), link_identity);
+            assert_eq!(path_identity(&target), target_identity);
+            assert_eq!(fs::read(&target).unwrap(), b"target");
+        }
+    }
 }
 
 #[cfg(all(test, windows))]
@@ -363,6 +492,135 @@ fn with_windows_entry_replacement_hook<T>(
             .borrow_mut()
             .take()
             .expect("Windows entry replacement paths remain active")
+    });
+    drop(restore);
+    (result, state.consumed)
+}
+
+#[cfg(all(test, windows))]
+thread_local! {
+    static WINDOWS_WRONG_KIND_REPLACEMENT_PATHS: std::cell::RefCell<Option<(PathBuf, PathBuf, PathBuf)>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static WINDOWS_WRONG_KIND_REPLACEMENT_CONSUMED: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
+#[cfg(all(test, windows))]
+fn run_windows_wrong_kind_replacement_hook() {
+    WINDOWS_WRONG_KIND_REPLACEMENT_PATHS.with(|paths| {
+        let Some((entry, displaced, replacement)) = paths.borrow_mut().take() else {
+            return;
+        };
+        fs::rename(&entry, displaced).unwrap();
+        fs::rename(replacement, entry).unwrap();
+        WINDOWS_WRONG_KIND_REPLACEMENT_CONSUMED.with(|consumed| consumed.set(true));
+    });
+}
+
+#[cfg(all(windows, not(test)))]
+fn run_windows_wrong_kind_replacement_hook() {}
+
+#[cfg(all(test, windows))]
+pub(crate) fn with_windows_wrong_kind_replacement_hook<T>(
+    entry: PathBuf,
+    displaced: PathBuf,
+    replacement: PathBuf,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    WINDOWS_WRONG_KIND_REPLACEMENT_PATHS.with(|paths| {
+        assert!(
+            paths.borrow().is_none(),
+            "Windows wrong-kind replacement hook is already active"
+        );
+        *paths.borrow_mut() = Some((entry, displaced, replacement));
+    });
+    WINDOWS_WRONG_KIND_REPLACEMENT_CONSUMED.with(|consumed| consumed.set(false));
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WINDOWS_WRONG_KIND_REPLACEMENT_PATHS.with(|paths| {
+                paths.borrow_mut().take();
+            });
+            WINDOWS_WRONG_KIND_REPLACEMENT_CONSUMED.with(|consumed| consumed.set(false));
+        }
+    }
+    let restore = Restore;
+    let result = operation();
+    let consumed = WINDOWS_WRONG_KIND_REPLACEMENT_CONSUMED.with(std::cell::Cell::get);
+    drop(restore);
+    (result, consumed)
+}
+
+#[cfg(all(test, windows))]
+struct WindowsLockEntryObservationFaultState {
+    ordinal: usize,
+    seen: usize,
+    consumed: bool,
+}
+
+#[cfg(all(test, windows))]
+thread_local! {
+    static WINDOWS_LOCK_ENTRY_OBSERVATION_FAULT: std::cell::RefCell<Option<WindowsLockEntryObservationFaultState>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(all(test, windows))]
+fn windows_lock_entry_observation_fault() -> io::Result<()> {
+    WINDOWS_LOCK_ENTRY_OBSERVATION_FAULT.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(state) = state.as_mut() else {
+            return Ok(());
+        };
+        state.seen += 1;
+        if state.seen == state.ordinal {
+            state.consumed = true;
+            return Err(io::Error::from_raw_os_error(
+                windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
+            ));
+        }
+        Ok(())
+    })
+}
+
+#[cfg(all(windows, not(test)))]
+fn windows_lock_entry_observation_fault() -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(test, windows))]
+pub(crate) fn with_windows_lock_entry_observation_fault<T>(
+    ordinal: usize,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    WINDOWS_LOCK_ENTRY_OBSERVATION_FAULT.with(|state| {
+        assert!(
+            state.borrow().is_none(),
+            "Windows lock-entry observation fault is already active"
+        );
+        *state.borrow_mut() = Some(WindowsLockEntryObservationFaultState {
+            ordinal,
+            seen: 0,
+            consumed: false,
+        });
+    });
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WINDOWS_LOCK_ENTRY_OBSERVATION_FAULT.with(|state| {
+                state.borrow_mut().take();
+            });
+        }
+    }
+    let restore = Restore;
+    let result = operation();
+    let state = WINDOWS_LOCK_ENTRY_OBSERVATION_FAULT.with(|state| {
+        state
+            .borrow_mut()
+            .take()
+            .expect("Windows lock-entry observation fault remains active")
     });
     drop(restore);
     (result, state.consumed)
@@ -886,6 +1144,33 @@ struct LockEntryIdentity {
 }
 
 #[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsLockEntryKind {
+    Regular,
+    Directory,
+    ReparsePoint,
+}
+
+#[cfg(windows)]
+impl WindowsLockEntryKind {
+    const fn unsafe_label(self) -> Option<&'static str> {
+        match self {
+            Self::Regular => None,
+            Self::Directory => Some("directory"),
+            Self::ReparsePoint => Some("reparse point"),
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Debug)]
+struct ObservedWindowsLockEntry {
+    _file: File,
+    identity: LockEntryIdentity,
+    kind: WindowsLockEntryKind,
+}
+
+#[cfg(windows)]
 pub fn acquire_existing_parent_lock(
     parent: &Path,
     name: &OsStr,
@@ -938,6 +1223,67 @@ fn acquire_lock_in_parent_windows(
 ) -> Result<WindowsLockGuard, ExistingParentLockError> {
     let deadline = Instant::now() + timeout;
     loop {
+        let observed = observe_lock_entry_windows(parent, name, path)?;
+        if let Some(first) = observed
+            .as_ref()
+            .filter(|entry| entry.kind.unsafe_label().is_some())
+        {
+            match nt_create_relative(
+                parent.as_handle().as_raw_handle(),
+                name.as_os_str(),
+                GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
+                FILE_OPEN_IF,
+                FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+            ) {
+                Ok(opened) => {
+                    let opened = classify_windows_lock_entry(File::from(opened), path)?;
+                    run_windows_wrong_kind_replacement_hook();
+                    let second = observe_lock_entry_windows(parent, name, path)?;
+                    let Some(second) = second else {
+                        return Err(ExistingParentLockError::NamespaceChanged {
+                            path: path.to_path_buf(),
+                        });
+                    };
+                    if first.identity == opened.identity
+                        && first.identity == second.identity
+                        && first.kind == opened.kind
+                        && first.kind == second.kind
+                    {
+                        return Err(ExistingParentLockError::UnsafeLockEntry {
+                            path: path.to_path_buf(),
+                            kind: first
+                                .kind
+                                .unsafe_label()
+                                .expect("wrong-kind observation has an unsafe label"),
+                        });
+                    }
+                    return Err(ExistingParentLockError::NamespaceChanged {
+                        path: path.to_path_buf(),
+                    });
+                }
+                Err(_primary_error) => {
+                    run_windows_wrong_kind_replacement_hook();
+                    let second = observe_lock_entry_windows(parent, name, path)?;
+                    let Some(second) = second else {
+                        return Err(ExistingParentLockError::NamespaceChanged {
+                            path: path.to_path_buf(),
+                        });
+                    };
+                    if first.identity == second.identity && first.kind == second.kind {
+                        return Err(ExistingParentLockError::UnsafeLockEntry {
+                            path: path.to_path_buf(),
+                            kind: first
+                                .kind
+                                .unsafe_label()
+                                .expect("wrong-kind observation has an unsafe label"),
+                        });
+                    }
+                    return Err(ExistingParentLockError::NamespaceChanged {
+                        path: path.to_path_buf(),
+                    });
+                }
+            }
+        }
         let file = nt_create_relative(
             parent.as_handle().as_raw_handle(),
             name.as_os_str(),
@@ -946,15 +1292,7 @@ fn acquire_lock_in_parent_windows(
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         )
         .map(File::from)
-        .map_err(|source| match source.raw_os_error() {
-            Some(code) if code == ERROR_DIRECTORY as i32 => {
-                ExistingParentLockError::UnsafeLockEntry {
-                    path: path.to_path_buf(),
-                    kind: "directory",
-                }
-            }
-            _ => existing_io("open persistent lock entry", path, source),
-        })?;
+        .map_err(|source| existing_io("open persistent lock entry", path, source))?;
         validate_lock_entry_windows(&file, path)?;
 
         match try_lock_exclusive(file) {
@@ -980,6 +1318,62 @@ fn acquire_lock_in_parent_windows(
             }
         }
     }
+}
+
+#[cfg(windows)]
+fn observe_lock_entry_windows(
+    parent: &impl AsHandle,
+    name: &NormalLockName,
+    path: &Path,
+) -> Result<Option<ObservedWindowsLockEntry>, ExistingParentLockError> {
+    let file = match nt_create_relative(
+        parent.as_handle().as_raw_handle(),
+        name.as_os_str(),
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_OPEN,
+        FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    ) {
+        Ok(file) => File::from(file),
+        Err(source)
+            if matches!(
+                source.raw_os_error(),
+                Some(code)
+                    if code == ERROR_FILE_NOT_FOUND as i32
+                        || code == ERROR_PATH_NOT_FOUND as i32
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(source) => {
+            return Err(existing_io("inspect persistent lock entry", path, source));
+        }
+    };
+    classify_windows_lock_entry(file, path).map(Some)
+}
+
+#[cfg(windows)]
+fn classify_windows_lock_entry(
+    file: File,
+    path: &Path,
+) -> Result<ObservedWindowsLockEntry, ExistingParentLockError> {
+    windows_lock_entry_observation_fault()
+        .map_err(|source| existing_io("classify persistent lock entry", path, source))?;
+    let attributes = attribute_tag_windows(&file)
+        .map_err(|source| existing_io("stat persistent lock entry", path, source))?;
+    let kind = if is_reparse_point_windows(attributes) {
+        WindowsLockEntryKind::ReparsePoint
+    } else if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        WindowsLockEntryKind::Directory
+    } else {
+        WindowsLockEntryKind::Regular
+    };
+    let identity = lock_entry_identity_windows(&file)
+        .map_err(|source| existing_io("stat persistent lock entry", path, source))?;
+    Ok(ObservedWindowsLockEntry {
+        _file: file,
+        identity,
+        kind,
+    })
 }
 
 #[cfg(windows)]

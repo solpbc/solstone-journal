@@ -93,6 +93,8 @@ pub struct Class {
     pub entry: EntryKind,
     /// Stem suffixes never pruned, however old.
     pub exempt_stem_suffixes: &'static [&'static str],
+    /// Leaf prefixes never pruned, however old.
+    pub exempt_leaf_prefixes: &'static [&'static str],
 }
 
 /// Every class, mirroring the reference's `CLASS_NAMES` plus the one it omitted.
@@ -111,6 +113,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::ExpandedDir,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &["oplog--"],
     },
     Class {
         name: "talent_run_logs",
@@ -123,6 +126,7 @@ pub const CLASSES: &[Class] = &[
         entry: EntryKind::File,
         // ⛔ A live run's log. Deleting it truncates a talent mid-run.
         exempt_stem_suffixes: &["_active"],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "talent_day_index",
@@ -131,6 +135,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "cogitate_history_cache",
@@ -142,6 +147,7 @@ pub const CLASSES: &[Class] = &[
         // resolves and refuses such a link instead of unlinking it. Keep it out
         // of this class until the door can offer an explicit link-only primitive.
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "tokens",
@@ -150,6 +156,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "local_inference",
@@ -158,6 +165,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "awareness_logs",
@@ -166,6 +174,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "config_actions",
@@ -174,6 +183,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     Class {
         name: "facet_logs",
@@ -185,6 +195,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
     // 🔴 The row the reference does not have.
     Class {
@@ -194,6 +205,7 @@ pub const CLASSES: &[Class] = &[
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
     },
 ];
 
@@ -493,6 +505,14 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                     .exempt_stem_suffixes
                     .iter()
                     .any(|suffix| stem.ends_with(suffix))
+                {
+                    built.retained.push(retained(Kept::Exempt));
+                    continue;
+                }
+                if class
+                    .exempt_leaf_prefixes
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
                 {
                     built.retained.push(retained(Kept::Exempt));
                     continue;

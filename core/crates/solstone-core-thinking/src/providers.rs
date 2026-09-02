@@ -214,17 +214,21 @@ fn validation_request() -> GenerateRequest {
 
 fn client_failure(error: ClientError) -> Value {
     match error {
-        ClientError::Resolve(error) => {
+        ClientError::Resolve(error) | ClientError::Decode(error) => {
             json!({"valid":false,"reason_code":"validation_unavailable","error":error})
         }
-        ClientError::Io(error) => {
-            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        error @ (ClientError::Io { .. }
+        | ClientError::ProcessIo(_)
+        | ClientError::InvalidResponse(_)
+        | ClientError::UnexpectedChild(_)) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error.to_string()})
         }
-        ClientError::Protocol(error) => {
-            json!({"valid":false,"reason_code":error.reason,"error":error.detail})
-        }
-        ClientError::Decode(error) => {
-            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        error @ ClientError::Protocol(_) => {
+            let reason = match &error {
+                ClientError::Protocol(failure) => failure.error.reason.clone(),
+                _ => unreachable!("matched protocol error"),
+            };
+            json!({"valid":false,"reason_code":reason,"error":error.to_string()})
         }
     }
 }
@@ -796,7 +800,7 @@ fn default_model_for(provider: &str) -> &'static str {
     match provider {
         "google" => "gemini-3.5-flash",
         "openai" => "gpt-5.4-mini",
-        "anthropic" => "claude-sonnet-4-6",
+        "anthropic" => "claude-sonnet-5",
         "local" => local::default_model(),
         _ => "",
     }
@@ -921,8 +925,9 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use solstone_core_generate::{
-        ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
-        ProtocolError, ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse,
+        CapturedStream, ChildStatus, ClientError, ContentPart, GenerateRequest, GenerateResponse,
+        GeneratedResponse, ProtocolError, ProtocolFailure, ReasonCode, ReasonCodeValue,
+        RefusalReason, RefusedResponse,
     };
     #[cfg(unix)]
     use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
@@ -1069,6 +1074,44 @@ mod tests {
             config["services"]["confidential"]["prior_active"]["model"],
             "gemini-3.5-flash"
         );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn provider_switch_without_a_model_falls_back_to_the_current_anthropic_mid_tier() {
+        let journal = temporary_journal(
+            "switch-anthropic-fallback",
+            json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"}}}),
+        );
+        let result = update_providers(
+            &journal,
+            ProviderUpdate {
+                lane: "byo".to_owned(),
+                provider: "anthropic".to_owned(),
+                model: None,
+                resolution_targets: vec![],
+            },
+            Value::Null,
+        );
+        assert!(result.is_ok(), "provider switch is allowed: {result:?}");
+        let config = read_config(&journal).expect("config reads");
+        assert_eq!(config["providers"]["active"]["model"], "claude-sonnet-5");
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn default_model_for_agrees_with_payload_mid_tier_for_every_cloud_provider() {
+        let journal = temporary_journal("default-model-mid-tier", json!({}));
+        let payload = super::payload(&journal, &Map::new(), "", Value::Null);
+        for provider in ["google", "openai", "anthropic"] {
+            let mid = payload["model_tiers"][provider]
+                .as_array()
+                .expect("model_tiers is an array")
+                .iter()
+                .find(|entry| entry["tier"] == "mid")
+                .and_then(|entry| entry["model"].as_str());
+            assert_eq!(mid, Some(super::default_model_for(provider)), "{provider}");
+        }
         let _ = fs::remove_dir_all(journal);
     }
 
@@ -1423,14 +1466,26 @@ mod tests {
 
     #[test]
     fn classify_key_transport_failure_is_invalid() {
-        let result = classify_key_probe(Err(ClientError::Protocol(ProtocolError {
-            id: None,
-            reason: "stub_failure".to_owned(),
-            detail: "one-shot stub hard failure".to_owned(),
-        })));
+        let result = classify_key_probe(Err(ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "stub_failure".to_owned(),
+                detail: "one-shot stub hard failure".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
+        }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
-        assert_eq!(result["error"], "one-shot stub hard failure");
+        assert_eq!(
+            result["error"],
+            "protocol stub_failure (exit 70): one-shot stub hard failure; stdin_closed_early=false; stdout=; stderr="
+        );
     }
 
     #[test]
@@ -1467,14 +1522,26 @@ mod tests {
 
     #[test]
     fn classify_model_transport_failure_is_invalid() {
-        let result = classify_model_probe(Err(ClientError::Protocol(ProtocolError {
-            id: None,
-            reason: "stub_failure".to_owned(),
-            detail: "one-shot stub hard failure".to_owned(),
-        })));
+        let result = classify_model_probe(Err(ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "stub_failure".to_owned(),
+                detail: "one-shot stub hard failure".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
+        }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
-        assert_eq!(result["error"], "one-shot stub hard failure");
+        assert_eq!(
+            result["error"],
+            "protocol stub_failure (exit 70): one-shot stub hard failure; stdin_closed_early=false; stdout=; stderr="
+        );
     }
 
     // The prompt, token budget, thinking budget, retry count, and timeout are

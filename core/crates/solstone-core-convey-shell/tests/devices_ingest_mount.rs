@@ -23,6 +23,20 @@ fn write_config(root: &std::path::Path, bytes: &[u8]) {
 fn established_journal() -> tempfile::TempDir {
     let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
     write_config(dir.path(), br#"{"setup":{"completed_at":1767225600}}"#);
+    fs::create_dir_all(dir.path().join("link")).expect("link directory");
+    fs::write(
+        dir.path().join("link/authorized_clients.json"),
+        json!([{
+            "fingerprint": CID_A,
+            "device_label": "fixture device",
+            "paired_at": "2026-01-01T00:00:00Z",
+            "instance_id": "fixture-instance",
+            "role": "",
+            "kind": "cert",
+        }])
+        .to_string(),
+    )
+    .expect("pairing identity");
     dir
 }
 

@@ -72,7 +72,7 @@ impl DescribeSessionFactory for SystemSessionFactory {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
 

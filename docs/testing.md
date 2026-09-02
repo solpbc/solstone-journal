@@ -7,13 +7,15 @@ dependency-free `unittest` suite under
 `tools/journal_device_sim/tests/`; run it with `make check-journal-device-sim`.
 
 - **Framework**: Cargo, for the native Rust workspace
-- **Unit Tests**: live beside their crate, under `core/crates/<crate>/src/` and `core/crates/<crate>/tests/`
-  - Fast, with mocked process/thread/clock/network/repository boundaries
-  - No external API calls, real browser, heavyweight build, or shared fixture writes
-  - Read `tests/fixtures/journal/` mock data; copy it, or use a temporary directory,
-    for any scan, index rebuild, or mutation
-- **Integration Tests**: Cargo integration targets, grouped into named legs by
-  `core/ci/suites.toml` and validated by `make check-rust-ci-topology`
+- **Unit tests**: live beside their crate under `core/crates/<crate>/src/`; they exercise deterministic same-crate logic or cheap source/static contracts without crossing a product filesystem, process, service, network, platform, or native-runtime boundary
+- **Broader same-crate tests**: may also live under `src/`, but the classified modules use each package's non-default `full-tests` feature and execute through package-specific classified targets; those targets are default `ci-full` entries and also preserve the legacy full-workspace preflight
+- **Integration tests**: Cargo integration targets under `core/crates/<crate>/tests/`, grouped into named legs by `core/ci/suites.toml` and validated by `make check-rust-ci-topology`
+
+| Packages | Routine selection | Broader same-crate selection | Integration selection |
+|---|---|---|---|
+| `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, `solstone-core-vad-analyze` | `--no-default-features --lib`; runtime-free unit modules only | `full-tests` activates the normal `runtime` feature; `make check-rust-onnx-test` runs serially with the pinned ONNX Runtime | `solstone-core-vad-analyze::vad_oracles`; separate full-registry target |
+
+These packages keep `runtime` in their default feature set, so ordinary production builds and supported-target checks continue to compile the shipped ONNX code. The routine no-default-feature route is narrower by design: it checks deterministic parsing, validation, provider planning, path construction, windowing, timestamp reduction, and response shaping without native linking or runtime setup. Product-filesystem, model, provider, inference, process, platform, and integration evidence stays on the full routes above.
 
 ## Fixture Journal
 
@@ -35,16 +37,7 @@ needed input into a temporary directory such as `tempfile::TempDir`.
 - `make test` runs selected Rust library/binary unit harnesses and reports its
   source-derived omission boundary
 - `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests
-- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane:
-  formatting, the CI-topology contract, library/binary Clippy checks, and
-  serialized library/binary unit tests. Four library harnesses,
-  `solstone-core-sol-link`, `solstone-core-convey-body`,
-  `solstone-core-facets`, and `solstone-core-describe`, are omitted from the
-  routine unit run and run as default package suites in `make ci-full`.
-  Routine execution also excludes the host-native
-  `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and
-  `solstone-core-vad-analyze` packages; the default `onnx-host-tests` leg
-  covers them.
+- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane: formatting, the CI-topology contract, library/binary Clippy checks, and serialized library/binary unit tests. The formerly duration-excluded `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe` packages are now split by behavior: deterministic in-memory and static-contract modules run routinely, while their filesystem, SQLite, HTTP/TLS workflow, corpus/oracle, and native/media modules require `full-tests` and run through package-specific default classified full-test legs in `make ci-full`. The existing `clippy-full` entry invokes package-specific feature-enabled Clippy targets so those broader modules retain `-D warnings` evidence. For `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and `solstone-core-vad-analyze`, it statically checks the default production closure and runs the runtime-free library closure. Their broader same-crate tests use `full-tests` with the normal runtime feature and remain in the staged full gate.
 - The topology validator has no baseline or allowlist. It rejects every
   process-launch, network-constructor, or native-runtime call it detects in
   scanned unit-test code. On Linux, `make ci` requires Bubblewrap and runs with
@@ -100,8 +93,7 @@ needed input into a temporary directory such as `tempfile::TempDir`.
   `core/crates/solstone-core/tests/support/await_outcome.rs`, emit the
   `SUPERVISOR_RACE_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,
   and join `RUST_RACE_TEST_TARGETS` so `make check-rust-race` covers them.
-- Run one crate's tests with `cargo test -p <crate>`. ⚠ That does **not** run a
-  dependency's tests; use `--workspace` when you need the sweep.
+- Run one crate's default-feature same-crate tests with `cargo test --manifest-path core/Cargo.toml -p <crate> --lib --bins`. For `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe`, that selects only routine same-crate evidence; run the matching `make check-rust-classified-full-tests-<suffix>` target for broader `full-tests` same-crate evidence and `make check-rust-classified-full-clippy-<suffix>` for its feature-enabled lint evidence. The sol-link targets also enable `test-hooks`. Omit `--lib --bins` only when you intend Cargo's eligible integration-target and doctest selection. A crate command does **not** run a dependency's tests; use `--workspace` when you need the default-feature sweep.
 ## Worktree Development
 
 Run the full stack (supervisor + callosum + sense + cortex + convey) against test fixture data:

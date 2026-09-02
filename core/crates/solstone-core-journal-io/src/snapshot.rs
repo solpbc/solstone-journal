@@ -7,7 +7,11 @@ use std::fs;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
 use crate::atomic::{AtomicWriteOptions, atomic_replace};
 use crate::errors::SnapshotError;
@@ -59,6 +63,7 @@ fn capture_path(journal: &Path, rel: &str, path: &Path) -> Result<JournalSnapsho
         }
         Err(source) => return Err(io_error(path, source)),
     };
+    ensure_not_reparse_point(path, &metadata)?;
     let file_type = metadata.file_type();
     if file_type.is_file() {
         return Ok(JournalSnapshot::File(SnapshotFile {
@@ -128,7 +133,11 @@ fn validate_snapshot(
     parent: Option<&str>,
 ) -> Result<(), SnapshotError> {
     let path = snapshot_path(snapshot);
-    contained_path(journal, path).map_err(SnapshotError::Path)?;
+    // Validate the supplied path lexically here. Symlink-aware inspection of
+    // the observed tree happens before removal below, but resolving every
+    // desired descendant against the observed tree would reject a valid
+    // directory snapshot whenever the directory is currently a regular file.
+    resolve_journal_path(journal, path).map_err(SnapshotError::Path)?;
     if let Some(parent) = parent
         && !is_child_path(parent, path)
     {
@@ -170,6 +179,7 @@ fn remove_existing(path: &Path) -> Result<(), SnapshotError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(source) => return Err(io_error(path, source)),
     };
+    ensure_not_reparse_point(path, &metadata)?;
     let file_type = metadata.file_type();
     if file_type.is_dir() {
         return fs::remove_dir_all(path).map_err(|source| io_error(path, source));
@@ -192,6 +202,7 @@ fn ensure_existing_tree_supported(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(source) => return Err(io_error(path, source)),
     };
+    ensure_not_reparse_point(path, &metadata)?;
     let file_type = metadata.file_type();
     if file_type.is_file() {
         return Ok(());
@@ -217,6 +228,21 @@ fn ensure_existing_tree_supported(
     Ok(())
 }
 
+#[cfg(windows)]
+fn ensure_not_reparse_point(path: &Path, metadata: &fs::Metadata) -> Result<(), SnapshotError> {
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(SnapshotError::UnsupportedFileType {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn ensure_not_reparse_point(_path: &Path, _metadata: &fs::Metadata) -> Result<(), SnapshotError> {
+    Ok(())
+}
+
 #[cfg(unix)]
 fn file_mode(metadata: &fs::Metadata) -> u32 {
     metadata.mode() & 0o7777
@@ -236,12 +262,77 @@ fn io_error(path: &Path, source: io::Error) -> SnapshotError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
 
     use super::*;
     use crate::test_support::TempDir;
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum TreeNode {
+        File(Vec<u8>),
+        Directory,
+        Other,
+    }
+
+    fn snapshot_paths(snapshot: &JournalSnapshot) -> Vec<String> {
+        let mut paths = Vec::new();
+        push_snapshot_paths(snapshot, &mut paths);
+        paths
+    }
+
+    fn push_snapshot_paths(snapshot: &JournalSnapshot, paths: &mut Vec<String>) {
+        paths.push(snapshot_path(snapshot).to_owned());
+        if let JournalSnapshot::Directory(directory) = snapshot {
+            for entry in &directory.entries {
+                push_snapshot_paths(entry, paths);
+            }
+        }
+    }
+
+    fn capture_tree(root: &Path) -> BTreeMap<String, TreeNode> {
+        let mut tree = BTreeMap::new();
+        capture_tree_into(root, "", &mut tree);
+        tree
+    }
+
+    fn capture_tree_into(path: &Path, rel: &str, tree: &mut BTreeMap<String, TreeNode>) {
+        let metadata = fs::symlink_metadata(path).unwrap();
+        if ensure_not_reparse_point(path, &metadata).is_err() {
+            tree.insert(rel.to_owned(), TreeNode::Other);
+            return;
+        }
+        let file_type = metadata.file_type();
+        if file_type.is_file() {
+            tree.insert(rel.to_owned(), TreeNode::File(fs::read(path).unwrap()));
+            return;
+        }
+        if file_type.is_dir() {
+            if !rel.is_empty() {
+                tree.insert(rel.to_owned(), TreeNode::Directory);
+            }
+            for entry in fs::read_dir(path).unwrap() {
+                let entry = entry.unwrap();
+                let name = entry.file_name().into_string().unwrap();
+                let child_rel = if rel.is_empty() {
+                    name
+                } else {
+                    format!("{rel}/{name}")
+                };
+                capture_tree_into(&entry.path(), &child_rel, tree);
+            }
+            return;
+        }
+        tree.insert(rel.to_owned(), TreeNode::Other);
+    }
+
+    fn plant_sentinel(journal: &Path) {
+        fs::create_dir_all(journal.join("keep")).unwrap();
+        fs::write(journal.join("keep/sentinel.txt"), b"keep").unwrap();
+    }
 
     #[test]
     fn captures_and_restores_file_tree_bytes_and_modes() {
@@ -331,5 +422,175 @@ mod tests {
             Err(SnapshotError::UnsupportedFileType { .. })
         ));
         assert!(journal.join("entities/alice").symlink_metadata().is_ok());
+    }
+
+    #[test]
+    fn capture_walks_multi_level_entries_in_lexical_order() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        fs::create_dir_all(journal.join("tree/z")).unwrap();
+        fs::write(journal.join("tree/z/file.txt"), b"z").unwrap();
+        fs::create_dir_all(journal.join("tree/m")).unwrap();
+        fs::write(journal.join("tree/m/z.txt"), b"mz").unwrap();
+        fs::write(journal.join("tree/m/a.txt"), b"ma").unwrap();
+        fs::create_dir_all(journal.join("tree/a")).unwrap();
+        fs::write(journal.join("tree/a/file.txt"), b"a").unwrap();
+
+        let captured = capture_snapshot(&journal, "tree").unwrap();
+        assert_eq!(
+            snapshot_paths(&captured),
+            vec![
+                "tree",
+                "tree/a",
+                "tree/a/file.txt",
+                "tree/m",
+                "tree/m/a.txt",
+                "tree/m/z.txt",
+                "tree/z",
+                "tree/z/file.txt",
+            ]
+        );
+    }
+
+    #[test]
+    fn restores_every_desired_kind_against_every_observed_kind() {
+        #[derive(Clone, Copy)]
+        enum Desired {
+            Missing,
+            File,
+            Directory,
+        }
+        #[derive(Clone, Copy)]
+        enum Observed {
+            Absent,
+            File,
+            Directory,
+        }
+
+        let desired_file = JournalSnapshot::File(SnapshotFile {
+            path: "target".to_owned(),
+            bytes: b"captured".to_vec(),
+            mode: 0o644,
+        });
+        let desired_directory = JournalSnapshot::Directory(SnapshotDirectory {
+            path: "target".to_owned(),
+            entries: vec![JournalSnapshot::File(SnapshotFile {
+                path: "target/child.txt".to_owned(),
+                bytes: b"child".to_vec(),
+                mode: 0o644,
+            })],
+        });
+        let desired_missing = JournalSnapshot::Missing {
+            path: "target".to_owned(),
+        };
+
+        for desired in [Desired::Missing, Desired::File, Desired::Directory] {
+            for observed in [Observed::Absent, Observed::File, Observed::Directory] {
+                let temporary = TempDir::new();
+                let journal = temporary.path().join("journal");
+                plant_sentinel(&journal);
+                let keep_before = capture_tree(&journal.join("keep"));
+
+                match observed {
+                    Observed::Absent => {}
+                    Observed::File => {
+                        fs::write(journal.join("target"), b"observed").unwrap();
+                    }
+                    Observed::Directory => {
+                        fs::create_dir_all(journal.join("target")).unwrap();
+                        fs::write(journal.join("target/other.txt"), b"other").unwrap();
+                    }
+                }
+
+                let snapshot = match desired {
+                    Desired::Missing => &desired_missing,
+                    Desired::File => &desired_file,
+                    Desired::Directory => &desired_directory,
+                };
+                restore_snapshot(&journal, snapshot).unwrap();
+
+                match desired {
+                    Desired::Missing => {
+                        assert!(!journal.join("target").exists());
+                    }
+                    Desired::File => {
+                        assert_eq!(fs::read(journal.join("target")).unwrap(), b"captured");
+                    }
+                    Desired::Directory => {
+                        assert_eq!(
+                            fs::read(journal.join("target/child.txt")).unwrap(),
+                            b"child"
+                        );
+                        assert!(!journal.join("target/other.txt").exists());
+                    }
+                }
+                assert_eq!(capture_tree(&journal.join("keep")), keep_before);
+
+                let mut expected = BTreeMap::from([
+                    ("keep".to_owned(), TreeNode::Directory),
+                    (
+                        "keep/sentinel.txt".to_owned(),
+                        TreeNode::File(b"keep".to_vec()),
+                    ),
+                ]);
+                match desired {
+                    Desired::Missing => {}
+                    Desired::File => {
+                        expected.insert("target".to_owned(), TreeNode::File(b"captured".to_vec()));
+                    }
+                    Desired::Directory => {
+                        expected.insert("target".to_owned(), TreeNode::Directory);
+                        expected.insert(
+                            "target/child.txt".to_owned(),
+                            TreeNode::File(b"child".to_vec()),
+                        );
+                    }
+                }
+                assert_eq!(capture_tree(&journal), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn restore_rejects_an_escaped_snapshot_path() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        plant_sentinel(&journal);
+        let keep_before = capture_tree(&journal.join("keep"));
+
+        assert!(matches!(
+            restore_snapshot(
+                &journal,
+                &JournalSnapshot::Missing {
+                    path: "entities/../../outside".to_owned(),
+                }
+            ),
+            Err(SnapshotError::Path(_))
+        ));
+        assert_eq!(capture_tree(&journal.join("keep")), keep_before);
+    }
+
+    #[test]
+    fn restore_rejects_a_child_not_contained_by_its_parent() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        plant_sentinel(&journal);
+        fs::create_dir_all(journal.join("entities")).unwrap();
+        fs::write(journal.join("entities/keep.txt"), b"stay").unwrap();
+        let keep_before = capture_tree(&journal.join("keep"));
+        let entities_before = capture_tree(&journal.join("entities"));
+
+        let snapshot = JournalSnapshot::Directory(SnapshotDirectory {
+            path: "entities".to_owned(),
+            entries: vec![JournalSnapshot::Missing {
+                path: "other".to_owned(),
+            }],
+        });
+        assert!(matches!(
+            restore_snapshot(&journal, &snapshot),
+            Err(SnapshotError::InvalidSnapshot { path, .. }) if path == "other"
+        ));
+        assert_eq!(capture_tree(&journal.join("keep")), keep_before);
+        assert_eq!(capture_tree(&journal.join("entities")), entities_before);
     }
 }

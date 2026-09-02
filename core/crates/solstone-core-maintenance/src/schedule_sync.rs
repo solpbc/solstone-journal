@@ -8,7 +8,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{MalformedPolicy, read_json};
-use solstone_core_system::schedule::{add_missing_schedule_entries, remove_schedule_entry};
+use solstone_core_system::schedule::{
+    add_missing_schedule_entries, initialize_schedule_config, remove_schedule_entry,
+};
 
 use crate::registry::RoutineDescriptor;
 
@@ -101,6 +103,7 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
 /// transactions. A failed add can therefore leave a successful retirement
 /// published, which mirrors the Python operation and avoids rollback writes.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
+    initialize_schedule_config(path).map_err(|error| error.to_string())?;
     remove_schedule_entry(path, RETIRED_ENTRY).map_err(|error| error.to_string())?;
     let raw = read_raw_schedules(path)?;
     let classified = classify(routines, &raw);
@@ -239,9 +242,9 @@ fn classify_one(descriptor: &RoutineDescriptor, raw: Option<&Value>) -> Schedule
 
 #[cfg(test)]
 mod tests {
-    use super::{ScheduleStatus, classify_one, expected_entry};
+    use super::{ScheduleStatus, classify_one, expected_entry, sync};
     use crate::registry::{Cadence, RoutineDescriptor};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     const CAPPED: RoutineDescriptor = RoutineDescriptor {
         id: "app:capped",
@@ -255,6 +258,21 @@ mod tests {
         cadence: Cadence::Weekly,
         max_runtime: None,
     };
+
+    #[test]
+    fn sync_initializes_staggered_metadata_for_a_missing_schedule_config() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let config = root.path().join("config/schedules.json");
+        std::fs::create_dir_all(config.parent().expect("config directory"))
+            .expect("config directory");
+
+        let summary = sync(&config, &[CAPPED, UNCAPPED]).expect("sync");
+        assert_eq!(summary.added, vec![CAPPED.id, UNCAPPED.id]);
+        let raw: Value =
+            serde_json::from_slice(&std::fs::read(config).expect("schedule config")).expect("json");
+        assert_eq!(raw["daily_time"], "00:15");
+        assert_eq!(raw["weekly_time"], "03:15");
+    }
 
     #[test]
     fn status_classification_preserves_operator_owned_fields_and_special_cases() {

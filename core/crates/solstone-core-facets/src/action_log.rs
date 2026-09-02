@@ -93,7 +93,7 @@ fn python_json(value: &Value) -> String {
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
 

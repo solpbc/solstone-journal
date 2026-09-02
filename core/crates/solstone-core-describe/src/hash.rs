@@ -138,7 +138,7 @@ pub fn format_dhash(hash: u64) -> String {
     format!("{hash:016x}")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{dhash, format_dhash, resize_and_grayscale};
     use crate::RgbFrame;

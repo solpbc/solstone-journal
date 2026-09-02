@@ -7,6 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::{self, Read};
 use std::mem::{offset_of, size_of};
+use std::os::windows::ffi::OsStringExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 
@@ -16,8 +17,8 @@ use windows_sys::Wdk::Storage::FileSystem::{
     NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_FILES, ERROR_PATH_NOT_FOUND, RtlNtStatusToDosError,
-    STATUS_SUCCESS,
+    ERROR_DIRECTORY, ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_FILES, ERROR_PATH_NOT_FOUND,
+    RtlNtStatusToDosError, STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -32,7 +33,7 @@ use crate::journal_root::JournalEntryKind;
 use crate::name_admission::{NameAdmissionReason, check_portable_component};
 use crate::observation::{FileObservation, FlatDirectoryEntry, NativeMtime, same_entry_metadata};
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
-use crate::windows_ntcreate::nt_create_relative;
+use crate::windows_ntcreate::{nt_create_relative, nt_create_relative_exact};
 
 const DIRECTORY_BUFFER_BYTES: usize = 64 * 1024;
 const WINDOWS_TO_UNIX_EPOCH_100NS: i128 = 116_444_736_000_000_000;
@@ -170,6 +171,7 @@ pub fn list_windows_flat_directory(
     let listed = list_directory(
         directory.directory.as_raw_handle(),
         &directory.diagnostic_path,
+        false,
     )?;
     let mut entries = Vec::new();
     for listed in listed {
@@ -195,6 +197,139 @@ pub fn list_windows_flat_directory(
     directory.revalidate()?;
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(Some(entries))
+}
+
+pub(crate) struct WindowsNativeListed {
+    pub entry: FlatDirectoryEntry,
+    pub directory: Option<WindowsFlatDirectory>,
+}
+
+pub(crate) fn list_windows_native_entries(
+    directory: &WindowsFlatDirectory,
+    maximum: usize,
+    retain_directories: bool,
+    after_enumeration: crate::cortex_use::census::CortexCensusPrimitive,
+    before_directory_open: Option<crate::cortex_use::census::CortexCensusPrimitive>,
+    enumeration_stage: crate::cortex_use::census::CortexCensusStage,
+) -> Result<Option<Vec<WindowsNativeListed>>, crate::cortex_use::census::CortexCensusError> {
+    use crate::cortex_use::census::{CortexCensusStage, checkpoint, map_listing};
+    directory
+        .revalidate()
+        .map_err(|error| map_listing(enumeration_stage, error))?;
+    let mut listed = list_directory(
+        directory.directory.as_raw_handle(),
+        &directory.diagnostic_path,
+        true,
+    )
+    .map_err(|error| map_listing(enumeration_stage, error))?;
+    if listed.len() > maximum {
+        return Ok(None);
+    }
+    checkpoint(after_enumeration)?;
+    listed.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+    let mut entries = Vec::new();
+    for listed in listed {
+        let path = directory.diagnostic_entry(&listed.name);
+        let handle = match open_relative_exact(
+            directory.directory.as_raw_handle(),
+            &listed.name,
+            FILE_READ_ATTRIBUTES,
+            0,
+            &path,
+            FILE_OPEN,
+        ) {
+            Ok(handle) => handle,
+            Err(FlatDirectoryError::Io { source, .. })
+                if matches!(
+                    source.raw_os_error(),
+                    Some(code)
+                        if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+                ) =>
+            {
+                return Err(map_listing(
+                    enumeration_stage,
+                    FlatDirectoryError::EnumerationChanged { path },
+                ));
+            }
+            Err(error) => return Err(map_listing(enumeration_stage, error)),
+        };
+        let entry = entry_from_handle(listed.name.clone(), handle.as_raw_handle(), &path)
+            .map_err(|error| map_listing(enumeration_stage, error))?;
+        let identity = entry_identity(handle.as_raw_handle(), &path)
+            .map_err(|error| map_listing(enumeration_stage, error))?;
+        if identity.file_id() != listed.file_id {
+            return Err(map_listing(
+                enumeration_stage,
+                FlatDirectoryError::EnumerationChanged { path },
+            ));
+        }
+        let child = if retain_directories && entry.kind == JournalEntryKind::Directory {
+            if let Some(primitive) = before_directory_open {
+                checkpoint(primitive)?;
+            }
+            let retained = open_relative_exact(
+                directory.directory.as_raw_handle(),
+                &listed.name,
+                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
+                FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+                &path,
+                FILE_OPEN,
+            )
+            .map_err(|error| map_listing(CortexCensusStage::TalentOpen, error))?;
+            let retained_identity = entry_identity(retained.as_raw_handle(), &path)
+                .map_err(|error| map_listing(CortexCensusStage::TalentOpen, error))?;
+            if retained_identity != identity {
+                return Err(map_listing(
+                    CortexCensusStage::TalentOpen,
+                    FlatDirectoryError::IdentityChanged { path },
+                ));
+            }
+            Some(WindowsFlatDirectory {
+                directory: retained,
+                identity: retained_identity,
+                diagnostic_path: path,
+            })
+        } else {
+            None
+        };
+        entries.push(WindowsNativeListed {
+            entry,
+            directory: child,
+        });
+    }
+    Ok(Some(entries))
+}
+
+pub(crate) fn native_child_directory_identity(
+    parent: &WindowsFlatDirectory,
+    name: &OsStr,
+) -> Result<Option<WindowsFileIdentity>, FlatDirectoryError> {
+    let path = parent.diagnostic_entry(name);
+    let handle = match open_relative_exact(
+        parent.directory.as_raw_handle(),
+        name,
+        FILE_READ_ATTRIBUTES,
+        0,
+        &path,
+        FILE_OPEN,
+    ) {
+        Ok(handle) => handle,
+        Err(FlatDirectoryError::Io { source, .. })
+            if matches!(
+                source.raw_os_error(),
+                Some(code)
+                    if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    let attributes = attribute_tag(handle.as_raw_handle(), &path)?;
+    if !is_directory(attributes) || is_reparse_point(attributes) {
+        return Ok(None);
+    }
+    Ok(Some(entry_identity(handle.as_raw_handle(), &path)?))
 }
 
 /// Read one direct regular file while proving stable metadata and enforcing a byte limit.
@@ -274,6 +409,12 @@ fn open_windows_flat_directory(
         disposition,
     ) {
         Ok(handle) => handle,
+        Err(FlatDirectoryError::Io { source, .. }) if matches!(source.raw_os_error(), Some(code) if code == ERROR_DIRECTORY as i32) =>
+        {
+            return Err(FlatDirectoryError::NotDirectory {
+                path: diagnostic_path,
+            });
+        }
         Err(FlatDirectoryError::Io { source, .. })
             if disposition == FILE_OPEN
                 && matches!(
@@ -354,6 +495,28 @@ fn open_relative(
     })
 }
 
+fn open_relative_exact(
+    parent: std::os::windows::io::RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    extra_options: u32,
+    path: &Path,
+    disposition: u32,
+) -> Result<OwnedHandle, FlatDirectoryError> {
+    nt_create_relative_exact(
+        parent,
+        name,
+        desired_access | SYNCHRONIZE,
+        disposition,
+        FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT | extra_options,
+    )
+    .map_err(|source| FlatDirectoryError::Io {
+        operation: "open flat-directory entry",
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 struct ListedEntry {
     name: OsString,
     file_id: [u8; 16],
@@ -362,6 +525,7 @@ struct ListedEntry {
 fn list_directory(
     directory: std::os::windows::io::RawHandle,
     path: &Path,
+    native: bool,
 ) -> Result<Vec<ListedEntry>, FlatDirectoryError> {
     let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
@@ -388,7 +552,7 @@ fn list_directory(
         };
         if result == STATUS_SUCCESS {
             restart_scan = false;
-            parse_directory_buffer(&buffer, path, &mut entries)?;
+            parse_directory_buffer(&buffer, path, &mut entries, native)?;
             continue;
         }
         // SAFETY: converts only the NTSTATUS returned by the preceding call.
@@ -410,6 +574,7 @@ fn parse_directory_buffer(
     buffer: &[u8],
     path: &Path,
     entries: &mut Vec<ListedEntry>,
+    native: bool,
 ) -> Result<(), FlatDirectoryError> {
     let header_bytes = offset_of!(FILE_ID_EXTD_DIR_INFO, FileName);
     let mut offset = 0usize;
@@ -433,11 +598,15 @@ fn parse_directory_buffer(
         let record = remaining
             .get(..record_bytes)
             .ok_or_else(|| invalid_listing(path))?;
-        let name = record[header_bytes..]
+        let units = record[header_bytes..]
             .chunks_exact(size_of::<u16>())
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect::<Vec<_>>();
-        let name = String::from_utf16(&name).map_err(|_| invalid_listing(path))?;
+        let name = if native {
+            OsString::from_wide(&units)
+        } else {
+            OsString::from(String::from_utf16(&units).map_err(|_| invalid_listing(path))?)
+        };
         let file_id_start = offset_of!(FILE_ID_EXTD_DIR_INFO, FileId);
         let file_id_end = file_id_start
             .checked_add(16)
@@ -448,10 +617,7 @@ fn parse_directory_buffer(
             .try_into()
             .map_err(|_| invalid_listing(path))?;
         if name != "." && name != ".." {
-            entries.push(ListedEntry {
-                name: OsString::from(name),
-                file_id,
-            });
+            entries.push(ListedEntry { name, file_id });
         }
         let next = directory_u32(
             header,

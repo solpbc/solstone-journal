@@ -11,7 +11,10 @@ use solstone_core_local::HttpResponse;
 
 use crate::endpoint::EndpointTransportError;
 use crate::token_budget::generate_token_budget;
-use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
+use crate::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
+};
 
 const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -29,6 +32,7 @@ const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicFailure {
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +42,7 @@ pub struct AnthropicGenerated {
     pub usage: Value,
     pub finish_reason: String,
     pub thinking: Option<Value>,
+    pub raw_response_snippet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,7 +154,15 @@ fn anthropic_converse_with<T: AnthropicTransport>(
         Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return converse_failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return AnthropicConverseResult::Failed(ConverseFailure {
+            reason_code: reason_code.to_owned(),
+            retryable,
+            blocking,
+            detail,
+        });
     }
     let offered = tools.iter().map(|tool| tool.name.clone()).collect();
     parse_converse_response(&response.body, &offered)
@@ -197,9 +210,14 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
         Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return AnthropicResult::Failed(AnthropicFailure {
+            reason_code: Some(reason_code.to_owned()),
+            detail,
+        });
     }
-    parse_response(&response.body)
+    parse_response(&response.body, &api_key)
 }
 
 fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
@@ -291,8 +309,16 @@ fn converse_request_body(
     body
 }
 
+// Models that reject the `temperature` parameter (Anthropic API error:
+// "temperature is deprecated for this model"). This list is manually
+// reconciled against the `model_tiers` catalog in
+// solstone-core-thinking/src/providers.rs and must be revisited whenever
+// that catalog changes.
 fn model_supports_temperature(model: &str) -> bool {
-    model != "claude-opus-4-7"
+    !matches!(
+        model,
+        "claude-opus-4-7" | "claude-sonnet-5" | "claude-opus-4-8"
+    )
 }
 
 fn request_timeout(timeout_s: Option<f64>) -> Duration {
@@ -302,7 +328,8 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
         .unwrap_or(DEFAULT_TIMEOUT)
 }
 
-fn parse_response(body: &str) -> AnthropicResult {
+fn parse_response(body: &str, secret: &str) -> AnthropicResult {
+    let raw_snippet = capture_provider_detail(body, secret);
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return failure("provider_response_invalid");
     };
@@ -350,6 +377,7 @@ fn parse_response(body: &str) -> AnthropicResult {
             other => other.to_owned(),
         },
         thinking,
+        raw_response_snippet: raw_snippet,
     })
 }
 
@@ -433,6 +461,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> AnthropicC
             name: name.to_owned(),
             arguments: arguments.clone(),
             not_offered: !offered.contains(name),
+            thought_signature: None,
         });
     }
     if stop_reason == "tool_use" && tool_calls.is_empty() {
@@ -510,9 +539,27 @@ fn is_context_window_error(body: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let scrubbed = if secret.is_empty() {
+        body.to_owned()
+    } else {
+        body.replace(secret, "[redacted]")
+    };
+    Some(
+        scrubbed
+            .chars()
+            .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
+            .collect(),
+    )
+}
+
 fn failure(reason_code: &str) -> AnthropicResult {
     AnthropicResult::Failed(AnthropicFailure {
         reason_code: Some(reason_code.to_owned()),
+        detail: None,
     })
 }
 
@@ -522,6 +569,7 @@ fn converse_failure(reason_code: &str) -> AnthropicConverseResult {
         reason_code: reason_code.to_owned(),
         retryable,
         blocking,
+        detail: None,
     })
 }
 
@@ -547,7 +595,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::{LaneOutcome, ProviderResultView, assess_provider_result, refusal_for};
+    use crate::{
+        LaneOutcome, ProviderResultView, ValidationFailure, assess_provider_result, refusal_for,
+    };
 
     #[derive(Default)]
     struct StubTransport {
@@ -648,7 +698,8 @@ mod tests {
         assert_eq!(
             result,
             AnthropicResult::Failed(AnthropicFailure {
-                reason_code: Some("provider_key_missing".into())
+                reason_code: Some("provider_key_missing".into()),
+                detail: None,
             })
         );
         assert!(transport.posts.is_empty());
@@ -699,6 +750,7 @@ mod tests {
             usage: &generated.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         let token_log = fs::read_to_string(
@@ -715,6 +767,7 @@ mod tests {
         let diagnostic = encode_one_shot_response(&GenerateResponse::Refused(refusal_for(
             &LaneOutcome::AnthropicFailure(AnthropicFailure {
                 reason_code: Some("provider_response_invalid".into()),
+                detail: None,
             }),
             "anthropic",
             Some("request".into()),
@@ -764,6 +817,74 @@ mod tests {
         };
         let refusal = refusal_for(&LaneOutcome::AnthropicFailure(failure), "anthropic", None);
         assert!(!refusal.detail.contains(credential));
+    }
+
+    #[test]
+    fn non_context_window_http_error_body_reaches_refusal_detail() {
+        let body = r#"{"error":{"message":"invalid temperature distinctive-400-anthropic"}}"#;
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 400,
+                body: body.to_owned(),
+            })],
+            ..Default::default()
+        };
+        let AnthropicResult::Failed(failure) = anthropic_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("400 must fail");
+        };
+        assert_eq!(failure.detail.as_deref(), Some(body));
+        let refusal = refusal_for(&LaneOutcome::AnthropicFailure(failure), "anthropic", None);
+        assert_eq!(refusal.detail, body);
+        assert!(!refusal.detail.contains("fixture"));
+        assert_ne!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+    }
+
+    #[test]
+    fn blank_extracted_text_keeps_distinctive_raw_snippet_on_refusal() {
+        let body = json!({
+            "content": [{"type": "text", "text": ""}],
+            "model": "claude-response-model",
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 12, "output_tokens": 34},
+            "distinctive": "blank-visible-anthropic-xyz",
+        });
+        let generated = generated(parse_response(&body.to_string(), ""));
+        assert!(generated.text.trim().is_empty());
+        let snippet = generated
+            .raw_response_snippet
+            .as_deref()
+            .expect("raw snippet");
+        assert!(snippet.contains("blank-visible-anthropic-xyz"));
+        let journal = crate::validation::isolated_journal_dir("anthropic-blank");
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &generated.model,
+            text: &generated.text,
+            finish_reason: &generated.finish_reason,
+            usage: &generated.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: generated.raw_response_snippet.as_deref(),
+        });
+        assert_eq!(
+            assessment.failure,
+            Some(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: generated.raw_response_snippet.clone(),
+            })
+        );
+        let refusal = refusal_for(
+            &LaneOutcome::ValidationFailure(assessment.failure.unwrap()),
+            "anthropic",
+            None,
+        );
+        assert!(refusal.detail.contains("blank-visible-anthropic-xyz"));
+        assert!(!refusal.detail.contains("fixture"));
+        let _ = fs::remove_dir_all(journal);
     }
 
     #[test]
@@ -820,6 +941,36 @@ mod tests {
         );
         assert!(no_temperature.posts[0].get("temperature").is_none());
 
+        let mut no_temperature_sonnet_5 = StubTransport {
+            responses: vec![Ok(success_response())],
+            ..Default::default()
+        };
+        let _ = anthropic_generate_with(
+            &request(),
+            &config(Some("configured-secret"), Some("claude-sonnet-5")),
+            &mut no_temperature_sonnet_5,
+        );
+        assert!(
+            no_temperature_sonnet_5.posts[0]
+                .get("temperature")
+                .is_none()
+        );
+
+        let mut no_temperature_opus_4_8 = StubTransport {
+            responses: vec![Ok(success_response())],
+            ..Default::default()
+        };
+        let _ = anthropic_generate_with(
+            &request(),
+            &config(Some("configured-secret"), Some("claude-opus-4-8")),
+            &mut no_temperature_opus_4_8,
+        );
+        assert!(
+            no_temperature_opus_4_8.posts[0]
+                .get("temperature")
+                .is_none()
+        );
+
         let mut temperature = StubTransport {
             responses: vec![Ok(success_response())],
             ..Default::default()
@@ -845,13 +996,14 @@ mod tests {
                 "usage": {"input_tokens": 1, "output_tokens": 2}
             })
             .to_string(),
+            "",
         );
         assert_eq!(
             generated(with_thinking).thinking,
             Some(json!({"type": "thinking", "thinking": "plan"}))
         );
         assert!(
-            generated(parse_response(&success_response().body))
+            generated(parse_response(&success_response().body, ""))
                 .thinking
                 .is_none()
         );
@@ -931,6 +1083,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"city": "Denver"}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {
@@ -1001,6 +1154,7 @@ mod tests {
                 "content":[{"type":"text","text":"before"},{"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Denver"}}]
             })
             .to_string(),
+            "",
         ) else {
             panic!("generated response expected")
         };
@@ -1039,6 +1193,7 @@ mod tests {
             usage: &unoffered.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(assessment.failure, None);
 

@@ -21,6 +21,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{JournalBrainOwnerCommand, JournalBrainRefreshOptions};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient,
+    sibling_executable,
 };
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
@@ -84,20 +85,80 @@ fn run_status(json_output: bool) -> ExitCode {
     brain_exit_code(&view)
 }
 
-fn current_bundled_runtime_fingerprint(journal: &Path) -> Option<String> {
-    #[cfg(target_os = "macos")]
-    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b", "backend": "metal"});
-    #[cfg(not(target_os = "macos"))]
-    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b"});
-    solstone_core_local::dispatch_install(
-        solstone_core_local::InstallVerb::FingerprintLocal,
-        payload,
+fn current_bundled_runtime_fingerprint(
+    journal: &Path,
+    config: &Map<String, Value>,
+    nvidia_probe: Option<solstone_core_local::NvidiaProbe>,
+) -> Option<String> {
+    let configured = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object)
+        .and_then(|active| active.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or("local/qwen3.5-4b");
+    let model_id = solstone_core_local::install::resolve_bundled_model_id(
+        configured,
+        cfg!(target_os = "macos"),
+    );
+    let readiness = bundled_runtime_readiness(journal, &model_id, nvidia_probe)?;
+    let artifacts = readiness.get("artifacts")?.as_object()?;
+    let model_path = artifacts.get("model_path")?.as_str()?;
+    let backend = readiness
+        .get("host")
+        .and_then(Value::as_object)
+        .and_then(|host| host.get("backend"))
+        .and_then(Value::as_str)
+        .unwrap_or("metal");
+    let artifact_target = readiness
+        .get("target")
+        .and_then(Value::as_object)
+        .and_then(|target| target.get("target_fingerprint_sha256"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    solstone_core_brain::bundled_runtime_desired_fingerprint(
+        backend,
+        &model_id,
+        artifact_target,
+        artifacts.get("binary_path").and_then(Value::as_str),
+        model_path,
+        artifacts.get("projector_path").and_then(Value::as_str),
     )
-    .ok()?
-    .result?
-    .get("target_fingerprint_sha256")?
-    .as_str()
-    .map(ToOwned::to_owned)
+    .ok()
+    .map(|desired| desired.sha256)
+}
+
+fn bundled_runtime_readiness(
+    journal: &Path,
+    model_id: &str,
+    nvidia_probe: Option<solstone_core_local::NvidiaProbe>,
+) -> Option<Value> {
+    let journal = journal.display().to_string();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = nvidia_probe;
+        solstone_core_local::install::metal_candidate::inspect(&Map::from_iter([
+            ("journal".into(), Value::String(journal)),
+            ("model_id".into(), Value::String(model_id.to_owned())),
+            ("backend".into(), Value::String("metal".into())),
+        ]))
+        .ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut input = Map::from_iter([
+            ("journal".into(), Value::String(journal)),
+            ("model_id".into(), Value::String(model_id.to_owned())),
+        ]);
+        if let Some(probe) = nvidia_probe {
+            input.insert("nvidia_probe".into(), serde_json::to_value(probe).ok()?);
+        }
+        Some(solstone_core_local::install::readiness::inspect_local(
+            input,
+        ))
+    }
 }
 
 /// The one full refresh path.  Unsafe prerequisite renewal delegates here.
@@ -115,7 +176,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
     // even when another lane is active. The writer ignores it for non-bundled
     // lanes, while having it already captured closes a config-change race into
     // bundled between this read and `begin_refresh`.
-    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal);
+    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal, &config, None);
     if let Some(expected) = options.expected_fingerprint.as_deref() {
         let actual = if options.expected_active_fingerprint {
             before.fingerprint_sha256.as_deref()
@@ -199,7 +260,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         now,
     );
     let finish_bundled_runtime_fingerprint = (lane == "bundled")
-        .then(|| current_bundled_runtime_fingerprint(&journal))
+        .then(|| current_bundled_runtime_fingerprint(&journal, &checking_config, None))
         .flatten();
     if solstone_core_brain::finish_refresh(
         &journal,
@@ -402,6 +463,7 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
         &endpoint.base_url,
         &nvattest_dir,
         StdDuration::from_secs(120),
+        solstone_core_spp_ratls::ensure_nvattest_installed,
     ) {
         Ok(channel) if channel.session.status(SystemTime::now()) == "verified" => {
             spp_component_ok(now, &channel.session)
@@ -474,9 +536,7 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         exclusive_admission: false,
         transport_retries: Some(0),
     };
-    let result = OneShotClient::sibling()
-        .map(|client| client.with_prefix_arguments(["generate".into()]))
-        .and_then(|client| client.execute(&request));
+    let result = OneShotClient::sibling().and_then(|client| client.execute(&request));
     let reason = match result {
         Ok(GenerateResponse::Generated(response)) => {
             let Some(reason) = classify_canned_generate(&response) else {
@@ -488,10 +548,21 @@ fn generate_component(now: DateTime<Utc>) -> Value {
             "generate",
             response.reason_code.as_ref().map(|value| value.as_wire()),
         ),
-        Err(ClientError::Protocol(error)) => map_provider_reason("generate", Some(&error.reason)),
-        Err(_) => "probe_internal_error".to_owned(),
+        Err(error) => generate_client_failure_reason(&error),
     };
+    // The frozen brain evidence contract intentionally admits no arbitrary diagnostic text for
+    // generate failures. Other generate-client adapters preserve bounded process evidence; this
+    // owner projection keeps the domain-specific reason translation contract-valid.
     component_for_reason("generate", &reason, Map::new(), now)
+}
+
+fn generate_client_failure_reason(error: &ClientError) -> String {
+    match error {
+        ClientError::Protocol(failure) => {
+            map_provider_reason("generate", Some(&failure.error.reason))
+        }
+        _ => "probe_internal_error".to_owned(),
+    }
 }
 
 fn classify_canned_generate(response: &GeneratedResponse) -> Option<&'static str> {
@@ -539,7 +610,7 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
     let Ok(input) = serde_json::to_vec(&request) else {
         return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
     };
-    let Ok(executable) = env::current_exe() else {
+    let Ok(executable) = sibling_executable() else {
         return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
     };
     let reason = match run_cogitate_with_outer_timeout(executable, input) {
@@ -1065,6 +1136,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn generate_client_failures_remain_contract_valid_owner_evidence() {
+        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let resolution = ClientError::Resolve("missing sibling".to_owned());
+        let reason = generate_client_failure_reason(&resolution);
+        assert_eq!(reason, "probe_internal_error");
+        let component = component_for_reason("generate", &reason, Map::new(), now);
+        assert_eq!(component["reason_code"], "probe_internal_error");
+        assert_eq!(component["diagnostic"], json!({}));
+
+        let protocol = ClientError::Protocol(Box::new(solstone_core_generate::ProtocolFailure {
+            error: solstone_core_generate::ProtocolError {
+                id: None,
+                reason: "provider_key_invalid".to_owned(),
+                detail: "bounded provider diagnostic".to_owned(),
+            },
+            status: solstone_core_generate::ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: solstone_core_generate::CapturedStream::empty(),
+            stderr: solstone_core_generate::CapturedStream::empty(),
+            stdin_closed_early: false,
+        }));
+        assert_eq!(
+            generate_client_failure_reason(&protocol),
+            "provider_key_invalid"
+        );
+    }
+
     fn generated_response(
         text: &str,
         finish_reason: &str,
@@ -1135,6 +1236,21 @@ mod tests {
         assert_eq!(
             cogitate_run_error_reason(CogitateRunError::Io),
             "probe_internal_error"
+        );
+    }
+
+    #[test]
+    fn owner_cogitate_resolution_failure_keeps_probe_internal_error() {
+        assert!(
+            solstone_core_generate::sibling_executable().is_err(),
+            "cargo test must run without a sibling solstone-core binary"
+        );
+        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        let config = Map::new();
+
+        assert_eq!(
+            cogitate_component(Path::new("unused-journal"), &config, now),
+            component_for_reason("cogitate", "probe_internal_error", Map::new(), now)
         );
     }
 
@@ -1219,6 +1335,27 @@ mod tests {
         // ...and a real success must be able to report `ok`, which it could not before.
         let finished = br#"{"event":"finish","ts":1788239790828,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
         assert_eq!(terminal_cogitate_reason(finished).as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn owner_cogitate_multiline_wire_terminals_are_classified() {
+        let success = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
+{"event":"finish","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
+        assert_eq!(terminal_cogitate_reason(success), Some("ok".to_owned()));
+
+        let error = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"E","model":"model"}
+{"event":"error","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"error":"endpoint unreachable","reason_code":"endpoint_unreachable"}"#;
+        assert_eq!(
+            terminal_cogitate_reason(error),
+            Some("endpoint_unreachable".to_owned())
+        );
+    }
+
+    #[test]
+    fn owner_cogitate_unparseable_terminal_stream_is_none() {
+        let stdout = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
+garbage"#;
+        assert_eq!(terminal_cogitate_reason(stdout), None);
     }
 
     #[test]

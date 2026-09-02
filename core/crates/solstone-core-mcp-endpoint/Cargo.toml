@@ -11,6 +11,7 @@ publish = false
 
 [features]
 default = []
+full-tests = []
 test-hooks = [
     "solstone-core-journal-io/test-hooks",
     "solstone-core-sol-link/test-hooks",
@@ -20,14 +21,44 @@ test-hooks = [
 solstone-core-journal-config.workspace = true
 
 [target.'cfg(unix)'.dependencies]
+arc-swap = "1.9.1"
+async-trait = "0.1.89"
+base64 = "0.22.1"
+chrono = { workspace = true, features = ["serde"] }
+futures = "0.3.31"
+log.workspace = true
 nix = { workspace = true, features = ["dir", "fs", "user"] }
+pem = "3.0.6"
+rcgen.workspace = true
 ring.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+rustls-acme = { version = "0.15.4", default-features = false, features = ["ring", "tokio", "webpki-roots"] }
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-callosum.workspace = true
+solstone-core-indexer-query.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-mcp-audit.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
+solstone-core-system.workspace = true
+spl-core.workspace = true
+spl-home.workspace = true
+time = "0.3.55"
+tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+webpki-roots = "1.0.9"
+x509-parser = { version = "0.16.0", features = ["verify"] }
 
 [dev-dependencies]
+proc-macro2 = "1.0.107"
+rusqlite.workspace = true
 serde.workspace = true
+solstone-core-indexer-store.workspace = true
+syn = { version = "2.0.119", features = ["full", "visit"] }
 tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "test-util"] }
 
 # This opt-in target exercises the public bootstrap boundary through its real
 # cross-crate, process-shaped call path with thread-local read hooks.

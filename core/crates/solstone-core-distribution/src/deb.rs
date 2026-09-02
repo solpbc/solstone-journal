@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use tar::Builder;
@@ -80,7 +79,7 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
         })?;
         let path = stage.join(&dest);
         let bytes = fs::read(&path)?;
-        let mode = fs::metadata(&path)?.permissions().mode() & 0o7777;
+        let mode = crate::stage::file_mode(&fs::metadata(&path)?);
         append_regular(&mut builder, &archive, &bytes, mode)?;
     }
     builder.finish()?;

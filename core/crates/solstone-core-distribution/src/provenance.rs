@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::digest::sha256_hex;
 use crate::select::ArtifactId;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     pub commit: String,
     pub lock_sha256: String,
@@ -51,6 +52,15 @@ pub fn require_commit(expected: &str, actual: &str) -> Result<(), ProvenanceErro
     if expected != actual {
         return Err(ProvenanceError::new(format!(
             "unexpected:\n  mismatched-commit {actual}"
+        )));
+    }
+    Ok(())
+}
+
+pub fn require_repository(expected: &str, actual: &str) -> Result<(), ProvenanceError> {
+    if expected != actual {
+        return Err(ProvenanceError::new(format!(
+            "unexpected:\n  mismatched-repository {actual}"
         )));
     }
     Ok(())

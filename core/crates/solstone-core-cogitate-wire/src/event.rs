@@ -207,7 +207,7 @@ pub fn serialize_dry_run(request: &CogitateRequest) -> Result<Value, ValidationE
 /// Result of selecting the native dry-run shortcut or executing the runtime.
 pub enum NativeRun {
     DryRun(Value),
-    Completed(RunOutcome),
+    Completed(Box<RunOutcome>),
 }
 
 /// Execute a prepared request, unless its dry-run marker selects the one-line
@@ -225,9 +225,9 @@ pub fn run_or_dry_run(
         return serialize_dry_run(request).map(NativeRun::DryRun);
     }
     let input: RunInput = request.to_run_input();
-    Ok(NativeRun::Completed(run_cogitate(
+    Ok(NativeRun::Completed(Box::new(run_cogitate(
         provider, tools, input, sink,
-    )))
+    ))))
 }
 
 fn event_value<const N: usize>(

@@ -181,13 +181,13 @@ fn open_without_delete_share(path: &Path) -> OwnedHandle {
     }
 }
 
-fn exercise_open_publish_resolve(root: &Path) {
+fn exercise_open_publish_resolve(root: &Path, reference: &str, name: &str) {
     let root_file = root_handle(root);
     let aliases = child(&root_file, root, "aliases");
     let days = child(&root_file, root, "days");
     let day = child(&days, &root.join("days"), DAY);
     let health = child(&day, &root.join("days").join(DAY), "health");
-    let payload_name = canonical_payload_name(REFERENCE, NAME);
+    let payload_name = canonical_payload_name(reference, name);
     let payload_path = root
         .join("days")
         .join(DAY)
@@ -204,16 +204,16 @@ fn exercise_open_publish_resolve(root: &Path) {
     let record = ManagedLogRecord::new(
         1,
         DAY.to_owned(),
-        REFERENCE.to_owned(),
-        NAME.to_owned(),
+        reference.to_owned(),
+        name.to_owned(),
         identity,
     )
     .unwrap();
-    let alias_name = root_alias_name(NAME);
+    let alias_name = root_alias_name(name);
     let lock = acquire_managed_log_alias_lock(
         &aliases,
         ManagedLogAliasRole::Root,
-        NAME,
+        name,
         lock_options(Duration::from_secs(2)),
     )
     .unwrap();
@@ -238,6 +238,13 @@ fn exercise_open_publish_resolve(root: &Path) {
     })
     .unwrap();
     assert_eq!(resolved.identity, identity);
+    assert_eq!(resolved.record.reference(), reference);
+    assert_eq!(resolved.record.name(), name);
+    let resolved_payload_name =
+        canonical_payload_name(resolved.record.reference(), resolved.record.name());
+    assert_eq!(resolved_payload_name, payload_name);
+    check_portable_component(&resolved_payload_name.to_string_lossy())
+        .expect("derived managed-log payload name is portable");
     let mut bytes = Vec::new();
     resolved.file.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, ORIGINAL);
@@ -393,8 +400,13 @@ pub fn exercise_windows_managed_log_reference_substrate(root: &Path) {
     let outcomes = root.join("outcomes");
     fs::create_dir(&open_resolve).unwrap();
     fs::create_dir(&outcomes).unwrap();
-    exercise_open_publish_resolve(&open_resolve);
+    exercise_open_publish_resolve(&open_resolve, REFERENCE, NAME);
     exercise_publication_outcomes(&outcomes);
+}
+
+/// Exercise one caller-supplied managed-log logical-coordinate pair.
+pub fn exercise_windows_managed_log_logical_coordinates(root: &Path, reference: &str, name: &str) {
+    exercise_open_publish_resolve(root, reference, name);
 }
 
 /// Return the deterministic root alias component used by process receipts.

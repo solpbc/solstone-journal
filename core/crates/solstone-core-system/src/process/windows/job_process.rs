@@ -13,7 +13,7 @@ use super::handle::{JobHandle, PrimaryThreadHandle, RootProcessHandle};
 use super::identity::{WindowsFileTime, filetime_value};
 use super::job::{JobMembership, WindowsJobApi};
 #[cfg(windows)]
-use super::job::{SystemWindowsJobApi, create_kill_on_close_job};
+use super::job::{JobResourceLimits, SystemWindowsJobApi, create_kill_on_close_job_with_limits};
 #[cfg(windows)]
 use super::pipes::SystemWindowsPipeApi;
 use super::pipes::{PipedStdio, WindowsPipeApi};
@@ -141,6 +141,8 @@ pub(super) struct WindowsJobProcess {
     identity: ProcessInstance,
     #[cfg_attr(not(windows), allow(dead_code))]
     pipes: PipedStdio,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    parent_stdin_open: bool,
     hard_stop_issued: bool,
 }
 
@@ -274,6 +276,63 @@ impl WindowsJobProcess {
             Instant::now() + JOB_HARD_STOP_TIMEOUT,
         )
     }
+
+    /// Terminate the complete Job and require both root reap and Job quiescence
+    /// before the caller's already-established deadline.
+    #[cfg(windows)]
+    pub(super) fn hard_stop_until(&mut self, deadline: Instant) -> io::Result<i32> {
+        self.hard_stop_with(
+            &SystemWindowsJobApi,
+            &SystemWindowsProcessControlApi,
+            deadline,
+        )
+    }
+
+    /// Transfer the two parent-owned output pipe ends to the managed facade.
+    /// The pipe handles leave this owner exactly once, after child endpoints
+    /// have been closed and atomic Job enrollment has succeeded.
+    #[cfg(windows)]
+    pub(super) fn take_output_files(&mut self) -> (std::fs::File, std::fs::File) {
+        use std::os::windows::io::{FromRawHandle, RawHandle};
+
+        let stdout = self.pipes.parent_stdout_read.take_raw();
+        let stderr = self.pipes.parent_stderr_read.take_raw();
+        // SAFETY: `take_raw` transfers each uniquely owned pipe handle to its
+        // corresponding File, which becomes its sole closer.
+        #[allow(unsafe_code)]
+        unsafe {
+            (
+                std::fs::File::from_raw_handle(stdout as RawHandle),
+                std::fs::File::from_raw_handle(stderr as RawHandle),
+            )
+        }
+    }
+
+    /// Transfer the explicitly retained parent stdin endpoint to one bounded
+    /// helper invocation. Ordinary managed launches close this endpoint before
+    /// returning, so a caller cannot accidentally retain an input channel.
+    #[cfg(windows)]
+    pub(super) fn take_input_file(&mut self) -> Option<std::fs::File> {
+        if !self.parent_stdin_open {
+            return None;
+        }
+        self.parent_stdin_open = false;
+        use std::os::windows::io::{FromRawHandle, RawHandle};
+
+        let stdin = self.pipes.parent_stdin_write.take_raw();
+        // SAFETY: `take_raw` transfers this uniquely owned pipe handle to the
+        // File, which becomes its sole closer.
+        #[allow(unsafe_code)]
+        Some(unsafe { std::fs::File::from_raw_handle(stdin as RawHandle) })
+    }
+
+    #[cfg(windows)]
+    pub(super) fn is_quiescent(&self) -> io::Result<bool> {
+        Ok(SystemWindowsJobApi
+            .accounting(self.job()?)?
+            .active_processes
+            == 0)
+    }
 }
 
 #[cfg(windows)]
@@ -401,7 +460,9 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
                 i32::from(inherit_handles),
                 EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
                 launch_spec.environment().as_ptr().cast(),
-                null(),
+                launch_spec
+                    .current_directory()
+                    .map_or_else(null, |current_directory| current_directory.as_ptr()),
                 &raw const startup_info.StartupInfo,
                 &raw mut information,
             )
@@ -430,8 +491,11 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
 fn prepare_launch_spec(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    current_directory: Option<&std::path::Path>,
+    exact_environment: bool,
 ) -> io::Result<super::launch_spec::WindowsLaunchSpec> {
     use super::environment::{
+        EmptyInheritedWindowsEnvironment, InheritedWindowsEnvironment,
         SystemInheritedWindowsEnvironment, SystemWindowsOrdinalCompare, SystemWindowsWideEncoder,
     };
     use super::launch_spec::{WindowsLaunchAdapters, prepare_windows_launch_spec};
@@ -442,17 +506,51 @@ fn prepare_launch_spec(
     let directories = SystemWindowsDirectoryLookup;
     let ordinal = SystemWindowsOrdinalCompare;
     let inherited_environment = SystemInheritedWindowsEnvironment;
+    let empty_environment = EmptyInheritedWindowsEnvironment;
     let wide_encoder = SystemWindowsWideEncoder;
     let full_path = SystemWindowsFullPathName;
+    let inherited_environment: &dyn InheritedWindowsEnvironment = if exact_environment {
+        &empty_environment
+    } else {
+        &inherited_environment
+    };
     let adapters = WindowsLaunchAdapters {
         probe: &probe,
         directories: &directories,
         ordinal: &ordinal,
-        inherited_environment: &inherited_environment,
+        inherited_environment,
         wide_encoder: &wide_encoder,
     };
-    prepare_windows_launch_spec(command, environment_overrides, &adapters, &full_path)
-        .map_err(io::Error::other)
+    let mut launch_spec =
+        prepare_windows_launch_spec(command, environment_overrides, &adapters, &full_path)
+            .map_err(io::Error::other)?;
+    if let Some(current_directory) = current_directory {
+        use std::os::windows::ffi::OsStrExt;
+
+        let current_directory = current_directory
+            .as_os_str()
+            .encode_wide()
+            .collect::<Vec<_>>();
+        launch_spec
+            .set_current_directory(&current_directory, &full_path)
+            .map_err(io::Error::other)?;
+    }
+    Ok(launch_spec)
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct WindowsJobLaunchOptions<'a> {
+    /// An explicit absolute current directory for the child.
+    pub(super) current_directory: Option<&'a std::path::Path>,
+    /// Every requested limit is installed before `CreateProcessW` may execute
+    /// the helper's first instruction.
+    pub(super) resource_limits: Option<JobResourceLimits>,
+    /// Do not copy the parent environment; use only caller-supplied entries.
+    pub(super) exact_environment: bool,
+    /// Keep the parent input endpoint only for a bounded helper that will
+    /// transfer it immediately to a writer under the same deadline.
+    pub(super) retain_parent_stdin: bool,
 }
 
 #[cfg(windows)]
@@ -460,12 +558,32 @@ pub(super) fn launch_windows_job_process(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
 ) -> io::Result<WindowsJobProcess> {
-    let mut launch_spec = prepare_launch_spec(command, environment_overrides)?;
+    launch_windows_job_process_with_options(
+        command,
+        environment_overrides,
+        WindowsJobLaunchOptions::default(),
+    )
+}
+
+/// Atomically enroll a helper in its fully configured Job before its first
+/// instruction, with explicit current-directory and Job-resource choices.
+#[cfg(windows)]
+pub(super) fn launch_windows_job_process_with_options(
+    command: &[String],
+    environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    options: WindowsJobLaunchOptions<'_>,
+) -> io::Result<WindowsJobProcess> {
+    let mut launch_spec = prepare_launch_spec(
+        command,
+        environment_overrides,
+        options.current_directory,
+        options.exact_environment,
+    )?;
 
     let jobs = SystemWindowsJobApi;
     let pipe_api = SystemWindowsPipeApi;
     let startup_api = SystemWindowsStartupInfoApi;
-    let job = create_kill_on_close_job(&jobs)?;
+    let job = create_kill_on_close_job_with_limits(&jobs, options.resource_limits)?;
     let mut pipes = PipedStdio::create(&pipe_api)?;
     let mut startup = WindowsStartupInfo::new(
         &startup_api,
@@ -494,7 +612,13 @@ pub(super) fn launch_windows_job_process(
         created?,
         &mut pipes,
         |thread| thread.close(),
-        |pipes| pipes.close_parent_stdin(&pipe_api),
+        |pipes| {
+            if options.retain_parent_stdin {
+                Ok(())
+            } else {
+                pipes.close_parent_stdin(&pipe_api)
+            }
+        },
         get_process_birth,
     )?;
 
@@ -503,6 +627,7 @@ pub(super) fn launch_windows_job_process(
         root: finalized.root,
         identity: finalized.identity,
         pipes,
+        parent_stdin_open: options.retain_parent_stdin,
         hard_stop_issued: false,
     })
 }
@@ -541,11 +666,12 @@ fn read_pipe_for_test(end: &mut super::handle::PipeEndHandle) -> Result<String, 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub(super) fn windows_job_process_no_inheritance_premise_for_test() -> Result<(), String> {
     let command = test_child_command("sleep", &["30".to_owned()])?;
-    let mut launch_spec =
-        prepare_launch_spec(&command, &Default::default()).map_err(|error| error.to_string())?;
+    let mut launch_spec = prepare_launch_spec(&command, &Default::default(), None, false)
+        .map_err(|error| error.to_string())?;
     let jobs = SystemWindowsJobApi;
     let startup_api = SystemWindowsStartupInfoApi;
-    let job = create_kill_on_close_job(&jobs).map_err(|error| error.to_string())?;
+    let job =
+        create_kill_on_close_job_with_limits(&jobs, None).map_err(|error| error.to_string())?;
     let mut startup =
         WindowsStartupInfo::new_job_only(&startup_api, &job).map_err(|error| error.to_string())?;
     let created =
@@ -667,6 +793,111 @@ fn wait_for_observer_signal(observer: &TestProcessObserver, label: &str) -> Resu
 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String> {
+    let jobs = SystemWindowsJobApi;
+    let limits = JobResourceLimits {
+        cpu_rate_per_10_000: 2_500,
+        committed_memory_bytes: 512 * 1024 * 1024,
+    };
+    let resource_job = create_kill_on_close_job_with_limits(&jobs, Some(limits))
+        .map_err(|error| format!("creating limited Job failed: {error}"))?;
+    let observed_limits = jobs
+        .resource_limits(&resource_job)
+        .map_err(|error| format!("reading limited Job configuration failed: {error}"))?;
+    if observed_limits.cpu_rate_per_10_000 != limits.cpu_rate_per_10_000
+        || observed_limits.committed_memory_bytes != limits.committed_memory_bytes
+        || !observed_limits.process_memory_enforced
+        || !observed_limits.job_memory_enforced
+        || !observed_limits.cpu_hard_cap_enforced
+    {
+        return Err(format!(
+            "limited Job readback did not retain the configured hard limits: {observed_limits:?}"
+        ));
+    }
+    let limited_sleep = test_child_command("sleep", &["30".to_owned()])?;
+    let mut limited_launch_spec =
+        prepare_launch_spec(&limited_sleep, &Default::default(), None, false)
+            .map_err(|error| error.to_string())?;
+    let startup_api = SystemWindowsStartupInfoApi;
+    let mut limited_startup = WindowsStartupInfo::new_job_only(&startup_api, &resource_job)
+        .map_err(|error| error.to_string())?;
+    let limited_created = SystemWindowsCreateProcessApi.create_process(
+        &mut limited_launch_spec,
+        &limited_startup,
+        None,
+        false,
+    );
+    limited_startup.delete_with(&startup_api);
+    let mut limited_created = limited_created.map_err(|error| error.to_string())?;
+    limited_created
+        .thread
+        .close()
+        .map_err(|error| error.to_string())?;
+    if jobs
+        .observe_member(limited_created.root.raw(), &resource_job)
+        .map_err(|error| error.to_string())?
+        != JobMembership::Member
+    {
+        return Err("limited Job did not atomically enroll its root process".to_owned());
+    }
+    jobs.terminate(&resource_job, JOB_HARD_STOP_EXIT_CODE)
+        .map_err(|error| error.to_string())?;
+    if SystemWindowsProcessControlApi
+        .wait_for_process(&limited_created.root, JOB_HARD_STOP_TIMEOUT)
+        .map_err(|error| error.to_string())?
+        != ProcessWait::Signaled
+    {
+        return Err("limited Job root did not stop within the receipt bound".to_owned());
+    }
+
+    let expected_current_directory =
+        std::fs::canonicalize(std::env::temp_dir()).map_err(|error| {
+            format!("canonicalizing current-directory receipt root failed: {error}")
+        })?;
+    if !expected_current_directory.is_absolute() {
+        return Err("current-directory receipt root was not absolute".to_owned());
+    }
+    let current_directory = test_child_command("current-directory", &[])?;
+    let mut current_directory_owner = launch_windows_job_process_with_options(
+        &current_directory,
+        &Default::default(),
+        WindowsJobLaunchOptions {
+            current_directory: Some(&expected_current_directory),
+            resource_limits: None,
+            exact_environment: false,
+            retain_parent_stdin: false,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    if current_directory_owner
+        .wait()
+        .map_err(|error| error.to_string())?
+        != 0
+    {
+        return Err("current-directory fixture did not exit successfully".to_owned());
+    }
+    let current_directory_stdout =
+        read_pipe_for_test(&mut current_directory_owner.pipes.parent_stdout_read)?;
+    let current_directory_stderr =
+        read_pipe_for_test(&mut current_directory_owner.pipes.parent_stderr_read)?;
+    if !current_directory_stderr.is_empty() {
+        return Err(format!(
+            "current-directory fixture wrote stderr: {current_directory_stderr}"
+        ));
+    }
+    let observed_current_directory = std::fs::canonicalize(current_directory_stdout.trim_end())
+        .map_err(|error| {
+            format!("canonicalizing child current-directory receipt failed: {error}")
+        })?;
+    if observed_current_directory != expected_current_directory {
+        return Err(format!(
+            "child current directory did not retain the explicit owned path: expected {}, got {}",
+            expected_current_directory.display(),
+            observed_current_directory.display()
+        ));
+    }
+    super::bounded::bounded_helper_receipt_for_test()
+        .map_err(|error| format!("bounded helper receipt failed: {error}"))?;
+
     let lines = test_child_command("lines", &[])?;
     let mut lines_owner = launch_windows_job_process(&lines, &Default::default())
         .map_err(|error| error.to_string())?;
@@ -696,13 +927,13 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     if owner.observe_member().map_err(|error| error.to_string())? != JobMembership::Member {
         return Err("launched root was not a Job member".to_owned());
     }
-    if !SystemWindowsJobApi
+    if !jobs
         .kill_on_close_enabled(owner.job().map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?
     {
         return Err("launched Job does not retain the kill-on-close limit".to_owned());
     }
-    if SystemWindowsJobApi
+    if jobs
         .accounting(owner.job().map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?
         .active_processes
@@ -831,7 +1062,9 @@ mod tests {
     use super::super::handle::{
         JobHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle, RootProcessHandle,
     };
-    use super::super::job::{JobAccounting, JobMembership, WindowsJobApi};
+    use super::super::job::{
+        JobAccounting, JobMembership, JobResourceLimitReceipt, JobResourceLimits, WindowsJobApi,
+    };
     use super::super::pipes::{PipedStdio, WindowsPipeApi};
     use super::{
         CreatedWindowsProcess, JOB_HARD_STOP_TIMEOUT, ProcessWait, WindowsJobProcess,
@@ -875,6 +1108,24 @@ mod tests {
 
         fn enable_kill_on_close(&self, _job: &JobHandle) -> io::Result<()> {
             Ok(())
+        }
+
+        fn configure_resource_limits(
+            &self,
+            _job: &JobHandle,
+            _limits: JobResourceLimits,
+        ) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn resource_limits(&self, _job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
+            Ok(JobResourceLimitReceipt {
+                cpu_rate_per_10_000: 0,
+                committed_memory_bytes: 0,
+                process_memory_enforced: false,
+                job_memory_enforced: false,
+                cpu_hard_cap_enforced: false,
+            })
         }
 
         fn kill_on_close_enabled(&self, _job: &JobHandle) -> io::Result<bool> {
@@ -1049,6 +1300,7 @@ mod tests {
                 birth: ProcessBirth::windows(9),
             },
             pipes,
+            parent_stdin_open: false,
             hard_stop_issued: false,
         }
     }

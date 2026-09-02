@@ -75,6 +75,14 @@ pub const TARGETS: &[TargetSpec] = &[
         library_name: "libpdfium.dylib",
         library_sha256: "df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9",
     },
+    TargetSpec {
+        key: "windows-x86_64",
+        archive_name: "pdfium-win-x64.tgz",
+        archive_sha256: "bf25149815b34b00042f48a886653d469c817529dd9cccabb4b509b6465a9526",
+        library_member: "bin/pdfium.dll",
+        library_name: "pdfium.dll",
+        library_sha256: "0aa3abb1aa20798094c1a5f2d8cdea45b24a6e12cdc6c774de261dd522dbdf81",
+    },
 ];
 
 const ROOT_MEMBERS: &[&str] = &["LICENSE", "PDFiumConfig.cmake", "VERSION", "args.gn"];
@@ -123,6 +131,8 @@ const NOTICE_MEMBERS: &[&str] = &[
     "licenses/zlib.txt",
 ];
 const DIRECTORY_MEMBERS: &[&str] = &["include", "include/cpp", "lib", "licenses"];
+const WINDOWS_DIRECTORY_MEMBERS: &[&str] = &["bin"];
+const WINDOWS_IMPORT_LIBRARY_MEMBER: &str = "lib/pdfium.dll.lib";
 const NOTICE_SHA256: &[(&str, &str)] = &[
     (
         "licenses/abseil.txt",
@@ -187,6 +197,40 @@ const NOTICE_SHA256: &[(&str, &str)] = &[
 ];
 const MACOS_PDFIUM_NOTICE_SHA256: &str =
     "1fe9dea718fbd75cf149adaf4d8a22a4335604d964ddb76d1b45383dec8668c9";
+const WINDOWS_NOTICE_SHA256: &[(&str, &str)] = &[
+    (
+        "licenses/abseil.txt",
+        "f54fff0b905df5b3464527c652a30e903b172d6dcab4d89b5e6f105d5e4a4603",
+    ),
+    (
+        "licenses/fast_float.txt",
+        "bf1b57355feca8fce77ee95f48002f8d4789fb71b30ec7599c06cda4901fbb2b",
+    ),
+    (
+        "licenses/icu.txt",
+        "93679f4389d53b6835d89843f251844fb9bc455b35bab036d3c8e7abe497a47a",
+    ),
+    (
+        "licenses/libjpeg_turbo.ijg",
+        "db16a04128171879c60708d171b88d97345a2dd20f9bfc173680a4497c73f704",
+    ),
+    (
+        "licenses/libjpeg_turbo.md",
+        "be2b2b5ab168bce87bc3e31f2a5c5adba4b7f6e9e51d618e958d1d46972ebd95",
+    ),
+    (
+        "licenses/libpng.txt",
+        "452390433ba0f88aa3e2b122c647741b72a0c117cd6ed7a329b49785aecb5511",
+    ),
+    (
+        "licenses/llvm-libc.txt",
+        "3b6226c32e168c83b891d8d6f0d3c29c2116dc3ef93dc93c307b54f279ecf383",
+    ),
+    (
+        "licenses/simdutf.txt",
+        "c172a0ba936ff31230febb5dad869e25cb7c1a07480c7a381be8cf011bb52719",
+    ),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StagedRuntime {
@@ -219,6 +263,18 @@ pub fn spec_for(key: &str) -> Option<&'static TargetSpec> {
     TARGETS.iter().find(|spec| spec.key == key)
 }
 
+#[must_use]
+pub fn staged_member_names(spec: &TargetSpec) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    names.insert(spec.library_name.to_owned());
+    for member in NOTICE_MEMBERS {
+        if let Some(name) = Path::new(member).file_name().and_then(|name| name.to_str()) {
+            names.insert(name.to_owned());
+        }
+    }
+    names
+}
+
 pub fn attestation_url() -> String {
     format!("{RELEASE_URL}/{ATTESTATION_NAME}")
 }
@@ -230,12 +286,24 @@ pub fn expected_members(spec: &TargetSpec) -> BTreeSet<&'static str> {
     names.extend(NOTICE_MEMBERS.iter().copied());
     names.extend(DIRECTORY_MEMBERS.iter().copied());
     names.insert(spec.library_member);
+    if spec.key.starts_with("windows-") {
+        names.extend(WINDOWS_DIRECTORY_MEMBERS.iter().copied());
+        // Census-only: never staged; bytes already covered by archive_sha256.
+        names.insert(WINDOWS_IMPORT_LIBRARY_MEMBER);
+    }
     names
 }
 
 fn notice_sha256(spec: &TargetSpec, member: &str) -> Option<&'static str> {
     if member == "licenses/pdfium.txt" && spec.key.starts_with("macos-") {
         return Some(MACOS_PDFIUM_NOTICE_SHA256);
+    }
+    if spec.key.starts_with("windows-")
+        && let Some((_, digest)) = WINDOWS_NOTICE_SHA256
+            .iter()
+            .find(|(name, _)| *name == member)
+    {
+        return Some(digest);
     }
     NOTICE_SHA256
         .iter()
@@ -388,11 +456,352 @@ mod tests {
     }
 
     #[test]
+    fn staged_member_names_are_library_plus_notice_basenames() {
+        let spec = spec_for("linux-x86_64").expect("linux-x86_64");
+        let names = staged_member_names(spec);
+        assert!(names.contains("libpdfium.so"));
+        assert!(names.contains("pdfium.txt"));
+        assert!(!names.contains("include/fpdfview.h"));
+        assert_eq!(names.len(), 1 + NOTICE_MEMBERS.len());
+    }
+
+    #[test]
     fn archive_digest_mismatch_is_refused() {
         let spec = spec_for("linux-x86_64").expect("linux-x86_64");
         let error = stage_from_bytes(spec, b"not-an-archive")
             .expect_err("wrong digest")
             .to_string();
         assert!(error.contains("archive digest mismatch"));
+    }
+
+    const PLACEHOLDER_DLL: &[u8] = b"windows-pdfium-dll-placeholder";
+    const PLACEHOLDER_IMPORT_LIB: &[u8] = b"windows-pdfium-import-lib-placeholder";
+
+    fn windows_license(member: &str) -> &'static [u8] {
+        match member {
+            "licenses/abseil.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/abseil.txt")
+            }
+            "licenses/agg23.txt" => include_bytes!("../fixtures/pdfium-win-licenses/agg23.txt"),
+            "licenses/fast_float.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/fast_float.txt")
+            }
+            "licenses/freetype.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/freetype.txt")
+            }
+            "licenses/icu.txt" => include_bytes!("../fixtures/pdfium-win-licenses/icu.txt"),
+            "licenses/lcms.txt" => include_bytes!("../fixtures/pdfium-win-licenses/lcms.txt"),
+            "licenses/libjpeg_turbo.ijg" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/libjpeg_turbo.ijg")
+            }
+            "licenses/libjpeg_turbo.md" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/libjpeg_turbo.md")
+            }
+            "licenses/libopenjpeg.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/libopenjpeg.txt")
+            }
+            "licenses/libpng.txt" => include_bytes!("../fixtures/pdfium-win-licenses/libpng.txt"),
+            "licenses/libtiff.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/libtiff.txt")
+            }
+            "licenses/llvm-libc.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/llvm-libc.txt")
+            }
+            "licenses/pdfium.txt" => include_bytes!("../fixtures/pdfium-win-licenses/pdfium.txt"),
+            "licenses/simdutf.txt" => {
+                include_bytes!("../fixtures/pdfium-win-licenses/simdutf.txt")
+            }
+            "licenses/zlib.txt" => include_bytes!("../fixtures/pdfium-win-licenses/zlib.txt"),
+            other => panic!("unknown windows license fixture {other}"),
+        }
+    }
+
+    fn leak_sha256(bytes: &[u8]) -> &'static str {
+        Box::leak(sha256_hex(bytes).into_boxed_str())
+    }
+
+    fn windows_spec_matching(archive: &[u8], library: &[u8]) -> TargetSpec {
+        let mut spec = spec_for("windows-x86_64").expect("windows-x86_64").clone();
+        spec.archive_sha256 = leak_sha256(archive);
+        spec.library_sha256 = leak_sha256(library);
+        spec
+    }
+
+    struct WindowsArchiveLayout<'a> {
+        dll: Option<&'a [u8]>,
+        import_lib: Option<&'a [u8]>,
+        notices: BTreeMap<&'a str, &'a [u8]>,
+        extra: Vec<(&'a str, &'a [u8])>,
+    }
+
+    fn default_windows_layout() -> WindowsArchiveLayout<'static> {
+        WindowsArchiveLayout {
+            dll: Some(PLACEHOLDER_DLL),
+            import_lib: Some(PLACEHOLDER_IMPORT_LIB),
+            notices: BTreeMap::new(),
+            extra: Vec::new(),
+        }
+    }
+
+    fn gzip_windows_archive(layout: &WindowsArchiveLayout<'_>) -> Vec<u8> {
+        let mut builder = tar::Builder::new(crate::tar::deterministic_gzip(Vec::new()));
+        for name in ROOT_MEMBERS {
+            crate::tar::append_regular(&mut builder, name, b"", 0o644).expect("root");
+        }
+        crate::tar::append_directory(&mut builder, "include", 0o755).expect("include");
+        crate::tar::append_directory(&mut builder, "include/cpp", 0o755).expect("include/cpp");
+        for name in HEADER_MEMBERS {
+            crate::tar::append_regular(&mut builder, name, b"", 0o644).expect("header");
+        }
+        crate::tar::append_directory(&mut builder, "bin", 0o755).expect("bin");
+        if let Some(dll) = layout.dll {
+            crate::tar::append_regular(&mut builder, "bin/pdfium.dll", dll, 0o644).expect("dll");
+        }
+        crate::tar::append_directory(&mut builder, "lib", 0o755).expect("lib");
+        if let Some(import_lib) = layout.import_lib {
+            crate::tar::append_regular(
+                &mut builder,
+                WINDOWS_IMPORT_LIBRARY_MEMBER,
+                import_lib,
+                0o644,
+            )
+            .expect("import lib");
+        }
+        crate::tar::append_directory(&mut builder, "licenses", 0o755).expect("licenses");
+        for member in NOTICE_MEMBERS {
+            let bytes = layout
+                .notices
+                .get(member)
+                .copied()
+                .unwrap_or_else(|| windows_license(member));
+            crate::tar::append_regular(&mut builder, member, bytes, 0o644).expect("notice");
+        }
+        for (name, bytes) in &layout.extra {
+            crate::tar::append_regular(&mut builder, name, bytes, 0o644).expect("extra");
+        }
+        builder.finish().expect("tar finish");
+        builder
+            .into_inner()
+            .expect("gzip encoder")
+            .finish()
+            .expect("gzip finish")
+    }
+
+    #[test]
+    fn windows_x86_64_is_pinned_and_windows_aarch64_is_not() {
+        const PINS: &[(&str, &str, &str)] = &[
+            (
+                "linux-x86_64",
+                "49ab3afbd4e6c1e284b5f2898129c8bb8a10fd785c1c5392c8c1fc70242f9ced",
+                "687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e",
+            ),
+            (
+                "linux-aarch64",
+                "00551476a77fbc1a31c37573eadc9b63f1c366f65ad727539326927da083bb4d",
+                "933f3d620cc8b58fb30a7f12a1bce8bf276da65caf39ff8fb2d04bc1268d53a3",
+            ),
+            (
+                "macos-x86_64",
+                "0c78b8d55a4c97e02c9bb516997253cb972739373009cf29554c959a2f6b194a",
+                "8fdf8fc61c85676515321b0c214fb1afa0e157cffdadbdff40802e7b4bed7ad6",
+            ),
+            (
+                "macos-arm64",
+                "c032aa59be58b0f12e41e76a8ef707e347b9841b0426446f646b2568d350ec4f",
+                "df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9",
+            ),
+            (
+                "windows-x86_64",
+                "bf25149815b34b00042f48a886653d469c817529dd9cccabb4b509b6465a9526",
+                "0aa3abb1aa20798094c1a5f2d8cdea45b24a6e12cdc6c774de261dd522dbdf81",
+            ),
+        ];
+        for (key, archive_sha256, library_sha256) in PINS {
+            let spec = spec_for(key).unwrap_or_else(|| panic!("missing {key}"));
+            assert_eq!(spec.archive_sha256, *archive_sha256, "{key} archive");
+            assert_eq!(spec.library_sha256, *library_sha256, "{key} library");
+        }
+        let windows = spec_for("windows-x86_64").expect("windows-x86_64");
+        assert_eq!(windows.archive_name, "pdfium-win-x64.tgz");
+        assert_eq!(windows.library_member, "bin/pdfium.dll");
+        assert_eq!(windows.library_name, "pdfium.dll");
+        assert!(spec_for("windows-aarch64").is_none());
+    }
+
+    #[test]
+    fn windows_expected_members_include_bin_and_the_import_library() {
+        let windows = expected_members(spec_for("windows-x86_64").expect("windows-x86_64"));
+        assert!(windows.contains("bin"));
+        assert!(windows.contains("lib/pdfium.dll.lib"));
+        let linux = expected_members(spec_for("linux-x86_64").expect("linux-x86_64"));
+        assert!(!linux.contains("bin"));
+        assert!(!linux.contains("lib/pdfium.dll.lib"));
+    }
+
+    #[test]
+    fn windows_notice_sha256_overrides_only_the_crlf_files() {
+        let spec = spec_for("windows-x86_64").expect("windows-x86_64");
+        for (member, digest) in WINDOWS_NOTICE_SHA256 {
+            assert_eq!(notice_sha256(spec, member), Some(*digest), "{member}");
+            let generic = NOTICE_SHA256
+                .iter()
+                .find(|(name, _)| name == member)
+                .map(|(_, generic)| *generic);
+            assert_ne!(notice_sha256(spec, member), generic, "{member} generic");
+        }
+        assert_eq!(
+            notice_sha256(spec, "licenses/agg23.txt"),
+            Some("c110d3ea2ad77467ce0dcff7d3337e6c8be8049a5103f4b9bd5fd911a77972e5")
+        );
+        assert_eq!(
+            notice_sha256(spec, "licenses/pdfium.txt"),
+            Some("961eacd9633fff6d051db7208b755e9210e30efac7adec3e6a6d52798f0ccf0e")
+        );
+        assert_ne!(
+            notice_sha256(spec, "licenses/pdfium.txt"),
+            Some(MACOS_PDFIUM_NOTICE_SHA256)
+        );
+    }
+
+    #[test]
+    fn windows_stage_from_bytes_succeeds_and_drops_the_import_library() {
+        let archive = gzip_windows_archive(&default_windows_layout());
+        let spec = windows_spec_matching(&archive, PLACEHOLDER_DLL);
+        let staged = stage_from_bytes(&spec, &archive).expect("windows archive");
+        assert_eq!(staged.library, PLACEHOLDER_DLL);
+        assert_eq!(staged.notices.len(), NOTICE_MEMBERS.len());
+        for member in NOTICE_MEMBERS {
+            let name = Path::new(member)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("notice basename");
+            assert_eq!(
+                staged.notices.get(name).map(Vec::as_slice),
+                Some(windows_license(member)),
+                "{member}"
+            );
+        }
+        assert!(!staged.notices.contains_key("pdfium.dll.lib"));
+        assert!(!staged.notices.contains_key("lib/pdfium.dll.lib"));
+    }
+
+    #[test]
+    fn windows_archive_missing_the_dll_is_refused() {
+        let mut layout = default_windows_layout();
+        layout.dll = None;
+        let archive = gzip_windows_archive(&layout);
+        let spec = windows_spec_matching(&archive, PLACEHOLDER_DLL);
+        let error = stage_from_bytes(&spec, &archive)
+            .expect_err("missing dll")
+            .to_string();
+        assert!(error.contains("bin/pdfium.dll"), "{error}");
+        assert!(error.contains("missing:"), "{error}");
+    }
+
+    #[test]
+    fn windows_archive_missing_the_import_library_is_refused() {
+        let mut layout = default_windows_layout();
+        layout.import_lib = None;
+        let archive = gzip_windows_archive(&layout);
+        let spec = windows_spec_matching(&archive, PLACEHOLDER_DLL);
+        let error = stage_from_bytes(&spec, &archive)
+            .expect_err("missing import lib")
+            .to_string();
+        assert!(error.contains("lib/pdfium.dll.lib"), "{error}");
+        assert!(error.contains("missing:"), "{error}");
+    }
+
+    #[test]
+    fn windows_archive_with_an_unexpected_member_is_refused() {
+        let mut layout = default_windows_layout();
+        layout.extra.push(("unexpected.txt", b"nope".as_slice()));
+        let archive = gzip_windows_archive(&layout);
+        let spec = windows_spec_matching(&archive, PLACEHOLDER_DLL);
+        let error = stage_from_bytes(&spec, &archive)
+            .expect_err("unexpected member")
+            .to_string();
+        assert!(error.contains("unexpected.txt"), "{error}");
+        assert!(error.contains("unexpected:"), "{error}");
+    }
+
+    #[test]
+    fn windows_library_digest_mismatch_is_refused() {
+        let archive = gzip_windows_archive(&default_windows_layout());
+        let mut spec = spec_for("windows-x86_64").expect("windows-x86_64").clone();
+        spec.archive_sha256 = leak_sha256(&archive);
+        let error = stage_from_bytes(&spec, &archive)
+            .expect_err("library digest")
+            .to_string();
+        assert!(
+            error.contains("PDFium extracted member digest mismatch: bin/pdfium.dll"),
+            "{error}"
+        );
+        assert!(error.contains(spec.library_sha256), "{error}");
+        assert!(error.contains(&sha256_hex(PLACEHOLDER_DLL)), "{error}");
+    }
+
+    #[test]
+    fn windows_notice_digest_mismatch_is_refused() {
+        let mut layout = default_windows_layout();
+        layout
+            .notices
+            .insert("licenses/abseil.txt", b"corrupted-abseil".as_slice());
+        let archive = gzip_windows_archive(&layout);
+        let spec = windows_spec_matching(&archive, PLACEHOLDER_DLL);
+        let error = stage_from_bytes(&spec, &archive)
+            .expect_err("notice digest")
+            .to_string();
+        assert!(
+            error.contains("PDFium extracted member digest mismatch: licenses/abseil.txt"),
+            "{error}"
+        );
+        assert!(
+            error.contains("f54fff0b905df5b3464527c652a30e903b172d6dcab4d89b5e6f105d5e4a4603"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn windows_staged_member_names_exclude_the_import_library() {
+        let spec = spec_for("windows-x86_64").expect("windows-x86_64");
+        let names = staged_member_names(spec);
+        assert!(names.contains("pdfium.dll"));
+        for member in NOTICE_MEMBERS {
+            let basename = Path::new(member)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("notice basename");
+            assert!(names.contains(basename), "{basename}");
+        }
+        assert!(!names.contains("pdfium.dll.lib"));
+        assert!(!names.contains("lib/pdfium.dll.lib"));
+        assert_eq!(names.len(), 1 + NOTICE_MEMBERS.len());
+    }
+
+    #[test]
+    fn windows_write_staged_library_does_not_write_the_import_library() {
+        let spec = spec_for("windows-x86_64").expect("windows-x86_64");
+        let mut notices = BTreeMap::new();
+        for member in NOTICE_MEMBERS {
+            let name = Path::new(member)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("notice basename");
+            notices.insert(name.to_owned(), windows_license(member).to_vec());
+        }
+        let staged = StagedRuntime {
+            library: PLACEHOLDER_DLL.to_vec(),
+            notices,
+        };
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_staged_library(spec, &staged, dir.path()).expect("stage");
+        let files = crate::stage::staged_files(dir.path()).expect("listing");
+        assert!(files.contains(&"pdfium.dll".to_owned()));
+        assert!(!files.iter().any(|name| name.contains("pdfium.dll.lib")));
+        assert_eq!(files.len(), 1 + NOTICE_MEMBERS.len());
     }
 }

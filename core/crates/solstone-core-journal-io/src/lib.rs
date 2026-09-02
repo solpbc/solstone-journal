@@ -16,31 +16,37 @@ compile_error!(
 pub mod append;
 #[cfg(any(unix, windows))]
 pub mod atomic;
+pub mod bounded_read;
 #[cfg(unix)]
 pub mod claim_remove;
+pub mod cortex_use;
+mod create_only_retry;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;
+mod exclusive_copy;
 #[cfg(unix)]
 pub mod flat_directory;
-#[cfg(unix)]
 pub mod health_marker;
+mod install_retry;
 pub mod inventory_budget;
 pub mod journal_root;
 #[cfg(any(unix, windows))]
 pub mod lease;
 #[cfg(any(unix, windows))]
 pub mod locking;
+mod managed_log_field_admission;
 mod managed_log_lock_boundary;
 mod managed_log_names;
 pub mod name_admission;
 pub mod observation;
+#[cfg(any(unix, windows))]
+pub mod operational_log;
 pub mod paths;
 pub mod readers;
 pub mod removal;
-#[cfg(unix)]
 pub mod snapshot;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
@@ -61,6 +67,8 @@ mod windows_managed_log_resolve;
 mod windows_managed_log_test_hooks;
 #[cfg(windows)]
 mod windows_ntcreate;
+// Parser is host-neutral (AC1); Windows prepare/revalidate are cfg'd inside.
+mod windows_publication_path;
 #[cfg(windows)]
 pub mod windows_sync_dir;
 
@@ -69,8 +77,12 @@ pub(crate) mod test_support;
 
 #[cfg(any(unix, windows))]
 pub use append::append_jsonl;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use append::append_text;
+#[cfg(any(unix, windows))]
+pub use atomic::install_file;
+#[cfg(unix)]
+pub use atomic::write_bytes_exclusive_bound_detailed;
 #[cfg(any(unix, windows))]
 pub use atomic::{AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json};
 #[cfg(unix)]
@@ -82,10 +94,30 @@ pub use atomic::{
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_detailed};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use atomic::{
-    install_file, write_bytes_exclusive, write_jsonl, write_reader_exclusive, write_text,
+    ExclusivePublication, FinalNameConfirmation, MetadataDurability, StageCleanup,
+    write_bytes_exclusive_detailed, write_reader_exclusive_detailed,
 };
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use atomic::{
+    WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
+    run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use atomic::{
+    WindowsInstallPrimitive, WindowsInstallTrace, run_with_windows_install_barrier,
+    run_with_windows_install_faults, run_with_windows_install_faults_and_barrier,
+};
+#[cfg(all(unix, feature = "test-hooks"))]
+pub use atomic::{
+    run_with_bound_publication_faults, run_with_bound_publication_faults_and_barrier,
+};
+#[cfg(any(unix, windows))]
+pub use atomic::{write_bytes_exclusive, write_reader_exclusive};
+#[cfg(any(unix, windows))]
+pub use atomic::{write_jsonl, write_text};
+pub use bounded_read::{JournalReadError, MAX_BYTES, resolve_read_path};
 #[cfg(unix)]
 pub use claim_remove::claim_and_remove_observed;
 #[cfg(all(unix, feature = "test-hooks"))]
@@ -96,8 +128,6 @@ pub use claim_remove::{
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
-#[cfg(unix)]
-pub use entry::sync_dir_bound;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ClaimDurability, ClaimRemovalError, ClaimRemovalOutcome,
@@ -109,8 +139,8 @@ pub use errors::{
 pub use flat_directory::{
     FlatDirectory, create_or_open_flat_directory_bound, list_flat_directory,
     open_flat_directory_bound, read_observed_file, read_observed_file_bounded,
+    read_observed_root_file_bounded,
 };
-#[cfg(unix)]
 pub use health_marker::{
     DayMarkerPairStatus, HealthMarker, HealthMarkerError, HealthMarkerKind, HealthMarkerState,
     PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,
@@ -127,6 +157,8 @@ pub use journal_root::{
     WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
     run_with_windows_acquisition_trace,
 };
+#[cfg(unix)]
+pub use lease::probe_exclusive_flock_no_release;
 #[cfg(any(unix, windows))]
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
@@ -146,8 +178,6 @@ pub use name_admission::{
     NoFollowEntryKind, StreamName, check_portable_component,
 };
 pub use observation::{FileObservation, FlatDirectoryEntry, NativeMtime};
-#[cfg(unix)]
-pub use paths::create_directory_bound;
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, SegmentLayout,
     SegmentLocatorIdentity, StreamLocation, check_record_identities, check_unique_record_keys,
@@ -167,11 +197,10 @@ pub use readers::{
     read_jsonl_with_report, read_text,
 };
 pub use removal::{remove_contained_tree, remove_dir_all};
-#[cfg(unix)]
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
 pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
@@ -195,6 +224,7 @@ pub use windows_lock::{
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_managed_log_test_hooks::{
+    exercise_windows_managed_log_logical_coordinates,
     exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
     publish_test_managed_log_alias, root_test_managed_log_alias_name,
     try_test_managed_log_alias_lock,

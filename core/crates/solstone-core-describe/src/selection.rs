@@ -353,7 +353,7 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::collections::BTreeMap;
 

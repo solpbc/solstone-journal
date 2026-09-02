@@ -13,6 +13,13 @@ publish = false
 name = "solstone-distribution"
 path = "src/main.rs"
 
+[[bin]]
+name = "solstone-distribution-fixture"
+path = "src/bin/solstone-distribution-fixture.rs"
+required-features = ["test-fixture-pin"]
+test = false
+bench = false
+
 [lints]
 workspace = true
 
@@ -26,12 +33,16 @@ minisign.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-solstone-core-artifact-download.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
+solstone-core-journal-io.workspace = true
 tar.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
 
+[target.'cfg(not(windows))'.dependencies]
+solstone-core-artifact-download.workspace = true
+
 [dev-dependencies]
+solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 tempfile = "3"
 
 [[test]]
@@ -47,3 +58,12 @@ required-features = ["test-fixture-pin"]
 name = "distribution_publish"
 path = "tests/distribution_publish.rs"
 required-features = ["test-fixture-pin"]
+
+[[test]]
+name = "windows_payload"
+path = "tests/windows_payload.rs"
+required-features = ["test-fixture-pin"]
+
+[[test]]
+name = "controlled_build_receipt_race"
+path = "tests/controlled_build_receipt_race.rs"

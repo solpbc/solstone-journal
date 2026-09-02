@@ -5,66 +5,62 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::sync::OnceLock;
+
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::{
+    VerifiedWindowsPayload, WINDOWS_CED_LIBRARY, verify_windows_payload,
+};
+
 use serde_json::{Value, json};
 
-use super::ced_install::{
-    ced_artifact_key, ced_library_path, ced_model_path, check_ced_assets, model_artifact,
-};
+use super::capability_status::CapabilityStatus;
 use super::ced_runtime::{
     CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
     invoke_ced_analyze_with_args,
 };
+use super::ced_install::{
+    ced_artifact_key, ced_library_path, ced_model_path, ced_uses_package_engine, check_ced_assets,
+    check_ced_model, model_artifact,
+};
 use super::manifest::sha256_file;
 
-const PROBE_REQUEST_SCHEMA: &str = "solstone-ced-probe-request-v1";
-const HELPER_ERROR_SCHEMA: &str = "solstone-ced-error-v1";
-
 /// Owner-facing sentence for a degraded CED verdict, identical on every surface.
-pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.";
+pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.";
 
 /// Short ready detail for `journal check` and `journal health`.
 pub const CED_READY_DETAIL: &str = "ced.cpp sound-tag engine and model are ready";
 
-/// Why a supported host is not Ready.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CedDegradedCause {
-    Absent,
-    IntegrityInvalid,
-    Unloadable,
-}
+/// Capability identifier carried on every CED-constructed non-ready status.
+pub const CED_CAPABILITY: &str = "ced";
 
 /// Result of probing CED assets on a host.
 ///
 /// `os` and `arch` must already be canonical (`linux`/`x86_64`, `linux`/`arm64`,
 /// `darwin`/`arm64`). Callers canonicalize at their own boundary.
+///
+/// `Degraded` is never constructed with [`CapabilityStatus::Ready`]; a ready
+/// host is [`CedVerdict::Ready`] directly.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CedReadiness {
-    Ready {
-        library: PathBuf,
-        model: PathBuf,
-    },
-    Unsupported {
-        os: String,
-        arch: String,
-    },
-    Degraded {
-        cause: CedDegradedCause,
-        detail: String,
-    },
+pub enum CedVerdict {
+    Ready { library: PathBuf, model: PathBuf },
+    Unsupported { os: String, arch: String },
+    Degraded(CapabilityStatus),
 }
 
 /// Production verdict: catalog model digest, then [`evaluate_ced_readiness_against`].
 ///
 /// `os` and `arch` must already be canonical.
-pub fn evaluate_ced_readiness(journal: &Path, os: &str, arch: &str) -> CedReadiness {
+pub fn evaluate_ced_readiness(journal: &Path, os: &str, arch: &str) -> CedVerdict {
     match model_artifact() {
         Ok(artifact) => evaluate_ced_readiness_against(journal, os, arch, artifact.sha256),
-        Err(error) => CedReadiness::Degraded {
-            cause: CedDegradedCause::IntegrityInvalid,
+        Err(error) => CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid {
+            capability: CED_CAPABILITY.to_owned(),
             detail: error.to_string(),
-        },
+        }),
     }
 }
 
@@ -79,7 +75,7 @@ pub fn evaluate_ced_readiness_against(
     os: &str,
     arch: &str,
     expected_model_sha256: &str,
-) -> CedReadiness {
+) -> CedVerdict {
     evaluate_ced_readiness_against_with_probe(
         journal,
         os,
@@ -89,47 +85,112 @@ pub fn evaluate_ced_readiness_against(
     )
 }
 
-/// [`evaluate_ced_readiness_against`] with the deep engine probe supplied by
-/// the caller.
+/// [`evaluate_ced_readiness_against`] with the deep engine probe supplied by the caller.
 ///
-/// Production always passes the real out-of-process probe (Brief D:
-/// `solstone-core-ced-sys` `dlopen`s a glibc shared object that this
-/// `musl-static`-lane crate can never load in-process). Callers in other
-/// crates' tests -- `solstone-core::install_models`,
-/// `solstone-core-sound-tags` -- substitute a closure to get a deterministic
-/// `Ready`/`Unloadable` verdict without a compiled cross-lane helper or a
-/// native shared-library fixture, exactly the seam
-/// `solstone-core::install_models`'s own `hooks.ced_verdict` function
-/// pointer already uses one level up.
+/// 🔴 Production always passes the real **out-of-process** probe. `solstone-core-ced-sys`
+/// `dlopen`s a glibc shared object, and this crate ships on the `musl-static` lane, which
+/// has no dynamic loader -- an in-process load can never succeed in a shipped build. Tests
+/// in sibling crates substitute a closure to get a deterministic verdict without a compiled
+/// cross-lane helper.
 pub fn evaluate_ced_readiness_against_with_probe(
     journal: &Path,
     os: &str,
     arch: &str,
     expected_model_sha256: &str,
     probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
-) -> CedReadiness {
+) -> CedVerdict {
+    if ced_uses_package_engine(os, arch) {
+        return probe_windows_package_engine(journal, expected_model_sha256, probe);
+    }
     let Some(key) = ced_artifact_key(os, arch) else {
-        return CedReadiness::Unsupported {
+        return CedVerdict::Unsupported {
             os: os.to_owned(),
             arch: arch.to_owned(),
         };
     };
     match check_ced_assets(journal, os, arch) {
-        Ok(None) => CedReadiness::Unsupported {
+        Ok(None) => CedVerdict::Unsupported {
             os: os.to_owned(),
             arch: arch.to_owned(),
         },
-        Err(error) => {
-            let cause = match error.reason_code.as_str() {
-                "sidecar_missing" | "file_missing" => CedDegradedCause::Absent,
-                _ => CedDegradedCause::IntegrityInvalid,
-            };
-            CedReadiness::Degraded {
-                cause,
-                detail: error.to_string(),
-            }
-        }
+        Err(error) => CedVerdict::Degraded(ced_install_status(&error)),
         Ok(Some(_)) => probe_integrity_and_load(journal, key, expected_model_sha256, probe),
+    }
+}
+
+fn probe_windows_package_engine(
+    journal: &Path,
+    expected_model_sha256: &str,
+    probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> CedVerdict {
+    let library = match windows_package_ced_library() {
+        Ok(library) => library,
+        Err(detail) => {
+            return CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail,
+            });
+        }
+    };
+    if let Err(error) = check_ced_model(journal) {
+        return CedVerdict::Degraded(ced_install_status(&error));
+    }
+    let model = ced_model_path(journal);
+    probe_model_and_library_at_paths(&model, expected_model_sha256, &library, probe)
+}
+
+#[cfg(windows)]
+fn windows_package_ced_library() -> Result<PathBuf, String> {
+    static PAYLOAD: OnceLock<Result<VerifiedWindowsPayload, String>> = OnceLock::new();
+    let payload = PAYLOAD.get_or_init(|| {
+        let executable = std::env::current_exe().map_err(|error| {
+            format!("could not determine the running journal executable: {error}")
+        })?;
+        let bin = executable.parent().ok_or_else(|| {
+            format!(
+                "running journal executable has no containing directory: {}",
+                executable.display()
+            )
+        })?;
+        if bin.file_name() != Some(OsStr::new("bin")) {
+            return Err(format!(
+                "running journal executable is not in the package bin directory: {}",
+                executable.display()
+            ));
+        }
+        let root = bin.parent().ok_or_else(|| {
+            format!(
+                "package bin directory has no package root: {}",
+                bin.display()
+            )
+        })?;
+        verify_windows_payload(root)
+            .map_err(|error| format!("could not verify the signed CED app payload: {error}"))
+    });
+    payload
+        .as_ref()
+        .map_err(Clone::clone)?
+        .ced_library_path()
+        .map_err(|error| {
+            format!("signed CED app payload does not declare {WINDOWS_CED_LIBRARY}: {error}")
+        })
+}
+
+#[cfg(not(windows))]
+fn windows_package_ced_library() -> Result<PathBuf, String> {
+    Err("Windows CED package verification requires a Windows runtime".to_owned())
+}
+
+fn ced_install_status(error: &super::ced_install::CedInstallError) -> CapabilityStatus {
+    match error.reason_code.as_str() {
+        "sidecar_missing" | "file_missing" => CapabilityStatus::Absent {
+            capability: CED_CAPABILITY.to_owned(),
+            detail: error.to_string(),
+        },
+        _ => CapabilityStatus::IntegrityInvalid {
+            capability: CED_CAPABILITY.to_owned(),
+            detail: error.to_string(),
+        },
     }
 }
 
@@ -138,41 +199,51 @@ fn probe_integrity_and_load(
     key: &str,
     expected_model_sha256: &str,
     probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
-) -> CedReadiness {
+) -> CedVerdict {
     let model = ced_model_path(journal);
-    let actual = match sha256_file(&model) {
+    let library = ced_library_path(journal, key);
+    probe_model_and_library_at_paths(&model, expected_model_sha256, &library, probe)
+}
+
+fn probe_model_and_library_at_paths(
+    model: &Path,
+    expected_model_sha256: &str,
+    library: &Path,
+    probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> CedVerdict {
+    let actual = match sha256_file(model) {
         Ok(actual) => actual,
         Err(detail) => {
-            return CedReadiness::Degraded {
-                cause: CedDegradedCause::IntegrityInvalid,
+            return CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid {
+                capability: CED_CAPABILITY.to_owned(),
                 detail,
-            };
+            });
         }
     };
     if actual != expected_model_sha256 {
-        return CedReadiness::Degraded {
-            cause: CedDegradedCause::IntegrityInvalid,
+        return CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid {
+            capability: CED_CAPABILITY.to_owned(),
             detail: format!(
                 "sha256 mismatch for {}: expected {expected_model_sha256}, got {actual}",
                 model.display()
             ),
-        };
+        });
     }
-    let library = ced_library_path(journal, key);
-    match probe(&library, &model) {
-        Ok(()) => CedReadiness::Ready { library, model },
-        Err(detail) => CedReadiness::Degraded {
-            cause: CedDegradedCause::Unloadable,
+    if let Err(detail) = probe(library, model) {
+        return CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
+            capability: CED_CAPABILITY.to_owned(),
             detail,
-        },
+        });
+    }
+    CedVerdict::Ready {
+        library: library.to_path_buf(),
+        model: model.to_path_buf(),
     }
 }
 
-/// Ask the out-of-process `solstone-core-ced-analyze` helper (Brief D) to
-/// open `library` and load `model`, without decoding or classifying any
-/// audio. This is exactly the pair of calls `CedLibrary::open` +
-/// `load_model` used to make in-process before this crate could never
-/// satisfy them from a `musl-static` binary.
+const PROBE_REQUEST_SCHEMA: &str = "solstone-ced-probe-request-v1";
+const HELPER_ERROR_SCHEMA: &str = "solstone-ced-error-v1";
+
 fn probe_ced_engine(
     program: &CedAnalyzeProgram,
     library: &Path,
@@ -216,6 +287,22 @@ fn helper_error_detail(stderr: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn windows_requires_a_verified_package_engine() {
+        let journal = tempfile::tempdir().unwrap();
+        match evaluate_ced_readiness(journal.path(), "windows", "x86_64") {
+            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable { detail, .. }) => {}
+            other => panic!("expected package-engine refusal, got {other:?}"),
+        }
+        match evaluate_ced_readiness(journal.path(), "macos", "aarch64") {
+            CedVerdict::Unsupported { os, arch } => {
+                assert_eq!(os, "macos");
+                assert_eq!(arch, "aarch64");
+            }
+            other => panic!("expected unsupported raw macos, got {other:?}"),
+        }
+    }
+
     use super::*;
 
     /// W8-14 regression, pinned at the exact call site that shipped broken.
@@ -276,15 +363,18 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     #[test]
     fn unsupported_platform_is_unsupported() {
         let journal = tempfile::tempdir().unwrap();
-        match evaluate_ced_readiness(journal.path(), "windows", "x86_64") {
-            CedReadiness::Unsupported { os, arch } => {
-                assert_eq!(os, "windows");
+        // Windows is no longer "unsupported": it resolves through the signed
+        // package engine, which cannot be verified off a Windows runtime. That
+        // path has its own test (`windows_requires_a_verified_package_engine`).
+        match evaluate_ced_readiness(journal.path(), "freebsd", "x86_64") {
+            CedVerdict::Unsupported { os, arch } => {
+                assert_eq!(os, "freebsd");
                 assert_eq!(arch, "x86_64");
             }
             other => panic!("expected unsupported, got {other:?}"),
         }
         match evaluate_ced_readiness(journal.path(), "macos", "aarch64") {
-            CedReadiness::Unsupported { os, arch } => {
+            CedVerdict::Unsupported { os, arch } => {
                 assert_eq!(os, "macos");
                 assert_eq!(arch, "aarch64");
             }
@@ -296,10 +386,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     fn absent_sidecar_is_absent() {
         let journal = tempfile::tempdir().unwrap();
         match evaluate_ced_readiness(journal.path(), "linux", "x86_64") {
-            CedReadiness::Degraded {
-                cause: CedDegradedCause::Absent,
-                ..
-            } => {}
+            CedVerdict::Degraded(CapabilityStatus::Absent { detail, .. }) => {}
             other => panic!("expected absent, got {other:?}"),
         }
     }
@@ -309,10 +396,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         let journal = tempfile::tempdir().unwrap();
         write_complete_ced_install(journal.path(), "linux-cpu-x64").unwrap();
         match evaluate_ced_readiness(journal.path(), "linux", "x86_64") {
-            CedReadiness::Degraded {
-                cause: CedDegradedCause::IntegrityInvalid,
-                ..
-            } => {}
+            CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { detail, .. }) => {}
             other => panic!("expected integrity-invalid, got {other:?}"),
         }
     }
@@ -349,10 +433,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         assert!(
             matches!(
                 evaluate_ced_readiness(journal.path(), "linux", "x86_64"),
-                CedReadiness::Degraded {
-                    cause: CedDegradedCause::IntegrityInvalid,
-                    ..
-                }
+                CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { .. })
             ),
             "fixture must fail the deep, catalog-digest readiness verdict"
         );
@@ -397,10 +478,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
             &digest,
             |_library, _model| Err("stub: engine refused to load".to_owned()),
         ) {
-            CedReadiness::Degraded {
-                cause: CedDegradedCause::Unloadable,
-                detail,
-            } => {
+            CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable { detail, .. }) => {
                 assert!(detail.contains("stub: engine refused to load"), "{detail}");
             }
             other => panic!("expected unloadable, got {other:?}"),
@@ -414,10 +492,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         write_complete_ced_install(journal.path(), "linux-cpu-x64").unwrap();
         write_ced_model_bytes(journal.path(), b"not-the-pin").unwrap();
         match evaluate_ced_readiness(journal.path(), "linux", "x86_64") {
-            CedReadiness::Degraded {
-                cause: CedDegradedCause::IntegrityInvalid,
-                detail,
-            } => {
+            CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { detail, .. }) => {
                 assert!(detail.contains(expected), "{detail}");
             }
             other => panic!("expected catalog-digest mismatch, got {other:?}"),
@@ -441,7 +516,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
                 Ok(())
             },
         ) {
-            CedReadiness::Ready { .. } => {}
+            CedVerdict::Ready { .. } => {}
             other => panic!("expected ready, got {other:?}"),
         }
     }
@@ -476,7 +551,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         }
         let _guard = set_test_helper_base_dir(helpers.path().to_path_buf());
         match evaluate_ced_readiness_against(journal.path(), "linux", "x86_64", &digest) {
-            CedReadiness::Ready { .. } => {}
+            CedVerdict::Ready { .. } => {}
             other => panic!("expected ready via the real subprocess stub, got {other:?}"),
         }
 
@@ -491,10 +566,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
             fs::set_permissions(&helper_path, fs::Permissions::from_mode(0o755)).unwrap();
         }
         match evaluate_ced_readiness_against(journal.path(), "linux", "x86_64", &digest) {
-            CedReadiness::Degraded {
-                cause: CedDegradedCause::Unloadable,
-                detail,
-            } => {
+            CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable { detail, .. }) => {
                 assert!(detail.contains("stub refuses"), "{detail}");
             }
             other => panic!("expected unloadable via the real subprocess stub, got {other:?}"),

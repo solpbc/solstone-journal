@@ -426,7 +426,7 @@ fn is_truthy(value: Option<&Value>) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
 

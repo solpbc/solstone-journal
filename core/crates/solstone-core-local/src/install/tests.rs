@@ -149,7 +149,13 @@ fn download_artifact_reason_codes_cover_every_archive_error() {
         "download_size_mismatch"
     );
     assert_eq!(
-        super::download_artifact_reason_code(&ArchiveError::DigestMismatch, fallback),
+        super::download_artifact_reason_code(
+            &ArchiveError::DigestMismatch {
+                expected: "a".repeat(64),
+                actual: "b".repeat(64),
+            },
+            fallback,
+        ),
         "download_digest_mismatch"
     );
     assert_eq!(
@@ -1864,7 +1870,7 @@ fn digest_mismatch_leaves_destination_unchanged() {
     let before = fs::read(&artifact).unwrap();
     assert!(matches!(
         archive::verify_sha256(&artifact, "00"),
-        Err(archive::ArchiveError::DigestMismatch)
+        Err(archive::ArchiveError::DigestMismatch { .. })
     ));
     assert_eq!(fs::read(&artifact).unwrap(), before);
     let _ = fs::remove_dir_all(root);

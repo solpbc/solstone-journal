@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
-use rusqlite::{Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params_from_iter};
+use rusqlite::{
+    Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params, params_from_iter,
+};
 
 use crate::compile::{CompileOutcome, compile_query};
 use crate::ladder::relaxed_plan;
@@ -57,6 +59,12 @@ pub fn search_counts(
     let mut counts = connection.aggregate_counts(&plan, relaxed)?;
     counts.degraded = connection.index_degraded()?;
     Ok(counts)
+}
+
+/// Return whether one exact journal path and chunk index are represented in the index.
+pub fn hit_at(journal: &Path, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
+    let mut connection = open_read_only(journal)?;
+    connection.hit_at(path, idx)
 }
 
 /// Return the distinct nonempty indexed agents. Search never calls this query.
@@ -379,6 +387,19 @@ impl QueryConnection {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| self.classify(error))?;
         Ok(rows)
+    }
+
+    fn hit_at(&mut self, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
+        let found: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT 1 FROM chunks WHERE path=?1 AND idx=?2 LIMIT 1",
+                params![path, idx],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| self.classify(error))?;
+        Ok(found.is_some())
     }
 
     fn aggregate_counts(

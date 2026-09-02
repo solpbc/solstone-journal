@@ -1,0 +1,370 @@
+{
+  "schema": "solstone.pairing-contract-vectors.v1",
+  "vectors": [
+    {
+      "additional_fields": {},
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
+      },
+      "fixture_id": "declared.pairing.identity.omission",
+      "id": "pairing.identity.omission",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "studio-mac"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "studio-mac",
+        "platform_state": "absent"
+      },
+      "fixture_id": "declared.pairing.identity.presence.label_only",
+      "id": "pairing.identity.presence.label_only",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "platform": "linux"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "valid",
+        "platform_value": "linux"
+      },
+      "fixture_id": "declared.pairing.identity.presence.platform_only",
+      "id": "pairing.identity.presence.platform_only",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "studio-mac",
+        "platform": "macos"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "studio-mac",
+        "platform_state": "valid",
+        "platform_value": "macos"
+      },
+      "fixture_id": "declared.pairing.identity.presence.both",
+      "id": "pairing.identity.presence.both",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "Client_Label": "studio-mac",
+        "PLATFORM": "linux"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
+      },
+      "fixture_id": "declared.pairing.identity.lookalike.casing",
+      "id": "pairing.identity.lookalike.casing",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client-label": "studio-mac",
+        "platform_": "linux"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
+      },
+      "fixture_id": "declared.pairing.identity.lookalike.punctuation",
+      "id": "pairing.identity.lookalike.punctuation",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "studio-mac",
+        "platform": "ios",
+        "vendor_token": {
+          "k": 1
+        },
+        "x-opaque": "keep"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "studio-mac",
+        "platform_state": "valid",
+        "platform_value": "ios"
+      },
+      "fixture_id": "declared.pairing.identity.opaque.extension",
+      "id": "pairing.identity.opaque.extension",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": 1
+      },
+      "decision": {
+        "accepted": false,
+        "detail": "client_label is invalid",
+        "http_status": 400,
+        "kind": "pairing_identity",
+        "reason_code": "pairing_request_invalid"
+      },
+      "fixture_id": "declared.pairing.identity.invalid.client_label.type",
+      "id": "pairing.identity.invalid.client_label.type",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code",
+        "/detail"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": ""
+      },
+      "decision": {
+        "accepted": false,
+        "detail": "client_label is invalid",
+        "http_status": 400,
+        "kind": "pairing_identity",
+        "reason_code": "pairing_request_invalid"
+      },
+      "fixture_id": "declared.pairing.identity.invalid.client_label.empty",
+      "id": "pairing.identity.invalid.client_label.empty",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code",
+        "/detail"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "decision": {
+        "accepted": false,
+        "detail": "client_label is invalid",
+        "http_status": 400,
+        "kind": "pairing_identity",
+        "reason_code": "pairing_request_invalid"
+      },
+      "fixture_id": "declared.pairing.identity.invalid.client_label.oversize",
+      "id": "pairing.identity.invalid.client_label.oversize",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code",
+        "/detail"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "platform": "plan9"
+      },
+      "decision": {
+        "accepted": false,
+        "detail": "platform is invalid",
+        "http_status": 400,
+        "kind": "pairing_identity",
+        "reason_code": "pairing_request_invalid"
+      },
+      "fixture_id": "declared.pairing.identity.invalid.platform.unknown",
+      "id": "pairing.identity.invalid.platform.unknown",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code",
+        "/detail"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééa"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_bytes": 253,
+        "client_label_state": "valid",
+        "platform_state": "absent"
+      },
+      "fixture_id": "declared.pairing.identity.bound.client_label.253",
+      "id": "pairing.identity.bound.client_label.253",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "role-empty",
+        "platform": "android"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "role-empty",
+        "platform_state": "valid",
+        "platform_value": "android"
+      },
+      "fixture_id": "declared.pairing.identity.role.empty",
+      "id": "pairing.identity.role.empty",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": ""
+    },
+    {
+      "additional_fields": {
+        "client_label": "role-phone",
+        "platform": "windows"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "role-phone",
+        "platform_state": "valid",
+        "platform_value": "windows"
+      },
+      "fixture_id": "declared.pairing.identity.role.phone",
+      "id": "pairing.identity.role.phone",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "phone"
+    },
+    {
+      "additional_fields": {
+        "client_label": "role-observer",
+        "platform": "linux"
+      },
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "valid",
+        "client_label_value": "role-observer",
+        "platform_state": "valid",
+        "platform_value": "linux"
+      },
+      "fixture_id": "declared.pairing.identity.role.observer",
+      "id": "pairing.identity.role.observer",
+      "kind": "declared",
+      "pointers": [
+        "/client_label",
+        "/platform"
+      ],
+      "role": "observer"
+    },
+    {
+      "additional_fields": {
+        "client_label": "role-peer",
+        "platform": "macos"
+      },
+      "decision": {
+        "accepted": false,
+        "detail": "peer pairing is not available on this build",
+        "http_status": 400,
+        "kind": "pairing_identity",
+        "reason_code": "pairing_request_invalid"
+      },
+      "fixture_id": "declared.pairing.identity.role.peer",
+      "id": "pairing.identity.role.peer",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code",
+        "/detail"
+      ],
+      "role": "peer"
+    }
+  ]
+}

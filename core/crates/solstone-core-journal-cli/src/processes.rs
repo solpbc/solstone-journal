@@ -45,6 +45,7 @@ const EMPTY: &[&str] = &[];
 const SERVICE: &[&str] = &["service"];
 const UP: &[&str] = &["up"];
 const DOWN: &[&str] = &["down"];
+const MCP: &[&str] = &["mcp"];
 const SPL_SERVICE: &[&str] = &["spl", "service"];
 const SUPERVISOR_SERVICE: &[&str] = &["supervisor"];
 const DESCRIBE_MODE: &[&str] = &["--describe"];
@@ -87,6 +88,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         token: "spl",
         binary: "solstone-core",
         preset_argv: SPL_SERVICE,
+    },
+    NativeProcessSpec {
+        token: "mcp",
+        binary: "solstone-core",
+        preset_argv: MCP,
     },
     NativeProcessSpec {
         token: "supervisor",
@@ -461,6 +467,12 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "spl",
         module: "solstone.think.spl_native",
+        preset_argv: EMPTY,
+        kind: ProcessKind::Service,
+    },
+    ProcessSpec {
+        token: "mcp",
+        module: "solstone.think.mcp_endpoint",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

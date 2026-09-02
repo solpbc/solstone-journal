@@ -135,7 +135,7 @@ fn index_payload(by_day: &BTreeMap<String, u64>) -> Value {
     json!({"coverage": coverage, "months": months})
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

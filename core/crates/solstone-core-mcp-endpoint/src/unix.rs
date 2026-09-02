@@ -14,9 +14,12 @@ use nix::unistd::{fsync, geteuid};
 use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
 use solstone_core_journal_config::{
-    McpEndpointCapability, mcp_endpoint_capability, read_journal_config_bound,
+    McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,
+    mcp_endpoint_force_staging_renewal, read_journal_config_bound,
 };
-use solstone_core_journal_io::atomic::write_bytes_exclusive_bound;
+use solstone_core_journal_io::atomic::{
+    BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound,
+};
 use solstone_core_journal_io::errors::AtomicWriteError;
 use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_sol_link::committed::load_committed_identity_bound;
@@ -26,12 +29,18 @@ use crate::test_seam::{OwnerBootstrapPrimitive, checkpoint};
 use crate::{McpEndpointBootstrapError, McpEndpointOwnerContext};
 
 const ENDPOINT_DIRECTORY: &str = "mcp-endpoint";
+const TLS_DIRECTORY: &str = "tls";
+const TLS_STATE_FILE: &str = "state.json";
+const TLS_STAGING_ACCOUNT_FILE: &str = "account-staging.pk8";
+const TLS_PRODUCTION_ACCOUNT_FILE: &str = "account-production.pk8";
 const CREATE_LOCK: &str = ".create.lock";
 const POP_KEY: &str = "pop.ed25519.pk8";
 const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 const MAX_POP_PKCS8_DER_BYTES: u64 = 512;
 const POP_PKCS8_READ_LIMIT: u64 = MAX_POP_PKCS8_DER_BYTES + 1;
+pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
 
 const DIRECTORY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
@@ -56,6 +65,15 @@ struct EndpointDirectory {
     file: File,
 }
 
+/// Owner-only descriptor for the endpoint's non-portable TLS state.
+///
+/// It is deliberately crate-private: callers may neither supply another
+/// directory nor obtain the descriptor that names private certificate bytes.
+pub(crate) struct TlsStateDirectory {
+    file: File,
+    owner: u32,
+}
+
 struct LoadedKey {
     identity: FileIdentity,
     bytes: Vec<u8>,
@@ -71,6 +89,10 @@ pub(super) fn bootstrap(
         McpEndpointCapability::Disabled => return Ok(None),
         McpEndpointCapability::Enabled => {}
     }
+    let certificate_environment = mcp_endpoint_certificate_environment(&config)
+        .map_err(|_| McpEndpointBootstrapError::Capability)?;
+    let force_staging_renewal = mcp_endpoint_force_staging_renewal(&config)
+        .map_err(|_| McpEndpointBootstrapError::Capability)?;
 
     checkpoint(OwnerBootstrapPrimitive::CommittedIdentityLoad)
         .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
@@ -122,9 +144,190 @@ pub(super) fn bootstrap(
     .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
     Ok(Some(McpEndpointOwnerContext {
         _private: (),
-        committed,
-        _keypair: keypair,
+        committed: std::sync::Arc::new(committed),
+        keypair: std::sync::Arc::new(keypair),
+        journal_root: std::sync::Arc::new(root),
+        certificate_environment,
+        force_staging_renewal,
     }))
+}
+
+/// Open the fixed `<journal>/mcp-endpoint/tls/` directory, creating it with
+/// owner-only permissions only after the endpoint capability has admitted the
+/// journal. State file reads and writes remain descriptor-bound below it.
+pub(crate) fn open_tls_state_directory(root: &JournalRoot) -> io::Result<TlsStateDirectory> {
+    let owner = geteuid().as_raw();
+    revalidate_root_binding(root)?;
+    let endpoint = create_or_open_endpoint_directory(root, owner)?;
+    let file =
+        create_or_open_owned_child_directory(&endpoint.file, OsStr::new(TLS_DIRECTORY), owner)?;
+    revalidate_root_binding(root)?;
+    Ok(TlsStateDirectory { file, owner })
+}
+
+/// Read the one TLS state file only after no-follow, type, effective-owner,
+/// exact-mode, identity, and size validation. This never repairs hostile
+/// state; the caller receives no bytes on any failed check.
+pub(crate) fn read_tls_state_bytes(directory: &TlsStateDirectory) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(directory, OsStr::new(TLS_STATE_FILE), MAX_TLS_STATE_BYTES)
+}
+
+/// Load the bounded persistent ACME account key for exactly one certificate
+/// environment. The name is fixed by this module, never caller supplied.
+pub(crate) fn read_tls_acme_account_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_file_name(production)),
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+fn read_tls_named_bytes(
+    directory: &TlsStateDirectory,
+    name: &OsStr,
+    max_bytes: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    let directory_stat = fstat(&directory.file).map_err(errno_error)?;
+    if !is_exact_directory(&directory_stat, directory.owner, DIRECTORY_MODE) {
+        return Err(invalid_entry());
+    }
+    let before = match fstatat(&directory.file, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(error) => return Err(errno_error(error)),
+    };
+    if !is_exact_regular(&before, directory.owner, FILE_MODE)
+        || before.st_size < 0
+        || u64::try_from(before.st_size).map_err(|_| invalid_entry())? > max_bytes as u64
+    {
+        return Err(invalid_entry());
+    }
+    let fd = openat(&directory.file, name, FILE_OPEN_FLAGS, Mode::empty()).map_err(errno_error)?;
+    let mut file = File::from(fd);
+    let opened = fstat(&file).map_err(errno_error)?;
+    if identity(&before) != identity(&opened)
+        || !is_exact_regular(&opened, directory.owner, FILE_MODE)
+    {
+        return Err(identity_changed());
+    }
+    let size = usize::try_from(opened.st_size).map_err(|_| invalid_entry())?;
+    let mut bytes = vec![0_u8; size];
+    file.read_exact(&mut bytes)?;
+    let after = fstat(&file).map_err(errno_error)?;
+    let named =
+        fstatat(&directory.file, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_error)?;
+    let final_directory = fstat(&directory.file).map_err(errno_error)?;
+    if identity(&opened) != identity(&after)
+        || identity(&opened) != identity(&named)
+        || !is_exact_regular(&after, directory.owner, FILE_MODE)
+        || !is_exact_regular(&named, directory.owner, FILE_MODE)
+        || !is_exact_directory(&final_directory, directory.owner, DIRECTORY_MODE)
+    {
+        return Err(identity_changed());
+    }
+    Ok(Some(bytes))
+}
+
+/// Durably replace TLS state under the retained descriptor. A publication with
+/// any durability or final-name uncertainty is a failure for activation.
+#[allow(dead_code)] // Called by the same-crate certificate lifecycle owner.
+pub(crate) fn persist_tls_state_bytes(
+    directory: &TlsStateDirectory,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_STATE_FILE),
+        bytes,
+        MAX_TLS_STATE_BYTES,
+    )
+}
+
+/// Persist one ACME account key under its fixed environment-specific name.
+/// Both the account and certificate state remain descriptor-bound and
+/// owner-only; callers cannot select a path.
+pub(crate) fn persist_tls_acme_account_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_file_name(production)),
+        bytes,
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+fn persist_tls_named_bytes(
+    directory: &TlsStateDirectory,
+    name: &OsStr,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> io::Result<()> {
+    if bytes.len() > max_bytes {
+        return Err(invalid_entry());
+    }
+    let directory_stat = fstat(&directory.file).map_err(errno_error)?;
+    if !is_exact_directory(&directory_stat, directory.owner, DIRECTORY_MODE) {
+        return Err(invalid_entry());
+    }
+    match atomic_replace_bound(&directory.file, name, bytes, FILE_MODE) {
+        Ok(BoundAtomicOutcome::Published { .. }) => Ok(()),
+        Ok(_) => Err(io::Error::other(
+            "TLS state publication was not durable and certain",
+        )),
+        Err(_) => Err(io::Error::other("TLS state publication failed")),
+    }
+}
+
+const fn acme_account_file_name(production: bool) -> &'static str {
+    if production {
+        TLS_PRODUCTION_ACCOUNT_FILE
+    } else {
+        TLS_STAGING_ACCOUNT_FILE
+    }
+}
+
+fn create_or_open_owned_child_directory(
+    parent: &impl AsFd,
+    name: &OsStr,
+    owner: u32,
+) -> io::Result<File> {
+    let mut created = false;
+    let before = match fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::ENOENT) => {
+            match mkdirat(parent, name, mode(DIRECTORY_MODE)) {
+                Ok(()) => created = true,
+                Err(Errno::EEXIST) => {}
+                Err(error) => return Err(errno_error(error)),
+            }
+            fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_error)?
+        }
+        Err(error) => return Err(errno_error(error)),
+    };
+    if !is_directory(&before) || before.st_uid != owner {
+        return Err(invalid_entry());
+    }
+    let fd = openat(parent, name, DIRECTORY_OPEN_FLAGS, Mode::empty()).map_err(errno_error)?;
+    let file = File::from(fd);
+    let after = fstat(&file).map_err(errno_error)?;
+    if identity(&before) != identity(&after) || !is_directory(&after) || after.st_uid != owner {
+        return Err(identity_changed());
+    }
+    if created {
+        fchmod(&file, mode(DIRECTORY_MODE)).map_err(errno_error)?;
+    }
+    let final_stat = fstat(&file).map_err(errno_error)?;
+    if !is_exact_directory(&final_stat, owner, DIRECTORY_MODE) {
+        return Err(invalid_entry());
+    }
+    fsync(parent).map_err(errno_error)?;
+    Ok(file)
 }
 
 fn create_or_open_endpoint_directory(

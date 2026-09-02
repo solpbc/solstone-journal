@@ -6,11 +6,23 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = ["runtime"]
+runtime = ["dep:solstone-core-speakers-onnx"]
+full-tests = ["runtime"]
+
 [dependencies]
+env_logger.workspace = true
+log.workspace = true
 serde_json.workspace = true
 solstone-core-speakers.workspace = true
-solstone-core-speakers-onnx.workspace = true
+solstone-core-speakers-onnx = { workspace = true, optional = true }
 solstone-core-system.workspace = true
+
+[[bin]]
+name = "solstone-core-speakers-analyze"
+path = "src/main.rs"
+required-features = ["runtime"]
 
 [lints]
 workspace = true

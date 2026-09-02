@@ -420,7 +420,7 @@ fn now_ms() -> i64 {
         .unwrap_or(i64::MAX)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     #[cfg(unix)]

@@ -209,10 +209,12 @@ fn worker_command(mode: &str) -> Command {
 fn claim_work(store: &CortexStore, request: &Map<String, Value>) -> Work {
     let use_id = request["use_id"].as_str().unwrap().to_owned();
     let name = request["name"].as_str().unwrap();
-    let active = store.claim(name, &use_id, request).unwrap().unwrap();
+    let (active, identity) = store.claim(name, &use_id, request).unwrap().unwrap();
     Work {
         use_id,
+        talent_name: name.to_owned(),
         active,
+        identity,
         request: request.clone(),
     }
 }
@@ -270,6 +272,7 @@ fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
     let fixture = root.join("fixture");
     fs::create_dir(&fixture).unwrap();
     let journal = fixture.join("journal");
+    fs::create_dir(&journal).unwrap();
     let executable_dir = root.join("bin");
     install_worker(&executable_dir);
     let (talent_root, apps_root, templates_dir) = package_roots(root);

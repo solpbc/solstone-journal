@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -255,7 +256,7 @@ fn sign_and_repack(
         let mut emitted_member = member.clone();
         if executable_paths.contains(member.path.as_str()) {
             let signed = signer.sign_executable(&extracted, &member.path)?;
-            let mode = fs::metadata(&extracted)?.permissions().mode() & 0o7777;
+            let mode = crate::stage::file_mode(&fs::metadata(&extracted)?);
             if mode != member.mode {
                 return Err(ArchiveSealError::new(format!(
                     "mode mutation while signing {}: {:04o} -> {:04o}",
@@ -281,9 +282,14 @@ fn sign_and_repack(
         emitted.push(emitted_member);
     }
     for (directory, mode) in directories.into_iter().rev() {
-        let mut permissions = fs::metadata(&directory)?.permissions();
-        permissions.set_mode(mode);
-        fs::set_permissions(directory, permissions)?;
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&directory)?.permissions();
+            permissions.set_mode(mode);
+            fs::set_permissions(directory, permissions)?;
+        }
+        #[cfg(not(unix))]
+        let _ = (directory, mode);
     }
     let bytes = repack_members(&emitted)?;
     Ok((bytes, signed_executables))
@@ -303,9 +309,12 @@ fn extract_member(
                 fs::create_dir_all(parent)?;
             }
             fs::write(&path, &member.bytes)?;
-            let mut permissions = fs::metadata(&path)?.permissions();
-            permissions.set_mode(member.mode);
-            fs::set_permissions(&path, permissions)?;
+            #[cfg(unix)]
+            {
+                let mut permissions = fs::metadata(&path)?.permissions();
+                permissions.set_mode(member.mode);
+                fs::set_permissions(&path, permissions)?;
+            }
         }
     }
     Ok(path)

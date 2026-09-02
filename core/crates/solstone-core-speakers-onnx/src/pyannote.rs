@@ -5,13 +5,10 @@ use std::path::Path;
 
 use ort::session::Session;
 use ort::value::Tensor;
-use solstone_core_speakers::{
-    FeatureMatrix, PYANNOTE_CLASS_COUNT, PYANNOTE_FRAMES_PER_WINDOW, PYANNOTE_SAMPLE_RATE_HZ,
-    PYANNOTE_WINDOW_S,
-};
+use solstone_core_speakers::{FeatureMatrix, PYANNOTE_CLASS_COUNT, PYANNOTE_FRAMES_PER_WINDOW};
 
 use crate::session::{ExpectedDim, expect_tensor, open_session};
-use crate::{SpeakerExecutionProvider, SpeakerOnnxError};
+use crate::{SpeakerExecutionProvider, SpeakerOnnxError, validate_pyannote_audio_window};
 
 const INPUT_NAME: &str = "input_values";
 const OUTPUT_NAME: &str = "logits";
@@ -41,7 +38,7 @@ impl PyannoteSegmenter {
         &mut self,
         audio_window: &[f32],
     ) -> Result<FeatureMatrix, SpeakerOnnxError> {
-        validate_audio_window(audio_window)?;
+        validate_pyannote_audio_window(audio_window)?;
         let input = Tensor::from_array((
             [1_usize, 1_usize, audio_window.len()],
             audio_window.to_vec().into_boxed_slice(),
@@ -80,17 +77,6 @@ impl PyannoteSegmenter {
     }
 }
 
-fn validate_audio_window(audio_window: &[f32]) -> Result<(), SpeakerOnnxError> {
-    let expected_samples = PYANNOTE_WINDOW_S as usize * PYANNOTE_SAMPLE_RATE_HZ as usize;
-    if audio_window.len() != expected_samples {
-        return Err(SpeakerOnnxError::InvalidAudioWindow {
-            expected_samples,
-            actual_samples: audio_window.len(),
-        });
-    }
-    Ok(())
-}
-
 fn validate_session_io(session: &Session) -> Result<(), SpeakerOnnxError> {
     let inputs = session.inputs();
     let outputs = session.outputs();
@@ -125,10 +111,11 @@ fn validate_session_io(session: &Session) -> Result<(), SpeakerOnnxError> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::test_support::repo_root;
+    use solstone_core_speakers::{PYANNOTE_SAMPLE_RATE_HZ, PYANNOTE_WINDOW_S};
 
     #[test]
     fn committed_pyannote_model_accepts_zero_window_and_returns_589x7_finite_values() {
@@ -142,18 +129,5 @@ mod tests {
         assert_eq!(log_probs.frames(), PYANNOTE_FRAMES_PER_WINDOW);
         assert_eq!(log_probs.bins(), PYANNOTE_CLASS_COUNT);
         assert!(log_probs.data().iter().all(|value| value.is_finite()));
-    }
-
-    #[test]
-    fn pyannote_rejects_wrong_length_window() {
-        let error = validate_audio_window(&[0.0; 42]).unwrap_err();
-
-        assert_eq!(
-            error,
-            SpeakerOnnxError::InvalidAudioWindow {
-                expected_samples: PYANNOTE_WINDOW_S as usize * PYANNOTE_SAMPLE_RATE_HZ as usize,
-                actual_samples: 42,
-            }
-        );
     }
 }

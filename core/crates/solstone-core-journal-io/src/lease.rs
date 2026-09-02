@@ -3,12 +3,16 @@
 
 //! Advisory file leases held for the lifetime of their guard.
 
-use std::fs;
 #[cfg(unix)]
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -20,16 +24,21 @@ use nix::fcntl::{FcntlArg, Flock, FlockArg, fcntl};
 #[cfg(unix)]
 use nix::sys::stat::{Mode, fchmod};
 #[cfg(windows)]
-use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+use windows_sys::Win32::Foundation::{
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+};
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT, OPEN_ALWAYS,
 };
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
 use crate::errors::LeaseError;
 #[cfg(windows)]
 use crate::windows_lock::{
-    WindowsLockGuard, is_contention as windows_contention, try_lock_exclusive,
+    WindowsLockGuard, WindowsLockHeld, is_contention as windows_contention, try_lock_exclusive,
+    try_lock_exclusive_held,
 };
 
 /// Python-compatible number of nonblocking acquisition attempts.
@@ -70,6 +79,32 @@ pub struct FileLease {
     path: PathBuf,
 }
 
+/// Exclusive lease taken on an already-open file's own descriptor.
+///
+/// Dropping this value closes the lease descriptor. It does not close the
+/// caller's original `File`. The advisory lock is released when the last
+/// descriptor of this open file description (Unix) or locked handle (Windows)
+/// closes; there is no explicit unlock on drop.
+#[derive(Debug)]
+pub struct SelfLease {
+    #[cfg(unix)]
+    #[allow(dead_code)]
+    file: File,
+    #[cfg(windows)]
+    _held: WindowsLockHeld,
+}
+
+/// Result of a non-blocking exclusive try-lock used as a liveness probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeaseProbe {
+    /// An exclusive lock is currently held.
+    Active,
+    /// An exclusive lock was acquired and released immediately.
+    Released,
+    /// The probe could not classify the lease.
+    Indeterminate,
+}
+
 impl FileLease {
     /// The lease file protected by this guard.
     pub fn path(&self) -> &Path {
@@ -85,6 +120,34 @@ impl FileLease {
     pub fn duplicate_for_inheritance(&self) -> Result<i32, LeaseError> {
         fcntl(&*self._guard, FcntlArg::F_DUPFD(3))
             .map_err(|error| io_error(&self.path, io::Error::from_raw_os_error(error as i32)))
+    }
+}
+
+/// Probe an exclusive nonblocking flock on `fd` without unlocking afterward.
+///
+/// This issues `flock(LOCK_EX | LOCK_NB)` on the borrowed descriptor and never
+/// follows it with `LOCK_UN` or an owning flock guard. Wrapping `fd` in
+/// [`Flock`] would `LOCK_UN` on drop and, for a duplicate of a held open file
+/// description, would release the owner's lock as well.
+///
+/// Returns `Ok(true)` when the exclusive flock succeeds (same-OFD idempotent
+/// re-lock, or the lock was free and is now held on this OFD). Returns
+/// `Ok(false)` on contention. Any other OS error is `Err`.
+#[cfg(unix)]
+pub fn probe_exclusive_flock_no_release(fd: RawFd) -> io::Result<bool> {
+    // SAFETY: the caller supplies a live descriptor; `LOCK_NB` makes the
+    // call non-blocking; this function never unlocks.
+    #[allow(unsafe_code)]
+    let result = unsafe { nix::libc::flock(fd, nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
+    if result == 0 {
+        Ok(true)
+    } else {
+        let error = Errno::last();
+        if is_contention(error) {
+            Ok(false)
+        } else {
+            Err(io::Error::from_raw_os_error(error as i32))
+        }
     }
 }
 
@@ -143,6 +206,107 @@ pub fn acquire_file_lease(
         }
     }
     Ok(None)
+}
+
+/// Take an exclusive nonblocking lease on `file` itself, without a companion path.
+pub fn acquire_self_lease(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    #[cfg(unix)]
+    {
+        acquire_self_lease_unix(file)
+    }
+    #[cfg(windows)]
+    {
+        acquire_self_lease_windows(file)
+    }
+}
+
+/// Non-blocking exclusive try-lock used as a liveness probe on an open handle.
+pub fn probe_file_lease(file: &File) -> LeaseProbe {
+    match acquire_self_lease(file) {
+        Ok(Some(lease)) => {
+            drop(lease);
+            LeaseProbe::Released
+        }
+        Ok(None) => LeaseProbe::Active,
+        Err(_) => LeaseProbe::Indeterminate,
+    }
+}
+
+#[cfg(unix)]
+fn acquire_self_lease_unix(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    let duplicated = fcntl(file, FcntlArg::F_DUPFD_CLOEXEC(3)).map_err(|error| {
+        io_error(
+            Path::new("self-lease"),
+            io::Error::from_raw_os_error(error as i32),
+        )
+    })?;
+    // SAFETY: `duplicated` is a freshly allocated descriptor owned by this function.
+    #[allow(unsafe_code)]
+    let owned = unsafe { OwnedFd::from_raw_fd(duplicated) };
+    let file = File::from(owned);
+    // SAFETY: `file` owns a live descriptor; `LOCK_NB` makes this call non-blocking.
+    #[allow(unsafe_code)]
+    let result =
+        unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
+    if result == 0 {
+        Ok(Some(SelfLease { file }))
+    } else {
+        let error = Errno::last();
+        drop(file);
+        if is_contention(error) {
+            Ok(None)
+        } else {
+            Err(io_error(
+                Path::new("self-lease"),
+                io::Error::from_raw_os_error(error as i32),
+            ))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn acquire_self_lease_windows(file: &File) -> Result<Option<SelfLease>, LeaseError> {
+    let duplicated = duplicate_windows_handle(file)?;
+    match try_lock_exclusive_held(duplicated) {
+        Ok(held) => Ok(Some(SelfLease { _held: held })),
+        Err((file, error)) if windows_contention(&error) => {
+            drop(file);
+            Ok(None)
+        }
+        Err((file, error)) => {
+            drop(file);
+            Err(io_error(Path::new("self-lease"), error))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn duplicate_windows_handle(file: &File) -> Result<File, LeaseError> {
+    let mut duplicated = INVALID_HANDLE_VALUE;
+    // SAFETY: source handle is a live `File`; output pointer is a local HANDLE.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            file.as_raw_handle(),
+            GetCurrentProcess(),
+            &mut duplicated,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        )
+    };
+    if result == 0 || duplicated == INVALID_HANDLE_VALUE {
+        return Err(io_error(
+            Path::new("self-lease"),
+            io::Error::last_os_error(),
+        ));
+    }
+    // SAFETY: `duplicated` is an owned handle returned by DuplicateHandle.
+    #[allow(unsafe_code)]
+    Ok(File::from(unsafe {
+        OwnedHandle::from_raw_handle(duplicated)
+    }))
 }
 
 #[cfg(unix)]
@@ -290,5 +454,70 @@ mod tests {
             .expect("duplicate descriptor");
         assert!(Path::new("/dev/fd").join(descriptor.to_string()).exists());
         nix::unistd::close(descriptor).expect("close duplicate");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exclusive_flock_probe_on_duplicate_does_not_release_owner_lock() {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        let temporary = TempDir::new();
+        let path = temporary.path().join("generation.lock");
+        let lease = acquire_file_lease(&path, LeaseOptions::default())
+            .unwrap()
+            .expect("owner lease");
+        let duplicate = lease
+            .duplicate_for_inheritance()
+            .expect("duplicate descriptor");
+        assert!(
+            probe_exclusive_flock_no_release(duplicate).expect("probe duplicate"),
+            "same-OFD re-flock is an idempotent success"
+        );
+        assert!(
+            acquire_file_lease(
+                &path,
+                LeaseOptions {
+                    attempts: 1,
+                    retry_max: Duration::ZERO,
+                    ..LeaseOptions::default()
+                },
+            )
+            .unwrap()
+            .is_none(),
+            "owner FileLease must still hold the lock after the no-release probe"
+        );
+        let independent = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("independent open");
+        assert!(
+            !probe_exclusive_flock_no_release(independent.as_raw_fd())
+                .expect("probe independent open"),
+            "an independent OFD must observe contention while the owner holds the lock"
+        );
+        assert!(
+            acquire_file_lease(
+                &path,
+                LeaseOptions {
+                    attempts: 1,
+                    retry_max: Duration::ZERO,
+                    ..LeaseOptions::default()
+                },
+            )
+            .unwrap()
+            .is_none(),
+            "independent-open probe must not unlock the owner either"
+        );
+        nix::unistd::close(duplicate).expect("close duplicate");
+        drop(independent);
+        drop(lease);
+        assert!(
+            acquire_file_lease(&path, LeaseOptions::default())
+                .unwrap()
+                .is_some(),
+            "lock becomes free only after the owner lease drops"
+        );
     }
 }

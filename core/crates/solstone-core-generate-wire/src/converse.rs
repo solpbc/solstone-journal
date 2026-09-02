@@ -59,6 +59,8 @@ pub struct ConverseToolCall {
     pub name: String,
     pub arguments: Value,
     pub not_offered: bool,
+    /// Gemini-only opaque token; replayed verbatim with this call.
+    pub thought_signature: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +78,7 @@ pub struct ConverseFailure {
     pub reason_code: String,
     pub retryable: bool,
     pub blocking: bool,
+    pub detail: Option<String>,
 }
 
 #[cfg(test)]

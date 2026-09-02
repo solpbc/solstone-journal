@@ -3,11 +3,13 @@
 
 //! Read-only client status projection over the authorization and activity ledgers.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::ledger::{
     AcceptedSegment, AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead,
-    IngestRejection, parse_rfc3339_utc, read_authorized_clients, read_device_activity,
+    IngestRejection, SourceRecord, parse_rfc3339_utc, read_authorized_clients,
+    read_device_activity,
 };
 
 pub const CLIENT_ACTIVE_MS: i64 = 30_000;
@@ -37,6 +39,7 @@ pub enum ClientActivityState {
 pub enum ClientLedgerUnavailable {
     Unreadable,
     Malformed,
+    DuplicateCid,
 }
 
 /// Result of reading the client-ledger projection.
@@ -71,6 +74,25 @@ pub struct ClientAssessment {
     pub connection: ConnectionFreshness,
     pub capture_state: ClientCaptureState,
     pub capture_elapsed_ms: Option<i64>,
+    pub source_delivery: BTreeMap<String, SourceDeliveryRow>,
+}
+
+/// Per-source delivery classification, distinct from device-level [`ClientCaptureState`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceDelivery {
+    Current,
+    NeedsAttention,
+    Unknown,
+}
+
+/// Classified delivery for one source on one device.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceDeliveryRow {
+    pub state: SourceDelivery,
+    pub elapsed_ms: Option<i64>,
+    pub last_accepted_ingest_at: Option<String>,
+    pub last_accepted_segment: Option<AcceptedSegment>,
+    pub ingest_rejection: Option<IngestRejection>,
 }
 
 /// Connection freshness derived from `last_seen_at`.
@@ -136,6 +158,10 @@ pub fn inspect_clients_at(journal_root: &Path, now_ms: i64) -> ClientInspection 
             reason: ClientLedgerUnavailable::Malformed,
             activity,
         },
+        AuthorizedClientsRead::DuplicateCid => ClientInspection::LedgerUnavailable {
+            reason: ClientLedgerUnavailable::DuplicateCid,
+            activity,
+        },
         AuthorizedClientsRead::Present(entries) => {
             let mut clients = entries
                 .into_iter()
@@ -148,6 +174,113 @@ pub fn inspect_clients_at(journal_root: &Path, now_ms: i64) -> ClientInspection 
                 ClientInspection::Ready { clients, activity }
             }
         }
+    }
+}
+
+/// Classify each observed source on one device.
+///
+/// Never consults another device's sources or connection. `Current` is the
+/// capture Active or Stale band (`elapsed < CLIENT_CAPTURE_STALE_MS`). Quiet
+/// sources escalate only with signal (a) (this device is not fully offline) or
+/// signal (b) (a sibling source on this device is `Current`).
+pub fn classify_source_deliveries(
+    sources: &BTreeMap<String, SourceRecord>,
+    connection: &ConnectionFreshness,
+    now_ms: i64,
+) -> BTreeMap<String, SourceDeliveryRow> {
+    let preliminary = sources
+        .iter()
+        .map(|(source, record)| (source.clone(), classify_source_pass1(record, now_ms)))
+        .collect::<Vec<_>>();
+    let any_current = preliminary.iter().any(|(_, pass)| {
+        matches!(
+            pass,
+            SourcePass::Decided(row) if row.state == SourceDelivery::Current
+        )
+    });
+    let signal_a = matches!(
+        connection,
+        ConnectionFreshness::Known {
+            reach: ClientReach::Active | ClientReach::Stale,
+            ..
+        }
+    );
+    preliminary
+        .into_iter()
+        .map(|(source, pass)| {
+            let row = match pass {
+                SourcePass::Decided(row) => row,
+                SourcePass::Undecided(mut row) => {
+                    row.state = if signal_a || any_current {
+                        SourceDelivery::NeedsAttention
+                    } else {
+                        SourceDelivery::Unknown
+                    };
+                    row
+                }
+            };
+            (source, row)
+        })
+        .collect()
+}
+
+enum SourcePass {
+    Decided(SourceDeliveryRow),
+    Undecided(SourceDeliveryRow),
+}
+
+fn classify_source_pass1(record: &SourceRecord, now_ms: i64) -> SourcePass {
+    let SourceRecord::Valid(activity) = record else {
+        return SourcePass::Decided(malformed_source_row());
+    };
+    let row = SourceDeliveryRow {
+        state: SourceDelivery::Unknown,
+        elapsed_ms: None,
+        last_accepted_ingest_at: activity.last_accepted_ingest_at.clone(),
+        last_accepted_segment: activity.last_accepted_segment.clone(),
+        ingest_rejection: activity.ingest_rejection.clone(),
+    };
+    if activity.ingest_rejection.is_some() {
+        let elapsed_ms = activity
+            .last_accepted_ingest_at
+            .as_deref()
+            .and_then(|value| timestamp_age_ms(value, now_ms));
+        return SourcePass::Decided(SourceDeliveryRow {
+            state: SourceDelivery::NeedsAttention,
+            elapsed_ms,
+            ..row
+        });
+    }
+    let (capture_state, elapsed_ms) =
+        capture_freshness(activity.last_accepted_ingest_at.as_deref(), false, now_ms);
+    let row = SourceDeliveryRow { elapsed_ms, ..row };
+    match capture_state {
+        ClientCaptureState::Active | ClientCaptureState::Stale => {
+            SourcePass::Decided(SourceDeliveryRow {
+                state: SourceDelivery::Current,
+                ..row
+            })
+        }
+        ClientCaptureState::Unknown => SourcePass::Decided(SourceDeliveryRow {
+            state: SourceDelivery::Unknown,
+            ..row
+        }),
+        ClientCaptureState::Offline | ClientCaptureState::NoCapture => SourcePass::Undecided(row),
+        // Rejection is handled above; capture_freshness(..., false, ...) never
+        // returns Degraded.
+        ClientCaptureState::Degraded => {
+            unreachable!("capture_freshness with rejecting=false cannot return Degraded")
+        }
+    }
+}
+
+fn malformed_source_row() -> SourceDeliveryRow {
+    SourceDeliveryRow {
+        state: SourceDelivery::Unknown,
+        elapsed_ms: None,
+        last_accepted_ingest_at: None,
+        last_accepted_segment: None,
+        ingest_rejection: None,
     }
 }
 
@@ -219,6 +352,13 @@ fn assessment_for(
             now_ms,
         ),
     };
+    let source_delivery = match activity_state {
+        ClientActivityState::Unreadable | ClientActivityState::Malformed => BTreeMap::new(),
+        ClientActivityState::Present | ClientActivityState::Missing => match activity {
+            Some(activity) => classify_source_deliveries(&activity.sources, &connection, now_ms),
+            None => BTreeMap::new(),
+        },
+    };
     ClientAssessment {
         cid,
         client_entry,
@@ -229,6 +369,7 @@ fn assessment_for(
         connection,
         capture_state,
         capture_elapsed_ms,
+        source_delivery,
     }
 }
 
@@ -320,7 +461,7 @@ fn timestamp_age_ms(timestamp: &str, now_ms: i64) -> Option<i64> {
     Some(now_ms.saturating_sub(timestamp_ms))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -364,6 +505,18 @@ mod tests {
             inspect_clients_at(root.path(), NOW_MS),
             ClientInspection::LedgerUnavailable {
                 reason: ClientLedgerUnavailable::Malformed,
+                ..
+            }
+        ));
+        fs::write(
+            root.path().join("link/authorized_clients.json"),
+            br#"[{"fingerprint":"a"},{"fingerprint":"a"}]"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            inspect_clients_at(root.path(), NOW_MS),
+            ClientInspection::LedgerUnavailable {
+                reason: ClientLedgerUnavailable::DuplicateCid,
                 ..
             }
         ));
@@ -533,6 +686,139 @@ mod tests {
         );
     }
 
+    #[test]
+    fn quiet_sources_need_attention_when_the_device_is_not_fully_offline() {
+        let sources = BTreeMap::from([
+            (
+                "audio".to_owned(),
+                valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
+            ),
+            (
+                "location".to_owned(),
+                valid_source_at_age(CLIENT_CAPTURE_STALE_MS + 1),
+            ),
+        ]);
+        let classified =
+            classify_source_deliveries(&sources, &known_connection(ClientReach::Active), NOW_MS);
+        assert_eq!(classified["audio"].state, SourceDelivery::NeedsAttention);
+        assert_eq!(classified["location"].state, SourceDelivery::NeedsAttention);
+    }
+
+    #[test]
+    fn quiet_source_needs_attention_when_a_sibling_is_current_even_if_offline() {
+        let sources = BTreeMap::from([
+            ("audio".to_owned(), valid_source_at_age(30_000)),
+            (
+                "location".to_owned(),
+                valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
+            ),
+        ]);
+        let classified =
+            classify_source_deliveries(&sources, &known_connection(ClientReach::Offline), NOW_MS);
+        assert_eq!(classified["audio"].state, SourceDelivery::Current);
+        assert_eq!(classified["location"].state, SourceDelivery::NeedsAttention);
+    }
+
+    #[test]
+    fn quiet_source_is_unknown_when_offline_without_a_current_sibling() {
+        let sources = BTreeMap::from([(
+            "location".to_owned(),
+            valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
+        )]);
+        let classified =
+            classify_source_deliveries(&sources, &known_connection(ClientReach::Offline), NOW_MS);
+        assert_eq!(classified["location"].state, SourceDelivery::Unknown);
+        assert_ne!(classified["location"].state, SourceDelivery::NeedsAttention);
+    }
+
+    #[test]
+    fn stale_connection_reach_still_satisfies_signal_a() {
+        let sources = BTreeMap::from([(
+            "audio".to_owned(),
+            valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
+        )]);
+        let classified =
+            classify_source_deliveries(&sources, &known_connection(ClientReach::Stale), NOW_MS);
+        assert_eq!(classified["audio"].state, SourceDelivery::NeedsAttention);
+    }
+
+    #[test]
+    fn source_rejection_wins_outright_even_with_recent_accept() {
+        let sources = BTreeMap::from([(
+            "audio".to_owned(),
+            SourceRecord::Valid(crate::ledger::SourceActivity {
+                last_accepted_ingest_at: Some(timestamp_at_age(30_000)),
+                last_accepted_segment: None,
+                ingest_rejection: Some(IngestRejection {
+                    reason_code: "event_append_failed".to_owned(),
+                    first: timestamp_at_age(1_000),
+                    latest: timestamp_at_age(1_000),
+                    active_count: 1,
+                }),
+            }),
+        )]);
+        let classified =
+            classify_source_deliveries(&sources, &known_connection(ClientReach::Offline), NOW_MS);
+        assert_eq!(classified["audio"].state, SourceDelivery::NeedsAttention);
+        assert_eq!(classified["audio"].elapsed_ms, Some(30_000));
+    }
+
+    #[test]
+    fn source_classification_is_scoped_to_one_device() {
+        let quiet = BTreeMap::from([(
+            "audio".to_owned(),
+            valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
+        )]);
+        let current = BTreeMap::from([("audio".to_owned(), valid_source_at_age(30_000))]);
+        let a = classify_source_deliveries(&quiet, &known_connection(ClientReach::Offline), NOW_MS);
+        let b =
+            classify_source_deliveries(&current, &known_connection(ClientReach::Active), NOW_MS);
+        assert_eq!(a["audio"].state, SourceDelivery::Unknown);
+        assert_eq!(b["audio"].state, SourceDelivery::Current);
+        let a_again =
+            classify_source_deliveries(&quiet, &known_connection(ClientReach::Offline), NOW_MS);
+        assert_eq!(a_again, a);
+
+        let root = TempDir::new();
+        write_clients(root.path(), &["a", "b"]);
+        fs::write(
+            root.path().join("link/devices.json"),
+            json!({
+                "a": {
+                    "last_seen_at": timestamp_at_age(CLIENT_STALE_MS),
+                    "sources": {
+                        "audio": {"last_accepted_ingest_at": timestamp_at_age(CLIENT_CAPTURE_STALE_MS)}
+                    }
+                },
+                "b": {
+                    "last_seen_at": timestamp_at_age(1_000),
+                    "last_accepted_ingest_at": timestamp_at_age(1_000),
+                    "sources": {
+                        "audio": {"last_accepted_ingest_at": timestamp_at_age(1_000)}
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let ClientInspection::Ready { clients, .. } = inspect_clients_at(root.path(), NOW_MS)
+        else {
+            panic!("ready inspection");
+        };
+        let device_a = clients.iter().find(|row| row.cid == "a").expect("device a");
+        let device_b = clients.iter().find(|row| row.cid == "b").expect("device b");
+        assert_eq!(
+            device_a.source_delivery["audio"].state,
+            SourceDelivery::Unknown
+        );
+        assert_eq!(
+            device_b.source_delivery["audio"].state,
+            SourceDelivery::Current
+        );
+        assert!(!device_a.source_delivery.contains_key("b"));
+        assert_eq!(device_a.source_delivery.len(), 1);
+    }
+
     fn capture_freshness_at_age(age_ms: i64, rejecting: bool) -> (ClientCaptureState, Option<i64>) {
         let timestamp = timestamp_at_age(age_ms);
         capture_freshness(Some(&timestamp), rejecting, NOW_MS)
@@ -548,6 +834,43 @@ mod tests {
             .expect("test timestamp")
             .format(&Rfc3339)
             .expect("RFC3339 timestamp")
+    }
+
+    fn valid_source_at_age(age_ms: i64) -> SourceRecord {
+        SourceRecord::Valid(crate::ledger::SourceActivity {
+            last_accepted_ingest_at: Some(timestamp_at_age(age_ms)),
+            last_accepted_segment: None,
+            ingest_rejection: None,
+        })
+    }
+
+    fn known_connection(reach: ClientReach) -> ConnectionFreshness {
+        match reach {
+            ClientReach::Active => ConnectionFreshness::Known {
+                state: ConnectionState::Connected,
+                group: ConnectionGroup::Active,
+                elapsed_ms: Some(0),
+                clock_skew: false,
+                label: "connected",
+                reach,
+            },
+            ClientReach::Stale => ConnectionFreshness::Known {
+                state: ConnectionState::Stale,
+                group: ConnectionGroup::Stale,
+                elapsed_ms: Some(CLIENT_STALE_MS - 1),
+                clock_skew: false,
+                label: "not reporting",
+                reach,
+            },
+            ClientReach::Offline => ConnectionFreshness::Known {
+                state: ConnectionState::Disconnected,
+                group: ConnectionGroup::Inactive,
+                elapsed_ms: Some(CLIENT_STALE_MS),
+                clock_skew: false,
+                label: "offline",
+                reach,
+            },
+        }
     }
 
     fn write_clients(root: &Path, cids: &[&str]) {

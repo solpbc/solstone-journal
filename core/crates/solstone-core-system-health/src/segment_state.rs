@@ -54,7 +54,9 @@ pub fn read_segment_data_state(
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
         .unwrap_or(DEFAULT_STREAM);
-    detect_data_state(&path, parent, now).unwrap_or_default()
+    detect_data_state(&path, parent, now)
+        .map(|(states, _)| states)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

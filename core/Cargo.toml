@@ -21,6 +21,7 @@ members = [
     "crates/solstone-core-journal-archive",
     "crates/solstone-core-journal-io",
     "crates/solstone-core-win-owner-rail",
+    "crates/solstone-core-win-dll-load",
     "crates/solstone-core-transfer",
     "crates/solstone-core-transfer-manifest",
     "crates/solstone-core-system-health",
@@ -67,6 +68,7 @@ members = [
     "crates/solstone-core-sol-client-cli",
     "crates/solstone-core-sol-link",
     "crates/solstone-core-mcp-endpoint",
+    "crates/solstone-core-mcp-audit",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-convey-shell",
     "crates/solstone-core-model-pricing",
@@ -173,6 +175,8 @@ solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
+solstone-core-mcp-audit = { path = "crates/solstone-core-mcp-audit" }
+solstone-core-win-dll-load = { path = "crates/solstone-core-win-dll-load" }
 solstone-core-win-owner-rail = { path = "crates/solstone-core-win-owner-rail" }
 solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-transfer-manifest = { path = "crates/solstone-core-transfer-manifest" }
@@ -215,6 +219,7 @@ solstone-core-retention-client = { path = "crates/solstone-core-retention-client
 solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
 solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
 solstone-core-ced-sys = { path = "crates/solstone-core-ced-sys" }
+solstone-core-distribution = { path = "crates/solstone-core-distribution" }
 solstone-core-sound-tags = { path = "crates/solstone-core-sound-tags" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
@@ -352,6 +357,14 @@ whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
 # DLL links on that target. Package MSRV 1.82 is below workspace Rust 1.95;
 # MIT license and the resolved graph are already covered by cargo-deny.
 windows-sys = { version = "=0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Globalization", "Win32_Security", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Shell"] }
+# Task Scheduler 2.0 COM bindings for the win-owner-rail ONLOGON probe only.
+# `windows-sys` 0.61.2 has no Win32_System_TaskScheduler module; this crate
+# supplies ITaskService / ITaskFolder / ILogonTrigger as generated interfaces.
+# Windows-target gated by solstone-core-win-owner-rail, `build = false`, no
+# C/C++ step, system DLL links on that target only. Package MSRV 1.74 is
+# below workspace Rust 1.95; MIT OR Apache-2.0 is already on the cargo-deny
+# allow list and `windows` is not banned. The binary is inventory-denied.
+windows = { version = "=0.61.3", default-features = false, features = ["Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_TaskScheduler"] }
 # IANA timezone for journal-config default materialization. Release-rail lenses:
 # `iana-time-zone` 0.1.65 is MIT OR Apache-2.0 and is already in the lock via
 # health-web and reprocess-cli. `build = false`; package MSRV 1.62.0 is below
@@ -386,6 +399,7 @@ serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtr
 jsonschema = { version = "0.49.8", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.10.9"
+subtle = "2.6.1"
 sha1 = "0.10.7"
 hmac = "0.12.1"
 getrandom = "0.3.4"
@@ -405,6 +419,9 @@ ureq = { version = "3.3.0", default-features = false }
 tar = "0.4"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 bzip2-rs = "0.1.2"
+# Decode-only xz for the nvattest appraiser .tar.xz payload. Pure Rust
+# (byteorder only); no C/FFI. Do not replace with xz2/liblzma.
+lzma-rs = "0.3"
 
 # Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
 # all 410 dependencies) put ~59G in target/debug against ~2.5G in

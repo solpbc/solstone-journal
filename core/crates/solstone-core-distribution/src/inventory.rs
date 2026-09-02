@@ -12,12 +12,13 @@ use crate::archive_taxonomy::ContainerKind;
 
 const KNOWN_LANES: &[&str] = &["musl-static", "zig-gnu-2.27"];
 /// Lanes a target may declare for itself. Linux entries carry a per-binary lane
-/// because the Linux tree is built by two distinct cross toolchains; macOS has
-/// exactly one toolchain, so its lane is a property of the target and the
-/// per-entry `lane` is not consulted for it.
-const KNOWN_TARGET_LANES: &[&str] = &["apple-native"];
+/// because the Linux tree is built by two distinct cross toolchains; macOS and
+/// Windows each have exactly one native toolchain, so the lane is a property of
+/// the target and the per-entry `lane` is not consulted for them.
+const KNOWN_TARGET_LANES: &[&str] = &["apple-native", "msvc-native"];
 pub const OS_LINUX: &str = "linux";
 pub const OS_MACOS: &str = "macos";
+pub const OS_WINDOWS: &str = "windows";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,11 +126,15 @@ pub fn artifact_archives(basename: &str) -> [String; 3] {
 /// the rest is the platform's own supported wrapper. Linux relocates the tree
 /// through `.deb` and `.rpm`; macOS relocates it through one signed, notarized
 /// and stapled `.pkg`.
-#[must_use]
-pub fn artifact_archives_for_os(os: &str, basename: &str) -> Vec<String> {
+pub fn artifact_archives_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
     match os {
-        OS_MACOS => vec![format!("{basename}.tar.gz"), format!("{basename}.pkg")],
-        _ => artifact_archives(basename).to_vec(),
+        OS_MACOS => Ok(vec![
+            format!("{basename}.tar.gz"),
+            format!("{basename}.pkg"),
+        ]),
+        OS_LINUX => Ok(artifact_archives(basename).to_vec()),
+        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        other => panic!("unexpected distribution os {other}"),
     }
 }
 
@@ -145,23 +150,41 @@ pub fn artifact_sidecars(basename: &str) -> [String; 3] {
 /// Members protected by the checksum sidecar. The receipt is a first-class
 /// macOS release fact, so it is covered alongside the containers and release
 /// declaration rather than being an unsigned afterthought.
-#[must_use]
-pub fn checksum_members_for_os(os: &str, basename: &str) -> Vec<String> {
-    let mut names = artifact_archives_for_os(os, basename);
-    names.push(format!("{basename}.release"));
-    if os == OS_MACOS {
-        names.push(format!("{basename}.signing.json"));
+pub fn checksum_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    match os {
+        OS_MACOS => {
+            let mut names = artifact_archives_for_os(os, basename)?;
+            names.push(format!("{basename}.release"));
+            names.push(format!("{basename}.signing.json"));
+            Ok(names)
+        }
+        OS_LINUX => {
+            let mut names = artifact_archives_for_os(os, basename)?;
+            names.push(format!("{basename}.release"));
+            Ok(names)
+        }
+        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        other => panic!("unexpected distribution os {other}"),
     }
-    names
 }
 
 /// Members protected by the manifest. The manifest never protects itself (or
 /// its eventual minisign signature), but it does bind the checksum sidecar.
-#[must_use]
-pub fn manifest_members_for_os(os: &str, basename: &str) -> Vec<String> {
-    let mut names = checksum_members_for_os(os, basename);
-    names.push(format!("{basename}.sha256"));
-    names
+pub fn manifest_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    match os {
+        OS_MACOS => {
+            let mut names = checksum_members_for_os(os, basename)?;
+            names.push(format!("{basename}.sha256"));
+            Ok(names)
+        }
+        OS_LINUX => {
+            let mut names = checksum_members_for_os(os, basename)?;
+            names.push(format!("{basename}.sha256"));
+            Ok(names)
+        }
+        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        other => panic!("unexpected distribution os {other}"),
+    }
 }
 
 #[must_use]
@@ -174,25 +197,37 @@ pub fn artifact_set(basename: &str) -> [String; 6] {
 /// Sidecars for `os`. macOS carries a fourth: the signing receipt, which is
 /// provenance the Linux set does not need and which used to be produced by
 /// `scripts/record_macos_native_wheel.py`.
-#[must_use]
-pub fn artifact_sidecars_for_os(os: &str, basename: &str) -> Vec<String> {
-    let mut names = artifact_sidecars(basename).to_vec();
-    if os == OS_MACOS {
-        names.push(format!("{basename}.signing.json"));
+pub fn artifact_sidecars_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    match os {
+        OS_MACOS => {
+            let mut names = artifact_sidecars(basename).to_vec();
+            names.push(format!("{basename}.signing.json"));
+            Ok(names)
+        }
+        OS_LINUX => Ok(artifact_sidecars(basename).to_vec()),
+        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        other => panic!("unexpected distribution os {other}"),
     }
-    names
 }
 
 /// The complete atomic set for `os`: every container plus every sidecar.
 /// Promotion renames one directory holding exactly this set or nothing at all.
-/// Both platforms land on six files — three containers and three sidecars on
-/// Linux, two containers and four sidecars on macOS — and the invariant that
-/// matters is completeness, not the count.
-#[must_use]
-pub fn artifact_set_for_os(os: &str, basename: &str) -> Vec<String> {
-    let mut names = artifact_archives_for_os(os, basename);
-    names.extend(artifact_sidecars_for_os(os, basename));
-    names
+/// Completeness is the invariant, not the count.
+pub fn artifact_set_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    match os {
+        OS_MACOS => {
+            let mut names = artifact_archives_for_os(os, basename)?;
+            names.extend(artifact_sidecars_for_os(os, basename)?);
+            Ok(names)
+        }
+        OS_LINUX => {
+            let mut names = artifact_archives_for_os(os, basename)?;
+            names.extend(artifact_sidecars_for_os(os, basename)?);
+            Ok(names)
+        }
+        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        other => panic!("unexpected distribution os {other}"),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -213,13 +248,17 @@ pub struct Target {
     pub triple_gnu: String,
     #[serde(default)]
     pub zig_gnu: String,
-    /// macOS-only fields.
+    /// Target-owned lane for macOS and Windows. Empty on Linux.
     #[serde(default)]
     pub lane: String,
+    /// macOS-only fields.
     #[serde(default)]
     pub triple_apple: String,
     #[serde(default)]
     pub min_macos: String,
+    /// Windows-only field.
+    #[serde(default)]
+    pub triple_windows: String,
 }
 
 impl Target {
@@ -228,11 +267,16 @@ impl Target {
         self.os == OS_MACOS
     }
 
-    /// The lane that actually builds `entry_lane` for this target. On macOS the
-    /// target owns the lane; on Linux the entry does. One contract, one end.
+    #[must_use]
+    pub fn is_windows(&self) -> bool {
+        self.os == OS_WINDOWS
+    }
+
+    /// The lane that actually builds `entry_lane` for this target. On macOS and
+    /// Windows the target owns the lane; on Linux the entry does.
     #[must_use]
     pub fn lane_for<'a>(&'a self, entry_lane: &'a str) -> &'a str {
-        if self.is_macos() {
+        if self.is_macos() || self.is_windows() {
             &self.lane
         } else {
             entry_lane
@@ -244,6 +288,7 @@ impl Target {
     pub fn triple_for_lane(&self, lane: &str) -> &str {
         match lane {
             "apple-native" => &self.triple_apple,
+            "msvc-native" => &self.triple_windows,
             "musl-static" => &self.triple_musl,
             _ => &self.triple_gnu,
         }
@@ -254,6 +299,7 @@ impl Target {
     pub fn triples(&self) -> Vec<&str> {
         [
             self.triple_apple.as_str(),
+            self.triple_windows.as_str(),
             self.triple_musl.as_str(),
             self.triple_gnu.as_str(),
         ]
@@ -484,6 +530,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     let mut dests_by_target: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut missing_targets = BTreeSet::new();
     let mut unexpected_lanes = BTreeSet::new();
+    let mut unexpected_dests = BTreeSet::new();
     for entry in &inventory.entry {
         let (dests, targets, lane) = entry_fields(entry);
         for target in targets {
@@ -500,6 +547,11 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
                         "duplicate dest {dest} for target {target} in {}",
                         path.display()
                     )));
+                }
+                if let Some(declared) = inventory.target.iter().find(|item| item.id == *target)
+                    && let Err(error) = crate::layout::admit_dest(&declared.os, dest)
+                {
+                    unexpected_dests.insert(format!("{target} {dest}: {error}"));
                 }
             }
         }
@@ -520,6 +572,12 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         return Err(InventoryError::new(format_named_list(
             "unexpected lane",
             &unexpected_lanes,
+        )));
+    }
+    if !unexpected_dests.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "unexpected windows dest",
+            &unexpected_dests,
         )));
     }
     validate_archive_slots(path, inventory)?;
@@ -714,6 +772,22 @@ pub fn validate_archive_member_path(path: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+fn require_fields(id: &str, fields: &[(&str, &str)], missing: &mut BTreeSet<String>) {
+    for (name, value) in fields {
+        if value.is_empty() {
+            missing.insert(format!("{id} {name}"));
+        }
+    }
+}
+
+fn forbid_fields(id: &str, fields: &[(&str, &str)], unexpected: &mut BTreeSet<String>) {
+    for (name, value) in fields {
+        if !value.is_empty() {
+            unexpected.insert(format!("{id} {name}"));
+        }
+    }
+}
+
 /// Every target declares exactly the field set its own os builds through, and
 /// none of the other os's. A macOS target carrying `deb_arch`, or a Linux
 /// target carrying `triple_apple`, is refused rather than silently ignored —
@@ -722,42 +796,53 @@ fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
     let mut missing = BTreeSet::new();
     let mut unexpected = BTreeSet::new();
     for target in targets {
-        let linux_fields = [
+        let linux_only = [
             ("deb_arch", target.deb_arch.as_str()),
             ("rpm_arch", target.rpm_arch.as_str()),
             ("triple_musl", target.triple_musl.as_str()),
             ("triple_gnu", target.triple_gnu.as_str()),
             ("zig_gnu", target.zig_gnu.as_str()),
         ];
-        let macos_fields = [
-            ("lane", target.lane.as_str()),
+        let macos_only = [
             ("triple_apple", target.triple_apple.as_str()),
             ("min_macos", target.min_macos.as_str()),
         ];
-        let (required, forbidden) = match target.os.as_str() {
-            OS_LINUX => (&linux_fields[..], &macos_fields[..]),
-            OS_MACOS => (&macos_fields[..], &linux_fields[..]),
+        let windows_only = [("triple_windows", target.triple_windows.as_str())];
+        let lane = target.lane.as_str();
+        match target.os.as_str() {
+            OS_LINUX => {
+                require_fields(&target.id, &linux_only, &mut missing);
+                forbid_fields(&target.id, &macos_only, &mut unexpected);
+                forbid_fields(&target.id, &windows_only, &mut unexpected);
+                if !lane.is_empty() {
+                    unexpected.insert(format!("{} lane", target.id));
+                }
+            }
+            OS_MACOS => {
+                require_fields(&target.id, &macos_only, &mut missing);
+                forbid_fields(&target.id, &linux_only, &mut unexpected);
+                forbid_fields(&target.id, &windows_only, &mut unexpected);
+                if lane.is_empty() {
+                    missing.insert(format!("{} lane", target.id));
+                } else if lane != "apple-native" {
+                    unexpected.insert(format!("{} lane {lane}", target.id));
+                }
+                if !target.min_macos.is_empty() && parse_min_macos(&target.min_macos).is_none() {
+                    unexpected.insert(format!("{} min_macos {}", target.id, target.min_macos));
+                }
+            }
+            OS_WINDOWS => {
+                require_fields(&target.id, &windows_only, &mut missing);
+                forbid_fields(&target.id, &linux_only, &mut unexpected);
+                forbid_fields(&target.id, &macos_only, &mut unexpected);
+                if lane.is_empty() {
+                    missing.insert(format!("{} lane", target.id));
+                } else if lane != "msvc-native" {
+                    unexpected.insert(format!("{} lane {lane}", target.id));
+                }
+            }
             other => {
                 unexpected.insert(format!("{} os {other}", target.id));
-                continue;
-            }
-        };
-        for (name, value) in required {
-            if value.is_empty() {
-                missing.insert(format!("{} {name}", target.id));
-            }
-        }
-        for (name, value) in forbidden {
-            if !value.is_empty() {
-                unexpected.insert(format!("{} {name}", target.id));
-            }
-        }
-        if target.is_macos() {
-            if !target.lane.is_empty() && !KNOWN_TARGET_LANES.contains(&target.lane.as_str()) {
-                unexpected.insert(format!("{} lane {}", target.id, target.lane));
-            }
-            if !target.min_macos.is_empty() && parse_min_macos(&target.min_macos).is_none() {
-                unexpected.insert(format!("{} min_macos {}", target.id, target.min_macos));
             }
         }
     }
@@ -839,6 +924,8 @@ pub fn repository_inventory_path(start: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    use std::fs;
+
     const COMMITTED: &str = include_str!("../../../distribution/inventory.toml");
 
     fn parse(text: &str) -> Result<Inventory, InventoryError> {
@@ -886,6 +973,33 @@ mod tests {
     }
 
     #[test]
+    fn the_committed_windows_target_declares_its_own_field_set_and_no_entries() {
+        let inventory = committed();
+        let target = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "windows-x86_64")
+            .expect("windows target");
+        assert!(target.is_windows());
+        assert_eq!(target.lane, "msvc-native");
+        assert_eq!(target.triple_windows, "x86_64-pc-windows-msvc");
+        assert_eq!(target.deb_arch, "");
+        assert_eq!(target.rpm_arch, "");
+        assert_eq!(target.triple_musl, "");
+        assert_eq!(target.triple_gnu, "");
+        assert_eq!(target.zig_gnu, "");
+        assert_eq!(target.triple_apple, "");
+        assert_eq!(target.min_macos, "");
+        assert_eq!(target.triples(), vec!["x86_64-pc-windows-msvc"]);
+        assert!(!inventory.entry.iter().any(|entry| {
+            entry_fields(entry)
+                .1
+                .iter()
+                .any(|id| id == "windows-x86_64")
+        }));
+    }
+
+    #[test]
     fn a_macos_target_resolves_every_entry_lane_to_its_own_lane() {
         let inventory = committed();
         let macos = inventory
@@ -919,6 +1033,26 @@ mod tests {
         assert_eq!(
             linux.triple_for_lane("zig-gnu-2.27"),
             "x86_64-unknown-linux-gnu"
+        );
+    }
+
+    #[test]
+    fn a_windows_target_resolves_every_entry_lane_to_its_own_lane() {
+        let inventory = committed();
+        let windows = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "windows-x86_64")
+            .unwrap();
+        for entry in &inventory.entry {
+            let Entry::Bin { lane, .. } = entry else {
+                continue;
+            };
+            assert_eq!(windows.lane_for(lane), "msvc-native");
+        }
+        assert_eq!(
+            windows.triple_for_lane("msvc-native"),
+            "x86_64-pc-windows-msvc"
         );
     }
 
@@ -1018,7 +1152,7 @@ mod tests {
     #[test]
     fn both_platforms_promote_a_six_file_set_and_neither_names_the_others_container() {
         let base = "solstone-journal-1.0.22-linux-x86_64";
-        let linux = artifact_set_for_os(OS_LINUX, base);
+        let linux = artifact_set_for_os(OS_LINUX, base).expect("linux");
         assert_eq!(linux.len(), 6);
         assert!(linux.iter().any(|name| name.ends_with(".deb")));
         assert!(linux.iter().any(|name| name.ends_with(".rpm")));
@@ -1026,13 +1160,36 @@ mod tests {
         assert!(!linux.iter().any(|name| name.ends_with(".signing.json")));
 
         let base = "solstone-journal-1.0.22-macos-arm64";
-        let macos = artifact_set_for_os(OS_MACOS, base);
+        let macos = artifact_set_for_os(OS_MACOS, base).expect("macos");
         assert_eq!(macos.len(), 6);
         assert!(macos.iter().any(|name| name.ends_with(".tar.gz")));
         assert!(macos.iter().any(|name| name.ends_with(".pkg")));
         assert!(macos.iter().any(|name| name.ends_with(".signing.json")));
         assert!(!macos.iter().any(|name| name.ends_with(".deb")));
         assert!(!macos.iter().any(|name| name.ends_with(".rpm")));
+    }
+
+    #[test]
+    fn windows_artifact_helpers_refuse() {
+        let base = "solstone-journal-1.0.22-windows-x86_64";
+        let refusal = "windows archive/signing is not implemented in this lode";
+        assert_eq!(
+            artifact_archives_for_os(OS_WINDOWS, base).unwrap_err(),
+            refusal
+        );
+        assert_eq!(
+            checksum_members_for_os(OS_WINDOWS, base).unwrap_err(),
+            refusal
+        );
+        assert_eq!(
+            artifact_sidecars_for_os(OS_WINDOWS, base).unwrap_err(),
+            refusal
+        );
+        assert_eq!(
+            manifest_members_for_os(OS_WINDOWS, base).unwrap_err(),
+            refusal
+        );
+        assert_eq!(artifact_set_for_os(OS_WINDOWS, base).unwrap_err(), refusal);
     }
 
     #[test]
@@ -1117,6 +1274,159 @@ min_macos = "14.0"
         let error = parse(unknown_lane).unwrap_err().to_string();
         assert!(error.contains("macos-arm64 lane xcodebuild"), "{error}");
 
+        let windows_with_deb = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+deb_arch = "amd64"
+"#;
+        let error = parse(windows_with_deb).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("windows-x86_64 deb_arch"), "{error}");
+
+        let windows_without_triple = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+"#;
+        let error = parse(windows_without_triple).unwrap_err().to_string();
+        assert!(error.contains("missing required target field"), "{error}");
+        assert!(error.contains("windows-x86_64 triple_windows"), "{error}");
+
+        let macos_with_msvc_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "msvc-native"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let error = parse(macos_with_msvc_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("macos-arm64 lane msvc-native"), "{error}");
+
+        let windows_with_apple_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "apple-native"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_with_apple_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(
+            error.contains("windows-x86_64 lane apple-native"),
+            "{error}"
+        );
+
+        let windows_unknown_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "xcodebuild"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_unknown_lane).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("windows-x86_64 lane xcodebuild"), "{error}");
+
+        let windows_empty_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+triple_windows = "x86_64-pc-windows-msvc"
+"#;
+        let error = parse(windows_empty_lane).unwrap_err().to_string();
+        assert!(error.contains("missing required target field"), "{error}");
+        assert!(error.contains("windows-x86_64 lane"), "{error}");
+
+        let windows_with_apple_fields = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let error = parse(windows_with_apple_fields).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("windows-x86_64 triple_apple"), "{error}");
+        assert!(error.contains("windows-x86_64 min_macos"), "{error}");
+
         // The control: the committed inventory passes the same validator, so a
         // refusal above is the rule firing rather than the parser being broken.
         validate_targets(&committed().target).expect("committed targets validate");
@@ -1163,6 +1473,48 @@ min_macos = "14.0"
         assert!(inventory.target.iter().any(Target::is_macos));
         // And the committed one does declare it.
         assert!(committed().apple.is_declared());
+    }
+
+    #[test]
+    fn windows_entry_dests_outside_the_layout_are_refused() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-distribution-windows-dest-")
+            .tempdir_in("/var/tmp")
+            .expect("temporary inventory");
+        let distribution = root.path().join("core/distribution");
+        fs::create_dir_all(&distribution).unwrap();
+        fs::write(distribution.join("payload.txt"), "").unwrap();
+        fs::write(
+            distribution.join("inventory.toml"),
+            r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "core/payload"
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+[[entry]]
+kind = "copy"
+source = "LICENSE"
+dest = "bin/solstone-core.exe"
+mode = 0o644
+targets = ["windows-x86_64"]
+"#,
+        )
+        .unwrap();
+        let error = load_inventory(&distribution.join("inventory.toml"))
+            .expect_err("linux dest on windows")
+            .to_string();
+        assert!(error.contains("unexpected windows dest"), "{error}");
+        assert!(error.contains("bin/solstone-core.exe"), "{error}");
     }
 
     #[test]

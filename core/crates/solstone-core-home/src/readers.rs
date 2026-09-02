@@ -21,7 +21,7 @@ use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
-    ConnectionFreshness, inspect_clients_at, rollup_client_capture_states,
+    ConnectionFreshness, SourceDelivery, inspect_clients_at, rollup_client_capture_states,
 };
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
@@ -929,7 +929,32 @@ fn home_client_row(row: &ClientAssessment) -> Value {
         summary["ingest_rejection"] =
             serde_json::to_value(rejection).expect("rejection serializes");
     }
+    if !row.source_delivery.is_empty() {
+        summary["source_delivery"] = Value::Object(
+            row.source_delivery
+                .iter()
+                .map(|(source, delivery)| {
+                    (
+                        source.clone(),
+                        json!({
+                            "state": source_delivery_name(delivery.state),
+                            "elapsed_ms": delivery.elapsed_ms,
+                            "ingest_rejection": delivery.ingest_rejection,
+                        }),
+                    )
+                })
+                .collect(),
+        );
+    }
     summary
+}
+
+fn source_delivery_name(state: SourceDelivery) -> &'static str {
+    match state {
+        SourceDelivery::Current => "current",
+        SourceDelivery::NeedsAttention => "needs_attention",
+        SourceDelivery::Unknown => "unknown",
+    }
 }
 
 fn unassessed_client_row(row: &ClientAssessment) -> Value {
@@ -1121,7 +1146,9 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use solstone_core_sol_link::client_status::{ClientReach, ConnectionGroup, ConnectionState};
+    use solstone_core_sol_link::client_status::{
+        ClientReach, ConnectionGroup, ConnectionState, SourceDelivery, SourceDeliveryRow,
+    };
     use solstone_core_sol_link::ledger::ClientEntry;
     use tempfile::TempDir;
 
@@ -1604,6 +1631,7 @@ mod tests {
             },
             capture_state,
             capture_elapsed_ms,
+            source_delivery: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1703,7 +1731,125 @@ mod tests {
         let health = get_capture_health(&home_context);
         assert_eq!(health["status"], "active");
         assert_eq!(health["clients"][0]["name"], "phone");
+        assert!(health["clients"][0].get("source_delivery").is_none());
         assert_eq!(last_observe_relative_seconds(&home_context), Some(29));
+    }
+
+    #[test]
+    fn capture_health_json_omits_source_delivery_when_empty_and_emits_it_additively() {
+        let mut single = assessment(
+            "phone",
+            ClientCaptureState::Active,
+            Some(1_000),
+            ClientReach::Active,
+        );
+        single.source_delivery.insert(
+            "audio".to_owned(),
+            SourceDeliveryRow {
+                state: SourceDelivery::Current,
+                elapsed_ms: Some(1_000),
+                last_accepted_ingest_at: Some("2026-01-01T00:00:00Z".to_owned()),
+                last_accepted_segment: None,
+                ingest_rejection: None,
+            },
+        );
+        let empty = assessment(
+            "phone",
+            ClientCaptureState::Active,
+            Some(1_000),
+            ClientReach::Active,
+        );
+        let empty_json = capture_health_json(&ClientInspection::Ready {
+            clients: vec![empty],
+            activity: ClientActivityState::Present,
+        });
+        let single_json = capture_health_json(&ClientInspection::Ready {
+            clients: vec![single],
+            activity: ClientActivityState::Present,
+        });
+        assert!(empty_json["clients"][0].get("source_delivery").is_none());
+        assert_eq!(empty_json["clients"][0]["status"], "active");
+        assert_eq!(
+            single_json["clients"][0]["source_delivery"]["audio"]["state"],
+            "current"
+        );
+        assert_eq!(
+            single_json["clients"][0]["source_delivery"]["audio"]["elapsed_ms"],
+            1_000
+        );
+        assert!(
+            single_json["clients"][0]["source_delivery"]["audio"]["ingest_rejection"].is_null()
+        );
+
+        let mut unnamed = assessment(
+            "phone",
+            ClientCaptureState::Active,
+            Some(1_000),
+            ClientReach::Active,
+        );
+        unnamed.source_delivery.insert(
+            String::new(),
+            SourceDeliveryRow {
+                state: SourceDelivery::Current,
+                elapsed_ms: Some(1_000),
+                last_accepted_ingest_at: None,
+                last_accepted_segment: None,
+                ingest_rejection: None,
+            },
+        );
+        let unnamed_json = capture_health_json(&ClientInspection::Ready {
+            clients: vec![unnamed],
+            activity: ClientActivityState::Present,
+        });
+        assert_eq!(
+            unnamed_json["clients"][0]["source_delivery"][""]["state"],
+            "current"
+        );
+        assert_eq!(unnamed_json["status"], empty_json["status"]);
+        assert_eq!(unnamed_json["clients"][0]["status"], "active");
+    }
+
+    #[test]
+    fn capture_health_json_projects_multi_source_needs_attention() {
+        let mut row = assessment(
+            "phone",
+            ClientCaptureState::Active,
+            Some(1_000),
+            ClientReach::Active,
+        );
+        row.source_delivery.insert(
+            "audio".to_owned(),
+            SourceDeliveryRow {
+                state: SourceDelivery::Current,
+                elapsed_ms: Some(1_000),
+                last_accepted_ingest_at: None,
+                last_accepted_segment: None,
+                ingest_rejection: None,
+            },
+        );
+        row.source_delivery.insert(
+            "location".to_owned(),
+            SourceDeliveryRow {
+                state: SourceDelivery::NeedsAttention,
+                elapsed_ms: Some(700_000),
+                last_accepted_ingest_at: None,
+                last_accepted_segment: None,
+                ingest_rejection: None,
+            },
+        );
+        let health = capture_health_json(&ClientInspection::Ready {
+            clients: vec![row],
+            activity: ClientActivityState::Present,
+        });
+        assert_eq!(health["status"], "active");
+        assert_eq!(
+            health["clients"][0]["source_delivery"]["location"]["state"],
+            "needs_attention"
+        );
+        assert_eq!(
+            health["clients"][0]["source_delivery"]["audio"]["state"],
+            "current"
+        );
     }
 
     #[test]

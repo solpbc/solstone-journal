@@ -424,7 +424,7 @@ impl PortalClient {
         let records = ledger.list_pending_acknowledgements()?;
         for record in records {
             let Some(remote_operation_id) = record.remote_operation_id.as_deref() else {
-                tracing::warn!(
+                log::warn!(
                     "support acknowledgement missing operation id for {}",
                     record.child_action_id
                 );
@@ -434,12 +434,12 @@ impl PortalClient {
                 Ok(true) => {
                     let _ = ledger.mark_acknowledged(&record);
                 }
-                Ok(false) => tracing::info!(
+                Ok(false) => log::debug!(
                     "support acknowledgement unavailable for {}",
                     record.child_action_id
                 ),
-                Err(_) => tracing::info!(
-                    "support acknowledgement failed for {}",
+                Err(error) => log::warn!(
+                    "support acknowledgement failed for {}: {error}",
                     record.child_action_id
                 ),
             }

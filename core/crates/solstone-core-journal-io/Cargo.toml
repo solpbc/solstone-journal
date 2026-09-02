@@ -12,6 +12,7 @@ getrandom = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2.workspace = true
 solstone-core-journal = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -58,4 +59,38 @@ required-features = ["test-hooks"]
 [[test]]
 name = "windows_atomic_detailed"
 path = "tests/windows_atomic_detailed.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_create_only_protocol"
+path = "tests/windows_create_only_protocol.rs"
+required-features = ["test-hooks"]
+
+# Detailed create-only publication has Windows-only no-follow and fault-injection behavior.
+[[test]]
+name = "windows_create_only_detailed"
+path = "tests/windows_create_only_detailed.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_install_file_protocol"
+path = "tests/windows_install_file_protocol.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_staged_protocol"
+path = "tests/windows_staged_protocol.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_oplog_namespace"
+path = "tests/windows_oplog_namespace.rs"
+required-features = ["test-hooks"]
+
+# Share-mode liveness and child-capture behavior need the feature-gated runtime
+# trace/barrier API, which automatic test discovery cannot declare as a target
+# requirement.
+[[test]]
+name = "windows_oplog_liveness"
+path = "tests/windows_oplog_liveness.rs"
 required-features = ["test-hooks"]

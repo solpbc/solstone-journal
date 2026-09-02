@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
 
 use serde_json::{Map, Value};
+use solstone_core_journal_io::cortex_use::CortexUseFileIdentity;
 use solstone_core_system::process::LaunchAuthority;
 
 use crate::storage::{CortexStore, synthesized_error};
@@ -21,7 +22,9 @@ pub(crate) struct Outbound {
 #[derive(Clone, Debug)]
 pub struct Work {
     pub use_id: String,
+    pub talent_name: String,
     pub active: PathBuf,
+    pub identity: CortexUseFileIdentity,
     pub request: Map<String, Value>,
 }
 
@@ -34,7 +37,9 @@ pub(crate) struct ResolvedTalent {
 
 #[derive(Clone, Debug)]
 pub struct RunningUse {
+    pub(crate) talent_name: String,
     pub(crate) active: PathBuf,
+    pub(crate) identity: CortexUseFileIdentity,
     pub authority: Arc<Mutex<LaunchAuthority>>,
     pub(crate) started: Instant,
     pub(crate) stderr: Arc<Mutex<Vec<String>>>,
@@ -58,7 +63,7 @@ struct FinalizedUse {
 
 #[derive(Clone)]
 pub struct CortexState {
-    store: CortexStore,
+    store: Arc<CortexStore>,
     inner: Arc<Mutex<Inner>>,
     spawn: mpsc::Sender<Work>,
     cancel: mpsc::Sender<(String, String)>,
@@ -73,7 +78,7 @@ impl CortexState {
         outbound: mpsc::Sender<Outbound>,
     ) -> Self {
         Self {
-            store,
+            store: Arc::new(store),
             inner: Arc::new(Mutex::new(Inner {
                 accepting: true,
                 ..Inner::default()
@@ -112,12 +117,14 @@ impl CortexState {
         {
             return;
         }
-        let Ok(Some(active)) = self.store.claim(name, &use_id, &request) else {
+        let Ok(Some((active, identity))) = self.store.claim(name, &use_id, &request) else {
             return;
         };
         let work = Work {
             use_id: use_id.clone(),
+            talent_name: name.to_owned(),
             active: active.clone(),
+            identity,
             request: request.clone(),
         };
         {
@@ -160,7 +167,9 @@ impl CortexState {
         inner.running.insert(
             work.use_id.clone(),
             RunningUse {
+                talent_name: work.talent_name.clone(),
                 active: work.active.clone(),
+                identity: work.identity,
                 authority,
                 started: Instant::now(),
                 stderr,
@@ -273,8 +282,12 @@ impl CortexState {
         }
         let event = synthesized_error(&work.use_id, message);
         let _ = self.store.append_active(&work.active, &event);
-        self.store
-            .complete(&work.use_id, &work.active, Some(&work.request));
+        self.store.complete(
+            &work.use_id,
+            &work.talent_name,
+            work.identity,
+            Some(&work.request),
+        );
     }
 
     pub fn finish(&self, use_id: &str, exit_code: i32) {
@@ -300,8 +313,12 @@ impl CortexState {
             error.insert("exit_code".into(), Value::from(exit_code));
             self.append_and_relay(use_id, &running.active, error);
         }
-        self.store
-            .complete(use_id, &running.active, finalized.request.as_ref());
+        self.store.complete(
+            use_id,
+            &running.talent_name,
+            running.identity,
+            finalized.request.as_ref(),
+        );
     }
 
     pub(crate) fn cancel_running(&self, use_id: &str, reason: &str) -> Option<RunningUse> {
@@ -316,8 +333,12 @@ impl CortexState {
         let mut event = synthesized_error(use_id, "Talent cancelled by watchdog");
         event.insert("reason_code".into(), Value::String(reason.to_owned()));
         self.append_and_relay(use_id, &running.active, event);
-        self.store
-            .complete(use_id, &running.active, finalized.request.as_ref());
+        self.store.complete(
+            use_id,
+            &running.talent_name,
+            running.identity,
+            finalized.request.as_ref(),
+        );
         Some(running)
     }
 
@@ -326,8 +347,12 @@ impl CortexState {
         let running = finalized.running?;
         let event = synthesized_error(use_id, format!("Talent timed out after {seconds} seconds"));
         self.append_and_relay(use_id, &running.active, event);
-        self.store
-            .complete(use_id, &running.active, finalized.request.as_ref());
+        self.store.complete(
+            use_id,
+            &running.talent_name,
+            running.identity,
+            finalized.request.as_ref(),
+        );
         Some(running)
     }
 
@@ -409,15 +434,16 @@ mod tests {
     fn nameless_request_is_silent_except_for_stderr_diagnostic() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let talents = store.talents().to_path_buf();
         let (spawn_tx, spawn_rx) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state
             .request(serde_json::from_value(serde_json::json!({"use_id":"missing-name"})).unwrap());
         assert!(spawn_rx.try_recv().is_err());
         assert!(outbound_rx.try_recv().is_err());
-        assert!(!store.talents().join("missing-name_active.jsonl").exists());
+        assert!(!talents.join("missing-name_active.jsonl").exists());
     }
 
     #[test]
@@ -482,10 +508,11 @@ mod tests {
     fn immediate_stop_terminalizes_queued_claim_without_starting_it() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let talents = store.talents().to_path_buf();
         let (spawn_tx, _spawn_rx) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
                 serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
@@ -494,7 +521,7 @@ mod tests {
         );
         assert_eq!(state.queue_depth(), 1);
         assert!(state.stop_immediately().is_empty());
-        let completed = store.talents().join("conversation/one.jsonl");
+        let completed = talents.join("conversation/one.jsonl");
         assert!(
             fs::read_to_string(completed)
                 .unwrap()
@@ -506,11 +533,12 @@ mod tests {
     fn failed_spawn_send_terminalizes_claim_and_leaves_drain_idle() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let talents = store.talents().to_path_buf();
         let (spawn_tx, spawn_rx) = mpsc::channel();
         drop(spawn_rx);
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
                 serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
@@ -519,7 +547,7 @@ mod tests {
         );
         assert!(state.is_idle());
         assert!(
-            fs::read_to_string(store.talents().join("conversation/one.jsonl"))
+            fs::read_to_string(talents.join("conversation/one.jsonl"))
                 .unwrap()
                 .contains("Spawn worker error: spawn queue unavailable")
         );

@@ -78,18 +78,60 @@ call :run_platform_receipt "Windows launch path preparation" "solstone-core-syst
 call :run_platform_receipt "Windows JOB_LIST without handle inheritance" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_list_no_handle_inheritance_receipt" "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE" || exit /b 1
 call :run_platform_receipt "Windows Job process owner" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_process_owner_receipt" "JOURNAL_WIN_CI_JOB_PROCESS_OWNER" || exit /b 1
 call :run_platform_receipt "Windows Job last-handle negative" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_last_handle_negative_receipt" "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE" || exit /b 1
+call :run_platform_receipt "Windows managed-process facade" "solstone-core-system" "windows_lifecycle_receipt" "windows_managed_process_facade_receipt" "JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE" || exit /b 1
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
+call :run_receipt "NTFS Cortex-use recovery" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_cortex_use_receipt" "JOURNAL_WIN_CI_CORTEX_USE_NTFS" "NTFS" || exit /b 1
+call :run_receipt "ReFS Cortex-use recovery" "solstone-core-journal-io" "windows_atomic_detailed" "refs_cortex_use_receipt" "JOURNAL_WIN_CI_CORTEX_USE_REFS" "ReFS" || exit /b 1
 call :run_receipt "NTFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_managed_log_reference_receipt" "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE" "NTFS" || exit /b 1
 call :run_receipt "ReFS managed-log reference" "solstone-core-journal-io" "windows_atomic_detailed" "refs_managed_log_reference_receipt" "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE" "ReFS" || exit /b 1
 call :run_receipt "NTFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "ntfs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP" "NTFS" || exit /b 1
 call :run_receipt "ReFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "refs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP" "ReFS" || exit /b 1
 echo === cargo test --locked (journal-io library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
+echo === cargo test --locked (journal-io health-marker protocol) ===
+set "JOURNAL_WIN_CI_HEALTH_MARKER_LOG=core\target\journal-win-ci-health-marker-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_health_marker_protocol -- --nocapture > "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1 & echo ERROR: journal-io health-marker protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_HEALTH_MARKER_LOG); $marker = 'JOURNAL_WIN_CI_HEALTH_MARKER'; $pass = [regex]::Escape($marker + '=read/bump/lock/publish/legacy/pair/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1 & echo ERROR: journal-io health-marker protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%"
+del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1
+echo === cargo test --locked (journal-io snapshot protocol) ===
+set "JOURNAL_WIN_CI_SNAPSHOT_LOG=core\target\journal-win-ci-snapshot-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_snapshot_protocol -- --nocapture > "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1 & echo ERROR: journal-io snapshot protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_SNAPSHOT_LOG); $marker = 'JOURNAL_WIN_CI_SNAPSHOT'; $pass = [regex]::Escape($marker + '=capture/restore/reparse/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1 & echo ERROR: journal-io snapshot protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_SNAPSHOT_LOG%"
+del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1
+echo === cargo test --locked (journal-io staged-directory protocol) ===
+set "JOURNAL_WIN_CI_STAGED_LOG=core\target\journal-win-ci-staged-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_staged_protocol --features test-hooks -- --test-threads=1 --nocapture > "%JOURNAL_WIN_CI_STAGED_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_STAGED_LOG%" & del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1 & echo ERROR: journal-io staged-directory protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_STAGED_LOG); $marker = [regex]::Escape('JOURNAL_WIN_CI_STAGED=publish/race/crash/cleanup/pass'); $ntfs = '^JOURNAL_WIN_CI_STAGED_NTFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)\r?$'; $refs = '^JOURNAL_WIN_CI_STAGED_REFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)\r?$'; if ([regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_STAGED=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $marker + '\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_STAGED_OS=.+\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)' + $ntfs).Count -eq 1 -and [regex]::Matches($text, '(?m)' + $refs).Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_STAGED_LOG%" & del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1 & echo ERROR: journal-io staged-directory protocol did not emit the exact source-originated NTFS/ReFS receipt & exit /b 1 )
+type "%JOURNAL_WIN_CI_STAGED_LOG%"
+del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_atomic_detailed --features test-hooks || exit /b 1
+call :run_source_marked_target "signed Windows payload verifier" "solstone-core-distribution" "windows_payload" "test-fixture-pin" "journal_win_ci_windows_payload_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD" || exit /b 1
+call :run_source_marked_target "journal-io create-only publication" "solstone-core-journal-io" "windows_create_only" "" "journal_win_ci_windows_create_only_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY" || exit /b 1
+call :run_source_marked_target "journal-io create-only publication protocol" "solstone-core-journal-io" "windows_create_only_protocol" "test-hooks" "journal_win_ci_windows_create_only_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL" || exit /b 1
+call :run_source_marked_target "journal-io install-file publication" "solstone-core-journal-io" "windows_install_file" "" "journal_win_ci_windows_install_file_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE" || exit /b 1
+echo === cargo test --locked (journal-io install-file publication protocol) ===
+set "JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG=core\target\journal-win-ci-install-protocol-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG); $marker = 'JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL'; $pass = [regex]::Escape($marker + '=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%"
+del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1
+call :run_source_marker "journal-io install-file publication protocol" "solstone-core-journal-io" "windows_install_file_protocol" "test-hooks" "journal_win_ci_windows_install_file_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL" || exit /b 1
+call :run_source_marked_target "journal-io operational-log namespace" "solstone-core-journal-io" "windows_oplog_namespace" "test-hooks" "journal_win_ci_windows_oplog_namespace_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE" || exit /b 1
+call :run_source_marked_target "journal-io operational-log liveness" "solstone-core-journal-io" "windows_oplog_liveness" "test-hooks" "journal_win_ci_windows_oplog_liveness_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS" || exit /b 1
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
@@ -150,12 +192,42 @@ type "%JOURNAL_WIN_CI_RECEIPT_LOG%"
 if not "%JOURNAL_WIN_CI_RECEIPT_STATUS%"=="0" exit /b 1
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_RECEIPT_LOG); $marker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER); $filesystemMarker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM'); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '=executed/pass'); $filesystem = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM=' + $env:JOURNAL_WIN_CI_RECEIPT_FILESYSTEM); if ([regex]::Matches($text, '(?m)^' + $marker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystemMarker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystem + '\r?$').Count -eq 1) { exit 0 }; exit 1"
 if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_RECEIPT_LABEL% receipt did not emit exactly one source-originated pass and runtime-filesystem marker & exit /b 1 )
+set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN="
+if "%JOURNAL_WIN_CI_RECEIPT_MARKER%"=="JOURNAL_WIN_CI_CORTEX_USE_NTFS" set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN=NTFS"
+if "%JOURNAL_WIN_CI_RECEIPT_MARKER%"=="JOURNAL_WIN_CI_CORTEX_USE_REFS" set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN=REFS"
+if defined JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_RECEIPT_LOG); $categories = @('CREATE_ADMIT', 'WRONG_KIND_REPARSE', 'RETAINED_ROOT', 'RETAINED_HEALTH', 'FAILURE_MAPPING', 'PRESERVATION', 'LOCK'); foreach ($category in $categories) { $marker = 'JOURNAL_WIN_CI_CORTEX_NAMESPACE_' + $env:JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN + '_' + $category; $pass = [regex]::Escape($marker + '=executed/pass'); $filesystemMarker = [regex]::Escape($marker + '_FILESYSTEM=' + $env:JOURNAL_WIN_CI_RECEIPT_FILESYSTEM); if ([regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -ne 1 -or [regex]::Matches($text, '(?m)^' + $filesystemMarker + '\r?$').Count -ne 1) { exit 1 } }; exit 0"
+if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_RECEIPT_LABEL% receipt did not emit every Cortex namespace category exactly once & exit /b 1 )
 del /q "%JOURNAL_WIN_CI_RECEIPT_LOG%" >nul 2>&1
 exit /b 0
 
 :require_journal_test
 set "JOURNAL_WIN_CI_TEST=%~1"
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --exact "%JOURNAL_WIN_CI_TEST%" 2>&1 | findstr /c:"test result: ok. 1 passed;" >nul || ( echo ERROR: required journal test %JOURNAL_WIN_CI_TEST% is missing ignored or failed & exit /b 1 )
+exit /b 0
+
+:run_source_marked_target
+echo === cargo test --locked (%~1) ===
+if "%~4"=="" (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" || exit /b 1
+) else (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" || exit /b 1
+)
+call :run_source_marker "%~1" "%~2" "%~3" "%~4" "%~5" "%~6" || exit /b 1
+exit /b 0
+
+:run_source_marker
+set "JOURNAL_WIN_CI_TARGET_LOG=core\target\journal-win-ci-target-%RANDOM%%RANDOM%.log"
+if "%~4"=="" (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+) else (
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+)
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 source-marker test failed & exit /b 1 )
+set "JOURNAL_WIN_CI_TARGET_MARKER=%~6"
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_TARGET_LOG); $key = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER + '=executed/pass'); if ([regex]::Matches($text, '(?m)^' + $key + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 did not emit exactly one source-originated target marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_TARGET_LOG%"
+del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1
 exit /b 0
 
 :verify_source_binding

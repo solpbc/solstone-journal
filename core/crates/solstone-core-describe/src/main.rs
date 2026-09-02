@@ -408,7 +408,7 @@ fn usage(message: &str) -> CliError {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;

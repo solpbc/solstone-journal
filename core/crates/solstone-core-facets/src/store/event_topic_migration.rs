@@ -61,7 +61,7 @@ pub fn migrate_event_topic_keys(
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use tempfile::tempdir;

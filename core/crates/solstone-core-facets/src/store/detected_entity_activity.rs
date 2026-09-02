@@ -8,7 +8,7 @@ use std::path::Path;
 
 use chrono::{Local, NaiveDate, TimeDelta};
 use serde_json::{Map, Value};
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 use solstone_core_entity_matching::MatchTier;
 use solstone_core_entity_matching::{
     EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
@@ -173,7 +173,7 @@ fn iter_detected_entity_names_since_with_reader(
     Ok(names)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn exclusion_tier(
     journal_root: &Path,
     facet_dir: &str,

@@ -4,7 +4,7 @@
 use std::fs;
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
@@ -34,20 +34,39 @@ fn owner_refresh(journal: &TempDir) {
 }
 
 fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
+    let model_id = solstone_core_local::install::resolve_bundled_model_id(
+        "local/qwen3.5-4b",
+        cfg!(target_os = "macos"),
+    );
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut input = serde_json::Map::from_iter([
+        (
+            "journal".into(),
+            json!(journal.path().display().to_string()),
+        ),
+        ("model_id".into(), json!(model_id)),
+    ]);
     #[cfg(target_os = "macos")]
-    let payload = serde_json::json!({"journal": journal.path(), "model_id": "local/qwen3.5-4b", "backend":"metal"});
+    input.insert("backend".into(), json!("metal"));
+    #[cfg(target_os = "macos")]
+    let readiness =
+        solstone_core_local::install::metal_candidate::inspect(&input).expect("metal inspect");
     #[cfg(not(target_os = "macos"))]
-    let payload = serde_json::json!({"journal": journal.path(), "model_id": "local/qwen3.5-4b"});
-    solstone_core_local::dispatch_install(
-        solstone_core_local::InstallVerb::FingerprintLocal,
-        payload,
+    let readiness = solstone_core_local::install::readiness::inspect_local(input);
+    solstone_core_brain::bundled_runtime_desired_fingerprint(
+        readiness["host"]["backend"].as_str().unwrap_or("metal"),
+        &model_id,
+        readiness["target"]["target_fingerprint_sha256"]
+            .as_str()
+            .unwrap_or(""),
+        readiness["artifacts"]["binary_path"].as_str(),
+        readiness["artifacts"]["model_path"]
+            .as_str()
+            .expect("model_path"),
+        readiness["artifacts"]["projector_path"].as_str(),
     )
-    .expect("resolve bundled runtime fingerprint")
-    .result
-    .expect("fingerprint result")["target_fingerprint_sha256"]
-        .as_str()
-        .expect("fingerprint string")
-        .to_owned()
+    .expect("unified desired fingerprint")
+    .sha256
 }
 
 #[test]

@@ -17,7 +17,10 @@ pub enum PublishCheckpoint {
 }
 
 impl PublishCheckpoint {
-    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(feature = "full-tests", feature = "test-hooks")),
+        allow(dead_code)
+    )]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::BeforeStagingDirCreate => "before-staging-dir-create",

@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
 use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
@@ -120,11 +120,11 @@ fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) ->
     )
 }
 
-fn ced_line(ced: &CedReadiness) -> String {
+fn ced_line(ced: &CedVerdict) -> String {
     match ced {
-        CedReadiness::Ready { .. } => CED_READY_DETAIL.to_owned(),
-        CedReadiness::Degraded { .. } => CED_UNAVAILABLE_GUIDANCE.to_owned(),
-        CedReadiness::Unsupported { os, arch } => {
+        CedVerdict::Ready { .. } => CED_READY_DETAIL.to_owned(),
+        CedVerdict::Degraded(_) => CED_UNAVAILABLE_GUIDANCE.to_owned(),
+        CedVerdict::Unsupported { os, arch } => {
             format!("ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets")
         }
     }
@@ -143,7 +143,7 @@ fn rfdetr_line(rfdetr: &RfdetrReadiness) -> String {
 }
 
 fn present_health(
-    ced: &CedReadiness,
+    ced: &CedVerdict,
     rfdetr: &RfdetrReadiness,
     fetch: Result<SupervisorStatus, PresentedHealthError>,
 ) -> (String, String, std::process::ExitCode) {
@@ -567,6 +567,8 @@ mod tests {
     use std::path::PathBuf;
 
     use serde_json::json;
+    use solstone_core_local::install::capability_status::CapabilityStatus;
+    use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
 
     use super::*;
 
@@ -662,7 +664,7 @@ mod tests {
     fn present_health_prefixes_ced_on_success() {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
         let rendered = render_status(&status);
-        let ced = CedReadiness::Ready {
+        let ced = CedVerdict::Ready {
             library: PathBuf::from("libced.so"),
             model: PathBuf::from("model.gguf"),
         };
@@ -681,10 +683,10 @@ mod tests {
 
     #[test]
     fn present_health_prefixes_ced_on_connection_failure() {
-        let ced = CedReadiness::Degraded {
-            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+        let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
+            capability: CED_CAPABILITY.to_owned(),
             detail: "sidecar missing".to_owned(),
-        };
+        });
         let rfdetr = RfdetrReadiness::Ready {
             binary: PathBuf::from("rfdetr-cli"),
             model: PathBuf::from("rfdetr-nano-f16.gguf"),
@@ -732,10 +734,10 @@ mod tests {
     #[test]
     fn present_health_fails_for_degraded_rfdetr_with_a_healthy_supervisor() {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
-        let ced = CedReadiness::Degraded {
-            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+        let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
+            capability: CED_CAPABILITY.to_owned(),
             detail: "sidecar missing".to_owned(),
-        };
+        });
         let rfdetr = RfdetrReadiness::Degraded {
             cause: solstone_core_local::install::rfdetr_readiness::RfdetrDegradedCause::Absent,
             detail: "sidecar missing".to_owned(),
@@ -748,15 +750,34 @@ mod tests {
     #[test]
     fn present_health_keeps_ced_degradation_non_gating_when_rfdetr_is_ready() {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
-        let ced = CedReadiness::Degraded {
-            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+        let ced = CedVerdict::Degraded(CapabilityStatus::Absent {
+            capability: CED_CAPABILITY.to_owned(),
             detail: "sidecar missing".to_owned(),
-        };
+        });
         let rfdetr = RfdetrReadiness::Ready {
             binary: PathBuf::from("rfdetr-cli"),
             model: PathBuf::from("rfdetr-nano-f16.gguf"),
         };
         let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        assert!(stderr.is_empty());
+        assert_eq!(code, std::process::ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn present_health_prefixes_ced_on_unsupported_platform() {
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let ced = CedVerdict::Unsupported {
+            os: "windows".to_owned(),
+            arch: "x86_64".to_owned(),
+        };
+        let rfdetr = RfdetrReadiness::Ready {
+            binary: PathBuf::from("rfdetr-cli"),
+            model: PathBuf::from("rfdetr-nano-f16.gguf"),
+        };
+        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        assert!(stdout.starts_with(
+            "ced install: unsupported platform windows/x86_64; skipping ced sound-tag assets\n"
+        ));
         assert!(stderr.is_empty());
         assert_eq!(code, std::process::ExitCode::SUCCESS);
     }

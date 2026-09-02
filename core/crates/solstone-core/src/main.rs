@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
@@ -32,16 +33,16 @@ use solstone_core_cli::{
     IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE,
-    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
-    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
-    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand,
-    TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
-    render_service_diagnostic, version_line,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpTokenCommand, NAVIGATE_HELP,
+    NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
+    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
+    TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
+    TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -62,6 +63,8 @@ mod service;
 mod service_logs;
 mod settings;
 use solstone_core::supervisor;
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
     DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
@@ -86,6 +89,8 @@ use solstone_core_journal::{
     ensure_journal_dir_with_label, read_config_journal,
     resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
@@ -104,6 +109,12 @@ const EXIT_IOERR: u8 = 74;
 const EXIT_PROTOCOL: u8 = 76;
 /// `EX_CONFIG`: hosted-service parent admission failed before service work.
 const EXIT_HOSTED_SERVICE_ADMISSION_REFUSED: u8 = 78;
+/// `EX_CONFIG`: the supervisor's own speakers-analyze generation acquisition
+/// or installation validation failed before any app process started.
+/// Numerically identical to but a distinct case from
+/// `EXIT_HOSTED_SERVICE_ADMISSION_REFUSED`, which is the hosted-CHILD
+/// admission refusal, not the supervisor's own boot refusal.
+const EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED: u8 = 78;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -172,6 +183,7 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
         HostedServiceKind::Sense => "sense",
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
+        HostedServiceKind::Mcp => "mcp",
     }
 }
 
@@ -232,6 +244,12 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
         } => {
             eprintln!("{ADMISSION_WAIT_UNVERIFIABLE_COPY}");
             ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::SpeakersAnalyzeGeneration(message),
+        } => {
+            eprintln!("{message}");
+            ExitCode::from(EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED)
         }
         supervisor::SupervisorHostOutcome::Refused { reason } => {
             eprintln!("supervisor failed to boot: {reason:?}");
@@ -367,7 +385,32 @@ fn main() -> ExitCode {
         Ok(Command::RetiredMover(message)) => run_retired_mover(message),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
-            let run = solstone_core_think_cli::run_cli(arguments, journal);
+            // Only the whole-day lifecycle (the sole caller of `sense_batch`)
+            // needs a speakers-analyze generation; narrower modes (`--segment`,
+            // `--flush`, `--weekly`, `--cadence`, `--activity`, `--updated`,
+            // `--segments`, `--dry-run`) never reach it and must not be forced
+            // to contend for a lease they don't need.
+            if !solstone_core_think_cli::requires_daily_lifecycle(arguments) {
+                let run = solstone_core_think_cli::run_cli(arguments, journal, &BTreeMap::new());
+                return (run.stdout, run.stderr, run.exit_code);
+            }
+            let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+                journal,
+                solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Think,
+            ) {
+                Ok(generation) => generation,
+                Err(error) => {
+                    return (
+                        String::new(),
+                        error.message().unwrap_or_default().to_owned(),
+                        error.exit_code(),
+                    );
+                }
+            };
+            let sense_child_environment = generation.inheritance_environment();
+            let run =
+                solstone_core_think_cli::run_cli(arguments, journal, &sense_child_environment);
+            drop(generation);
             (run.stdout, run.stderr, run.exit_code)
         }),
         Ok(Command::ThinkingHelp) => {
@@ -440,6 +483,16 @@ fn main() -> ExitCode {
         }
         Ok(Command::SplHelp) => {
             print!("{SPL_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Mcp(command)) => run_mcp_process(command),
+        Ok(Command::McpUsage(error)) => {
+            eprint!("{MCP_USAGE}");
+            eprintln!("journal mcp: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::McpHelp) => {
+            print!("{MCP_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::Sense(options)) => run_sense(options),
@@ -788,7 +841,15 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    match solstone_core_transcribe::run_cli(options.arguments, &journal.path) {
+    let mut on_day = |day: &Path| {
+        println!(
+            "{}",
+            day.file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
+        );
+    };
+    match solstone_core_transcribe::run_cli(options.arguments, &journal.path, &mut on_day) {
         Ok(result) => {
             if let Some(summary) = result.summary {
                 println!("{summary}");
@@ -2643,6 +2704,7 @@ fn generate_response_for_request(
                             usage: &usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: None,
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2766,6 +2828,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2815,6 +2878,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2864,6 +2928,7 @@ fn generate_response_for_request(
                             usage: &success.usage,
                             json_output: request.json_output,
                             enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
                         },
                     );
                     if let Some(error) = assessment.token_log_error {
@@ -2947,6 +3012,7 @@ fn endpoint_result_response(
                     usage: &usage,
                     json_output: request.json_output,
                     enforce_responsiveness: request.enforce_responsiveness,
+                    raw_response_snippet: None,
                 },
             );
             if let Some(error) = assessment.token_log_error {
@@ -4704,6 +4770,305 @@ fn run_spl_process(command: SplCommand) -> ExitCode {
     }
 }
 
+fn run_mcp_process(command: McpCommand) -> ExitCode {
+    match command {
+        McpCommand::Service => run_mcp_service(),
+        McpCommand::Status => run_mcp_status(),
+        McpCommand::Token(command) => run_mcp_token(command),
+        McpCommand::Pairing(command) => run_mcp_pairing(command),
+        McpCommand::Oauth(command) => run_mcp_oauth(command),
+    }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_service() -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let service_journal = journal.path.clone();
+    run_hosted_service(&journal.path, HostedServiceKind::Mcp, move |parent| {
+        match solstone_core::run_native_service_with_hosted_parent(service_journal, parent) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("mcp service failed: {}", error.class());
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
+        }
+    })
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_service() -> ExitCode {
+    eprintln!("journal mcp service is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_status() -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+
+    let mut exit = ExitCode::SUCCESS;
+    let capability = match read_journal_config(&journal.path) {
+        Ok(read) => match mcp_endpoint_capability(&read) {
+            Ok(McpEndpointCapability::Enabled) => "enabled".to_owned(),
+            Ok(McpEndpointCapability::Disabled) => "disabled".to_owned(),
+            Err(error) => {
+                eprintln!("journal mcp status: MCP capability configuration is invalid: {error:?}");
+                exit = ExitCode::from(EXIT_UNAVAILABLE);
+                "error".to_owned()
+            }
+        },
+        Err(error) => {
+            eprintln!("journal mcp status: could not read MCP capability configuration: {error}");
+            exit = ExitCode::from(EXIT_UNAVAILABLE);
+            "error".to_owned()
+        }
+    };
+
+    let token_count = match TokenStore::open(&journal.path).list() {
+        Ok(tokens) => tokens.len().to_string(),
+        Err(error) => {
+            eprintln!("journal mcp status: could not read bearer-token ledger: {error}");
+            exit = ExitCode::from(token_store_error_exit(&error));
+            "unavailable".to_owned()
+        }
+    };
+
+    println!("MCP capability/config status only; this does not report service liveness.");
+    println!("capability compiled in: true");
+    println!("capability: {capability}");
+    println!("token count: {token_count}");
+    exit
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_status() -> ExitCode {
+    eprintln!("journal mcp status is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = TokenStore::open(&journal.path);
+
+    match command {
+        McpTokenCommand::Create { label } => match store.create(&label) {
+            Ok(created) => {
+                println!("Created bearer token for label {:?}.", created.label);
+                println!(
+                    "Save this token now. It will not be shown again and cannot be recovered:"
+                );
+                println!("{}", created.token);
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("create", &error),
+        },
+        McpTokenCommand::List => match store.list() {
+            Ok(tokens) => {
+                for token in tokens {
+                    println!("{}\t{}", token.label, token.created_at.to_rfc3339());
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("list", &error),
+        },
+        McpTokenCommand::Revoke { label } => match store.revoke(&label) {
+            Ok(()) => {
+                println!("Revoked bearer token for label {label:?}.");
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_token_store_error("revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_token(_command: McpTokenCommand) -> ExitCode {
+    eprintln!("journal mcp token management is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = OAuthStore::open(&journal.path);
+    match command {
+        McpPairingCommand::Generate => match store.generate_pairing_code() {
+            Ok(created) => {
+                println!("Generated a pairing code, valid for 10 minutes and one use.");
+                println!("Save this now. It will not be shown again and cannot be recovered:");
+                println!("{}", created.code);
+                println!("Expires at {}.", created.expires_at.to_rfc3339());
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_oauth_store_error("pairing", "generate", &error),
+        },
+        McpPairingCommand::Revoke => match store.revoke_pairing_code() {
+            Ok(()) => {
+                println!("Revoked the active pairing code.");
+                ExitCode::SUCCESS
+            }
+            Err(OAuthStoreError::NoActivePairing) => {
+                eprintln!("journal mcp pairing revoke: no active pairing code to revoke");
+                ExitCode::from(EXIT_DATAERR)
+            }
+            Err(error) => render_oauth_store_error("pairing", "revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_pairing(_command: McpPairingCommand) -> ExitCode {
+    eprintln!("journal mcp pairing is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = OAuthStore::open(&journal.path);
+    match command {
+        McpOauthCommand::List => match store.list_clients() {
+            Ok(clients) => {
+                for client in clients {
+                    let name = client.client_name.as_deref().unwrap_or("-");
+                    println!(
+                        "{}\t{}\t{}",
+                        client.client_id,
+                        name,
+                        client.created_at.to_rfc3339()
+                    );
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => render_oauth_store_error("oauth", "list", &error),
+        },
+        McpOauthCommand::Revoke { client_id } => match store.revoke_client_by_client_id(&client_id)
+        {
+            Ok(()) => {
+                println!("Revoked OAuth client {client_id}.");
+                ExitCode::SUCCESS
+            }
+            Err(OAuthStoreError::ClientNotFound) => {
+                eprintln!("journal mcp oauth revoke: no such OAuth client");
+                ExitCode::from(EXIT_DATAERR)
+            }
+            Err(error) => render_oauth_store_error("oauth", "revoke", &error),
+        },
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_oauth(_command: McpOauthCommand) -> ExitCode {
+    eprintln!("journal mcp oauth is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCode {
+    match error {
+        TokenStoreError::InvalidLabel(error) => {
+            eprintln!("journal mcp token {operation}: invalid label: {error}");
+        }
+        TokenStoreError::DuplicateLabel { label } => {
+            eprintln!(
+                "journal mcp token {operation}: a bearer token already exists for label {label:?}"
+            );
+        }
+        TokenStoreError::NotFound { label } => {
+            eprintln!("journal mcp token {operation}: no bearer token exists for label {label:?}");
+        }
+        _ => {
+            eprintln!("journal mcp token {operation}: {error}");
+        }
+    }
+    ExitCode::from(token_store_error_exit(error))
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
+    match error {
+        TokenStoreError::InvalidLabel(_) | TokenStoreError::DuplicateLabel { .. } => EXIT_USAGE,
+        TokenStoreError::NotFound { .. } | TokenStoreError::InvalidToken => EXIT_DATAERR,
+        TokenStoreError::Lock(_) => EXIT_TEMPFAIL,
+        TokenStoreError::Directory(_) | TokenStoreError::Read { .. } => EXIT_IOERR,
+        TokenStoreError::Write(_) => EXIT_CANTCREAT,
+        TokenStoreError::Randomness
+        | TokenStoreError::Malformed { .. }
+        | TokenStoreError::UnsupportedSchema { .. } => EXIT_UNAVAILABLE,
+    }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn render_oauth_store_error(command: &str, operation: &str, error: &OAuthStoreError) -> ExitCode {
+    match error {
+        OAuthStoreError::NoActivePairing => {
+            eprintln!("journal mcp {command} {operation}: no active pairing code");
+        }
+        OAuthStoreError::ClientNotFound => {
+            eprintln!("journal mcp {command} {operation}: no such OAuth client");
+        }
+        _ => {
+            eprintln!("journal mcp {command} {operation}: {error}");
+        }
+    }
+    ExitCode::from(oauth_store_error_exit(error))
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
+    match error {
+        OAuthStoreError::NoActivePairing
+        | OAuthStoreError::ClientNotFound
+        | OAuthStoreError::InvalidToken
+        | OAuthStoreError::TransactionNotFound
+        | OAuthStoreError::TransactionExpired
+        | OAuthStoreError::TransactionExhausted
+        | OAuthStoreError::CodeExpired
+        | OAuthStoreError::BindingMismatch
+        | OAuthStoreError::PairingMismatch
+        | OAuthStoreError::PairingLocked => EXIT_DATAERR,
+        OAuthStoreError::Lock(_) => EXIT_TEMPFAIL,
+        OAuthStoreError::Directory(_) | OAuthStoreError::Read { .. } => EXIT_IOERR,
+        OAuthStoreError::Write(_) => EXIT_CANTCREAT,
+        OAuthStoreError::Randomness
+        | OAuthStoreError::Quota
+        | OAuthStoreError::Malformed { .. }
+        | OAuthStoreError::UnsupportedSchema { .. }
+        | OAuthStoreError::EntryTooLarge
+        | OAuthStoreError::StateTooLarge => EXIT_UNAVAILABLE,
+    }
+}
+
 fn run_spl_service(options: ServiceOptions) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -4737,14 +5102,32 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    // Borrows the hosting supervisor's inherited generation when present
+    // (the ordinary hosted case); otherwise acquires as its own root owner
+    // (an unhosted `journal sense` daemon run outside the supervisor).
+    let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+        &journal.path,
+        solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+    ) {
+        Ok(generation) => generation,
+        Err(error) => {
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
+            }
+            return ExitCode::from(error.exit_code() as u8);
+        }
+    };
+    let sense_child_environment = generation.inheritance_environment();
     let service_journal = journal.path.clone();
     run_hosted_service(&journal.path, HostedServiceKind::Sense, move |parent| {
+        let _generation = generation;
         match solstone_core_sense::run_native_service_with_hosted_parent(
             service_journal,
             solstone_core_sense::SenseOptions {
                 verbose: options.verbose,
                 debug: options.debug,
             },
+            sense_child_environment,
             parent,
         ) {
             Ok(()) => ExitCode::SUCCESS,
@@ -4810,16 +5193,18 @@ fn run_sense(options: SenseOptions) -> ExitCode {
         }
         return ExitCode::from(error.exit_code() as u8);
     }
-    let _generation =
-        match solstone_core_transcribe::enter_speakers_analyze_generation(&journal.path) {
-            Ok(generation) => generation,
-            Err(error) => {
-                if let Some(message) = error.message() {
-                    eprintln!("{message}");
-                }
-                return ExitCode::from(error.exit_code() as u8);
+    let _generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+        &journal.path,
+        solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+    ) {
+        Ok(generation) => generation,
+        Err(error) => {
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
             }
-        };
+            return ExitCode::from(error.exit_code() as u8);
+        }
+    };
     solstone_core_sense::batch::install_batch_signal_handlers();
     let reprocess = options.reprocess.map(|kind| match kind {
         SenseReprocessKind::Screen => solstone_core_sense::batch::ReprocessKind::Screen,
@@ -5898,6 +6283,7 @@ mod tests {
                 usage: json!({"input_tokens": 1}),
                 finish_reason: "stop".into(),
                 thinking: Some(json!({"type": "thinking", "thinking": "work"})),
+                raw_response_snippet: None,
             },
             None,
         )

@@ -51,6 +51,9 @@ pub enum SegmentError {
     StreamBindingConflict {
         name: String,
     },
+    StreamAllocationExhausted {
+        base: String,
+    },
     Serialization {
         path: PathBuf,
         source: serde_json::Error,
@@ -101,6 +104,9 @@ impl fmt::Display for SegmentError {
             Self::StreamBindingConflict { name } => {
                 write!(formatter, "stream record binding changed for {name}")
             }
+            Self::StreamAllocationExhausted { base } => {
+                write!(formatter, "stream name allocation exhausted for {base}")
+            }
             Self::Serialization { path, source } => {
                 write!(formatter, "{}: {source}", path.display())
             }
@@ -128,7 +134,8 @@ impl Error for SegmentError {
             | Self::StreamInput(_)
             | Self::InvalidDeviceCid(_)
             | Self::InvalidDeviceJid(_)
-            | Self::StreamBindingConflict { .. } => None,
+            | Self::StreamBindingConflict { .. }
+            | Self::StreamAllocationExhausted { .. } => None,
         }
     }
 }

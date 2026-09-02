@@ -92,6 +92,34 @@ fn source_lock_target(journal: &Path) -> PathBuf {
     journal.join("streams/.source-location.mutation")
 }
 
+fn write_pairing_identities(journal: &Path) {
+    let path = journal.join("link/authorized_clients.json");
+    fs::create_dir_all(path.parent().unwrap()).expect("link directory");
+    fs::write(
+        path,
+        json!([
+            {
+                "fingerprint": CID_A,
+                "device_label": "fixture A",
+                "paired_at": "2026-01-01T00:00:00Z",
+                "instance_id": "fixture-instance",
+                "role": "",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": CID_B,
+                "device_label": "fixture B",
+                "paired_at": "2026-01-01T00:00:00Z",
+                "instance_id": "fixture-instance",
+                "role": "",
+                "kind": "cert",
+            },
+        ])
+        .to_string(),
+    )
+    .expect("pairing identities");
+}
+
 fn wait_until_source_lock_is_held(journal: &Path) {
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
@@ -136,6 +164,7 @@ fn one_live_location_segment(journal: &Path) -> PathBuf {
 fn location_ingest_and_deletion_share_one_outer_mutation_order() {
     let temporary = TempDir::new_in("/var/tmp").unwrap();
     let journal = temporary.path().to_path_buf();
+    write_pairing_identities(&journal);
     let callosum_runtime = Runtime::new().unwrap();
     let socket = journal.join("health/callosum.sock");
     let server = callosum_runtime

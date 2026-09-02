@@ -193,7 +193,7 @@ issue a Cloud Files query. Ordinary permission and I/O failures remain
 
 windows covers root admission, complete witnessed source enumeration, route
 revalidation, checked archive-source reads, portable name admission, and
-durable `append_jsonl`.
+durable `append_jsonl` and `append_text`.
 
 windows `atomic_replace_detailed` stages beside the destination, writes and
 flushes the staged file, then calls path-based
@@ -210,8 +210,20 @@ universal-durability guarantee. `DetailedAtomicOutcome` preserves publication
 and later-observation uncertainty rather than calling an uncertain result a
 success.
 
-An interrupted publication leaves the old complete record or the new complete
-record and may leave a same-directory staged file. A leaked stage is an
+`write_text` and `write_jsonl` are available on Unix and windows. Both use the
+generic `atomic_replace` facade rather than writing the destination directly.
+`write_text` publishes the supplied UTF-8 bytes. `write_jsonl` serializes the
+complete input in iteration order with one newline after every record; a
+serialization failure publishes no prefix. The generic facade does not expose
+the detailed outcome contract: successful-but-unverified publication returns
+success, and prepublication stage-cleanup details are reduced to the underlying
+`AtomicWriteError::Io` cause.
+
+At the tested process-interruption boundaries, termination before the terminal
+move leaves the old complete record, while termination after an observed
+successful move leaves the new complete record. The earlier boundary may leave
+a same-directory staged file. This evidence does not establish power-loss
+behavior or resolve an uncertain `MoveFileExW` result. A leaked stage is an
 opportunistic-cleanup concern: it does not make a later write fail. A malformed
 or torn heartbeat is rejected by the bounded read and classification path; it
 is never silently accepted as a valid record.
@@ -222,8 +234,8 @@ unchanged scans. An incomplete scan, changed observation, or malformed record
 does not earn deletion. windows does not implement the Unix claimed-removal
 state machine.
 
-Packaging, `snapshot`, `staged`, `health_marker`, `append_text`, and the Unix
-`FlatDirectory` and `claim_remove` APIs remain Unix-only. windows lifecycle
+Packaging, `snapshot`, `staged`, `health_marker`, and the Unix `FlatDirectory`
+and `claim_remove` APIs remain Unix-only. windows lifecycle
 uses its separate no-follow, bounded directory substrate only for the supported
 heartbeat path; this is not a general archive or packaging capability.
 
@@ -297,20 +309,20 @@ collector instead uses the separately stated age-and-stability gate before a
 plain verified deletion. That gate is specific to stale heartbeats: it is not a
 general replacement for Unix claim-and-remove semantics.
 
-## Append JSONL
+## Append text and JSONL
 
-`append_jsonl` is available on Unix and windows. It serializes one record,
-adds one newline, performs one append write, and requires `File::sync_all` to
-succeed before it returns success. A write error can still leave a partial
-record if the operating system reports a short write; callers must treat every
+`append_text` and `append_jsonl` are available on Unix and windows. Each builds
+one complete newline-terminated record, performs one append write, and requires
+`File::sync_all` to succeed before returning success. `append_jsonl` serializes
+one value for its record; `append_text` uses the supplied UTF-8 text. A write
+error can still leave a partial record if the operating system reports a short
+write, and a flush error can leave the complete record. Callers must treat every
 error as indeterminate on-disk state.
 
 On Unix, a newly created record file also receives the existing best-effort
 parent-directory sync. windows has no equivalent directory-handle sync in this
 surface, so a windows success means the record file flush completed; it does
-not claim durable parent-directory entry creation. `append_text` remains
-Unix-only because this lane exposes only the JSONL primitive used by
-Callosum's windows-compilable default surface.
+not claim durable parent-directory entry creation.
 
 ## No-replace platform support
 

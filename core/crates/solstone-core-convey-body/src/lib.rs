@@ -6,7 +6,7 @@
 mod aggregate;
 mod archive;
 mod chronicle;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod corpus_test;
 mod day;
 mod freshness;
@@ -60,7 +60,7 @@ pub use trends::{
     typical_by_signal, warm_trends,
 };
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

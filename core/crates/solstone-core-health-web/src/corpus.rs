@@ -428,6 +428,7 @@ async fn ac17_clients_payload_has_the_health_fields() {
         "clock_skew",
         "last_seen_at",
         "last_accepted_ingest_at",
+        "source_delivery",
     ] {
         assert!(row.get(key).is_some(), "missing {key}");
     }

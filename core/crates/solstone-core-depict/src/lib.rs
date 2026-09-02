@@ -166,9 +166,7 @@ pub struct SystemWireClient;
 
 impl WireClient for SystemWireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        OneShotClient::sibling()?
-            .with_prefix_arguments(["generate".into()])
-            .execute(request)
+        OneShotClient::sibling()?.execute(request)
     }
 }
 
@@ -332,15 +330,15 @@ fn interpret_generate(
             refusal.blocking,
             refusal.reason_code.map(|code| code.as_wire().to_owned()),
         )),
-        Err(ClientError::Protocol(error)) => Err(wire_error(
-            format!("{}: {}", error.reason, error.detail),
-            true,
-            None,
-        )),
+        Err(error @ ClientError::Protocol(_)) => Err(wire_error(error.to_string(), true, None)),
         Err(ClientError::Decode(detail)) => Err(wire_error(detail, true, None)),
-        Err(ClientError::Io(detail)) | Err(ClientError::Resolve(detail)) => {
-            Err(wire_error(detail, true, None))
-        }
+        Err(
+            error @ (ClientError::Io { .. }
+            | ClientError::ProcessIo(_)
+            | ClientError::InvalidResponse(_)
+            | ClientError::UnexpectedChild(_)),
+        ) => Err(wire_error(error.to_string(), true, None)),
+        Err(ClientError::Resolve(detail)) => Err(wire_error(detail, true, None)),
     }
 }
 
@@ -523,7 +521,7 @@ fn build_header_from_values(
                     "SEGMENT_META must be an object".to_owned(),
                 ));
             }
-            Err(_) => eprintln!("native depict: invalid SEGMENT_META JSON"),
+            Err(_) => log::warn!("native depict: invalid SEGMENT_META JSON"),
         }
     }
     Ok(header)
@@ -568,8 +566,9 @@ mod tests {
     use image::{ImageBuffer, Rgb};
     use sha2::{Digest, Sha256};
     use solstone_core_generate::{
-        GeneratedResponse, ProtocolError, ReasonCode, ReasonCodeValue, RefusedResponse,
-        decode_one_shot_response, decode_protocol_error,
+        CapturedStream, ChildStatus, GeneratedResponse, ProtocolError, ProtocolFailure, ReasonCode,
+        ReasonCodeValue, RefusedResponse, UnexpectedChildFailure, decode_one_shot_response,
+        decode_protocol_error,
     };
     use solstone_core_local::install::{
         rfdetr_install::{EngineSpec, ModelSpec},
@@ -828,11 +827,20 @@ mod tests {
                 }
             ));
         }
-        let error = interpret_generate(Err(ClientError::Protocol(ProtocolError {
-            id: None,
-            reason: "internal-failure".to_owned(),
-            detail: "failed to encode provider result".to_owned(),
-        })))
+        let error = interpret_generate(Err(ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "internal-failure".to_owned(),
+                detail: "failed to encode provider result".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
+        }))))
         .expect_err("protocol error must not produce a description");
         assert!(matches!(
             error,
@@ -843,8 +851,20 @@ mod tests {
             }
         ));
         for error in [
-            ClientError::Io("io".to_owned()),
+            ClientError::Io {
+                primary: "io".to_owned(),
+                cleanup: None,
+            },
             ClientError::Resolve("resolve".to_owned()),
+            ClientError::UnexpectedChild(Box::new(UnexpectedChildFailure {
+                status: ChildStatus {
+                    exit_code: Some(64),
+                    signal: None,
+                },
+                stdout: CapturedStream::empty(),
+                stderr: CapturedStream::empty(),
+                stdin_closed_early: false,
+            })),
         ] {
             assert!(matches!(
                 interpret_generate(Err(error)),

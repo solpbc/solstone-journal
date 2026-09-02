@@ -102,7 +102,7 @@ fn cfg_predicate(meta: &Meta) -> Result<bool, String> {
             let Lit::Str(feature) = &literal.lit else {
                 return Err("cfg feature value is not a string literal".to_owned());
             };
-            if feature.value() == "test-hooks" {
+            if matches!(feature.value().as_str(), "test-hooks" | "full-tests") {
                 Ok(false)
             } else {
                 Err(format!(
@@ -177,7 +177,7 @@ fn test_item(attributes: &[Attribute]) -> Result<bool, String> {
     Ok(false)
 }
 
-fn production_file(source: &str) -> Result<File, String> {
+pub(crate) fn production_file(source: &str) -> Result<File, String> {
     let mut file = syn::parse_file(source).map_err(|error| format!("parse source: {error}"))?;
     file.items = production_items(file.items)?;
     Ok(file)
@@ -2791,9 +2791,10 @@ fn bound_read_feature_closures_and_leaf_process_target_remain_narrow() {
         BTreeSet::from([
             JOURNAL_IO.to_owned(),
             SOL_LINK.to_owned(),
+            "solstone-core-generate-wire".to_owned(),
             "solstone-core-mcp-endpoint".to_owned(),
         ]),
-        "the process target reaches exactly its own and its two declared hook features"
+        "the process target reaches exactly its declared hooks and the audited Callosum wire closure"
     );
 
     assert!(

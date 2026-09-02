@@ -6,7 +6,13 @@ use std::process;
 
 use solstone_core_depict::{DepictError, USAGE, error_json_line, parse_args, run};
 
+fn install_logger() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
+}
+
 fn main() {
+    install_logger();
     let args: Vec<_> = env::args_os().skip(1).collect();
     if args
         .iter()

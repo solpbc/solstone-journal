@@ -26,6 +26,7 @@ use solstone_core_ingest_resolve::{
 };
 use solstone_core_segment::{
     ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream, hold_source_mutation,
+    lookup_stream_state,
 };
 use solstone_core_sol_link::ledger::{AcceptedSegment, AuthorizationLedger};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -510,14 +511,16 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
                             StatusCode::SERVICE_UNAVAILABLE,
                             "location ingest is temporarily unavailable; retry the request",
                         ),
-                    ),
+                    )
+                    .with_source(Some(envelope.source.clone())),
                 );
             }
         }
     } else {
         None
     };
-    let completion = write_envelope_inner(state, cid, envelope);
+    let source = Some(envelope.source.clone());
+    let completion = write_envelope_inner(state, cid, envelope).with_source(source);
     finish_ingest_completion(state, cid, completion)
 }
 
@@ -684,7 +687,13 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             ),
         );
     }
-    if applied.should_advance
+    let needs_first_advance = || {
+        lookup_stream_state(&state.journal_root, cid, &envelope.source)
+            .ok()
+            .flatten()
+            .is_some_and(|binding| binding.seq == 0)
+    };
+    if (applied.should_advance || needs_first_advance())
         && advance_bound_stream(
             &bound.stream,
             &envelope.day,
@@ -996,6 +1005,7 @@ enum IngestActivity {
 struct IngestCompletion {
     response: Response,
     activity: IngestActivity,
+    source: Option<String>,
 }
 
 impl IngestCompletion {
@@ -1003,6 +1013,7 @@ impl IngestCompletion {
         Self {
             response,
             activity: IngestActivity::Accepted(AcceptedSegment { day, name }),
+            source: None,
         }
     }
 
@@ -1010,7 +1021,13 @@ impl IngestCompletion {
         Self {
             response,
             activity: IngestActivity::Rejected(code),
+            source: None,
         }
+    }
+
+    fn with_source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
     }
 }
 
@@ -1033,18 +1050,27 @@ fn finish_ingest_completion(
     cid: &str,
     completion: IngestCompletion,
 ) -> Response {
-    let IngestCompletion { response, activity } = completion;
-    record_ingest_activity(state, cid, activity);
+    let IngestCompletion {
+        response,
+        activity,
+        source,
+    } = completion;
+    record_ingest_activity(state, cid, activity, source.as_deref());
     response
 }
 
-fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivity) {
+fn record_ingest_activity(
+    state: &IngestState,
+    cid: &str,
+    activity: IngestActivity,
+    source: Option<&str>,
+) {
     let timestamp = activity_timestamp((state.now_ms)());
     let mut ledger = AuthorizationLedger::new(&state.journal_root);
     let (operation, result) = match activity {
         IngestActivity::Accepted(segment) => (
             "ingest_success",
-            ledger.record_accepted_ingest(cid, &timestamp, segment),
+            ledger.record_accepted_ingest(cid, &timestamp, segment, source),
         ),
         IngestActivity::Rejected(code) => {
             // A rejection previously landed only in the per-client ledger (devices.json),
@@ -1054,7 +1080,7 @@ fn record_ingest_activity(state: &IngestState, cid: &str, activity: IngestActivi
             log::warn!("ingest_rejection reason={}", code.as_str());
             (
                 "ingest_rejection",
-                ledger.record_ingest_rejection(cid, &timestamp, code.as_str()),
+                ledger.record_ingest_rejection(cid, &timestamp, code.as_str(), source),
             )
         }
     };
@@ -1099,7 +1125,8 @@ mod tests {
     use crate::model::IncomingFile;
     use solstone_core_segment::{SegmentError, hold_source_mutation};
     use solstone_core_sol_link::ledger::{
-        AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, read_device_activity,
+        AuthorizationLedger, ClientEntry, ClientRole, DeviceActivityRead, SourceRecord,
+        read_device_activity,
     };
 
     const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1182,7 +1209,10 @@ mod tests {
     static ACTIVITY_LOGGER_INIT: Once = Once::new();
 
     fn root() -> tempfile::TempDir {
-        tempfile::TempDir::new().unwrap()
+        let directory = tempfile::TempDir::new().unwrap();
+        seed_authorized_client(directory.path(), CID_A);
+        seed_authorized_client(directory.path(), CID_B);
+        directory
     }
 
     fn seed_authorized_client(root: &Path, cid: &str) {
@@ -1195,6 +1225,18 @@ mod tests {
                 ClientRole::Roleless,
             ))
             .unwrap();
+    }
+
+    fn seed_authorized_client_with_label(root: &Path, cid: &str, label: &str) {
+        let mut entry = ClientEntry::new(
+            cid,
+            "Test device",
+            "2026-01-01T00:00:00Z",
+            "test-instance",
+            ClientRole::Roleless,
+        );
+        entry.client_label = label.to_owned();
+        AuthorizationLedger::new(root).add(entry).unwrap();
     }
 
     fn activity_for(root: &Path, cid: &str) -> solstone_core_sol_link::ledger::ClientActivity {
@@ -1438,6 +1480,25 @@ mod tests {
         .await
     }
 
+    async fn call_segments(app: &axum::Router, source: &str) -> (StatusCode, Value) {
+        let uri = if source.is_empty() {
+            "/app/devices/ingest/segments/20260804".to_owned()
+        } else {
+            format!("/app/devices/ingest/segments/20260804?source={source}")
+        };
+        call(
+            app,
+            "GET",
+            &uri,
+            None,
+            Vec::new(),
+            basis(CID_A),
+            Some("3"),
+            &[],
+        )
+        .await
+    }
+
     #[test]
     fn resolve_and_apply_reenters_once_after_stale_drift() {
         let dir = root();
@@ -1594,7 +1655,7 @@ mod tests {
         let journal = directory.path().to_path_buf();
         seed_authorized_client(&journal, CID_A);
         AuthorizationLedger::new(&journal)
-            .record_ingest_rejection(CID_A, "2026-01-02T00:00:00Z", "event_append_failed")
+            .record_ingest_rejection(CID_A, "2026-01-02T00:00:00Z", "event_append_failed", None)
             .unwrap();
         let (_now, clock) = frozen_clock(1_700_000_000_000);
         let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
@@ -1619,6 +1680,69 @@ mod tests {
             body["segment"].as_str().unwrap()
         );
         assert_eq!(activity.ingest_rejection, None);
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.last_accepted_ingest_at,
+                    activity.last_accepted_ingest_at
+                );
+                assert_eq!(source.last_accepted_segment, activity.last_accepted_segment);
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source recorded, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn sourced_accept_and_rejection_record_independent_source_activity() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        let (_now, clock) = frozen_clock(1_700_000_000_000);
+        let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
+        let audio = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "audio",
+            "files": [{"submitted": "audio.flac"}],
+        });
+        let (status, _) = call_upload(&app, audio, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+
+        fs::remove_dir_all(journal.join("streams")).unwrap();
+        fs::write(journal.join("streams"), b"not a directory").unwrap();
+        let location = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": "location",
+            "files": [{"submitted": "location.json"}],
+        });
+        let (status, body) = call_upload(&app, location, "location.json", b"location").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "location_lock_unavailable");
+
+        let activity = activity_for(&journal, CID_A);
+        match activity.sources.get("audio") {
+            Some(SourceRecord::Valid(source)) => {
+                assert!(source.last_accepted_ingest_at.is_some());
+                assert_eq!(source.ingest_rejection, None);
+            }
+            other => panic!("audio source accepted, got {other:?}"),
+        }
+        match activity.sources.get("location") {
+            Some(SourceRecord::Valid(source)) => {
+                assert_eq!(
+                    source.ingest_rejection.as_ref().unwrap().reason_code,
+                    "location_lock_unavailable"
+                );
+                assert_eq!(source.last_accepted_ingest_at, None);
+            }
+            other => panic!("location source rejected, got {other:?}"),
+        }
+        assert_eq!(
+            activity.ingest_rejection.as_ref().unwrap().reason_code,
+            "location_lock_unavailable"
+        );
     }
 
     #[tokio::test]
@@ -1642,19 +1766,20 @@ mod tests {
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["reason_code"], "protocol_version_required");
+        let activity = activity_for(&journal, CID_A);
         assert_eq!(
-            activity_for(&journal, CID_A)
-                .ingest_rejection
-                .as_ref()
-                .unwrap()
-                .reason_code,
+            activity.ingest_rejection.as_ref().unwrap().reason_code,
             "protocol_version_required"
+        );
+        assert!(
+            activity.sources.is_empty(),
+            "pre-parse refusal must not invent a source key"
         );
     }
 
     #[tokio::test]
     async fn rejection_for_an_unpaired_cid_leaves_the_refusal_unchanged() {
-        let directory = root();
+        let directory = tempfile::TempDir::new().unwrap();
         let journal = directory.path().to_path_buf();
         let app = router(&journal);
 
@@ -1992,7 +2117,7 @@ mod tests {
             .map(|file| file["written"].as_str().unwrap())
             .collect();
         assert_eq!(names, ["audio.flac"]);
-        let (_, listing) = call(
+        let (listing_status, listing) = call(
             &app,
             "GET",
             "/app/devices/ingest/segments/20260804",
@@ -2003,27 +2128,160 @@ mod tests {
             &[],
         )
         .await;
-        let item = listing["items"]
+        assert_eq!(listing_status, StatusCode::CONFLICT);
+        assert_eq!(listing["reason_code"], "stream_binding_incomplete");
+    }
+
+    #[tokio::test]
+    async fn first_binding_content_fault_then_retry_converges_once() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+        let source = "witness";
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": source,
+            "files": [{"submitted":"audio.flac"},{"submitted":"notes.json"}],
+        });
+        let (status, body) = call_upload_files(
+            &app,
+            request.clone(),
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "journal_write_failed");
+
+        let stream = solstone_core_segment::lookup_stream(&root, CID_A, source)
+            .unwrap()
+            .expect("first-binding reservation exists after partial apply");
+        assert_ne!(stream, "device");
+        assert_ne!(stream, "device_tmux");
+        assert_eq!(stream_record(&root, &stream)["seq"], 0);
+        let segment = root.join(format!("chronicle/20260804/{stream}/120000_1"));
+        assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"sound");
+        assert!(segment.join("notes.json").is_dir());
+        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
+        assert_eq!(events.lines().count(), 1);
+        let event: Value = serde_json::from_str(events.lines().next().unwrap()).unwrap();
+        assert_eq!(event["record_type"], "device_ingest");
+        let names: Vec<&str> = event["files"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|item| item["key"] == "120000_1")
-            .expect("landed segment");
-        let listed: Vec<&str> = item["files"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|file| file["name"].as_str().unwrap())
+            .map(|file| file["written"].as_str().unwrap())
             .collect();
-        assert!(listed.contains(&"audio.flac"));
-        assert!(!listed.contains(&"notes.json"));
-        let audio = item["files"]
+        assert_eq!(names, ["audio.flac"]);
+        let (listing_status, listing) = call_segments(&app, source).await;
+        assert_eq!(listing_status, StatusCode::CONFLICT);
+        assert_eq!(listing["reason_code"], "stream_binding_incomplete");
+
+        fs::remove_dir(segment.join("notes.json")).unwrap();
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(
+            stream_record(&root, &stream)["seq"],
+            1,
+            "retry must chain-advance the first-binding reservation exactly once"
+        );
+        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
+        assert_eq!(events.lines().count(), 2);
+        let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
+        assert_eq!(last["record_type"], "device_ingest");
+        let names: Vec<&str> = last["files"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|file| file["name"] == "audio.flac")
-            .unwrap();
-        assert_eq!(audio["status"], "present");
+            .map(|file| file["written"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["audio.flac", "notes.json"]);
+        assert_eq!(fs::read(segment.join("notes.json")).unwrap(), b"notes");
+        let (listing_status, listing) = call_segments(&app, source).await;
+        assert_eq!(listing_status, StatusCode::OK);
+        assert_eq!(listing["total"], 1);
+        assert_eq!(listing["items"][0]["files"][0]["status"], "present");
+    }
+
+    /// Marker-write faults are not the `seq == 0` incomplete-binding signal.
+    ///
+    /// `advance_stream` writes `StreamRecord` before `stream.json` on purpose:
+    /// rebuild tooling treats markers as ground truth and recovers an orphaned
+    /// advance offline. After this fault, `seq == 1` with `stream.json` still
+    /// blocked, so `stream_binding_incomplete` (which only checks `seq == 0`)
+    /// cannot see it and online retry does not repair the marker. Recovery is
+    /// `repair_stream_tail_from_markers`, not a gap this task introduced.
+    #[tokio::test]
+    async fn first_binding_chain_advance_fault_then_retry_converges_once() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        seed_authorized_client_with_label(&root, CID_A, "studio-mac");
+        let app = router(&root);
+        let source = "chain";
+        let stream = "studio-mac_chain";
+        // Inject after resolve so the segment is still treated as newly minted
+        // (`should_advance`); pre-creating the path would skip chain advance.
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("stream.json")).unwrap();
+        });
+        let request = json!({
+            "day": "20260804",
+            "segment": "120000_1",
+            "source": source,
+            "files": [{"submitted":"audio.flac"}],
+        });
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        clear_before_apply_hook();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_advance_failed");
+
+        assert_eq!(
+            solstone_core_segment::lookup_stream(&root, CID_A, source)
+                .unwrap()
+                .as_deref(),
+            Some(stream)
+        );
+        assert_eq!(stream_record(&root, stream)["seq"], 1);
+        let segment = root.join(format!("chronicle/20260804/{stream}/120000_1"));
+        assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"sound");
+        assert!(segment.join("stream.json").is_dir());
+        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
+        assert_eq!(events.lines().count(), 1);
+        let (listing_status, listing) = call_segments(&app, source).await;
+        assert_eq!(listing_status, StatusCode::OK);
+        assert_ne!(listing["reason_code"], "stream_binding_incomplete");
+        assert_eq!(listing["items"][0]["files"][0]["status"], "present");
+
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_eq!(
+            stream_record(&root, stream)["seq"],
+            1,
+            "online retry must not re-advance after a marker-orphaned seq==1 state"
+        );
+        assert!(
+            segment.join("stream.json").is_dir(),
+            "online retry does not repair an orphaned stream.json marker"
+        );
+        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
+        assert_eq!(events.lines().count(), 2);
     }
 
     #[tokio::test]
@@ -2887,9 +3145,14 @@ mod tests {
         let first =
             fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
                 .unwrap();
-        let second =
-            fs::read_to_string(root.join("chronicle/20260805/device_2/120001_1/events.jsonl"))
-                .unwrap();
+        let second_stream = solstone_core_segment::lookup_stream(&root, CID_B, "")
+            .unwrap()
+            .expect("second device has its own stream");
+        assert_ne!(second_stream, "device");
+        let second = fs::read_to_string(root.join(format!(
+            "chronicle/20260805/{second_stream}/120001_1/events.jsonl"
+        )))
+        .unwrap();
         assert!(first.contains(CID_A));
         assert!(!first.contains(CID_B));
         assert!(second.contains(CID_B));

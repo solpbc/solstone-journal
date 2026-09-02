@@ -179,7 +179,7 @@ pub fn inspect_home_attestation(
         .then_some((header, claims, signature.len()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use base64::Engine as _;
     use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};

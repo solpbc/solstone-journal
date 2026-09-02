@@ -37,6 +37,8 @@ pub mod pairing;
 #[cfg(feature = "client")]
 mod pairing_entry;
 #[cfg(feature = "host")]
+pub mod pairing_identity;
+#[cfg(feature = "host")]
 mod publish_checkpoint;
 #[cfg(feature = "client")]
 mod serve;
@@ -53,6 +55,11 @@ pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
     authorization_publication_ticks, build_device_door_server_config, refresh_once,
     spawn_authorization_refresh,
+};
+#[cfg(feature = "host")]
+pub use pairing_identity::{
+    CeremonyPairingIdentity, ClientLabelState, PairingIdentity, PairingIdentityFields, Platform,
+    PlatformState, validate_ceremony_pairing_identity,
 };
 #[cfg(feature = "client")]
 pub use serve::SplLinkServeRunner;
@@ -124,7 +131,8 @@ pub mod test_support {
     }
 }
 
-#[cfg(all(test, feature = "host"))]
+#[cfg(feature = "host")]
+#[cfg(all(test, feature = "full-tests"))]
 mod http_tests;
 
 #[cfg(feature = "client")]
@@ -291,7 +299,7 @@ fn map_relay_control_endpoint(endpoint: RelayControlEndpoint) -> LinkJoinRelayCo
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::sync::{Arc, Mutex};
 

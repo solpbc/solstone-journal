@@ -7,8 +7,8 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use crate::{
-    AttestationFailure, AttestationSession, AttestationStateStore, AttestedChannel, RatlsEndpoint,
-    check_nvattest_readiness, classify_channel_failure, classify_nvattest_prerequisite,
+    AttestationFailure, AttestationSession, AttestationStateStore, AttestedChannel,
+    NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
     establish_production_attested_channel,
 };
 
@@ -18,13 +18,17 @@ pub struct FreshAttestedChannel {
     pub session: AttestationSession,
 }
 
-pub fn perform_fresh_reattest(
+pub fn perform_fresh_reattest<R>(
     state: &AttestationStateStore,
     endpoint_url: &str,
     nvattest_dir: &Path,
     socket_timeout: Duration,
-) -> Result<FreshAttestedChannel, AttestationFailure> {
-    if let Some(failure) = classify_nvattest_prerequisite(check_nvattest_readiness(nvattest_dir)) {
+    readiness: R,
+) -> Result<FreshAttestedChannel, AttestationFailure>
+where
+    R: FnOnce(&Path) -> NvattestEnsureStatus,
+{
+    if let Some(failure) = classify_nvattest_prerequisite(readiness(nvattest_dir)) {
         state.record_attestation_failed(failure.kind, failure.reason_code);
         return Err(failure);
     }
@@ -84,7 +88,10 @@ mod tests {
     use std::{fs, path::Path, time::Duration};
 
     use super::perform_fresh_reattest;
-    use crate::{AttestationFailureKind, AttestationStateStore, test_support::TempDir};
+    use crate::{
+        AttestationFailureKind, AttestationStateStore, NvattestEnsureStatus,
+        check_nvattest_readiness, test_support::TempDir,
+    };
 
     fn assert_prerequisite_failure(nvattest_dir: &Path, reason_code: &'static str) {
         let state = AttestationStateStore::new();
@@ -93,6 +100,7 @@ mod tests {
             "not-a-channel-target",
             nvattest_dir,
             Duration::from_millis(1),
+            check_nvattest_readiness,
         ) {
             Err(failure) => failure,
             Ok(_) => panic!("readiness refusal must not establish a channel"),
@@ -112,5 +120,24 @@ mod tests {
         fs::create_dir_all(root.path().join("lib")).expect("create library directory");
         fs::write(root.path().join("bin/nvattest"), "placeholder").expect("write binary");
         assert_prerequisite_failure(root.path(), "nvattest_integrity_failed");
+    }
+
+    #[test]
+    fn fresh_reattest_honors_an_injected_install_status() {
+        let root = TempDir::new("fresh-inject");
+        let state = AttestationStateStore::new();
+        let failure = match perform_fresh_reattest(
+            &state,
+            "not-a-channel-target",
+            root.path(),
+            Duration::from_millis(1),
+            |_| NvattestEnsureStatus::InstallInFlight,
+        ) {
+            Err(failure) => failure,
+            Ok(_) => panic!("injected in-flight status must not establish a channel"),
+        };
+        assert_eq!(failure.kind, AttestationFailureKind::Unreachable);
+        assert_eq!(failure.reason_code, "nvattest_install_in_progress");
+        assert_eq!(state.get_attestation_state().failure, Some(failure));
     }
 }

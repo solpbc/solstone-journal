@@ -133,6 +133,7 @@ fn accepted_then_closed_is_endpoint_unreachable() {
         result,
         EndpointResult::Failed(EndpointFailure {
             reason_code: Some("local_endpoint_unreachable".into()),
+            detail: None,
         })
     );
     server.join().expect("join unreachable server");
@@ -181,6 +182,7 @@ fn accepted_but_silent_is_capacity_exhausted_then_released_response_succeeds() {
         timed_out,
         EndpointResult::Failed(EndpointFailure {
             reason_code: Some("local_capacity_exhausted".into()),
+            detail: None,
         })
     );
     drop(_release);

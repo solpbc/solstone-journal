@@ -260,6 +260,78 @@ grep -i "queue" journal/health/sense.log | tail -10
 
 Causes: Slow transcription, describe API rate limits.
 
+### SPL relay / scheduled backup never run on a convey-only setup
+
+**Symptoms:** SPL private link is enabled but the relay never dials; cloud backup shows "enabled" but has never recorded a completed run. This is expected, not a bug, on a **convey-only** setup — a supervisor deliberately started with only the convey component (Cogitate/Cortex/full-think intentionally excluded from the automatic loop).
+
+`journal spl` and `journal backup run` are both standalone CLI subcommands with no supervisor or IPC dependency — they run correctly when invoked directly, but nothing invokes them on a convey-only setup, because both normally ride the full supervisor's own tick loop, which convey-only skips by design.
+
+```bash
+# Confirm both are runnable manually today
+journal spl --help
+journal backup run
+```
+
+**Fix — schedule them yourself, alongside the convey-only service.** The supervisor's own generated launchd plist (`core/crates/solstone-core-service-unit/src/plist.rs`) only launches `journal start <port>`; it does not cover `spl` or `backup run`, so a convey-only setup needs its own separate `launchd` agents. Adjust the `journal` path and journal-path env value to match your install:
+
+```xml
+<!-- ~/Library/LaunchAgents/org.solpbc.solstone.spl.plist — keep SPL dialed continuously -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>org.solpbc.solstone.spl</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOU/.local/bin/journal</string>
+        <string>spl</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SOLSTONE_JOURNAL</key><string>/Users/YOU/journal</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key>
+    <dict><key>SuccessfulExit</key><false/></dict>
+    <key>StandardOutPath</key><string>/Users/YOU/journal/health/spl-manual.log</string>
+    <key>StandardErrorPath</key><string>/Users/YOU/journal/health/spl-manual.log</string>
+</dict>
+</plist>
+```
+
+```xml
+<!-- ~/Library/LaunchAgents/org.solpbc.solstone.backup.plist — run backup on a schedule (StartInterval, not KeepAlive) -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>org.solpbc.solstone.backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOU/.local/bin/journal</string>
+        <string>backup</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SOLSTONE_JOURNAL</key><string>/Users/YOU/journal</string>
+    </dict>
+    <key>StartInterval</key><integer>86400</integer>
+    <key>StandardOutPath</key><string>/Users/YOU/journal/health/backup-manual.log</string>
+    <key>StandardErrorPath</key><string>/Users/YOU/journal/health/backup-manual.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load ~/Library/LaunchAgents/org.solpbc.solstone.spl.plist
+launchctl load ~/Library/LaunchAgents/org.solpbc.solstone.backup.plist
+```
+
+On Linux (systemd user, not covered by the example above), the equivalent is a `.timer`/`.service` pair invoking `journal backup run` and a `.service` with `Restart=always` invoking `journal spl`, following the same env-var convention as `solstone-core-service-unit`'s generated unit.
+
+Causes: convey-only is an intentional, documented configuration (not a code defect) that skips the supervisor triggers SPL and backup normally ride. This shape is architecturally generic — any source-checkout running convey-only hits it, not just one machine.
+
 ---
 
 ## Useful Commands

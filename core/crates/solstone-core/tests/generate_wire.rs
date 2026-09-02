@@ -235,6 +235,12 @@ fn write_config(root: &Path, config: Value) {
     std::fs::write(root.join("config/journal.json"), config.to_string()).expect("write config");
 }
 
+fn configure_uninstallable_nvattest(root: &Path, config: &mut Value) {
+    let blocked_parent = root.join("blocked-nvattest-parent");
+    std::fs::write(&blocked_parent, "not a directory").expect("write nvattest install blocker");
+    config["services"]["confidential"]["nvattest_dir"] = json!(blocked_parent.join("nvattest"));
+}
+
 fn bundled_config(confidential: bool) -> Value {
     if confidential {
         json!({"providers": {"active": {"provider": "local"}}, "services": {"confidential": {}}})
@@ -722,12 +728,6 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
     let cases = [
         ("none", json!({}), "refused-no-engine-configured", true),
         (
-            "attestation",
-            json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}}),
-            "refused-attestation-not-verified",
-            true,
-        ),
-        (
             "google-missing-key",
             json!({"providers": {"active": {"provider": "google"}}}),
             "refused-provider-response-invalid",
@@ -762,6 +762,12 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
                 response["detail"], "the configured provider could not produce a usable response",
                 "{vector_id} detail"
             );
+        } else if name == "unimplemented-provider" {
+            assert_eq!(
+                response["detail"],
+                "no generate implementation exists for the resolved provider lane",
+                "{vector_id} detail"
+            );
         } else {
             assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
         }
@@ -791,6 +797,31 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         assert!(!journal.join("tokens").exists());
         let _ = std::fs::remove_dir_all(journal);
     }
+}
+
+#[test]
+fn confidential_lane_refusal_matches_not_verified_fixture_without_network() {
+    let mut config = json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}});
+    let journal = root("attestation");
+    configure_uninstallable_nvattest(&journal, &mut config);
+    write_config(&journal, config);
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    let response = stdout_json(&output);
+    let vector_id = "refused-attestation-not-verified";
+    let expected = &fixture_vector(vector_id)["response"];
+    assert_eq!(response["reason"], expected["reason"], "{vector_id} reason");
+    assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
+    assert_eq!(
+        response["provider"], expected["provider"],
+        "{vector_id} provider"
+    );
+    for name in ["reason_code", "retryable", "blocking"] {
+        assert_eq!(response[name], expected[name], "{vector_id} {name}");
+    }
+    assert!(!journal.join("tokens").exists());
+    let _ = std::fs::remove_dir_all(journal);
 }
 
 #[test]
@@ -1214,6 +1245,7 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     let confidential_journal = root("byo-confidential");
     let mut confidential = config;
     confidential["services"] = json!({"confidential": {}});
+    configure_uninstallable_nvattest(&confidential_journal, &mut confidential);
     write_config(&confidential_journal, confidential);
     let output = one_shot(
         &confidential_journal,
@@ -1222,7 +1254,10 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     assert_eq!(output.status.code(), Some(0));
     let response = stdout_json(&output);
     assert_eq!(response["outcome"], "refused");
-    assert_eq!(response["reason"], "attestation-not-verified");
+    assert_eq!(
+        response["reason"],
+        fixture_vector("refused-attestation-not-verified")["response"]["reason"]
+    );
     let _ = std::fs::remove_dir_all(journal);
     let _ = std::fs::remove_dir_all(confidential_journal);
 }

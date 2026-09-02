@@ -436,7 +436,7 @@ fn fill_polygon_black(frame: &mut RgbFrame, polygon: &[[f32; 2]; 4]) {
     frame.pixels = image.into_raw();
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::path::Path;
 

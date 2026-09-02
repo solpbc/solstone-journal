@@ -11,9 +11,9 @@ use nix::sys::statvfs::statvfs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedDegradedCause, CedReadiness,
-    evaluate_ced_readiness,
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{
     RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrDegradedCause, RfdetrReadiness,
@@ -45,19 +45,9 @@ pub struct CheckInputs {
     pub gpu_evaluation_error: Option<String>,
     pub version: String,
     #[serde(default)]
-    pub ced: CedCheckInput,
+    pub ced: Option<CapabilityStatus>,
     #[serde(default)]
     pub rfdetr: RfdetrCheckInput,
-}
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum CedCheckInput {
-    #[default]
-    Omit,
-    Ready,
-    Degraded {
-        cause: CedDegradedCause,
-    },
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -319,11 +309,11 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         },
     }
 }
-fn ced_input_from(readiness: CedReadiness) -> CedCheckInput {
-    match readiness {
-        CedReadiness::Ready { .. } => CedCheckInput::Ready,
-        CedReadiness::Degraded { cause, .. } => CedCheckInput::Degraded { cause },
-        CedReadiness::Unsupported { .. } => CedCheckInput::Omit,
+fn ced_input_from(verdict: CedVerdict) -> Option<CapabilityStatus> {
+    match verdict {
+        CedVerdict::Ready { .. } => Some(CapabilityStatus::Ready),
+        CedVerdict::Degraded(status) => Some(status),
+        CedVerdict::Unsupported { .. } => None,
     }
 }
 fn rfdetr_input_from(readiness: RfdetrReadiness) -> RfdetrCheckInput {
@@ -466,11 +456,24 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
 /// this is what a future investigator (or `journal check --json`) reads to
 /// tell `Absent`, `IntegrityInvalid` and `Unloadable` apart, which the
 /// shared guidance sentence alone cannot do.
-fn ced_cause_str(cause: CedDegradedCause) -> &'static str {
-    match cause {
-        CedDegradedCause::Absent => "absent",
-        CedDegradedCause::IntegrityInvalid => "integrity_invalid",
-        CedDegradedCause::Unloadable => "unloadable",
+/// The specific reason a CED capability is not Ready, as a stable snake_case token.
+///
+/// `main` models CED readiness with the richer [`CapabilityStatus`] (it carries a
+/// `capability` and a free-text `detail`), but its check builder discarded that
+/// distinction: all four degraded variants rendered one indistinguishable warning.
+/// The burn-in fix this replaces surfaced the cause on the diagnostic surface; keep
+/// that, mapped onto the newer vocabulary. `Ready` has no cause and is handled by
+/// the caller before this is reached.
+fn ced_cause_str(status: &CapabilityStatus) -> &'static str {
+    match status {
+        CapabilityStatus::Ready => "ready",
+        CapabilityStatus::Absent { .. } => "absent",
+        CapabilityStatus::IntegrityInvalid { .. } => "integrity_invalid",
+        CapabilityStatus::UnloadableOrUnrunnable { .. } => "unloadable",
+        CapabilityStatus::WrongAbiOrProtocol { .. } => "wrong_abi_or_protocol",
+        CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. } => {
+            "resource_or_owner_scope_unavailable"
+        }
     }
 }
 /// Same as [`ced_cause_str`], for RF-DETR's degraded causes.
@@ -483,9 +486,11 @@ fn rfdetr_cause_str(cause: RfdetrDegradedCause) -> &'static str {
 }
 fn ced_check(inputs: &CheckInputs) -> Option<Check> {
     match &inputs.ced {
-        CedCheckInput::Omit => None,
-        CedCheckInput::Ready => Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None)),
-        CedCheckInput::Degraded { cause } => {
+        None => None,
+        Some(CapabilityStatus::Ready) => {
+            Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None))
+        }
+        Some(status) => {
             let mut item = check(
                 "ced",
                 Severity::Warning,
@@ -493,7 +498,7 @@ fn ced_check(inputs: &CheckInputs) -> Option<Check> {
                 None,
                 None,
             );
-            item.cause = Some(ced_cause_str(*cause));
+            item.cause = Some(ced_cause_str(status));
             Some(item)
         }
     }
@@ -802,8 +807,9 @@ pub fn human_output(report: &CheckReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
 
-    fn check_inputs(ced: CedCheckInput, rfdetr: RfdetrCheckInput) -> CheckInputs {
+    fn check_inputs(ced: Option<CapabilityStatus>, rfdetr: RfdetrCheckInput) -> CheckInputs {
         CheckInputs {
             platform: PlatformInput {
                 os: "Linux".into(),
@@ -838,7 +844,7 @@ mod tests {
 
     #[test]
     fn ready_rfdetr_is_ok_and_does_not_change_overall() {
-        let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Ready);
+        let inputs = check_inputs(None, RfdetrCheckInput::Ready);
         let rfdetr = rfdetr_check(&inputs).expect("ready RF-DETR check");
         assert_eq!(rfdetr.severity, Severity::Ok);
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
@@ -861,7 +867,7 @@ mod tests {
             (RfdetrDegradedCause::IntegrityInvalid, "integrity_invalid"),
             (RfdetrDegradedCause::Unrunnable, "unrunnable"),
         ] {
-            let inputs = check_inputs(CedCheckInput::Omit, RfdetrCheckInput::Degraded { cause });
+            let inputs = check_inputs(None, RfdetrCheckInput::Degraded { cause });
             let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
             assert_eq!(rfdetr.severity, Severity::Warning, "{cause:?}");
             // Done condition 7: the owner-facing `detail` stays the single
@@ -874,14 +880,15 @@ mod tests {
 
         // The two optional-asset checks must not disagree about severity.
         let degraded_ced = ced_check(&check_inputs(
-            CedCheckInput::Degraded {
-                cause: CedDegradedCause::Unloadable,
-            },
+            Some(CapabilityStatus::UnloadableOrUnrunnable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "ced library failed to load".to_owned(),
+            }),
             RfdetrCheckInput::Omit,
         ))
         .expect("degraded CED check");
         let degraded_rfdetr = rfdetr_check(&check_inputs(
-            CedCheckInput::Omit,
+            None,
             RfdetrCheckInput::Degraded {
                 cause: RfdetrDegradedCause::Unrunnable,
             },
@@ -895,19 +902,58 @@ mod tests {
 
     /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same
     /// done-condition-7 guarantee (shared owner sentence, distinguishable
-    /// `cause`), for the three `CedDegradedCause` variants.
+    /// `cause`), for every non-Ready [`CapabilityStatus`] variant.
+    ///
+    /// Ported from the burn-in's `CedDegradedCause` form when `main` replaced that
+    /// enum with the richer `CapabilityStatus`. `main`'s builder collapsed every
+    /// degraded variant into one indistinguishable warning; this is the test that
+    /// keeps them distinguishable, now covering the two variants `main` added.
     #[test]
     fn degraded_ced_warns_and_surfaces_every_cause() {
-        for (cause, expected_cause_str) in [
-            (CedDegradedCause::Absent, "absent"),
-            (CedDegradedCause::IntegrityInvalid, "integrity_invalid"),
-            (CedDegradedCause::Unloadable, "unloadable"),
+        let detail = "ced degraded".to_owned();
+        let capability = CED_CAPABILITY.to_owned();
+        for (status, expected_cause_str) in [
+            (
+                CapabilityStatus::Absent {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "absent",
+            ),
+            (
+                CapabilityStatus::IntegrityInvalid {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "integrity_invalid",
+            ),
+            (
+                CapabilityStatus::UnloadableOrUnrunnable {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "unloadable",
+            ),
+            (
+                CapabilityStatus::WrongAbiOrProtocol {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "wrong_abi_or_protocol",
+            ),
+            (
+                CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "resource_or_owner_scope_unavailable",
+            ),
         ] {
-            let inputs = check_inputs(CedCheckInput::Degraded { cause }, RfdetrCheckInput::Omit);
+            let inputs = check_inputs(Some(status.clone()), RfdetrCheckInput::Omit);
             let ced = ced_check(&inputs).expect("degraded CED check");
-            assert_eq!(ced.severity, Severity::Warning, "{cause:?}");
+            assert_eq!(ced.severity, Severity::Warning, "{status:?}");
             assert_eq!(ced.detail, CED_UNAVAILABLE_GUIDANCE);
-            assert_eq!(ced.cause, Some(expected_cause_str), "{cause:?}");
+            assert_eq!(ced.cause, Some(expected_cause_str), "{status:?}");
         }
     }
 
@@ -919,9 +965,10 @@ mod tests {
     #[test]
     fn json_output_surfaces_the_distinguishing_cause() {
         let inputs = check_inputs(
-            CedCheckInput::Degraded {
-                cause: CedDegradedCause::Unloadable,
-            },
+            Some(CapabilityStatus::UnloadableOrUnrunnable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "ced library failed to load".to_owned(),
+            }),
             RfdetrCheckInput::Ready,
         );
         let report = build_check_report(&inputs);
@@ -952,7 +999,7 @@ mod tests {
     /// the propagation once both readiness verdicts agree the assets work.
     #[test]
     fn both_providers_ready_leaves_overall_ok() {
-        let inputs = check_inputs(CedCheckInput::Ready, RfdetrCheckInput::Ready);
+        let inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
         let overall_severity = overall(&[
             ced_check(&inputs).expect("ready CED check"),
             rfdetr_check(&inputs).expect("ready RF-DETR check"),
@@ -964,9 +1011,10 @@ mod tests {
     #[test]
     fn ced_warning_stays_independent_from_ready_rfdetr() {
         let inputs = check_inputs(
-            CedCheckInput::Degraded {
-                cause: CedDegradedCause::Absent,
-            },
+            Some(CapabilityStatus::Absent {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "sidecar missing".to_owned(),
+            }),
             RfdetrCheckInput::Ready,
         );
         assert_eq!(
@@ -1007,7 +1055,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);
@@ -1044,7 +1092,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
@@ -1092,7 +1140,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
-            ced: CedCheckInput::Omit,
+            ced: None,
             rfdetr: RfdetrCheckInput::Ready,
         };
         let report = build_check_report(&inputs);

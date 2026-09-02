@@ -12,6 +12,7 @@
 //! held lease so callers can distinguish busy from an internal failure.
 
 pub mod archive;
+pub mod capability_status;
 pub mod ced_fixture;
 pub mod ced_install;
 pub mod ced_readiness;
@@ -23,6 +24,9 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
+pub mod onnx_readiness;
+pub mod parakeet_readiness;
+pub mod pdfium_readiness;
 pub mod pins;
 pub mod readiness;
 pub(crate) mod rfdetr_compiled_expectation;
@@ -494,7 +498,7 @@ fn download_artifact_reason_code<'a>(
         archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
         archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
         archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
-        archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+        archive::ArchiveError::DigestMismatch { .. } => "download_digest_mismatch",
         archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
             "download_redirect_hop_limit_exceeded"
         }
@@ -769,11 +773,40 @@ fn local_target_for_key(
     )
 }
 
+/// Darwin always ships `local/qwen3.5-4b`. Elsewhere a configured pin wins.
+pub fn resolve_bundled_model_id(configured: &str, darwin: bool) -> String {
+    if darwin || pins::model_identity(configured).is_none() {
+        "local/qwen3.5-4b".to_owned()
+    } else {
+        configured.to_owned()
+    }
+}
+
+fn live_nvidia_probe_is_transient_undetected(probe: &crate::NvidiaProbe) -> bool {
+    if probe.detected {
+        return false;
+    }
+    let Some(error) = probe.probe_error.as_deref() else {
+        return false;
+    };
+    error == "NVIDIA GPU probe timed out after 10s"
+        || error.starts_with("NVIDIA GPU probe could not start:")
+        || error.starts_with("NVIDIA GPU probe could not wait for nvidia-smi:")
+        || error.starts_with("NVIDIA GPU probe exited with status")
+}
+
 pub fn local_backend_choice(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> crate::BackendChoice {
-    let probe = nvidia_probe.unwrap_or_else(crate::probe_nvidia_gpu);
+    let probe = nvidia_probe.unwrap_or_else(|| {
+        let first = crate::probe_nvidia_gpu();
+        if live_nvidia_probe_is_transient_undetected(&first) {
+            crate::probe_nvidia_gpu()
+        } else {
+            first
+        }
+    });
     let key = pins::platform_key();
     let pin = pins::cuda_pin(&key);
     let trust = pin
@@ -1495,5 +1528,58 @@ fn failure(kind: &str, reason: &str, message: impl ToString, exit_code: u8) -> D
     DispatchError {
         envelope: InstallEnvelope::error(kind, reason, message),
         exit_code,
+    }
+}
+
+#[cfg(test)]
+mod nvidia_probe_retry_tests {
+    use super::live_nvidia_probe_is_transient_undetected;
+    use crate::nvidia::NVIDIA_PROBE_SCHEMA;
+    use serde_json::json;
+
+    fn probe(detected: bool, error: Option<&str>) -> crate::NvidiaProbe {
+        serde_json::from_value(json!({
+            "schema": NVIDIA_PROBE_SCHEMA,
+            "detected": detected,
+            "gpu_index": detected.then_some(0),
+            "gpu_name": detected.then_some("NVIDIA GeForce RTX 4090"),
+            "compute_cap": detected.then_some("8.9"),
+            "arch": detected.then_some("sm_89"),
+            "driver_cuda_major": detected.then_some(13),
+            "vram_mib": detected.then_some(24564),
+            "unified_memory_mib": null,
+            "probe_error": error,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn retries_only_transient_undetected_nvidia_smi_failures() {
+        let transient = [
+            "NVIDIA GPU probe timed out after 10s",
+            "NVIDIA GPU probe could not start: resource temporarily unavailable",
+            "NVIDIA GPU probe could not wait for nvidia-smi: broken pipe",
+            "NVIDIA GPU probe exited with status 255",
+        ];
+        let permanent = [
+            "nvidia-smi binary not found",
+            "NVIDIA GPU probe returned no rows",
+            "NVIDIA GPU probe returned invalid CSV",
+        ];
+        for error in transient {
+            assert!(
+                live_nvidia_probe_is_transient_undetected(&probe(false, Some(error))),
+                "{error}"
+            );
+        }
+        for error in permanent {
+            assert!(
+                !live_nvidia_probe_is_transient_undetected(&probe(false, Some(error))),
+                "{error}"
+            );
+        }
+        assert!(!live_nvidia_probe_is_transient_undetected(&probe(
+            true, None
+        )));
     }
 }

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,6 +55,7 @@ fn ac1_append_creates_file_with_single_correction_matching_python_bytes() {
         fs::read(&path).expect("corrections are readable"),
         CORRECTIONS_ONE
     );
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&path)
             .expect("metadata is readable")

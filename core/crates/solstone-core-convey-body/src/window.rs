@@ -661,7 +661,7 @@ fn is_audit_only_oura(record_type: &str) -> bool {
     matches!(record_type, "oura.session" | "oura.enhanced_tag")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

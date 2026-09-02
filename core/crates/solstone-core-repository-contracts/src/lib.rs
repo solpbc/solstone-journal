@@ -57,11 +57,20 @@ mod hosted_launch_admission_boundary;
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]
+#[path = "contracts/mcp_audit_boundary.rs"]
+mod mcp_audit_boundary;
+#[cfg(test)]
 #[path = "contracts/mcp_endpoint_exclusion_coherence.rs"]
 mod mcp_endpoint_exclusion_coherence;
 #[cfg(test)]
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
+#[cfg(test)]
+#[path = "contracts/paired_stream_allocator_governance.rs"]
+mod paired_stream_allocator_governance;
+#[cfg(test)]
+#[path = "contracts/pairing_contract_bundle.rs"]
+mod pairing_contract_bundle;
 
 #[cfg(test)]
 #[path = "contracts/bound_read_race_closure.rs"]
@@ -88,11 +97,17 @@ mod service_legacy_gate_purity;
 #[path = "contracts/settings_devices_python_web_cut.rs"]
 mod settings_devices_python_web_cut;
 #[cfg(test)]
+#[path = "contracts/speaker_native_routes.rs"]
+mod speaker_native_routes;
+#[cfg(test)]
 #[path = "contracts/spl_source_coherence.rs"]
 mod spl_source_coherence;
 #[cfg(test)]
 #[path = "contracts/stats_dispatch_audit.rs"]
 mod stats_dispatch_audit;
+#[cfg(test)]
+#[path = "contracts/stream_name_identity_consumers.rs"]
+mod stream_name_identity_consumers;
 #[cfg(test)]
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;

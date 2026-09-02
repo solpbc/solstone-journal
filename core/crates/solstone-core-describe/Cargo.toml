@@ -30,6 +30,7 @@ base64 = "0.22.1"
 chrono.workspace = true
 
 [features]
+full-tests = []
 test-stubs = []
 
 [[bin]]

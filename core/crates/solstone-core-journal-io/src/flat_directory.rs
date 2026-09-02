@@ -269,6 +269,104 @@ pub fn list_flat_directory(
     Ok(Some(entries))
 }
 
+pub(crate) struct NativeListed {
+    pub entry: FlatDirectoryEntry,
+    pub directory: Option<FlatDirectory>,
+}
+
+pub(crate) fn list_native_entries(
+    directory: &FlatDirectory,
+    maximum: usize,
+    retain_directories: bool,
+    after_enumeration: crate::cortex_use::census::CortexCensusPrimitive,
+    before_directory_open: Option<crate::cortex_use::census::CortexCensusPrimitive>,
+    enumeration_stage: crate::cortex_use::census::CortexCensusStage,
+) -> Result<Option<Vec<NativeListed>>, crate::cortex_use::census::CortexCensusError> {
+    use crate::cortex_use::census::{CortexCensusStage, checkpoint, map_listing};
+    directory
+        .revalidate()
+        .map_err(|error| map_listing(enumeration_stage, error))?;
+    let mut opened = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+        .map_err(|error| {
+            map_listing(
+                enumeration_stage,
+                errno_error(
+                    "open flat directory for listing",
+                    directory.diagnostic_path().to_path_buf(),
+                    error,
+                ),
+            )
+        })?;
+    let mut names = Vec::new();
+    for listed in opened.iter() {
+        let listed = listed.map_err(|error| {
+            map_listing(
+                enumeration_stage,
+                errno_error(
+                    "iterate flat directory",
+                    directory.diagnostic_path().to_path_buf(),
+                    error,
+                ),
+            )
+        })?;
+        let bytes = listed.file_name().to_bytes();
+        if matches!(bytes, b"." | b"..") {
+            continue;
+        }
+        names.push(OsString::from_vec(bytes.to_vec()));
+    }
+    if names.len() > maximum {
+        return Ok(None);
+    }
+    checkpoint(after_enumeration)?;
+    names.sort_unstable_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    let mut entries = Vec::new();
+    for name in names {
+        let path = directory.diagnostic_entry(&name);
+        let entry = stat_entry(directory, &name)
+            .map_err(|error| map_listing(enumeration_stage, error))?
+            .ok_or_else(|| {
+                map_listing(
+                    enumeration_stage,
+                    FlatDirectoryError::EnumerationChanged { path: path.clone() },
+                )
+            })?;
+        let child = if retain_directories && entry.kind == JournalEntryKind::Directory {
+            if let Some(primitive) = before_directory_open {
+                checkpoint(primitive)?;
+            }
+            let opened = open_verified_child_directory(directory, &name, &path)
+                .map_err(|error| map_listing(CortexCensusStage::TalentOpen, error))?;
+            let Some((fd, identity)) = opened else {
+                return Err(map_listing(
+                    CortexCensusStage::TalentOpen,
+                    FlatDirectoryError::EnumerationChanged { path: path.clone() },
+                ));
+            };
+            if identity
+                != crate::journal_root::ObjectIdentity::from_device_inode(entry.device, entry.inode)
+            {
+                return Err(map_listing(
+                    CortexCensusStage::TalentOpen,
+                    FlatDirectoryError::IdentityChanged { path: path.clone() },
+                ));
+            }
+            Some(FlatDirectory {
+                directory: fd,
+                identity,
+                diagnostic_path: path,
+            })
+        } else {
+            None
+        };
+        entries.push(NativeListed {
+            entry,
+            directory: child,
+        });
+    }
+    Ok(Some(entries))
+}
+
 /// Read one direct regular file while proving stable metadata and exact bytes.
 pub fn read_observed_file(
     directory: &FlatDirectory,
@@ -287,6 +385,25 @@ pub fn read_observed_file_bounded(
     read_observed_file_unchecked_bounded(directory, name, maximum)
 }
 
+/// Read one direct regular file from a retained root descriptor.
+///
+/// This has the same no-follow, stable-metadata, and bounded-read contract as
+/// [`read_observed_file_bounded`], without requiring callers to invent a
+/// synthetic child directory merely to read a direct root member.
+pub fn read_observed_root_file_bounded(
+    root: &JournalRoot,
+    name: &OsStr,
+    maximum: usize,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    let root_path = root.canonical_path().to_path_buf();
+    let path = root_path.join(name);
+    read_observed_file_from_parent(root, name, path, maximum, || {
+        root.revalidate()
+            .map_err(|error| map_root_revalidation_error(error, root_path.clone()))
+    })
+}
+
 pub(crate) fn read_observed_file_unchecked(
     directory: &FlatDirectory,
     name: &OsStr,
@@ -299,10 +416,20 @@ fn read_observed_file_unchecked_bounded(
     name: &OsStr,
     maximum: usize,
 ) -> Result<Option<FileObservation>, FlatDirectoryError> {
-    directory.revalidate()?;
     let path = directory.diagnostic_entry(name);
+    read_observed_file_from_parent(directory, name, path, maximum, || directory.revalidate())
+}
+
+fn read_observed_file_from_parent(
+    parent: &impl AsFd,
+    name: &OsStr,
+    path: PathBuf,
+    maximum: usize,
+    revalidate: impl Fn() -> Result<(), FlatDirectoryError>,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    revalidate()?;
     flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeObservedFileOpen);
-    let fd = match openat(directory, name, FILE_FLAGS, Mode::empty()) {
+    let fd = match openat(parent, name, FILE_FLAGS, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::ENOENT) => return Ok(None),
         Err(Errno::ELOOP) => return Err(FlatDirectoryError::NotRegular { path }),
@@ -343,23 +470,13 @@ fn read_observed_file_unchecked_bounded(
             source,
         });
     }
-    let after = fstat(&file).map_err(|error| {
-        errno_error(
-            "restat observed file",
-            directory.diagnostic_entry(name),
-            error,
-        )
-    })?;
-    let after_entry = entry_from_stat(
-        name.to_os_string(),
-        &after,
-        &directory.diagnostic_entry(name),
-    )?;
+    let after =
+        fstat(&file).map_err(|error| errno_error("restat observed file", path.clone(), error))?;
+    let after_entry = entry_from_stat(name.to_os_string(), &after, &path)?;
     if !same_entry_metadata(&entry, &after_entry) {
-        return Err(FlatDirectoryError::IdentityChanged {
-            path: directory.diagnostic_entry(name),
-        });
+        return Err(FlatDirectoryError::IdentityChanged { path });
     }
+    revalidate()?;
     Ok(Some(FileObservation { entry, bytes }))
 }
 
@@ -785,6 +902,30 @@ mod tests {
         let mut bytes = vec![0; 10];
         read_exact(&mut reader, &mut bytes).unwrap();
         assert_eq!(bytes, b"short-read");
+    }
+
+    #[test]
+    fn observed_root_read_is_direct_no_follow_and_bounded() {
+        let temporary = TempDir::new();
+        let record = temporary.path().join("record");
+        fs::write(&record, b"bytes").unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        assert_eq!(
+            read_observed_root_file_bounded(&root, OsStr::new("record"), 5)
+                .unwrap()
+                .expect("record")
+                .bytes,
+            b"bytes"
+        );
+        assert!(matches!(
+            read_observed_root_file_bounded(&root, OsStr::new("record"), 4),
+            Err(FlatDirectoryError::SizeLimitExceeded { .. })
+        ));
+        symlink(&record, temporary.path().join("link")).unwrap();
+        assert!(matches!(
+            read_observed_root_file_bounded(&root, OsStr::new("link"), 5),
+            Err(FlatDirectoryError::NotRegular { .. })
+        ));
     }
 
     #[test]

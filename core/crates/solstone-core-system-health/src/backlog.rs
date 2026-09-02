@@ -14,18 +14,18 @@ use serde_json::Value;
 use crate::{
     BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK, BACKLOG_STATE_UNKNOWN,
     BacklogDay, BacklogError, BacklogUnit, BacklogView, CappedDailySummary, CappedDailyUnit,
-    DailyUnit, DeterministicFailure, HealthError, HealthLogSource, NO_SENSE_COMPLETE_AGED_MS,
-    REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
+    DailyUnit, DeterministicFailure, HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS,
+    NO_SENSE_COMPLETE_AGED_MS, REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
     REASON_SEGMENT_REPAIR_DEGRADED, REASON_SEGMENT_REPAIR_PROGRESSING, REASON_SEGMENT_REPAIR_STUCK,
     REASON_SEGMENT_REPAIR_UNKNOWN, SEGMENT_REPAIR_STATUS_DEGRADED,
     SEGMENT_REPAIR_STATUS_PROGRESSING, SEGMENT_REPAIR_STATUS_STUCK, SEGMENT_REPAIR_STATUS_UNKNOWN,
-    STUCK_FAIL_THRESHOLD, SegmentInput, SegmentProgress, SegmentRepairSummary, SegmentSource,
-    TerminalEvent, TerminalState, TerminalUnit, WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED,
-    WHY_NO_SENSE_COMPLETE_AGED, WHY_SENSED_NOT_THOUGHT, classify_segment_completion,
-    day_is_complete, lookup_segment_progress, read_backoff_summary,
-    read_daily_deterministic_failures, read_segment_progress, read_segment_repair_attempted,
-    read_segment_repair_summary, read_terminal_states, scan_day, segment_fully_sensed,
-    segment_fully_thought,
+    SENSED_TERMINAL_STATES, STUCK_FAIL_THRESHOLD, SegmentInput, SegmentProgress,
+    SegmentRepairSummary, SegmentSource, TerminalEvent, TerminalState, TerminalUnit,
+    WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED, WHY_NO_SENSE_COMPLETE_AGED,
+    WHY_SENSED_NOT_THOUGHT, classify_segment_completion, day_is_complete, lookup_segment_progress,
+    read_backoff_summary, read_daily_deterministic_failures, read_segment_progress,
+    read_segment_repair_attempted, read_segment_repair_summary, read_terminal_states, scan_day,
+    segment_fully_sensed, segment_fully_thought, segment_requires_processing,
 };
 
 /// Return a bounded, read-only cross-day processing backlog report.
@@ -93,6 +93,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     .map(SegmentInput::from)
                     .collect::<Vec<_>>();
                 let completion = classify_segment_completion(&inputs, &progress.value);
+                let not_sensed = aged_not_sensed_count(
+                    &scanned,
+                    &inputs,
+                    now.timestamp_millis(),
+                    MODALITY_INPUT_AGED_MS,
+                );
                 let stream_updated_ms = stream_updated_ms(journal, &day);
                 let mut why = segment_backlog_units(
                     journal,
@@ -109,7 +115,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     stream_updated_ms,
                 ));
                 let backoff = read_backoff_summary(journal, &day);
-                let segment_depth = completion.not_sensed + completion.not_thought;
+                let segment_depth = not_sensed + completion.not_thought;
                 let mut reason = if why
                     .iter()
                     .any(|unit| unit.why == WHY_CORRUPT_RAW && unit.stuck)
@@ -148,7 +154,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     state,
                     segments: segment_depth,
                     units: why.len(),
-                    not_sensed: completion.not_sensed,
+                    not_sensed,
                     why,
                     reason,
                     reason_code,
@@ -316,6 +322,37 @@ fn system_time_ms(time: SystemTime) -> i64 {
         Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         Err(error) => -i64::try_from(error.duration().as_millis()).unwrap_or(i64::MAX),
     }
+}
+
+fn aged_not_sensed_count(
+    scanned: &[crate::DaySegment],
+    inputs: &[SegmentInput],
+    now_ms: i64,
+    threshold_ms: i64,
+) -> usize {
+    scanned
+        .iter()
+        .zip(inputs)
+        .filter(|(segment, input)| {
+            segment_requires_processing(input) && !segment_fully_sensed(&segment.data_state)
+        })
+        .filter(|(segment, _)| {
+            segment.data_state.0.iter().any(|(modality, state)| {
+                if SENSED_TERMINAL_STATES.contains(&state.as_str()) {
+                    return false;
+                }
+                match segment
+                    .modality_input_mtime_ms
+                    .get(modality)
+                    .copied()
+                    .flatten()
+                {
+                    None => true,
+                    Some(mtime_ms) => now_ms.saturating_sub(mtime_ms) >= threshold_ms,
+                }
+            })
+        })
+        .count()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -645,9 +682,10 @@ mod tests {
     use chrono::{DateTime, Utc};
     use tempfile::tempdir;
 
-    use super::{is_stuck, segment_backlog_units};
+    use super::{aged_not_sensed_count, is_stuck, segment_backlog_units};
     use crate::{
-        DataStateMap, DaySegment, SegmentProgress, TerminalEvent, TerminalState, WHY_CORRUPT_RAW,
+        DataStateMap, DaySegment, MODALITY_INPUT_AGED_MS, SegmentInput, SegmentProgress,
+        TerminalEvent, TerminalState, WHY_CORRUPT_RAW,
     };
 
     fn failed_terminal_state() -> TerminalState {
@@ -692,6 +730,7 @@ mod tests {
             end: "12:01".to_owned(),
             types: vec!["screen".to_owned()],
             data_state: DataStateMap(BTreeMap::from([("screen".to_owned(), "failed".to_owned())])),
+            modality_input_mtime_ms: BTreeMap::new(),
         }];
         let why = segment_backlog_units(
             root,
@@ -708,5 +747,30 @@ mod tests {
         assert_eq!(why.len(), 1);
         assert_eq!(why[0].why, WHY_CORRUPT_RAW);
         assert!(why[0].stuck);
+    }
+
+    #[test]
+    fn missing_input_mtime_counts_as_backlog() {
+        let segments = vec![DaySegment {
+            key: "120000_60".to_owned(),
+            stream: "_default".to_owned(),
+            start: "12:00".to_owned(),
+            end: "12:01".to_owned(),
+            types: vec!["audio".to_owned()],
+            data_state: DataStateMap(BTreeMap::from([("audio".to_owned(), "pending".to_owned())])),
+            modality_input_mtime_ms: BTreeMap::from([("audio".to_owned(), None)]),
+        }];
+        let inputs = segments
+            .iter()
+            .cloned()
+            .map(SegmentInput::from)
+            .collect::<Vec<_>>();
+        let count = aged_not_sensed_count(
+            &segments,
+            &inputs,
+            1_800_000_000_000,
+            MODALITY_INPUT_AGED_MS,
+        );
+        assert_eq!(count, 1);
     }
 }

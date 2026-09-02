@@ -468,14 +468,14 @@ fn is_day_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn retry_add_for_test<T>(
     operation: impl FnMut() -> Result<T, ObservationWriteError>,
 ) -> Result<T, ObservationWriteError> {
     retry_add_operation(operation)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn retry_record_for_test<T>(
     operation: impl FnMut() -> Result<T, ObservationWriteError>,
 ) -> Result<T, ObservationWriteError> {

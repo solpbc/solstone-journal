@@ -202,7 +202,7 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};

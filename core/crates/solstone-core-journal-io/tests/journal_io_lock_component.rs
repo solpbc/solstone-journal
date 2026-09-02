@@ -14,7 +14,7 @@ use std::io::Read;
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::os::unix::ffi::OsStringExt;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 #[cfg(windows)]
@@ -38,6 +38,11 @@ use nix::sys::stat::{Mode, umask};
 #[cfg(unix)]
 use nix::unistd::Pid;
 #[cfg(unix)]
+use solstone_core_journal_io::cortex_use::{
+    CortexNamespaceAuthority, CortexNamespaceLock, CortexNamespaceLockError,
+    acquire_cortex_namespace_lock_with_test_timing, create_or_admit_cortex_namespace,
+};
+#[cfg(unix)]
 use solstone_core_journal_io::{
     AtomicWriteOptions, ClaimDurability, ClaimName, ClaimRemovalOutcome, ClaimRemovalPrimitive,
     FlatDirectory, IdentityChangeDisposition, JournalRoot, StagedDirOptions, atomic_replace,
@@ -49,6 +54,163 @@ use solstone_core_journal_io::{
     acquire_existing_parent_lock, acquire_existing_parent_lock_bound, acquire_file_lease,
     hold_lock,
 };
+
+#[cfg(unix)]
+const CORTEX_NAMESPACE_LOCK_NAME: &str = "cortex-use.lock";
+#[cfg(unix)]
+const CORTEX_LOCK_CHILD_MARKER_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_LOCK_CHILD";
+#[cfg(unix)]
+const CORTEX_LOCK_CHILD_MARKER_VALUE: &str = "cortex-namespace-lock-child-v1";
+#[cfg(unix)]
+const CORTEX_LOCK_CHILD_EXPECT_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_LOCK_EXPECT";
+#[cfg(unix)]
+const CORTEX_LOCK_ROOT_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_LOCK_ROOT";
+#[cfg(unix)]
+const CORTEX_LOCK_CHILD_BUSY: &str = "CORTEX_NAMESPACE_LOCK_CHILD_BUSY";
+#[cfg(unix)]
+const CORTEX_LOCK_CHILD_ACQUIRED: &str = "CORTEX_NAMESPACE_LOCK_CHILD_ACQUIRED";
+
+#[cfg(unix)]
+fn cortex_authority(root: &Path) -> CortexNamespaceAuthority {
+    create_or_admit_cortex_namespace(JournalRoot::open(root).unwrap()).unwrap()
+}
+
+#[cfg(unix)]
+fn cortex_lock_entry_identity(path: &Path) -> (u64, u64, fs::FileType) {
+    let metadata = fs::symlink_metadata(path).unwrap();
+    (metadata.dev(), metadata.ino(), metadata.file_type())
+}
+
+#[cfg(unix)]
+fn expect_cortex_lock_error(
+    result: Result<CortexNamespaceLock, CortexNamespaceLockError>,
+) -> CortexNamespaceLockError {
+    match result {
+        Ok(_) => panic!("expected Cortex namespace lock acquisition to fail"),
+        Err(error) => error,
+    }
+}
+
+#[cfg(unix)]
+fn run_cortex_lock_child(root: &Path, expected: &str) -> std::process::Output {
+    Command::new(std::env::current_exe().expect("current test executable"))
+        .args([
+            "--exact",
+            "cortex_namespace_lock_child_helper",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(CORTEX_LOCK_CHILD_MARKER_ENV, CORTEX_LOCK_CHILD_MARKER_VALUE)
+        .env(CORTEX_LOCK_CHILD_EXPECT_ENV, expected)
+        .env(CORTEX_LOCK_ROOT_ENV, root)
+        .output()
+        .expect("run Cortex namespace-lock child")
+}
+
+#[cfg(unix)]
+fn require_cortex_lock_child_receipt(output: std::process::Output, receipt: &str) {
+    assert!(
+        output.status.success(),
+        "Cortex namespace-lock child failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("child stdout is UTF-8");
+    assert_eq!(stdout.matches(receipt).count(), 1, "child stdout: {stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "helper for VPE-direct multi-process verification"]
+fn cortex_namespace_lock_child_helper() {
+    let Some(marker) = std::env::var_os(CORTEX_LOCK_CHILD_MARKER_ENV) else {
+        return;
+    };
+    if marker != CORTEX_LOCK_CHILD_MARKER_VALUE {
+        return;
+    }
+    let root = std::env::var_os(CORTEX_LOCK_ROOT_ENV).expect("marked child is missing its root");
+    let authority = cortex_authority(Path::new(&root));
+    let expectation = std::env::var(CORTEX_LOCK_CHILD_EXPECT_ENV)
+        .expect("marked child is missing its expected outcome");
+    match expectation.as_str() {
+        "busy" => {
+            let error = expect_cortex_lock_error(acquire_cortex_namespace_lock_with_test_timing(
+                &authority,
+                Duration::ZERO,
+                Duration::ZERO,
+            ));
+            assert_eq!(error.to_string(), "cortex_namespace_lock_busy");
+            println!("{CORTEX_LOCK_CHILD_BUSY}");
+        }
+        "acquired" => {
+            let _lock = acquire_cortex_namespace_lock_with_test_timing(
+                &authority,
+                Duration::ZERO,
+                Duration::ZERO,
+            )
+            .unwrap();
+            println!("{CORTEX_LOCK_CHILD_ACQUIRED}");
+        }
+        other => panic!("unknown marked-child expectation: {other}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "VPE-direct multi-process verification"]
+fn cortex_namespace_lock_cross_process_child_is_busy_then_acquires_after_parent_release() {
+    let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
+    let root = temporary.path();
+    let health = root.join("health");
+    let talents = root.join("talents");
+    let authority = cortex_authority(root);
+    fs::write(root.join("root-sentinel"), b"root").unwrap();
+    fs::write(health.join("sentinel"), b"health").unwrap();
+    fs::write(talents.join("sentinel"), b"talents").unwrap();
+    let root_identity = cortex_lock_entry_identity(root);
+    let health_identity = cortex_lock_entry_identity(&health);
+    let talents_identity = cortex_lock_entry_identity(&talents);
+    let parent_lock =
+        acquire_cortex_namespace_lock_with_test_timing(&authority, Duration::ZERO, Duration::ZERO)
+            .unwrap();
+    let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
+    let entry_identity = cortex_lock_entry_identity(&entry);
+    let entry_bytes = fs::read(&entry).unwrap();
+    let entry_mode = fs::symlink_metadata(&entry).unwrap().mode() & 0o7777;
+
+    require_cortex_lock_child_receipt(run_cortex_lock_child(root, "busy"), CORTEX_LOCK_CHILD_BUSY);
+    assert_eq!(cortex_lock_entry_identity(&entry), entry_identity);
+    assert_eq!(fs::read(&entry).unwrap(), entry_bytes);
+    assert_eq!(
+        fs::symlink_metadata(&entry).unwrap().mode() & 0o7777,
+        entry_mode
+    );
+    assert_eq!(cortex_lock_entry_identity(root), root_identity);
+    assert_eq!(cortex_lock_entry_identity(&health), health_identity);
+    assert_eq!(cortex_lock_entry_identity(&talents), talents_identity);
+    assert_eq!(fs::read(root.join("root-sentinel")).unwrap(), b"root");
+    assert_eq!(fs::read(health.join("sentinel")).unwrap(), b"health");
+    assert_eq!(fs::read(talents.join("sentinel")).unwrap(), b"talents");
+    drop(parent_lock);
+
+    require_cortex_lock_child_receipt(
+        run_cortex_lock_child(root, "acquired"),
+        CORTEX_LOCK_CHILD_ACQUIRED,
+    );
+    assert_eq!(cortex_lock_entry_identity(&entry), entry_identity);
+    assert_eq!(fs::read(&entry).unwrap(), entry_bytes);
+    assert_eq!(
+        fs::symlink_metadata(&entry).unwrap().mode() & 0o7777,
+        entry_mode
+    );
+    assert_eq!(cortex_lock_entry_identity(root), root_identity);
+    assert_eq!(cortex_lock_entry_identity(&health), health_identity);
+    assert_eq!(cortex_lock_entry_identity(&talents), talents_identity);
+    assert_eq!(fs::read(root.join("root-sentinel")).unwrap(), b"root");
+    assert_eq!(fs::read(health.join("sentinel")).unwrap(), b"health");
+    assert_eq!(fs::read(talents.join("sentinel")).unwrap(), b"talents");
+}
 #[cfg(windows)]
 use solstone_core_journal_io::{
     WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,

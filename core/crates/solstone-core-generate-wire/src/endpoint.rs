@@ -22,7 +22,10 @@ use solstone_core_local::{
 };
 use solstone_core_spp_ratls::AttestationStateStore;
 
-use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
+use crate::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
+};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const ENDPOINT_MODELS_TIMEOUT: Duration = Duration::from_millis(2_500);
@@ -74,6 +77,7 @@ pub struct EndpointGenerated {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndpointFailure {
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,16 +253,33 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
             }
         }
     };
+    let secret = endpoint.credential.as_deref().unwrap_or("");
     if !(200..300).contains(&response.status) {
-        return failure("provider_response_invalid");
+        let detail = capture_provider_detail(&response.body, secret);
+        return EndpointResult::Failed(EndpointFailure {
+            reason_code: Some("provider_response_invalid".to_owned()),
+            detail,
+        });
     }
     let body = match serde_json::from_str::<Value>(&response.body) {
         Ok(body) => body,
-        Err(_) => return failure("provider_response_invalid"),
+        Err(_) => {
+            let detail = capture_provider_detail(&response.body, secret);
+            return EndpointResult::Failed(EndpointFailure {
+                reason_code: Some("provider_response_invalid".to_owned()),
+                detail,
+            });
+        }
     };
     let parsed = match parse_response(&body) {
         Ok(parsed) => parsed,
-        Err(_) => return failure("provider_response_invalid"),
+        Err(_) => {
+            let detail = capture_provider_detail(&response.body, secret);
+            return EndpointResult::Failed(EndpointFailure {
+                reason_code: Some("provider_response_invalid".to_owned()),
+                detail,
+            });
+        }
     };
     EndpointResult::Generated(EndpointGenerated {
         text: parsed.text,
@@ -405,7 +426,16 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         }
     };
     if !(200..300).contains(&response.status) {
-        return converse_failure("provider_response_invalid");
+        let reason_code = "provider_response_invalid";
+        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+        let secret = endpoint.credential.as_deref().unwrap_or("");
+        let detail = capture_provider_detail(&response.body, secret);
+        return Err(ConverseFailure {
+            reason_code: reason_code.to_owned(),
+            retryable,
+            blocking,
+            detail,
+        });
     }
     let response_body = match serde_json::from_str::<Value>(&response.body) {
         Ok(body) => body,
@@ -438,6 +468,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
                 name: call.name,
                 arguments: call.arguments,
                 not_offered,
+                thought_signature: None,
             }
         })
         .collect();
@@ -794,9 +825,27 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
         .unwrap_or(DEFAULT_TIMEOUT)
 }
 
+fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let scrubbed = if secret.is_empty() {
+        body.to_owned()
+    } else {
+        body.replace(secret, "[redacted]")
+    };
+    Some(
+        scrubbed
+            .chars()
+            .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
+            .collect(),
+    )
+}
+
 fn failure(reason_code: &str) -> EndpointResult {
     EndpointResult::Failed(EndpointFailure {
         reason_code: Some(reason_code.to_owned()),
+        detail: None,
     })
 }
 
@@ -806,6 +855,7 @@ pub(crate) fn converse_failure(reason_code: &str) -> EndpointConverseResult {
         reason_code: reason_code.to_owned(),
         retryable,
         blocking,
+        detail: None,
     })
 }
 
@@ -1375,7 +1425,7 @@ mod tests {
         );
         let refusal =
             crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failed), "local", None);
-        assert_eq!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+        assert_eq!(refusal.detail, "{}");
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1929,6 +1979,7 @@ mod tests {
                         name: "weather".into(),
                         arguments: json!({"city": "Denver"}),
                         not_offered: false,
+                        thought_signature: None,
                     }],
                 },
                 ConverseMessage::ToolResult {
@@ -1998,6 +2049,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(500)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             });
             messages.push(ConverseMessage::ToolResult {
@@ -2062,6 +2114,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(650)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             });
             messages.push(ConverseMessage::ToolResult {
@@ -2134,6 +2187,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(20_000)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {
@@ -2240,6 +2294,7 @@ mod tests {
             usage: &turn.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(assessment.failure, None);
         let empty = json!({});
@@ -2252,10 +2307,13 @@ mod tests {
             usage: &empty,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(
             rejected.failure,
-            Some(crate::ValidationFailure::ProviderResponseInvalid)
+            Some(crate::ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: None,
+            })
         );
         let _ = std::fs::remove_dir_all(journal);
     }

@@ -570,7 +570,7 @@ fn serve_failure_detail(kind: &LinkServeTransportErrorKind) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
     use serde_json::json;

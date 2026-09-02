@@ -4,10 +4,11 @@
 //! Pinned CPU runtime table. `solstone-distribution acquire onnx` stages
 //! from this table through the builder-input download policy.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+#[cfg(not(windows))]
 use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::digest::sha256_hex;
@@ -125,6 +126,15 @@ pub fn spec_for(key: &str) -> Option<&'static TargetSpec> {
     TARGETS.iter().find(|spec| spec.key == key)
 }
 
+#[must_use]
+pub fn staged_member_names(spec: &TargetSpec) -> BTreeSet<&'static str> {
+    let mut names = BTreeSet::new();
+    names.insert(spec.runtime_staged_name);
+    names.extend(spec.link_names.iter().copied());
+    names.extend(spec.notices.iter().map(|notice| notice.staged_name));
+    names
+}
+
 pub fn stage_from_bytes(spec: &TargetSpec, wheel: &[u8]) -> Result<StagedRuntime, StageError> {
     let digest = sha256_hex(wheel);
     if digest != spec.wheel_sha256 {
@@ -176,6 +186,7 @@ pub fn stage_from_path(spec: &TargetSpec, path: &Path) -> Result<StagedRuntime, 
 
 /// Single origin primitive: only pin-table URLs may be fetched, and only
 /// through the builder-input policy. This is not the owner-facing allow-list.
+#[cfg(not(windows))]
 pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
     let spec = TARGETS
         .iter()
@@ -193,6 +204,13 @@ pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
     )
     .map_err(|error| StageError::new(error.to_string()))?;
     fs::read(&dest).map_err(|error| StageError::new(error.to_string()))
+}
+
+#[cfg(windows)]
+pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
+    Err(StageError::new(format!(
+        "onnx runtime fetch is not supported on windows: {url}"
+    )))
 }
 
 pub fn fetch_wheel(spec: &TargetSpec) -> Result<Vec<u8>, StageError> {
@@ -260,4 +278,21 @@ pub fn forbidden_member_fixture_wheel() -> (TargetSpec, Vec<u8>) {
     let wheel = zip::write_stored_zip(&files).expect("forbidden fixture zip");
     spec.wheel_sha256 = Box::leak(sha256_hex(&wheel).into_boxed_str());
     (spec, wheel)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staged_member_names_dedupe_the_overlapping_soname() {
+        let spec = spec_for("linux-x86_64").expect("linux-x86_64");
+        let names = staged_member_names(spec);
+        assert!(names.contains("libonnxruntime.so.1"));
+        assert!(names.contains("libonnxruntime.so.1.25.0"));
+        assert!(names.contains("libonnxruntime.so"));
+        assert!(names.contains("onnxruntime-LICENSE.txt"));
+        assert!(names.contains("onnxruntime-ThirdPartyNotices.txt"));
+        assert_eq!(names.len(), 5);
+    }
 }

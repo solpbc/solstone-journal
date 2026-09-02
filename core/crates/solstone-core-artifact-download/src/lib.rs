@@ -38,7 +38,9 @@ const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
     "release-assets.githubusercontent.com",
     "github-releases.githubusercontent.com",
     "ziglang.org",
+    "cmake.org",
     "static.rust-lang.org",
+    "www.python.org",
     "files.pythonhosted.org",
 ];
 
@@ -71,8 +73,8 @@ pub const BUILDER_INPUT_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadH
 pub enum ArchiveError {
     #[error("archive member escapes destination: {0}")]
     PathEscape(String),
-    #[error("sha256 mismatch")]
-    DigestMismatch,
+    #[error("sha256 mismatch: expected {expected}, got {actual}")]
+    DigestMismatch { expected: String, actual: String },
     #[error("download size mismatch: expected {expected} bytes, got {actual}")]
     SizeMismatch { expected: u64, actual: u64 },
     #[error("download host refused: {host}")]
@@ -220,7 +222,10 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError
         .map(|byte| format!("{byte:02x}"))
         .collect();
     if actual != expected {
-        return Err(ArchiveError::DigestMismatch);
+        return Err(ArchiveError::DigestMismatch {
+            expected: expected.to_owned(),
+            actual,
+        });
     }
     Ok(actual)
 }
@@ -371,7 +376,7 @@ pub fn ensure_verified_url(
     if destination.is_file() {
         match verify_sha256(destination, sha256) {
             Ok(_) => return Ok(false),
-            Err(ArchiveError::DigestMismatch) => {}
+            Err(ArchiveError::DigestMismatch { .. }) => {}
             Err(error) => return Err(error),
         }
     }
@@ -635,10 +640,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("asset");
         File::create(&path).unwrap().write_all(b"asset").unwrap();
-        assert!(matches!(
-            verify_sha256(&path, "00"),
-            Err(ArchiveError::DigestMismatch)
-        ));
+        let error = verify_sha256(&path, "00").expect_err("must refuse wrong digest");
+        let ArchiveError::DigestMismatch { expected, actual } = error else {
+            panic!("expected digest mismatch");
+        };
+        assert_eq!(expected, "00");
+        assert_eq!(
+            actual,
+            "d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718"
+        );
     }
 
     #[test]
@@ -751,7 +761,9 @@ mod tests {
         for url in [
             "https://github.com/FFmpeg/FFmpeg/archive/deadbeef.tar.gz",
             "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
+            "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip",
             "https://static.rust-lang.org/dist/rust-std.tar.xz",
+            "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
             "https://files.pythonhosted.org/packages/onnxruntime.whl",
         ] {
             validate_url(url, &BUILDER_INPUT_DOWNLOAD_POLICY)

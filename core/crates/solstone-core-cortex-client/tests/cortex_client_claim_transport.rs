@@ -93,11 +93,18 @@ fn dispatch(journal: &Path, use_id: &str) -> Result<String, DispatchError> {
 }
 
 #[test]
-fn successful_write_claims_active_completed_and_malformed_existing_use_files() {
+fn successful_write_claims_active_and_completed_existing_use_files() {
     for (name, active, body) in [
-        ("active", true, b"{\"event\":\"request\"}\n".as_slice()),
-        ("completed", false, b"{\"event\":\"finish\"}\n".as_slice()),
-        ("malformed", false, b"not-json\n".as_slice()),
+        (
+            "active",
+            true,
+            br#"{"event":"request","use_id":"active"}"#.as_slice(),
+        ),
+        (
+            "completed",
+            false,
+            br#"{"event":"finish","use_id":"completed"}"#.as_slice(),
+        ),
     ] {
         let journal = tempfile::tempdir().expect("claim journal");
         let listener = bind(journal.path());
@@ -105,6 +112,20 @@ fn successful_write_claims_active_completed_and_malformed_existing_use_files() {
         assert_eq!(dispatch(journal.path(), name), Ok(name.to_owned()));
         accept_lines(&listener, 1, name);
     }
+}
+
+#[test]
+fn malformed_existing_use_file_is_not_claimed() {
+    let journal = tempfile::tempdir().expect("malformed journal");
+    let listener = bind(journal.path());
+    write_use(journal.path(), "malformed", false, b"not-json\n");
+    assert_eq!(
+        dispatch(journal.path(), "malformed"),
+        Err(DispatchError::NotClaimed {
+            use_id: "malformed".to_owned()
+        })
+    );
+    accept_lines(&listener, 3, "malformed");
 }
 
 #[test]

@@ -25,8 +25,8 @@ use crate::archive_seal::{SealedArchiveSet, seal_declared_archives};
 use crate::digest::sha256_hex;
 use crate::elf;
 use crate::inventory::{
-    Entry, Inventory, Target, artifact_set_for_os, digest_const_hex, format_named_list,
-    load_payload, parse_min_macos,
+    Entry, Inventory, OS_LINUX, OS_MACOS, OS_WINDOWS, Target, artifact_set_for_os,
+    digest_const_hex, format_named_list, load_payload, parse_min_macos,
 };
 use crate::lanes::{self, write_wrappers};
 use crate::macho;
@@ -36,7 +36,8 @@ use crate::promote::{PromoteRequest, isolated_target_dir, promote};
 use crate::provenance::{
     self, Provenance, bind_cargo_json, bind_ffmpeg_build_script_out_dirs, lock_digest,
 };
-use crate::select::{self, ArtifactId};
+use crate::record;
+use crate::select::{self, ArtifactId, Selection};
 use crate::stage;
 
 pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
@@ -333,6 +334,18 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 .collect();
             ProduceError::new(format_named_list("missing required", &names))
         })?;
+    match target.os.as_str() {
+        OS_LINUX => {}
+        OS_MACOS => {}
+        OS_WINDOWS => {
+            return Err(ProduceError::new(
+                "windows produce is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(ProduceError::new(format!("unexpected:\n  os {other}")));
+        }
+    }
     let repo = inventory_path
         .ancestors()
         .nth(3)
@@ -495,6 +508,12 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             });
         }
 
+        if target.os != OS_LINUX {
+            return Err(ProduceError::new(format!(
+                "unexpected:\n  os {}",
+                target.os
+            )));
+        }
         let (zig_lib, zig_dir) = zig_paths
             .as_ref()
             .ok_or_else(|| ProduceError::new("missing required:\n  zig"))?;
@@ -698,9 +717,9 @@ struct FinishProduce<'a> {
     delivery_contract: Option<&'a DeliveryContract>,
 }
 
-/// Selection, binary inspection, staging and atomic promotion — identical for
-/// both platforms except for which inspector reads the binaries and which
-/// containers promotion emits.
+/// Selection, binary inspection, staging and atomic promotion. Linux inspects
+/// ELF and emits deb/rpm; macOS inspects Mach-O and emits a signed pkg. Windows
+/// produce is refused in this lode.
 fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceError> {
     let FinishProduce {
         args,
@@ -730,43 +749,52 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     let selection = select::select_artifacts(inventory, &args.target_id, artifacts)
         .map_err(|error| ProduceError::new(error.to_string()))?;
 
-    if target.is_macos() {
-        let cputype = macho::cputype_for_arch(&target.arch)
-            .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
-        let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
-            ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
-        })?;
-        for bin in &selection.bins {
-            let bytes = fs::read(&bin.path)?;
-            inspect_macho_bin(&bin.bin, &bin.lane, &bytes, cputype, ceiling)?;
-        }
-    } else {
-        let machine = match target.arch.as_str() {
-            "x86_64" => elf::machine_x86_64(),
-            "aarch64" => elf::machine_aarch64(),
-            other => {
-                return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+    match target.os.as_str() {
+        OS_MACOS => {
+            let cputype = macho::cputype_for_arch(&target.arch)
+                .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
+            let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
+                ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
+            })?;
+            for bin in &selection.bins {
+                let bytes = fs::read(&bin.path)?;
+                inspect_macho_bin(&bin.bin, &bin.lane, &bytes, cputype, ceiling)?;
             }
-        };
-        for bin in &selection.bins {
-            let bytes = fs::read(&bin.path)?;
-            inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
+        }
+        OS_LINUX => {
+            let machine = match target.arch.as_str() {
+                "x86_64" => elf::machine_x86_64(),
+                "aarch64" => elf::machine_aarch64(),
+                other => {
+                    return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+                }
+            };
+            for bin in &selection.bins {
+                let bytes = fs::read(&bin.path)?;
+                inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
+            }
+        }
+        OS_WINDOWS => {
+            return Err(ProduceError::new(
+                "windows produce is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(ProduceError::new(format!("unexpected:\n  os {other}")));
         }
     }
 
     let stage = work.join("stage");
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(&stage)?;
-    select::stage_selected(&selection, &stage)?;
-    stage_layout(
+    write_stage(
+        &selection,
         checkout,
         inventory_path,
         inventory,
         &args.target_id,
-        spec,
-        staged_runtime,
-        pdfium_spec,
-        staged_pdfium,
+        Some((spec, staged_runtime)),
+        Some((pdfium_spec, staged_pdfium)),
         sealed_archives,
         &stage,
     )?;
@@ -775,18 +803,29 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     // because it is not a binary: it is staged straight out of the pinned wheel
     // and never passes through `select`. A census that walked only `selection`
     // would report a clean tree with the loaded half never looked at.
-    if target.is_macos() {
-        archive_census::validate_staged_archives(&stage, inventory)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-        inspect_macos_payloads(&stage, target)?;
-        let prebuild = prebuild_input.ok_or_else(|| {
-            ProduceError::new("missing required:\n  macOS prebuild archive identity")
-        })?;
-        let delivery = delivery_contract.ok_or_else(|| {
-            ProduceError::new("missing required:\n  macOS archive delivery contract")
-        })?;
-        stage_chain(&stage, prebuild, delivery, commit, expected_lock)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
+    match target.os.as_str() {
+        OS_MACOS => {
+            archive_census::validate_staged_archives(&stage, inventory)
+                .map_err(|error| ProduceError::new(error.to_string()))?;
+            inspect_macos_payloads(&stage, target)?;
+            let prebuild = prebuild_input.ok_or_else(|| {
+                ProduceError::new("missing required:\n  macOS prebuild archive identity")
+            })?;
+            let delivery = delivery_contract.ok_or_else(|| {
+                ProduceError::new("missing required:\n  macOS archive delivery contract")
+            })?;
+            stage_chain(&stage, prebuild, delivery, commit, expected_lock)
+                .map_err(|error| ProduceError::new(error.to_string()))?;
+        }
+        OS_LINUX => {}
+        OS_WINDOWS => {
+            return Err(ProduceError::new(
+                "windows produce is not implemented in this lode",
+            ));
+        }
+        other => {
+            return Err(ProduceError::new(format!("unexpected:\n  os {other}")));
+        }
     }
 
     let tree = tree_from_stage(&stage)?;
@@ -822,6 +861,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
     .map_err(|error| ProduceError::new(error.to_string()))?;
 
     let produced_artifacts = artifact_set_for_os(&target.os, &basename)
+        .map_err(ProduceError::new)?
         .into_iter()
         .map(|name| produced.join(name))
         .collect::<Vec<_>>();
@@ -1122,16 +1162,109 @@ fn merge_artifacts(into: &mut BTreeMap<ArtifactId, PathBuf>, from: BTreeMap<Arti
     into.extend(from);
 }
 
+pub struct StageInventoryTree {
+    pub selection: Selection,
+    pub records: Vec<crate::record::FileRecord>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn stage_inventory_tree(
+    repo: &Path,
+    inventory_path: &Path,
+    inventory: &Inventory,
+    target_id: &str,
+    artifacts: &BTreeMap<ArtifactId, PathBuf>,
+    onnx: Option<(&onnx_runtime::TargetSpec, &onnx_runtime::StagedRuntime)>,
+    pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
+    sealed_archives: Option<&SealedArchiveSet>,
+    stage: &Path,
+) -> Result<StageInventoryTree, ProduceError> {
+    select::refuse_wrong_triple(inventory, target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    select::refuse_extra(inventory, target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let selection = select::select_artifacts(inventory, target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let _ = fs::remove_dir_all(stage);
+    fs::create_dir_all(stage)?;
+    let records = write_stage(
+        &selection,
+        repo,
+        inventory_path,
+        inventory,
+        target_id,
+        onnx,
+        pdfium,
+        sealed_archives,
+        stage,
+    )?;
+    Ok(StageInventoryTree { selection, records })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_stage(
+    selection: &Selection,
+    repo: &Path,
+    inventory_path: &Path,
+    inventory: &Inventory,
+    target_id: &str,
+    onnx: Option<(&onnx_runtime::TargetSpec, &onnx_runtime::StagedRuntime)>,
+    pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
+    sealed_archives: Option<&SealedArchiveSet>,
+    stage: &Path,
+) -> Result<Vec<crate::record::FileRecord>, ProduceError> {
+    select::stage_selected(selection, stage)?;
+    stage_layout(
+        repo,
+        inventory_path,
+        inventory,
+        target_id,
+        onnx,
+        pdfium,
+        sealed_archives,
+        stage,
+    )?;
+    let records = stage::staged_records(stage)?;
+    let payload = load_payload(inventory_path, inventory)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let artifacts = selection
+        .bins
+        .iter()
+        .map(|bin| {
+            (
+                ArtifactId {
+                    package: bin.package.clone(),
+                    bin: bin.bin.clone(),
+                    triple: bin.triple.clone(),
+                },
+                bin.path.clone(),
+            )
+        })
+        .collect();
+    let declared = record::declared_records(
+        inventory,
+        target_id,
+        repo,
+        &payload,
+        &artifacts,
+        onnx,
+        pdfium,
+        sealed_archives,
+    )
+    .map_err(ProduceError::new)?;
+    record::compare_records("declared", &declared, "staged", &records)
+        .map_err(ProduceError::new)?;
+    Ok(records)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn stage_layout(
     repo: &Path,
     inventory_path: &Path,
     inventory: &Inventory,
     target_id: &str,
-    spec: &onnx_runtime::TargetSpec,
-    runtime: &onnx_runtime::StagedRuntime,
-    pdfium_spec: &pdfium::TargetSpec,
-    pdfium_runtime: &pdfium::StagedRuntime,
+    onnx: Option<(&onnx_runtime::TargetSpec, &onnx_runtime::StagedRuntime)>,
+    pdfium: Option<(&pdfium::TargetSpec, &pdfium::StagedRuntime)>,
     sealed_archives: Option<&SealedArchiveSet>,
     stage: &Path,
 ) -> Result<(), ProduceError> {
@@ -1188,6 +1321,9 @@ fn stage_layout(
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
                 }
+                let (spec, runtime) = onnx.ok_or_else(|| {
+                    ProduceError::new(format!("missing required:\n  onnx runtime {target_id}"))
+                })?;
                 onnx_runtime::write_staged_runtime(spec, runtime, &stage.join(dest_dir))
                     .map_err(|error| ProduceError::new(error.to_string()))?;
             }
@@ -1199,17 +1335,33 @@ fn stage_layout(
                 if !targets.iter().any(|item| item == target_id) {
                     continue;
                 }
-                pdfium::write_staged_library(pdfium_spec, pdfium_runtime, &stage.join(dest_dir))
+                let (spec, pdfium_runtime) = pdfium.ok_or_else(|| {
+                    ProduceError::new(format!("missing required:\n  pdfium runtime {target_id}"))
+                })?;
+                pdfium::write_staged_library(spec, pdfium_runtime, &stage.join(dest_dir))
                     .map_err(|error| ProduceError::new(error.to_string()))?;
             }
         }
     }
-    for source in load_payload(inventory_path, inventory)
-        .map_err(|error| ProduceError::new(error.to_string()))?
-    {
-        let dest = payload_dest(&inventory.payload_dest_prefix, &source);
-        let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
-        stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
+    let payload = load_payload(inventory_path, inventory)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == target_id)
+        .ok_or_else(|| ProduceError::new(format!("missing required:\n  target {target_id}")))?;
+    if target.is_windows() {
+        if !payload.is_empty() {
+            return Err(ProduceError::new(
+                "windows payload is not implemented in this lode",
+            ));
+        }
+    } else {
+        for source in payload {
+            let dest = payload_dest(&inventory.payload_dest_prefix, &source);
+            let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
+            stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
+        }
     }
     Ok(())
 }
@@ -1386,6 +1538,8 @@ mod tests {
     use solstone_core_ffmpeg_build_support::{
         ConfigureReceipt, ConfigureRunRecord, write_configure_receipt, write_current_run_record,
     };
+
+    use std::collections::BTreeSet;
 
     use crate::archive_taxonomy::ContainerKind;
     use crate::inventory::{ArchiveExecutable, ArchiveSlot};
@@ -1774,6 +1928,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_zig_resolves_path_symlink_to_install_root() {
         let root = PathBuf::from("/var/tmp/solstone-distribution-zig-path-symlink");
         let _ = fs::remove_dir_all(&root);
@@ -1826,5 +1981,350 @@ mod tests {
         let error =
             inspect_bin("solstone-core", "unknown", &musl, elf::machine_x86_64()).unwrap_err();
         assert!(error.to_string().contains("unexpected:"));
+    }
+
+    fn windows_stage_fixture() -> (
+        tempfile::TempDir,
+        Inventory,
+        PathBuf,
+        BTreeMap<ArtifactId, PathBuf>,
+    ) {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-distribution-windows-stage-")
+            .tempdir_in("/var/tmp")
+            .expect("temporary windows fixture");
+        let distribution = root.path().join("core/distribution");
+        fs::create_dir_all(&distribution).unwrap();
+        fs::write(distribution.join("payload.txt"), "").unwrap();
+        fs::write(root.path().join("LICENSE.txt"), b"license").unwrap();
+        fs::write(
+            distribution.join("inventory.toml"),
+            r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+payload_src_root = "payload"
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "windows-x86_64"
+os = "windows"
+arch = "x86_64"
+lane = "msvc-native"
+triple_windows = "x86_64-pc-windows-msvc"
+[[entry]]
+kind = "bin"
+package = "test-fixture-bin"
+bin = "test-fixture-bin"
+dest = "runtime/test-fixture-bin.exe"
+mode = 0o755
+lane = "musl-static"
+targets = ["windows-x86_64"]
+[[entry]]
+kind = "copy"
+source = "LICENSE.txt"
+dest = "licenses/solstone/LICENSE"
+mode = 0o644
+targets = ["windows-x86_64"]
+"#,
+        )
+        .unwrap();
+        let inventory_path = distribution.join("inventory.toml");
+        let inventory = crate::inventory::load_inventory(&inventory_path).expect("inventory");
+        let artifacts_dir = root.path().join("artifacts");
+        fs::create_dir_all(&artifacts_dir).unwrap();
+        let bin = artifacts_dir.join("test-fixture-bin.exe");
+        fs::write(&bin, b"fixture-bin").unwrap();
+        let mut artifacts = BTreeMap::new();
+        artifacts.insert(
+            ArtifactId {
+                package: "test-fixture-bin".into(),
+                bin: "test-fixture-bin".into(),
+                triple: "x86_64-pc-windows-msvc".into(),
+            },
+            bin,
+        );
+        (root, inventory, inventory_path, artifacts)
+    }
+
+    #[test]
+    fn windows_stage_inventory_tree_matches_declared_set() {
+        let (root, inventory, inventory_path, artifacts) = windows_stage_fixture();
+        let stage = root.path().join("stage");
+        let staged = stage_inventory_tree(
+            root.path(),
+            &inventory_path,
+            &inventory,
+            "windows-x86_64",
+            &artifacts,
+            None,
+            None,
+            None,
+            &stage,
+        )
+        .expect("stage windows");
+        let dests = staged
+            .records
+            .iter()
+            .map(|record| record.dest.as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(dests.contains("runtime/test-fixture-bin.exe"));
+        assert!(dests.contains("licenses/solstone/LICENSE"));
+        assert!(!dests.iter().any(|dest| dest.starts_with("share/")));
+        assert!(!dests.iter().any(|dest| dest.starts_with("lib/")));
+        assert!(!dests.iter().any(|dest| dest.starts_with("bin/")));
+    }
+
+    #[test]
+    fn windows_produce_run_refuses() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let error = match run(ProduceArgs {
+            target_id: "windows-x86_64".into(),
+            dest: PathBuf::from("/var/tmp/solstone-distribution-windows-produce-dest"),
+            start: repo,
+        }) {
+            Ok(_) => panic!("windows produce refuses"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("windows produce is not implemented in this lode"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn windows_stage_refuses_nonempty_payload() {
+        let (root, inventory, inventory_path, artifacts) = windows_stage_fixture();
+        fs::write(
+            inventory_path.parent().unwrap().join("payload.txt"),
+            "hello.md\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.path().join("payload")).unwrap();
+        fs::write(root.path().join("payload/hello.md"), b"hello").unwrap();
+        let stage = root.path().join("stage");
+        let error = match stage_inventory_tree(
+            root.path(),
+            &inventory_path,
+            &inventory,
+            "windows-x86_64",
+            &artifacts,
+            None,
+            None,
+            None,
+            &stage,
+        ) {
+            Ok(_) => panic!("windows payload refuses"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("windows payload is not implemented in this lode"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn windows_fail_closed_names_missing_and_unexpected() {
+        let (root, inventory, inventory_path, artifacts) = windows_stage_fixture();
+        let stage = root.path().join("stage");
+        stage_inventory_tree(
+            root.path(),
+            &inventory_path,
+            &inventory,
+            "windows-x86_64",
+            &artifacts,
+            None,
+            None,
+            None,
+            &stage,
+        )
+        .expect("stage windows");
+        let payload = load_payload(&inventory_path, &inventory).unwrap();
+        let declared = record::declared_records(
+            &inventory,
+            "windows-x86_64",
+            root.path(),
+            &payload,
+            &artifacts,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        fs::remove_file(stage.join("licenses/solstone/LICENSE")).unwrap();
+        let missing = record::compare_records(
+            "declared",
+            &declared,
+            "staged",
+            &stage::staged_records(&stage).unwrap(),
+        )
+        .expect_err("deleted dest is missing");
+        assert!(missing.contains("missing in staged"), "{missing}");
+        assert!(missing.contains("licenses/solstone/LICENSE"), "{missing}");
+
+        fs::write(stage.join("licenses/solstone/LICENSE"), b"license").unwrap();
+        fs::write(stage.join("runtime/extra.exe"), b"extra").unwrap();
+        let unexpected = record::compare_records(
+            "declared",
+            &declared,
+            "staged",
+            &stage::staged_records(&stage).unwrap(),
+        )
+        .expect_err("extra dest is unexpected");
+        assert!(unexpected.contains("unexpected in staged"), "{unexpected}");
+        assert!(unexpected.contains("runtime/extra.exe"), "{unexpected}");
+    }
+
+    fn linux_stub_artifacts(inventory: &Inventory, dir: &Path) -> BTreeMap<ArtifactId, PathBuf> {
+        let target = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "linux-x86_64")
+            .unwrap();
+        fs::create_dir_all(dir).unwrap();
+        let mut artifacts = BTreeMap::new();
+        for entry in &inventory.entry {
+            let Entry::Bin {
+                package,
+                bin,
+                lane,
+                targets,
+                ..
+            } = entry
+            else {
+                continue;
+            };
+            if !targets.iter().any(|item| item == "linux-x86_64") {
+                continue;
+            }
+            let triple = target.triple_for_lane(target.lane_for(lane)).to_owned();
+            let path = dir.join(bin);
+            fs::write(&path, bin.as_bytes()).unwrap();
+            artifacts.insert(
+                ArtifactId {
+                    package: package.clone(),
+                    bin: bin.clone(),
+                    triple,
+                },
+                path,
+            );
+        }
+        artifacts
+    }
+
+    fn linux_fixture_runtimes() -> (
+        &'static onnx_runtime::TargetSpec,
+        onnx_runtime::StagedRuntime,
+        &'static crate::pdfium::TargetSpec,
+        crate::pdfium::StagedRuntime,
+    ) {
+        // The CI topology scanner treats the ident `pdfium` in a call path as a
+        // native-runtime boundary. Alias the module so this unit test can still
+        // construct the committed Linux dest expansion.
+        use crate::pdfium as pdf_runtime;
+        let spec = onnx_runtime::spec_for("linux-x86_64").expect("onnx spec");
+        let mut notices = BTreeMap::new();
+        for notice in spec.notices {
+            notices.insert(notice.staged_name.to_owned(), b"onnx-notice".to_vec());
+        }
+        let staged = onnx_runtime::StagedRuntime {
+            library: b"onnx-library".to_vec(),
+            notices,
+        };
+        let pdf_spec = pdf_runtime::spec_for("linux-x86_64").expect("pdf spec");
+        let mut pdf_notices = BTreeMap::new();
+        for name in pdf_runtime::staged_member_names(pdf_spec) {
+            if name != pdf_spec.library_name {
+                pdf_notices.insert(name, b"pdfium-notice".to_vec());
+            }
+        }
+        let pdf_staged = pdf_runtime::StagedRuntime {
+            library: b"pdfium-library".to_vec(),
+            notices: pdf_notices,
+        };
+        (spec, staged, pdf_spec, pdf_staged)
+    }
+
+    #[test]
+    fn linux_fail_closed_uses_the_same_missing_and_unexpected_shape() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let inventory_path = repo.join("core/distribution/inventory.toml");
+        let inventory = crate::inventory::load_inventory(&inventory_path).expect("committed");
+        let artifacts_root = tempfile::Builder::new()
+            .prefix("solstone-distribution-linux-stage-artifacts-")
+            .tempdir_in("/var/tmp")
+            .expect("artifacts");
+        let artifacts = linux_stub_artifacts(&inventory, artifacts_root.path());
+        let (spec, staged, pdfium_spec, pdfium_staged) = linux_fixture_runtimes();
+        let stage_root = tempfile::Builder::new()
+            .prefix("solstone-distribution-linux-stage-")
+            .tempdir_in("/var/tmp")
+            .expect("stage");
+        let stage = stage_root.path().join("stage");
+        stage_inventory_tree(
+            &repo,
+            &inventory_path,
+            &inventory,
+            "linux-x86_64",
+            &artifacts,
+            Some((spec, &staged)),
+            Some((pdfium_spec, &pdfium_staged)),
+            None,
+            &stage,
+        )
+        .expect("stage linux");
+        let payload = load_payload(&inventory_path, &inventory).unwrap();
+        let declared = record::declared_records(
+            &inventory,
+            "linux-x86_64",
+            &repo,
+            &payload,
+            &artifacts,
+            Some((spec, &staged)),
+            Some((pdfium_spec, &pdfium_staged)),
+            None,
+        )
+        .unwrap();
+        assert!(declared.iter().any(|record| {
+            record
+                .dest
+                .starts_with("lib/solstone-core-speakers-analyze/")
+        }));
+        assert!(
+            declared
+                .iter()
+                .any(|record| record.dest.starts_with("lib/solstone-core-pdf/"))
+        );
+
+        let license = fs::read(stage.join("share/LICENSE")).unwrap();
+        fs::remove_file(stage.join("share/LICENSE")).unwrap();
+        let missing = record::compare_records(
+            "declared",
+            &declared,
+            "staged",
+            &stage::staged_records(&stage).unwrap(),
+        )
+        .expect_err("deleted dest is missing");
+        assert!(missing.contains("missing in staged"), "{missing}");
+        assert!(missing.contains("share/LICENSE"), "{missing}");
+
+        fs::write(stage.join("share/LICENSE"), license).unwrap();
+        fs::write(stage.join("bin/extra").as_path(), b"extra").unwrap();
+        let unexpected = record::compare_records(
+            "declared",
+            &declared,
+            "staged",
+            &stage::staged_records(&stage).unwrap(),
+        )
+        .expect_err("extra dest is unexpected");
+        assert!(unexpected.contains("unexpected in staged"), "{unexpected}");
+        assert!(unexpected.contains("bin/extra"), "{unexpected}");
     }
 }

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "request": {
+    "method": "POST",
+    "url": "https://services.solstone.app/reach/mcp/bridge-token",
+    "body": "{\"instance_id\":\"8488ae64-b592-80a3-97c6-490e995daa85\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjg0ODhhZTY0LWI1OTItODBhMy05N2M2LTQ5MGU5OTVkYWE4NSIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI4NDg4YWU2NC1iNTkyLTgwYTMtOTdjNi00OTBlOTk1ZGFhODUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MH0.Dob8pebaDSM80usXouCFraOrgzORGXDPQWzZgHLz1lIspj_C10nEF2lQJjbMn-RYgBDOTY-N7jlRB07tae2JSQ\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEDqAw0i9YxRG5/1DAZ1eLejZJuTcq\\nPjxbfiv6klgXm9nk08MUGpdn/Cgw5Fc0/lI39DF1GiyQ9AewtkawyxUDIQ==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+  },
+  "response": {
+    "status": 200,
+    "cache_control": "no-store",
+    "body": {
+      "token": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6Im1jcC1icmlkZ2UtZml4dHVyZS12MSJ9.eyJob3N0bmFtZSI6ImFhYXFlYXllLnNvbHN0b25lLm1lIiwiY25mIjp7Imp3ayI6eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI1NTE5IiwieCI6IkFzak9PWVVNVURER1lWdmYyYTAyU0RFWGFiMUg5VzNadmM0V1h6eW1MNGMifX0sImlzcyI6InNlcnZpY2VzLnNvbHN0b25lLmFwcCIsImF1ZCI6Im1jcC1icmlkZ2UtZml4dHVyZSIsInN1YiI6ImhvbWU6ODQ4OGFlNjQtYjU5Mi04MGEzLTk3YzYtNDkwZTk5NWRhYTg1IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.8ZcGs-Bl1L7mOvjopz_rnay4PMBBxxUSpsN6ynYAO7VVX5u53LUwSSK0-QbQQxzgkmBm4KA1-cSgb_vswNm9CQ",
+      "token_type": "Bearer",
+      "expires_in": 600,
+      "expires_at": "2023-11-14T22:23:20Z",
+      "instance_id": "8488ae64-b592-80a3-97c6-490e995daa85",
+      "hostname": "aaaqeaye.solstone.me",
+      "bridge_id": "mcp-bridge-fixture",
+      "bridge_addresses": [
+        "20.186.92.169"
+      ]
+    }
+  },
+  "jwks": {
+    "status": 200,
+    "cache_control": "public, max-age=300",
+    "body": {
+      "keys": [
+        {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "-mxm_u2UQ4ld_X6hexCvWxzwwYrH5XB1mMegug-7S2k",
+          "kid": "mcp-bridge-fixture-v1",
+          "use": "sig",
+          "alg": "EdDSA"
+        }
+      ]
+    }
+  }
+}

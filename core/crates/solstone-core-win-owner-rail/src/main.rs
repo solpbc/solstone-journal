@@ -9,7 +9,8 @@ mod windows;
 #[cfg(windows)]
 fn main() {
     if let Err(error) = windows::run(std::env::args_os().skip(1).collect()) {
-        eprintln!("win-owner-rail: {error}");
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), "win-owner-rail: {error}");
         std::process::exit(1);
     }
 }

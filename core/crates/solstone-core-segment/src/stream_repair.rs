@@ -205,6 +205,7 @@ fn default_stream_record(
         seq: max_seq,
         cid: None,
         source: None,
+        allocation: None,
     }
 }
 

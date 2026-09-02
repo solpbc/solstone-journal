@@ -24,6 +24,10 @@ impl TempDir {
             std::process::id()
         ));
         fs::create_dir(&path).unwrap();
+        // macOS may expose the temporary directory through a symlinked namespace.
+        // Windows canonicalization instead adds a verbatim-path prefix that the
+        // journal-root contract intentionally refuses.
+        #[cfg(not(windows))]
         let path = fs::canonicalize(path).unwrap();
         Self { path }
     }

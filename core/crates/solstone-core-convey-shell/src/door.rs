@@ -1353,6 +1353,10 @@ mod tests {
             &AuthorizedClientsRead::Malformed,
             &cid
         ));
+        assert!(!close_for_revocation(
+            &AuthorizedClientsRead::DuplicateCid,
+            &cid
+        ));
         assert!(close_for_revocation(
             &AuthorizedClientsRead::Present(Vec::new()),
             &cid

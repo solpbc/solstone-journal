@@ -68,6 +68,62 @@ timeout = "extended"
 default_full = true
 
 [[legs]]
+id = "classified-full-tests-sol-link"
+make_target = "check-rust-classified-full-tests-sol-link"
+set = "component"
+areas = ["trust"]
+packages = ["solstone-core-sol-link"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+
+[[legs]]
+id = "classified-full-tests-convey-body"
+make_target = "check-rust-classified-full-tests-convey-body"
+set = "component"
+areas = ["services"]
+packages = ["solstone-core-convey-body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+
+[[legs]]
+id = "classified-full-tests-facets"
+make_target = "check-rust-classified-full-tests-facets"
+set = "component"
+areas = ["facets"]
+packages = ["solstone-core-facets"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
+id = "classified-full-tests-describe"
+make_target = "check-rust-classified-full-tests-describe"
+set = "native"
+areas = ["media"]
+packages = ["solstone-core-describe"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
+id = "classified-full-tests-mcp-endpoint"
+make_target = "check-rust-classified-full-tests-mcp-endpoint"
+set = "component"
+areas = ["trust"]
+packages = ["solstone-core-mcp-endpoint"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"
@@ -454,7 +510,7 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
 serial_group = "local-services"
-default_full = true
+default_full = false
 runtime = "none"
 
 [[package_suites]]
@@ -534,7 +590,7 @@ areas = ["media"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
-default_full = true
+default_full = false
 runtime = "none"
 
 [[package_suites]]
@@ -611,7 +667,7 @@ areas = ["facets"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = true
+default_full = false
 runtime = "none"
 
 [[package_suites]]
@@ -986,6 +1042,17 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
+id = "package::solstone-core-mcp-audit"
+package = "solstone-core-mcp-audit"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
 default_full = true
 runtime = "none"
 
@@ -1307,7 +1374,7 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
-default_full = true
+default_full = false
 runtime = "none"
 
 [[package_suites]]
@@ -1670,6 +1737,17 @@ id = "package::solstone-core-win-owner-rail"
 package = "solstone-core-win-owner-rail"
 set = "component"
 areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
+id = "package::solstone-core-win-dll-load"
+package = "solstone-core-win-dll-load"
+set = "component"
+areas = ["platform"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
@@ -2440,6 +2518,33 @@ required_features = ["test-fixture-pin"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-distribution::windows_payload"
+package = "solstone-core-distribution"
+target = "windows_payload"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-fixture-pin"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-distribution::controlled_build_receipt_race"
+package = "solstone-core-distribution"
+target = "controlled_build_receipt_race"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-entity::entity_trust_lock_component"
 package = "solstone-core-entity"
 target = "entity_trust_lock_component"
@@ -3119,6 +3224,45 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-io::windows_create_only_detailed"
+package = "solstone-core-journal-io"
+target = "windows_create_only_detailed"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_create_only"
+package = "solstone-core-journal-io"
+target = "windows_create_only"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_create_only_protocol"
+package = "solstone-core-journal-io"
+target = "windows_create_only_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-io::windows_generic_writers"
 package = "solstone-core-journal-io"
 target = "windows_generic_writers"
@@ -3132,9 +3276,100 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-io::windows_health_marker_protocol"
+package = "solstone-core-journal-io"
+target = "windows_health_marker_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_snapshot_protocol"
+package = "solstone-core-journal-io"
+target = "windows_snapshot_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_staged_protocol"
+package = "solstone-core-journal-io"
+target = "windows_staged_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-io::windows_ordinary_owner_inventory"
 package = "solstone-core-journal-io"
 target = "windows_ordinary_owner_inventory"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_install_file"
+package = "solstone-core-journal-io"
+target = "windows_install_file"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_install_file_protocol"
+package = "solstone-core-journal-io"
+target = "windows_install_file_protocol"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_oplog_namespace"
+package = "solstone-core-journal-io"
+target = "windows_oplog_namespace"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::windows_oplog_liveness"
+package = "solstone-core-journal-io"
+target = "windows_oplog_liveness"
 set = "component"
 areas = ["journal"]
 platforms = ["windows"]
@@ -3901,6 +4136,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-system::managed_process"
+package = "solstone-core-system"
+target = "managed_process"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-system::windows_lifecycle_receipt"
 package = "solstone-core-system"
 target = "windows_lifecycle_receipt"
@@ -4040,7 +4288,7 @@ platforms = ["linux"]
 prerequisites = ["cargo-cache", "onnx-runtime"]
 timeout = "standard"
 default_full = true
-required_features = []
+required_features = ["runtime"]
 runtime = "onnx"
 
 [[suites]]
@@ -4365,6 +4613,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-cogitate-wire::cogitate_oneshot_process_group"
+package = "solstone-core-cogitate-wire"
+target = "cogitate_oneshot_process_group"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-spp-ratls::attested_channels"
 package = "solstone-core-spp-ratls"
 target = "attested_channels"
@@ -4375,6 +4636,19 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-spp-ratls::nvattest_install"
+package = "solstone-core-spp-ratls"
+target = "nvattest_install"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

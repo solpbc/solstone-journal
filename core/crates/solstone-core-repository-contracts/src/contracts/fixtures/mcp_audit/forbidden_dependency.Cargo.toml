@@ -1,0 +1,9 @@
+[package]
+name = "mcp-audit-forbidden-dependency-fixture"
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-journal-io.workspace = true
+tokio.workspace = true

@@ -52,7 +52,9 @@ fn fixture_make_command(root: &Path, shims: &Path, target: &str) -> Command {
 fn make_ci_never_executes_forbidden_interpreters() {
     assert_gate_never_executes_forbidden_interpreters(
         "ci",
-        &["run", "fmt", "run", "clippy", "test"],
+        &[
+            "run", "fmt", "run", "clippy", "clippy", "clippy", "test", "test",
+        ],
     );
 }
 
@@ -61,6 +63,60 @@ fn make_ci_full_never_executes_forbidden_interpreters() {
     // The Cargo shim records the runner launch. Per-entry traversal is owned by
     // the runner and covered by its selector, poison, and command tests.
     assert_gate_never_executes_forbidden_interpreters("ci-full", &["run"]);
+}
+
+#[test]
+fn make_ci_full_explicit_cloud_selector_invokes_only_cloud_runner_once() {
+    let temp = TempDir::new("ci-full-cloud-selector");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(root, system, arch.trim());
+
+    let shims = root.join("shims");
+    let cloud_log = root.join("cloud.log");
+    let cargo_log = root.join("cargo.log");
+    fs::create_dir(&shims).expect("create cloud-selector shim directory");
+    write_executable(
+        &shims.join("extro-cloud-ci"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLOUD_LOG\"\n",
+    );
+    write_recording_cargo_shim(&shims.join("cargo"));
+
+    let mut command = Command::new("make");
+    command
+        .arg("ci-full")
+        .current_dir(root)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CLOUD_LOG", &cloud_log)
+        .env("SOLSTONE_CI_CARGO_LOG", &cargo_log);
+    isolate_local_ci_fixture(&mut command);
+    command.env("SOLSTONE_CI_CLOUD", "1");
+    let output = command
+        .output()
+        .expect("run explicit cloud-selector fixture");
+    assert!(
+        output.status.success(),
+        "make ci-full explicit cloud selector failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&cloud_log).expect("cloud runner invocation log"),
+        format!("run --source {}\n", root.display())
+    );
+    assert!(!cargo_log.exists(), "explicit cloud selector invoked Cargo");
 }
 
 #[test]
@@ -198,6 +254,7 @@ fn ci_entrypoints_override_hostile_cargo_disk_settings() {
                 .env("CARGO_TARGET_DIR", &target)
                 .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
                 .env("SOLSTONE_CI_CARGO_ENV_LOG", &environment_log);
+            seed_and_isolate_local_ci_fixture(&mut command);
             match channel {
                 OverrideChannel::Environment => {
                     command
@@ -450,6 +507,64 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
                     "--all-targets",
                     "--no-run",
                     "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-sol-link",
+                    "--features",
+                    "full-tests,test-hooks",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-convey-body",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-facets",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-describe",
+                    "--features",
+                    "full-tests",
+                    "--lib",
+                    "--bins",
+                    "--no-run",
+                    "--locked",
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "-p",
+                    "solstone-core-speakers-analyze",
+                    "-p",
+                    "solstone-core-speakers-onnx",
+                    "-p",
+                    "solstone-core-vad-analyze",
+                    "--features",
+                    "full-tests",
+                    "--all-targets",
+                    "--no-run",
+                    "--locked",
                 ]
             );
             let recorded_env = fs::read_to_string(&env_log).expect("read Cargo env log");
@@ -468,6 +583,209 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
             );
         }
     }
+}
+
+#[test]
+fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
+    let temp = TempDir::new("classified-full-clippy-aggregation");
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(&temp.path, system, arch.trim());
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create Clippy shim directory");
+    write_executable(
+        &shims.join("cargo"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLIPPY_LOG\"\ncase \"$*\" in\n  *'--workspace'*) exit 23 ;;\n  *'-p solstone-core-sol-link '*) exit 24 ;;\nesac\n",
+    );
+    let log = temp.path.join("clippy.log");
+    let output = Command::new("make")
+        .arg("check-rust-clippy-full")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CLIPPY_LOG", &log)
+        .output()
+        .expect("run classified full Clippy fixture");
+    assert!(
+        !output.status.success(),
+        "aggregate Clippy masked child failures"
+    );
+    let calls = fs::read_to_string(log).expect("read classified Clippy calls");
+    let calls = calls.lines().collect::<Vec<_>>();
+    assert_eq!(
+        calls.len(),
+        7,
+        "full Clippy stopped before all scopes: {calls:?}"
+    );
+    assert!(calls[0].contains("--workspace"));
+    for (call, package) in calls[1..].iter().zip([
+        "solstone-core-sol-link",
+        "solstone-core-convey-body",
+        "solstone-core-facets",
+        "solstone-core-describe",
+        "solstone-core-mcp-endpoint",
+    ]) {
+        assert!(
+            call.contains(&format!("-p {package}")),
+            "wrong Clippy child order: {call}"
+        );
+        assert!(call.contains("--all-targets") && call.contains("-D warnings"));
+    }
+    let native = calls[6];
+    for package in [
+        "solstone-core-speakers-analyze",
+        "solstone-core-speakers-onnx",
+        "solstone-core-vad-analyze",
+    ] {
+        assert!(
+            native.contains(&format!("-p {package}")),
+            "native full Clippy omitted {package}: {native}"
+        );
+    }
+    assert!(
+        native.contains("--features full-tests")
+            && native.contains("--all-targets")
+            && native.contains("-D warnings")
+    );
+}
+
+#[test]
+fn native_routine_and_staged_full_routes_execute_the_exact_command_graph() {
+    let temp = TempDir::new("native-routine-command-graph");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create native command shims");
+    write_recording_cargo_shim(&shims.join("cargo"));
+    seed_runtime(
+        &temp.path,
+        "linux-x86_64",
+        &[
+            "libonnxruntime.so.1.25.0",
+            "libonnxruntime.so.1",
+            "libonnxruntime.so",
+        ],
+        &[],
+    );
+
+    let cases = [
+        (
+            "check-rust-unit",
+            vec![
+                "test --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline --no-fail-fast -- --test-threads=1",
+                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline --no-fail-fast -- --test-threads=1",
+            ],
+        ),
+        (
+            "check-rust-clippy",
+            vec![
+                "clippy --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline -- -D warnings",
+                "clippy --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --lib --bins --locked --offline -- -D warnings",
+                "clippy --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline -- -D warnings",
+            ],
+        ),
+        (
+            "check-rust-onnx-test",
+            vec![
+                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --features full-tests --lib --bins --locked -- --test-threads=1",
+            ],
+        ),
+    ];
+
+    for (target, expected) in cases {
+        let log = temp.path.join(format!("{target}.cargo"));
+        let output = Command::new("make")
+            .arg(target)
+            .current_dir(&temp.path)
+            .env("PATH", fixture_path(&shims))
+            .env("SOLSTONE_CI_CARGO_LOG", &log)
+            .output()
+            .unwrap_or_else(|error| panic!("run {target}: {error}"));
+        assert!(
+            output.status.success(),
+            "{target} failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(&log)
+                .expect("read native command log")
+                .lines()
+                .collect::<Vec<_>>(),
+            expected,
+            "{target} command graph drifted"
+        );
+    }
+}
+
+#[test]
+fn public_code_evidence_reports_match_only_the_completed_make_path() {
+    let temp = TempDir::new("public-code-evidence");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create code evidence shims");
+    write_recording_cargo_shim(&shims.join("cargo"));
+    let package_list =
+        "solstone-core-speakers-analyze solstone-core-speakers-onnx solstone-core-vad-analyze";
+    let runtime_receipt = format!("Runtime-free library unit tests ran for: {package_list}");
+    let ci_clippy_receipt = format!(
+        "Clippy ran on the default production library and binary targets for: {package_list}"
+    );
+    let test_clippy_receipt = "Clippy did not run. Run 'make ci' to run it.";
+
+    let test_log = temp.path.join("test.cargo");
+    let test_output = Command::new("make")
+        .arg("test")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CI_CARGO_LOG", &test_log)
+        .output()
+        .expect("run make test evidence fixture");
+    assert!(test_output.status.success());
+    let test_stdout = String::from_utf8_lossy(&test_output.stdout);
+    assert!(test_stdout.contains(&runtime_receipt));
+    assert!(test_stdout.contains(test_clippy_receipt));
+    assert!(!test_stdout.contains(&ci_clippy_receipt));
+
+    let ci_log = temp.path.join("ci.cargo");
+    let ci_output = Command::new("make")
+        .arg("ci-under-poison")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CI_CARGO_LOG", &ci_log)
+        .env("SOLSTONE_CI_POISONED", "1")
+        .output()
+        .expect("run make ci evidence fixture");
+    assert!(ci_output.status.success());
+    let ci_stdout = String::from_utf8_lossy(&ci_output.stdout);
+    assert!(ci_stdout.contains(&runtime_receipt));
+    assert!(ci_stdout.contains(&ci_clippy_receipt));
+    assert!(!ci_stdout.contains(test_clippy_receipt));
+
+    write_executable(
+        &shims.join("cargo"),
+        "#!/bin/sh\nset -eu\ncase \"$*\" in *'--no-default-features'*) exit 29 ;; esac\n",
+    );
+    let failed_output = Command::new("make")
+        .arg("test")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .output()
+        .expect("run failed make test evidence fixture");
+    assert!(!failed_output.status.success());
+    let failed_stdout = String::from_utf8_lossy(&failed_output.stdout);
+    assert!(!failed_stdout.contains(&runtime_receipt));
+    assert!(!failed_stdout.contains(test_clippy_receipt));
+    assert!(!failed_stdout.contains(&ci_clippy_receipt));
 }
 
 #[test]
@@ -1478,12 +1796,422 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-fn write_native_receipt_ssh_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
+    (
+        "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
+        "executed/pass",
+    ),
+    ("JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE",
+        "executed/pass",
+    ),
+    ("JOURNAL_WIN_CI_JOB_PROCESS_OWNER", "executed/pass"),
+    ("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE", "executed/pass"),
+    ("JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD", "executed/pass"),
+    ("JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE",
+        "executed/pass",
+    ),
+    ("JOURNAL_WIN_CI_NTFS_PUBLICATION", "executed/pass"),
+    ("JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM", "NTFS"),
+    ("JOURNAL_WIN_CI_REFS_PUBLICATION", "executed/pass"),
+    ("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM", "ReFS"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_NTFS", "executed/pass"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM", "NTFS"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_REFS", "executed/pass"),
+    ("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM", "ReFS"),
+    ("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "NTFS",
+    ),
+    ("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
+const VALID_CORTEX_NAMESPACE_RECEIPTS: [(&str, &str); 28] = [
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION_FILESYSTEM",
+        "NTFS",
+    ),
+    ("JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING_FILESYSTEM",
+        "ReFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION_FILESYSTEM",
+        "ReFS",
+    ),
+    ("JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
+const VALID_NATIVE_RECEIPT_TAIL: [(&str, &str); 4] = [
+    (
+        "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM",
+        "NTFS",
+    ),
+    (
+        "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM",
+        "ReFS",
+    ),
+];
+
+#[derive(Clone, Debug)]
+struct NativeReceiptScenario {
+    name: String,
+    before_acknowledgement: Vec<String>,
+    after_acknowledgement: Vec<String>,
+    expected_diagnostic_key: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CortexReceiptMutation {
+    Omit,
+    Duplicate,
+    Replace(&'static str),
+    MoveAfterAcknowledgement,
+}
+
+fn valid_native_receipts() -> Vec<String> {
+    VALID_NATIVE_RECEIPTS
+        .into_iter()
+        .chain(VALID_CORTEX_NAMESPACE_RECEIPTS)
+        .chain(VALID_NATIVE_RECEIPT_TAIL)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect()
+}
+
+fn cortex_receipt_scenario(
+    name: &str,
+    key: &'static str,
+    diagnostic_key: &'static str,
+    mutation: CortexReceiptMutation,
+) -> NativeReceiptScenario {
+    let valid = valid_native_receipts();
+    let prefix = format!("{key}=");
+    let index = valid
+        .iter()
+        .position(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("valid receipt stream missing {key}"));
+    assert_eq!(
+        valid
+            .iter()
+            .filter(|line| line.starts_with(&prefix))
+            .count(),
+        1,
+        "valid receipt stream must contain exactly one {key}"
+    );
+    let original = valid[index].clone();
+    let mut before = valid.clone();
+    let mut after = Vec::new();
+    match mutation {
+        CortexReceiptMutation::Omit => {
+            before.remove(index);
+            let mut restored = before.clone();
+            restored.insert(index, original);
+            assert_eq!(restored, valid, "omit scenario changed another receipt");
+        }
+        CortexReceiptMutation::Duplicate => {
+            before.insert(index + 1, original.clone());
+            let mut restored = before.clone();
+            assert_eq!(restored.remove(index + 1), original);
+            assert_eq!(
+                restored, valid,
+                "duplicate scenario changed another receipt"
+            );
+        }
+        CortexReceiptMutation::Replace(replacement) => {
+            before[index] = format!("{key}={replacement}");
+            assert_eq!(
+                before
+                    .iter()
+                    .zip(&valid)
+                    .filter(|(left, right)| left != right)
+                    .count(),
+                1,
+                "replacement scenario changed more than one receipt"
+            );
+        }
+        CortexReceiptMutation::MoveAfterAcknowledgement => {
+            after.push(before.remove(index));
+            assert_eq!(after, vec![original.clone()]);
+            let mut restored = before.clone();
+            restored.insert(index, after[0].clone());
+            assert_eq!(restored, valid, "ordering scenario changed another receipt");
+        }
+    }
+    NativeReceiptScenario {
+        name: name.to_owned(),
+        before_acknowledgement: before,
+        after_acknowledgement: after,
+        expected_diagnostic_key: Some(diagnostic_key),
+    }
+}
+
+fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
+    let valid = valid_native_receipts();
+    let mut scenarios = vec![
+        NativeReceiptScenario {
+            name: "valid".into(),
+            before_acknowledgement: valid.clone(),
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "missing".into(),
+            before_acknowledgement: valid[..7].to_vec(),
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "duplicate".into(),
+            before_acknowledgement: {
+                let mut receipts = valid.clone();
+                receipts.push("JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass".into());
+                receipts
+            },
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "filesystem-extra".into(),
+            before_acknowledgement: {
+                let mut receipts = valid.clone();
+                receipts.push("JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=NTFS".into());
+                receipts
+            },
+            after_acknowledgement: Vec::new(),
+            expected_diagnostic_key: None,
+        },
+        NativeReceiptScenario {
+            name: "post".into(),
+            before_acknowledgement: Vec::new(),
+            after_acknowledgement: valid,
+            expected_diagnostic_key: None,
+        },
+    ];
+    for (short, key, diagnostic_key, wrong_value) in [
+        (
+            "ntfs-execution",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "fixture-invalid",
+        ),
+        (
+            "ntfs-filesystem",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM",
+            "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+            "ReFS",
+        ),
+        (
+            "refs-execution",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "fixture-invalid",
+        ),
+        (
+            "refs-filesystem",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM",
+            "JOURNAL_WIN_CI_CORTEX_USE_REFS",
+            "NTFS",
+        ),
+    ] {
+        scenarios.extend([
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-omit"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Omit,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-duplicate"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Duplicate,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-wrong-value"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Replace(wrong_value),
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-{short}-post"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::MoveAfterAcknowledgement,
+            ),
+        ]);
+    }
+    for (index, (key, value)) in VALID_CORTEX_NAMESPACE_RECEIPTS.into_iter().enumerate() {
+        let diagnostic_key = key.strip_suffix("_FILESYSTEM").unwrap_or(key);
+        let wrong_value = match value {
+            "NTFS" => "ReFS",
+            "ReFS" => "NTFS",
+            _ => "fixture-invalid",
+        };
+        scenarios.extend([
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-omit"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Omit,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-duplicate"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Duplicate,
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-wrong-value"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::Replace(wrong_value),
+            ),
+            cortex_receipt_scenario(
+                &format!("cortex-namespace-{index}-post"),
+                key,
+                diagnostic_key,
+                CortexReceiptMutation::MoveAfterAcknowledgement,
+            ),
+        ]);
+    }
+    scenarios
+}
+
+fn shell_receipt_lines(lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("printf '%s\\n' '{line}'\n"))
+        .collect()
+}
+
+fn write_native_receipt_ssh_shim(
+    temp: &TempDir,
+    scenario: &NativeReceiptScenario,
+) -> (PathBuf, PathBuf) {
     let shim = temp.path.join(".git/native-receipt-ssh-shim");
     let log = temp.path.join(".git/native-receipt-ssh.log");
-    write_executable(
-        &shim,
-        r#"#!/bin/sh
+    let script = r#"#!/bin/sh
 set -eu
 printf '%s\n' "$*" >> "$SOLSTONE_SSH_LOG"
 snapshot_sha=$(sed -n 's/^  "commit": "\([0-9a-f]*\)",$/\1/p' target/win-host-ci-source-binding.json)
@@ -1497,53 +2225,19 @@ printf 'JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%s\n' "$cargo_lock_sha256"
 printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$cloud"
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed'
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed'
-emit_receipts() {
-  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_PROCESS_OWNER=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM=ReFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-  printf '%s\n' 'JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=ReFS'
-}
-case "${SOLSTONE_SSH_SCENARIO:-valid}" in
-  valid) emit_receipts ;;
-  missing)
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS'
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass'
-    printf '%s\n' 'JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS'
-    ;;
-  duplicate)
-    emit_receipts
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass'
-    ;;
-  filesystem-extra)
-    emit_receipts
-    printf '%s\n' 'JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=NTFS'
-    ;;
-  post)
-    printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
-    emit_receipts
-    exit 0
-    ;;
-  *) exit 97 ;;
-esac
+__BEFORE_ACKNOWLEDGEMENT__
 printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
-"#,
+__AFTER_ACKNOWLEDGEMENT__
+"#
+    .replace(
+        "__BEFORE_ACKNOWLEDGEMENT__\n",
+        &shell_receipt_lines(&scenario.before_acknowledgement),
+    )
+    .replace(
+        "__AFTER_ACKNOWLEDGEMENT__\n",
+        &shell_receipt_lines(&scenario.after_acknowledgement),
     );
+    write_executable(&shim, &script);
     (shim, log)
 }
 
@@ -1553,7 +2247,6 @@ fn run_native_receipt_driver(
     scp_log: &Path,
     ssh: &Path,
     ssh_log: &Path,
-    scenario: &str,
 ) -> std::process::Output {
     Command::new("sh")
         .arg("scripts/win-host-ci.sh")
@@ -1563,7 +2256,6 @@ fn run_native_receipt_driver(
         .env("SSH", ssh)
         .env("SOLSTONE_SCP_LOG", scp_log)
         .env("SOLSTONE_SSH_LOG", ssh_log)
-        .env("SOLSTONE_SSH_SCENARIO", scenario)
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
         .env("PATH", fixture_path(&temp.path.join("scripts")))
@@ -1573,19 +2265,28 @@ fn run_native_receipt_driver(
 
 #[test]
 fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
-    for scenario in ["valid", "missing", "duplicate", "filesystem-extra", "post"] {
-        let temp = windows_transport_fixture(&format!("windows-native-receipt-{scenario}"));
+    for scenario in native_receipt_scenarios() {
+        let temp = windows_transport_fixture(&format!("windows-native-receipt-{}", scenario.name));
         let (scp, scp_log) = write_transport_scp_shim(&temp);
-        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp);
-        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, scenario);
+        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &scenario);
+        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log);
         assert_eq!(
             output.status.success(),
-            scenario == "valid",
-            "receipt scenario {scenario} had unexpected result:\nstdout:\n{}\nstderr:\n{}",
+            scenario.name == "valid",
+            "receipt scenario {} had unexpected result:\nstdout:\n{}\nstderr:\n{}",
+            scenario.name,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        if scenario == "valid" {
+        if let Some(key) = scenario.expected_diagnostic_key {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(key),
+                "receipt scenario {} failed for the wrong marker:\n{}",
+                scenario.name,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        if scenario.name == "valid" {
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(stdout.contains("JOURNAL_WIN_HOST_CI_VERIFIED"));
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
@@ -1607,6 +2308,8 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         "windows_job_last_handle_negative_receipt",
         "ntfs_publication_receipt",
         "refs_publication_receipt",
+        "ntfs_cortex_use_receipt",
+        "refs_cortex_use_receipt",
         "ntfs_managed_log_reference_receipt",
         "refs_managed_log_reference_receipt",
         "ntfs_stale_heartbeat_cleanup_receipt",
@@ -1625,6 +2328,8 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE",
         "JOURNAL_WIN_CI_NTFS_PUBLICATION",
         "JOURNAL_WIN_CI_REFS_PUBLICATION",
+        "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
+        "JOURNAL_WIN_CI_CORTEX_USE_REFS",
         "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE",
         "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE",
         "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
@@ -1637,6 +2342,25 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         assert!(
             driver.contains(marker),
             "driver missing receipt marker validator {marker}"
+        );
+    }
+    for fragment in [
+        "JOURNAL_WIN_CI_CORTEX_NAMESPACE_",
+        "CREATE_ADMIT",
+        "WRONG_KIND_REPARSE",
+        "RETAINED_ROOT",
+        "RETAINED_HEALTH",
+        "FAILURE_MAPPING",
+        "PRESERVATION",
+        "LOCK",
+    ] {
+        assert!(
+            runner.contains(fragment),
+            "runner missing Cortex namespace receipt fragment {fragment}"
+        );
+        assert!(
+            driver.contains(fragment),
+            "driver missing Cortex namespace receipt fragment {fragment}"
         );
     }
     for retired in [

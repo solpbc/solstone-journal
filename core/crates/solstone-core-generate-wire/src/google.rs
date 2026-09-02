@@ -12,7 +12,10 @@ use solstone_core_local::HttpResponse;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::token_budget::generate_token_budget;
-use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
+use crate::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
+};
 
 const GOOGLE_API_KEY_ENV: &str = "GOOGLE_API_KEY";
 const GOOGLE_BASE_URL: &str = "https://generativelanguage.googleapis.com";
@@ -32,6 +35,7 @@ const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoogleFailure {
     pub reason_code: Option<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +45,7 @@ pub struct GoogleGenerated {
     pub usage: Value,
     pub finish_reason: String,
     pub thinking: Option<Value>,
+    pub raw_response_snippet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +151,15 @@ fn google_converse_with<T: GoogleTransport>(
         Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return converse_failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return GoogleConverseResult::Failed(ConverseFailure {
+            reason_code: reason_code.to_owned(),
+            retryable,
+            blocking,
+            detail,
+        });
     }
     let offered = tools.iter().map(|tool| tool.name.clone()).collect();
     parse_converse_response(&response.body, &offered)
@@ -193,9 +206,14 @@ fn google_generate_with_lookup<T: GoogleTransport>(
         Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
     };
     if !(200..300).contains(&response.status) {
-        return failure(classify_http_failure(response.status, &response.body));
+        let reason_code = classify_http_failure(response.status, &response.body);
+        let detail = capture_provider_detail(&response.body, &api_key);
+        return GoogleResult::Failed(GoogleFailure {
+            reason_code: Some(reason_code.to_owned()),
+            detail,
+        });
     }
-    parse_response(&response.body)
+    parse_response(&response.body, &api_key)
 }
 
 fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
@@ -269,39 +287,42 @@ fn converse_request_body(
     messages: &[ConverseMessage],
     tools: &[ConverseToolSpec],
 ) -> Value {
-    let contents =
-        messages
-            .iter()
-            .map(|message| match message {
-                ConverseMessage::User { text } => {
-                    json!({"role": "user", "parts": [{"text": text}]})
+    let contents = messages
+        .iter()
+        .map(|message| match message {
+            ConverseMessage::User { text } => {
+                json!({"role": "user", "parts": [{"text": text}]})
+            }
+            ConverseMessage::Assistant { text, tool_calls } => {
+                let mut parts = Vec::new();
+                if !text.is_empty() {
+                    parts.push(json!({"text": text}));
                 }
-                ConverseMessage::Assistant { text, tool_calls } => {
-                    // Multi-turn Gemini 3 tool history needs thoughtSignature replay;
-                    // this generic assistant representation does not carry it yet.
-                    let mut parts = Vec::new();
-                    if !text.is_empty() {
-                        parts.push(json!({"text": text}));
+                for call in tool_calls {
+                    let mut part = json!({
+                        "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
+                    });
+                    if let Some(signature) = &call.thought_signature {
+                        part["thoughtSignature"] = json!(signature);
                     }
-                    parts.extend(tool_calls.iter().map(|call| json!({
-                    "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
-                })));
-                    json!({"role": "model", "parts": parts})
+                    parts.push(part);
                 }
-                ConverseMessage::ToolResult {
-                    tool_call_id,
-                    tool_name,
-                    output,
-                } => json!({
-                    "role": "user",
-                    "parts": [{"functionResponse": {
-                        "id": tool_call_id,
-                        "name": tool_name,
-                        "response": {"result": output},
-                    }}],
-                }),
-            })
-            .collect::<Vec<_>>();
+                json!({"role": "model", "parts": parts})
+            }
+            ConverseMessage::ToolResult {
+                tool_call_id,
+                tool_name,
+                output,
+            } => json!({
+                "role": "user",
+                "parts": [{"functionResponse": {
+                    "id": tool_call_id,
+                    "name": tool_name,
+                    "response": {"result": output},
+                }}],
+            }),
+        })
+        .collect::<Vec<_>>();
     let mut body = json!({
         "contents": contents,
         "tools": [{"functionDeclarations": tools.iter().map(|tool| json!({
@@ -334,7 +355,8 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
         .unwrap_or(DEFAULT_TIMEOUT)
 }
 
-fn parse_response(body: &str) -> GoogleResult {
+fn parse_response(body: &str, secret: &str) -> GoogleResult {
+    let raw_snippet = capture_provider_detail(body, secret);
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return failure("provider_response_invalid");
     };
@@ -376,6 +398,7 @@ fn parse_response(body: &str) -> GoogleResult {
         usage,
         finish_reason: normalize_finish_reason(candidate),
         thinking: None,
+        raw_response_snippet: raw_snippet,
     })
 }
 
@@ -416,7 +439,11 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             text.push_str(value);
         }
         if let Some(function_call) = part.get("functionCall") {
-            function_parts.push(function_call);
+            let thought_signature = part
+                .get("thoughtSignature")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            function_parts.push((function_call, thought_signature));
         }
     }
     let finish_reason = normalize_finish_reason(candidate);
@@ -434,7 +461,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
         return converse_failure("tool_call_arguments_invalid");
     }
     let mut tool_calls = Vec::new();
-    for (position, function_call) in function_parts.into_iter().enumerate() {
+    for (position, (function_call, thought_signature)) in function_parts.into_iter().enumerate() {
         let Some(name) = function_call
             .get("name")
             .and_then(Value::as_str)
@@ -465,6 +492,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             name: name.to_owned(),
             arguments: arguments.clone(),
             not_offered: !offered.contains(name),
+            thought_signature: thought_signature.map(str::to_owned),
         });
     }
     GoogleConverseResult::Turn(Box::new(ConverseTurn {
@@ -601,9 +629,27 @@ fn is_context_window_error(body: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let scrubbed = if secret.is_empty() {
+        body.to_owned()
+    } else {
+        body.replace(secret, "[redacted]")
+    };
+    Some(
+        scrubbed
+            .chars()
+            .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
+            .collect(),
+    )
+}
+
 fn failure(reason_code: &str) -> GoogleResult {
     GoogleResult::Failed(GoogleFailure {
         reason_code: Some(reason_code.to_owned()),
+        detail: None,
     })
 }
 
@@ -613,6 +659,7 @@ fn converse_failure(reason_code: &str) -> GoogleConverseResult {
         reason_code: reason_code.to_owned(),
         retryable,
         blocking,
+        detail: None,
     })
 }
 
@@ -642,7 +689,9 @@ mod tests {
     use solstone_core_generate::{ContentPart, ReasonCodeValue};
 
     use super::*;
-    use crate::{LaneOutcome, ProviderResultView, assess_provider_result, refusal_for};
+    use crate::{
+        LaneOutcome, ProviderResultView, ValidationFailure, assess_provider_result, refusal_for,
+    };
 
     #[derive(Default)]
     struct StubTransport {
@@ -738,7 +787,7 @@ mod tests {
     }
 
     fn parsed(body: Value) -> GoogleGenerated {
-        generated(parse_response(&body.to_string()))
+        generated(parse_response(&body.to_string(), ""))
     }
 
     fn temp_journal() -> std::path::PathBuf {
@@ -888,11 +937,13 @@ mod tests {
                 "promptFeedback": {"blockReason": "SAFETY"},
             })
             .to_string(),
+            "",
         );
         assert_eq!(
             result,
             GoogleResult::Failed(GoogleFailure {
                 reason_code: Some("provider_response_invalid".into()),
+                detail: None,
             })
         );
     }
@@ -964,6 +1015,7 @@ mod tests {
             usage: &zero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         assert!(!journal.join("tokens").exists());
@@ -982,6 +1034,7 @@ mod tests {
             usage: &nonzero.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert!(assessment.token_log_error.is_none());
         let files = fs::read_dir(journal.join("tokens")).unwrap().count();
@@ -1073,7 +1126,8 @@ mod tests {
         assert_eq!(
             result,
             GoogleResult::Failed(GoogleFailure {
-                reason_code: Some("provider_key_missing".into())
+                reason_code: Some("provider_key_missing".into()),
+                detail: None,
             })
         );
         assert!(transport.posts.is_empty());
@@ -1086,7 +1140,8 @@ mod tests {
             assert_eq!(
                 google_generate_with(&request(), &config(key, None), &mut transport),
                 GoogleResult::Failed(GoogleFailure {
-                    reason_code: Some("provider_key_missing".into())
+                    reason_code: Some("provider_key_missing".into()),
+                    detail: None,
                 })
             );
             assert!(transport.posts.is_empty());
@@ -1111,6 +1166,73 @@ mod tests {
         let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
         assert!(!refusal.detail.contains(credential));
         assert_eq!(transport.api_keys, [credential]);
+    }
+
+    #[test]
+    fn non_context_window_http_error_body_reaches_refusal_detail() {
+        let body = r#"{"error":{"message":"invalid temperature distinctive-400-google"}}"#;
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 400,
+                body: body.to_owned(),
+            })],
+            ..Default::default()
+        };
+        let GoogleResult::Failed(failure) = google_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("400 must fail");
+        };
+        assert_eq!(failure.detail.as_deref(), Some(body));
+        let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
+        assert_eq!(refusal.detail, body);
+        assert!(!refusal.detail.contains("fixture"));
+        assert_ne!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+    }
+
+    #[test]
+    fn blank_extracted_text_keeps_distinctive_raw_snippet_on_refusal() {
+        let mut body = successful_body();
+        body["candidates"] = json!([{
+            "content": {"parts": [{"text": ""}]},
+            "finishReason": "STOP",
+        }]);
+        body["distinctive"] = json!("blank-visible-google-xyz");
+        let generated = parsed(body);
+        assert!(generated.text.trim().is_empty());
+        let snippet = generated
+            .raw_response_snippet
+            .as_deref()
+            .expect("raw snippet");
+        assert!(snippet.contains("blank-visible-google-xyz"));
+        let journal = temp_journal();
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &generated.model,
+            text: &generated.text,
+            finish_reason: &generated.finish_reason,
+            usage: &generated.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+            raw_response_snippet: generated.raw_response_snippet.as_deref(),
+        });
+        assert_eq!(
+            assessment.failure,
+            Some(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: generated.raw_response_snippet.clone(),
+            })
+        );
+        let refusal = refusal_for(
+            &LaneOutcome::ValidationFailure(assessment.failure.unwrap()),
+            "google",
+            None,
+        );
+        assert!(refusal.detail.contains("blank-visible-google-xyz"));
+        assert!(!refusal.detail.contains("fixture"));
+        let _ = fs::remove_dir_all(journal);
     }
 
     /// Gemini refuses `additionalProperties` inside a function declaration.
@@ -1185,6 +1307,137 @@ mod tests {
     }
 
     #[test]
+    fn converse_captures_gemini_thought_signature() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"name":"weather","args":{"city":"Denver"}},"thoughtSignature":"sig-denver"},
+                    {"functionCall":{"name":"weather","args":{"city":"Boulder"}},"thoughtSignature":"sig-boulder"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("a gemini tool call with thoughtSignature must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 2);
+        let denver = turn
+            .tool_calls
+            .iter()
+            .find(|call| call.arguments["city"] == "Denver")
+            .expect("denver call");
+        let boulder = turn
+            .tool_calls
+            .iter()
+            .find(|call| call.arguments["city"] == "Boulder")
+            .expect("boulder call");
+        assert_eq!(denver.thought_signature.as_deref(), Some("sig-denver"));
+        assert_eq!(boulder.thought_signature.as_deref(), Some("sig-boulder"));
+        assert_ne!(denver.id, boulder.id);
+        assert!(!denver.id.is_empty());
+    }
+
+    #[test]
+    fn converse_pairs_thought_signature_with_its_functioncall_not_every_part() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"text":"thinking..."},
+                    {"functionCall":{"name":"weather","args":{"city":"Denver"}}},
+                    {"functionCall":{"name":"weather","args":{"city":"Boulder"}},"thoughtSignature":"sig-boulder"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("mixed text and functionCall parts must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 2);
+        assert!(turn.text.contains("thinking..."));
+        assert_eq!(turn.tool_calls[0].thought_signature, None);
+        assert_eq!(
+            turn.tool_calls[1].thought_signature.as_deref(),
+            Some("sig-boulder")
+        );
+    }
+
+    #[test]
+    fn converse_treats_missing_or_empty_thought_signature_as_none() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"name":"weather","args":{"city":"a"}}},
+                    {"functionCall":{"name":"weather","args":{"city":"b"}},"thoughtSignature":""},
+                    {"functionCall":{"name":"weather","args":{"city":"c"}},"thoughtSignature":"keep-me"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("missing or empty thoughtSignature must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 3);
+        assert_eq!(turn.tool_calls[0].thought_signature, None);
+        assert_eq!(turn.tool_calls[1].thought_signature, None);
+        assert_eq!(
+            turn.tool_calls[2].thought_signature.as_deref(),
+            Some("keep-me")
+        );
+    }
+
+    #[test]
+    fn converse_replays_thought_signature_on_gemini_tool_history() {
+        let messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: Some("sig-1".to_string()),
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+            },
+        ];
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let body = converse_request_body(&request(), &messages, &tools);
+        assert_eq!(
+            crate::converse::canonical_json(&body),
+            crate::converse::canonical_json(&json!({
+                "contents":[
+                    {"role":"user","parts":[{"text":"ask"}]},
+                    {"role":"model","parts":[{"text":"working"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}},"thoughtSignature":"sig-1"}]},
+                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"result":"sunny"}}}]}
+                ],
+                "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
+                "generationConfig":{"temperature":0.3,"maxOutputTokens":4000},
+                "systemInstruction":{"parts":[{"text":"system"}]}
+            }))
+        );
+        assert!(
+            body["contents"][2]["parts"][0]
+                .get("thoughtSignature")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn converse_body_and_tool_turns_follow_gemini_shapes() {
         let messages = vec![
             ConverseMessage::User { text: "ask".into() },
@@ -1195,6 +1448,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"city":"Denver"}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {
@@ -1245,6 +1499,7 @@ mod tests {
         assert_eq!(turn.finish_reason, "tool_calls");
         assert_eq!(turn.text, "before");
         assert!(!turn.tool_calls[0].not_offered);
+        assert!(turn.tool_calls[0].thought_signature.is_none());
         assert_eq!(
             turn.usage,
             json!({"input_tokens":2,"output_tokens":3,"total_tokens":5,"reasoning_tokens":1,"model_version":"gemini"})
@@ -1255,6 +1510,7 @@ mod tests {
                 "candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"before"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}}}]}}]
             })
             .to_string(),
+            "",
         ) else {
             panic!("generated response expected")
         };
@@ -1295,6 +1551,7 @@ mod tests {
             usage: &unoffered.usage,
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(assessment.failure, None);
         let GoogleConverseResult::Failed(invalid) = parse_converse_response(&json!({

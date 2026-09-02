@@ -50,7 +50,7 @@ fn secret_array(secret: &[u8]) -> Result<[u8; 8], TransportError> {
         .map_err(|_| TransportError::PairLink("relay secret length".to_string()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     #[test]
     fn spl_entry_module_stays_one_shot() {

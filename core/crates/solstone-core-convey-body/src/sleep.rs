@@ -166,7 +166,7 @@ pub fn pick_day_sleep(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
 

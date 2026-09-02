@@ -63,7 +63,7 @@ fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
 
     assert!(
         source.contains(
-            "use solstone_core_journal_config::{\n    McpEndpointCapability, mcp_endpoint_capability, read_journal_config_bound,\n};"
+            "use solstone_core_journal_config::{\n    McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,\n    mcp_endpoint_force_staging_renewal, read_journal_config_bound,\n};"
         ),
         "Unix bootstrap must import the established descriptor-bound config pipeline"
     );
@@ -91,9 +91,23 @@ fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
         "Unix bootstrap must use the established endpoint capability gate once"
     );
     assert_eq!(
+        count_occurrences(&source, "mcp_endpoint_force_staging_renewal("),
+        1,
+        "Unix bootstrap must derive the recovery-only setting from the same bound config read once"
+    );
+    assert_eq!(
         count_occurrences(&source, "load_committed_identity_bound("),
         1,
         "Unix bootstrap must use the descriptor-bound committed-identity loader once"
+    );
+    assert_eq!(
+        count_occurrences(&source, "\"state.json\""),
+        1,
+        "Unix bootstrap must reserve the sole state.json literal for owner-held TLS state"
+    );
+    assert!(
+        source.contains("const TLS_STATE_FILE: &str = \"state.json\";"),
+        "Unix bootstrap must bind the sole state.json literal to owner-held TLS state"
     );
 
     let local_capability_function = ["fn mcp_", "endpoint_capability("].concat();
@@ -104,8 +118,11 @@ fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
         "MCP_ENDPOINT_LOOPBACK_PORT",
         "struct JournalConfigRead",
         "enum McpEndpointCapability",
-        "state.json",
         "link/ca",
+        "link/state.json",
+        "link\\\\state.json",
+        "join(\"link\")",
+        "link.join(",
         "read_state(",
         "parse_state(",
         "fn parse_config",

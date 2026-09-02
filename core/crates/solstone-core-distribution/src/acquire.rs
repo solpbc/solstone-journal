@@ -14,6 +14,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 use serde::Serialize;
+#[cfg(not(windows))]
 use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::onnx_runtime;
@@ -65,6 +66,7 @@ impl From<pdfium::StageError> for AcquireError {
     }
 }
 
+#[cfg(not(windows))]
 impl From<solstone_core_artifact_download::ArchiveError> for AcquireError {
     fn from(error: solstone_core_artifact_download::ArchiveError) -> Self {
         Self::new(error.to_string())
@@ -76,6 +78,8 @@ struct BuilderInputsFile {
     schema: String,
     ffmpeg: FetchableInput,
     zig: FetchableInput,
+    cmake_windows_x86_64: VersionedFetchableInput,
+    python_windows_x86_64: VersionedFetchableInput,
     #[serde(rename = "rust_std_aarch64_unknown_linux_gnu")]
     rust_std_aarch64_gnu: FetchableInput,
     #[serde(rename = "rust_std_aarch64_unknown_linux_musl")]
@@ -92,6 +96,38 @@ struct FetchableInput {
     size: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct VersionedFetchableInput {
+    version: String,
+    #[serde(flatten)]
+    input: FetchableInput,
+}
+
+/// The exact CMake archive admitted into a Windows controlled-build slot.
+///
+/// Acquisition and the CED receipt path share this one parsed identity so a
+/// future builder-input edit cannot silently desynchronize download admission
+/// from the bytes recorded beside the produced DLL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WindowsCmakeArchiveInput {
+    pub version: String,
+    pub filename: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+/// The exact embeddable Python archive admitted into an ONNX Windows build
+/// slot. It is a builder input, not a runtime or owner-package dependency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WindowsPythonArchiveInput {
+    pub version: String,
+    pub filename: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Default)]
 struct Flags {
     dest: Option<PathBuf>,
@@ -103,7 +139,7 @@ struct Flags {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution acquire <ffmpeg|onnx|pdfium|builder-inputs> [FLAG]"
+    "usage: solstone-distribution acquire <ffmpeg|onnx|pdfium|builder-inputs|cmake-windows|python-windows> [FLAG]"
 }
 
 pub fn run(args: &[String]) -> Result<(), AcquireError> {
@@ -117,6 +153,8 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
         "onnx" => acquire_onnx(&repo, &flags)?,
         "pdfium" => acquire_pdfium(&repo, &flags)?,
         "builder-inputs" => acquire_builder_inputs(&repo, flags.dest.as_deref())?,
+        "cmake-windows" => acquire_cmake_windows(&repo, flags.dest.as_deref())?,
+        "python-windows" => acquire_python_windows(&repo, flags.dest.as_deref())?,
         other => {
             return Err(AcquireError::new(format!(
                 "unknown acquire command {other:?}\n{}",
@@ -182,19 +220,63 @@ fn load_builder_inputs(repo: &Path) -> Result<BuilderInputsFile, AcquireError> {
     Ok(parsed)
 }
 
+pub(crate) fn windows_cmake_archive_input(
+    repo: &Path,
+) -> Result<WindowsCmakeArchiveInput, AcquireError> {
+    let input = load_builder_inputs(repo)?.cmake_windows_x86_64;
+    Ok(WindowsCmakeArchiveInput {
+        version: input.version,
+        filename: input.input.filename,
+        url: input.input.url,
+        sha256: input.input.sha256,
+        size: input.input.size,
+    })
+}
+
+pub(crate) fn windows_python_archive_input(
+    repo: &Path,
+) -> Result<WindowsPythonArchiveInput, AcquireError> {
+    let input = load_builder_inputs(repo)?.python_windows_x86_64;
+    Ok(WindowsPythonArchiveInput {
+        version: input.version,
+        filename: input.input.filename,
+        url: input.input.url,
+        sha256: input.input.sha256,
+        size: input.input.size,
+    })
+}
+
+fn fetch_verified(
+    url: &str,
+    sha256: &str,
+    size: Option<u64>,
+    dest: &Path,
+) -> Result<bool, AcquireError> {
+    #[cfg(not(windows))]
+    {
+        Ok(ensure_verified_url(
+            url,
+            sha256,
+            size,
+            dest,
+            &BUILDER_INPUT_DOWNLOAD_POLICY,
+            |_, _| {},
+        )?)
+    }
+    #[cfg(windows)]
+    {
+        let _ = (url, sha256, size, dest);
+        Err(AcquireError::new(
+            "distribution acquire is not supported on windows",
+        ))
+    }
+}
+
 fn fetch_input(input: &FetchableInput, dest: &Path) -> Result<bool, AcquireError> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    let fetched = ensure_verified_url(
-        &input.url,
-        &input.sha256,
-        Some(input.size),
-        dest,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
-    )?;
-    Ok(fetched)
+    fetch_verified(&input.url, &input.sha256, Some(input.size), dest)
 }
 
 fn acquire_ffmpeg(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
@@ -236,6 +318,49 @@ fn acquire_builder_inputs(repo: &Path, dest: Option<&Path>) -> Result<(), Acquir
     Ok(())
 }
 
+/// Acquire the CMake archive admitted for a Windows controlled-build slot.
+///
+/// This deliberately remains separate from `builder-inputs`: those bytes make
+/// the Linux cleanroom image, while this archive is a verified driver-side
+/// input that must be transferred into a Windows slot before its network deny
+/// boundary is armed.
+fn acquire_cmake_windows(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
+    let cmake = windows_cmake_archive_input(repo)?;
+    let dest = dest.map(Path::to_path_buf).unwrap_or_else(|| {
+        repo.join("target/windows-builder-inputs")
+            .join(&cmake.filename)
+    });
+    let fetched = fetch_verified(&cmake.url, &cmake.sha256, Some(cmake.size), &dest)?;
+    println!(
+        "cmake {} version={} dest={}",
+        if fetched { "fetched" } else { "cached" },
+        cmake.version,
+        dest.display()
+    );
+    Ok(())
+}
+
+/// Acquire the embeddable Python archive admitted for the Windows ONNX slot.
+///
+/// As with CMake, this is deliberately separate from `builder-inputs`: it is
+/// verified on the driver and transferred before the native slot blocks
+/// egress, rather than becoming a host prerequisite or shipped payload.
+fn acquire_python_windows(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
+    let python = windows_python_archive_input(repo)?;
+    let dest = dest.map(Path::to_path_buf).unwrap_or_else(|| {
+        repo.join("target/windows-builder-inputs")
+            .join(&python.filename)
+    });
+    let fetched = fetch_verified(&python.url, &python.sha256, Some(python.size), &dest)?;
+    println!(
+        "python {} version={} dest={}",
+        if fetched { "fetched" } else { "cached" },
+        python.version,
+        dest.display()
+    );
+    Ok(())
+}
+
 fn acquire_onnx(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
     let target = flags
         .target
@@ -255,14 +380,7 @@ fn acquire_onnx(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         .ok_or_else(|| AcquireError::new("onnx wheel url has no file name"))?;
     let wheel_path = cache_dir.join(wheel_name);
     let alias = cache_dir.join(format!("onnxruntime-{target}.whl"));
-    let fetched = ensure_verified_url(
-        spec.wheel_url,
-        spec.wheel_sha256,
-        None,
-        &wheel_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
-    )?;
+    let fetched = fetch_verified(spec.wheel_url, spec.wheel_sha256, None, &wheel_path)?;
     if alias != wheel_path {
         fs::copy(&wheel_path, &alias)?;
     }
@@ -366,7 +484,11 @@ fn write_onnx_link_dir(
     }
     for name in rest {
         let link_path = link_dir.join(name);
-        if std::os::unix::fs::symlink(primary, &link_path).is_err() {
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(primary, &link_path).is_ok();
+        #[cfg(not(unix))]
+        let linked = false;
+        if !linked {
             fs::copy(&primary_path, &link_path)?;
         }
     }
@@ -387,13 +509,11 @@ fn acquire_pdfium(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         .unwrap_or_else(|| repo.join(PDF_CACHE));
     fs::create_dir_all(&cache_dir)?;
     let archive_path = cache_dir.join(spec.archive_name);
-    let fetched = ensure_verified_url(
+    let fetched = fetch_verified(
         &spec.archive_url(),
         spec.archive_sha256,
         None,
         &archive_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
     )?;
     println!(
         "pdfium archive {} dest={}",
@@ -401,13 +521,11 @@ fn acquire_pdfium(repo: &Path, flags: &Flags) -> Result<(), AcquireError> {
         archive_path.display()
     );
     let attestation_path = cache_dir.join(pdfium::ATTESTATION_NAME);
-    ensure_verified_url(
+    fetch_verified(
         &pdfium::attestation_url(),
         pdfium::ATTESTATION_SHA256,
         None,
         &attestation_path,
-        &BUILDER_INPUT_DOWNLOAD_POLICY,
-        |_, _| {},
     )?;
     let attestation = verify_pdfium_attestation(&archive_path)?;
     let archive = fs::read(&archive_path)?;
@@ -597,6 +715,34 @@ mod tests {
         assert_eq!(inputs.ffmpeg.sha256.len(), 64);
         assert!(inputs.ffmpeg.url.starts_with("https://github.com/"));
         assert!(inputs.zig.url.starts_with("https://ziglang.org/"));
+        assert_eq!(inputs.cmake_windows_x86_64.version, "3.31.12");
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.filename,
+            "cmake-3.31.12-windows-x86_64.zip"
+        );
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.url,
+            "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip"
+        );
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.sha256,
+            "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
+        );
+        assert_eq!(inputs.cmake_windows_x86_64.input.size, 46_666_397);
+        assert_eq!(inputs.python_windows_x86_64.version, "3.12.10");
+        assert_eq!(
+            inputs.python_windows_x86_64.input.filename,
+            "python-3.12.10-embed-amd64.zip"
+        );
+        assert_eq!(
+            inputs.python_windows_x86_64.input.url,
+            "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
+        );
+        assert_eq!(
+            inputs.python_windows_x86_64.input.sha256,
+            "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
+        );
+        assert_eq!(inputs.python_windows_x86_64.input.size, 11_133_606);
     }
 
     #[test]

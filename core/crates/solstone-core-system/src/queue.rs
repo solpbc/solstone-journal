@@ -4,6 +4,7 @@
 //! Per-partition task admission, lifecycle, and deadline enforcement.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::ffi::OsString;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -287,6 +288,12 @@ pub struct TaskQueueOptions {
     pub ready: bool,
     /// Test synchronization seam invoked after Phase B and before Phase C.
     pub before_deadline_commit: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Environment merged into every queued task's spawn, e.g. an inherited
+    /// speakers-analyze generation (see
+    /// `solstone-core-transcribe::SpeakersAnalyzeGeneration`) so a scheduled
+    /// `journal think --day` catchup task borrows the supervisor's held
+    /// generation. Tasks that do not consult these keys ignore them.
+    pub child_environment: BTreeMap<OsString, OsString>,
 }
 
 /// A synchronous, per-partition task queue.
@@ -320,6 +327,7 @@ struct QueueOptions {
     queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
     process_sink: Option<Arc<dyn ProcessEventSink>>,
     before_deadline_commit: Option<Arc<dyn Fn() + Send + Sync>>,
+    child_environment: BTreeMap<OsString, OsString>,
 }
 
 struct QueueState {
@@ -431,6 +439,7 @@ impl TaskQueue {
                     queue_sink: options.queue_sink,
                     process_sink: options.process_sink,
                     before_deadline_commit: options.before_deadline_commit,
+                    child_environment: options.child_environment,
                 },
                 state: Mutex::new(QueueState {
                     ready: options.ready,
@@ -1121,7 +1130,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             reference: primary.clone(),
             day: dispatch.submission.day.clone(),
             sink: inner.options.process_sink.clone(),
-            environment: Default::default(),
+            environment: inner.options.child_environment.clone(),
         },
         timeout,
     );
@@ -1596,6 +1605,7 @@ mod tests {
             process_sink: None,
             ready,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(plan_spawner(plans));
         queue
@@ -2116,6 +2126,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Failure])));
         let provenance = DailyCatchupProvenance {
@@ -2171,6 +2182,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
@@ -2272,6 +2284,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2327,6 +2340,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2375,6 +2389,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_thread_spawner(Arc::new(|_| {
             Err(io::Error::other("injected worker-thread spawn failure"))
@@ -2426,6 +2441,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
@@ -2537,6 +2553,7 @@ mod tests {
             process_sink: None,
             ready: true,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         });
         queue.set_worker_spawner(Arc::new(move |_, _, timeout| {
             *recorded.lock().expect("captured timeout") = Some(timeout);

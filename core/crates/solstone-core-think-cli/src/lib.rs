@@ -38,6 +38,8 @@ pub mod test_support {
     }
 }
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::Path;
 
 use chrono::{Local, NaiveDate};
@@ -67,7 +69,11 @@ enum CliError {
     InvalidDay { message: String },
 }
 
-pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
+pub fn run_cli(
+    args: &[String],
+    journal: &Path,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
+) -> CliRun {
     run_cli_with(
         args,
         journal,
@@ -98,7 +104,29 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
                 .unwrap_or((false, LocalEndpointResolution::Bundled))
         },
         || workers::bundled_slots(journal),
+        sense_child_environment,
     )
+}
+
+/// Whether `raw_args` would reach the whole-day lifecycle (the sole caller of
+/// `sense_batch`, and thus the only mode that can launch transcription),
+/// rather than a narrower `--updated`, `--cadence`, `--activity`, `--flush`,
+/// `--segments`, `--segment`, `--weekly`, or `--dry-run` mode. Callers use
+/// this to decide whether to acquire a speakers-analyze generation before
+/// invoking [`run_cli`]; this crate has no dependency on the speakers-analyze
+/// lease itself, so the decision is made by the caller.
+pub fn requires_daily_lifecycle(raw_args: &[String]) -> bool {
+    let Ok(args::ParseOutcome::Args(parsed)) = args::parse(raw_args) else {
+        return false;
+    };
+    !parsed.updated
+        && !parsed.cadence
+        && parsed.activity.is_none()
+        && !parsed.flush
+        && !parsed.segments
+        && parsed.segment.is_none()
+        && !parsed.weekly
+        && !parsed.dry_run
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -112,6 +140,7 @@ pub fn run_cli_with<E, C, N, M, P, R, B>(
     cpu_count: P,
     endpoint: R,
     bundled_slots: B,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> CliRun
 where
     E: Fn(&str) -> Option<String>,
@@ -321,6 +350,7 @@ where
                 &parsed,
                 default_segment_workers,
                 timeout,
+                sense_child_environment,
             )
         }
         .map_err(|message| CliError::InvalidDay { message })?;
@@ -671,6 +701,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
+            &BTreeMap::new(),
         )
     }
 
@@ -771,6 +802,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
+            &BTreeMap::new(),
         )
     }
 
@@ -2134,6 +2166,7 @@ mod tests {
                 || Some(8),
                 || (false, LocalEndpointResolution::Bundled),
                 || None,
+                &BTreeMap::new(),
             )
         };
         assert_eq!(
@@ -2163,6 +2196,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || None,
+            &BTreeMap::new(),
         );
         assert_eq!(output.exit_code, 0);
     }
@@ -2240,6 +2274,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
+            &BTreeMap::new(),
         );
         assert_eq!(result.exit_code, 1);
         assert!(!gate_failure.path().join("identity").exists());
@@ -3467,6 +3502,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
+            &BTreeMap::new(),
         );
         assert_eq!(first.exit_code, 0);
         assert_eq!(first.stdout.lines().next(), Some("Day 2026-01-01"));
@@ -3493,6 +3529,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
+            &BTreeMap::new(),
         );
         assert_eq!(second.exit_code, 0);
         assert_eq!(

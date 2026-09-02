@@ -194,6 +194,35 @@ fn expanded_classes_walk_exactly_one_level() {
     teardown(&bed);
 }
 
+#[test]
+fn chronicle_oplog_prefix_leaves_are_exempt_even_when_malformed() {
+    let bed = Bed::new("oplog-prefix");
+    bed.file(
+        "chronicle/20260101/health/oplog--source--run--20260101T000000Z--id.log",
+        b"valid-shaped",
+    );
+    bed.file(
+        "chronicle/20260101/health/oplog--malformed.jsonl",
+        b"malformed",
+    );
+    bed.file("chronicle/20260101/health/unrelated.log", b"old");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        rels(&built.prunable),
+        vec!["chronicle/20260101/health/unrelated.log"]
+    );
+    assert!(built.retained.iter().any(|kept| {
+        kept.rel
+            .ends_with("oplog--source--run--20260101T000000Z--id.log")
+            && kept.reason == Kept::Exempt
+    }));
+    assert!(built.retained.iter().any(|kept| {
+        kept.rel.ends_with("oplog--malformed.jsonl") && kept.reason == Kept::Exempt
+    }));
+    teardown(&bed);
+}
+
 /// Epoch-millisecond stems, and the exemption that protects a live run.
 #[test]
 fn a_live_talent_run_log_is_exempt_however_old() {

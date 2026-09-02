@@ -35,6 +35,8 @@ const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
 const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
 const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
+const PROCESS_WINDOWS_BOUNDED: &str = include_str!("../src/process/windows/bounded.rs");
+const PROCESS_WINDOWS_MANAGED: &str = include_str!("../src/process/windows/managed.rs");
 const PROCESS_WINDOWS_HANDLE: &str = include_str!("../src/process/windows/handle.rs");
 const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
 const PROCESS_WINDOWS_JOB: &str = include_str!("../src/process/windows/job.rs");
@@ -48,6 +50,7 @@ const PROCESS_WINDOWS_USER_PATH: &str = include_str!("../src/process/windows/use
 const PROCESS_WINDOWS_COMMAND_LINE: &str = include_str!("../src/process/windows/command_line.rs");
 const PROCESS_WINDOWS_ENVIRONMENT: &str = include_str!("../src/process/windows/environment.rs");
 const PROCESS_WINDOWS_LAUNCH_SPEC: &str = include_str!("../src/process/windows/launch_spec.rs");
+const PROCESS_WINDOWS_PROVIDER: &str = include_str!("../src/process/windows/provider.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
@@ -298,6 +301,8 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             .collect()
     );
     let windows_process_modules = [
+        ("bounded", PROCESS_WINDOWS_BOUNDED),
+        ("managed", PROCESS_WINDOWS_MANAGED),
         ("handle", PROCESS_WINDOWS_HANDLE),
         ("identity", PROCESS_WINDOWS_IDENTITY),
         ("job", PROCESS_WINDOWS_JOB),
@@ -310,6 +315,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("command_line", PROCESS_WINDOWS_COMMAND_LINE),
         ("environment", PROCESS_WINDOWS_ENVIRONMENT),
         ("launch_spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+        ("provider", PROCESS_WINDOWS_PROVIDER),
     ];
     assert_eq!(
         declared_modules(PROCESS_WINDOWS),
@@ -471,6 +477,7 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
     for (name, source) in [
         ("common", PROCESS_COMMON),
         ("windows facade", PROCESS_WINDOWS),
+        ("windows managed facade", PROCESS_WINDOWS_MANAGED),
         ("windows handle", PROCESS_WINDOWS_HANDLE),
         ("windows identity", PROCESS_WINDOWS_IDENTITY),
         ("windows job", PROCESS_WINDOWS_JOB),
@@ -483,6 +490,11 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         ("windows command line", PROCESS_WINDOWS_COMMAND_LINE),
         ("windows environment", PROCESS_WINDOWS_ENVIRONMENT),
         ("windows launch spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+        // ⚠ `bounded` and `provider` were absent here while being present in the
+        // declared-module roster above, so the two newest Windows modules were
+        // the only ones exempt from the nix/Unix scan this loop exists to apply.
+        ("windows bounded", PROCESS_WINDOWS_BOUNDED),
+        ("windows provider", PROCESS_WINDOWS_PROVIDER),
     ] {
         assert!(!source.contains("nix::"), "{name} must not name nix");
         assert!(
@@ -494,8 +506,9 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         !PROCESS_WINDOWS.contains(".spawn("),
         "the non-Unix process facade must not spawn owned children"
     );
-    assert!(PROCESS_WINDOWS.contains("pub enum ManagedProcess {}"));
-    assert!(PROCESS_WINDOWS.contains("pub enum LaunchAuthority {}"));
+    assert!(PROCESS_WINDOWS.contains("mod managed;"));
+    assert!(PROCESS_WINDOWS_MANAGED.contains("launch_windows_job_process"));
+    assert!(!PROCESS_WINDOWS_MANAGED.contains("Command::new"));
 }
 
 #[test]

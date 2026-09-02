@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, feature = "full-tests"))]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -186,6 +188,30 @@ async fn devices_distinguish_missing_unreadable_and_malformed_ledgers() {
     assert_eq!(
         response_json(response).await["reason_code"],
         "authorization_ledger_malformed"
+    );
+
+    let duplicate = TempDir::new();
+    fs::create_dir_all(duplicate.path().join("link")).unwrap();
+    fs::write(
+        duplicate
+            .path()
+            .join("link")
+            .join("authorized_clients.json"),
+        br#"[{"fingerprint":"a","device_label":"one","paired_at":"1","instance_id":"i"},{"fingerprint":"a","device_label":"two","paired_at":"2","instance_id":"i"}]"#,
+    )
+    .unwrap();
+    let response = request(
+        duplicate.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/app/network/api/devices",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_json(response).await["reason_code"],
+        "authorization_ledger_duplicate_cid"
     );
 }
 

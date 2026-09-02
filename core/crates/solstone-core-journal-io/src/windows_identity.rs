@@ -8,7 +8,7 @@ use std::mem::size_of;
 use std::os::windows::io::RawHandle;
 
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    FILE_ID_INFO, FILE_STANDARD_INFO, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,4 +69,54 @@ pub(crate) fn file_identity(handle: RawHandle) -> io::Result<WindowsFileIdentity
             file_id: info.FileId.Identifier,
         })
         .ok_or_else(io::Error::last_os_error)
+}
+
+pub(crate) fn file_link_count(handle: RawHandle) -> io::Result<u64> {
+    let mut info = FILE_STANDARD_INFO {
+        AllocationSize: 0,
+        EndOfFile: 0,
+        NumberOfLinks: 0,
+        DeletePending: false,
+        Directory: false,
+    };
+    // SAFETY: `info` is writable for its exact buffer size and `handle` remains valid
+    // for the synchronous GetFileInformationByHandleEx call.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileStandardInfo,
+            (&mut info as *mut FILE_STANDARD_INFO).cast(),
+            size_of::<FILE_STANDARD_INFO>() as u32,
+        )
+    };
+    (result != 0)
+        .then_some(u64::from(info.NumberOfLinks))
+        .ok_or_else(io::Error::last_os_error)
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs::{self, File};
+    use std::os::windows::io::AsRawHandle;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    #[test]
+    fn link_count_reflects_a_new_hard_link() {
+        let temporary = TempDir::new();
+        let original = temporary.path().join("original.bin");
+        fs::write(&original, b"content").unwrap();
+
+        let handle = File::open(&original).unwrap();
+        assert_eq!(file_link_count(handle.as_raw_handle()).unwrap(), 1);
+        drop(handle);
+
+        let linked = temporary.path().join("linked.bin");
+        fs::hard_link(&original, &linked).unwrap();
+
+        let handle = File::open(&original).unwrap();
+        assert_eq!(file_link_count(handle.as_raw_handle()).unwrap(), 2);
+    }
 }

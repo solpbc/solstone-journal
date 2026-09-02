@@ -3,88 +3,24 @@
 
 use std::error::Error;
 use std::fmt;
-use std::io;
-use std::path::PathBuf;
 
-#[derive(Debug)]
-pub struct HealthDirectoryProbeError {
-    pub path: PathBuf,
-    pub source: io::Error,
-}
-
-impl fmt::Display for HealthDirectoryProbeError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}: {}", self.path.display(), self.source)
-    }
-}
-
-impl Error for HealthDirectoryProbeError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.source)
-    }
-}
-
-#[derive(Debug)]
-pub enum OrdinaryTailError {
-    InvalidUtf8 {
-        path: PathBuf,
-        source: std::string::FromUtf8Error,
-    },
-}
-
-impl fmt::Display for OrdinaryTailError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidUtf8 { path, source } => write!(formatter, "{}: {source}", path.display()),
-        }
-    }
-}
-
-impl Error for OrdinaryTailError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::InvalidUtf8 { source, .. } => Some(source),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum EnumerationError {
-    Enumerate { path: PathBuf, source: io::Error },
-}
-
-impl fmt::Display for EnumerationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Enumerate { path, source } => write!(formatter, "{}: {source}", path.display()),
-        }
-    }
-}
-
-impl Error for EnumerationError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Enumerate { source, .. } => Some(source),
-        }
-    }
-}
+use solstone_core_journal_io::operational_log::OplogCatalogError;
 
 #[derive(Debug)]
 pub enum CollectError {
-    HealthDirectoryProbe(HealthDirectoryProbeError),
-    SupervisorProbe(HealthDirectoryProbeError),
-    Enumeration(EnumerationError),
-    InvalidUtf8(OrdinaryTailError),
+    Root,
+    Catalog(OplogCatalogError),
+    CatalogIo,
+    CatalogUtf8,
 }
 
 impl fmt::Display for CollectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::HealthDirectoryProbe(error) | Self::SupervisorProbe(error) => {
-                error.fmt(formatter)
-            }
-            Self::Enumeration(error) => error.fmt(formatter),
-            Self::InvalidUtf8(error) => error.fmt(formatter),
+            Self::Root => formatter.write_str("oplog_catalog_root"),
+            Self::Catalog(error) => error.fmt(formatter),
+            Self::CatalogIo => formatter.write_str("oplog_catalog_io"),
+            Self::CatalogUtf8 => formatter.write_str("oplog_catalog_utf8"),
         }
     }
 }
@@ -92,9 +28,8 @@ impl fmt::Display for CollectError {
 impl Error for CollectError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::HealthDirectoryProbe(error) | Self::SupervisorProbe(error) => Some(error),
-            Self::Enumeration(error) => Some(error),
-            Self::InvalidUtf8(error) => Some(error),
+            Self::Catalog(error) => Some(error),
+            Self::Root | Self::CatalogIo | Self::CatalogUtf8 => None,
         }
     }
 }

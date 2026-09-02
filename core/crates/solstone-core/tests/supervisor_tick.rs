@@ -19,6 +19,8 @@ use tokio::net::UnixStream;
 
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
+#[path = "support/speakers_analyze_stub.rs"]
+mod speakers_analyze_stub;
 #[path = "support/supervisor_guard.rs"]
 mod supervisor_guard;
 
@@ -204,6 +206,7 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>, extra_args: &[&str]) -
             cap_seconds.to_string(),
         );
     }
+    speakers_analyze_stub::apply(&mut command);
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
@@ -361,11 +364,13 @@ async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
     // full host suite it can legitimately lose several scheduler turns while
     // other native fixtures are compiling and exiting. On macOS, preserve the
     // finite hard-failure bound but amortize a dilated scheduler interval over
-    // a longer positive observation window.
+    // a longer positive observation window. Linux full CI uses protected
+    // concurrent shards too, so it needs a bounded observation window that
+    // exceeds the observed recycle time under that load.
     #[cfg(target_os = "macos")]
     let iterations = 4_800;
     #[cfg(not(target_os = "macos"))]
-    let iterations = 2_400;
+    let iterations = 4_800;
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
         Duration::from_millis(10),

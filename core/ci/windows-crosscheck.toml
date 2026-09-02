@@ -2,47 +2,17 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived from Cargo metadata after `solstone-core-mcp-endpoint` joined the
-# workspace. The census counts a package once when any target is `lib`, so this
-# new library-only crate increases both baselines by exactly one.
-workspace_packages = 135
-library_packages = 129
-
-[[exclusions]]
-package = "solstone-core-backfill-cli"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker backend still owns bump_stream_marker."
-expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_marker`"]
-
-[[exclusions]]
-package = "solstone-core-identity"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only append_text writer remains outside this backend slice."
-expected_stderr = ["unresolved import `solstone_core_journal_io::append_text`"]
+# Re-derived from Cargo metadata after the MCP endpoint and its audit crate
+# joined the workspace. The census counts a package once when any target is
+# `lib`; each new library-only crate increases both baselines by exactly one.
+workspace_packages = 137
+library_packages = 131
 
 [[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker and exclusive-write backends, plus retention's own Unix permissions read, remain."
-expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "solstone_core_journal_io::write_bytes_exclusive", "cannot find `unix` in `os`"]
-
-[[exclusions]]
-package = "solstone-core-segment"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only exclusive, text, and health-marker writers remain outside this backend slice."
-expected_stderr = ["solstone_core_journal_io::write_bytes_exclusive", "solstone_core_journal_io::write_text", "solstone_core_journal_io::bump_stream_marker"]
-
-[[exclusions]]
-package = "solstone-core-speaker-id"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only write_bytes_exclusive writer remains outside this backend slice."
-expected_stderr = ["unresolved import `solstone_core_journal_io::write_bytes_exclusive`"]
-
-[[exclusions]]
-package = "solstone-core-pdf"
-class = "preserved-production-guarantee"
-reason = "The worker enforces Unix address-space and CPU resource limits; a Windows Job Object equivalent belongs to the later backend lane."
-expected_stderr = ["could not compile `solstone-core-pdf`", "RLIMIT_AS"]
+reason = "Retention's compact_log still reads Unix file permissions via std::os::unix::fs::PermissionsExt."
+expected_stderr = ["cannot find `unix` in `os`"]
 
 [[exclusions]]
 package = "ring"

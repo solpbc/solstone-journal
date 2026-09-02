@@ -9,7 +9,7 @@ license.workspace = true
 base64 = "=0.22.1"
 ring = "=0.17.14"
 serde_json = { workspace = true }
-subtle = "=2.6.1"
+subtle.workspace = true
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 

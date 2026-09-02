@@ -335,7 +335,7 @@ pub fn display_value(record_type: &str, value: f64, unit: Option<&str>) -> Strin
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::*;
 

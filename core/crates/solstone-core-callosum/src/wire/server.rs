@@ -165,7 +165,7 @@ impl CallosumSocketServer {
                     .fetch_add(1, Ordering::AcqRel)
                     == 0
                 {
-                    eprintln!("callosum wire: broadcast queue saturated; dropping events");
+                    log::warn!("callosum wire: broadcast queue saturated; dropping events");
                 }
                 false
             }
@@ -549,7 +549,7 @@ fn queue_broadcast(inner: &ServerInner, envelope: CallosumEnvelope) -> bool {
                 .fetch_add(1, Ordering::AcqRel)
                 == 0
             {
-                eprintln!("callosum wire: broadcast queue saturated; dropping events");
+                log::warn!("callosum wire: broadcast queue saturated; dropping events");
             }
             false
         }
@@ -580,7 +580,7 @@ fn evict_client(inner: &ServerInner, id: u64) {
         .fetch_add(1, Ordering::AcqRel)
         == 0
     {
-        eprintln!("callosum wire: evicting stalled client");
+        log::warn!("callosum wire: evicting stalled client");
     }
 }
 

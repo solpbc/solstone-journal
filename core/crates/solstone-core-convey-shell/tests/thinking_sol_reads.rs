@@ -337,6 +337,101 @@ async fn ac4_run_detail_completed_pending_and_malformed_oracle() {
 }
 
 #[tokio::test]
+async fn ac4_run_detail_unparseable_shapes_distinguish_reason_codes() {
+    for (label, bytes, reason) in [
+        ("empty", &b""[..], "talent_run_malformed"),
+        ("invalid", b"not-json\n".as_slice(), "talent_run_malformed"),
+        (
+            "non-utf8",
+            [0xff, 0xfe].as_slice(),
+            "talent_operation_failed",
+        ),
+    ] {
+        let fixture = Fixture::new();
+        fixture.established();
+        fs::create_dir_all(fixture.0.join("talents/shape")).expect("shape dir");
+        fs::write(fixture.0.join("talents/shape/shape-id.jsonl"), bytes).expect("shape run");
+        let (status, body) = get(
+            router(fixture.0.clone()),
+            "/app/thinking/api/run/shape-id",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{label}: {body}");
+        assert_eq!(body["reason_code"], reason, "{label}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn ac4_run_detail_missing_or_wrong_use_id_is_not_found() {
+    for (label, first_line) in [
+        ("missing", r#"{"event":"request"}"#),
+        ("wrong", r#"{"event":"request","use_id":"other"}"#),
+    ] {
+        let fixture = Fixture::new();
+        fixture.established();
+        fs::create_dir_all(fixture.0.join("talents/only")).expect("dir");
+        fs::write(fixture.0.join("talents/only/run-x.jsonl"), first_line).expect("run");
+        let (status, body) = get(
+            router(fixture.0.clone()),
+            "/app/thinking/api/run/run-x",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{label}: {body}");
+        assert_eq!(body["reason_code"], "talent_not_found", "{label}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn ac4_decoy_does_not_mask_genuine_match_in_either_directory_order() {
+    let genuine = request_event("run-x", "20260403", "genuine", None);
+    let wrong = serde_json::to_vec(&request_event("other", "20260403", "decoy", None)).unwrap();
+    let cases: [(&str, &[u8], &str, bool, StatusCode); 3] = [
+        ("5a", wrong.as_slice(), "run-x.jsonl", false, StatusCode::OK),
+        ("5b", b"", "run-x.jsonl", false, StatusCode::OK),
+        ("5c", b"", "run-x.jsonl", true, StatusCode::ACCEPTED),
+    ];
+    for (label, decoy, decoy_file, active, expected) in cases {
+        let genuine_file = if active {
+            "run-x_active.jsonl"
+        } else {
+            "run-x.jsonl"
+        };
+        for (decoy_dir, genuine_dir) in [("aaa", "zzz"), ("zzz", "aaa")] {
+            let fixture = Fixture::new();
+            fixture.established();
+            let decoy_path = fixture.0.join("talents").join(decoy_dir).join(decoy_file);
+            fs::create_dir_all(decoy_path.parent().expect("parent")).expect("decoy dir");
+            fs::write(&decoy_path, decoy).expect("decoy");
+            write_jsonl(
+                &fixture
+                    .0
+                    .join("talents")
+                    .join(genuine_dir)
+                    .join(genuine_file),
+                std::slice::from_ref(&genuine),
+            );
+            let (status, body) = get(
+                router(fixture.0.clone()),
+                "/app/thinking/api/run/run-x",
+                None,
+            )
+            .await;
+            assert_eq!(
+                status, expected,
+                "{label} {decoy_dir}->{genuine_dir}: {body}"
+            );
+            if expected == StatusCode::OK {
+                assert_eq!(body["name"], "genuine", "{label}: {body}");
+            } else {
+                assert_eq!(body["reason_code"], "talent_run_pending", "{label}: {body}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn ac3_day_index_io_error_keeps_active_run() {
     let fixture = Fixture::new();
     fixture.established();

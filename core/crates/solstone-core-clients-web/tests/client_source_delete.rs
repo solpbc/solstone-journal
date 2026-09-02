@@ -97,6 +97,22 @@ impl Bed {
         );
     }
 
+    fn pairing_identity(&self, cid: &str) {
+        self.write_file(
+            "link/authorized_clients.json",
+            json!([{
+                "fingerprint": cid,
+                "device_label": "fixture device",
+                "paired_at": "2026-01-01T00:00:00Z",
+                "instance_id": "fixture-instance",
+                "role": "",
+                "kind": "cert",
+            }])
+            .to_string()
+            .as_bytes(),
+        );
+    }
+
     fn listing(&self, rel: &str) -> BTreeSet<String> {
         fs::read_dir(self.path().join(rel))
             .unwrap()
@@ -654,6 +670,7 @@ async fn criterion_9_second_run_is_zero_and_keeps_tombstones() {
 #[tokio::test]
 async fn criterion_10_unlinks_every_location_stream_identity_and_fresh_ingest_rebinds() {
     let bed = Bed::new();
+    bed.pairing_identity(CID_A);
     bed.location_only("20260805", "location", "070000_17");
     bed.stream_record("location", CID_A, "location");
     bed.stream_record("location_2", CID_B, "location");

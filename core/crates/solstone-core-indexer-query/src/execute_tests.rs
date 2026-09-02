@@ -17,7 +17,7 @@ use crate::execute::{
 use crate::test_support::reserve_temp_path;
 use crate::{
     CompileOutcome, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, Order,
-    SearchRequest, compile_query, coverage, indexed_entity_ids, search, search_counts,
+    SearchRequest, compile_query, coverage, hit_at, indexed_entity_ids, search, search_counts,
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
@@ -141,6 +141,27 @@ fn absent_index_is_classified_without_creating_it() {
     let error = search(&root, &request("needle"), reference_date()).expect_err("missing index");
     assert!(matches!(error, IndexAccessError::Absent { .. }));
     assert!(!root.join("indexer").exists());
+}
+
+#[test]
+fn exact_hit_lookup_requires_both_indexed_path_and_chunk_index() {
+    let (root, connection) = seeded_root("exact-hit");
+    insert(
+        &connection,
+        "indexed note",
+        "notes/with:colon.txt",
+        "20260107",
+        "work",
+        "operator",
+        "default",
+        7,
+    );
+    drop(connection);
+
+    assert!(hit_at(&root, "notes/with:colon.txt", 7).expect("exact hit query"));
+    assert!(!hit_at(&root, "notes/with:colon.txt", 8).expect("different index query"));
+    assert!(!hit_at(&root, "notes/missing.txt", 7).expect("different path query"));
+    fs::remove_dir_all(root).expect("cleanup exact hit index");
 }
 
 #[test]

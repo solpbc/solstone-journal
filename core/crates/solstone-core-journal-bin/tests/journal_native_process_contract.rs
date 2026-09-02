@@ -23,8 +23,8 @@ use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPEC
 use sha2::{Digest, Sha256};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SCHEDULE_USAGE, SPL_USAGE,
-    THINKING_USAGE, TOP_USAGE,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, MCP_USAGE, SCHEDULE_USAGE,
+    SPL_USAGE, THINKING_USAGE, TOP_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -363,6 +363,14 @@ const PROBES: &[Probe] = &[
         argv: &["--nope"],
         expected_exit: 2,
         stderr_anchor: Some(SPL_USAGE.as_bytes()),
+    },
+    // This parse-owned usage path proves the MCP dispatcher is present before
+    // the endpoint feature can enter service startup.
+    Probe {
+        token: "mcp",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(MCP_USAGE.as_bytes()),
     },
     Probe {
         token: "schedule",
@@ -2483,7 +2491,8 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
         health.stdout,
         concat!(
             "Sound tagging is degraded because its CED assets are unavailable. ",
-            "Transcription will continue. Use `journal install-models` to check or repair the CED assets.\n",
+            "Transcription will continue. Use `journal install-models` to check or repair the CED assets. ",
+            "If the signed CED app payload is unavailable on Windows, reinstall the journal app.\n",
             "Object detection is degraded because its RF-DETR assets are unavailable. ",
             "Screen descriptions will continue. Use `journal install-models` to check or repair the RF-DETR assets.\n",
         )

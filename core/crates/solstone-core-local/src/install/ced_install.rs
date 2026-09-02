@@ -25,6 +25,7 @@ const MODEL_REPOSITORY_DIRECTORY: &str = "mudler__ced-gguf";
 const MODEL_REVISION: &str = "b5e9a4aad6438763c8da16079d77563fbed35c65";
 const MODEL_FILE: &str = "ced-tiny-q8_0.gguf";
 const SIDECAR: &str = ".ced-install.json";
+const MODEL_SIDECAR: &str = ".ced-model.json";
 const REQUIRED: [&str; 2] = ["LICENSE", "README.md"];
 
 #[derive(Debug, Error)]
@@ -53,6 +54,21 @@ pub struct CedRecord {
     pub model_revision: String,
 }
 
+/// Durable record for the CED model alone.
+///
+/// Windows keeps the signed CED engine in the immutable application package,
+/// so its writable journal state must not describe or admit an engine. This
+/// record gives the separately fetched model the same pinned identity and
+/// crash-safe publication shape without recreating a mutable-engine layout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CedModelRecord {
+    pub model_repo: String,
+    pub model_revision: String,
+    pub model_file: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
 pub fn ced_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
     match (os_name, arch.to_ascii_lowercase().as_str()) {
         ("linux", "amd64" | "x64" | "x86_64") => Some("linux-cpu-x64"),
@@ -62,11 +78,23 @@ pub fn ced_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
     }
 }
 
+/// True for the Windows CED ownership split: its model is owner-installed,
+/// while its executable engine is admitted only from the signed app payload.
+pub fn ced_uses_package_engine(os_name: &str, arch: &str) -> bool {
+    matches!(
+        (os_name, arch.to_ascii_lowercase().as_str()),
+        ("windows", "amd64" | "x64" | "x86_64")
+    )
+}
+
 fn root(journal: &Path) -> PathBuf {
     journal.join("cache/providers/ced").join(ENGINE_VERSION)
 }
 fn sidecar(journal: &Path) -> PathBuf {
     root(journal).join(SIDECAR)
+}
+fn model_sidecar(journal: &Path) -> PathBuf {
+    root(journal).join(MODEL_SIDECAR)
 }
 pub(crate) fn engine_dir(journal: &Path, key: &str) -> PathBuf {
     root(journal).join("engine").join(key)
@@ -134,6 +162,17 @@ pub(crate) fn model_artifact() -> Result<&'static Artifact, CedInstallError> {
                 .unwrap_or_else(|| "ced model catalog lookup failed".to_owned()),
             65,
         )
+    })
+}
+
+fn expected_model_record() -> Result<CedModelRecord, CedInstallError> {
+    let model = model_artifact()?;
+    Ok(CedModelRecord {
+        model_repo: MODEL_REPO.to_owned(),
+        model_revision: MODEL_REVISION.to_owned(),
+        model_file: MODEL_FILE.to_owned(),
+        sha256: model.sha256.to_owned(),
+        size_bytes: model.size_bytes,
     })
 }
 
@@ -243,6 +282,122 @@ fn cleanup(journal: &Path, key: Option<&str>) {
     let _ = fs::remove_file(&model);
     let _ = fs::remove_file(model.with_file_name(format!("{}.tmp", MODEL_FILE)));
     let _ = fs::remove_file(sidecar(journal));
+}
+
+fn cleanup_model(journal: &Path) {
+    let model = ced_model_path(journal);
+    let _ = fs::remove_file(&model);
+    let _ = fs::remove_file(model.with_file_name(format!("{}.tmp", MODEL_FILE)));
+    let _ = fs::remove_file(model_sidecar(journal));
+}
+
+/// Check the separately fetched CED model without admitting an engine from the
+/// writable journal tree.
+///
+/// This is the Windows model-only half of the CED ownership boundary. The full
+/// digest remains a readiness-time check immediately before CED sees the
+/// model; this install-time check establishes the pinned metadata and expected
+/// byte length before that probe runs.
+pub fn check_ced_model(journal: &Path) -> Result<CedModelRecord, CedInstallError> {
+    let path = model_sidecar(journal);
+    let text = fs::read_to_string(&path).map_err(|_| {
+        CedInstallError::new(
+            "sidecar_missing",
+            format!("ced model sidecar missing: {}", path.display()),
+            65,
+        )
+    })?;
+    let stored: CedModelRecord = serde_json::from_str(&text).map_err(|error| {
+        CedInstallError::new(
+            "sidecar_invalid",
+            format!("ced model sidecar invalid: {}: {error}", path.display()),
+            65,
+        )
+    })?;
+    let expected = expected_model_record()?;
+    if stored != expected {
+        return Err(CedInstallError::new(
+            "sidecar_mismatch",
+            "ced model sidecar does not match the pinned model spec",
+            65,
+        ));
+    }
+    let model = ced_model_path(journal);
+    let metadata = fs::metadata(&model).map_err(|_| {
+        CedInstallError::new(
+            "file_missing",
+            format!("ced model missing: {}", model.display()),
+            65,
+        )
+    })?;
+    if !metadata.is_file() || metadata.len() != expected.size_bytes {
+        return Err(CedInstallError::new(
+            "size_mismatch",
+            format!(
+                "size mismatch for {MODEL_FILE}: expected {}, got {}",
+                expected.size_bytes,
+                metadata.len()
+            ),
+            65,
+        ));
+    }
+    Ok(stored)
+}
+
+/// Fetch and publish only the pinned CED model.
+///
+/// Unlike [`install_ced_assets`], this function never downloads, extracts, or
+/// writes executable engine code. It is intended for a Windows package whose
+/// engine is verified separately from its immutable application directory.
+pub fn install_ced_model(journal: &Path, force: bool) -> Result<CedModelRecord, CedInstallError> {
+    install_ced_model_with_policy(journal, force, &archive::PRODUCTION_DOWNLOAD_POLICY)
+}
+
+pub(crate) fn install_ced_model_with_policy(
+    journal: &Path,
+    force: bool,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<CedModelRecord, CedInstallError> {
+    if !force && check_ced_model(journal).is_ok() {
+        return check_ced_model(journal);
+    }
+    let result = (|| {
+        let _ = fs::remove_file(model_sidecar(journal));
+        let model = model_artifact()?;
+        download_artifact(
+            model,
+            &ced_model_path(journal),
+            policy,
+            |_, _| {},
+            "download_failed",
+        )
+        .map_err(dispatch_error)?;
+        write_model_sidecar(journal)
+    })();
+    if result.is_err() {
+        cleanup_model(journal);
+    }
+    result
+}
+
+pub(crate) fn write_model_sidecar(journal: &Path) -> Result<CedModelRecord, CedInstallError> {
+    let record = expected_model_record()?;
+    let path = model_sidecar(journal);
+    fs::create_dir_all(path.parent().expect("model sidecar parent"))
+        .map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
+    let mut text =
+        serde_json::to_string_pretty(&record).expect("static CED model record serializes");
+    text.push('\n');
+    let temporary = path
+        .parent()
+        .expect("model sidecar parent")
+        .join(format!("tmp{}", uuid::Uuid::new_v4().simple()));
+    let publication = fs::write(&temporary, text).and_then(|_| fs::rename(&temporary, &path));
+    if publication.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    publication.map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
+    Ok(record)
 }
 
 pub fn check_ced_assets(
@@ -459,6 +614,21 @@ mod tests {
         }
     }
 
+    fn model_only_fixture(journal: &Path) {
+        let model = model_artifact().unwrap();
+        let model_path = ced_model_path(journal);
+        fs::create_dir_all(model_path.parent().unwrap()).unwrap();
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&model_path)
+            .unwrap()
+            .set_len(model.size_bytes)
+            .unwrap();
+        write_model_sidecar(journal).unwrap();
+    }
+
     #[test]
     fn unsupported_platform_is_silent_for_check_and_install() {
         let temp = tempfile::tempdir().unwrap();
@@ -524,6 +694,40 @@ mod tests {
                 .reason_code,
             "size_mismatch"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn model_only_install_keeps_journal_engine_free_and_never_fetches_when_ready() {
+        let temp = tempfile::tempdir().unwrap();
+        model_only_fixture(temp.path());
+        let root = root(temp.path());
+        let model = ced_model_path(temp.path());
+        let before = fs::metadata(&model).unwrap();
+
+        assert!(check_ced_model(temp.path()).is_ok());
+        assert!(install_ced_model_with_policy(temp.path(), false, &DENY_ALL_POLICY).is_ok());
+        let after = fs::metadata(&model).unwrap();
+        assert_eq!(after.ino(), before.ino());
+        assert_eq!(after.mtime(), before.mtime());
+        assert!(!root.join("engine").exists());
+        assert!(leaked_temps(&root).is_empty());
+    }
+
+    #[test]
+    fn failed_model_only_repair_removes_only_model_state() {
+        let temp = tempfile::tempdir().unwrap();
+        model_only_fixture(temp.path());
+        let sentinel = root(temp.path()).join("unrelated-sentinel");
+        fs::write(&sentinel, b"keep").unwrap();
+
+        let error = install_ced_model_with_policy(temp.path(), true, &DENY_ALL_POLICY)
+            .expect_err("denied model download must fail");
+        assert_eq!(error.reason_code, "download_host_refused");
+        assert!(!ced_model_path(temp.path()).exists());
+        assert!(!model_sidecar(temp.path()).exists());
+        assert!(!root(temp.path()).join("engine").exists());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
     }
 
     #[cfg(unix)]

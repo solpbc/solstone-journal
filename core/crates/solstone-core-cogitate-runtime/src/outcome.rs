@@ -48,7 +48,12 @@ impl RunOutcome {
         correlation_id: String,
     ) -> Self {
         Self {
-            error_text: Some(failure.reason_code.clone()),
+            error_text: Some(
+                failure
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| failure.reason_code.clone()),
+            ),
             reason_code: Some(failure.reason_code.clone()),
             result: None,
             usage,

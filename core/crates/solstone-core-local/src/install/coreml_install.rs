@@ -68,7 +68,7 @@ fn archive_error_reason_code(error: &archive::ArchiveError) -> &'static str {
         archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
         archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
         archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
-        archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+        archive::ArchiveError::DigestMismatch { .. } => "download_digest_mismatch",
         archive::ArchiveError::RedirectHopLimitExceeded { .. } => "download_redirect_hop_limit",
         archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
         archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => "download_failed",
@@ -317,7 +317,10 @@ mod tests {
             "download_size_mismatch"
         );
         assert_eq!(
-            archive_error_reason_code(&ArchiveError::DigestMismatch),
+            archive_error_reason_code(&ArchiveError::DigestMismatch {
+                expected: "a".repeat(64),
+                actual: "b".repeat(64),
+            }),
             "download_digest_mismatch"
         );
         assert_eq!(

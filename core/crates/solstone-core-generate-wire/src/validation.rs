@@ -34,6 +34,7 @@ pub struct ProviderResultView<'a> {
     pub usage: &'a Value,
     pub json_output: bool,
     pub enforce_responsiveness: bool,
+    pub raw_response_snippet: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +46,11 @@ pub enum SanitizedFinishReason {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationFailure {
-    ProviderResponseInvalid,
+    ProviderResponseInvalid {
+        raw_response_snippet: Option<String>,
+    },
     IncompleteJson {
         finish_reason: SanitizedFinishReason,
     },
@@ -96,7 +99,9 @@ pub fn assess_provider_result(view: ProviderResultView<'_>) -> ProviderResultAss
     let failure = if view.json_output && finish_reason != SanitizedFinishReason::Stop {
         Some(ValidationFailure::IncompleteJson { finish_reason })
     } else if finish_reason == SanitizedFinishReason::Stop && blank_visible_output(view.text) {
-        Some(ValidationFailure::ProviderResponseInvalid)
+        Some(ValidationFailure::ProviderResponseInvalid {
+            raw_response_snippet: view.raw_response_snippet.map(str::to_owned),
+        })
     } else if non_responsive {
         Some(ValidationFailure::NonResponsiveOutput)
     } else {
@@ -181,6 +186,7 @@ mod tests {
             usage,
             json_output: false,
             enforce_responsiveness: true,
+            raw_response_snippet: None,
         }
     }
 
@@ -264,7 +270,9 @@ mod tests {
         let usage = json!({});
         assert_eq!(
             assess_provider_result(view(&journal, "  ", "stop", &usage)).failure,
-            Some(ValidationFailure::ProviderResponseInvalid)
+            Some(ValidationFailure::ProviderResponseInvalid {
+                raw_response_snippet: None,
+            })
         );
         assert_eq!(
             assess_provider_result(view(&journal, "  ", "max_tokens", &usage)).failure,
@@ -300,6 +308,7 @@ mod tests {
             usage: &Value::Object(Map::new()),
             json_output: false,
             enforce_responsiveness: false,
+            raw_response_snippet: None,
         });
         assert_eq!(
             sanitize_finish_reason("tool_calls"),

@@ -6,7 +6,7 @@ use crate::{
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
 use solstone_core_sol_link::client_status::{
-    ClientAssessment, ClientCaptureState, ClientInspection, ConnectionFreshness,
+    ClientAssessment, ClientCaptureState, ClientInspection, ConnectionFreshness, SourceDelivery,
 };
 
 const MINUTE_MS: i64 = 60_000;
@@ -49,7 +49,7 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
                 matches!(
                     row.capture_state,
                     ClientCaptureState::Stale | ClientCaptureState::Offline
-                )
+                ) || !common::needs_attention_source_names(row).is_empty()
             })
             .collect();
         if stalled.is_empty() {
@@ -76,14 +76,41 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
 }
 
 fn stall_clause(row: &ClientAssessment) -> String {
-    let added = row
-        .capture_elapsed_ms
-        .expect("stalled device has a last-sent stamp");
-    let body = format!(
-        "the solstone app on {} last added {}m ago",
-        common::client_name(row),
-        added / MINUTE_MS
-    );
+    let names = common::needs_attention_source_names(row);
+    let body = if matches!(
+        row.capture_state,
+        ClientCaptureState::Stale | ClientCaptureState::Offline
+    ) {
+        let added = row
+            .capture_elapsed_ms
+            .expect("stalled device has a last-sent stamp");
+        let body = format!(
+            "the solstone app on {} last added {}m ago",
+            common::client_name(row),
+            added / MINUTE_MS
+        );
+        common::with_source_attention(body, &names)
+    } else {
+        let sources = common::format_attention_sources(&names)
+            .expect("active source stall names a NeedsAttention source");
+        match row
+            .source_delivery
+            .values()
+            .filter(|delivery| delivery.state == SourceDelivery::NeedsAttention)
+            .filter_map(|delivery| delivery.elapsed_ms)
+            .max()
+        {
+            Some(added) => format!(
+                "the solstone app on {} last added {sources} {}m ago",
+                common::client_name(row),
+                added / MINUTE_MS
+            ),
+            None => format!(
+                "the solstone app on {} is having trouble adding {sources}",
+                common::client_name(row)
+            ),
+        }
+    };
     match row.connection {
         ConnectionFreshness::Known { reach, .. } => {
             format!("{body}; {}", common::delivery_reach_clause(reach))

@@ -117,7 +117,7 @@ fn validate_session_io(session: &Session) -> Result<(), SpeakerOnnxError> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::test_support::{decode_waveform, fixture, repo_root};

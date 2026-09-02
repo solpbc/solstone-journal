@@ -21,6 +21,19 @@ fn read_repo_file(relative: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
+fn batch_label_body<'a>(script: &'a str, label: &str) -> &'a str {
+    let heading = format!(":{label}\r\n");
+    let body_at = script
+        .find(&heading)
+        .unwrap_or_else(|| panic!("batch script must define :{label}"))
+        + heading.len();
+    let body_end = script[body_at..]
+        .find("\r\n:")
+        .map(|offset| body_at + offset)
+        .unwrap_or(script.len());
+    &script[body_at..body_end]
+}
+
 fn parse_manifest(relative: &str) -> DocumentMut {
     read_repo_file(relative)
         .parse()
@@ -215,7 +228,8 @@ fn native_launch_preparation_receipts_are_source_bound_and_exactly_once() {
             "the source receipt must emit one canonical {marker} pass marker"
         );
         assert_eq!(
-            host.matches(&format!("require_platform_receipt {marker}"))
+            host.lines()
+                .filter(|line| *line == format!("require_platform_receipt {marker}"))
                 .count(),
             1,
             "the host must require {marker} exactly once"
@@ -237,4 +251,190 @@ fn native_launch_preparation_receipts_are_source_bound_and_exactly_once() {
     assert!(source_binding < first_receipt);
     assert!(first_receipt < final_binding);
     assert!(final_binding < acknowledgement);
+}
+
+#[test]
+fn native_foundation_targets_run_before_source_markers_and_are_host_required() {
+    let win_ci = read_repo_file("scripts/win-ci.cmd");
+    let host = read_repo_file("scripts/win-host-ci.sh");
+    assert_eq!(win_ci.matches("JOURNAL_WIN_CI_OK:").count(), 1);
+    let final_ok = win_ci
+        .find("JOURNAL_WIN_CI_OK:")
+        .expect("final success marker");
+    let targets = [
+        (
+            "signed Windows payload verifier",
+            "solstone-core-distribution",
+            "windows_payload",
+            "test-fixture-pin",
+            "journal_win_ci_windows_payload_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD",
+            "core/crates/solstone-core-distribution/tests/windows_payload.rs",
+            true,
+        ),
+        (
+            "journal-io create-only publication",
+            "solstone-core-journal-io",
+            "windows_create_only",
+            "",
+            "journal_win_ci_windows_create_only_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY",
+            "core/crates/solstone-core-journal-io/tests/windows_create_only.rs",
+            true,
+        ),
+        (
+            "journal-io create-only publication protocol",
+            "solstone-core-journal-io",
+            "windows_create_only_protocol",
+            "test-hooks",
+            "journal_win_ci_windows_create_only_protocol_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL",
+            "core/crates/solstone-core-journal-io/tests/windows_create_only_protocol.rs",
+            true,
+        ),
+        (
+            "journal-io install-file publication",
+            "solstone-core-journal-io",
+            "windows_install_file",
+            "",
+            "journal_win_ci_windows_install_file_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE",
+            "core/crates/solstone-core-journal-io/tests/windows_install_file.rs",
+            true,
+        ),
+        (
+            "journal-io install-file publication protocol",
+            "solstone-core-journal-io",
+            "windows_install_file_protocol",
+            "test-hooks",
+            "journal_win_ci_windows_install_file_protocol_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL",
+            "core/crates/solstone-core-journal-io/tests/windows_install_file_protocol.rs",
+            false,
+        ),
+        (
+            "journal-io operational-log namespace",
+            "solstone-core-journal-io",
+            "windows_oplog_namespace",
+            "test-hooks",
+            "journal_win_ci_windows_oplog_namespace_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE",
+            "core/crates/solstone-core-journal-io/tests/windows_oplog_namespace.rs",
+            true,
+        ),
+        (
+            "journal-io operational-log liveness",
+            "solstone-core-journal-io",
+            "windows_oplog_liveness",
+            "test-hooks",
+            "journal_win_ci_windows_oplog_liveness_marker",
+            "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS",
+            "core/crates/solstone-core-journal-io/tests/windows_oplog_liveness.rs",
+            true,
+        ),
+    ];
+
+    for (label, package, target, features, marker_test, marker, source_path, runs_target) in targets
+    {
+        let helper = if runs_target {
+            "run_source_marked_target"
+        } else {
+            "run_source_marker"
+        };
+        let invocation = format!(
+            "call :{helper} \"{label}\" \"{package}\" \"{target}\" \"{features}\" \"{marker_test}\" \"{marker}\""
+        );
+        assert_eq!(
+            win_ci.matches(&invocation).count(),
+            1,
+            "native batch lost the exact {target} execution/marker route"
+        );
+        assert!(
+            win_ci
+                .find(&invocation)
+                .expect("top-level target invocation")
+                < final_ok,
+            "native batch must complete {target} before its final success marker"
+        );
+        let source = read_repo_file(source_path);
+        assert_eq!(
+            source.matches(&format!("{marker}=executed/pass")).count(),
+            1
+        );
+        let host_requirement = format!("require_platform_receipt {marker}");
+        assert_eq!(
+            host.lines()
+                .filter(|line| *line == host_requirement)
+                .count(),
+            1,
+            "native driver must independently require {marker}"
+        );
+    }
+
+    let target_body = batch_label_body(&win_ci, "run_source_marked_target");
+    let plain_target = "cargo test --manifest-path core\\Cargo.toml --locked -p \"%~2\" --test \"%~3\" || exit /b 1";
+    let featured_target = "cargo test --manifest-path core\\Cargo.toml --locked -p \"%~2\" --test \"%~3\" --features \"%~4\" || exit /b 1";
+    let marker_call =
+        "call :run_source_marker \"%~1\" \"%~2\" \"%~3\" \"%~4\" \"%~5\" \"%~6\" || exit /b 1";
+    for command in [plain_target, featured_target, marker_call] {
+        assert_eq!(
+            target_body.matches(command).count(),
+            1,
+            "full-target helper lost its exact guarded command: {command}"
+        );
+    }
+    assert!(
+        target_body.find(plain_target) < target_body.find(marker_call),
+        "plain full-target execution must precede its marker"
+    );
+    assert!(
+        target_body.find(featured_target) < target_body.find(marker_call),
+        "feature-qualified full-target execution must precede its marker"
+    );
+
+    let install_target = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" 2>&1";
+    let install_target_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )";
+    let install_receipt = "$marker = 'JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL';";
+    let install_receipt_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )";
+    let install_marker = "call :run_source_marker \"journal-io install-file publication protocol\" \"solstone-core-journal-io\" \"windows_install_file_protocol\" \"test-hooks\" \"journal_win_ci_windows_install_file_protocol_marker\" \"JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL\" || exit /b 1";
+    for command in [
+        install_target,
+        install_target_guard,
+        install_receipt,
+        install_receipt_guard,
+        install_marker,
+    ] {
+        assert_eq!(
+            win_ci.matches(command).count(),
+            1,
+            "install-file protocol lost its exact full-target/receipt/marker command: {command}"
+        );
+    }
+    let install_target_at = win_ci
+        .find(install_target)
+        .expect("install protocol target");
+    let install_target_guard_at = win_ci
+        .find(install_target_guard)
+        .expect("install protocol target guard");
+    let install_receipt_at = win_ci
+        .find(install_receipt)
+        .expect("install protocol receipt");
+    let install_receipt_guard_at = win_ci
+        .find(install_receipt_guard)
+        .expect("install protocol receipt guard");
+    let install_marker_at = win_ci
+        .find(install_marker)
+        .expect("install protocol marker");
+    assert!(
+        install_target_at < install_target_guard_at
+            && install_target_guard_at < install_receipt_at
+            && install_receipt_at < install_receipt_guard_at
+            && install_receipt_guard_at < install_marker_at
+            && install_marker_at < final_ok,
+        "install-file protocol must guard its full target and receipt before its source marker and final success"
+    );
+
+    let marker_body = batch_label_body(&win_ci, "run_source_marker");
+    assert!(marker_body.contains("-- --ignored --exact --nocapture"));
+    assert!(marker_body.contains("did not emit exactly one source-originated target marker"));
 }

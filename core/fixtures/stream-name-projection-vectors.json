@@ -306,6 +306,36 @@
       "source": "",
       "expect": "prn_",
       "why": "Windows reserved basename PRN -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "Desk.01",
+      "source": "tmux",
+      "expect": "desk_01_tmux",
+      "why": "pairing-derived client_label base with a nonempty source suffix; short enough that both projectors agree"
+    },
+    {
+      "label": "Desk.01",
+      "source": "",
+      "expect": "desk_01",
+      "why": "pairing-derived client_label base with an empty source; short enough that both projectors agree"
+    },
+    {
+      "label": "linux",
+      "source": "",
+      "expect": "linux",
+      "why": "platform-fallback style base treated as an ordinary short label"
+    },
+    {
+      "label": "studio-mac",
+      "source": "",
+      "expect": "studio-mac",
+      "why": "AC21 fixed vector: pairing client_label with empty source"
+    },
+    {
+      "label": "studio-mac",
+      "source": "tmux",
+      "expect": "studio-mac_tmux",
+      "why": "AC21 fixed vector: pairing client_label with tmux source"
     }
   ],
   "legacy": [

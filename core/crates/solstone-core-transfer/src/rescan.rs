@@ -52,7 +52,7 @@ pub fn send_indexer_rescan(journal: &Path) -> RescanOutcome {
     if sender.send_line(&line).is_ok() {
         RescanOutcome::Queued
     } else {
-        eprintln!("warning: indexer rescan was not queued: Callosum socket unavailable");
+        log::warn!("indexer rescan was not queued: Callosum socket unavailable");
         RescanOutcome::Unavailable
     }
 }
