@@ -123,10 +123,13 @@ fn install_reparse_fixture(
     kind: ReparseKind,
     position: Position,
 ) -> (&'static str, PathBuf) {
-    fs::create_dir_all(journal.join("targets/directory")).unwrap();
-    fs::write(journal.join("targets/file.bin"), b"target-file").unwrap();
+    let targets = journal.join("targets");
+    let directory_target = targets.join("directory");
+    let file_target = targets.join("file.bin");
+    fs::create_dir_all(&directory_target).unwrap();
+    fs::write(&file_target, b"target-file").unwrap();
     fs::write(
-        journal.join("targets/directory/child.bin"),
+        directory_target.join("child.bin"),
         b"target-directory-child",
     )
     .unwrap();
@@ -136,17 +139,21 @@ fn install_reparse_fixture(
         Position::Root => ("observed", journal.join("observed")),
         Position::Descendant => {
             fs::create_dir(journal.join("observed")).unwrap();
-            fs::write(journal.join("observed/sibling.bin"), b"ordinary-sibling").unwrap();
-            ("observed", journal.join("observed/link"))
+            fs::write(
+                journal.join("observed").join("sibling.bin"),
+                b"ordinary-sibling",
+            )
+            .unwrap();
+            ("observed", journal.join("observed").join("link"))
         }
     };
     match kind {
         ReparseKind::FileSymlink => {
-            std::os::windows::fs::symlink_file(journal.join("targets/file.bin"), &link)
+            std::os::windows::fs::symlink_file(&file_target, &link)
                 .expect("file-symlink fixture creation must succeed");
         }
         ReparseKind::DirectoryJunction => {
-            create_junction(&link, &journal.join("targets/directory"));
+            create_junction(&link, &directory_target);
         }
     }
     (rel, link)
