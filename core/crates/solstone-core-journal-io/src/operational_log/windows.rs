@@ -6,46 +6,49 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
-use std::mem::{align_of, offset_of, size_of};
+use std::mem::{align_of, size_of};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle};
 
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT,
     FILE_SYNCHRONOUS_IO_NONALERT,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, GENERIC_READ, HANDLE,
+    ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER,
+    ERROR_NOT_SUPPORTED, ERROR_PATH_NOT_FOUND, GENERIC_READ, HANDLE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_APPEND_DATA, FILE_DISPOSITION_INFO, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO,
-    FileDispositionInfo, FileRenameInfo, SYNCHRONIZE, SetFileInformationByHandle,
+    DELETE, FILE_APPEND_DATA, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO, FileRenameInfo, SYNCHRONIZE,
+    SetFileInformationByHandle,
 };
 
-use super::create::OplogCreateError;
 use super::namespace::OplogDayHealth;
+use super::reason::{NamedOccupant, OplogFileIdentity, StageError};
 use crate::atomic::{ATOMIC_CANDIDATE_MARKER, publication_candidate_name};
 use crate::lease::{LeaseProbe, SelfLease, acquire_self_lease, probe_file_lease};
-use crate::windows_identity::{WindowsFileIdentity, file_identity};
+use crate::windows_identity::file_link_count;
 use crate::windows_ntcreate::nt_create_relative;
 use crate::windows_sync_dir::validate_windows_regular_handle;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct WindowsIdentity {
-    identity: WindowsFileIdentity,
-}
-
 pub(super) struct StagedFile {
     pub file: File,
-    #[allow(dead_code)]
     pub stage_name: OsString,
-    pub identity: WindowsIdentity,
+    pub identity: OplogFileIdentity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum OplogRenameClass {
+    Occupied,
+    Unsupported,
+    SourceAbsent,
+    Ambiguous,
 }
 
 pub(super) fn stage_exclusive(
     health: &OplogDayHealth,
     dest: &OsStr,
-) -> Result<StagedFile, OplogCreateError> {
+) -> Result<StagedFile, StageError> {
     let sequence = std::process::id() as u128;
     let stage_name = publication_candidate_name(dest, ATOMIC_CANDIDATE_MARKER, &[sequence]);
     let handle = nt_create_relative(
@@ -55,95 +58,89 @@ pub(super) fn stage_exclusive(
         FILE_CREATE,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )
-    .map_err(|_| OplogCreateError::io())?;
+    .map_err(|_| StageError::Allocate)?;
     let file = File::from(handle);
     let path = health
         .health()
         .diagnostic_entry_path(stage_name.as_os_str());
-    let identity = validate_windows_regular_handle(file.as_raw_handle(), &path)
-        .map_err(|_| OplogCreateError::io())?;
+    let identity = match validate_windows_regular_handle(file.as_raw_handle(), &path) {
+        Ok(identity) => identity,
+        Err(_) => {
+            drop(file);
+            return Err(StageError::Leftover(stage_name));
+        }
+    };
     Ok(StagedFile {
         file,
         stage_name,
-        identity: WindowsIdentity { identity },
+        identity: OplogFileIdentity::from_windows(identity.volume_serial(), identity.file_id()),
     })
 }
 
-pub(super) fn lease_staged(file: &File) -> Result<Option<SelfLease>, OplogCreateError> {
-    acquire_self_lease(file).map_err(|_| OplogCreateError::io())
+pub(super) fn lease_staged(file: &File) -> io::Result<Option<SelfLease>> {
+    acquire_self_lease(file).map_err(|error| io::Error::other(error.to_string()))
 }
 
-pub(super) fn publish_handle_bound(
-    health: &OplogDayHealth,
-    staged: StagedFile,
-    dest: &OsStr,
-) -> Result<File, PublishOutcome> {
-    match rename_open_stage_no_replace(health, &staged.file, dest) {
-        Ok(()) => Ok(staged.file),
-        Err(error) if is_already_exists(&error) => Err(PublishOutcome::Occupied(staged)),
-        Err(_) => Err(PublishOutcome::Io(staged)),
-    }
-}
-
-pub(super) enum PublishOutcome {
-    Occupied(StagedFile),
-    Io(StagedFile),
-    #[allow(dead_code)]
-    WrongIdentityPublished {
-        file: File,
-    },
-    #[allow(dead_code)]
-    IoAfterPublish {
-        file: File,
-    },
-    #[allow(dead_code)]
-    Aliased {
-        file: File,
-    },
-}
-
-pub(super) fn rollback_stage(
+pub(super) fn rename_stage(
     health: &OplogDayHealth,
     staged: &StagedFile,
-) -> Result<(), OplogCreateError> {
-    let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-    // SAFETY: `staged.file` is an owned handle opened with DELETE.
-    #[allow(unsafe_code)]
-    let result = unsafe {
-        SetFileInformationByHandle(
-            staged.file.as_raw_handle(),
-            FileDispositionInfo,
-            (&mut disposition as *mut FILE_DISPOSITION_INFO).cast(),
-            size_of::<FILE_DISPOSITION_INFO>() as u32,
-        )
-    };
-    if result == 0 {
-        Err(OplogCreateError::own_residue())
-    } else {
-        let _ = health;
-        Ok(())
+    dest: &OsStr,
+) -> io::Result<()> {
+    if super::create::force_publish_io() {
+        return Err(io::Error::from_raw_os_error(ERROR_INVALID_FUNCTION as i32));
+    }
+    rename_open_stage_no_replace(health, &staged.file, dest)
+}
+
+pub(super) fn classify_windows_rename_error(error: &io::Error) -> OplogRenameClass {
+    match error.raw_os_error() {
+        Some(code) if code == ERROR_ALREADY_EXISTS as i32 => OplogRenameClass::Occupied,
+        Some(code)
+            if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32 =>
+        {
+            OplogRenameClass::SourceAbsent
+        }
+        Some(code)
+            if code == ERROR_NOT_SUPPORTED as i32
+                || code == ERROR_INVALID_FUNCTION as i32
+                || code == ERROR_INVALID_PARAMETER as i32 =>
+        {
+            OplogRenameClass::Unsupported
+        }
+        _ => OplogRenameClass::Ambiguous,
     }
 }
 
-pub(super) fn dest_is_foreign(
-    health: &OplogDayHealth,
-    dest: &OsStr,
-    expected: WindowsIdentity,
-) -> Result<bool, OplogCreateError> {
+pub(super) fn inspect_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<NamedOccupant> {
     let handle = match nt_create_relative(
         health.health().as_handle().as_raw_handle(),
-        dest,
+        name,
         FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_OPEN,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     ) {
         Ok(handle) => handle,
-        Err(_) => return Err(OplogCreateError::io()),
+        Err(error)
+            if matches!(
+                error.raw_os_error(),
+                Some(code)
+                    if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+            ) =>
+        {
+            return Ok(NamedOccupant::Absent);
+        }
+        Err(error) => return Err(error),
     };
-    let path = health.health().diagnostic_entry_path(dest);
-    let identity = validate_windows_regular_handle(handle.as_raw_handle(), &path)
-        .map_err(|_| OplogCreateError::io())?;
-    Ok(identity != expected.identity)
+    let path = health.health().diagnostic_entry_path(name);
+    let identity = match validate_windows_regular_handle(handle.as_raw_handle(), &path) {
+        Ok(identity) => identity,
+        Err(_) => return Ok(NamedOccupant::Other),
+    };
+    let nlink = file_link_count(handle.as_raw_handle())?;
+    Ok(NamedOccupant::Regular {
+        identity: OplogFileIdentity::from_windows(identity.volume_serial(), identity.file_id()),
+        nlink,
+    })
 }
 
 pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
@@ -172,6 +169,16 @@ pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
     }
     let file = File::from(handle);
     probe_file_lease(&file)
+}
+
+pub(super) fn identity_of(file: &File) -> io::Result<OplogFileIdentity> {
+    crate::windows_identity::file_identity(file.as_raw_handle()).map(|identity| {
+        OplogFileIdentity::from_windows(identity.volume_serial(), identity.file_id())
+    })
+}
+
+pub(super) fn nlink_of(file: &File) -> io::Result<u64> {
+    file_link_count(file.as_raw_handle())
 }
 
 fn rename_open_stage_no_replace(
@@ -220,28 +227,162 @@ fn rename_open_stage_no_replace(
     }
 }
 
-fn is_already_exists(error: &io::Error) -> bool {
-    error.raw_os_error() == Some(ERROR_ALREADY_EXISTS as i32)
-}
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::os::windows::fs::symlink_file;
+    use std::time::Duration;
 
-#[allow(dead_code)]
-fn _offset_of_filename() -> usize {
-    offset_of!(FILE_RENAME_INFO, FileName)
-}
+    use chrono::DateTime;
 
-#[allow(dead_code)]
-fn _from_owned(handle: OwnedHandle) -> File {
-    File::from(handle)
-}
+    use super::super::create::{
+        OPLOG_CREATE_ATTEMPTS, create_oplog_with_test_timing, run_with_oplog_file_ids,
+    };
+    use super::super::name::{
+        derive_day_key_and_opened_field, file_id_hex, format_oplog_name, oplog_name_from_parts,
+    };
+    use super::super::namespace::admit_day_health_directory;
+    use super::super::reason::{
+        OplogIdentityObservation, OplogPublishReason, RetainedNamespaceState,
+    };
+    use super::super::{OplogCreateReason, OplogFormat};
+    use crate::journal_root::JournalRoot;
 
-#[allow(dead_code)]
-fn _from_raw(handle: std::os::windows::io::RawHandle) -> File {
-    // SAFETY: caller owns the handle.
-    #[allow(unsafe_code)]
-    File::from(unsafe { OwnedHandle::from_raw_handle(handle) })
-}
+    const ZERO: Duration = Duration::ZERO;
+    const SOURCE: &str = "cortex";
+    const RUN: &str = "daily-think";
 
-#[allow(dead_code)]
-fn _identity(handle: std::os::windows::io::RawHandle) -> io::Result<WindowsFileIdentity> {
-    file_identity(handle)
+    fn instant() -> DateTime<chrono::FixedOffset> {
+        DateTime::parse_from_rfc3339("2026-09-01T16:42:33.381904Z").unwrap()
+    }
+
+    fn dest_for(file_id: [u8; 16]) -> String {
+        let (_, opened) = derive_day_key_and_opened_field(instant());
+        format_oplog_name(&oplog_name_from_parts(
+            SOURCE,
+            RUN,
+            opened,
+            file_id_hex(&file_id),
+            OplogFormat::Log,
+        ))
+    }
+
+    fn health_dir(root: &std::path::Path) -> std::path::PathBuf {
+        let (day, _) = derive_day_key_and_opened_field(instant());
+        root.join("chronicle").join(day).join("health")
+    }
+
+    #[test]
+    fn eight_collisions_leave_one_stage_and_no_handle_disposition_delete() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let (day, _) = derive_day_key_and_opened_field(instant());
+        admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap();
+        let dir = health_dir(root);
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x30 + index as u8; 16])
+            .collect();
+        for id in &ids {
+            fs::write(dir.join(dest_for(*id)), b"preexisting").unwrap();
+        }
+        let error = run_with_oplog_file_ids(ids, || {
+            create_oplog_with_test_timing(
+                JournalRoot::open(root).unwrap(),
+                SOURCE,
+                RUN,
+                OplogFormat::Log,
+                instant(),
+                ZERO,
+                ZERO,
+            )
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "oplog_create_destination_exhaustion");
+        assert_eq!(error.collisions().len(), 8);
+        assert!(matches!(
+            error.namespace(),
+            RetainedNamespaceState::Established(_)
+        ));
+        // Product create never handle-deletes: the single leftover stage remains.
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| {
+                name.to_string_lossy().contains(".tmp")
+                    && name != OsStr::new(".oplog-namespace.lock")
+            })
+            .collect();
+        assert_eq!(leftovers.len(), 1);
+        assert_eq!(
+            error
+                .observations()
+                .iter()
+                .filter(|observation| matches!(
+                    observation,
+                    OplogIdentityObservation::ForeignLanded(_)
+                ))
+                .count(),
+            8
+        );
+        assert_eq!(
+            error.reason(),
+            OplogCreateReason::Publish(OplogPublishReason::DestinationExhaustion)
+        );
+    }
+
+    #[test]
+    fn reparse_point_at_candidate_is_reconciliation_not_a_foreign_collision() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let (day, _) = derive_day_key_and_opened_field(instant());
+        admit_day_health_directory(JournalRoot::open(root).unwrap(), &day).unwrap();
+        let dir = health_dir(root);
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x50 + index as u8; 16])
+            .collect();
+        let target = dir.join("reparse-target.bin");
+        fs::write(&target, b"elsewhere").unwrap();
+        // The first candidate destination is a reparse point, not a regular
+        // file: the rename still reports Occupied (EEXIST), but the occupant
+        // cannot be proven foreign or own, so this must classify as a
+        // reconciliation failure, not a collision-history entry.
+        symlink_file(&target, dir.join(dest_for(ids[0]))).unwrap();
+
+        let error = run_with_oplog_file_ids(ids, || {
+            create_oplog_with_test_timing(
+                JournalRoot::open(root).unwrap(),
+                SOURCE,
+                RUN,
+                OplogFormat::Log,
+                instant(),
+                ZERO,
+                ZERO,
+            )
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "oplog_create_reconciliation");
+        assert!(
+            error.collisions().is_empty(),
+            "a reparse occupant is not a proven-foreign collision"
+        );
+        assert!(matches!(
+            error.namespace(),
+            RetainedNamespaceState::Established(_)
+        ));
+        assert_eq!(
+            error.reason(),
+            OplogCreateReason::Publish(OplogPublishReason::Reconciliation)
+        );
+    }
+
+    #[test]
+    fn windows_directory_sync_is_a_documented_no_op() {
+        let source = include_str!("windows.rs");
+        let production = source.split("\n#[cfg(all(test").next().unwrap_or(source);
+        assert!(
+            !production.contains("sync_dir"),
+            "windows oplog create must not invoke a directory durability primitive"
+        );
+    }
 }

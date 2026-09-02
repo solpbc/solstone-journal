@@ -331,6 +331,103 @@ impl Backend for UnixRoot {
         }
         Ok(())
     }
+
+    fn revalidate_canonical_binding(&self) -> Result<(), JournalRootError> {
+        let components = canonical_components(&self.canonical, &self.canonical)?;
+        let mut current = open("/", DIRECTORY_FLAGS, Mode::empty())
+            .map_err(|error| source_io("open filesystem root", Path::new("/"), error))?;
+        if components.is_empty() {
+            let stat = fstat(&current)
+                .map_err(|error| source_io("stat opened filesystem root", Path::new("/"), error))?;
+            if !is_directory(&stat) || object_identity(&stat)? != self.identity {
+                return Err(JournalRootError::Changed);
+            }
+            return Ok(());
+        }
+        let (final_name, ancestors) = components
+            .split_last()
+            .expect("nonempty canonical components have a final name");
+        for component in ancestors {
+            let before = fstatat(
+                &current,
+                component.as_os_str(),
+                AtFlags::AT_SYMLINK_NOFOLLOW,
+            )
+            .map_err(|error| {
+                if is_race_error(error) {
+                    JournalRootError::Changed
+                } else {
+                    source_io("stat canonical root component", &self.canonical, error)
+                }
+            })?;
+            if !is_directory(&before) {
+                return Err(JournalRootError::Changed);
+            }
+            let opened = openat(
+                &current,
+                component.as_os_str(),
+                DIRECTORY_FLAGS,
+                Mode::empty(),
+            )
+            .map_err(|error| {
+                if is_race_error(error) {
+                    JournalRootError::Changed
+                } else {
+                    source_io("open journal directory", &self.canonical, error)
+                }
+            })?;
+            let after = fstat(&opened).map_err(|error| {
+                source_io(
+                    "stat opened canonical root component",
+                    &self.canonical,
+                    error,
+                )
+            })?;
+            if object_identity(&before)? != object_identity(&after)? {
+                return Err(JournalRootError::Changed);
+            }
+            current = opened;
+        }
+        let before_final = fstatat(
+            &current,
+            final_name.as_os_str(),
+            AtFlags::AT_SYMLINK_NOFOLLOW,
+        )
+        .map_err(|error| {
+            if is_race_error(error) {
+                JournalRootError::Changed
+            } else {
+                source_io("stat canonical root component", &self.canonical, error)
+            }
+        })?;
+        if !is_directory(&before_final) || object_identity(&before_final)? != self.identity {
+            return Err(JournalRootError::Changed);
+        }
+        let opened_final = openat(
+            &current,
+            final_name.as_os_str(),
+            DIRECTORY_FLAGS,
+            Mode::empty(),
+        )
+        .map_err(|error| {
+            if is_race_error(error) {
+                JournalRootError::Changed
+            } else {
+                source_io("open journal directory", &self.canonical, error)
+            }
+        })?;
+        let after_final = fstat(&opened_final).map_err(|error| {
+            source_io(
+                "stat opened canonical root component",
+                &self.canonical,
+                error,
+            )
+        })?;
+        if object_identity(&after_final)? != self.identity {
+            return Err(JournalRootError::Changed);
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn acquire(root: &Path) -> Result<UnixRoot, JournalRootError> {
@@ -1341,6 +1438,34 @@ mod tests {
         assert_eq!(
             read_member(&admitted, &["imports", "import-1", "source.bin"]),
             b"source"
+        );
+    }
+
+    #[test]
+    fn canonical_binding_rejects_symlink_ancestor_while_retained_descriptor_revalidates() {
+        let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
+        let root = temporary.path().join("outer/inner/journal");
+        fs::create_dir_all(&root).unwrap();
+        let admitted = JournalRoot::open(&root).expect("admit root");
+        admitted.revalidate().expect("retained descriptor");
+        admitted
+            .revalidate_canonical_binding()
+            .expect("recorded pathname still resolves");
+
+        let inner = temporary.path().join("outer/inner");
+        let moved = temporary.path().join("outer/inner-moved");
+        fs::rename(&inner, &moved).unwrap();
+        std::os::unix::fs::symlink(&moved, &inner).unwrap();
+
+        admitted
+            .revalidate()
+            .expect("retained descriptor still names the admitted directory");
+        assert!(
+            matches!(
+                admitted.revalidate_canonical_binding(),
+                Err(JournalRootError::Changed)
+            ),
+            "symlink substitution at an intermediate canonical component must fail the pathname walk"
         );
     }
 }

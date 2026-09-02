@@ -12,6 +12,8 @@ use crate::errors::FlatDirectoryError;
 use crate::journal_root::JournalRoot;
 use crate::paths::is_day_key;
 
+use super::reason::OplogNamespaceIdentity;
+
 #[cfg(unix)]
 use crate::flat_directory::{FlatDirectory, create_or_open_flat_directory_bound};
 #[cfg(windows)]
@@ -24,6 +26,7 @@ const DIRECTORY_MODE: u32 = 0o700;
 
 /// Ordered checkpoints along the chronicle → day → health admission chain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum OplogNamespacePrimitive {
     /// After `chronicle/` is retained, before the day child lookup.
     AfterChronicle,
@@ -68,6 +71,27 @@ impl OplogDayHealth {
     #[cfg(windows)]
     pub fn health(&self) -> &WindowsFlatDirectory {
         &self.health
+    }
+
+    pub(super) fn journal_root(&self) -> &JournalRoot {
+        &self.root
+    }
+
+    pub(super) fn identity(&self) -> OplogNamespaceIdentity {
+        #[cfg(unix)]
+        {
+            OplogNamespaceIdentity::new(self.health.identity())
+        }
+        #[cfg(windows)]
+        {
+            let identity = self.health.identity();
+            OplogNamespaceIdentity::new(
+                crate::journal_root::ObjectIdentity::from_volume_and_file_id(
+                    identity.volume_serial(),
+                    identity.file_id(),
+                ),
+            )
+        }
     }
 
     /// Re-resolve `chronicle/<day>/health` from the retained journal root.

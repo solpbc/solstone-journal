@@ -202,6 +202,7 @@ mod backend {
         fn identity(&self) -> ObjectIdentity;
         fn diagnostic_path(&self) -> &Path;
         fn revalidate(&self) -> Result<(), JournalRootError>;
+        fn revalidate_canonical_binding(&self) -> Result<(), JournalRootError>;
     }
 }
 
@@ -243,6 +244,12 @@ impl JournalRoot {
     /// Confirm the retained descriptor still names the admitted directory identity.
     pub fn revalidate(&self) -> Result<(), JournalRootError> {
         self.inner.revalidate()
+    }
+
+    /// Prove the recorded canonical pathname still resolves, no-follow,
+    /// component-by-component, to the retained root identity.
+    pub fn revalidate_canonical_binding(&self) -> Result<(), JournalRootError> {
+        self.inner.revalidate_canonical_binding()
     }
 }
 

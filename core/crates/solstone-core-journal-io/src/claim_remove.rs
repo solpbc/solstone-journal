@@ -581,14 +581,14 @@ fn identity_changed(
     }
 }
 
-enum RenameErrorClass {
+pub(crate) enum RenameErrorClass {
     Occupied,
     Unsupported,
     SourceAbsent,
     Ambiguous,
 }
 
-fn classify_rename_error(error: &io::Error) -> RenameErrorClass {
+pub(crate) fn classify_rename_error(error: &io::Error) -> RenameErrorClass {
     let Some(raw) = error.raw_os_error() else {
         return RenameErrorClass::Ambiguous;
     };

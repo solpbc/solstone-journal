@@ -467,6 +467,107 @@ impl Backend for WindowsRoot {
         }
         Ok(())
     }
+
+    fn revalidate_canonical_binding(&self) -> Result<(), JournalRootError> {
+        let validated = validate_path(&self.canonical)?;
+        if validated.components.is_empty() {
+            let handle = open_directory(
+                &validated.wide,
+                WindowsAcquisitionPrimitive::FinalTargetOpen,
+                DirectoryOpenPurpose::Verification,
+            )
+            .map_err(|source| {
+                after_authority(&self.canonical, "open verified journal root", source)
+            })?;
+            let attributes = attribute_tag(
+                &handle,
+                WindowsAcquisitionPrimitive::FinalTargetAttributeTag,
+            )
+            .map_err(|source| {
+                after_authority(
+                    &self.canonical,
+                    "query verified journal root attributes",
+                    source,
+                )
+            })?;
+            if !is_directory(attributes) || is_reparse_point(attributes) {
+                return Err(JournalRootError::Changed);
+            }
+            let observed = file_id(&handle, WindowsAcquisitionPrimitive::FinalTargetFileId)
+                .map_err(|source| {
+                    after_authority(
+                        &self.canonical,
+                        "query verified journal root identity",
+                        source,
+                    )
+                })?;
+            return (observed == self.identity)
+                .then_some(())
+                .ok_or(JournalRootError::Changed);
+        }
+        let mut level = root_drive_prefix(&validated.wide);
+        let (target, ancestors) = validated
+            .components
+            .split_last()
+            .expect("non-root path has final component");
+        for ancestor in ancestors {
+            append_component(&mut level, ancestor);
+            let handle = open_directory(
+                &level,
+                WindowsAcquisitionPrimitive::VerificationAncestorOpen,
+                DirectoryOpenPurpose::Verification,
+            )
+            .map_err(|source| {
+                after_authority(&self.canonical, "open journal root ancestor", source)
+            })?;
+            let attributes = attribute_tag(
+                &handle,
+                WindowsAcquisitionPrimitive::VerificationAncestorAttributeTag,
+            )
+            .map_err(|source| {
+                after_authority(
+                    &self.canonical,
+                    "query journal root ancestor attributes",
+                    source,
+                )
+            })?;
+            if !is_directory(attributes) || is_reparse_point(attributes) {
+                return Err(JournalRootError::Changed);
+            }
+        }
+        append_component(&mut level, target);
+        let handle = open_directory(
+            &level,
+            WindowsAcquisitionPrimitive::FinalTargetOpen,
+            DirectoryOpenPurpose::Verification,
+        )
+        .map_err(|source| after_authority(&self.canonical, "open verified journal root", source))?;
+        let attributes = attribute_tag(
+            &handle,
+            WindowsAcquisitionPrimitive::FinalTargetAttributeTag,
+        )
+        .map_err(|source| {
+            after_authority(
+                &self.canonical,
+                "query verified journal root attributes",
+                source,
+            )
+        })?;
+        if !is_directory(attributes) || is_reparse_point(attributes) {
+            return Err(JournalRootError::Changed);
+        }
+        let observed =
+            file_id(&handle, WindowsAcquisitionPrimitive::FinalTargetFileId).map_err(|source| {
+                after_authority(
+                    &self.canonical,
+                    "query verified journal root identity",
+                    source,
+                )
+            })?;
+        (observed == self.identity)
+            .then_some(())
+            .ok_or(JournalRootError::Changed)
+    }
 }
 
 #[derive(Debug)]
@@ -1685,6 +1786,32 @@ mod tests {
         fs::remove_dir_all(&root_path).expect("remove replacement final target");
         fs::rename(&moved, &root_path).expect("restore original final target");
         assert_eq!(snapshot_fixture(&root_path), before);
+    }
+
+    #[test]
+    fn canonical_binding_rejects_reparse_ancestor_while_retained_handle_revalidates() {
+        let (temporary, root_path) = nested_fixture("journal");
+        let admitted = JournalRoot::open(&root_path).expect("admit nested fixture root");
+        admitted.revalidate().expect("retained handle");
+        admitted
+            .revalidate_canonical_binding()
+            .expect("recorded pathname still resolves");
+
+        let inner = temporary.path().join("outer").join("inner");
+        let moved = temporary.path().join("outer").join("inner-moved");
+        fs::rename(&inner, &moved).expect("move intermediate ancestor");
+        symlink_dir(&moved, &inner).expect("plant reparse ancestor");
+
+        admitted
+            .revalidate()
+            .expect("retained handle still names the admitted directory");
+        assert!(
+            matches!(
+                admitted.revalidate_canonical_binding(),
+                Err(JournalRootError::Changed)
+            ),
+            "reparse substitution at an intermediate canonical component must fail the pathname walk"
+        );
     }
 
     #[test]
