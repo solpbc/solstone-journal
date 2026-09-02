@@ -185,6 +185,9 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
         entry["last_accepted_ingest_at"] = rfc3339(last_accepted).into();
         entry["last_accepted_segment"] = serde_json::json!({"day": "20260101", "name": "fixture"});
     }
+    if let Some(sources) = value.get("sources") {
+        entry["sources"] = sources.clone();
+    }
     if let Some(rejection) = value
         .get("health")
         .and_then(|health| health.get("ingest_rejection"))
@@ -1888,6 +1891,173 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     };
     assert_eq!(strip_reach(&running_facts), strip_reach(&stale_facts));
     assert_eq!(strip_reach(&running_facts), strip_reach(&asleep_facts));
+}
+
+fn rfc3339_millis(timestamp: i64) -> String {
+    chrono::Utc
+        .timestamp_millis_opt(timestamp)
+        .single()
+        .expect("fixture timestamp")
+        .to_rfc3339()
+}
+
+#[test]
+fn single_source_capture_and_stall_wording_is_unchanged() {
+    let hour = 3_600_000;
+    let expected_capture = "rollup=attention; the solstone app on phone last added 89h ago; it is still running, but it isn't adding to your journal";
+    let expected_stall = "the solstone app on phone last added 5340m ago; it is still running, but it isn't adding to your journal";
+    for sources in [
+        None,
+        Some(serde_json::json!({
+            "audio": {"last_accepted_ingest_at": ""}
+        })),
+        Some(serde_json::json!({
+            "": {"last_accepted_ingest_at": ""}
+        })),
+    ] {
+        let c = fixture();
+        let now = c.now.timestamp_millis();
+        let last_sent = now - 89 * hour;
+        let stamp = rfc3339_millis(last_sent);
+        let mut value = serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "phone",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": last_sent,
+        });
+        if let Some(mut sources) = sources {
+            if let Some(audio) = sources.get_mut("audio") {
+                audio["last_accepted_ingest_at"] = stamp.clone().into();
+            }
+            if let Some(default) = sources.get_mut("") {
+                default["last_accepted_ingest_at"] = stamp.clone().into();
+            }
+            value["sources"] = sources;
+        }
+        write_client_fixture(&c, "abcdefgh", value);
+        let capture = result("capture_health", &c);
+        let stall = result("client_delivery_stall", &c);
+        assert_eq!(capture.detail, expected_capture);
+        assert_eq!(stall.detail, expected_stall);
+        assert!(!capture.detail.contains("audio"));
+        assert!(!stall.detail.contains("audio"));
+        assert!(!capture.detail.contains("default"));
+        assert!(!stall.detail.contains("default"));
+    }
+}
+
+#[test]
+fn multi_source_needs_attention_names_the_quiet_source() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    write_client_fixture(
+        &c,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "phone",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 1_000,
+            "sources": {
+                "audio": {"last_accepted_ingest_at": rfc3339_millis(now - 1_000)},
+                "location": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000)},
+            }
+        }),
+    );
+    let capture = result("capture_health", &c);
+    let stall = result("client_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert_eq!(
+        capture.detail,
+        "rollup=attention; the solstone app on phone is having trouble adding location"
+    );
+    assert_eq!(
+        stall.detail,
+        "the solstone app on phone last added location 11m ago; it is still running, but it isn't adding to your journal"
+    );
+}
+
+#[test]
+fn multi_source_plural_need_attention_joins_quiet_names() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    let quiet = rfc3339_millis(now - 700_000);
+    write_client_fixture(
+        &c,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "phone",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 700_000,
+            "sources": {
+                "audio": {"last_accepted_ingest_at": quiet},
+                "location": {"last_accepted_ingest_at": quiet},
+                "screen": {"last_accepted_ingest_at": quiet},
+            }
+        }),
+    );
+    let capture = result("capture_health", &c);
+    let stall = result("client_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert!(
+        capture
+            .detail
+            .contains("audio, location, screen need attention"),
+        "capture should join quiet sources with the plural verb: {}",
+        capture.detail
+    );
+    assert!(
+        stall
+            .detail
+            .contains("audio, location, screen need attention"),
+        "stall should join quiet sources with the plural verb: {}",
+        stall.detail
+    );
+    assert!(!capture.detail.contains("needs attention"));
+    assert!(!stall.detail.contains("needs attention"));
+}
+
+#[test]
+fn empty_source_is_named_default_on_a_multi_source_device() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    write_client_fixture(
+        &c,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "phone",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 1_000,
+            "sources": {
+                "audio": {"last_accepted_ingest_at": rfc3339_millis(now - 1_000)},
+                "": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000)},
+            }
+        }),
+    );
+    let capture = result("capture_health", &c);
+    let stall = result("client_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert_eq!(
+        capture.detail,
+        "rollup=attention; the solstone app on phone is having trouble adding default"
+    );
+    assert_eq!(
+        stall.detail,
+        "the solstone app on phone last added default 11m ago; it is still running, but it isn't adding to your journal"
+    );
 }
 
 #[test]
