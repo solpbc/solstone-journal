@@ -5,16 +5,27 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::sync::OnceLock;
+
 use solstone_core_ced_sys::CedLibrary;
+
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::{
+    VerifiedWindowsPayload, WINDOWS_CED_LIBRARY, verify_windows_payload,
+};
 
 use super::capability_status::CapabilityStatus;
 use super::ced_install::{
-    ced_artifact_key, ced_library_path, ced_model_path, check_ced_assets, model_artifact,
+    ced_artifact_key, ced_library_path, ced_model_path, ced_uses_package_engine, check_ced_assets,
+    check_ced_model, model_artifact,
 };
 use super::manifest::sha256_file;
 
 /// Owner-facing sentence for a degraded CED verdict, identical on every surface.
-pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.";
+pub const CED_UNAVAILABLE_GUIDANCE: &str = "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.";
 
 /// Short ready detail for `journal check` and `journal health`.
 pub const CED_READY_DETAIL: &str = "ced.cpp sound-tag engine and model are ready";
@@ -61,6 +72,9 @@ pub fn evaluate_ced_readiness_against(
     arch: &str,
     expected_model_sha256: &str,
 ) -> CedVerdict {
+    if ced_uses_package_engine(os, arch) {
+        return probe_windows_package_engine(journal, expected_model_sha256);
+    }
     let Some(key) = ced_artifact_key(os, arch) else {
         return CedVerdict::Unsupported {
             os: os.to_owned(),
@@ -75,6 +89,65 @@ pub fn evaluate_ced_readiness_against(
         Err(error) => CedVerdict::Degraded(ced_install_status(&error)),
         Ok(Some(_)) => probe_integrity_and_load(journal, key, expected_model_sha256),
     }
+}
+
+fn probe_windows_package_engine(journal: &Path, expected_model_sha256: &str) -> CedVerdict {
+    let library = match windows_package_ced_library() {
+        Ok(library) => library,
+        Err(detail) => {
+            return CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail,
+            });
+        }
+    };
+    if let Err(error) = check_ced_model(journal) {
+        return CedVerdict::Degraded(ced_install_status(&error));
+    }
+    let model = ced_model_path(journal);
+    probe_model_and_library_at_paths(&model, expected_model_sha256, &library)
+}
+
+#[cfg(windows)]
+fn windows_package_ced_library() -> Result<PathBuf, String> {
+    static PAYLOAD: OnceLock<Result<VerifiedWindowsPayload, String>> = OnceLock::new();
+    let payload = PAYLOAD.get_or_init(|| {
+        let executable = std::env::current_exe().map_err(|error| {
+            format!("could not determine the running journal executable: {error}")
+        })?;
+        let bin = executable.parent().ok_or_else(|| {
+            format!(
+                "running journal executable has no containing directory: {}",
+                executable.display()
+            )
+        })?;
+        if bin.file_name() != Some(OsStr::new("bin")) {
+            return Err(format!(
+                "running journal executable is not in the package bin directory: {}",
+                executable.display()
+            ));
+        }
+        let root = bin.parent().ok_or_else(|| {
+            format!(
+                "package bin directory has no package root: {}",
+                bin.display()
+            )
+        })?;
+        verify_windows_payload(root)
+            .map_err(|error| format!("could not verify the signed CED app payload: {error}"))
+    });
+    payload
+        .as_ref()
+        .map_err(Clone::clone)?
+        .ced_library_path()
+        .map_err(|error| {
+            format!("signed CED app payload does not declare {WINDOWS_CED_LIBRARY}: {error}")
+        })
+}
+
+#[cfg(not(windows))]
+fn windows_package_ced_library() -> Result<PathBuf, String> {
+    Err("Windows CED package verification requires a Windows runtime".to_owned())
 }
 
 fn ced_install_status(error: &super::ced_install::CedInstallError) -> CapabilityStatus {
@@ -149,14 +222,11 @@ mod tests {
     use crate::install::ced_install::{ced_library_path, ced_model_path, model_artifact};
 
     #[test]
-    fn unsupported_platform_is_unsupported() {
+    fn windows_requires_a_verified_package_engine() {
         let journal = tempfile::tempdir().unwrap();
         match evaluate_ced_readiness(journal.path(), "windows", "x86_64") {
-            CedVerdict::Unsupported { os, arch } => {
-                assert_eq!(os, "windows");
-                assert_eq!(arch, "x86_64");
-            }
-            other => panic!("expected unsupported, got {other:?}"),
+            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. }) => {}
+            other => panic!("expected package-engine refusal, got {other:?}"),
         }
         match evaluate_ced_readiness(journal.path(), "macos", "aarch64") {
             CedVerdict::Unsupported { os, arch } => {

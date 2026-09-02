@@ -23,6 +23,9 @@ pub const WINDOWS_PAYLOAD_SCHEMA_V1: &str = "solstone.windows-installed-payload.
 pub const WINDOWS_PAYLOAD_TARGET: &str = "windows-x86_64";
 pub const WINDOWS_PAYLOAD_MANIFEST: &str = "share/provenance/windows-payload.json";
 pub const WINDOWS_PAYLOAD_SIGNATURE: &str = "share/provenance/windows-payload.json.minisig";
+/// The CED engine is a signed application-directory payload, never mutable
+/// journal state.
+pub const WINDOWS_CED_LIBRARY: &str = "bin/ced.dll";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,6 +76,17 @@ impl VerifiedWindowsPayload {
             .iter()
             .any(|file| file.path == path)
             .then(|| self.root.join(path))
+    }
+
+    /// Return the CED engine only when the verified package declared it.
+    ///
+    /// The caller still owns the platform-safe dynamic-load operation. This
+    /// capability only binds that operation to the exact signed tree checked
+    /// by [`verify_windows_payload`].
+    pub fn ced_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_CED_LIBRARY).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_CED_LIBRARY)
+        })
     }
 }
 

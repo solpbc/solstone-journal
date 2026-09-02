@@ -36,6 +36,9 @@ log.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["time"] }
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-distribution.workspace = true
+
 [dev-dependencies]
 socket2 = "0.6.5"
 tempfile = "3.24.0"

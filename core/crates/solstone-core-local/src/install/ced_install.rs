@@ -78,6 +78,15 @@ pub fn ced_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
     }
 }
 
+/// True for the Windows CED ownership split: its model is owner-installed,
+/// while its executable engine is admitted only from the signed app payload.
+pub fn ced_uses_package_engine(os_name: &str, arch: &str) -> bool {
+    matches!(
+        (os_name, arch.to_ascii_lowercase().as_str()),
+        ("windows", "amd64" | "x64" | "x86_64")
+    )
+}
+
 fn root(journal: &Path) -> PathBuf {
     journal.join("cache/providers/ced").join(ENGINE_VERSION)
 }

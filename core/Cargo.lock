@@ -4611,6 +4611,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-ced-sys",
+ "solstone-core-distribution",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "tar",

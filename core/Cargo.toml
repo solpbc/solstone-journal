@@ -218,6 +218,7 @@ solstone-core-retention-client = { path = "crates/solstone-core-retention-client
 solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
 solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
 solstone-core-ced-sys = { path = "crates/solstone-core-ced-sys" }
+solstone-core-distribution = { path = "crates/solstone-core-distribution" }
 solstone-core-sound-tags = { path = "crates/solstone-core-sound-tags" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
