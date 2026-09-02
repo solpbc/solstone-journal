@@ -33,8 +33,6 @@ fn launch(model_path: &str) -> ParakeetLaunchConfig {
         gpu_index: None,
         binary_path: PathBuf::from(FIXTURE),
         model_path: PathBuf::from(model_path),
-        package_root: None,
-        journal_path: PathBuf::from("test-journal"),
         threads: 1,
         desired_fingerprint_json: "{}".to_owned(),
         desired_fingerprint_sha256: "desired".to_owned(),

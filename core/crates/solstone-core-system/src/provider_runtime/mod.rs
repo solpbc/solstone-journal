@@ -33,7 +33,7 @@ pub use launch::{
 pub use model::*;
 pub use parakeet::{
     PARAKEET_SERVER_PROCESS_NAME, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
-    ParakeetProbeSeam, ParakeetRuntimeShared, parakeet_auth_headers, probe_parakeet_cpp_server,
+    ParakeetProbeSeam, ParakeetRuntimeShared, probe_parakeet_cpp_server,
 };
 pub use parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
