@@ -4,7 +4,11 @@
 //! Caller-owned Windows publication-path admission and retained ancestor chain.
 //!
 //! The lexical parser is host-neutral so AC1 runs on a Unix build host. The
-//! retained capability and prepare/revalidate path are Windows-only.
+//! retained capability and prepare/revalidate path are Windows-only. A
+//! current-directory-relative spec is resolved to drive-absolute (cwd
+//! components plus caller components) before any handle is opened; the retained
+//! chain always starts at the drive root and covers every ancestor through the
+//! terminal parent.
 
 #![cfg_attr(
     not(windows),
@@ -298,7 +302,8 @@ mod windows_impl {
 
     use super::{
         MAX_EXTENDED_PATH_UTF16, PublicationPathParseError, PublicationPathSpec,
-        VOLUME_GUID_PREFIX, check_move_spelling_budget, join_guid_parent, parse_publication_path,
+        VOLUME_GUID_PREFIX, ascii_drive_letter, check_move_spelling_budget, join_guid_parent,
+        parse_publication_path,
     };
     use crate::windows_identity::{WindowsFileIdentity, file_identity};
     use crate::windows_ntcreate::nt_create_relative_deny_delete_sharing;
@@ -417,6 +422,8 @@ mod windows_impl {
     }
 
     /// Retained no-follow ancestor chain for a later create-only publication writer.
+    /// Always starts at the opened drive root and includes every ancestor through
+    /// the terminal parent.
     ///
     /// Not `Clone`: the OS share-mode guarantee is bound to these live handles.
     #[allow(
@@ -473,7 +480,7 @@ mod windows_impl {
             &self.leaf
         }
 
-        /// Volume-GUID absolute spelling of the terminal parent (ancestors only).
+        /// Volume-GUID absolute spelling of the terminal parent (drive-root GUID plus every ancestor, no leaf).
         #[allow(
             dead_code,
             reason = "consumed by the create-only publication writer landing in the next lode"
@@ -482,7 +489,7 @@ mod windows_impl {
             &self.move_spelling
         }
 
-        /// Re-check every retained identity and that `move_spelling` still names the parent.
+        /// Re-check every retained identity (drive root through terminal parent) and that `move_spelling` still names the parent.
         #[allow(
             dead_code,
             reason = "consumed by the create-only publication writer landing in the next lode"
@@ -513,7 +520,7 @@ mod windows_impl {
         }
     }
 
-    /// Prepare a retained publication path. Does not open or create the leaf.
+    /// Resolve a relative path against the current directory, then retain the drive root and every ancestor. Does not open or create the leaf.
     #[allow(
         dead_code,
         reason = "consumed by the create-only publication writer landing in the next lode"
@@ -522,7 +529,14 @@ mod windows_impl {
         input: &str,
     ) -> Result<WindowsPublicationPath, PublicationPathError> {
         let spec = parse_publication_path(input).map_err(PublicationPathError::Parse)?;
-        let (anchor, anchor_identity) = open_anchor(&spec)?;
+        let spec = resolve_effective_spec(spec)?;
+        let drive = match &spec {
+            PublicationPathSpec::DriveAbsolute { drive, .. } => *drive,
+            PublicationPathSpec::CurrentDirectoryRelative { .. } => {
+                unreachable!("resolve_effective_spec always returns DriveAbsolute")
+            }
+        };
+        let (anchor, anchor_identity) = open_anchor(drive)?;
         let guid = volume_guid_path(anchor.as_raw_handle())?;
         let ancestor_names = spec
             .ancestors()
@@ -532,17 +546,13 @@ mod windows_impl {
         check_move_spelling_budget(&guid, &ancestor_names)
             .map_err(|_| PublicationPathError::PathTooLong)?;
 
-        let mut retained: Vec<(OwnedHandle, WindowsFileIdentity)> = Vec::new();
+        let mut retained: Vec<(OwnedHandle, WindowsFileIdentity)> =
+            Vec::with_capacity(spec.ancestors().len() + 1);
+        retained.push((anchor, anchor_identity));
         for name in spec.ancestors() {
-            let parent = retained
-                .last()
-                .map(|entry| entry.0.as_raw_handle())
-                .unwrap_or_else(|| anchor.as_raw_handle());
+            let parent = retained.last().expect("root just pushed").0.as_raw_handle();
             let (handle, identity) = open_or_create_ancestor(parent, name)?;
             retained.push((handle, identity));
-        }
-        if retained.is_empty() {
-            retained.push((anchor, anchor_identity));
         }
 
         Ok(WindowsPublicationPath {
@@ -553,32 +563,58 @@ mod windows_impl {
         })
     }
 
-    fn open_anchor(
-        spec: &PublicationPathSpec,
-    ) -> Result<(OwnedHandle, WindowsFileIdentity), PublicationPathError> {
-        let wide = match spec {
-            PublicationPathSpec::DriveAbsolute { drive, .. } => {
-                vec![u16::from(*drive), u16::from(b':'), u16::from(b'\\'), 0]
-            }
-            PublicationPathSpec::CurrentDirectoryRelative { .. } => {
-                let cwd = std::env::current_dir().map_err(|source| PublicationPathError::Io {
-                    operation: "resolve publication-path current directory",
-                    source,
-                })?;
-                let mut wide = cwd.as_os_str().encode_wide().collect::<Vec<_>>();
-                if wide.contains(&0) {
-                    return Err(PublicationPathError::Io {
-                        operation: "resolve publication-path current directory",
-                        source: io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "current directory contains an interior NUL",
-                        ),
-                    });
-                }
-                wide.push(0);
-                wide
-            }
+    fn resolve_effective_spec(
+        spec: PublicationPathSpec,
+    ) -> Result<PublicationPathSpec, PublicationPathError> {
+        let PublicationPathSpec::CurrentDirectoryRelative {
+            components: caller_components,
+        } = spec
+        else {
+            return Ok(spec);
         };
+        let cwd = std::env::current_dir().map_err(|source| PublicationPathError::Io {
+            operation: "resolve publication-path current directory",
+            source,
+        })?;
+        let cwd_str = cwd.to_str().ok_or_else(|| PublicationPathError::Io {
+            operation: "resolve publication-path current directory",
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "current directory is not valid UTF-8",
+            ),
+        })?;
+        match parse_publication_path(cwd_str) {
+            Ok(PublicationPathSpec::DriveAbsolute {
+                drive,
+                components: mut cwd_components,
+            }) => {
+                cwd_components.extend(caller_components);
+                Ok(PublicationPathSpec::DriveAbsolute {
+                    drive,
+                    components: cwd_components,
+                })
+            }
+            Ok(PublicationPathSpec::CurrentDirectoryRelative { .. }) => {
+                unreachable!(
+                    "GetCurrentDirectoryW never returns a bare-relative or already-refused string"
+                )
+            }
+            Err(PublicationPathParseError::RootOnly) => {
+                let drive = ascii_drive_letter(cwd_str).expect(
+                    "parse_publication_path already matched a drive letter to produce RootOnly",
+                );
+                Ok(PublicationPathSpec::DriveAbsolute {
+                    drive,
+                    components: caller_components,
+                })
+            }
+            Err(other) => Err(PublicationPathError::Parse(other)),
+        }
+    }
+
+    /// Open the drive root as the retained chain's first handle.
+    fn open_anchor(drive: u8) -> Result<(OwnedHandle, WindowsFileIdentity), PublicationPathError> {
+        let wide = [u16::from(drive), u16::from(b':'), u16::from(b'\\'), 0];
         let handle = open_anchor_directory(&wide)?;
         let identity = validate_retained_directory(handle.as_raw_handle(), "<anchor>")?;
         Ok((handle, identity))
@@ -1223,6 +1259,37 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn resolved_cwd_component_count() -> usize {
+        let cwd = std::env::current_dir().unwrap();
+        match parse_publication_path(cwd.to_str().unwrap()).unwrap() {
+            PublicationPathSpec::DriveAbsolute { components, .. } => components.len(),
+            PublicationPathSpec::CurrentDirectoryRelative { .. } => unreachable!(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn assert_share_blocked(path: &Path) {
+        let rename_error = fs::rename(path, path.with_extension("retired")).unwrap_err();
+        assert!(
+            rename_error.raw_os_error()
+                == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32)
+                || rename_error.raw_os_error()
+                    == Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32),
+            "rename of {} while live: {rename_error:?}",
+            path.display()
+        );
+        let remove_error = fs::remove_dir(path).unwrap_err();
+        assert!(
+            remove_error.raw_os_error()
+                == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32)
+                || remove_error.raw_os_error()
+                    == Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32),
+            "remove_dir of {} while live: {remove_error:?}",
+            path.display()
+        );
+    }
+
+    #[cfg(windows)]
     fn assert_volume_guid_spelling(spelling: &OsStr) {
         let text = spelling.to_string_lossy();
         assert!(
@@ -1253,7 +1320,10 @@ mod tests {
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path("leaf").unwrap();
-        assert_eq!(prepared.retained_count(), 1);
+        assert_eq!(
+            prepared.retained_count(),
+            1 + resolved_cwd_component_count()
+        );
         assert_eq!(prepared.leaf_name(), OsStr::new("leaf"));
         assert!(!temporary.path().join("leaf").exists());
         prepared.revalidate().unwrap();
@@ -1261,11 +1331,14 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn prepare_multicomponent_retains_suffix() {
+    fn prepare_multicomponent_retains_full_chain() {
         let temporary = TempDir::new();
         let _cwd = set_cwd(temporary.path());
         let prepared = prepare_publication_path(r"a\b\leaf").unwrap();
-        assert_eq!(prepared.retained_count(), 2);
+        assert_eq!(
+            prepared.retained_count(),
+            1 + resolved_cwd_component_count() + 2
+        );
         assert!(temporary.path().join("a").is_dir());
         assert!(temporary.path().join("a").join("b").is_dir());
         assert!(!temporary.path().join("a").join("b").join("leaf").exists());
@@ -1371,33 +1444,24 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn share_mode_blocks_rename_and_delete_while_live() {
-        let temporary = TempDir::new();
-        let _cwd = set_cwd(temporary.path());
+        let original = TempDir::new();
+        let elsewhere = TempDir::new();
+        let _restore = set_cwd(original.path());
         let prepared = prepare_publication_path(r"a\b\leaf").unwrap();
-        let a = temporary.path().join("a");
+        let _moved = set_cwd(elsewhere.path());
+        let a = original.path().join("a");
         let b = a.join("b");
-        for path in [&a, &b] {
-            let rename_error = fs::rename(path, path.with_extension("retired")).unwrap_err();
-            assert!(
-                rename_error.raw_os_error()
-                    == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32)
-                    || rename_error.raw_os_error()
-                        == Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32),
-                "rename of {} while live: {rename_error:?}",
-                path.display()
-            );
-            let remove_error = fs::remove_dir(path).unwrap_err();
-            assert!(
-                remove_error.raw_os_error()
-                    == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32)
-                    || remove_error.raw_os_error()
-                        == Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32),
-                "remove_dir of {} while live: {remove_error:?}",
-                path.display()
-            );
+        for path in [original.path(), a.as_path(), b.as_path()] {
+            assert_share_blocked(path);
         }
         drop(prepared);
-        fs::remove_dir(&b).unwrap();
-        fs::remove_dir(&a).unwrap();
+        fs::rename(&b, b.with_extension("retired")).unwrap();
+        fs::rename(&a, a.with_extension("retired")).unwrap();
+        let retired_root = original.path().parent().unwrap().join(format!(
+            "retired-{}",
+            original.path().file_name().unwrap().to_string_lossy()
+        ));
+        fs::rename(original.path(), &retired_root).unwrap();
+        fs::remove_dir_all(&retired_root).unwrap();
     }
 }
