@@ -15,18 +15,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
-#[cfg(windows)]
-use std::{ffi::OsStr, sync::OnceLock};
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_json, fingerprint_sha256};
-#[cfg(windows)]
-use solstone_core_distribution::windows_payload::{
-    WINDOWS_PARAKEET_MODEL, WINDOWS_PARAKEET_SERVER, verify_windows_payload,
-};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::pins;
+#[cfg(windows)]
+use solstone_core_local::install::verified_windows_parakeet_package;
 use solstone_core_local::plan::VulkanDevice;
 use solstone_core_local::{detect_gpus, select_device};
 
@@ -427,7 +423,7 @@ fn observe_windows_parakeet_truth(
     config: &ParakeetTruthConfig,
     latch: &super::admission::ParakeetAdmissionLatch,
 ) -> ProviderTruthObservation {
-    let package = match verified_windows_provider_package() {
+    let package = match verified_windows_parakeet_package() {
         Ok(package) => package,
         Err(_) => return unavailable_observation("artifact-missing"),
     };
@@ -489,59 +485,6 @@ fn observe_windows_parakeet_truth(
             "stt_admission_latch": latch.to_json(),
             "target_fingerprint_json": fingerprint_json,
         })),
-    }
-}
-
-#[cfg(windows)]
-#[derive(Clone)]
-struct WindowsParakeetPackage {
-    package_root: PathBuf,
-    server: PathBuf,
-    model: PathBuf,
-}
-
-#[cfg(windows)]
-fn verified_windows_provider_package() -> Result<WindowsParakeetPackage, String> {
-    static PACKAGE: OnceLock<Result<WindowsParakeetPackage, String>> = OnceLock::new();
-    match PACKAGE.get_or_init(|| {
-        let executable = std::env::current_exe()
-            .map_err(|error| format!("could not determine the running journal executable: {error}"))?;
-        let bin = executable.parent().ok_or_else(|| {
-            format!(
-                "running journal executable has no containing directory: {}",
-                executable.display()
-            )
-        })?;
-        if bin.file_name() != Some(OsStr::new("bin")) {
-            return Err(format!(
-                "running journal executable is not in the package bin directory: {}",
-                executable.display()
-            ));
-        }
-        let package_root = bin.parent().ok_or_else(|| {
-            format!(
-                "package bin directory has no package root: {}",
-                bin.display()
-            )
-        })?;
-        let payload = verify_windows_payload(package_root)
-            .map_err(|error| format!("could not verify the signed Parakeet app payload: {error}"))?;
-        Ok(WindowsParakeetPackage {
-            package_root: package_root.to_path_buf(),
-            server: payload.parakeet_server_path().map_err(|error| {
-                format!(
-                    "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_SERVER}: {error}"
-                )
-            })?,
-            model: payload.parakeet_model_path().map_err(|error| {
-                format!(
-                    "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_MODEL}: {error}"
-                )
-            })?,
-        })
-    }) {
-        Ok(package) => Ok(package.clone()),
-        Err(error) => Err(error.clone()),
     }
 }
 
