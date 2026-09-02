@@ -35,7 +35,23 @@ const DRIVER_COMMAND_CAPACITY: usize = 512;
 const STREAM_SIGNAL_CAPACITY: usize = 1;
 const CARRIER_READ_BYTES: usize = 4_096;
 const RENEW_FETCH_LEAD_SECONDS: i64 = 180;
-const RENEW_CHALLENGE_LEAD_SECONDS: i64 = 120;
+/// When this journal will ANSWER a bridge renewal challenge.
+///
+/// 🔴 This is deliberately the fetch lead and **not** the bridge's own
+/// `RENEWAL_WINDOW` (120s), and the difference is the whole defect this
+/// constant exists to prevent. Measured on the deployed endpoint 2026-09-02:
+/// with both sides at 120s the two windows were *coincident* rather than
+/// nested, so they carried zero tolerance for the fact that each side maps
+/// wall-clock seconds onto its own monotonic anchor and rounds to whole
+/// seconds. The bridge's challenge therefore landed a hair "early", the
+/// journal rejected it, and in-band renewal succeeded **0 times out of 6**.
+///
+/// 🔒 The receiver must be at least as permissive as the sender. The earliest
+/// instant this journal could possibly answer is the instant it fetched a
+/// successor authority, so that is the instant from which it accepts a
+/// challenge. Any bridge window inside the fetch lead is then nested with room
+/// to spare instead of balanced on a shared boundary.
+const RENEW_CHALLENGE_LEAD_SECONDS: i64 = RENEW_FETCH_LEAD_SECONDS;
 const CONTROL_EXCHANGE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_CONTROL_FRAME_BYTES: usize = 65_536 + 4;
 
@@ -711,10 +727,17 @@ async fn run_driver(
                     .saturating_sub(RENEW_CHALLENGE_LEAD_SECONDS))
                 .unwrap_or(expiry);
             if Instant::now() < challenge_at {
+                // ⛔ This used to `break 'driver`, which tore the whole session
+                // down — dropping the owner's endpoint entirely — because an
+                // authenticated peer was fractionally early. The bounded
+                // response is to drop the frame: the bridge's attempt then
+                // times out exactly as an unanswered challenge already does,
+                // and a working session survives a clock difference.
                 log::warn!(
-                    "mcp bridge lease renewal: control bytes arrived before this lease's renewal window; ending the session"
+                    "mcp bridge lease renewal: control bytes arrived before this lease's renewal window; frame dropped"
                 );
-                break 'driver;
+                control.deadline = None;
+                continue;
             }
             log::info!("mcp bridge lease renewal: draining a control event");
             let frame = match control.append(control_bytes, expiry) {
@@ -1252,6 +1275,39 @@ async fn write_mux_frames<W: AsyncWrite + Unpin>(
 mod tests {
     use super::*;
     use spl_core::frame::FLAG_OPEN;
+
+    /// The bridge's own renewal window, mirrored here so this crate can assert
+    /// the relationship rather than assume it.
+    ///
+    /// ⚠ Mirrored rather than imported: this crate does not depend on
+    /// `spl-bridge`, and the peer is a separately released binary. That is
+    /// exactly why the two constants drifted into coincidence unnoticed —
+    /// nothing compared them.
+    const BRIDGE_RENEWAL_WINDOW_SECONDS: i64 = 120;
+
+    /// 🔴 The window this journal accepts a challenge in must strictly CONTAIN
+    /// the window the bridge sends one in — not merely equal it.
+    ///
+    /// With both at 120s the two boundaries coincided, and since each side maps
+    /// wall-clock seconds onto its own monotonic anchor and rounds to whole
+    /// seconds, the bridge's challenge landed fractionally "early" every time.
+    /// Measured on the deployed endpoint: in-band renewal succeeded 0 times out
+    /// of 6, the lease ran to expiry on every cycle, and the endpoint went dark
+    /// for roughly two minutes in every ten with the journal process healthy.
+    #[test]
+    fn the_accept_window_strictly_contains_the_bridge_send_window() {
+        assert!(
+            RENEW_CHALLENGE_LEAD_SECONDS > BRIDGE_RENEWAL_WINDOW_SECONDS,
+            "the journal must start accepting challenges strictly before the bridge starts sending them; \
+             equal leads leave zero tolerance for two independent wall-to-monotonic mappings"
+        );
+        // ⚠ And it may not run ahead of the successor fetch: accepting a
+        // challenge this journal cannot yet answer buys nothing.
+        assert!(
+            RENEW_CHALLENGE_LEAD_SECONDS <= RENEW_FETCH_LEAD_SECONDS,
+            "the accept window may not open before a successor authority could exist"
+        );
+    }
 
     fn frame(body: &[u8]) -> Vec<u8> {
         let mut bytes = u32::try_from(body.len())
