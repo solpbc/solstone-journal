@@ -1789,7 +1789,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_binding_rejects_reparse_ancestor_while_retained_handle_revalidates() {
+    fn canonical_binding_rejects_reparse_ancestor_or_retained_handle_prevents_substitution() {
         let (temporary, root_path) = nested_fixture("journal");
         let admitted = JournalRoot::open(&root_path).expect("admit nested fixture root");
         admitted.revalidate().expect("retained handle");
@@ -1799,19 +1799,38 @@ mod tests {
 
         let inner = temporary.path().join("outer").join("inner");
         let moved = temporary.path().join("outer").join("inner-moved");
-        fs::rename(&inner, &moved).expect("move intermediate ancestor");
-        symlink_dir(&moved, &inner).expect("plant reparse ancestor");
+        match fs::rename(&inner, &moved) {
+            Ok(()) => {
+                symlink_dir(&moved, &inner).expect("plant reparse ancestor");
 
-        admitted
-            .revalidate()
-            .expect("retained handle still names the admitted directory");
-        assert!(
-            matches!(
-                admitted.revalidate_canonical_binding(),
-                Err(JournalRootError::Changed)
-            ),
-            "reparse substitution at an intermediate canonical component must fail the pathname walk"
-        );
+                admitted
+                    .revalidate()
+                    .expect("retained handle still names the admitted directory");
+                assert!(
+                    matches!(
+                        admitted.revalidate_canonical_binding(),
+                        Err(JournalRootError::Changed)
+                    ),
+                    "reparse substitution at an intermediate canonical component must fail the pathname walk"
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                // A live admitted descendant can make an intermediate rename unavailable on
+                // Windows. That is the stronger outcome: the namespace substitution cannot
+                // begin, so the retained authority and its canonical binding stay valid.
+                assert!(
+                    !moved.exists(),
+                    "blocked substitution must not create a moved ancestor"
+                );
+                admitted
+                    .revalidate()
+                    .expect("retained handle remains valid after blocked substitution");
+                admitted
+                    .revalidate_canonical_binding()
+                    .expect("blocked substitution leaves canonical binding intact");
+            }
+            Err(error) => panic!("move intermediate ancestor: {error}"),
+        }
     }
 
     #[test]
