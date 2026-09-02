@@ -107,6 +107,7 @@ pub fn verified_windows_onnx_package() -> Result<WindowsOnnxPackage, String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
     use super::*;
 
     #[cfg(not(windows))]

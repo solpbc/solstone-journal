@@ -89,6 +89,7 @@ pub fn verified_windows_pdfium_package() -> Result<WindowsPdfiumPackage, String>
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
     use super::*;
 
     #[cfg(not(windows))]

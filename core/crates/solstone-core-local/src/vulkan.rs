@@ -394,6 +394,7 @@ mod tests {
         assert!(detect_gpus().is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn memoized_probe_uses_test_sibling_helper() {
         use std::fs;

@@ -92,6 +92,7 @@ pub fn verified_windows_parakeet_package() -> Result<WindowsParakeetPackage, Str
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
     use super::*;
 
     #[cfg(not(windows))]
