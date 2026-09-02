@@ -7,6 +7,34 @@ use std::io;
 
 use super::handle::{JobHandle, RawWindowsHandle};
 
+/// Limits that must be fully installed on a Job before a helper's first
+/// instruction. A bounded helper gets one hard CPU share plus equal process
+/// and complete-Job committed-memory ceilings, so a descendant cannot evade
+/// the root's memory boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct JobResourceLimits {
+    pub(super) cpu_rate_per_10_000: u32,
+    pub(super) committed_memory_bytes: usize,
+}
+
+impl JobResourceLimits {
+    fn validate(self) -> io::Result<()> {
+        if !(1..=10_000).contains(&self.cpu_rate_per_10_000) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Job CPU rate must be within 1..=10000 per 10000 cycles",
+            ));
+        }
+        if self.committed_memory_bytes == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Job committed-memory ceiling must be nonzero",
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct JobAccounting {
     pub(super) active_processes: u32,
@@ -23,6 +51,11 @@ pub(super) enum JobMembership {
 pub(super) trait WindowsJobApi {
     fn create_unnamed_job(&self) -> io::Result<JobHandle>;
     fn enable_kill_on_close(&self, job: &JobHandle) -> io::Result<()>;
+    fn configure_resource_limits(
+        &self,
+        job: &JobHandle,
+        limits: JobResourceLimits,
+    ) -> io::Result<()>;
     #[cfg_attr(not(windows), allow(dead_code))]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()>;
@@ -35,8 +68,23 @@ pub(super) trait WindowsJobApi {
 }
 
 pub(super) fn create_kill_on_close_job(api: &impl WindowsJobApi) -> io::Result<JobHandle> {
+    create_kill_on_close_job_with_limits(api, None)
+}
+
+/// Create a kill-on-close Job and install every requested resource limit
+/// before handing its handle to the atomic process-launch boundary.
+pub(super) fn create_kill_on_close_job_with_limits(
+    api: &impl WindowsJobApi,
+    limits: Option<JobResourceLimits>,
+) -> io::Result<JobHandle> {
+    if let Some(limits) = limits {
+        limits.validate()?;
+    }
     let job = api.create_unnamed_job()?;
     api.enable_kill_on_close(&job)?;
+    if let Some(limits) = limits {
+        api.configure_resource_limits(&job, limits)?;
+    }
     Ok(job)
 }
 
@@ -82,6 +130,61 @@ impl WindowsJobApi for SystemWindowsJobApi {
             )
         };
         if set == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn configure_resource_limits(
+        &self,
+        job: &JobHandle,
+        limits: JobResourceLimits,
+    ) -> io::Result<()> {
+        use std::mem::size_of;
+
+        use windows_sys::Win32::System::JobObjects::{
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectCpuRateControlInformation,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
+        };
+
+        let mut extended = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        extended.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            | JOB_OBJECT_LIMIT_JOB_MEMORY;
+        extended.ProcessMemoryLimit = limits.committed_memory_bytes;
+        extended.JobMemoryLimit = limits.committed_memory_bytes;
+        // SAFETY: `extended` is initialized and remains live for the synchronous call.
+        #[allow(unsafe_code)]
+        let memory_set = unsafe {
+            SetInformationJobObject(
+                job.raw(),
+                JobObjectExtendedLimitInformation,
+                (&raw const extended).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if memory_set == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        cpu.ControlFlags =
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        cpu.Anonymous.CpuRate = limits.cpu_rate_per_10_000;
+        // SAFETY: `cpu` is initialized and remains live for the synchronous call.
+        #[allow(unsafe_code)]
+        let cpu_set = unsafe {
+            SetInformationJobObject(
+                job.raw(),
+                JobObjectCpuRateControlInformation,
+                (&raw const cpu).cast(),
+                size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+            )
+        };
+        if cpu_set == 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
@@ -179,25 +282,37 @@ impl WindowsJobApi for SystemWindowsJobApi {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::io;
 
     use super::{
-        JobAccounting, JobHandle, JobMembership, RawWindowsHandle, WindowsJobApi,
-        create_kill_on_close_job,
+        JobAccounting, JobHandle, JobMembership, JobResourceLimits, RawWindowsHandle,
+        WindowsJobApi, create_kill_on_close_job, create_kill_on_close_job_with_limits,
     };
 
     struct FakeJobApi {
         enabled: Cell<bool>,
+        setup: RefCell<Vec<&'static str>>,
     }
 
     impl WindowsJobApi for FakeJobApi {
         fn create_unnamed_job(&self) -> io::Result<JobHandle> {
+            self.setup.borrow_mut().push("create");
             Ok(JobHandle::new(1usize as RawWindowsHandle))
         }
 
         fn enable_kill_on_close(&self, _job: &JobHandle) -> io::Result<()> {
+            self.setup.borrow_mut().push("kill-on-close");
             self.enabled.set(true);
+            Ok(())
+        }
+
+        fn configure_resource_limits(
+            &self,
+            _job: &JobHandle,
+            _limits: JobResourceLimits,
+        ) -> io::Result<()> {
+            self.setup.borrow_mut().push("resource-limits");
             Ok(())
         }
 
@@ -228,8 +343,68 @@ mod tests {
     fn creation_enables_kill_on_close_before_returning_the_handle() {
         let api = FakeJobApi {
             enabled: Cell::new(false),
+            setup: RefCell::new(Vec::new()),
         };
         let _job = create_kill_on_close_job(&api).expect("job is created");
         assert!(api.enabled.get());
+        assert_eq!(*api.setup.borrow(), ["create", "kill-on-close"]);
+    }
+
+    #[test]
+    fn limited_creation_installs_every_limit_before_returning_the_job() {
+        let api = FakeJobApi {
+            enabled: Cell::new(false),
+            setup: RefCell::new(Vec::new()),
+        };
+        let limits = JobResourceLimits {
+            cpu_rate_per_10_000: 2_500,
+            committed_memory_bytes: 512 * 1024 * 1024,
+        };
+        let _job = create_kill_on_close_job_with_limits(&api, Some(limits))
+            .expect("limited job is created");
+
+        assert!(api.enabled.get());
+        assert_eq!(
+            *api.setup.borrow(),
+            ["create", "kill-on-close", "resource-limits"]
+        );
+    }
+
+    #[test]
+    fn resource_limits_refuse_zero_and_out_of_range_values_before_job_creation() {
+        for cpu_rate_per_10_000 in [0, 10_001] {
+            let api = FakeJobApi {
+                enabled: Cell::new(false),
+                setup: RefCell::new(Vec::new()),
+            };
+            let error = match create_kill_on_close_job_with_limits(
+                &api,
+                Some(JobResourceLimits {
+                    cpu_rate_per_10_000,
+                    committed_memory_bytes: 1,
+                }),
+            ) {
+                Ok(_) => panic!("invalid CPU rate must refuse before creating a Job"),
+                Err(error) => error,
+            };
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert!(api.setup.borrow().is_empty());
+        }
+        let api = FakeJobApi {
+            enabled: Cell::new(false),
+            setup: RefCell::new(Vec::new()),
+        };
+        let error = match create_kill_on_close_job_with_limits(
+            &api,
+            Some(JobResourceLimits {
+                cpu_rate_per_10_000: 1,
+                committed_memory_bytes: 0,
+            }),
+        ) {
+            Ok(_) => panic!("zero memory limit must refuse before creating a Job"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(api.setup.borrow().is_empty());
     }
 }

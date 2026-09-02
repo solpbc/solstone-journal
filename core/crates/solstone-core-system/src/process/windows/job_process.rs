@@ -870,7 +870,7 @@ mod tests {
     use super::super::handle::{
         JobHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle, RootProcessHandle,
     };
-    use super::super::job::{JobAccounting, JobMembership, WindowsJobApi};
+    use super::super::job::{JobAccounting, JobMembership, JobResourceLimits, WindowsJobApi};
     use super::super::pipes::{PipedStdio, WindowsPipeApi};
     use super::{
         CreatedWindowsProcess, JOB_HARD_STOP_TIMEOUT, ProcessWait, WindowsJobProcess,
@@ -913,6 +913,14 @@ mod tests {
         }
 
         fn enable_kill_on_close(&self, _job: &JobHandle) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn configure_resource_limits(
+            &self,
+            _job: &JobHandle,
+            _limits: JobResourceLimits,
+        ) -> io::Result<()> {
             Ok(())
         }
 
