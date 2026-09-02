@@ -48,6 +48,13 @@ const PARAKEET_WINDOWS_CMAKE_ARCHIVE_LABEL: &str = "tools/cmake-windows-x86_64.z
 const PARAKEET_WINDOWS_MODEL_INPUT_LABEL: &str = "models/tdt-0.6b-v3-q8_0.gguf";
 const PARAKEET_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/parakeet-build-evidence.json";
+// The receipt names one PE server, while the retained Windows root observes
+// both output directories and the copied model as well. Keep this bound tied
+// to the intentionally small tree rather than allowing receipt verification
+// to scan an arbitrary build output.
+const PARAKEET_WINDOWS_OUTPUT_TREE_ENTRIES: usize = 4;
+const PARAKEET_WINDOWS_OUTPUT_TREE_MAXIMUM_BYTES: usize =
+    PARAKEET_MODEL_SIZE_BYTES as usize + 128 * 1024 * 1024;
 const PARAKEET_WINDOWS_GGML_PATCH_DIFF_SHA256: &str =
     "e62f5e880cde081d478927b62f304f60c93e92a8996b4e82f2e3b6a9205e9926";
 const PARAKEET_WINDOWS_PATCHES: &[(&str, &str)] = &[
@@ -304,7 +311,11 @@ pub fn run_cli(args: &[String]) -> Result<String, ParakeetWindowsSourceError> {
             let verified = verify_persisted_controlled_build_artifacts(
                 &receipt_path,
                 &output_root,
-                ControlledBuildArtifactVerificationLimits::new(1, 2, 128 * 1024 * 1024),
+                ControlledBuildArtifactVerificationLimits::new(
+                    PARAKEET_WINDOWS_OUTPUT_TREE_ENTRIES,
+                    2,
+                    PARAKEET_WINDOWS_OUTPUT_TREE_MAXIMUM_BYTES,
+                ),
             )
             .map_err(|source| ParakeetWindowsSourceError::new(source.to_string()))?;
             let model = inspect_model(&output_root.join(PARAKEET_MODEL_OUTPUT_LABEL))?;

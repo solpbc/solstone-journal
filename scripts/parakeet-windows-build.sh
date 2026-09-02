@@ -25,6 +25,10 @@ printf '%s\n' "$EXPECTED_WIN_COMMIT" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ERROR: EXPECTED_WIN_COMMIT must be a lowercase full commit SHA' >&2
   exit 1
 }
+printf '%s\n' "$WIN_REMOTE_HOST" | grep -Eq '^[A-Za-z0-9_.@-]+$' || {
+  echo 'ERROR: WIN_REMOTE_HOST must be a safe SSH authority' >&2
+  exit 1
+}
 printf '%s\n' "$WIN_REMOTE_HOME" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$' || {
   echo 'ERROR: WIN_REMOTE_HOME must be a safe absolute Windows path' >&2
   exit 1
@@ -88,6 +92,20 @@ remote_work="$WIN_REMOTE_HOME\\parakeet-work-$short_commit"
 remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote Parakeet source input already exists' }; if (Test-Path -LiteralPath '$remote_cmake') { throw 'remote Parakeet CMake input already exists' }; if (Test-Path -LiteralPath '$remote_model') { throw 'remote Parakeet model input already exists' }; if (Test-Path -LiteralPath '$remote_slot') { throw 'remote Parakeet output slot already exists' }; if (Test-Path -LiteralPath '$remote_work') { throw 'remote Parakeet work root already exists' }"
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -Command \"$remote_guard\""
 
+remote_failure_cleanup="\\$ErrorActionPreference = 'Stop'; foreach (\\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \\$path) { Remove-Item -LiteralPath \\$path -Recurse -Force } }; foreach (\\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \\$path) { throw \\\"remote Parakeet cleanup left path: \\$path\\\" } }; Write-Output 'PARAKEET_REMOTE_CLEANUP_OK paths=5'"
+remote_failure_cleanup_encoded=$(printf '%s' "$remote_failure_cleanup" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\\r\\n')
+[ -n "$remote_failure_cleanup_encoded" ] || {
+  echo 'ERROR: could not encode remote Parakeet failure-cleanup command' >&2
+  exit 1
+}
+remote_cleanup_armed=0
+cleanup_remote_on_failure() {
+  [ "$remote_cleanup_armed" -eq 1 ] || return 0
+  "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -EncodedCommand $remote_failure_cleanup_encoded"
+  remote_cleanup_armed=0
+}
+remote_cleanup_armed=1
+trap cleanup_remote_on_failure EXIT
 "$SCP" "$source_archive" "$WIN_REMOTE_HOST:parakeet-source-$EXPECTED_WIN_COMMIT.tar.gz"
 "$SCP" "$cmake_archive" "$WIN_REMOTE_HOST:parakeet-cmake-$EXPECTED_WIN_COMMIT.zip"
 "$SCP" "$PARAKEET_WINDOWS_MODEL_PATH" "$WIN_REMOTE_HOST:parakeet-model-$EXPECTED_WIN_COMMIT.gguf"
@@ -108,4 +126,6 @@ remote_cleanup_encoded=$(printf '%s' "$remote_cleanup" | iconv -f UTF-8 -t UTF-1
   exit 1
 }
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -EncodedCommand $remote_cleanup_encoded"
+remote_cleanup_armed=0
+trap - EXIT
 echo "PARAKEET_WINDOWS_DRIVER_OK commit=$EXPECTED_WIN_COMMIT server=$slot/output/bin/parakeet-server.exe receipt=$slot/report/parakeet-build-receipt.json"
