@@ -210,6 +210,7 @@ pub struct BacklogDay {
     pub state: String,
     pub segments: usize,
     pub units: usize,
+    /// Age-gated count of segments with a not-yet-sensed modality past `MODALITY_INPUT_AGED_MS`, not a raw un-aged count.
     pub not_sensed: usize,
     pub why: Vec<BacklogUnit>,
     pub reason: Option<String>,

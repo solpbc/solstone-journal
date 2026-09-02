@@ -913,9 +913,9 @@ fn multi_modality_not_sensed_counts_once() {
     fs::write(&screen, b"fixture").unwrap();
     fs::File::open(&screen)
         .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(ms_ago(1_000)))
+        .set_times(fs::FileTimes::new().set_modified(ms_ago(MODALITY_INPUT_AGED_MS)))
         .unwrap();
-    incomplete(root, day, NOW_MS - 1_000);
+    incomplete(root, day, NOW_MS - MODALITY_INPUT_AGED_MS);
     let result = view(root, 30);
     assert_eq!(result.days[0].state, BACKLOG_STATE_PENDING);
     assert_eq!(result.days[0].not_sensed, 1);
