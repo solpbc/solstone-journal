@@ -606,11 +606,10 @@ pub fn verify_notices(notices: &BTreeMap<String, Vec<u8>>) -> Result<(), Parakee
         });
     }
     for name in PARAKEET_WINDOWS_NOTICE_NAMES {
+        // Presence is guaranteed by the set-equality check above.
         let bytes = notices
             .get(*name)
-            .ok_or(ParakeetWindowsError::MissingRequired {
-                role: "notice bytes",
-            })?;
+            .expect("notice name verified present above");
         if bytes.is_empty() {
             return Err(unexpected("notice bytes", "non-empty", *name));
         }
