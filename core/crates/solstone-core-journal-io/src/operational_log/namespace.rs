@@ -46,14 +46,14 @@ pub enum OplogNamespacePrimitive {
 
 /// Admitted `chronicle/<day>/health` directory for one local day.
 pub struct OplogDayHealth {
-    day: String,
-    root: JournalRoot,
-    chronicle_identity: ObjectIdentity,
-    day_identity: ObjectIdentity,
+    pub(super) day: String,
+    pub(super) root: JournalRoot,
+    pub(super) chronicle_identity: ObjectIdentity,
+    pub(super) day_identity: ObjectIdentity,
     #[cfg(unix)]
-    health: FlatDirectory,
+    pub(super) health: FlatDirectory,
     #[cfg(windows)]
-    health: WindowsFlatDirectory,
+    pub(super) health: WindowsFlatDirectory,
 }
 
 impl fmt::Debug for OplogDayHealth {

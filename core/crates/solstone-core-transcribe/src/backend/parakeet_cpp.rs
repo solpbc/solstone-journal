@@ -24,10 +24,21 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(1);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// A ready supervised parakeet.cpp service.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ParakeetServer {
     pub(crate) port: u16,
     pub(crate) base_url: String,
+    pub(crate) auth_headers: Option<(String, String)>,
+}
+
+impl std::fmt::Debug for ParakeetServer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ParakeetServer")
+            .field("port", &self.port)
+            .field("base_url", &self.base_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The health outcome needed by connection setup.
@@ -109,13 +120,26 @@ pub(crate) fn connect(journal_path: &Path) -> Result<ParakeetServer, TranscribeE
         return Err(deferred("no_port", "Parakeet server is not ready yet."));
     };
     let base_url = base_url(port);
-    if probe_health(&base_url, HEALTH_TIMEOUT) != HealthState::Ready {
+    let auth_headers = solstone_core_system::provider_runtime::parakeet_auth_headers(port);
+    if cfg!(windows) && auth_headers.is_none() {
+        return Err(deferred(
+            "server_not_ready",
+            "Parakeet server credentials are unavailable in this process.",
+        ));
+    }
+    if probe_health_with_headers(&base_url, HEALTH_TIMEOUT, auth_headers.as_ref())
+        != HealthState::Ready
+    {
         return Err(deferred(
             "server_not_ready",
             "Parakeet server is not ready yet.",
         ));
     }
-    Ok(ParakeetServer { port, base_url })
+    Ok(ParakeetServer {
+        port,
+        base_url,
+        auth_headers,
+    })
 }
 
 /// Submit a WAV payload to parakeet.cpp's OpenAI-compatible endpoint.
@@ -131,7 +155,7 @@ pub(crate) fn get_model_info(
     journal_path: &Path,
     configured_device: Option<&str>,
 ) -> Result<ModelInfo, TranscribeError> {
-    require_linux()?;
+    require_supported_platform()?;
     let configured_device = validated_device(configured_device)?;
     Ok(ModelInfo {
         model: MODEL_FILENAME.to_owned(),
@@ -147,7 +171,7 @@ pub(crate) fn transcribe_with_timeout(
     wav_bytes: &[u8],
     timeout: Duration,
 ) -> Result<TranscriptionResponse, TranscribeError> {
-    require_linux()?;
+    require_supported_platform()?;
     transcribe_transport_with_timeout(server, wav_bytes, timeout)
 }
 
@@ -166,10 +190,9 @@ pub(crate) fn transcribe_transport_with_timeout(
                 .mime_str("audio/wav")
                 .map_err(|error| failure("local_protocol_error", error.to_string()))?,
         );
-    let response = agent(timeout)
-        .post(&format!("{}/v1/audio/transcriptions", server.base_url))
-        .send(form)
-        .map_err(map_ureq_error)?;
+    let request = agent(timeout).post(&format!("{}/v1/audio/transcriptions", server.base_url));
+    let request = with_auth_post_headers(request, server.auth_headers.as_ref());
+    let response = request.send(form).map_err(map_ureq_error)?;
     if response.status().as_u16() != 200 {
         return Err(failure(
             "transcription_http_error",
@@ -287,15 +310,52 @@ fn finite_word_number(
         .ok_or(WordContractError::InvalidNumber)
 }
 
-fn require_linux() -> Result<(), TranscribeError> {
-    (std::env::consts::OS == "linux")
+fn require_supported_platform() -> Result<(), TranscribeError> {
+    matches!(std::env::consts::OS, "linux" | "windows")
         .then_some(())
         .ok_or_else(|| {
             failure(
                 "unsupported_platform",
-                "parakeet-cpp is only supported on Linux",
+                "parakeet-cpp is only supported on Linux and Windows",
             )
         })
+}
+
+fn probe_health_with_headers(
+    base_url: &str,
+    timeout: Duration,
+    auth_headers: Option<&(String, String)>,
+) -> HealthState {
+    let request = agent(timeout).get(&format!("{base_url}/health"));
+    let response = with_auth_get_headers(request, auth_headers).call();
+    match response {
+        Ok(response) if response.status().as_u16() == 200 => HealthState::Ready,
+        Ok(_) | Err(_) => HealthState::NotReady,
+    }
+}
+
+fn with_auth_get_headers(
+    request: ureq::RequestBuilder<ureq::typestate::WithoutBody>,
+    auth_headers: Option<&(String, String)>,
+) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    let Some((authorization, nonce)) = auth_headers else {
+        return request;
+    };
+    request
+        .header("Authorization", authorization)
+        .header("X-Solstone-Nonce", nonce)
+}
+
+fn with_auth_post_headers(
+    request: ureq::RequestBuilder<ureq::typestate::WithBody>,
+    auth_headers: Option<&(String, String)>,
+) -> ureq::RequestBuilder<ureq::typestate::WithBody> {
+    let Some((authorization, nonce)) = auth_headers else {
+        return request;
+    };
+    request
+        .header("Authorization", authorization)
+        .header("X-Solstone-Nonce", nonce)
 }
 
 fn validated_device(configured_device: Option<&str>) -> Result<&str, TranscribeError> {

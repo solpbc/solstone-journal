@@ -1,0 +1,281 @@
+diff --git a/examples/server/main.cpp b/examples/server/main.cpp
+index 0e4cbad6..1991225d 100644
+--- a/examples/server/main.cpp
++++ b/examples/server/main.cpp
+@@ -9,10 +9,16 @@
+ #include "dr_wav.h"           // declarations only; impl lives in libparakeet
+ 
+ #include <csignal>
++#include <cerrno>
++#include <chrono>
++#include <condition_variable>
+ #include <cstdio>
++#include <cstdlib>
++#include <limits>
+ #include <memory>
+ #include <mutex>
+ #include <string>
++#include <thread>
+ #include <vector>
+ 
+ namespace {
+@@ -20,6 +26,80 @@ namespace {
+ httplib::Server* g_server = nullptr;
+ void on_signal(int) { if (g_server) g_server->stop(); }
+ 
++bool parse_positive_size(const std::string& text, size_t& out) {
++    if (text.empty()) return false;
++    char* end = nullptr;
++    errno = 0;
++    const unsigned long long parsed = std::strtoull(text.c_str(), &end, 10);
++    if (errno != 0 || end == text.c_str() || *end != '\0' || parsed == 0 ||
++        parsed > std::numeric_limits<size_t>::max()) {
++        return false;
++    }
++    out = static_cast<size_t>(parsed);
++    return true;
++}
++
++bool parse_port(const std::string& text, int& out) {
++    size_t parsed = 0;
++    if (!parse_positive_size(text, parsed) || parsed > 65535) return false;
++    out = static_cast<int>(parsed);
++    return true;
++}
++
++bool constant_time_equal(const std::string& left, const std::string& right) {
++    size_t difference = left.size() ^ right.size();
++    const size_t largest = left.size() > right.size() ? left.size() : right.size();
++    for (size_t index = 0; index < largest; ++index) {
++        const unsigned char left_byte =
++            index < left.size() ? static_cast<unsigned char>(left[index]) : 0;
++        const unsigned char right_byte =
++            index < right.size() ? static_cast<unsigned char>(right[index]) : 0;
++        difference |= static_cast<size_t>(left_byte ^ right_byte);
++    }
++    return difference == 0;
++}
++
++bool request_is_authenticated(const httplib::Request& request,
++                              const std::string& token,
++                              const std::string& nonce) {
++    return constant_time_equal(request.get_header_value("Authorization"), "Bearer " + token) &&
++           constant_time_equal(request.get_header_value("X-Solstone-Nonce"), nonce);
++}
++
++// A completed inference cannot be safely interrupted inside ggml. The process
++// owner therefore treats deadline expiry as a fail-closed provider crash; its
++// Windows Job owner observes, reaps, and may restart the whole provider.
++class RequestDeadline {
++public:
++    explicit RequestDeadline(std::chrono::milliseconds duration)
++        : watcher_([this, duration] {
++              std::unique_lock<std::mutex> lock(mutex_);
++              if (!finished_.wait_for(lock, duration, [this] { return complete_; })) {
++                  std::fputs("parakeet-server: request deadline exceeded\n", stderr);
++                  std::fflush(stderr);
++                  std::_Exit(124);
++              }
++          }) {}
++
++    ~RequestDeadline() {
++        {
++            std::lock_guard<std::mutex> lock(mutex_);
++            complete_ = true;
++        }
++        finished_.notify_one();
++        watcher_.join();
++    }
++
++    RequestDeadline(const RequestDeadline&) = delete;
++    RequestDeadline& operator=(const RequestDeadline&) = delete;
++
++private:
++    std::mutex mutex_;
++    std::condition_variable finished_;
++    bool complete_ = false;
++    std::thread watcher_;
++};
++
+ // Decode WAV bytes in memory into mono float PCM. Returns false if the bytes
+ // are not a decodable, non-empty WAV (so a bad/empty upload becomes a 400, not
+ // a 500 from the inference path). The model resamples to 16 kHz internally, so
+@@ -46,19 +126,23 @@ bool decode_wav_mem(const std::string& bytes, std::vector<float>& mono,
+ }
+ 
+ void usage() {
+-    std::fprintf(stderr,
++        std::fprintf(stderr,
+         "usage:\n"
+-        "  parakeet-server --model <path|url|alias> [--host 127.0.0.1] "
+-        "[--port 8080] [--threads N] [--cache-dir <dir>]\n"
++        "  SOLSTONE_PARAKEET_AUTH_TOKEN=<token> SOLSTONE_PARAKEET_AUTH_NONCE=<nonce> "
++        "parakeet-server --model <local-path> --host 127.0.0.1 --port N --threads N "
++        "--max-request-bytes N --max-audio-seconds N --max-concurrency 1 "
++        "--max-queue-depth N --max-output-bytes N --deadline-ms N\n"
+         "\n"
+-        "Serves POST /v1/audio/transcriptions (OpenAI-compatible) for one model.\n");
++        "Serves authenticated POST /v1/audio/transcriptions and GET /health for one local model.\n");
+ }
+ 
+ } // namespace
+ 
+ int main(int argc, char** argv) {
+-    std::string model_arg, host = "127.0.0.1", cache_dir;
+-    int port = 8080, threads = 0;
++    std::string model_arg, host;
++    int port = 0;
++    size_t threads = 0, max_request_bytes = 0, max_audio_seconds = 0;
++    size_t max_concurrency = 0, max_queue_depth = 0, max_output_bytes = 0, deadline_ms = 0;
+ 
+     for (int i = 1; i < argc; ++i) {
+         std::string a = argv[i];
+@@ -66,11 +150,27 @@ int main(int argc, char** argv) {
+             if (i + 1 >= argc) { std::fprintf(stderr, "missing value for %s\n", name); std::exit(2); }
+             return argv[++i];
+         };
+-        if (a == "--model")        model_arg = next("--model");
+-        else if (a == "--host")    host = next("--host");
+-        else if (a == "--port")    port = std::atoi(next("--port").c_str());
+-        else if (a == "--threads") threads = std::atoi(next("--threads").c_str());
+-        else if (a == "--cache-dir") cache_dir = next("--cache-dir");
++        if (a == "--model") {
++            model_arg = next("--model");
++        } else if (a == "--host") {
++            host = next("--host");
++        } else if (a == "--port") {
++            if (!parse_port(next("--port"), port)) { std::fprintf(stderr, "invalid --port\n"); return 2; }
++        } else if (a == "--threads") {
++            if (!parse_positive_size(next("--threads"), threads)) { std::fprintf(stderr, "invalid --threads\n"); return 2; }
++        } else if (a == "--max-request-bytes") {
++            if (!parse_positive_size(next("--max-request-bytes"), max_request_bytes)) { std::fprintf(stderr, "invalid --max-request-bytes\n"); return 2; }
++        } else if (a == "--max-audio-seconds") {
++            if (!parse_positive_size(next("--max-audio-seconds"), max_audio_seconds)) { std::fprintf(stderr, "invalid --max-audio-seconds\n"); return 2; }
++        } else if (a == "--max-concurrency") {
++            if (!parse_positive_size(next("--max-concurrency"), max_concurrency)) { std::fprintf(stderr, "invalid --max-concurrency\n"); return 2; }
++        } else if (a == "--max-queue-depth") {
++            if (!parse_positive_size(next("--max-queue-depth"), max_queue_depth)) { std::fprintf(stderr, "invalid --max-queue-depth\n"); return 2; }
++        } else if (a == "--max-output-bytes") {
++            if (!parse_positive_size(next("--max-output-bytes"), max_output_bytes)) { std::fprintf(stderr, "invalid --max-output-bytes\n"); return 2; }
++        } else if (a == "--deadline-ms") {
++            if (!parse_positive_size(next("--deadline-ms"), deadline_ms)) { std::fprintf(stderr, "invalid --deadline-ms\n"); return 2; }
++        }
+         else if (a == "-h" || a == "--help") { usage(); return 0; }
+         else if (a == "--version" || a == "-V") {
+             std::printf("parakeet-server %s\n", parakeet_version());
+@@ -78,8 +178,18 @@ int main(int argc, char** argv) {
+         }
+         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); usage(); return 2; }
+     }
+-    if (model_arg.empty()) { usage(); return 2; }
+-    if (cache_dir.empty()) cache_dir = pkserver::default_cache_dir();
++    const char* token_env = std::getenv("SOLSTONE_PARAKEET_AUTH_TOKEN");
++    const char* nonce_env = std::getenv("SOLSTONE_PARAKEET_AUTH_NONCE");
++    if (model_arg.empty() || host != "127.0.0.1" || port == 0 || threads == 0 ||
++        max_request_bytes == 0 || max_audio_seconds == 0 || max_concurrency != 1 ||
++        max_queue_depth == 0 || max_output_bytes == 0 || deadline_ms == 0 ||
++        !token_env || !*token_env || !nonce_env || !*nonce_env) {
++        std::fprintf(stderr, "parakeet-server: missing or unsafe controlled-server configuration\n");
++        usage();
++        return 2;
++    }
++    const std::string auth_token(token_env);
++    const std::string auth_nonce(nonce_env);
+ 
+     // Resolve and fetch the model before binding the socket.
+     pkserver::ModelSource src;
+@@ -88,17 +198,19 @@ int main(int argc, char** argv) {
+         std::fprintf(stderr, "parakeet-server: %s\n", err.c_str());
+         return 2;
+     }
++    if (src.kind != pkserver::ModelSource::kLocalPath) {
++        std::fprintf(stderr, "parakeet-server: controlled mode requires a local model path\n");
++        return 2;
++    }
+     std::string model_path;
+     try {
+-        if (src.kind == pkserver::ModelSource::kUrl)
+-            std::fprintf(stderr, "parakeet-server: fetching %s\n", src.value.c_str());
+-        model_path = pkserver::fetch_model(src, cache_dir);
++        model_path = pkserver::fetch_model(src, "");
+     } catch (const std::exception& e) {
+         std::fprintf(stderr, "parakeet-server: %s\n", e.what());
+         return 1;
+     }
+ 
+-    if (threads > 0) pk::set_num_threads(threads);
++    pk::set_num_threads(static_cast<int>(threads));
+ 
+     std::unique_ptr<pk::Model> model = pk::Model::load(model_path);
+     if (!model) {
+@@ -109,11 +221,23 @@ int main(int argc, char** argv) {
+     std::mutex infer_mu;
+ 
+     httplib::Server svr;
++    svr.set_payload_max_length(max_request_bytes);
++    const auto deadline = std::chrono::milliseconds(deadline_ms);
++    svr.set_read_timeout(deadline);
++    svr.set_write_timeout(deadline);
++    svr.set_keep_alive_max_count(1);
++    svr.new_task_queue = [max_queue_depth] {
++        return new httplib::ThreadPool(1, max_queue_depth);
++    };
+     g_server = &svr;
+     std::signal(SIGINT, on_signal);
+     std::signal(SIGTERM, on_signal);
+ 
+-    svr.Get("/health", [](const httplib::Request&, httplib::Response& res) {
++    svr.Get("/health", [&](const httplib::Request& req, httplib::Response& res) {
++        if (!request_is_authenticated(req, auth_token, auth_nonce)) {
++            res.status = 401;
++            return;
++        }
+         res.set_content("{\"status\":\"ok\"}", "application/json");
+     });
+ 
+@@ -125,6 +249,12 @@ int main(int argc, char** argv) {
+             res.set_content(error_body(msg, "invalid_request_error"), "application/json");
+         };
+ 
++        if (!request_is_authenticated(req, auth_token, auth_nonce)) {
++            fail(401, "authentication required");
++            return;
++        }
++        RequestDeadline request_deadline(deadline);
++
+         if (!req.has_file("file")) { fail(400, "missing required field 'file'"); return; }
+ 
+         // response_format (default json)
+@@ -140,6 +270,10 @@ int main(int argc, char** argv) {
+             if (g.content == "word") include_words = true;
+ 
+         const std::string& bytes = req.get_file_value("file").content;
++        if (bytes.size() > max_request_bytes) {
++            fail(413, "request exceeds configured byte limit");
++            return;
++        }
+         std::vector<float> pcm;
+         int sr = 0;
+         if (!decode_wav_mem(bytes, pcm, sr)) {
+@@ -147,6 +281,10 @@ int main(int argc, char** argv) {
+             return;
+         }
+         double duration_sec = sr > 0 ? (double)pcm.size() / (double)sr : 0.0;
++        if (duration_sec > static_cast<double>(max_audio_seconds)) {
++            fail(413, "audio exceeds configured duration limit");
++            return;
++        }
+ 
+         try {
+             pk::Transcription tr;
+@@ -155,6 +293,10 @@ int main(int argc, char** argv) {
+                 tr = model->transcribe_with_timestamps(pcm, sr, pk::Decoder::kDefault);
+             }
+             Response out = format_transcription(tr, fmt, duration_sec, include_words);
++            if (out.body.size() > max_output_bytes) {
++                fail(500, "response exceeds configured output limit");
++                return;
++            }
+             res.set_content(out.body, out.content_type.c_str());
+         } catch (const std::exception& e) {
+             std::fprintf(stderr, "parakeet-server: inference error: %s\n", e.what());

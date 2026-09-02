@@ -19,13 +19,13 @@ use serde_json::{Value, json};
 use super::admission::ParakeetAdmissionLatch;
 use super::model::{ProviderName, ProviderTruthObservation, ReasonCode, RuntimePhase};
 
-/// Mirrors `_parakeet_platform_can_host`: Linux only, and only on an arch
-/// `parakeet_artifact_key` recognizes. Takes the platform/machine strings as
-/// parameters rather than reading `sys.platform`/`platform.machine()` itself,
-/// so it stays a pure decision a test can drive without touching the host.
+/// A host may run the installed Windows CPU package on x86_64, or one of the
+/// existing pinned Linux artifacts. Package signature verification remains a
+/// separate runtime capability check; this stays a pure platform decision.
 pub fn parakeet_platform_can_host(platform: &str, machine: &str) -> bool {
-    platform.starts_with("linux")
-        && solstone_core_local::install::pins::parakeet_artifact_key("linux", machine).is_ok()
+    (platform == "windows" && machine == "x86_64")
+        || (platform.starts_with("linux")
+            && solstone_core_local::install::pins::parakeet_artifact_key("linux", machine).is_ok())
 }
 
 fn not_desired(reason_code: &'static str, detail: Value) -> ProviderTruthObservation {
@@ -106,8 +106,9 @@ mod tests {
     }
 
     #[test]
-    fn win32_cannot_host() {
-        assert!(!parakeet_platform_can_host("win32", "x86_64"));
+    fn windows_x86_64_can_host_when_the_signed_package_is_present() {
+        assert!(parakeet_platform_can_host("windows", "x86_64"));
+        assert!(!parakeet_platform_can_host("windows", "aarch64"));
     }
 
     #[test]

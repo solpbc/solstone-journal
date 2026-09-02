@@ -15,9 +15,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
+#[cfg(windows)]
+use std::{ffi::OsStr, sync::OnceLock};
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_json, fingerprint_sha256};
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::{
+    WINDOWS_PARAKEET_MODEL, WINDOWS_PARAKEET_SERVER, verify_windows_payload,
+};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::pins;
@@ -59,6 +65,14 @@ pub struct ParakeetTruthSeam {
 struct ResolvedParakeetPaths {
     binary_path: PathBuf,
     model_path: PathBuf,
+    package_root: Option<PathBuf>,
+}
+
+struct ParakeetLaunchMetadata {
+    journal_path: PathBuf,
+    threads: u32,
+    desired_fingerprint_json: String,
+    desired_fingerprint_sha256: String,
 }
 
 impl ParakeetTruthSeam {
@@ -209,6 +223,9 @@ fn observe_parakeet_truth(
         return admission_not_desired_observation(&latch);
     }
 
+    #[cfg(windows)]
+    return observe_windows_parakeet_truth(shared, config, &latch);
+
     let Ok(artifact_key) = pins::parakeet_artifact_key(&config.platform, &config.machine) else {
         return platform_cannot_host_not_desired(&config.platform);
     };
@@ -256,9 +273,12 @@ fn observe_parakeet_truth(
         env_updates,
         gpu_index,
         paths,
-        parakeet_physical_thread_count(),
-        fingerprint_json.clone(),
-        fingerprint_sha256.clone(),
+        ParakeetLaunchMetadata {
+            journal_path: config.journal_path.clone(),
+            threads: parakeet_physical_thread_count(),
+            desired_fingerprint_json: fingerprint_json.clone(),
+            desired_fingerprint_sha256: fingerprint_sha256.clone(),
+        },
     );
     shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
     let Some((after_json, after_sha256)) =
@@ -337,9 +357,7 @@ fn build_parakeet_launch_config(
     env_updates: BTreeMap<String, String>,
     gpu_index: Option<u32>,
     paths: ResolvedParakeetPaths,
-    threads: u32,
-    desired_fingerprint_json: String,
-    desired_fingerprint_sha256: String,
+    metadata: ParakeetLaunchMetadata,
 ) -> ParakeetLaunchConfig {
     let placement = if binary_backend == "vulkan" {
         ParakeetPlacement::Gpu
@@ -352,9 +370,11 @@ fn build_parakeet_launch_config(
         gpu_index,
         binary_path: paths.binary_path,
         model_path: paths.model_path,
-        threads,
-        desired_fingerprint_json,
-        desired_fingerprint_sha256,
+        package_root: paths.package_root,
+        journal_path: metadata.journal_path,
+        threads: metadata.threads,
+        desired_fingerprint_json: metadata.desired_fingerprint_json,
+        desired_fingerprint_sha256: metadata.desired_fingerprint_sha256,
         placement,
     }
 }
@@ -397,7 +417,132 @@ fn resolved_parakeet_paths(
     Some(ResolvedParakeetPaths {
         binary_path: path_from_value(&paths, binary_key)?,
         model_path: path_from_value(&paths, "model_path")?,
+        package_root: None,
     })
+}
+
+#[cfg(windows)]
+fn observe_windows_parakeet_truth(
+    shared: &ParakeetRuntimeShared,
+    config: &ParakeetTruthConfig,
+    latch: &super::admission::ParakeetAdmissionLatch,
+) -> ProviderTruthObservation {
+    let package = match verified_windows_provider_package() {
+        Ok(package) => package,
+        Err(_) => return unavailable_observation("artifact-missing"),
+    };
+    let paths = ResolvedParakeetPaths {
+        binary_path: package.server,
+        model_path: package.model,
+        package_root: Some(package.package_root),
+    };
+    match regular_files_exist(&paths.binary_path, &paths.model_path) {
+        Ok(true) => {}
+        Ok(false) => return unavailable_observation("artifact-missing"),
+        Err(_) => return unavailable_observation("record-unavailable"),
+    }
+    let target = json!({
+        "provider": "parakeet",
+        "runtime": "parakeet.cpp",
+        "artifact_key": "x86_64-pc-windows-msvc",
+        "package_root": paths.package_root.as_ref().map(|path| path.display().to_string()),
+        "server": paths.binary_path.display().to_string(),
+        "model": paths.model_path.display().to_string(),
+        "launch_env": {PARAKEET_ATT_CONTEXT_ENV: PARAKEET_ATT_CONTEXT},
+    });
+    let Some((fingerprint_json, fingerprint_sha256)) =
+        canonical_json(&CanonicalInput::Json(target))
+            .ok()
+            .map(|json| {
+                let sha256 = fingerprint_sha256(&json);
+                (json, sha256)
+            })
+    else {
+        return unavailable_observation("truth-observation-failed");
+    };
+    let launch = build_parakeet_launch_config(
+        "cpu".to_owned(),
+        BTreeMap::from([(
+            PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+            PARAKEET_ATT_CONTEXT.to_owned(),
+        )]),
+        None,
+        paths,
+        ParakeetLaunchMetadata {
+            journal_path: config.journal_path.clone(),
+            threads: parakeet_physical_thread_count(),
+            desired_fingerprint_json: fingerprint_json.clone(),
+            desired_fingerprint_sha256: fingerprint_sha256.clone(),
+        },
+    );
+    shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
+    ProviderTruthObservation {
+        provider: ProviderName::Parakeet,
+        phase: RuntimePhase::Starting,
+        reason_code: Some(ReasonCode::known("launch-requested")),
+        desired_fingerprint: Some(fingerprint_sha256),
+        has_plan: true,
+        boot_required: true,
+        detail: Some(json!({
+            "backend": "cpu",
+            "placement": "cpu",
+            "stt_admission_latch": latch.to_json(),
+            "target_fingerprint_json": fingerprint_json,
+        })),
+    }
+}
+
+#[cfg(windows)]
+#[derive(Clone)]
+struct WindowsParakeetPackage {
+    package_root: PathBuf,
+    server: PathBuf,
+    model: PathBuf,
+}
+
+#[cfg(windows)]
+fn verified_windows_provider_package() -> Result<WindowsParakeetPackage, String> {
+    static PACKAGE: OnceLock<Result<WindowsParakeetPackage, String>> = OnceLock::new();
+    match PACKAGE.get_or_init(|| {
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("could not determine the running journal executable: {error}"))?;
+        let bin = executable.parent().ok_or_else(|| {
+            format!(
+                "running journal executable has no containing directory: {}",
+                executable.display()
+            )
+        })?;
+        if bin.file_name() != Some(OsStr::new("bin")) {
+            return Err(format!(
+                "running journal executable is not in the package bin directory: {}",
+                executable.display()
+            ));
+        }
+        let package_root = bin.parent().ok_or_else(|| {
+            format!(
+                "package bin directory has no package root: {}",
+                bin.display()
+            )
+        })?;
+        let payload = verify_windows_payload(package_root)
+            .map_err(|error| format!("could not verify the signed Parakeet app payload: {error}"))?;
+        Ok(WindowsParakeetPackage {
+            package_root: package_root.to_path_buf(),
+            server: payload.parakeet_server_path().map_err(|error| {
+                format!(
+                    "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_SERVER}: {error}"
+                )
+            })?,
+            model: payload.parakeet_model_path().map_err(|error| {
+                format!(
+                    "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_MODEL}: {error}"
+                )
+            })?,
+        })
+    }) {
+        Ok(package) => Ok(package.clone()),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 fn regular_files_exist(binary_path: &Path, model_path: &Path) -> Result<bool, std::io::Error> {
@@ -645,9 +790,12 @@ mod tests {
             BTreeMap::from([("GGML_VK_VISIBLE_DEVICES".to_owned(), "0".to_owned())]),
             Some(0),
             vulkan_paths,
-            8,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: journal.clone(),
+                threads: 8,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(vulkan_launch.placement, ParakeetPlacement::Gpu);
 
@@ -658,9 +806,12 @@ mod tests {
             BTreeMap::new(),
             None,
             cpu_paths,
-            8,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: journal.clone(),
+                threads: 8,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(cpu_launch.placement, ParakeetPlacement::Cpu);
     }
@@ -727,9 +878,12 @@ mod tests {
             BTreeMap::new(),
             None,
             paths,
-            37,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: PathBuf::from("/fixture-journal"),
+                threads: 37,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(launch.threads, 37);
         assert_eq!(launch.binary_path, binary_path);

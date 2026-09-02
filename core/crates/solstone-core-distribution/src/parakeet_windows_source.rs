@@ -57,6 +57,12 @@ const PARAKEET_WINDOWS_OUTPUT_TREE_MAXIMUM_BYTES: usize =
     PARAKEET_MODEL_SIZE_BYTES as usize + 128 * 1024 * 1024;
 const PARAKEET_WINDOWS_GGML_PATCH_DIFF_SHA256: &str =
     "e62f5e880cde081d478927b62f304f60c93e92a8996b4e82f2e3b6a9205e9926";
+const PARAKEET_WINDOWS_SERVER_PATCH_NAME: &str = "0005-controlled-local-server-boundary.patch";
+const PARAKEET_WINDOWS_SERVER_PATCH_PATH: &str =
+    "core/distribution/parakeet-windows-patches/0005-controlled-local-server-boundary.patch";
+const PARAKEET_WINDOWS_SERVER_PATCH_SHA256: &str =
+    "b2314ce9019d0d7020678c07b623adf3419e420f3fe5df0c4e7baa143a1d0412";
+const PARAKEET_WINDOWS_SERVER_PATCH_SIZE: u64 = 12_337;
 const PARAKEET_WINDOWS_PATCHES: &[(&str, &str)] = &[
     (
         "0001-ggml-cpu-fold-broadcast-iterations-in-llamafile_sgem.patch",
@@ -361,6 +367,12 @@ pub fn materialize_parakeet_windows_source_archive(
     verify_source_checkout(source_root)?;
     let ggml_root = source_root.join("third_party/ggml");
     let mut source_files = working_tree_files(source_root, "")?;
+    source_files.push(SourceFile {
+        path: format!("parakeet-windows-patches/{PARAKEET_WINDOWS_SERVER_PATCH_NAME}"),
+        mode: 0o644,
+        bytes: verified_server_patch_bytes()?,
+    });
+    source_files.sort_by(|left, right| left.path.cmp(&right.path));
     let parakeet_digest = digest_files(&source_files);
     let ggml_files = working_tree_files(&ggml_root, "third_party/ggml/")?;
     let ggml_digest = digest_files(&ggml_files);
@@ -643,9 +655,9 @@ fn verify_source_checkout(source_root: &Path) -> Result<(), ParakeetWindowsSourc
             "--ignore-submodules=none",
         ],
     )?;
-    if root_status != b" M third_party/ggml\n" {
+    if root_status != b" M examples/server/main.cpp\n M third_party/ggml\n" {
         return Err(ParakeetWindowsSourceError::new(
-            "Parakeet source must contain only the reviewed dirty ggml submodule",
+            "Parakeet source must contain only the reviewed server patch and dirty ggml submodule",
         ));
     }
     let ggml_root = source_root.join("third_party/ggml");
@@ -691,7 +703,7 @@ fn verify_git_identity(
 fn verified_patch_inputs(
     source_root: &Path,
 ) -> Result<Vec<InputIdentityEntry>, ParakeetWindowsSourceError> {
-    let mut patches = Vec::with_capacity(PARAKEET_WINDOWS_PATCHES.len());
+    let mut patches = Vec::with_capacity(PARAKEET_WINDOWS_PATCHES.len() + 1);
     for (name, expected_sha256) in PARAKEET_WINDOWS_PATCHES {
         let path = source_root.join("third_party/ggml-patches").join(name);
         let bytes = fs::read(&path)?;
@@ -707,7 +719,36 @@ fn verified_patch_inputs(
             size: bytes.len() as u64,
         });
     }
+    let server_patch = verified_server_patch_bytes()?;
+    let server_patch_sha256 = sha256_hex(&server_patch);
+    let server_diff = git_output(
+        source_root,
+        &["diff", "--binary", "HEAD", "--", "examples/server/main.cpp"],
+    )?;
+    if server_diff != server_patch {
+        return Err(ParakeetWindowsSourceError::new(
+            "Parakeet server working tree does not match the reviewed controlled-server patch",
+        ));
+    }
+    patches.push(InputIdentityEntry {
+        label: format!("patches/{PARAKEET_WINDOWS_SERVER_PATCH_NAME}"),
+        sha256: server_patch_sha256,
+        size: server_patch.len() as u64,
+    });
     Ok(patches)
+}
+
+fn verified_server_patch_bytes() -> Result<Vec<u8>, ParakeetWindowsSourceError> {
+    let server_patch_path = repository_root()?.join(PARAKEET_WINDOWS_SERVER_PATCH_PATH);
+    let server_patch = fs::read(&server_patch_path)?;
+    if sha256_hex(&server_patch) != PARAKEET_WINDOWS_SERVER_PATCH_SHA256
+        || server_patch.len() as u64 != PARAKEET_WINDOWS_SERVER_PATCH_SIZE
+    {
+        return Err(ParakeetWindowsSourceError::new(
+            "Parakeet controlled-server patch has an unexpected identity",
+        ));
+    }
+    Ok(server_patch)
 }
 
 fn working_tree_files(
@@ -914,10 +955,14 @@ fn validate_manifest(
         GGML_COMMIT,
         "ggml",
     )?;
-    let expected_patches = PARAKEET_WINDOWS_PATCHES
+    let mut expected_patches = PARAKEET_WINDOWS_PATCHES
         .iter()
         .map(|(name, sha256)| (format!("patches/{name}"), (*sha256).to_owned()))
         .collect::<BTreeMap<_, _>>();
+    expected_patches.insert(
+        format!("patches/{PARAKEET_WINDOWS_SERVER_PATCH_NAME}"),
+        PARAKEET_WINDOWS_SERVER_PATCH_SHA256.to_owned(),
+    );
     let actual_patches = manifest
         .patches
         .iter()
@@ -985,7 +1030,11 @@ fn validate_manifest(
         let name = patch.label.strip_prefix("patches/").ok_or_else(|| {
             ParakeetWindowsSourceError::new("Parakeet source archive has invalid patch label")
         })?;
-        let path = format!("third_party/ggml-patches/{name}");
+        let path = if name == PARAKEET_WINDOWS_SERVER_PATCH_NAME {
+            format!("parakeet-windows-patches/{name}")
+        } else {
+            format!("third_party/ggml-patches/{name}")
+        };
         let (_, bytes) = members.get(&path).ok_or_else(|| {
             ParakeetWindowsSourceError::new("Parakeet source archive lacks a reviewed patch")
         })?;
@@ -1119,6 +1168,10 @@ fn git_text(root: &Path, args: &[&str]) -> Result<String, ParakeetWindowsSourceE
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Vec<u8>, ParakeetWindowsSourceError> {
     let output = Command::new("git")
+        // The source boundary hashes `git diff --binary`; its index headers are
+        // otherwise affected by the caller's core.abbrev configuration.
+        .arg("-c")
+        .arg("core.abbrev=8")
         .arg("-C")
         .arg(root)
         .args(args)
@@ -1167,6 +1220,31 @@ mod tests {
         };
         let error = validate_manifest(&manifest, &BTreeMap::new())
             .expect_err("unreviewed patch set must fail closed");
+        assert!(error.to_string().contains("patch-set identity"));
+    }
+
+    #[test]
+    fn source_manifest_requires_the_controlled_server_patch() {
+        let manifest = ParakeetWindowsSourceArchiveManifest {
+            schema: PARAKEET_WINDOWS_SOURCE_ARCHIVE_SCHEMA_V1.to_owned(),
+            parakeet: DependencySource {
+                repository: PARAKEET_CPP_REPOSITORY.to_owned(),
+                revision: PARAKEET_CPP_COMMIT.to_owned(),
+                content_sha256: "0".repeat(64),
+            },
+            ggml: DependencySource {
+                repository: PARAKEET_GGML_REPOSITORY.to_owned(),
+                revision: GGML_COMMIT.to_owned(),
+                content_sha256: "1".repeat(64),
+            },
+            patches: PARAKEET_WINDOWS_PATCHES
+                .iter()
+                .map(|(name, sha256)| input(&format!("patches/{name}"), sha256, 1))
+                .collect(),
+            files: vec![],
+        };
+        let error = validate_manifest(&manifest, &BTreeMap::new())
+            .expect_err("missing controlled server patch must fail closed");
         assert!(error.to_string().contains("patch-set identity"));
     }
 

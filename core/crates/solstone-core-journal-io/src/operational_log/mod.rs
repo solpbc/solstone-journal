@@ -20,7 +20,9 @@
 //! ```
 
 mod admission;
+mod catalog;
 mod create;
+mod follow;
 mod lock;
 mod name;
 mod namespace;
@@ -40,12 +42,19 @@ pub use crate::lease::LeaseProbe;
 pub use admission::{
     OPLOG_ADMISSION_MAX_BYTES, OplogAdmissionError, OplogAdmissionRecord, validate_oplog_admission,
 };
-#[cfg(all(windows, any(test, feature = "test-hooks")))]
-pub use create::probe_oplog_identity;
+pub use catalog::{
+    OPLOG_CATALOG_CENSUS_ATTEMPTS, OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY,
+    OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS, OplogCatalogEntry, OplogCatalogError,
+    OplogCatalogSnapshot, catalog_oplogs, open_oplog_catalog_entry,
+    probe_oplog_catalog_entry_lease,
+};
+#[cfg(windows)]
+pub use create::probe_oplog_identity_lease;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub use create::run_with_oplog_parent_sync_fail;
 pub use create::{
-    OPLOG_CREATE_ATTEMPTS, OPLOG_FILE_ID_DRAW_BUDGET, create_oplog, probe_oplog_lease,
+    OPLOG_CREATE_ATTEMPTS, OPLOG_FILE_ID_DRAW_BUDGET, create_oplog, create_oplog_at,
+    probe_oplog_lease,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use create::{
@@ -54,6 +63,11 @@ pub use create::{
     run_with_oplog_entropy_source_fault, run_with_oplog_entropy_source_fault_at,
     run_with_oplog_file_ids, run_with_oplog_probe_indeterminate, run_with_oplog_sampled_instant,
     run_with_oplog_sampler_fault, run_with_oplog_sync_fail,
+};
+pub use follow::{
+    OplogClock, OplogEntryReaderFactory, OplogFollowReader, OplogFollowState,
+    OplogFollowTickOutcome, OplogFollower, OplogIdentityProbe, OplogInitialDiscovery,
+    OplogSnapshotSource,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lock::acquire_oplog_namespace_lock_with_test_timing;

@@ -12,26 +12,37 @@
 //! separately. This module is the seam machinery a truth decision hands a
 //! plan to, not the decision itself.
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(unix, windows))]
 use std::io::{Read, Write};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(unix, windows))]
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Child, Command};
+#[cfg(windows)]
+use std::sync::OnceLock;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use std::collections::BTreeMap;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(unix, windows)))]
 use std::collections::BTreeSet;
+#[cfg(windows)]
+use std::ffi::OsString;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::apply_parent_death_kill;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::process::{Disposition, LaunchError};
+#[cfg(windows)]
 use crate::process::{
-    Disposition, LaunchAuthority, LaunchError, ProcessObservation, ProcessObservationTuple,
-    SERVICE_SHUTDOWN_TIMEOUT, classify_process_observation,
+    IndependentProviderRequest, IndependentProviderResourceLimits, SpawnOptions,
+    launch_independent_provider,
+};
+use crate::process::{
+    LaunchAuthority, ProcessObservation, ProcessObservationTuple, SERVICE_SHUTDOWN_TIMEOUT,
+    classify_process_observation,
 };
 
 use super::model::{
@@ -47,8 +58,44 @@ use super::store::{
 };
 
 pub const PARAKEET_SERVER_PROCESS_NAME: &str = "parakeet-server";
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(unix, windows))]
 const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// The controlled Windows server accepts no unauthenticated loopback request.
+/// Credentials stay in this process only: the public readiness record carries
+/// a port, never a replayable token or nonce.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Clone, Debug)]
+struct ParakeetCredentials {
+    token: String,
+    nonce: String,
+}
+
+#[cfg(windows)]
+static READY_AUTH: OnceLock<Mutex<BTreeMap<u16, ParakeetCredentials>>> = OnceLock::new();
+
+#[cfg(windows)]
+fn ready_auth() -> &'static Mutex<BTreeMap<u16, ParakeetCredentials>> {
+    READY_AUTH.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+/// Return the two exact headers for an in-process client of a currently owned
+/// Windows Parakeet provider. A separate process receives no credential and
+/// must fail closed rather than recover it from mutable journal state.
+#[cfg(windows)]
+pub fn parakeet_auth_headers(port: u16) -> Option<(String, String)> {
+    ready_auth().lock().ok()?.get(&port).map(|credentials| {
+        (
+            format!("Bearer {}", credentials.token),
+            credentials.nonce.clone(),
+        )
+    })
+}
+
+#[cfg(not(windows))]
+pub fn parakeet_auth_headers(_: u16) -> Option<(String, String)> {
+    None
+}
 
 /// Mirrors Python's `ParakeetServerLaunchPlan` field-for-field. `env_updates`
 /// and `gpu_index` are populated by GPU auto-placement (ported separately);
@@ -60,6 +107,12 @@ pub struct ParakeetLaunchConfig {
     pub gpu_index: Option<u32>,
     pub binary_path: PathBuf,
     pub model_path: PathBuf,
+    /// Present only for the Windows installed-payload capability. Linux and
+    /// macOS retain their pinned-cache resolver shape.
+    pub package_root: Option<PathBuf>,
+    /// Durable root used only for the managed provider log. The Windows model
+    /// remains in the signed package, never under this mutable root.
+    pub journal_path: PathBuf,
     pub threads: u32,
     pub desired_fingerprint_json: String,
     pub desired_fingerprint_sha256: String,
@@ -103,9 +156,9 @@ pub struct ParakeetRuntimeShared {
     launch_requests: Mutex<BTreeMap<Option<String>, ParakeetLaunchConfig>>,
     results: Mutex<ParakeetRuntimeResults>,
     result_available: Condvar,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
 }
 
@@ -291,13 +344,14 @@ impl ParakeetRuntimeShared {
             .insert(key, started_at);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn register_ready_process(
         &self,
         fence: &ProviderFence,
         authority: LaunchAuthority,
         process: ReadyProcess,
         started_at: Instant,
+        #[cfg(windows)] credentials: ParakeetCredentials,
     ) {
         let key = FenceKey::from(fence);
         let mut ready_processes = self
@@ -324,9 +378,14 @@ impl ParakeetRuntimeShared {
             &mut ready_children,
             &mut started,
         );
+        #[cfg(windows)]
+        ready_auth()
+            .lock()
+            .expect("parakeet ready-auth lock")
+            .insert(process.port, credentials);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn retain_child(&self, process_id: String, authority: LaunchAuthority) {
         self.children
             .lock()
@@ -334,7 +393,7 @@ impl ParakeetRuntimeShared {
             .insert(process_id, authority);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn take_child(&self, process_id: &str) -> Option<LaunchAuthority> {
         self.children
             .lock()
@@ -342,7 +401,7 @@ impl ParakeetRuntimeShared {
             .remove(process_id)
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, LaunchAuthority)> {
         let mut ready_children = self
             .ready_children
@@ -352,7 +411,7 @@ impl ParakeetRuntimeShared {
         Some((ready_child.process_id, ready_child.authority))
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn retain_ready_child(
         &self,
         fence: &ProviderFence,
@@ -371,7 +430,7 @@ impl ParakeetRuntimeShared {
             );
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     fn remove_ready_process(&self, fence: &ProviderFence) {
         let key = FenceKey::from(fence);
         let mut ready_processes = self
@@ -386,15 +445,24 @@ impl ParakeetRuntimeShared {
             .started_at
             .lock()
             .expect("parakeet runtime shared lock");
+        #[cfg(windows)]
+        let port = ready_processes.get(&key).map(|process| process.port);
         remove_ready_tuple(
             &key,
             &mut ready_processes,
             &mut ready_children,
             &mut started,
         );
+        #[cfg(windows)]
+        if let Some(port) = port {
+            ready_auth()
+                .lock()
+                .expect("parakeet ready-auth lock")
+                .remove(&port);
+        }
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(unix, windows)))]
     fn remove_ready_process(&self, fence: &ProviderFence) {
         let key = FenceKey::from(fence);
         self.ready_processes
@@ -415,7 +483,7 @@ impl ParakeetRuntimeShared {
         let Ok(ready_processes) = self.ready_processes.lock() else {
             return ProcessObservation::Indeterminate;
         };
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(unix, windows))]
         {
             let Ok(mut ready_children) = self.ready_children.lock() else {
                 return ProcessObservation::Indeterminate;
@@ -470,7 +538,7 @@ impl ParakeetRuntimeShared {
                 CurrentProcessResolution::Ambiguous => ProcessObservation::Indeterminate,
             }
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(unix, windows)))]
         {
             let Ok(started) = self.started_at.lock() else {
                 return ProcessObservation::Indeterminate;
@@ -623,9 +691,9 @@ impl ProbeSeam for ParakeetProbeSeam {
         let launch = shared.launch_request_for(&state.desired_fingerprint);
         thread::spawn(move || {
             let outcome = match launch {
-                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                #[cfg(any(unix, windows))]
                 Some(_) => probe_parakeet(&journal_path),
-                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                #[cfg(not(any(unix, windows)))]
                 Some(_) => probe_unavailable(),
                 None => probe_unavailable(),
             };
@@ -639,7 +707,7 @@ impl ProbeSeam for ParakeetProbeSeam {
 /// (`health/parakeet-cpp.port`), not an in-memory fence-keyed lookup. A
 /// probe's own fence is not the launch's fence -- looking up
 /// `ready_process_for_fence(&probe_fence)` would only work by coincidence.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(unix, windows))]
 fn probe_parakeet(journal_path: &std::path::Path) -> ProviderProbeOutcome {
     let Some(port) = std::fs::read_to_string(journal_path.join("health/parakeet-cpp.port"))
         .ok()
@@ -663,18 +731,26 @@ pub fn probe_parakeet_cpp_server(
     journal_path: &std::path::Path,
     timeout: Duration,
 ) -> Result<(), String> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(unix, windows))]
     {
         let port = std::fs::read_to_string(journal_path.join("health/parakeet-cpp.port"))
             .map_err(|error| error.to_string())?
             .trim()
             .parse::<u16>()
             .map_err(|error| error.to_string())?;
-        probe_health_with_timeout(port, timeout)
+        #[cfg(windows)]
+        let credentials =
+            parakeet_auth_headers(port).map(|(authorization, nonce)| ParakeetCredentials {
+                token: authorization.trim_start_matches("Bearer ").to_owned(),
+                nonce,
+            });
+        #[cfg(not(windows))]
+        let credentials: Option<ParakeetCredentials> = None;
+        probe_health_with_timeout(port, timeout, credentials.as_ref())
             .then_some(())
             .ok_or_else(|| "health endpoint did not return HTTP 200".to_owned())
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (journal_path, timeout);
         Err("parakeet-cpp health probe is unsupported on this platform".to_owned())
@@ -696,9 +772,9 @@ fn launch_failed() -> ProviderLaunchOutcome {
     }
 }
 
-/// Mirrors `_build_parakeet_cmd` in supervisor.py verbatim -- flag spellings
-/// are the Python authors' own "re-verify at live bring-up" placeholders,
-/// carried forward rather than invented independently.
+/// Existing POSIX launch command. Windows deliberately uses the separate
+/// controlled-server protocol below, so no permissive upstream CLI reaches the
+/// signed package capability.
 fn build_parakeet_cmd(
     binary_path: &std::path::Path,
     model_path: &std::path::Path,
@@ -715,6 +791,115 @@ fn build_parakeet_cmd(
         port.to_string(),
         "--threads".to_owned(),
         threads.to_string(),
+    ]
+}
+
+#[cfg(windows)]
+const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+#[cfg(windows)]
+const MAX_AUDIO_SECONDS: usize = 300;
+#[cfg(windows)]
+const MAX_QUEUE_DEPTH: usize = 1;
+#[cfg(windows)]
+const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(windows)]
+const REQUEST_DEADLINE: Duration = Duration::from_secs(300);
+#[cfg(windows)]
+const PROVIDER_CPU_RATE_PER_10_000: u32 = 5_000;
+#[cfg(windows)]
+const PROVIDER_COMMITTED_MEMORY_BYTES: usize = 3 * 1024 * 1024 * 1024;
+#[cfg(windows)]
+const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
+#[cfg(windows)]
+const PARAKEET_ATT_CONTEXT: &str = "128";
+
+#[cfg(windows)]
+fn fresh_parakeet_credentials() -> Option<ParakeetCredentials> {
+    let mut token = [0_u8; 32];
+    let mut nonce = [0_u8; 32];
+    getrandom::fill(&mut token).ok()?;
+    getrandom::fill(&mut nonce).ok()?;
+    Some(ParakeetCredentials {
+        token: hex_encode(&token),
+        nonce: hex_encode(&nonce),
+    })
+}
+
+#[cfg(windows)]
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+#[cfg(windows)]
+fn controlled_windows_environment(
+    launch: &ParakeetLaunchConfig,
+    credentials: &ParakeetCredentials,
+) -> Option<BTreeMap<OsString, OsString>> {
+    if launch.binary_backend != "cpu"
+        || launch.gpu_index.is_some()
+        || launch.placement != ParakeetPlacement::Cpu
+        || launch.env_updates
+            != BTreeMap::from([(
+                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+                PARAKEET_ATT_CONTEXT.to_owned(),
+            )])
+    {
+        return None;
+    }
+    let system_root = std::env::var_os("SystemRoot")?;
+    if system_root.is_empty() {
+        return None;
+    }
+    Some(BTreeMap::from([
+        (OsString::from("SystemRoot"), system_root),
+        (
+            OsString::from(PARAKEET_ATT_CONTEXT_ENV),
+            OsString::from(PARAKEET_ATT_CONTEXT),
+        ),
+        (
+            OsString::from("SOLSTONE_PARAKEET_AUTH_TOKEN"),
+            OsString::from(&credentials.token),
+        ),
+        (
+            OsString::from("SOLSTONE_PARAKEET_AUTH_NONCE"),
+            OsString::from(&credentials.nonce),
+        ),
+    ]))
+}
+
+#[cfg(windows)]
+fn controlled_windows_arguments(
+    model_path: &std::path::Path,
+    port: u16,
+    threads: u32,
+) -> Vec<String> {
+    vec![
+        "--model".to_owned(),
+        model_path.display().to_string(),
+        "--host".to_owned(),
+        "127.0.0.1".to_owned(),
+        "--port".to_owned(),
+        port.to_string(),
+        "--threads".to_owned(),
+        threads.to_string(),
+        "--max-request-bytes".to_owned(),
+        MAX_REQUEST_BYTES.to_string(),
+        "--max-audio-seconds".to_owned(),
+        MAX_AUDIO_SECONDS.to_string(),
+        "--max-concurrency".to_owned(),
+        "1".to_owned(),
+        "--max-queue-depth".to_owned(),
+        MAX_QUEUE_DEPTH.to_string(),
+        "--max-output-bytes".to_owned(),
+        MAX_OUTPUT_BYTES.to_string(),
+        "--deadline-ms".to_owned(),
+        REQUEST_DEADLINE.as_millis().to_string(),
     ]
 }
 
@@ -808,7 +993,111 @@ fn start_parakeet(
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(windows)]
+fn start_parakeet(
+    shared: &ParakeetRuntimeShared,
+    launch: &ParakeetLaunchConfig,
+    fence: &ProviderFence,
+    warmup_timeout: Duration,
+    warmup_poll_interval: Duration,
+) -> ProviderLaunchOutcome {
+    let Some(package_root) = launch.package_root.as_ref() else {
+        return launch_failed();
+    };
+    let Some(current_directory) = launch.binary_path.parent() else {
+        return launch_failed();
+    };
+    let Some(credentials) = fresh_parakeet_credentials() else {
+        return launch_failed();
+    };
+    let Some(environment) = controlled_windows_environment(launch, &credentials) else {
+        return launch_failed();
+    };
+    let mut reservation = match super::launch::ReservedPort::reserve() {
+        Ok(reservation) => reservation,
+        Err(_) => return launch_failed(),
+    };
+    let port = reservation.release_for_spawn();
+    let arguments = controlled_windows_arguments(&launch.model_path, port, launch.threads);
+    let mut authority = match launch_independent_provider(IndependentProviderRequest {
+        package_root: package_root.clone(),
+        executable: launch.binary_path.clone(),
+        current_directory: current_directory.to_path_buf(),
+        arguments,
+        environment,
+        resource_limits: Some(IndependentProviderResourceLimits {
+            cpu_rate_per_10_000: PROVIDER_CPU_RATE_PER_10_000,
+            committed_memory_bytes: PROVIDER_COMMITTED_MEMORY_BYTES,
+        }),
+        spawn_options: SpawnOptions {
+            journal_root: launch.journal_path.clone(),
+            reference: format!("parakeet-provider:{}", fence.generation),
+            day: None,
+            sink: None,
+            environment: BTreeMap::new(),
+        },
+    }) {
+        Ok(authority) => authority,
+        Err(_) => return launch_failed(),
+    };
+    let started_at = Instant::now();
+    let process_id = format!("parakeet:{}", authority.pid());
+    let pid = authority.pid();
+    let deadline = Instant::now() + warmup_timeout;
+    loop {
+        if let Ok(Some(_)) = authority.poll() {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::Exited,
+                reason_code: ReasonCode::known("process-exited"),
+                managed: None,
+            };
+        }
+        if probe_health_with_timeout(port, HEALTH_PROBE_TIMEOUT, Some(&credentials)) {
+            let managed = ManagedProcess {
+                id: process_id.clone(),
+                pid,
+                name: PARAKEET_SERVER_PROCESS_NAME.into(),
+                running: true,
+                fence: Some(fence.clone()),
+            };
+            shared.register_ready_process(
+                fence,
+                authority,
+                ReadyProcess {
+                    process_id,
+                    process_name: PARAKEET_SERVER_PROCESS_NAME.into(),
+                    pid,
+                    port,
+                },
+                started_at,
+                credentials,
+            );
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::Ready,
+                reason_code: ReasonCode::known("probe-ready"),
+                managed: Some(managed),
+            };
+        }
+        if Instant::now() >= deadline {
+            let managed = ManagedProcess {
+                id: process_id.clone(),
+                pid,
+                name: PARAKEET_SERVER_PROCESS_NAME.into(),
+                running: true,
+                fence: None,
+            };
+            shared.retain_child(process_id, authority);
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::WarmupTimeout,
+                reason_code: ReasonCode::known("warmup-timeout"),
+                managed: Some(managed),
+            };
+        }
+        thread::sleep(warmup_poll_interval);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn start_parakeet(
     _: &ParakeetRuntimeShared,
     _: &ParakeetLaunchConfig,
@@ -836,13 +1125,27 @@ fn spawn_parakeet(
     command.spawn()
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(unix, windows))]
 fn probe_health(port: u16) -> bool {
-    probe_health_with_timeout(port, HEALTH_PROBE_TIMEOUT)
+    #[cfg(windows)]
+    let credentials =
+        parakeet_auth_headers(port).map(|(authorization, nonce)| ParakeetCredentials {
+            token: authorization.trim_start_matches("Bearer ").to_owned(),
+            nonce,
+        });
+    #[cfg(not(windows))]
+    let credentials: Option<ParakeetCredentials> = None;
+    probe_health_with_timeout(port, HEALTH_PROBE_TIMEOUT, credentials.as_ref())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn probe_health_with_timeout(port: u16, timeout: Duration) -> bool {
+#[cfg(any(unix, windows))]
+fn probe_health_with_timeout(
+    port: u16,
+    timeout: Duration,
+    credentials: Option<&ParakeetCredentials>,
+) -> bool {
+    #[cfg(not(windows))]
+    let _ = credentials;
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = match TcpStream::connect_timeout(&address, timeout) {
         Ok(stream) => stream,
@@ -850,9 +1153,20 @@ fn probe_health_with_timeout(port: u16, timeout: Duration) -> bool {
     };
     if stream.set_read_timeout(Some(timeout)).is_err()
         || stream.set_write_timeout(Some(timeout)).is_err()
-        || stream
-            .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
-            .is_err()
+        || {
+            #[cfg(windows)]
+            let request = credentials.map_or_else(
+                || "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".to_owned(),
+                |credentials| format!(
+                    "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nX-Solstone-Nonce: {}\r\nConnection: close\r\n\r\n",
+                    credentials.token, credentials.nonce
+                ),
+            );
+            #[cfg(not(windows))]
+            let request =
+                "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".to_owned();
+            stream.write_all(request.as_bytes()).is_err()
+        }
     {
         return false;
     }

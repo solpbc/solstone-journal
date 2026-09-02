@@ -246,21 +246,37 @@ fn ac14_parent_grace_timeout_is_distinct_from_proven_escalation() {
 }
 
 #[test]
-fn ac18_daily_writer_creates_the_two_relative_operational_log_symlinks() {
+fn ac18_daily_writer_creates_one_canonical_operational_log_without_symlinks() {
     let bed = Bed::new("links");
     let mut process = bed.spawn("links", &["lines"]);
     assert_eq!(process.wait().expect("fixture exits"), 0);
     process.cleanup();
     let day = bed.root.join("chronicle/20260807/health");
-    assert_eq!(
-        fs::read_link(day.join("solstone-system-test-child.log")).expect("day link"),
-        PathBuf::from("links_solstone-system-test-child.log")
+    let leaves = fs::read_dir(&day)
+        .expect("day health directory")
+        .map(|entry| entry.expect("health entry"))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("oplog--"))
+        .collect::<Vec<_>>();
+    assert_eq!(leaves.len(), 1);
+    let leaf = &leaves[0];
+    assert!(leaf.file_name().to_string_lossy().starts_with("oplog--"));
+    assert!(leaf.path().is_file());
+    assert!(
+        !fs::symlink_metadata(leaf.path())
+            .expect("canonical leaf metadata")
+            .file_type()
+            .is_symlink()
     );
-    assert_eq!(
-        fs::read_link(bed.root.join("health/solstone-system-test-child.log"))
-            .expect("journal link"),
-        PathBuf::from("../chronicle/20260807/health/links_solstone-system-test-child.log")
+    assert!(
+        fs::read_dir(&day)
+            .expect("day health directory")
+            .all(|entry| !entry
+                .expect("health entry")
+                .file_type()
+                .expect("file type")
+                .is_symlink())
     );
+    assert!(!bed.root.join("health").exists());
 }
 
 #[test]

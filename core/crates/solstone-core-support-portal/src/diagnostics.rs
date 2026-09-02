@@ -4,6 +4,7 @@
 //! Local support diagnostics, with the same intentionally narrow redaction as Python.
 
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -13,6 +14,10 @@ use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use regex::Regex;
 use serde_json::{Map, Value, json};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{catalog_oplogs, open_oplog_catalog_entry},
+};
 
 const UNKNOWN_HEADLINE: &str = "thinking status unavailable";
 const RECENCY_WINDOW: Duration = Duration::hours(168);
@@ -212,61 +217,123 @@ fn signal_zero(pid: i32) -> Result<(), Errno> {
     kill(Pid::from_raw(pid), None)
 }
 
-/// Collect recent errors, preserving Python's aware-timestamp collector failure seam.
-pub fn collect_recent_errors(journal_root: &Path, now: DateTime<Local>) -> Result<Value, String> {
-    let health = journal_root.join("health");
-    let Ok(entries) = fs::read_dir(health) else {
-        return Ok(json!([]));
-    };
+/// Closed, path-free error for the support bundle's log section.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LogCollectionError {
+    kind: &'static str,
+    day: Option<String>,
+}
+
+impl LogCollectionError {
+    pub fn kind(&self) -> &'static str {
+        self.kind
+    }
+
+    pub fn day(&self) -> Option<&str> {
+        self.day.as_deref()
+    }
+
+    fn catalog(error: &solstone_core_journal_io::operational_log::OplogCatalogError) -> Self {
+        Self {
+            kind: error.kind(),
+            day: error.day().map(ToOwned::to_owned),
+        }
+    }
+
+    fn root() -> Self {
+        Self {
+            kind: "oplog_catalog_root",
+            day: None,
+        }
+    }
+
+    fn io(day: &str) -> Self {
+        Self {
+            kind: "oplog_catalog_io",
+            day: Some(day.to_owned()),
+        }
+    }
+
+    fn timestamp(day: &str) -> Self {
+        Self {
+            kind: "oplog_catalog_timestamp",
+            day: Some(day.to_owned()),
+        }
+    }
+
+    fn json(&self) -> Value {
+        let mut object = Map::new();
+        object.insert("kind".to_owned(), Value::String(self.kind.to_owned()));
+        if let Some(day) = &self.day {
+            object.insert("day".to_owned(), Value::String(day.clone()));
+        }
+        Value::Object(object)
+    }
+}
+
+/// Collect recent canonical operational-log errors over every intersecting local day.
+pub fn collect_recent_errors(
+    journal_root: &Path,
+    now: DateTime<Local>,
+) -> Result<Value, LogCollectionError> {
     let cutoff = now - RECENCY_WINDOW;
     let mut candidates = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|extension| extension != "log") {
-            continue;
-        }
-        let service = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_owned();
-        let Ok(bytes) = fs::read(&path) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        let fallback = path
-            .metadata()
-            .ok()
-            .and_then(|meta| meta.modified().ok())
-            .map(DateTime::<Local>::from);
-        let mut last = None;
-        for line in text.lines().filter(|line| line.contains("ERROR")) {
-            let (first, rest) = split_python_once(line);
-            let (time, approximate, message) = match parse_local_timestamp(first)? {
-                Some(time) => {
-                    last = Some(time);
-                    (
-                        time,
-                        false,
-                        bounded_redacted_text(Some(rest.trim()), 500).unwrap_or_default(),
-                    )
+    let mut day = cutoff.date_naive();
+    while day <= now.date_naive() {
+        let day_key = day.format("%Y%m%d").to_string();
+        let root = JournalRoot::open(journal_root).map_err(|_| LogCollectionError::root())?;
+        let snapshot =
+            catalog_oplogs(root, &[day]).map_err(|error| LogCollectionError::catalog(&error))?;
+        for entry in snapshot.entries() {
+            let service = entry.name().source().display_slug().to_owned();
+            let root = JournalRoot::open(journal_root).map_err(|_| LogCollectionError::root())?;
+            let mut file = open_oplog_catalog_entry(root, entry)
+                .map_err(|error| LogCollectionError::catalog(&error))?;
+            file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                .map_err(|_| LogCollectionError::io(&day_key))?;
+            let fallback = file
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .map(DateTime::<Local>::from);
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)
+                .map_err(|_| LogCollectionError::io(&day_key))?;
+            let text = String::from_utf8_lossy(&bytes);
+            let mut last = None;
+            for line in text.lines().filter(|line| line.contains("ERROR")) {
+                let (first, rest) = split_python_once(line);
+                let (time, approximate, message) = match parse_local_timestamp(first)
+                    .map_err(|_| LogCollectionError::timestamp(&day_key))?
+                {
+                    Some(time) => {
+                        last = Some(time);
+                        (
+                            time,
+                            false,
+                            bounded_redacted_text(Some(rest.trim()), 500).unwrap_or_default(),
+                        )
+                    }
+                    None => {
+                        let Some(time) = last.or(fallback) else {
+                            continue;
+                        };
+                        (
+                            time,
+                            true,
+                            bounded_redacted_text(Some(line.trim()), 500).unwrap_or_default(),
+                        )
+                    }
+                };
+                if time < cutoff {
+                    continue;
                 }
-                None => {
-                    let Some(time) = last.or(fallback) else {
-                        continue;
-                    };
-                    (
-                        time,
-                        true,
-                        bounded_redacted_text(Some(line.trim()), 500).unwrap_or_default(),
-                    )
-                }
-            };
-            if time < cutoff {
-                continue;
+                candidates.push((time, json!({"service":service,"message":message,"time":time.to_rfc3339_opts(SecondsFormat::Secs, false),"time_approximate":approximate})));
             }
-            candidates.push((time, json!({"service":service,"message":message,"time":time.to_rfc3339_opts(SecondsFormat::Secs, false),"time_approximate":approximate})));
         }
+        day = day
+            .succ_opt()
+            .expect("local day has successor in the supported range");
     }
     candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
     Ok(Value::Array(
@@ -492,8 +559,13 @@ pub fn collect_all(
     );
     output.insert("platform".to_owned(), collect_platform(platform));
     output.insert("services".to_owned(), collect_services(journal_root));
-    if let Ok(errors) = collect_recent_errors(journal_root, now) {
-        output.insert("recent_errors".to_owned(), errors);
+    match collect_recent_errors(journal_root, now) {
+        Ok(errors) => {
+            output.insert("recent_errors".to_owned(), errors);
+        }
+        Err(error) => {
+            output.insert("log_collection_error".to_owned(), error.json());
+        }
     }
     output.insert("config".to_owned(), collect_config(journal_root));
     output.insert(
