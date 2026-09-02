@@ -24,7 +24,11 @@ use super::super::{
     SERVICE_SHUTDOWN_TIMEOUT, SignalKind, SpawnError, SpawnOptions, TerminationError,
     TerminationOutcome,
 };
-use super::job_process::{WindowsJobProcess, launch_windows_job_process};
+use super::job::JobResourceLimits;
+use super::job_process::{
+    WindowsJobLaunchOptions, WindowsJobProcess, launch_windows_job_process,
+    launch_windows_job_process_with_options,
+};
 
 /// A process whose root entered an unnamed kill-on-close Job atomically at
 /// `CreateProcessW`, together with the ordinary managed-process log contract.
@@ -56,6 +60,41 @@ impl ManagedProcess {
         Self::spawn_with_mode(cmd, options, true)
     }
 
+    /// Start a retained provider from an already-admitted package boundary.
+    ///
+    /// The caller supplies only canonical, package-owned paths and a complete
+    /// environment. This method deliberately remains crate-private: public
+    /// consumers use the validating independent-provider authority rather
+    /// than composing a Job launch from arbitrary paths or inherited state.
+    pub(crate) fn spawn_package_owned(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+        current_directory: &std::path::Path,
+        resource_limits: Option<(u32, usize)>,
+    ) -> Result<Self, SpawnError> {
+        if cmd.is_empty() {
+            return Err(SpawnError::EmptyCommand);
+        }
+        let (name, writer, log_path) = prepare_managed_log(&cmd, &options)?;
+        let owner = launch_windows_job_process_with_options(
+            &cmd,
+            &options.environment,
+            WindowsJobLaunchOptions {
+                current_directory: Some(current_directory),
+                resource_limits: resource_limits.map(
+                    |(cpu_rate_per_10_000, committed_memory_bytes)| JobResourceLimits {
+                        cpu_rate_per_10_000,
+                        committed_memory_bytes,
+                    },
+                ),
+                exact_environment: true,
+                retain_parent_stdin: false,
+            },
+        )
+        .map_err(SpawnError::Spawn)?;
+        Self::from_owned_job(cmd, options, owner, name, writer, log_path)
+    }
+
     fn spawn_with_mode(
         cmd: Vec<String>,
         options: SpawnOptions,
@@ -64,19 +103,20 @@ impl ManagedProcess {
         if cmd.is_empty() {
             return Err(SpawnError::EmptyCommand);
         }
-        let name = partition_for(&cmd).as_str().to_owned();
-        let writer = DailyLogWriter::new(
-            &options.journal_root,
-            &options.reference,
-            &name,
-            options.day,
-        )
-        .map_err(SpawnError::Log)?;
-        let log_path = writer.path();
-        let writer = Arc::new(Mutex::new(writer));
-
-        let mut owner =
+        let (name, writer, log_path) = prepare_managed_log(&cmd, &options)?;
+        let owner =
             launch_windows_job_process(&cmd, &options.environment).map_err(SpawnError::Spawn)?;
+        Self::from_owned_job(cmd, options, owner, name, writer, log_path)
+    }
+
+    fn from_owned_job(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+        mut owner: WindowsJobProcess,
+        name: String,
+        writer: Arc<Mutex<DailyLogWriter>>,
+        log_path: PathBuf,
+    ) -> Result<Self, SpawnError> {
         let instance = owner.identity();
         let pid = instance.pid;
         let (stdout, stderr) = owner.take_output_files();
@@ -272,6 +312,22 @@ impl ManagedProcess {
         );
         self.exit_emitted = true;
     }
+}
+
+fn prepare_managed_log(
+    cmd: &[String],
+    options: &SpawnOptions,
+) -> Result<(String, Arc<Mutex<DailyLogWriter>>, PathBuf), SpawnError> {
+    let name = partition_for(cmd).as_str().to_owned();
+    let writer = DailyLogWriter::new(
+        &options.journal_root,
+        &options.reference,
+        &name,
+        options.day.clone(),
+    )
+    .map_err(SpawnError::Log)?;
+    let log_path = writer.path();
+    Ok((name, Arc::new(Mutex::new(writer)), log_path))
 }
 
 impl Drop for ManagedProcess {

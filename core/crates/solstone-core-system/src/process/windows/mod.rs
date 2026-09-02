@@ -48,6 +48,8 @@ mod path_list;
 #[cfg(any(windows, test))]
 mod pipes;
 #[cfg(any(windows, test))]
+mod provider;
+#[cfg(any(windows, test))]
 mod resolve;
 #[cfg(any(windows, test))]
 mod startup_info;
@@ -64,6 +66,11 @@ pub use managed::{
     launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,
     launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
+};
+#[cfg(windows)]
+pub use provider::{
+    IndependentProviderError, IndependentProviderRequest, IndependentProviderResourceLimits,
+    launch_independent_provider,
 };
 
 #[cfg(windows)]
