@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 #[cfg(any(test, feature = "test-hooks"))]
 use std::time::Duration;
 
@@ -48,6 +48,9 @@ pub struct OplogCreateError {
 enum OplogCreateClass {
     InvalidField,
     Io,
+    EntropySource,
+    #[cfg(any(test, feature = "test-hooks"))]
+    Sampler,
     LeaseFailed,
     OwnResidue,
     ForeignResidue,
@@ -75,6 +78,9 @@ impl OplogCreateClass {
         match self {
             Self::InvalidField => "oplog_create_invalid_field",
             Self::Io => "oplog_create_io",
+            Self::EntropySource => "oplog_create_entropy_source",
+            #[cfg(any(test, feature = "test-hooks"))]
+            Self::Sampler => "oplog_create_sampler",
             Self::LeaseFailed => "oplog_create_lease_failed",
             Self::OwnResidue => "oplog_create_own_residue",
             Self::ForeignResidue => "oplog_create_foreign_residue",
@@ -110,6 +116,15 @@ impl OplogCreateError {
 
     pub(super) const fn io() -> Self {
         Self::new(OplogCreateClass::Io)
+    }
+
+    pub(super) const fn entropy_source() -> Self {
+        Self::new(OplogCreateClass::EntropySource)
+    }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub(super) const fn sampler() -> Self {
+        Self::new(OplogCreateClass::Sampler)
     }
 
     pub(super) const fn own_residue() -> Self {
@@ -155,7 +170,7 @@ pub fn create_oplog(
     if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
         return Err(OplogCreateError::new(OplogCreateClass::InvalidField));
     }
-    let instant = sample_local_instant();
+    let instant = sample_local_instant()?;
     create_with_timing(
         root,
         source_original,
@@ -230,6 +245,7 @@ fn create_with_timing(
             rollback(&health, &staged)?;
             return Err(error);
         }
+        record_event(OplogCreateEvent::Lease);
         let lease = match platform::lease_staged(&staged.file) {
             Ok(Some(lease)) => lease,
             Ok(None) => {
@@ -250,6 +266,7 @@ fn create_with_timing(
             rollback(&health, &staged)?;
             return Err(OplogCreateError::new(OplogCreateClass::AncestorReplaced));
         }
+        record_event(OplogCreateEvent::Publish);
         let published = platform::publish_handle_bound(&health, staged, dest_os);
         match published {
             Ok(file) => {
@@ -291,9 +308,27 @@ fn create_with_timing(
     Err(OplogCreateError::new(OplogCreateClass::RetryExhausted))
 }
 
+fn write_admission_bytes<W: Write>(writer: &mut W, header: &[u8]) -> Result<(), OplogCreateError> {
+    let mut written = 0;
+    while written < header.len() {
+        match writer.write(&header[written..]) {
+            Ok(0) => return Err(OplogCreateError::io()),
+            Ok(n) => written += n,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(_) => return Err(OplogCreateError::io()),
+        }
+    }
+    record_event(OplogCreateEvent::AdmissionBytesAccepted);
+    Ok(())
+}
+
 fn write_admission(file: &mut std::fs::File, header: &[u8]) -> Result<(), OplogCreateError> {
-    file.write_all(header).map_err(|_| OplogCreateError::io())?;
+    write_admission_bytes(file, header)?;
+    if force_sync_fail() {
+        return Err(OplogCreateError::io());
+    }
     file.sync_all().map_err(|_| OplogCreateError::io())?;
+    record_event(OplogCreateEvent::SyncAll);
     Ok(())
 }
 
@@ -387,13 +422,20 @@ fn draw_distinct_file_ids() -> Result<[[u8; 16]; OPLOG_CREATE_ATTEMPTS], OplogCr
 }
 
 fn draw_file_id() -> Result<[u8; 16], OplogCreateError> {
-    checkpoint(OplogCreatePrimitive::Random)?;
+    fill_oplog_file_id()
+}
+
+fn fill_oplog_file_id() -> Result<[u8; 16], OplogCreateError> {
+    record_event(OplogCreateEvent::EntropyDraw);
+    if take_entropy_source_fault() {
+        return Err(OplogCreateError::entropy_source());
+    }
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(bytes) = take_injected_file_id() {
         return Ok(bytes);
     }
     let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|_| OplogCreateError::io())?;
+    getrandom::fill(&mut bytes).map_err(|_| OplogCreateError::entropy_source())?;
     Ok(bytes)
 }
 
@@ -422,8 +464,15 @@ pub enum OplogCreatePrimitive {
     Publish,
     /// Stage rollback.
     Rollback,
-    /// File-id entropy.
-    Random,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OplogCreateEvent {
+    EntropyDraw,
+    AdmissionBytesAccepted,
+    SyncAll,
+    Lease,
+    Publish,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -437,6 +486,14 @@ struct OplogCreateTraceState {
     probe_indeterminate: bool,
     dest_identity_io: bool,
     publish_io: bool,
+    sync_fail: bool,
+    entropy_fault: Option<usize>,
+    entropy_fault_consumed: bool,
+    entropy_draws: usize,
+    events: Vec<OplogCreateEvent>,
+    sampled_instant: Option<DateTime<FixedOffset>>,
+    sampler_fail: bool,
+    sampler_calls: usize,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -561,6 +618,65 @@ pub(super) fn force_publish_io() -> bool {
     })
 }
 
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn force_sync_fail() -> bool {
+    false
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn force_sync_fail() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| trace.borrow().as_ref().is_some_and(|state| state.sync_fail))
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn take_entropy_source_fault() -> bool {
+    false
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn take_entropy_source_fault() -> bool {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return false;
+        };
+        state.entropy_draws += 1;
+        if state.entropy_fault == Some(state.entropy_draws) {
+            state.entropy_fault = None;
+            state.entropy_fault_consumed = true;
+            true
+        } else {
+            false
+        }
+    })
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn record_event(_event: OplogCreateEvent) {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn record_event(event: OplogCreateEvent) {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        if let Some(state) = trace.borrow_mut().as_mut() {
+            state.events.push(event);
+        }
+    });
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn take_sampler_override() -> Option<Result<DateTime<FixedOffset>, OplogCreateError>> {
+    OPLOG_CREATE_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let state = trace.as_mut()?;
+        state.sampler_calls += 1;
+        if state.sampler_fail {
+            Some(Err(OplogCreateError::sampler()))
+        } else {
+            state.sampled_instant.map(Ok)
+        }
+    })
+}
+
 #[cfg(any(test, feature = "test-hooks"))]
 fn take_injected_file_id() -> Option<[u8; 16]> {
     OPLOG_CREATE_TRACE.with(|trace| {
@@ -583,6 +699,14 @@ fn empty_trace() -> OplogCreateTraceState {
         probe_indeterminate: false,
         dest_identity_io: false,
         publish_io: false,
+        sync_fail: false,
+        entropy_fault: None,
+        entropy_fault_consumed: false,
+        entropy_draws: 0,
+        events: Vec::new(),
+        sampled_instant: None,
+        sampler_fail: false,
+        sampler_calls: 0,
     }
 }
 
@@ -602,14 +726,14 @@ pub fn run_with_oplog_create_fault_at<T>(
     ordinal: usize,
     operation: impl FnOnce() -> T,
 ) -> (T, bool) {
-    with_trace(
+    let (result, state) = with_trace(
         OplogCreateTraceState {
             fault: Some((primitive, ordinal)),
             ..empty_trace()
         },
         operation,
-        |state| state.fault_consumed,
-    )
+    );
+    (result, state.fault_consumed)
 }
 
 /// Run `operation` with one barrier callback.
@@ -625,7 +749,6 @@ pub fn run_with_oplog_create_barrier<T>(
             ..empty_trace()
         },
         operation,
-        |_| true,
     )
     .0
 }
@@ -639,7 +762,6 @@ pub fn run_with_oplog_file_ids<T>(ids: Vec<[u8; 16]>, operation: impl FnOnce() -
             ..empty_trace()
         },
         operation,
-        |_| true,
     )
     .0
 }
@@ -653,7 +775,70 @@ pub fn run_with_oplog_probe_indeterminate<T>(operation: impl FnOnce() -> T) -> T
             ..empty_trace()
         },
         operation,
-        |_| true,
+    )
+    .0
+}
+
+/// Run `operation` with one entropy-adapter fault at the first draw.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_entropy_source_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+    run_with_oplog_entropy_source_fault_at(1, operation)
+}
+
+/// Run `operation` with one entropy-adapter fault at a 1-based draw ordinal.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_entropy_source_fault_at<T>(
+    ordinal: usize,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    let (result, state) = with_trace(
+        OplogCreateTraceState {
+            entropy_fault: Some(ordinal),
+            ..empty_trace()
+        },
+        operation,
+    );
+    (result, state.entropy_fault_consumed)
+}
+
+/// Freeze the production sampler to `instant`.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_sampled_instant<T>(
+    instant: DateTime<FixedOffset>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    with_trace(
+        OplogCreateTraceState {
+            sampled_instant: Some(instant),
+            ..empty_trace()
+        },
+        operation,
+    )
+    .0
+}
+
+/// Fail the production sampler before any entropy draw.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_sampler_fault<T>(operation: impl FnOnce() -> T) -> (T, bool) {
+    let (result, state) = with_trace(
+        OplogCreateTraceState {
+            sampler_fail: true,
+            ..empty_trace()
+        },
+        operation,
+    );
+    (result, state.sampler_calls > 0)
+}
+
+/// Fail `sync_all` after the admission bytes are written.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn run_with_oplog_sync_fail<T>(operation: impl FnOnce() -> T) -> T {
+    with_trace(
+        OplogCreateTraceState {
+            sync_fail: true,
+            ..empty_trace()
+        },
+        operation,
     )
     .0
 }
@@ -662,8 +847,7 @@ pub fn run_with_oplog_probe_indeterminate<T>(operation: impl FnOnce() -> T) -> T
 fn with_trace<T>(
     state: OplogCreateTraceState,
     operation: impl FnOnce() -> T,
-    consumed: impl FnOnce(&OplogCreateTraceState) -> bool,
-) -> (T, bool) {
+) -> (T, OplogCreateTraceState) {
     OPLOG_CREATE_TRACE.with(|trace| {
         assert!(
             trace.borrow().is_none(),
@@ -678,8 +862,7 @@ fn with_trace<T>(
             .take()
             .expect("oplog create trace remains active")
     });
-    let flag = consumed(&state);
-    (result, flag)
+    (result, state)
 }
 
 #[cfg(all(test, unix))]
@@ -766,6 +949,14 @@ mod tests {
         assert_eq!(error.to_string(), token);
         assert_eq!(format!("{error:?}"), token);
         assert!(error.source().is_none());
+    }
+
+    fn count_event(state: &OplogCreateTraceState, event: OplogCreateEvent) -> usize {
+        state
+            .events
+            .iter()
+            .filter(|candidate| **candidate == event)
+            .count()
     }
 
     // A concurrent test's forked child can briefly inherit this writer's OFD across
@@ -874,10 +1065,9 @@ mod tests {
     #[test]
     fn random_source_failure_does_not_retry() {
         let temporary = temp();
-        let (result, consumed) =
-            run_with_oplog_create_fault(OplogCreatePrimitive::Random, || create(temporary.path()));
+        let (result, consumed) = run_with_oplog_entropy_source_fault(|| create(temporary.path()));
         assert!(consumed);
-        expect_token(result.unwrap_err(), "oplog_create_io");
+        expect_token(result.unwrap_err(), "oplog_create_entropy_source");
         assert!(!temporary.path().join("chronicle").exists());
     }
 
@@ -928,7 +1118,6 @@ mod tests {
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |state| state.fault_consumed,
         )
         .0
         .unwrap_err();
@@ -1071,7 +1260,6 @@ mod tests {
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |_| true,
         )
         .0
         .unwrap_err();
@@ -1079,7 +1267,7 @@ mod tests {
         let dir = health_dir(&root);
         assert_eq!(fs::read(dir.join(&dest)).unwrap(), b"replacement");
         let displaced = fs::read(dir.join("displaced-stage")).unwrap();
-        assert!(displaced.starts_with(b"{\"kind\":\"solstone.oplog.admission.v1\""));
+        assert!(displaced.starts_with(b"{\"_solstone_oplog_v\":1"));
     }
 
     #[test]
@@ -1094,7 +1282,6 @@ mod tests {
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |_| true,
         )
         .0
         .unwrap_err();
@@ -1114,7 +1301,6 @@ mod tests {
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |_| true,
         )
         .0
         .unwrap_err();
@@ -1169,22 +1355,15 @@ mod tests {
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [0x55 + index as u8; 16])
             .collect();
-        let remaining = std::cell::Cell::new(usize::MAX);
-        let error = with_trace(
+        let (result, state) = with_trace(
             OplogCreateTraceState {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |state| {
-                remaining.set(state.file_ids.len());
-                true
-            },
-        )
-        .0
-        .unwrap_err();
-        expect_token(error, "oplog_create_lock_unsafe");
-        assert_eq!(remaining.get(), 0);
+        );
+        expect_token(result.unwrap_err(), "oplog_create_lock_unsafe");
+        assert_eq!(state.file_ids.len(), 0);
         for id in ids {
             assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
         }
@@ -1200,22 +1379,15 @@ mod tests {
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [0x56 + index as u8; 16])
             .collect();
-        let remaining = std::cell::Cell::new(usize::MAX);
-        let error = with_trace(
+        let (result, state) = with_trace(
             OplogCreateTraceState {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |state| {
-                remaining.set(state.file_ids.len());
-                true
-            },
-        )
-        .0
-        .unwrap_err();
-        expect_token(error, "oplog_create_lock_unsafe");
-        assert_eq!(remaining.get(), 0);
+        );
+        expect_token(result.unwrap_err(), "oplog_create_lock_unsafe");
+        assert_eq!(state.file_ids.len(), 0);
         for id in ids {
             assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
         }
@@ -1241,22 +1413,15 @@ mod tests {
         let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
             .map(|index| [0x77 + index as u8; 16])
             .collect();
-        let remaining = std::cell::Cell::new(usize::MAX);
-        let error = with_trace(
+        let (result, state) = with_trace(
             OplogCreateTraceState {
                 file_ids: ids.clone().into(),
                 ..empty_trace()
             },
             || create(temporary.path()),
-            |state| {
-                remaining.set(state.file_ids.len());
-                true
-            },
-        )
-        .0
-        .unwrap_err();
-        expect_token(error, "oplog_create_lock_unsafe");
-        assert_eq!(remaining.get(), 0);
+        );
+        expect_token(result.unwrap_err(), "oplog_create_lock_unsafe");
+        assert_eq!(state.file_ids.len(), 0);
         for id in ids {
             assert!(!dir.join(dest_for(id)).exists());
         }
@@ -1502,17 +1667,21 @@ mod tests {
     fn entropy_fault_at_every_draw_ordinal_leaves_no_chronicle() {
         for ordinal in 1..=OPLOG_FILE_ID_DRAW_BUDGET {
             let temporary = temp();
-            let (result, consumed) = with_trace(
+            let (result, state) = with_trace(
                 OplogCreateTraceState {
-                    fault: Some((OplogCreatePrimitive::Random, ordinal)),
-                    file_ids: vec![[0x11; 16]; ordinal.saturating_sub(1)].into(),
+                    entropy_fault: Some(ordinal),
+                    file_ids: vec![[0x11; 16]; OPLOG_FILE_ID_DRAW_BUDGET].into(),
                     ..empty_trace()
                 },
                 || create(temporary.path()),
-                |state| state.fault_consumed,
             );
-            assert!(consumed, "ordinal {ordinal}");
-            expect_token(result.unwrap_err(), "oplog_create_io");
+            assert!(state.entropy_fault_consumed, "ordinal {ordinal}");
+            expect_token(result.unwrap_err(), "oplog_create_entropy_source");
+            assert_eq!(
+                state.file_ids.len(),
+                OPLOG_FILE_ID_DRAW_BUDGET - (ordinal - 1),
+                "ordinal {ordinal} must not consume a queued id after the fault"
+            );
             assert!(
                 !temporary.path().join("chronicle").exists(),
                 "ordinal {ordinal} must not admit the namespace"
@@ -1525,8 +1694,40 @@ mod tests {
         let temporary = temp();
         let root = temporary.path();
         std::os::unix::fs::symlink("elsewhere", root.join("chronicle")).unwrap();
-        let error = create(root).unwrap_err();
-        expect_token(error, "oplog_create_namespace_chronicle_unsafe");
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [index as u8 + 1; 16])
+            .collect();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                sampled_instant: Some(instant()),
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || {
+                create_oplog(
+                    JournalRoot::open(root).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Log,
+                )
+            },
+        );
+        expect_token(
+            result.unwrap_err(),
+            "oplog_create_namespace_chronicle_unsafe",
+        );
+        assert_eq!(state.sampler_calls, 1);
+        assert_eq!(
+            count_event(&state, OplogCreateEvent::EntropyDraw),
+            OPLOG_CREATE_ATTEMPTS
+        );
+        assert_eq!(
+            count_event(&state, OplogCreateEvent::AdmissionBytesAccepted),
+            0
+        );
+        assert_eq!(count_event(&state, OplogCreateEvent::Lease), 0);
+        assert_eq!(count_event(&state, OplogCreateEvent::Publish), 0);
+        assert!(state.attempted.is_empty());
         assert!(!root.join("elsewhere").exists());
         assert!(
             fs::symlink_metadata(root.join("chronicle"))
@@ -1603,6 +1804,256 @@ mod tests {
         assert!(root.join("chronicle").is_dir());
         assert!(!root.join("chronicle").join("20260901").exists());
     }
+
+    #[test]
+    fn sampled_near_midnight_instant_controls_day_and_utc_fields() {
+        let temporary = temp();
+        let offset = DateTime::parse_from_rfc3339("2026-09-01T23:30:00-05:00").unwrap();
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x21 + index as u8; 16])
+            .collect();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                sampled_instant: Some(offset),
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || {
+                create_oplog(
+                    JournalRoot::open(temporary.path()).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Log,
+                )
+            },
+        );
+        let writer = result.unwrap();
+        assert_eq!(state.sampler_calls, 1);
+        assert!(writer.leaf_name().contains("20260902T043000.000000Z"));
+        assert!(
+            temporary
+                .path()
+                .join("chronicle")
+                .join("20260901")
+                .join("health")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn production_factory_log_and_jsonl_headers_match_hand_authored_literals() {
+        const LOG_HEADER: &[u8] = b"{\"_solstone_oplog_v\":1,\"candidates\":[\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--a1b2c3d4e5f60718293a4b5c6d7e8f90--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--b0c1d2e3f405162738495a6b7c8d9e0f--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--c1d2e3f405162738495a6b7c8d9e0f10--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--d2e3f405162738495a6b7c8d9e0f1011--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--e3f405162738495a6b7c8d9e0f101112--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--f405162738495a6b7c8d9e0f10111213--daily-think~7df259e6285645a5f9ea769caa484e07.log\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--05162738495a6b7c8d9e0f1011121314--daily-think~7df259e6285645a5f9ea769caa484e07.log\"]}\n";
+        const JSONL_HEADER: &[u8] = b"{\"_solstone_oplog_v\":1,\"candidates\":[\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--a1b2c3d4e5f60718293a4b5c6d7e8f90--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--b0c1d2e3f405162738495a6b7c8d9e0f--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--c1d2e3f405162738495a6b7c8d9e0f10--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--d2e3f405162738495a6b7c8d9e0f1011--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--e3f405162738495a6b7c8d9e0f101112--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--f405162738495a6b7c8d9e0f10111213--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\",\"oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--05162738495a6b7c8d9e0f1011121314--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl\"]}\n";
+        let ids: Vec<[u8; 16]> = vec![
+            [
+                0x8f, 0x03, 0xca, 0xbe, 0xad, 0x7e, 0x44, 0x1d, 0x83, 0xf6, 0xc9, 0x2b, 0x2d, 0x89,
+                0xa0, 0x21,
+            ],
+            [
+                0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e,
+                0x8f, 0x90,
+            ],
+            [
+                0xb0, 0xc1, 0xd2, 0xe3, 0xf4, 0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d,
+                0x9e, 0x0f,
+            ],
+            [
+                0xc1, 0xd2, 0xe3, 0xf4, 0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e,
+                0x0f, 0x10,
+            ],
+            [
+                0xd2, 0xe3, 0xf4, 0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e, 0x0f,
+                0x10, 0x11,
+            ],
+            [
+                0xe3, 0xf4, 0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e, 0x0f, 0x10,
+                0x11, 0x12,
+            ],
+            [
+                0xf4, 0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e, 0x0f, 0x10, 0x11,
+                0x12, 0x13,
+            ],
+            [
+                0x05, 0x16, 0x27, 0x38, 0x49, 0x5a, 0x6b, 0x7c, 0x8d, 0x9e, 0x0f, 0x10, 0x11, 0x12,
+                0x13, 0x14,
+            ],
+        ];
+
+        let log_root = temp();
+        let (log_result, _) = with_trace(
+            OplogCreateTraceState {
+                sampled_instant: Some(instant()),
+                file_ids: ids.clone().into(),
+                ..empty_trace()
+            },
+            || {
+                create_oplog(
+                    JournalRoot::open(log_root.path()).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Log,
+                )
+            },
+        );
+        let log_writer = log_result.unwrap();
+        let log_path = health_dir(log_root.path()).join(log_writer.leaf_name());
+        drop(log_writer);
+        assert_eq!(fs::read(&log_path).unwrap(), LOG_HEADER);
+
+        let jsonl_root = temp();
+        let (jsonl_result, _) = with_trace(
+            OplogCreateTraceState {
+                sampled_instant: Some(instant()),
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || {
+                create_oplog(
+                    JournalRoot::open(jsonl_root.path()).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Jsonl,
+                )
+            },
+        );
+        let jsonl_writer = jsonl_result.unwrap();
+        let jsonl_path = health_dir(jsonl_root.path()).join(jsonl_writer.leaf_name());
+        drop(jsonl_writer);
+        assert_eq!(fs::read(&jsonl_path).unwrap(), JSONL_HEADER);
+    }
+
+    #[test]
+    fn sampler_fault_occurs_before_any_entropy_draw() {
+        let temporary = temp();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                sampler_fail: true,
+                file_ids: vec![[0x11; 16]; OPLOG_CREATE_ATTEMPTS].into(),
+                ..empty_trace()
+            },
+            || {
+                create_oplog(
+                    JournalRoot::open(temporary.path()).unwrap(),
+                    SOURCE,
+                    RUN,
+                    OplogFormat::Log,
+                )
+            },
+        );
+        expect_token(result.unwrap_err(), "oplog_create_sampler");
+        assert_eq!(state.sampler_calls, 1);
+        assert_eq!(count_event(&state, OplogCreateEvent::EntropyDraw), 0);
+        assert!(state.file_ids.len() == OPLOG_CREATE_ATTEMPTS);
+        assert!(!temporary.path().join("chronicle").exists());
+    }
+
+    #[test]
+    fn invalid_originals_do_not_call_the_sampler() {
+        let temporary = temp();
+        let (result, state) = with_trace(empty_trace(), || {
+            create_oplog(
+                JournalRoot::open(temporary.path()).unwrap(),
+                "",
+                RUN,
+                OplogFormat::Log,
+            )
+        });
+        expect_token(result.unwrap_err(), "oplog_create_invalid_field");
+        assert_eq!(state.sampler_calls, 0);
+        assert_eq!(count_event(&state, OplogCreateEvent::EntropyDraw), 0);
+        assert!(!temporary.path().join("chronicle").exists());
+    }
+
+    #[test]
+    fn success_records_admission_sync_lease_publish_after_entropy_draws() {
+        let temporary = temp();
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x31 + index as u8; 16])
+            .collect();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        );
+        result.unwrap();
+        assert_eq!(
+            count_event(&state, OplogCreateEvent::EntropyDraw),
+            OPLOG_CREATE_ATTEMPTS
+        );
+        assert_eq!(
+            &state.events[OPLOG_CREATE_ATTEMPTS..],
+            &[
+                OplogCreateEvent::AdmissionBytesAccepted,
+                OplogCreateEvent::SyncAll,
+                OplogCreateEvent::Lease,
+                OplogCreateEvent::Publish,
+            ]
+        );
+    }
+
+    #[test]
+    fn sync_fault_writes_bytes_and_invokes_neither_lease_nor_publish() {
+        let temporary = temp();
+        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
+            .map(|index| [0x41 + index as u8; 16])
+            .collect();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                sync_fail: true,
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        );
+        expect_token(result.unwrap_err(), "oplog_create_io");
+        assert_eq!(
+            count_event(&state, OplogCreateEvent::AdmissionBytesAccepted),
+            1
+        );
+        assert_eq!(count_event(&state, OplogCreateEvent::SyncAll), 0);
+        assert_eq!(count_event(&state, OplogCreateEvent::Lease), 0);
+        assert_eq!(count_event(&state, OplogCreateEvent::Publish), 0);
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
+    }
+
+    #[test]
+    fn first_distinct_draw_order_binds_admission_and_publish_attempts() {
+        let temporary = temp();
+        let _ = health_at(temporary.path());
+        let first = [0x51; 16];
+        let second = [0x52; 16];
+        let rest: Vec<[u8; 16]> = (0..6).map(|index| [0x53 + index as u8; 16]).collect();
+        let mut ids = vec![first, first, second];
+        ids.extend(rest);
+        fs::write(
+            health_dir(temporary.path()).join(dest_for(first)),
+            b"incumbent",
+        )
+        .unwrap();
+        let (result, state) = with_trace(
+            OplogCreateTraceState {
+                file_ids: ids.into(),
+                ..empty_trace()
+            },
+            || create(temporary.path()),
+        );
+        let writer = result.unwrap();
+        assert_eq!(writer.leaf_name(), dest_for(second));
+        assert_eq!(count_event(&state, OplogCreateEvent::EntropyDraw), 9);
+        assert_eq!(count_event(&state, OplogCreateEvent::Publish), 2);
+        let bytes = fs::read(health_dir(temporary.path()).join(writer.leaf_name())).unwrap();
+        let record = validate_oplog_admission(OsStr::new(writer.leaf_name()), &bytes).unwrap();
+        assert_eq!(record.candidates()[0].file_id(), file_id_hex(&first));
+        assert_eq!(record.candidates()[1].file_id(), file_id_hex(&second));
+        assert_eq!(
+            fs::read(health_dir(temporary.path()).join(dest_for(first))).unwrap(),
+            b"incumbent"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1632,5 +2083,84 @@ mod derivation_tests {
         let (day_before_again, opened_before_again) = derive_day_key_and_opened_field(before);
         assert_eq!(day_before, day_before_again);
         assert_eq!(opened_before, opened_before_again);
+    }
+}
+
+#[cfg(test)]
+mod write_admission_tests {
+    use std::collections::VecDeque;
+    use std::io::{self, ErrorKind, Write};
+
+    use super::*;
+
+    struct ScriptedWrite {
+        plan: VecDeque<io::Result<usize>>,
+        sink: Vec<u8>,
+    }
+
+    impl Write for ScriptedWrite {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            match self.plan.pop_front() {
+                Some(Ok(n)) => {
+                    let n = n.min(buf.len());
+                    self.sink.extend_from_slice(&buf[..n]);
+                    Ok(n)
+                }
+                Some(Err(error)) => Err(error),
+                None => {
+                    self.sink.extend_from_slice(buf);
+                    Ok(buf.len())
+                }
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn interrupted_write_retries_until_the_header_is_accepted() {
+        let header = b"{\"_solstone_oplog_v\":1}\n";
+        let mut writer = ScriptedWrite {
+            plan: VecDeque::from([
+                Err(io::Error::from(ErrorKind::Interrupted)),
+                Ok(4),
+                Err(io::Error::from(ErrorKind::Interrupted)),
+                Ok(header.len() - 4),
+            ]),
+            sink: Vec::new(),
+        };
+        write_admission_bytes(&mut writer, header).unwrap();
+        assert_eq!(writer.sink, header);
+    }
+
+    #[test]
+    fn zero_progress_write_is_io() {
+        let header = b"{\"_solstone_oplog_v\":1}\n";
+        let mut writer = ScriptedWrite {
+            plan: VecDeque::from([Ok(0)]),
+            sink: Vec::new(),
+        };
+        expect_io(write_admission_bytes(&mut writer, header));
+        assert!(writer.sink.is_empty());
+    }
+
+    #[test]
+    fn non_interrupted_write_error_is_io() {
+        let header = b"{\"_solstone_oplog_v\":1}\n";
+        let mut writer = ScriptedWrite {
+            plan: VecDeque::from([Err(io::Error::from(ErrorKind::BrokenPipe))]),
+            sink: Vec::new(),
+        };
+        expect_io(write_admission_bytes(&mut writer, header));
+        assert!(writer.sink.is_empty());
+    }
+
+    fn expect_io(result: Result<(), OplogCreateError>) {
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "oplog_create_io");
+        assert_eq!(format!("{error:?}"), "oplog_create_io");
+        assert!(std::error::Error::source(&error).is_none());
     }
 }

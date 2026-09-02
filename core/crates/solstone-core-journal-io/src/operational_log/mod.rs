@@ -44,8 +44,10 @@ pub use create::{
 #[cfg(any(test, feature = "test-hooks"))]
 pub use create::{
     OplogCreatePrimitive, create_oplog_with_test_timing, run_with_oplog_create_barrier,
-    run_with_oplog_create_fault, run_with_oplog_create_fault_at, run_with_oplog_file_ids,
-    run_with_oplog_probe_indeterminate,
+    run_with_oplog_create_fault, run_with_oplog_create_fault_at,
+    run_with_oplog_entropy_source_fault, run_with_oplog_entropy_source_fault_at,
+    run_with_oplog_file_ids, run_with_oplog_probe_indeterminate, run_with_oplog_sampled_instant,
+    run_with_oplog_sampler_fault, run_with_oplog_sync_fail,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lock::acquire_oplog_namespace_lock_with_test_timing;
@@ -62,6 +64,10 @@ pub use namespace::{
 pub use writer::{OplogStdioHandle, OplogWriter, OplogWriterError};
 
 /// Sample one local instant for day-key and UTC-field derivation.
-fn sample_local_instant() -> DateTime<FixedOffset> {
-    Local::now().fixed_offset()
+fn sample_local_instant() -> Result<DateTime<FixedOffset>, OplogCreateError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(overridden) = create::take_sampler_override() {
+        return overridden;
+    }
+    Ok(Local::now().fixed_offset())
 }
