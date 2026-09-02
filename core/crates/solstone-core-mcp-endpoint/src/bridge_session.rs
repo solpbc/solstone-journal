@@ -643,6 +643,7 @@ async fn run_driver(
         response: None,
     };
     let mut successor = None;
+    let mut saw_renewal_window_bytes = false;
     let mut bytes = [0u8; CARRIER_READ_BYTES];
     let Some(mut expiry) = epoch.at(authority.expires_at()) else {
         return;
@@ -666,6 +667,17 @@ async fn run_driver(
             }
             read = reader.read(&mut bytes) => {
                 let Ok(read) = read else { break; };
+                // ⚠ Distinguishes "the bridge's challenge never arrived" from
+                // "it arrived and the mux did not surface it as control data".
+                // ⛔ Recorded here and reported after the `select!`: a `log::`
+                // call inside another macro's token stream is not structurally
+                // inspectable, so the diagnostic contract rightly refuses one.
+                saw_renewal_window_bytes = read > 0
+                    && epoch
+                        .at(authority
+                            .expires_at()
+                            .saturating_sub(RENEW_CHALLENGE_LEAD_SECONDS))
+                        .is_some_and(|challenge_at| Instant::now() >= challenge_at);
                 let output = if read == 0 { acceptor.finish_eof() } else {
                     let Ok(output) = acceptor.feed(&bytes[..read]) else { break; };
                     output
@@ -687,6 +699,11 @@ async fn run_driver(
             }
         }
 
+        if saw_renewal_window_bytes {
+            saw_renewal_window_bytes = false;
+            log::info!("mcp bridge lease renewal: carrier bytes read inside the renewal window");
+        }
+
         while let Some(control_bytes) = control_events.pop_front() {
             let challenge_at = epoch
                 .at(authority
@@ -699,6 +716,7 @@ async fn run_driver(
                 );
                 break 'driver;
             }
+            log::info!("mcp bridge lease renewal: draining a control event");
             let frame = match control.append(control_bytes, expiry) {
                 Ok(frame) => frame,
                 Err(()) => {
@@ -709,6 +727,9 @@ async fn run_driver(
                 }
             };
             let Some(frame) = frame else {
+                log::info!(
+                    "mcp bridge lease renewal: control frame still incomplete; waiting for more bytes"
+                );
                 continue;
             };
             let Some(next) = successor.take() else {
@@ -1180,6 +1201,7 @@ async fn write_output<W: AsyncWrite + Unpin>(
                 if queued.is_none_or(|total| total > MAX_CONTROL_FRAME_BYTES) {
                     return false;
                 }
+                log::info!("mcp bridge lease renewal: control bytes received from the bridge");
                 control_events.push_back(bytes);
             }
             MuxEvent::ReadClosed {
@@ -1188,7 +1210,12 @@ async fn write_output<W: AsyncWrite + Unpin>(
             | MuxEvent::Reset {
                 stream_id: CONTROL_STREAM_ID,
                 ..
-            } => return false,
+            } => {
+                log::warn!(
+                    "mcp bridge lease renewal: the bridge closed or reset the control stream; ending the session"
+                );
+                return false;
+            }
             MuxEvent::Data { stream_id, bytes } => {
                 queue_signal(streams, stream_id, StreamSignal::Data(bytes))
             }

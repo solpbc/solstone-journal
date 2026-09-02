@@ -1698,6 +1698,40 @@ impl DiagnosticSyntaxVisitor {
     }
 }
 
+/// The `log` levels this crate may emit, and nothing else.
+///
+/// ⚠ `tracing` stays banned outright: its macros accept structured fields, and
+/// a field is exactly the shape that carries a token or a hostname.
+const PERMITTED_LOG_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+
+/// Return the level when `path` is exactly `log::<level>`.
+fn log_diagnostic_level(path: &syn::Path) -> Option<String> {
+    if path.segments.len() != 2 || path.leading_colon.is_some() {
+        return None;
+    }
+    let root = normalized_ident(&path.segments[0].ident);
+    if root != "log" {
+        return None;
+    }
+    let level = normalized_ident(&path.segments[1].ident);
+    PERMITTED_LOG_LEVELS
+        .contains(&level.as_str())
+        .then_some(level)
+}
+
+/// True when a macro body is exactly one string literal carrying no format
+/// placeholder — the only diagnostic shape this crate may emit.
+///
+/// 🔒 This is the whole privacy argument, and it is structural rather than
+/// reviewed: `syn::parse2::<syn::LitStr>` succeeds only if the *entire* token
+/// stream is one string literal, so there is no argument list, no `format_args`
+/// interpolation, no `target:`/`Level::` prefix and no shorthand field. A
+/// message that cannot take an argument cannot carry a key, a token, a
+/// hostname, a client identifier or a byte of journal content.
+fn is_content_free_log_body(tokens: proc_macro2::TokenStream) -> bool {
+    syn::parse2::<syn::LitStr>(tokens).is_ok_and(|literal| !literal.value().contains('{'))
+}
+
 impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
         let prior = self.in_test_scope;
@@ -1730,6 +1764,26 @@ impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        // 🔴 The only diagnostics this crate may emit: `log::<level>!` whose body
+        // is one fixed string literal. Admitted here and NOT descended into, so
+        // `visit_path` does not see the `log::` root as an egress path.
+        //
+        // The blanket ban this replaces was introduced to keep key and identity
+        // material out of diagnostics (`fd18f8588`). It kept that promise and
+        // also left the crate with zero diagnostics in 25k lines — which is how
+        // a lease renewal with a 0% success rate ran on a live endpoint with
+        // nothing readable on either side. A fixed literal keeps the original
+        // promise by construction; it is the same constraint `spl-bridge`'s
+        // source-policy scanner already enforces on the other half of this arc.
+        if let Some(_level) = log_diagnostic_level(&node.path) {
+            if !is_content_free_log_body(node.tokens.clone()) {
+                push_unique(
+                    &mut self.violations,
+                    "log macro body is not a single fixed literal",
+                );
+            }
+            return;
+        }
         let name = node
             .path
             .segments
@@ -2691,7 +2745,6 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         ]
         .concat(),
         ["use lo", "g::info;"].concat(),
-        ["lo", "g::info!(\"x\");"].concat(),
         ["use trac", "ing::info;"].concat(),
         ["trac", "ing::info!(\"x\");"].concat(),
         ["r#trac", "ing::info!(\"x\");"].concat(),
@@ -2749,6 +2802,20 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         ]
         .concat(),
         ["std::fs::wri", "te(\"token.txt\", token).unwrap();"].concat(),
+        // 🔴 Every `log` shape that could carry a value. The permitted shape is
+        // one fixed literal and nothing else, so each of these must still be a
+        // violation after that narrowing — otherwise the narrowing IS the leak.
+        ["log::wa", "rn!(\"{}\", token);"].concat(),
+        ["log::wa", "rn!(\"leaked {token}\");"].concat(),
+        ["log::in", "fo!(\"host {}\", hostname);"].concat(),
+        ["log::wa", "rn!(target: \"mcp\", \"x\");"].concat(),
+        ["log::wa", "rn!(message);"].concat(),
+        ["log::wa", "rn!(\"x\", );"].concat(),
+        ["log::lo", "g!(log::Level::Warn, \"{}\", token);"].concat(),
+        ["log::wa", "rn!(\"{token:?}\");"].concat(),
+        // `tracing` stays banned outright: its macros take structured fields.
+        ["tracing::wa", "rn!(\"x\");"].concat(),
+        ["tracing::wa", "rn!(field = %token, \"x\");"].concat(),
     ];
     for (index, control) in planted.into_iter().enumerate() {
         let path = nested.join(format!("control-{index}.rs"));
@@ -2759,6 +2826,31 @@ fn diagnostic_egress_detector_rejects_each_planted_family() {
         );
         fs::remove_file(path).expect("synthetic source control removes");
     }
+
+    // ✅ The positive twin, and the one family that MOVED sides when the blanket
+    // ban became a content-free ban: `log::<level>!("literal")` was planted as a
+    // violation and is now the single permitted diagnostic shape.
+    //
+    // 🔒 What makes that shape enforceable is that the *other* two routes to the
+    // same macro stay banned above — `use log::info;` and
+    // `extern crate log as audit;`. A bare or aliased `info!(...)` is not a
+    // `log::<level>` path, so the detector could not inspect its body; keeping
+    // both closed means every admitted call site is fully qualified and therefore
+    // body-checked.
+    let permitted = nested.join("permitted.rs");
+    for body in [
+        "log::warn!(\"mcp bridge lease renewal: a fixed literal\");",
+        "log::info!(\"x\");",
+        "log::error!(\"another\"); log::debug!(\"and another\"); log::trace!(\"and one more\");",
+    ] {
+        fs::write(&permitted, format!("fn emit() {{ {body} }}"))
+            .expect("synthetic permitted source writes");
+        assert!(
+            syntax_detector_violations(root.path(), diagnostic_syntax_detector).is_empty(),
+            "a log macro whose body is one fixed literal is the permitted diagnostic shape: {body}"
+        );
+    }
+    fs::remove_file(&permitted).expect("synthetic permitted control removes");
 
     let account_wire = root.path().join("account_wire.rs");
     fs::write(
