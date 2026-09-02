@@ -21,7 +21,7 @@ use windows_sys::Win32::Foundation::{
     STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_APPEND_DATA, FILE_READ_ATTRIBUTES, SYNCHRONIZE,
+    DELETE, FILE_APPEND_DATA, FILE_READ_ATTRIBUTES, FILE_READ_DATA, SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
@@ -137,7 +137,7 @@ pub(super) fn open_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<Na
     let handle = match nt_create_relative(
         health.health().as_handle().as_raw_handle(),
         name,
-        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_READ_ATTRIBUTES | FILE_READ_DATA | SYNCHRONIZE,
         FILE_OPEN,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     ) {
