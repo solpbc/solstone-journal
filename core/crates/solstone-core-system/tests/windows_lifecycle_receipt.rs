@@ -666,11 +666,12 @@ fn windows_managed_process_facade_receipt() {
     )
     .expect("public managed-process facade launches fixture");
     assert!(lines.pid() > 0, "managed Job root has a nonzero PID");
+    let name = lines.name().to_owned();
     assert_eq!(lines.wait().expect("wait for line fixture"), 0);
     lines.cleanup();
     let log = fs::read_to_string(lines.log_path()).expect("read managed operational log");
-    assert!(log.contains("[solstone-system-test-child:stdout] stdout-line"));
-    assert!(log.contains("[solstone-system-test-child:stderr] stderr-line"));
+    assert!(log.contains(&format!("[{name}:stdout] stdout-line")));
+    assert!(log.contains(&format!("[{name}:stderr] stderr-line")));
 
     let authority = launch_managed_request(
         Disposition::IndependentBoundedHelper {
