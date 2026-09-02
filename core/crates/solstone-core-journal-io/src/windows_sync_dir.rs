@@ -17,8 +17,8 @@ use windows_sys::Wdk::Storage::FileSystem::{
     NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_FILES, ERROR_PATH_NOT_FOUND, RtlNtStatusToDosError,
-    STATUS_SUCCESS,
+    ERROR_DIRECTORY, ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_FILES, ERROR_PATH_NOT_FOUND,
+    RtlNtStatusToDosError, STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -409,6 +409,12 @@ fn open_windows_flat_directory(
         disposition,
     ) {
         Ok(handle) => handle,
+        Err(FlatDirectoryError::Io { source, .. }) if matches!(source.raw_os_error(), Some(code) if code == ERROR_DIRECTORY as i32) =>
+        {
+            return Err(FlatDirectoryError::NotDirectory {
+                path: diagnostic_path,
+            });
+        }
         Err(FlatDirectoryError::Io { source, .. })
             if disposition == FILE_OPEN
                 && matches!(
