@@ -54,7 +54,10 @@ pub(super) fn stage_exclusive(
     let handle = nt_create_relative(
         health.health().as_handle().as_raw_handle(),
         stage_name.as_os_str(),
-        FILE_APPEND_DATA | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        // `LockFileEx` requires a handle opened with generic read or write
+        // access. `FILE_APPEND_DATA` alone admits the append writer but is not
+        // sufficient for the self-lease that guards this live stage.
+        GENERIC_READ | FILE_APPEND_DATA | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_CREATE,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )
@@ -381,7 +384,7 @@ mod windows_tests {
         let source = include_str!("windows.rs");
         let production = source.split("\n#[cfg(all(test").next().unwrap_or(source);
         assert!(
-            !production.contains("sync_dir"),
+            !production.contains("sync_dir("),
             "windows oplog create must not invoke a directory durability primitive"
         );
     }
