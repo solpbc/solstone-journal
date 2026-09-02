@@ -403,8 +403,12 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     #[test]
     fn malformed_stdout_is_malformed_response() {
         let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nprintf 'not json'\n");
-        let error =
-            invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(2)).unwrap_err();
+        // The subject here is response *parsing*, not timing. A tight wall-clock made
+        // this flaky: under parallel test load, spawning the shell stub alone could
+        // exceed the budget and the call returned `Timeout` instead of the malformed
+        // response it exists to check. `timeout_kills_the_helper` covers the deadline.
+        let error = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(60))
+            .unwrap_err();
         assert!(matches!(error, CedAnalyzeError::MalformedResponse { .. }));
     }
 

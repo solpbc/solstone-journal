@@ -72,7 +72,11 @@ struct UnitSnapshot {
 enum RuntimeTruth {
     Absent,
     Managed { active: bool },
-    Foreign,
+    /// The registration exists but is not the one journal manages. The payload names
+    /// which check rejected it, because the bare refusal is unactionable: an operator
+    /// who added a drop-in deliberately cannot tell that from a corrupted unit, and
+    /// journal correctly declines to overwrite either.
+    Foreign(&'static str),
     Unknown(String),
 }
 
@@ -223,7 +227,7 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     }
     ensure_health_dir(&journal)?;
     let runtime = observe_runtime(platform, &target)?;
-    if matches!(runtime, RuntimeTruth::Foreign | RuntimeTruth::Unknown(_)) {
+    if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
         return Err(runtime_error("install", runtime));
     }
 
@@ -240,6 +244,7 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     let runtime_dir = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
+        .map(|dir| version_independent_runtime_dir(&dir))
         .ok_or_else(|| "service install: current executable has no directory".to_owned())?;
     let environment = build_service_environment(
         path_text(home)?,
@@ -308,7 +313,7 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
     let target = unit_path(platform, home);
     let initial = classify_unit(platform, &target)?;
     let runtime = observe_runtime(platform, &target)?;
-    if matches!(runtime, RuntimeTruth::Foreign | RuntimeTruth::Unknown(_)) {
+    if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
         return Err(runtime_error("uninstall", runtime));
     }
     if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
@@ -452,7 +457,7 @@ fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
 
 fn stop_requires_manager(unit: &UnitTruth, runtime: RuntimeTruth) -> Result<bool, String> {
     match runtime {
-        RuntimeTruth::Foreign | RuntimeTruth::Unknown(_) => Err(runtime_error("stop", runtime)),
+        RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_) => Err(runtime_error("stop", runtime)),
         RuntimeTruth::Absent if matches!(unit, UnitTruth::Absent) => Err(not_installed()),
         RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => Ok(false),
         RuntimeTruth::Managed { active: true } => Ok(true),
@@ -1377,7 +1382,7 @@ fn classify_systemd_runtime(
         ));
     };
     if *id != UNIT {
-        return Ok(RuntimeTruth::Foreign);
+        return Ok(RuntimeTruth::Foreign("a different unit answers to this name"));
     }
     if *load_state == "not-found" {
         return if values.keys().copied().collect::<BTreeSet<_>>() == absent_keys
@@ -1411,16 +1416,30 @@ fn classify_systemd_runtime(
             "incomplete systemd property set".to_owned(),
         ));
     }
-    if values["LoadState"] != "loaded"
-        || values["FragmentPath"] != path_text(canonical)?
-        || !values["SourcePath"].is_empty()
-        || !systemd_drop_ins_are_trusted(values["DropInPaths"])
-        || !matches!(values["UnitFileState"], "enabled" | "disabled" | "static")
-        || !launchers
-            .iter()
-            .any(|launcher| systemd_runtime_exec_matches(values["ExecStart"], launcher))
+    // Report which check rejected the unit, in the order an operator would fix them.
+    if !systemd_drop_ins_are_trusted(values["DropInPaths"]) {
+        return Ok(RuntimeTruth::Foreign(
+            "the unit carries a drop-in journal did not write",
+        ));
+    }
+    if values["FragmentPath"] != path_text(canonical)? {
+        return Ok(RuntimeTruth::Foreign(
+            "the unit file is not the one journal manages",
+        ));
+    }
+    if !launchers
+        .iter()
+        .any(|launcher| systemd_runtime_exec_matches(values["ExecStart"], launcher))
     {
-        return Ok(RuntimeTruth::Foreign);
+        return Ok(RuntimeTruth::Foreign(
+            "the unit's ExecStart is not a journal launcher",
+        ));
+    }
+    if values["LoadState"] != "loaded"
+        || !values["SourcePath"].is_empty()
+        || !matches!(values["UnitFileState"], "enabled" | "disabled" | "static")
+    {
+        return Ok(RuntimeTruth::Foreign("the unit is in an unexpected state"));
     }
     let active = match (values["ActiveState"], values["SubState"]) {
         ("active", "running") => true,
@@ -1518,7 +1537,9 @@ fn classify_launchd_runtime(
         || field(text, "path") != Some(path_text(canonical)?)
         || field(text, "type") != Some("LaunchAgent")
     {
-        return Ok(RuntimeTruth::Foreign);
+        return Ok(RuntimeTruth::Foreign(
+            "the launch agent is not the one journal manages",
+        ));
     }
     let Some(arguments) = launchd_arguments(text) else {
         return Ok(RuntimeTruth::Unknown(
@@ -1530,7 +1551,9 @@ fn classify_launchd_runtime(
             && arguments.first().copied() == launcher.to_str()
     }) || !(managed_command_tail(&arguments[1..]) || (program_only && arguments.len() == 1))
     {
-        return Ok(RuntimeTruth::Foreign);
+        return Ok(RuntimeTruth::Foreign(
+            "the launch agent's program is not a journal launcher",
+        ));
     }
     match field(text, "state") {
         Some("running") => Ok(RuntimeTruth::Managed { active: true }),
@@ -1864,9 +1887,13 @@ fn truth_error(operation: &str, path: &Path, truth: &UnitTruth) -> String {
 
 fn runtime_error(operation: &str, truth: RuntimeTruth) -> String {
     match truth {
-        RuntimeTruth::Foreign => {
-            format!("service {operation} refused a runtime registration not created by journal")
-        }
+        RuntimeTruth::Foreign(reason) => format!(
+            "service {operation} refused: {reason}. journal will not overwrite it. \
+             If that is deliberate, finish the {operation} yourself -- on Linux: \
+             `systemctl --user daemon-reload && systemctl --user restart solstone.service` \
+             -- then confirm the running build with \
+             `readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe`"
+        ),
         RuntimeTruth::Unknown(cause) => {
             format!("service {operation} could not check the service registration: {cause}")
         }
@@ -1891,8 +1918,68 @@ fn safe(value: &str) -> String {
     solstone_core_system_health::sanitize_for_terminal(value)
 }
 
+
+/// Rewrite `<root>/versions/<version>/bin` to `<root>/current/bin`.
+///
+/// 🔴 This unit's `PATH` is written once, at setup, and read forever after. Baking the
+/// *resolved* version directory into it means every PATH-resolved subprocess keeps
+/// running whichever build was current when setup last succeeded -- and setup refuses
+/// whenever the unit carries a user drop-in, so "last succeeded" can be many deploys
+/// ago. Measured on the founder's journal 2026-09-02: the supervisor was running a new
+/// build while `think` and `transcribe` workers, spawned through `PATH`, were still
+/// executing a binary from two deploys earlier, silently missing every fix in between.
+///
+/// Naming `current/bin` instead makes the unit version-independent, so a deploy that
+/// only flips the symlink is enough and a stale unit can no longer pin an old build.
+/// A directory that is not in the versioned layout (a dev build, a test tree) is
+/// returned unchanged.
+fn version_independent_runtime_dir(runtime_dir: &Path) -> PathBuf {
+    let mut components: Vec<_> = runtime_dir.components().collect();
+    // Expect the tail to be `versions/<version>/bin`.
+    if components.len() < 3 {
+        return runtime_dir.to_path_buf();
+    }
+    let bin = components.pop().expect("checked length");
+    let _version = components.pop().expect("checked length");
+    let versions = components.pop().expect("checked length");
+    if bin.as_os_str() != "bin" || versions.as_os_str() != "versions" {
+        return runtime_dir.to_path_buf();
+    }
+    let mut stable: PathBuf = components.iter().collect();
+    stable.push("current");
+    stable.push("bin");
+    stable
+}
+
 #[cfg(test)]
 mod tests {
+    /// The unit's `PATH` is written once and read forever. A resolved version
+    /// directory in it pins every PATH-resolved subprocess to whichever build was
+    /// current when setup last succeeded -- and setup refuses while a user drop-in
+    /// exists, so that can be several deploys stale.
+    #[test]
+    fn the_service_path_names_current_not_a_resolved_version() {
+        use super::version_independent_runtime_dir;
+        assert_eq!(
+            version_independent_runtime_dir(Path::new(
+                "/home/owner/.local/solstone-journal/versions/2.0.0-7568daa6e1c9/bin"
+            )),
+            Path::new("/home/owner/.local/solstone-journal/current/bin")
+        );
+        // A tree that is not the versioned layout is left alone.
+        for untouched in [
+            "/home/owner/.local/bin",
+            "/usr/bin",
+            "/home/owner/src/solstone/target/debug",
+        ] {
+            assert_eq!(
+                version_independent_runtime_dir(Path::new(untouched)),
+                Path::new(untouched),
+                "{untouched}"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -2249,10 +2336,7 @@ mod tests {
                 .into_bytes(),
             stderr: Vec::new(),
         };
-        assert_eq!(
-            classify_systemd_runtime(&near_twin, canonical, &launchers).unwrap(),
-            RuntimeTruth::Foreign
-        );
+        assert!(matches!(classify_systemd_runtime(&near_twin, canonical, &launchers).unwrap(), RuntimeTruth::Foreign(_)));
         let drop_in = CommandResult {
             code: 0,
             stdout: loaded_stdout
@@ -2260,10 +2344,7 @@ mod tests {
                 .into_bytes(),
             stderr: Vec::new(),
         };
-        assert_eq!(
-            classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(),
-            RuntimeTruth::Foreign
-        );
+        assert!(matches!(classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(), RuntimeTruth::Foreign(_)));
         assert!(!trusted_systemd_vendor_drop_in(Path::new(
             "/etc/systemd/user/service.d/foreign.conf"
         )));
@@ -2282,10 +2363,18 @@ mod tests {
             stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Absent).unwrap_err(),
             "service not installed. run 'journal service install' first."
         );
-        assert_eq!(
-            stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Foreign).unwrap_err(),
-            "service stop refused a runtime registration not created by journal"
+        // The refusal now names which check rejected the unit and how to finish the
+        // operation by hand -- the bare message was unactionable.
+        let refusal = stop_requires_manager(
+            &UnitTruth::Absent,
+            RuntimeTruth::Foreign("the unit carries a drop-in journal did not write"),
+        )
+        .unwrap_err();
+        assert!(
+            refusal.contains("the unit carries a drop-in journal did not write"),
+            "{refusal}"
         );
+        assert!(refusal.contains("systemctl --user restart"), "{refusal}");
         let managed_unit = UnitTruth::Managed(UnitSnapshot {
             device: 1,
             inode: 2,
@@ -2336,10 +2425,7 @@ mod tests {
             stdout: stdout.replace("\t\t5015\n", "\t\t--foreign\n").into_bytes(),
             stderr: Vec::new(),
         };
-        assert_eq!(
-            classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(),
-            RuntimeTruth::Foreign
-        );
+        assert!(matches!(classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(), RuntimeTruth::Foreign(_)));
         let pending = CommandResult {
             code: 0,
             stdout: stdout
