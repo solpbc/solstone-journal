@@ -20,7 +20,7 @@ use solstone_core_backup_runtime::{
     ToolInstallDirs, ToolRunner, UreqHttpTransport, prepare, resolve_operational_tools,
     resolve_tools,
 };
-use solstone_core_generate::{GenerateRequest, GenerateResponse, OneShotClient};
+use solstone_core_generate::{GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient};
 use solstone_core_offload::{OffloadResult, format_offload_result};
 
 pub use parser::USAGE;
@@ -66,7 +66,7 @@ pub struct TimelineServices<'a> {
 
 /// One model selection request for a timeline rollup.
 pub trait RollupPicker: Sync {
-    fn pick(&self, request: &GenerateRequest) -> Result<String, String>;
+    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String>;
 }
 
 /// Resolve the configured generate-lane model without making a generation request.
@@ -356,13 +356,13 @@ pub fn run_cli_with_all_services(
 struct ProductionRollupPicker;
 
 impl RollupPicker for ProductionRollupPicker {
-    fn pick(&self, request: &GenerateRequest) -> Result<String, String> {
+    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String> {
         let client = OneShotClient::sibling().map_err(|error| format!("{error}"))?;
         match client
             .execute(request)
             .map_err(|error| format!("{error}"))?
         {
-            GenerateResponse::Generated(response) => Ok(response.text),
+            GenerateResponse::Generated(response) => Ok(*response),
             GenerateResponse::Refused(response) => Err(response.detail),
         }
     }
@@ -414,7 +414,7 @@ mod composed_tests {
         BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
         JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
     };
-    use solstone_core_generate::GenerateRequest;
+    use solstone_core_generate::{GenerateRequest, GeneratedResponse};
 
     use super::{
         GenerateModelResolver, HealthServices, MaintenanceServices, RollupPicker, TimelineServices,
@@ -477,7 +477,7 @@ mod composed_tests {
     struct Picker;
 
     impl RollupPicker for Picker {
-        fn pick(&self, _: &GenerateRequest) -> Result<String, String> {
+        fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, String> {
             panic!("empty timeline fixtures must not generate")
         }
     }
@@ -558,7 +558,11 @@ mod composed_tests {
             ("backup:offload", "backup offload:", 0),
             ("health:mark-raw", "new items: 0", 0),
             ("health:prune-logs", "prune-logs: disabled", 0),
-            ("timeline:rollup-day", "no segment timeline.json", 66),
+            (
+                "timeline:rollup-day",
+                "no verified segment timeline.json",
+                66,
+            ),
             ("timeline:rollup-master", "no day-level timeline.json", 66),
         ] {
             let mut args = vec!["run", id];
@@ -566,7 +570,7 @@ mod composed_tests {
                 args.push("--dry-run");
             }
             if id == "timeline:rollup-day" {
-                args.push("20260301");
+                args.extend(["--day", "20260301"]);
             }
             let result = run(&args);
             assert_eq!(result.exit_code, expected_exit, "{id}: {result:?}");

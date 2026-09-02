@@ -25,6 +25,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-offload.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-system.workspace = true
+solstone-core-timeline.workspace = true
 
 [dev-dependencies]
 solstone-core-backup.workspace = true

@@ -80,6 +80,8 @@ pub enum TimelineError {
     LockContention { detail: String },
     #[error("timeline digest mismatch: expected {expected}, got {actual}")]
     DigestMismatch { expected: String, actual: String },
+    #[error("timeline curation failed: {detail}")]
+    CurationFailed { detail: String },
     #[error("timeline publication durability is uncertain for {}: {detail}", path.display())]
     DurabilityUncertain { path: PathBuf, detail: String },
     #[error("timeline publication did not complete for {}: {detail}", path.display())]

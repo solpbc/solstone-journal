@@ -7,11 +7,11 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{DetailedAtomicOutcome, atomic_replace_detailed};
 
 use crate::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, SegmentBindingV1,
-    SegmentSummaryV1, SegmentTimelineV1, TimelineError, TimelineLockRequest, TimelineLockSubject,
-    acquire_timeline_locks, bounded_diagnostic_detail, load_timeline_state, origin_for_binding,
-    record_artifact_published, record_attempt_outcome, record_attempt_started, segment_directory,
-    validate_segment_timeline,
+    ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1,
+    SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError, TimelineLockRequest,
+    TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail, load_timeline_state,
+    origin_for_binding, record_artifact_published, record_attempt_outcome, record_attempt_started,
+    segment_directory, validate_day_timeline, validate_segment_timeline,
 };
 
 pub fn segment_timeline_path(
@@ -42,49 +42,88 @@ pub fn publish_segment_timeline(
     let path = segment_timeline_path(journal, binding)?;
     let mut bytes = serde_json::to_vec(timeline)?;
     bytes.push(b'\n');
+    publish_timeline(
+        journal,
+        &subject,
+        path,
+        &timeline.input_digest,
+        timeline.generated_at_ms,
+        bytes,
+        attempt,
+    )
+}
+
+pub fn day_timeline_path(journal: &Path, day: &str) -> PathBuf {
+    journal.join("chronicle").join(day).join("timeline.json")
+}
+
+pub fn publish_day_timeline(
+    journal: &Path,
+    timeline: &DayTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    validate_day_timeline(timeline)?;
+    let subject = day_subject_key(&timeline.day);
+    record_attempt_started(journal, &subject, attempt.clone())?;
+    let mut bytes = serde_json::to_vec(timeline)?;
+    bytes.push(b'\n');
+    publish_timeline(
+        journal,
+        &subject,
+        day_timeline_path(journal, &timeline.day),
+        &timeline.source_digest,
+        timeline.generated_at_ms,
+        bytes,
+        attempt,
+    )
+}
+
+fn publish_timeline(
+    journal: &Path,
+    subject: &str,
+    path: PathBuf,
+    input_digest: &str,
+    generated_at_ms: i64,
+    bytes: Vec<u8>,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
     let publication = atomic_replace_detailed(&path, &bytes, 0o600);
     match publication {
         Err(error) => {
             let detail = bounded_diagnostic_detail(&error.to_string());
             let _ = record_attempt_outcome(
                 journal,
-                &subject,
+                subject,
                 attempt,
                 AttemptOutcome::Failed,
                 &detail,
-                timeline.generated_at_ms,
+                generated_at_ms,
             );
             Err(TimelineError::Atomic(error))
         }
         Ok(DetailedAtomicOutcome::Published) => {
             let generation = load_timeline_state(journal)?
                 .artifacts
-                .get(&subject)
+                .get(subject)
                 .map(|state| state.generation.saturating_add(1))
                 .unwrap_or(1);
             let artifact = ArtifactStateV1 {
-                input_digest: timeline.input_digest.clone(),
+                input_digest: input_digest.to_owned(),
                 artifact_sha256: sha256_hex(&bytes),
-                published_at_ms: timeline.generated_at_ms,
+                published_at_ms: generated_at_ms,
                 generation,
             };
-            record_artifact_published(
-                journal,
-                &subject,
-                attempt,
-                artifact,
-                timeline.generated_at_ms,
-            )
+            record_artifact_published(journal, subject, attempt, artifact, generated_at_ms)
         }
         Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }) => {
             let detail = bounded_diagnostic_detail(&source.to_string());
             let _ = record_attempt_outcome(
                 journal,
-                &subject,
+                subject,
                 attempt,
                 AttemptOutcome::DurabilityUncertain,
                 &detail,
-                timeline.generated_at_ms,
+                generated_at_ms,
             );
             Err(TimelineError::DurabilityUncertain { path, detail })
         }
@@ -97,11 +136,11 @@ pub fn publish_segment_timeline(
             );
             let _ = record_attempt_outcome(
                 journal,
-                &subject,
+                subject,
                 attempt,
                 AttemptOutcome::Failed,
                 &detail,
-                timeline.generated_at_ms,
+                generated_at_ms,
             );
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
@@ -118,11 +157,11 @@ pub fn publish_segment_timeline(
             ));
             let _ = record_attempt_outcome(
                 journal,
-                &subject,
+                subject,
                 attempt,
                 AttemptOutcome::Failed,
                 &detail,
-                timeline.generated_at_ms,
+                generated_at_ms,
             );
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
@@ -161,6 +200,10 @@ pub fn segment_subject_key(binding: &SegmentBindingV1) -> String {
     )
 }
 
+pub fn day_subject_key(day: &str) -> String {
+    format!("day:{day}")
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -168,10 +211,14 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
 
     use super::*;
-    use crate::{AttemptOutcome, TimelineStateV1, load_timeline_state};
+    use crate::{
+        AttemptOutcome, CurationRecordV1, DayTimelineV1, TimelineKind, TimelineStateV1,
+        load_timeline_state,
+    };
 
     fn binding() -> SegmentBindingV1 {
         SegmentBindingV1 {
@@ -189,6 +236,28 @@ mod tests {
             finished_at_ms: None,
             outcome: AttemptOutcome::Running,
             detail: String::new(),
+        }
+    }
+
+    fn day_timeline() -> DayTimelineV1 {
+        DayTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Day,
+            day: "20260401".to_owned(),
+            source_digest: "input".to_owned(),
+            generated_at_ms: 2,
+            top_n: 4,
+            segment_count: 1,
+            hour_count: 0,
+            hours: BTreeMap::new(),
+            day_curation: CurationRecordV1 {
+                input_digest: "input".to_owned(),
+                candidate_count: 1,
+                picks: Vec::new(),
+                rationale: "fixture".to_owned(),
+                error: None,
+                provenance: None,
+            },
         }
     }
 
@@ -227,5 +296,31 @@ mod tests {
                 .any(|value| value.outcome == AttemptOutcome::Published)
         );
         assert_ne!(state, TimelineStateV1::empty());
+    }
+
+    #[test]
+    fn day_publication_writes_typed_artifact_and_day_subject_state() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        let timeline = day_timeline();
+
+        publish_day_timeline(journal.path(), &timeline, attempt()).unwrap();
+
+        let published = serde_json::from_slice::<DayTimelineV1>(
+            &fs::read(day_timeline_path(journal.path(), &timeline.day)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(published, timeline);
+        let state = load_timeline_state(journal.path()).unwrap();
+        assert_eq!(
+            state.artifacts[&day_subject_key("20260401")].input_digest,
+            "input"
+        );
+        assert!(
+            state
+                .attempts
+                .values()
+                .any(|attempt| attempt.outcome == AttemptOutcome::Published)
+        );
     }
 }

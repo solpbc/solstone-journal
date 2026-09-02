@@ -34,6 +34,6 @@ pub use state::{
     update_timeline_state,
 };
 pub use store::{
-    publish_continuation_summary, publish_segment_timeline, segment_subject_key,
-    segment_timeline_path,
+    day_subject_key, day_timeline_path, publish_continuation_summary, publish_day_timeline,
+    publish_segment_timeline, segment_subject_key, segment_timeline_path,
 };

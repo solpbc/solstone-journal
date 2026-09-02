@@ -4649,6 +4649,7 @@ dependencies = [
  "solstone-core-offload",
  "solstone-core-retention",
  "solstone-core-system",
+ "solstone-core-timeline",
  "tempfile",
 ]
 
