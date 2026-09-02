@@ -31,7 +31,7 @@ use super::reason::{NamedOccupant, NamedOpen, OplogFileIdentity, StageError, Sta
 use crate::atomic::{ATOMIC_CANDIDATE_MARKER, publication_candidate_name};
 use crate::lease::{LeaseProbe, SelfLease, acquire_self_lease, probe_file_lease};
 use crate::windows_identity::file_link_count;
-use crate::windows_ntcreate::nt_create_relative;
+use crate::windows_ntcreate::{nt_create_relative, nt_create_relative_share_read_delete};
 use crate::windows_sync_dir::validate_windows_regular_handle;
 
 pub(super) struct StagedFile {
@@ -54,12 +54,15 @@ pub(super) fn stage_exclusive(
 ) -> Result<StagedFile, StageError> {
     let sequence = std::process::id() as u128;
     let stage_name = publication_candidate_name(dest, ATOMIC_CANDIDATE_MARKER, &[sequence]);
-    let handle = nt_create_relative(
+    let handle = nt_create_relative_share_read_delete(
         health.health().as_handle().as_raw_handle(),
         stage_name.as_os_str(),
         // `LockFileEx` requires a handle opened with generic read or write
         // access. `FILE_APPEND_DATA` alone admits the append writer but is not
-        // sufficient for the self-lease that guards this live stage.
+        // sufficient for the self-lease that guards this live stage. The live
+        // writer grants read and delete sharing so it can be observed and
+        // renamed, but withholds write sharing: a handle-based liveness probe
+        // can distinguish this still-live original from a pathname replacement.
         GENERIC_READ | FILE_APPEND_DATA | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_CREATE,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
