@@ -208,6 +208,7 @@ pub(super) fn probe_named(
     classify_liveness_by_id(health.health().as_handle().as_raw_handle(), identity)
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
 pub(super) fn probe_identity(health: &OplogDayHealth, identity: OplogFileIdentity) -> LeaseProbe {
     classify_liveness_by_id(health.health().as_handle().as_raw_handle(), identity)
 }
