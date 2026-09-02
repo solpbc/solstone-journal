@@ -13,11 +13,58 @@ use solstone_core_journal_io::{
     path_lexists, read_json, remove_file, write_bytes_exclusive, write_json,
 };
 
+use caseless::default_case_fold_str;
+use sha2::{Digest, Sha256};
+
 use crate::device::validate_cid;
-use crate::projection::name_with_ordinal;
+use crate::projection::{name_with_ordinal, paired_name_with_suffix, project_paired_stream_base};
 use crate::{Kind, SegmentDir, SegmentError, is_safe_stream_component, project_stream_name};
 
 const REGISTRY_LOCK_NAME: &str = ".registry";
+
+/// Audit-only record of the pairing-derived inputs consumed at first-binding
+/// allocation time. Never consulted by lookup_stream, bind retry, or reopen —
+/// `name` is the sole registry key and `(cid, source)` is the sole binding
+/// identity; this field cannot reinterpret or rename an existing binding.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StreamAllocation {
+    pub base: StreamAllocationBase,
+    pub base_input: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collision: Option<StreamAllocationCollision>,
+}
+
+/// Which pairing-identity input supplied the readable stream base.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamAllocationBase {
+    ClientLabel,
+    Platform,
+    Device,
+}
+
+/// Discriminator applied after the bare projected name was occupied.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StreamAllocationCollision {
+    pub scheme: StreamCollisionScheme,
+    pub suffix: String,
+}
+
+/// Whether the collision suffix was derived from the CID or the source string.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamCollisionScheme {
+    Cid,
+    Source,
+}
+
+/// Pairing-resolved base passed to `bind_paired_stream`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PairedStreamBase<'a> {
+    pub origin: StreamAllocationBase,
+    pub input: &'a str,
+}
 
 /// A persistent stream state record, accepting Python's legacy `type` field.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -40,6 +87,8 @@ pub struct StreamRecord {
     pub cid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation: Option<StreamAllocation>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -100,11 +149,11 @@ pub struct ResolvedStream {
 
 /// A (cid, source)-bound stream identity, not yet advanced.
 ///
-/// Produced by `bind_stream` or `bind_named_stream`, which resolve identity
-/// but perform no chain mutation. This lets a caller search several
-/// segment-key candidates against the same bound identity — e.g. retrying
-/// past a content collision — without minting a chain link for every
-/// candidate it tries.
+/// Produced by `bind_stream`, `bind_named_stream`, or `bind_paired_stream`,
+/// which resolve identity but perform no chain mutation. This lets a caller
+/// search several segment-key candidates against the same bound identity —
+/// e.g. retrying past a content collision — without minting a chain link for
+/// every candidate it tries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundStream {
     pub stream: String,
@@ -137,6 +186,49 @@ pub fn bind_stream(
     source: &str,
     hints: &StreamHints,
 ) -> Result<BoundStream, SegmentError> {
+    bind_allocated_stream(
+        journal,
+        day,
+        segment,
+        cid,
+        source,
+        hints,
+        |lock, binding| allocate(lock, journal, label, binding, hints),
+    )
+}
+
+/// Resolve a device-owned stream from a pairing-derived base, without advancing
+/// its chain. Collision names are a bounded CID- or source-hash suffix, not
+/// ordinals.
+pub fn bind_paired_stream(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    base: &PairedStreamBase<'_>,
+    cid: &str,
+    source: &str,
+    hints: &StreamHints,
+) -> Result<BoundStream, SegmentError> {
+    bind_allocated_stream(
+        journal,
+        day,
+        segment,
+        cid,
+        source,
+        hints,
+        |lock, binding| allocate_paired(lock, journal, base, binding, hints),
+    )
+}
+
+fn bind_allocated_stream(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    cid: &str,
+    source: &str,
+    _hints: &StreamHints,
+    mut allocate: impl FnMut(&FileLock, StreamBinding<'_>) -> Result<String, SegmentError>,
+) -> Result<BoundStream, SegmentError> {
     validate_cid(cid)?;
     let _ = SegmentDir::resolve(journal, day, segment, DEFAULT_STREAM)?;
     let binding = StreamBinding { cid, source };
@@ -144,7 +236,7 @@ pub fn bind_stream(
         let name = {
             let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
             let registry_lock = hold_lock(registry_target, LockOptions::default())?;
-            allocate(&registry_lock, journal, label, binding, hints)?
+            allocate(&registry_lock, binding)?
         };
         let segment_dir = SegmentDir::resolve(journal, day, segment, &name)?;
         let state_path = stream_record_path(journal, &name);
@@ -213,7 +305,7 @@ pub fn bind_named_stream(
             });
         }
         None => {
-            let record = reservation_record(name.to_owned(), binding, hints)?;
+            let record = reservation_record(name.to_owned(), binding, hints, None)?;
             let bytes =
                 serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
                     path: state_path.clone(),
@@ -491,13 +583,34 @@ pub fn lookup_stream(
     cid: &str,
     source: &str,
 ) -> Result<Option<String>, SegmentError> {
+    Ok(lookup_stream_state(journal, cid, source)?.map(|state| state.name))
+}
+
+/// Bound stream name plus the durable chain sequence, if any record matches.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamBindingState {
+    pub name: String,
+    pub seq: u64,
+}
+
+/// Look up the `(cid, source)` binding and the matched record's `seq`.
+///
+/// `seq == 0` is a reservation that has not yet been chain-advanced.
+pub fn lookup_stream_state(
+    journal: &Path,
+    cid: &str,
+    source: &str,
+) -> Result<Option<StreamBindingState>, SegmentError> {
     validate_cid(cid)?;
     let records = read_registry_records(journal)?;
     let binding = StreamBinding { cid, source };
     Ok(records
         .iter()
         .find(|(_, record)| binding_matches(record, binding))
-        .map(|(name, _)| name.clone()))
+        .map(|(name, record)| StreamBindingState {
+            name: name.clone(),
+            seq: record.seq,
+        }))
 }
 
 /// Whether any stream record is missing a complete `(cid, source)` binding.
@@ -569,7 +682,7 @@ fn allocate(
             continue;
         }
         let path = stream_record_path(journal, &name);
-        let record = reservation_record(name.clone(), binding, hints)?;
+        let record = reservation_record(name.clone(), binding, hints, None)?;
         let bytes = serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
             path: path.clone(),
             source,
@@ -585,6 +698,132 @@ fn allocate(
         }
     }
     unreachable!("u64 ordinal iterator is inexhaustible")
+}
+
+const PAIRED_SUFFIX_WIDTHS: [usize; 3] = [8, 12, 16];
+
+/// Allocate under the caller-held registry guard using a pairing-derived base
+/// and a bounded CID- or source-hash suffix on collision.
+fn allocate_paired(
+    _registry_lock: &FileLock,
+    journal: &Path,
+    base: &PairedStreamBase<'_>,
+    binding: StreamBinding<'_>,
+    hints: &StreamHints,
+) -> Result<String, SegmentError> {
+    let records = read_registry_records(journal)?;
+    if let Some((name, _)) = records
+        .iter()
+        .find(|(_, record)| binding_matches(record, binding))
+    {
+        return Ok(name.clone());
+    }
+
+    let projected = project_paired_stream_base(base.input, binding.source);
+    let occupancy = folded_occupancy(&records);
+    let provenance = |collision: Option<StreamAllocationCollision>| StreamAllocation {
+        base: base.origin,
+        base_input: base.input.to_owned(),
+        source: binding.source.to_owned(),
+        collision,
+    };
+
+    if try_reserve_paired(
+        journal,
+        &projected,
+        binding,
+        hints,
+        provenance(None),
+        &occupancy,
+    )? {
+        return Ok(projected);
+    }
+
+    let scheme = collision_scheme(&records, &projected, binding.cid);
+    // Hash the full raw binding string as stored, including the `sha256:` CID
+    // prefix (not the hex tail alone) and the submitted source (not the
+    // projected fragment), so `watch` and `watch_` stay distinct.
+    let digest = sha256_hex(match scheme {
+        StreamCollisionScheme::Cid => binding.cid,
+        StreamCollisionScheme::Source => binding.source,
+    });
+    for width in PAIRED_SUFFIX_WIDTHS {
+        let hex = &digest[..width];
+        let candidate = paired_name_with_suffix(base.input, binding.source, hex);
+        if try_reserve_paired(
+            journal,
+            &candidate,
+            binding,
+            hints,
+            provenance(Some(StreamAllocationCollision {
+                scheme,
+                suffix: hex.to_owned(),
+            })),
+            &occupancy,
+        )? {
+            return Ok(candidate);
+        }
+    }
+    Err(SegmentError::StreamAllocationExhausted { base: projected })
+}
+
+fn folded_occupancy(records: &BTreeMap<String, StreamRecord>) -> BTreeMap<String, String> {
+    records
+        .keys()
+        .map(|name| (default_case_fold_str(name), name.clone()))
+        .collect()
+}
+
+fn occupancy_contains(occupancy: &BTreeMap<String, String>, name: &str) -> bool {
+    occupancy.contains_key(&default_case_fold_str(name))
+}
+
+fn collision_scheme(
+    records: &BTreeMap<String, StreamRecord>,
+    projected: &str,
+    cid: &str,
+) -> StreamCollisionScheme {
+    let folded = default_case_fold_str(projected);
+    let same_cid = records.iter().any(|(name, record)| {
+        default_case_fold_str(name) == folded && record.cid.as_deref() == Some(cid)
+    });
+    if same_cid {
+        StreamCollisionScheme::Source
+    } else {
+        StreamCollisionScheme::Cid
+    }
+}
+
+fn try_reserve_paired(
+    journal: &Path,
+    name: &str,
+    binding: StreamBinding<'_>,
+    hints: &StreamHints,
+    allocation: StreamAllocation,
+    occupancy: &BTreeMap<String, String>,
+) -> Result<bool, SegmentError> {
+    if occupancy_contains(occupancy, name) || !is_safe_stream_component(name) {
+        return Ok(false);
+    }
+    let path = stream_record_path(journal, name);
+    let record = reservation_record(name.to_owned(), binding, hints, Some(allocation))?;
+    let bytes = serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
+        path: path.clone(),
+        source,
+    })?;
+    match write_bytes_exclusive(&path, &bytes, AtomicWriteOptions::default()) {
+        Ok(()) => Ok(true),
+        Err(AtomicWriteError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::AlreadyExists =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn sha256_hex(input: &str) -> String {
+    format!("{:x}", Sha256::digest(input.as_bytes()))
 }
 
 /// Advance one reserved stream, then atomically write its matching segment marker.
@@ -747,6 +986,7 @@ fn reservation_record(
     name: String,
     binding: StreamBinding<'_>,
     hints: &StreamHints,
+    allocation: Option<StreamAllocation>,
 ) -> Result<StreamRecord, SegmentError> {
     Ok(StreamRecord {
         name,
@@ -764,6 +1004,7 @@ fn reservation_record(
         seq: 0,
         cid: Some(binding.cid.to_owned()),
         source: Some(binding.source.to_owned()),
+        allocation,
     })
 }
 
@@ -787,6 +1028,7 @@ fn unbound_reservation_record(
         seq: 0,
         cid: None,
         source: None,
+        allocation: None,
     })
 }
 
@@ -800,7 +1042,7 @@ fn update_record(
 ) -> Result<(StreamRecord, StreamAdvance), SegmentError> {
     match record {
         None => {
-            let mut record = reservation_record(name.to_owned(), binding, &hints)?;
+            let mut record = reservation_record(name.to_owned(), binding, &hints, None)?;
             record.last_day = Some(day.to_owned());
             record.last_segment = Some(segment.to_owned());
             record.seq = 1;
@@ -961,6 +1203,7 @@ mod tests {
             seq,
             cid: cid.map(str::to_owned),
             source: source.map(str::to_owned),
+            allocation: None,
         }
     }
 
@@ -2078,5 +2321,410 @@ mod tests {
             delete_stream_record(temporary.path(), "location").unwrap(),
             Removed::AlreadyAbsent
         );
+    }
+
+    fn paired_label(input: &str) -> PairedStreamBase<'_> {
+        PairedStreamBase {
+            origin: StreamAllocationBase::ClientLabel,
+            input,
+        }
+    }
+
+    fn bind_paired(
+        root: &Path,
+        base: &PairedStreamBase<'_>,
+        cid: &str,
+        source: &str,
+    ) -> BoundStream {
+        bind_paired_stream(root, "20260804", "120000_60", base, cid, source, &hints()).unwrap()
+    }
+
+    fn load_record(root: &Path, name: &str) -> StreamRecord {
+        serde_json::from_slice(&fs::read(stream_record_path(root, name)).unwrap()).unwrap()
+    }
+
+    fn json_stems(root: &Path) -> BTreeSet<String> {
+        let directory = root.join("streams");
+        fs::read_dir(&directory)
+            .map(|entries| {
+                entries
+                    .map(Result::unwrap)
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.extension()
+                            .is_some_and(|extension| extension == "json")
+                    })
+                    .map(|path| path.file_stem().unwrap().to_str().unwrap().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn cid_suffix(cid: &str, width: usize) -> String {
+        let digest = sha256_hex(cid);
+        digest[..width].to_owned()
+    }
+
+    fn source_suffix(source: &str, width: usize) -> String {
+        let digest = sha256_hex(source);
+        digest[..width].to_owned()
+    }
+
+    #[test]
+    fn bind_paired_stream_mints_a_bare_name_with_provenance() {
+        let temporary = TempDir::new();
+        let base = paired_label("Desk.01");
+        let empty = bind_paired(temporary.path(), &base, CID_A, "");
+        assert_eq!(empty.stream, "desk_01");
+        let empty_record = load_record(temporary.path(), "desk_01");
+        assert_eq!(
+            empty_record.allocation,
+            Some(StreamAllocation {
+                base: StreamAllocationBase::ClientLabel,
+                base_input: "Desk.01".to_owned(),
+                source: String::new(),
+                collision: None,
+            })
+        );
+        assert_eq!(empty_record.seq, 0);
+        assert_eq!(
+            lookup_stream_state(temporary.path(), CID_A, "")
+                .unwrap()
+                .unwrap(),
+            StreamBindingState {
+                name: "desk_01".to_owned(),
+                seq: 0,
+            }
+        );
+
+        let tmux = bind_paired(temporary.path(), &base, CID_A, "tmux");
+        assert_eq!(tmux.stream, "desk_01_tmux");
+        assert_eq!(
+            load_record(temporary.path(), "desk_01_tmux").allocation,
+            Some(StreamAllocation {
+                base: StreamAllocationBase::ClientLabel,
+                base_input: "Desk.01".to_owned(),
+                source: "tmux".to_owned(),
+                collision: None,
+            })
+        );
+    }
+
+    #[test]
+    fn bind_paired_stream_uses_a_cid_suffix_when_bases_collide() {
+        let temporary = TempDir::new();
+        let base = paired_label("Desk.01");
+        let first = bind_paired(temporary.path(), &base, CID_A, "");
+        assert_eq!(first.stream, "desk_01");
+        let first_path = stream_record_path(temporary.path(), "desk_01");
+        let first_bytes = fs::read(&first_path).unwrap();
+
+        let second = bind_paired(temporary.path(), &base, CID_B, "");
+        let suffix = cid_suffix(CID_B, 8);
+        assert_eq!(second.stream, format!("desk_01_{suffix}"));
+        assert_eq!(
+            load_record(temporary.path(), &second.stream)
+                .allocation
+                .unwrap()
+                .collision,
+            Some(StreamAllocationCollision {
+                scheme: StreamCollisionScheme::Cid,
+                suffix,
+            })
+        );
+        assert_eq!(fs::read(&first_path).unwrap(), first_bytes);
+        assert_eq!(
+            lookup_stream(temporary.path(), CID_A, "")
+                .unwrap()
+                .as_deref(),
+            Some("desk_01")
+        );
+        assert_eq!(
+            lookup_stream(temporary.path(), CID_B, "")
+                .unwrap()
+                .as_deref(),
+            Some(second.stream.as_str())
+        );
+    }
+
+    #[test]
+    fn bind_paired_stream_uses_a_source_suffix_when_same_cid_sources_collide() {
+        let temporary = TempDir::new();
+        let base = paired_label("iPhone");
+        let first = bind_paired(temporary.path(), &base, CID_A, "watch");
+        assert_eq!(first.stream, "iphone_watch");
+        let second = bind_paired(temporary.path(), &base, CID_A, "watch_");
+        let suffix = source_suffix("watch_", 8);
+        assert_eq!(second.stream, format!("iphone_watch_{suffix}"));
+        assert_eq!(
+            load_record(temporary.path(), &second.stream)
+                .allocation
+                .unwrap()
+                .collision,
+            Some(StreamAllocationCollision {
+                scheme: StreamCollisionScheme::Source,
+                suffix,
+            })
+        );
+        assert_ne!(first.stream, second.stream);
+        assert_eq!(
+            lookup_stream(temporary.path(), CID_A, "watch")
+                .unwrap()
+                .as_deref(),
+            Some("iphone_watch")
+        );
+        assert_eq!(
+            lookup_stream(temporary.path(), CID_A, "watch_")
+                .unwrap()
+                .as_deref(),
+            Some(second.stream.as_str())
+        );
+    }
+
+    #[test]
+    fn bind_paired_stream_leaves_a_legacy_occupant_untouched() {
+        let temporary = TempDir::new();
+        write_record(temporary.path(), &record("desk_01", None, None, 4, 11));
+        let path = stream_record_path(temporary.path(), "desk_01");
+        let before = fs::read(&path).unwrap();
+        let bound = bind_paired(temporary.path(), &paired_label("Desk.01"), CID_A, "");
+        let suffix = cid_suffix(CID_A, 8);
+        assert_eq!(bound.stream, format!("desk_01_{suffix}"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(
+            lookup_stream(temporary.path(), CID_A, "").unwrap().unwrap(),
+            bound.stream
+        );
+    }
+
+    #[test]
+    fn bind_paired_stream_case_folds_occupancy_against_legacy_uppercase_names() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("DEVICE_TMUX", None, Some("tmux"), 1, 1),
+        );
+        let path = stream_record_path(temporary.path(), "DEVICE_TMUX");
+        let before = fs::read(&path).unwrap();
+        let bound = bind_paired(
+            temporary.path(),
+            &PairedStreamBase {
+                origin: StreamAllocationBase::Device,
+                input: "device",
+            },
+            CID_A,
+            "tmux",
+        );
+        assert_ne!(bound.stream, "device_tmux");
+        assert_ne!(bound.stream, "DEVICE_TMUX");
+        let suffix = cid_suffix(CID_A, 8);
+        assert_eq!(bound.stream, format!("device_tmux_{suffix}"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn bind_paired_stream_widens_the_cid_suffix_when_shorter_candidates_are_taken() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("device", Some(CID_B), Some(""), 1, 1),
+        );
+        write_record(
+            temporary.path(),
+            &record(
+                &format!("device_{}", cid_suffix(CID_A, 8)),
+                Some(CID_C),
+                Some(""),
+                1,
+                1,
+            ),
+        );
+        let twelve = bind_paired(
+            temporary.path(),
+            &PairedStreamBase {
+                origin: StreamAllocationBase::Device,
+                input: "device",
+            },
+            CID_A,
+            "",
+        );
+        assert_eq!(twelve.stream, format!("device_{}", cid_suffix(CID_A, 12)));
+        assert_eq!(
+            load_record(temporary.path(), &twelve.stream)
+                .allocation
+                .unwrap()
+                .collision
+                .unwrap()
+                .suffix,
+            cid_suffix(CID_A, 12)
+        );
+
+        write_record(
+            temporary.path(),
+            &record(
+                &format!("device_{}", cid_suffix(CID_D, 8)),
+                Some(CID_B),
+                Some("other"),
+                1,
+                1,
+            ),
+        );
+        write_record(
+            temporary.path(),
+            &record(
+                &format!("device_{}", cid_suffix(CID_D, 12)),
+                Some(CID_C),
+                Some("other"),
+                1,
+                1,
+            ),
+        );
+        let sixteen = bind_paired(
+            temporary.path(),
+            &PairedStreamBase {
+                origin: StreamAllocationBase::Device,
+                input: "device",
+            },
+            CID_D,
+            "",
+        );
+        assert_eq!(sixteen.stream, format!("device_{}", cid_suffix(CID_D, 16)));
+    }
+
+    #[test]
+    fn bind_paired_stream_exhausts_without_creating_a_file() {
+        let temporary = TempDir::new();
+        let base = PairedStreamBase {
+            origin: StreamAllocationBase::Device,
+            input: "device",
+        };
+        write_record(
+            temporary.path(),
+            &record("device", Some(CID_B), Some(""), 1, 1),
+        );
+        for width in [8, 12, 16] {
+            write_record(
+                temporary.path(),
+                &record(
+                    &format!("device_{}", cid_suffix(CID_A, width)),
+                    Some(CID_C),
+                    Some(""),
+                    1,
+                    1,
+                ),
+            );
+        }
+        let before = json_stems(temporary.path());
+        let error = bind_paired_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            &base,
+            CID_A,
+            "",
+            &hints(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SegmentError::StreamAllocationExhausted { base } if base == "device"
+        ));
+        assert_eq!(json_stems(temporary.path()), before);
+    }
+
+    #[test]
+    fn bind_paired_stream_converges_concurrent_same_tuple_binds() {
+        let temporary = TempDir::new();
+        let root = temporary.path().to_path_buf();
+        let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let root = root.clone();
+            let start = start.clone();
+            workers.push(thread::spawn(move || {
+                let base = paired_label("Desk.01");
+                start.wait();
+                bind_paired(&root, &base, CID_A, "")
+            }));
+        }
+        let names: BTreeSet<String> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap().stream)
+            .collect();
+        assert_eq!(names, BTreeSet::from(["desk_01".to_owned()]));
+        assert_eq!(json_stems(temporary.path()), names);
+        assert_eq!(
+            load_record(temporary.path(), "desk_01")
+                .allocation
+                .unwrap()
+                .collision,
+            None
+        );
+    }
+
+    #[test]
+    fn bind_paired_stream_keeps_concurrent_different_cids_distinct() {
+        let temporary = TempDir::new();
+        let root = temporary.path().to_path_buf();
+        let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut workers = Vec::new();
+        for cid in [CID_A, CID_B] {
+            let root = root.clone();
+            let start = start.clone();
+            workers.push(thread::spawn(move || {
+                let base = paired_label("Desk.01");
+                start.wait();
+                (cid, bind_paired(&root, &base, cid, ""))
+            }));
+        }
+        let mut by_cid = BTreeMap::new();
+        for worker in workers {
+            let (cid, bound) = worker.join().unwrap();
+            by_cid.insert(cid, bound.stream);
+        }
+        assert_ne!(by_cid[CID_A], by_cid[CID_B]);
+        for (cid, name) in &by_cid {
+            let record = load_record(temporary.path(), name);
+            assert_eq!(record.cid.as_deref(), Some(*cid));
+            assert_eq!(record.source.as_deref(), Some(""));
+            assert_eq!(
+                lookup_stream(temporary.path(), cid, "").unwrap().as_deref(),
+                Some(name.as_str())
+            );
+        }
+        assert_eq!(
+            json_stems(temporary.path()),
+            by_cid.values().cloned().collect()
+        );
+    }
+
+    #[test]
+    fn stream_record_deserializes_without_allocation() {
+        let record: StreamRecord = serde_json::from_value(json!({
+            "name": "desk",
+            "kind": "observer",
+            "host": null,
+            "platform": null,
+            "created_at": 9,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1,
+            "cid": CID_A,
+            "source": "",
+        }))
+        .unwrap();
+        assert_eq!(record.allocation, None);
+        let with_allocation = StreamRecord {
+            allocation: Some(StreamAllocation {
+                base: StreamAllocationBase::ClientLabel,
+                base_input: "Desk.01".to_owned(),
+                source: String::new(),
+                collision: None,
+            }),
+            ..record
+        };
+        let round_trip: StreamRecord =
+            serde_json::from_slice(&serde_json::to_vec(&with_allocation).unwrap()).unwrap();
+        assert_eq!(round_trip, with_allocation);
     }
 }

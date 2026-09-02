@@ -20,7 +20,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
-use crate::pairing_identity::Platform;
+use crate::pairing_identity::{PairingIdentityFields, Platform};
 
 const CERT_KIND: &str = "cert";
 
@@ -321,6 +321,7 @@ pub struct RemoveOutcome {
 #[derive(Clone, Debug, Default)]
 struct Clients {
     entries: Vec<ClientEntry>,
+    pairing: BTreeMap<String, PairingIdentityFields>,
 }
 
 impl Clients {
@@ -330,7 +331,26 @@ impl Clients {
             .find(|entry| entry.fingerprint == fingerprint)
     }
 
+    fn pairing(&self, fingerprint: &str) -> Option<&PairingIdentityFields> {
+        self.pairing.get(fingerprint)
+    }
+
+    fn upsert_parsed(&mut self, entry: ClientEntry, pairing: PairingIdentityFields) {
+        self.pairing.insert(entry.fingerprint.clone(), pairing);
+        self.upsert_entry(entry);
+    }
+
     fn upsert(&mut self, entry: ClientEntry) {
+        // Mutations do not re-parse disk JSON. Keep a lossless pairing row in
+        // lockstep: existing fingerprints keep the parse-time fields
+        // (first-write-wins), new fingerprints derive from the written object.
+        self.pairing
+            .entry(entry.fingerprint.clone())
+            .or_insert_with(|| pairing_from_entry(&entry));
+        self.upsert_entry(entry);
+    }
+
+    fn upsert_entry(&mut self, entry: ClientEntry) {
         if let Some(index) = self
             .entries
             .iter()
@@ -351,6 +371,7 @@ impl Clients {
             return false;
         };
         self.entries.remove(index);
+        self.pairing.remove(fingerprint);
         true
     }
 }
@@ -404,7 +425,32 @@ impl AuthorizationLedger {
         {
             return false;
         }
-        self.set_read_state(read_authorized_clients(&self.authorized_clients_path));
+        // Parse through `read_authorized` so the lossless pairing cache is
+        // rebuilt with the ClientEntry vec, not reconstructed from the lossy
+        // `AuthorizedClientsRead::Present` payload.
+        match read_authorized(&self.authorized_clients_path) {
+            Ok(Some(clients)) => {
+                self.read_state = AuthorizedClientsRead::Present(clients.entries.clone());
+                self.cached = clients;
+            }
+            Ok(None) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Missing;
+            }
+            Err(AuthorizedClientsLoadError::Unreadable { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Unreadable;
+            }
+            Err(AuthorizedClientsLoadError::Malformed { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::Malformed;
+            }
+            Err(AuthorizedClientsLoadError::DuplicateCid { .. }) => {
+                self.cached = Clients::default();
+                self.read_state = AuthorizedClientsRead::DuplicateCid;
+            }
+        }
+        self.reload_key = reload_key(&self.authorized_clients_path);
         true
     }
 
@@ -427,6 +473,25 @@ impl AuthorizationLedger {
     pub fn get(&mut self, fingerprint: &str) -> Option<ClientEntry> {
         self.reload_if_stale();
         self.cached.get(fingerprint).cloned()
+    }
+
+    /// Lossless pairing-identity read-back for one fingerprint.
+    ///
+    /// `Ok(None)` means the ledger is readable and has no row for `fingerprint`
+    /// (a missing file is treated the same: there is no row). `Err` is the same
+    /// unreadable / malformed / duplicate-cid state `read_state` reports after
+    /// `get()` on a broken file — `get()` itself collapses those to `None`.
+    pub fn get_pairing_identity_fields(
+        &mut self,
+        fingerprint: &str,
+    ) -> Result<Option<PairingIdentityFields>, AuthorizedClientsRead> {
+        self.reload_if_stale();
+        match &self.read_state {
+            AuthorizedClientsRead::Present(_) | AuthorizedClientsRead::Missing => {
+                Ok(self.cached.pairing(fingerprint).cloned())
+            }
+            other => Err(other.clone()),
+        }
     }
 
     pub fn add(
@@ -648,20 +713,6 @@ impl AuthorizationLedger {
         })
     }
 
-    fn set_read_state(&mut self, read: AuthorizedClientsRead) {
-        self.cached = match &read {
-            AuthorizedClientsRead::Present(entries) => Clients {
-                entries: entries.clone(),
-            },
-            AuthorizedClientsRead::Missing
-            | AuthorizedClientsRead::Unreadable
-            | AuthorizedClientsRead::Malformed
-            | AuthorizedClientsRead::DuplicateCid => Clients::default(),
-        };
-        self.read_state = read;
-        self.reload_key = reload_key(&self.authorized_clients_path);
-    }
-
     fn set_cached(&mut self, clients: Clients) {
         self.read_state = AuthorizedClientsRead::Present(clients.entries.clone());
         self.cached = clients;
@@ -778,28 +829,31 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value > 0)
             .unwrap_or(1);
-        clients.upsert(ClientEntry {
-            fingerprint: fingerprint.to_owned(),
-            device_label: json_string(item.get("device_label")),
-            paired_at: json_string(item.get("paired_at")),
-            instance_id: json_string(item.get("instance_id")),
-            role: ClientRole::from_wire(item.get("role").and_then(Value::as_str)),
-            network: item
-                .get("network")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-            client_label: item
-                .get("client_label")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            label_ordinal,
-            kind: CERT_KIND.to_owned(),
-            platform: item
-                .get("platform")
-                .and_then(Value::as_str)
-                .and_then(Platform::from_wire),
-        });
+        clients.upsert_parsed(
+            ClientEntry {
+                fingerprint: fingerprint.to_owned(),
+                device_label: json_string(item.get("device_label")),
+                paired_at: json_string(item.get("paired_at")),
+                instance_id: json_string(item.get("instance_id")),
+                role: ClientRole::from_wire(item.get("role").and_then(Value::as_str)),
+                network: item
+                    .get("network")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                client_label: item
+                    .get("client_label")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                label_ordinal,
+                kind: CERT_KIND.to_owned(),
+                platform: item
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .and_then(Platform::from_wire),
+            },
+            PairingIdentityFields::from_object(item),
+        );
     }
     if dropped_non_cert {
         log::warn!(
@@ -834,6 +888,11 @@ fn write_authorized_clients(
             ..JsonWriteOptions::default()
         },
     )
+}
+
+fn pairing_from_entry(entry: &ClientEntry) -> PairingIdentityFields {
+    let value = client_to_json(entry);
+    PairingIdentityFields::from_object(value.as_object().expect("client JSON is an object"))
 }
 
 fn client_to_json(entry: &ClientEntry) -> Value {
@@ -1817,6 +1876,204 @@ mod tests {
             &self.path
         }
     }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+#[cfg(all(test, not(feature = "full-tests")))]
+mod pairing_identity_read_tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::pairing_identity::{ClientLabelState, Platform, PlatformState};
+
+    #[test]
+    fn get_pairing_identity_fields_preserves_distinctions_that_get_collapses() {
+        let temporary = TempDir::new();
+        let path = authorized_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let long = "a".repeat(254);
+        fs::write(
+            &path,
+            json!([
+                {"fingerprint":"absent-label","device_label":"p","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"empty-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":""},
+                {"fingerprint":"valid-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":"phone"},
+                {"fingerprint":"long-label","device_label":"p","paired_at":"1","instance_id":"i","client_label": long},
+                {"fingerprint":"malformed-label","device_label":"p","paired_at":"1","instance_id":"i","client_label":1},
+                {"fingerprint":"absent-platform","device_label":"p","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"linux","device_label":"p","paired_at":"1","instance_id":"i","platform":"linux"},
+                {"fingerprint":"macos","device_label":"p","paired_at":"1","instance_id":"i","platform":"macos"},
+                {"fingerprint":"windows","device_label":"p","paired_at":"1","instance_id":"i","platform":"windows"},
+                {"fingerprint":"ios","device_label":"p","paired_at":"1","instance_id":"i","platform":"ios"},
+                {"fingerprint":"android","device_label":"p","paired_at":"1","instance_id":"i","platform":"android"},
+                {"fingerprint":"empty-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":""},
+                {"fingerprint":"unknown-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":"plan9"},
+                {"fingerprint":"malformed-platform","device_label":"p","paired_at":"1","instance_id":"i","platform":true}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("absent-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Absent
+        );
+        assert_eq!(ledger.get("absent-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("empty-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Empty
+        );
+        assert_eq!(ledger.get("empty-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("valid-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Valid("phone".to_owned())
+        );
+        assert_eq!(ledger.get("valid-label").unwrap().client_label, "phone");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("long-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Unprojectable("a".repeat(254))
+        );
+        assert_eq!(
+            ledger.get("long-label").unwrap().client_label,
+            "a".repeat(254)
+        );
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("malformed-label")
+                .unwrap()
+                .unwrap()
+                .client_label,
+            ClientLabelState::Malformed
+        );
+        assert_eq!(ledger.get("malformed-label").unwrap().client_label, "");
+
+        assert_eq!(
+            ledger
+                .get_pairing_identity_fields("absent-platform")
+                .unwrap()
+                .unwrap()
+                .platform,
+            PlatformState::Absent
+        );
+        assert_eq!(ledger.get("absent-platform").unwrap().platform, None);
+
+        for (fingerprint, platform) in [
+            ("linux", Platform::Linux),
+            ("macos", Platform::Macos),
+            ("windows", Platform::Windows),
+            ("ios", Platform::Ios),
+            ("android", Platform::Android),
+        ] {
+            assert_eq!(
+                ledger
+                    .get_pairing_identity_fields(fingerprint)
+                    .unwrap()
+                    .unwrap()
+                    .platform,
+                PlatformState::Valid(platform)
+            );
+            assert_eq!(ledger.get(fingerprint).unwrap().platform, Some(platform));
+        }
+
+        for fingerprint in ["empty-platform", "unknown-platform", "malformed-platform"] {
+            assert_eq!(
+                ledger
+                    .get_pairing_identity_fields(fingerprint)
+                    .unwrap()
+                    .unwrap()
+                    .platform,
+                PlatformState::Malformed
+            );
+            assert_eq!(ledger.get(fingerprint).unwrap().platform, None);
+        }
+
+        assert_eq!(
+            ledger.get_pairing_identity_fields("missing-row").unwrap(),
+            None
+        );
+        assert_eq!(ledger.get("missing-row"), None);
+    }
+
+    #[test]
+    fn get_pairing_identity_fields_and_get_agree_on_a_broken_ledger() {
+        let temporary = TempDir::new();
+        let path = authorized_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{bad").unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.get("a"), None);
+        assert_eq!(
+            ledger.get_pairing_identity_fields("a"),
+            Err(AuthorizedClientsRead::Malformed)
+        );
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::Malformed);
+
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.get("a"), None);
+        assert_eq!(
+            ledger.get_pairing_identity_fields("a"),
+            Err(AuthorizedClientsRead::Unreadable)
+        );
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::Unreadable);
+    }
+
+    fn authorized_path(root: &Path) -> PathBuf {
+        root.join("link").join("authorized_clients.json")
+    }
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "sol-link-pairing-read-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);

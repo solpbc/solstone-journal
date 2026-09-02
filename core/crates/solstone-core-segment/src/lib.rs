@@ -69,9 +69,11 @@ pub use solstone_core_journal_io::{
 };
 pub use source_mutation::hold_source_mutation;
 pub use stream_record::{
-    BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,
-    UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_named_stream,
-    bind_stream, delete_stream_record, has_unattributed_stream_record, lookup_stream,
+    BoundStream, PairedStreamBase, ResolvedStream, StreamAdvance, StreamAllocation,
+    StreamAllocationBase, StreamAllocationCollision, StreamBindingState, StreamCollisionScheme,
+    StreamHints, StreamRecord, UnboundStreamAdvanceError, advance_bound_stream,
+    advance_unbound_stream, bind_named_stream, bind_paired_stream, bind_stream,
+    delete_stream_record, has_unattributed_stream_record, lookup_stream, lookup_stream_state,
     resolve_stream,
 };
 pub use stream_repair::{

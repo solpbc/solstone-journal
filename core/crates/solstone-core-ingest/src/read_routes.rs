@@ -9,7 +9,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_segment::{list_days, lookup_stream};
+use solstone_core_segment::{list_days, lookup_stream_state};
 
 use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
 use crate::model::ReasonCode;
@@ -137,6 +137,7 @@ pub async fn ingest_segments(
     Json(json!({"protocol_version": 3, "total": items.len(), "items": items})).into_response()
 }
 
+#[derive(Debug)]
 struct ListingContext {
     cid: String,
     source: String,
@@ -157,17 +158,26 @@ fn listing_context(
         .transpose()
         .map_err(|code| (code, StatusCode::BAD_REQUEST, "invalid source".to_owned()))?
         .unwrap_or_default();
-    let native_stream = lookup_stream(&state.journal_root, &cid, &source).map_err(|_| {
+    let binding = lookup_stream_state(&state.journal_root, &cid, &source).map_err(|_| {
         (
             ReasonCode::JournalReadFailed,
             StatusCode::INTERNAL_SERVER_ERROR,
             "cannot resolve journal stream".to_owned(),
         )
     })?;
+    if let Some(bound) = &binding
+        && bound.seq == 0
+    {
+        return Err((
+            ReasonCode::StreamBindingIncomplete,
+            StatusCode::CONFLICT,
+            "authenticated stream binding is incomplete".to_owned(),
+        ));
+    }
     Ok(ListingContext {
         cid,
         source,
-        native_stream,
+        native_stream: binding.map(|bound| bound.name),
     })
 }
 
@@ -286,5 +296,120 @@ mod access_tests {
         .unwrap_err();
         assert_eq!(refusal.0, ReasonCode::LinkedDeviceRequired);
         assert_eq!(refusal.1, StatusCode::FORBIDDEN);
+    }
+}
+
+#[cfg(test)]
+mod listing_context_tests {
+    use std::fs;
+    use std::sync::Arc;
+
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use serde_json::json;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
+    use solstone_core_ingest_resolve::IngestNotice;
+
+    use super::{SourceQuery, listing_context};
+    use crate::model::ReasonCode;
+    use crate::router::IngestState;
+    use crate::validation::PROTOCOL_HEADER;
+
+    const VALID_CID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    struct SilentNotifier;
+
+    impl solstone_core_ingest_resolve::IngestNotifier for SilentNotifier {
+        fn notify(
+            &self,
+            _notice: &IngestNotice<'_>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+    }
+
+    fn protocol_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(PROTOCOL_HEADER, HeaderValue::from_static("3"));
+        headers
+    }
+
+    fn linked() -> AccessBasis {
+        AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            cid: LinkedDeviceCid::try_from(VALID_CID).unwrap(),
+        }
+    }
+
+    fn ingest_state(root: &std::path::Path) -> IngestState {
+        IngestState {
+            journal_root: root.to_path_buf(),
+            notifier: Arc::new(SilentNotifier),
+            now_ms: Arc::new(|| 0),
+        }
+    }
+
+    fn write_stream(root: &std::path::Path, seq: u64) {
+        let path = root.join("streams/desk_01.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            json!({
+                "name": "desk_01",
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 1,
+                "last_day": null,
+                "last_segment": null,
+                "seq": seq,
+                "cid": VALID_CID,
+                "source": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn listing_context_unbound_is_empty_native_stream() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let context = listing_context(
+            &ingest_state(journal.path()),
+            &linked(),
+            &protocol_headers(),
+            &SourceQuery { source: None },
+        )
+        .unwrap();
+        assert_eq!(context.native_stream, None);
+    }
+
+    #[test]
+    fn listing_context_healthy_binding_returns_the_name() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        write_stream(journal.path(), 1);
+        let context = listing_context(
+            &ingest_state(journal.path()),
+            &linked(),
+            &protocol_headers(),
+            &SourceQuery { source: None },
+        )
+        .unwrap();
+        assert_eq!(context.native_stream.as_deref(), Some("desk_01"));
+    }
+
+    #[test]
+    fn listing_context_seq_zero_is_incomplete() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        write_stream(journal.path(), 0);
+        let error = listing_context(
+            &ingest_state(journal.path()),
+            &linked(),
+            &protocol_headers(),
+            &SourceQuery { source: None },
+        )
+        .unwrap_err();
+        assert_eq!(error.0, ReasonCode::StreamBindingIncomplete);
+        assert_eq!(error.1, StatusCode::CONFLICT);
     }
 }

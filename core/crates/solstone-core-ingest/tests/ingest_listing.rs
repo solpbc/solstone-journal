@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_ingest::api_router;
+use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use tower::ServiceExt;
 
 const DAY: &str = "20260804";
@@ -19,7 +20,22 @@ const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn journal() -> tempfile::TempDir {
-    tempfile::TempDir::new_in("/var/tmp").expect("journal root")
+    let directory = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+    seed_authorized_client(directory.path(), CID_A);
+    seed_authorized_client(directory.path(), CID_B);
+    directory
+}
+
+fn seed_authorized_client(root: &Path, cid: &str) {
+    AuthorizationLedger::new(root)
+        .add(ClientEntry::new(
+            cid,
+            "Test device",
+            "2026-01-01T00:00:00Z",
+            "test-instance",
+            ClientRole::Roleless,
+        ))
+        .unwrap();
 }
 
 fn basis(cid: &str) -> AccessBasis {

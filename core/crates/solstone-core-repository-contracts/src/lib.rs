@@ -63,6 +63,9 @@ mod mcp_endpoint_exclusion_coherence;
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
 #[cfg(test)]
+#[path = "contracts/paired_stream_allocator_governance.rs"]
+mod paired_stream_allocator_governance;
+#[cfg(test)]
 #[path = "contracts/pairing_contract_bundle.rs"]
 mod pairing_contract_bundle;
 
@@ -99,6 +102,9 @@ mod spl_source_coherence;
 #[cfg(test)]
 #[path = "contracts/stats_dispatch_audit.rs"]
 mod stats_dispatch_audit;
+#[cfg(test)]
+#[path = "contracts/stream_name_identity_consumers.rs"]
+mod stream_name_identity_consumers;
 #[cfg(test)]
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;

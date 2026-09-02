@@ -177,7 +177,7 @@ fn test_item(attributes: &[Attribute]) -> Result<bool, String> {
     Ok(false)
 }
 
-fn production_file(source: &str) -> Result<File, String> {
+pub(crate) fn production_file(source: &str) -> Result<File, String> {
     let mut file = syn::parse_file(source).map_err(|error| format!("parse source: {error}"))?;
     file.items = production_items(file.items)?;
     Ok(file)

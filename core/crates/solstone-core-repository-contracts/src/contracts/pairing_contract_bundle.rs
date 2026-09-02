@@ -97,6 +97,14 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+pub(crate) fn bundle_semver() -> &'static str {
+    BUNDLE_SEMVER
+}
+
+pub(crate) fn authority_digest() -> String {
+    sha256(PAIRING_CONTRACT_AUTHORITY.as_bytes())
+}
+
 fn label_253() -> String {
     let mut label = "é".repeat(126);
     label.push('a');
