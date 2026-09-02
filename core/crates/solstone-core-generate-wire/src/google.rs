@@ -1341,6 +1341,32 @@ mod tests {
     }
 
     #[test]
+    fn converse_pairs_thought_signature_with_its_functioncall_not_every_part() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"text":"thinking..."},
+                    {"functionCall":{"name":"weather","args":{"city":"Denver"}}},
+                    {"functionCall":{"name":"weather","args":{"city":"Boulder"}},"thoughtSignature":"sig-boulder"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("mixed text and functionCall parts must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 2);
+        assert!(turn.text.contains("thinking..."));
+        assert_eq!(turn.tool_calls[0].thought_signature, None);
+        assert_eq!(
+            turn.tool_calls[1].thought_signature.as_deref(),
+            Some("sig-boulder")
+        );
+    }
+
+    #[test]
     fn converse_treats_missing_or_empty_thought_signature_as_none() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let GoogleConverseResult::Turn(turn) = parse_converse_response(
