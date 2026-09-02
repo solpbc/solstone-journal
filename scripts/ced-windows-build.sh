@@ -42,6 +42,14 @@ if [ -z "$CED_WINDOWS_SOURCE_ROOT" ] || [ ! -d "$CED_WINDOWS_SOURCE_ROOT" ]; the
   echo "ERROR: ced-windows-build: CED_WINDOWS_SOURCE_ROOT must name the clean pinned ced.cpp checkout" >&2
   exit 1
 fi
+if [ -z "${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-}" ]; then
+  echo "ERROR: ced-windows-build: SOLSTONE_JOURNAL_WIN_REFS_ROOT is required for the mandatory native host gate" >&2
+  exit 1
+fi
+if [ -z "${SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT:-}" ]; then
+  echo "ERROR: ced-windows-build: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required for the mandatory native host gate" >&2
+  exit 1
+fi
 if ! printf '%s\n' "$WIN_REMOTE_HOME" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$'; then
   echo "ERROR: ced-windows-build: WIN_REMOTE_HOME must be a safe absolute Windows path" >&2
   exit 1
@@ -82,6 +90,8 @@ fi
 
 # Reuse the ordinary source-bound native gate to install the exact clean bundle
 # and prove the current host rail before this distinct dependency slot starts.
+SOLSTONE_JOURNAL_WIN_REFS_ROOT="$SOLSTONE_JOURNAL_WIN_REFS_ROOT" \
+SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT="$SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT" \
 make win-host-ci
 
 remote_slot_rel="ced-windows-controlled-build/$EXPECTED_WIN_COMMIT"
@@ -99,6 +109,37 @@ remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote CED s
   -o ControlPersist=60s \
   "$WIN_REMOTE_HOST" \
   "powershell -NoProfile -Command \"$remote_guard\""
+
+remote_cleanup="\$ErrorActionPreference = 'Stop'
+foreach (\$path in @('$remote_source', '$remote_cmake', '$remote_slot')) {
+  if (Test-Path -LiteralPath \$path) {
+    Remove-Item -LiteralPath \$path -Recurse -Force
+  }
+}
+foreach (\$path in @('$remote_source', '$remote_cmake', '$remote_slot')) {
+  if (Test-Path -LiteralPath \$path) {
+    throw \"remote CED cleanup left path: \$path\"
+  }
+}
+Write-Output 'CED_REMOTE_CLEANUP_OK paths=3'"
+remote_cleanup_encoded=$(printf '%s' "$remote_cleanup" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\r\n')
+if [ -z "$remote_cleanup_encoded" ]; then
+  echo "ERROR: ced-windows-build: could not encode remote cleanup command" >&2
+  exit 1
+fi
+remote_cleanup_armed=0
+cleanup_remote_on_failure() {
+  [ "$remote_cleanup_armed" -eq 1 ] || return 0
+  "$SSH" \
+    -o ControlMaster=auto \
+    -o "ControlPath=/tmp/sj-%r@%h:%p" \
+    -o ControlPersist=60s \
+    "$WIN_REMOTE_HOST" \
+    "powershell -NoProfile -EncodedCommand $remote_cleanup_encoded"
+  remote_cleanup_armed=0
+}
+remote_cleanup_armed=1
+trap cleanup_remote_on_failure EXIT
 
 "$SCP" \
   -o ControlMaster=auto \
@@ -151,15 +192,13 @@ mkdir -p "$local_slot/output/bin" "$local_slot/report"
 cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- \
   ced-windows verify --receipt "$local_slot/report/ced-build-receipt.json" --output-root "$local_slot/output"
 
-remote_cleanup="\$ErrorActionPreference = 'Stop'
-Remove-Item -LiteralPath '$remote_source' -Force
-Remove-Item -LiteralPath '$remote_cmake' -Force
-Remove-Item -LiteralPath '$remote_slot' -Recurse -Force"
 "$SSH" \
   -o ControlMaster=auto \
   -o "ControlPath=/tmp/sj-%r@%h:%p" \
   -o ControlPersist=60s \
   "$WIN_REMOTE_HOST" \
-  "powershell -NoProfile -Command \"$remote_cleanup\""
+  "powershell -NoProfile -EncodedCommand $remote_cleanup_encoded"
+remote_cleanup_armed=0
+trap - EXIT
 
 echo "CED_WINDOWS_DRIVER_OK commit=$EXPECTED_WIN_COMMIT source_sha256=$source_sha256 source_size=$source_size output=$local_slot/output/bin/ced.dll receipt=$local_slot/report/ced-build-receipt.json"
