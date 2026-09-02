@@ -552,9 +552,29 @@ async fn run_renewal_fetcher(
                 return;
             }
             let result = refresh_mcp_bridge_authority(&owner, &mut shutdown).await;
+            let accepted = match &result {
+                Ok(successor) => {
+                    let accepted = binding.accepts_successor(successor, current_expiry);
+                    if !accepted {
+                        // The three binding fields and the expiry ordering are the
+                        // only reasons this can fail; none of them is loggable.
+                        log::warn!(
+                            "mcp bridge lease renewal: the account returned a successor this binding will not accept"
+                        );
+                    }
+                    accepted
+                }
+                Err(_) => {
+                    log::warn!(
+                        "mcp bridge lease renewal: could not fetch a successor authority from the account service"
+                    );
+                    false
+                }
+            };
             if let Ok(successor) = result
-                && binding.accepts_successor(&successor, current_expiry)
+                && accepted
             {
+                log::info!("mcp bridge lease renewal: successor authority accepted");
                 if updates
                     .send(RenewalUpdate::Success(successor))
                     .await
@@ -674,17 +694,31 @@ async fn run_driver(
                     .saturating_sub(RENEW_CHALLENGE_LEAD_SECONDS))
                 .unwrap_or(expiry);
             if Instant::now() < challenge_at {
+                log::warn!(
+                    "mcp bridge lease renewal: control bytes arrived before this lease's renewal window; ending the session"
+                );
                 break 'driver;
             }
             let frame = match control.append(control_bytes, expiry) {
                 Ok(frame) => frame,
-                Err(()) => break 'driver,
+                Err(()) => {
+                    log::warn!(
+                        "mcp bridge lease renewal: the challenge frame exceeded its bound; ending the session"
+                    );
+                    break 'driver;
+                }
             };
             let Some(frame) = frame else {
                 continue;
             };
             let Some(next) = successor.take() else {
                 // No placeholder response and no later response to this challenge.
+                // The bridge is now waiting on a reply that will never come, so
+                // say so: this is the difference between a renewal that failed
+                // and one that was never attempted.
+                log::warn!(
+                    "mcp bridge lease renewal: a challenge arrived with no successor authority ready; no response will be sent"
+                );
                 control.deadline = None;
                 continue;
             };
@@ -695,8 +729,14 @@ async fn run_driver(
                 Utc::now().timestamp(),
             ) {
                 Ok(response) => response,
-                Err(_) => break 'driver,
+                Err(_) => {
+                    log::warn!(
+                        "mcp bridge lease renewal: could not build a renewal response for the challenge; ending the session"
+                    );
+                    break 'driver;
+                }
             };
+            log::info!("mcp bridge lease renewal: renewal response staged for the bridge");
             control.response = Some((response, next));
         }
 

@@ -4661,6 +4661,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures",
+ "log",
  "nix",
  "pem",
  "proc-macro2",
