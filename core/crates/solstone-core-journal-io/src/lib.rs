@@ -128,8 +128,6 @@ pub use claim_remove::{
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
-#[cfg(unix)]
-pub use entry::sync_dir_bound;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ClaimDurability, ClaimRemovalError, ClaimRemovalOutcome,
@@ -178,8 +176,6 @@ pub use name_admission::{
     NoFollowEntryKind, StreamName, check_portable_component,
 };
 pub use observation::{FileObservation, FlatDirectoryEntry, NativeMtime};
-#[cfg(unix)]
-pub use paths::create_directory_bound;
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, SegmentLayout,
     SegmentLocatorIdentity, StreamLocation, check_record_identities, check_unique_record_keys,

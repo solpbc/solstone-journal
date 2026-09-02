@@ -46,7 +46,7 @@ use solstone_core_system::provider_runtime::{
     ProviderRuntimeState, ReasonCode, RuntimePhase, SystemRuntimeClock, WedgeState,
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
-use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow};
+use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow, initialize_schedule_config};
 use solstone_core_system::status_wire::CrashedServiceCandidate;
 
 use super::bus::{SupervisorProcessSink, SupervisorScheduleSink, SupervisorTaskQueueSink};
@@ -1347,8 +1347,14 @@ pub(crate) async fn boot_and_tick(
     let scheduler = if options.no_schedule {
         None
     } else {
+        let schedule_config_path = journal.join("config/schedules.json");
+        if let Err(error) = initialize_schedule_config(&schedule_config_path) {
+            return Err(
+                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
+            );
+        }
         let mut scheduler = match ScheduleEngine::init(
-            journal.join("config/schedules.json"),
+            schedule_config_path,
             journal.join("health/scheduler.json"),
             now,
         ) {

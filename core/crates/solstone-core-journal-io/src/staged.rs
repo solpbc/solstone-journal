@@ -70,25 +70,31 @@ impl Error for StagedWriteError {
 
 /// Populate and atomically publish a new directory at `destination`.
 ///
-/// Publication is create-only: an existing destination, including a dangling
-/// symlink, fails with `AlreadyExists`. Before the rename, failures remove the
-/// staging directory. A process killed before rename can leave that private
-/// staging directory orphaned, but the destination remains absent; after rename
-/// it contains the complete, synced set. Parent-directory sync is best effort.
+/// A destination observed before staging begins, including a dangling symlink,
+/// fails with `AlreadyExists`. Before rename, ordinary failures attempt to
+/// remove the private staging directory. Cleanup is best effort: a process
+/// killed before rename or a removal blocked by sharing or permissions can
+/// leave that directory orphaned, while the destination remains absent. After
+/// rename, the destination contains the complete populated set.
 ///
-/// On Windows, parent-directory sync after rename remains best effort: there is
-/// no documented directory-entry metadata flush on a directory handle opened
-/// for listing and attributes (`FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
+/// On Unix, the staging directory is hard-synced before rename and the parent
+/// directory is synced best effort afterward.
+///
+/// On Windows, both directory-sync operations are omitted: there is no
+/// documented directory-entry metadata flush on a directory handle opened for
+/// listing and attributes (`FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES |
 /// SYNCHRONIZE`, plus `FILE_TRAVERSE` on the publication-path capability) —
 /// neither includes `GENERIC_WRITE`/`FILE_WRITE_DATA`, which `FlushFileBuffers`
-/// requires. This primitive does not claim that flush. It also does not claim
-/// ACL equivalence with Unix [`StagedDirOptions::directory_mode`].
+/// requires. This primitive makes no directory-metadata durability claim on
+/// Windows. It also does not claim ACL equivalence with Unix
+/// [`StagedDirOptions::directory_mode`].
 ///
 /// After the absence check, a late name at `fs::rename` is replace-or-refuse
 /// on Unix (an empty directory is replaced by the complete staged set; a
 /// regular file or non-empty directory is left untouched and publish fails).
-/// On Windows that same collision is platform- and filesystem-conditioned,
-/// not a guaranteed replace-or-refuse outcome.
+/// On Windows the exact result is platform- and filesystem-conditioned: a
+/// successful rename exposes the complete staged set, while a refused rename
+/// preserves the competing destination.
 ///
 /// This primitive does not hold a lock across its absence-check-and-rename
 /// sequence. Concurrent, uncoordinated callers targeting the same destination
@@ -162,11 +168,19 @@ impl StagingDir {
                 STAGED_CANDIDATE_MARKER,
                 &[u128::from(std::process::id()), nanos + u128::from(sequence)],
             ));
-            let mut builder = DirBuilder::new();
             #[cfg(unix)]
-            if let Some(mode) = options.directory_mode {
-                builder.mode(mode);
-            }
+            let builder = {
+                let mut builder = DirBuilder::new();
+                if let Some(mode) = options.directory_mode {
+                    builder.mode(mode);
+                }
+                builder
+            };
+            #[cfg(windows)]
+            let builder = {
+                let _ = options;
+                DirBuilder::new()
+            };
             match builder.create(&path) {
                 Ok(()) => return Ok(Self { path, armed: true }),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
