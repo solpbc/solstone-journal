@@ -17,7 +17,7 @@ use chrono::{FixedOffset, TimeZone};
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogCreatePrimitive, OplogFormat, OplogWriter, admit_day_health_directory,
-    create_oplog_with_test_timing, probe_oplog_identity, probe_oplog_lease,
+    create_oplog_with_test_timing, probe_oplog_identity_lease, probe_oplog_lease,
     run_with_oplog_capture_stderr_fault, run_with_oplog_capture_stdout_fault,
     run_with_oplog_create_barrier,
 };
@@ -185,7 +185,10 @@ fn share_mode_active_while_live_released_after_every_duplicate_closes() {
         probe_oplog_lease(&health, OsStr::new(&leaf), identity),
         LeaseProbe::Active
     );
-    assert_eq!(probe_oplog_identity(&health, identity), LeaseProbe::Active);
+    assert_eq!(
+        probe_oplog_identity_lease(&health, identity),
+        LeaseProbe::Active
+    );
     drop(writer);
     assert_eq!(
         probe_oplog_lease(&health, OsStr::new(&leaf), identity),
@@ -195,7 +198,7 @@ fn share_mode_active_while_live_released_after_every_duplicate_closes() {
     drop(duplicate);
     assert_released_eventually(&health, OsStr::new(&leaf), identity);
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Released
     );
 }
@@ -221,14 +224,14 @@ fn named_probe_indeterminate_after_replacement_identity_probe_unaffected() {
         "a pathname now naming a different file must never be trusted for liveness"
     );
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Active,
         "the identity-bound probe never touches the pathname and must be unaffected"
     );
 
     drop(writer);
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Released,
         "identity liveness must still transition correctly after the writer drops"
     );
@@ -276,7 +279,7 @@ fn delete_pending_never_promotes_to_released() {
 
     let pending = mark_delete_pending(&published).expect("mark the live oplog delete-pending");
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Indeterminate,
         "delete-pending is not a trustworthy share-mode liveness observation even while the writer is live"
     );
@@ -286,7 +289,7 @@ fn delete_pending_never_promotes_to_released() {
     // underlying bytes are not yet reclaimed. A correct probe must never read
     // this as `Released` from absence or EOF; it must stay indeterminate.
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Indeterminate,
         "delete-pending must never be promoted to Released by an absence heuristic"
     );
@@ -305,13 +308,13 @@ fn foreign_write_sharing_withheld_handle_is_conservatively_active() {
     let foreign = open_withholding_write_share(&published)
         .expect("open a foreign handle that withholds write sharing");
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Active,
         "the probe cannot distinguish a legitimate writer from any other write-sharing-withholding handle"
     );
     drop(foreign);
     assert_eq!(
-        probe_oplog_identity(&health, identity),
+        probe_oplog_identity_lease(&health, identity),
         LeaseProbe::Released
     );
 }
@@ -331,7 +334,7 @@ fn wrong_volume_hint_is_indeterminate_before_share_classification() {
     let (refs_writer, refs_health, _refs_published) = create_and_publish(refs.path());
 
     assert_eq!(
-        probe_oplog_identity(&refs_health, identity),
+        probe_oplog_identity_lease(&refs_health, identity),
         LeaseProbe::Indeterminate,
         "a same-file-id coincidence on a different hinted volume must not report Active"
     );

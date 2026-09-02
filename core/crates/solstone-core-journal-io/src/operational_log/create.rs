@@ -62,7 +62,30 @@ pub fn create_oplog(
     if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
         return Err(bare(OplogCreateReason::InvalidField));
     }
-    let instant = sample_local_instant()?;
+    create_oplog_at(
+        root,
+        source_original,
+        run_original,
+        format,
+        sample_local_instant()?,
+    )
+}
+
+/// Create one exclusive append-only operational log at a caller-supplied local instant.
+///
+/// The supplied instant determines both the containing local day and the UTC field in
+/// the canonical leaf. Callers that need a historical pinned day use this rather than
+/// changing process-global time.
+pub fn create_oplog_at(
+    root: JournalRoot,
+    source_original: &str,
+    run_original: &str,
+    format: OplogFormat,
+    instant: DateTime<FixedOffset>,
+) -> Result<OplogWriter, OplogCreateError> {
+    if !original_is_admissible(source_original) || !original_is_admissible(run_original) {
+        return Err(bare(OplogCreateReason::InvalidField));
+    }
     create_with_timing(
         root,
         source_original,
@@ -1172,12 +1195,15 @@ pub fn probe_oplog_lease(
 }
 
 /// Test-only identity liveness probe. Windows share-mode authority; no pathname bind.
-#[cfg(all(windows, any(test, feature = "test-hooks")))]
-pub fn probe_oplog_identity(health: &OplogDayHealth, identity: OplogFileIdentity) -> LeaseProbe {
+#[cfg(windows)]
+pub fn probe_oplog_identity_lease(
+    health: &OplogDayHealth,
+    identity: OplogFileIdentity,
+) -> LeaseProbe {
     if force_probe_indeterminate() {
         return LeaseProbe::Indeterminate;
     }
-    platform::probe_identity(health, identity)
+    platform::probe_identity_lease(health, identity)
 }
 
 /// Ordered checkpoints for one create call.
