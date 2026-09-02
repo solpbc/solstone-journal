@@ -57,6 +57,15 @@ pub fn require_commit(expected: &str, actual: &str) -> Result<(), ProvenanceErro
     Ok(())
 }
 
+pub fn require_repository(expected: &str, actual: &str) -> Result<(), ProvenanceError> {
+    if expected != actual {
+        return Err(ProvenanceError::new(format!(
+            "unexpected:\n  mismatched-repository {actual}"
+        )));
+    }
+    Ok(())
+}
+
 pub fn require_lock(expected: &str, actual: &str) -> Result<(), ProvenanceError> {
     if expected != actual {
         return Err(ProvenanceError::new(format!(

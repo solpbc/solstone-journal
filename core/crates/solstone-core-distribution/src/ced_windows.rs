@@ -16,18 +16,27 @@ use crate::provenance::{self, ProvenanceError};
 
 pub const CED_CPP_COMMIT: &str = "c04ac14b7992d00584d9e812c9bb6268598a6ce7";
 pub const GGML_COMMIT: &str = "e705c5fed490514458bdd2eaddc43bd098fcce9b";
+pub const CED_CPP_REPOSITORY: &str = "https://github.com/localai-org/ced.cpp.git";
 
 pub const CED_WINDOWS_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 pub const CED_WINDOWS_BUILD_PROFILE: &str = "Release";
-// Intended CPU-only/shared-library CMake inputs for a future controlled build;
-// not yet verified against upstream CMakeLists.txt (no build has run).
+// CPU-only/shared-library CMake inputs verified against `ced.cpp`
+// `c04ac14b`: its top-level target is controlled by `CED_SHARED`, forwards
+// the four CED_GGML backend toggles, and otherwise defaults to native CPU
+// specialization and a CLI we do not ship.
 pub const CED_WINDOWS_BUILD_FLAGS: &[&str] = &[
-    "-DBUILD_SHARED_LIBS=ON",
-    "-DGGML_CUDA=OFF",
-    "-DGGML_VULKAN=OFF",
+    "-DCED_SHARED=ON",
+    "-DCED_BUILD_CLI=OFF",
+    "-DCED_BUILD_TESTS=OFF",
+    "-DCED_GGML_CUDA=OFF",
+    "-DCED_GGML_METAL=OFF",
+    "-DCED_GGML_VULKAN=OFF",
+    "-DCED_GGML_HIP=OFF",
+    "-DGGML_NATIVE=OFF",
+    "-DGGML_LLAMAFILE=OFF",
     "-DGGML_OPENCL=OFF",
-    "-DGGML_HIP=OFF",
-    "-DGGML_METAL=OFF",
+    "-DGGML_BACKEND_DL=OFF",
+    "-DGGML_OPENMP=ON",
 ];
 
 pub const CED_WINDOWS_EXPORTS: &[&str] = &[
@@ -38,6 +47,14 @@ pub const CED_WINDOWS_EXPORTS: &[&str] = &[
     "ced_capi_classify_pcm_json",
     "ced_capi_free_string",
 ];
+
+/// Exact MSVC module-definition document for the approved Rust-facing C API.
+///
+/// The pinned upstream target enables CMake's `WINDOWS_EXPORT_ALL_SYMBOLS`,
+/// while its header defines additional inspection and path-classification
+/// functions. A controlled source overlay must disable that broad export and
+/// link this document so the produced DLL has precisely the reviewed ABI.
+pub const CED_WINDOWS_EXPORT_DEFINITION: &str = "LIBRARY ced\nEXPORTS\n    ced_capi_abi_version\n    ced_capi_load\n    ced_capi_free\n    ced_capi_last_error\n    ced_capi_classify_pcm_json\n    ced_capi_free_string\n";
 
 /// Catalog identity for the GGUF model. `solstone-core-assets::ARTIFACTS`'s
 /// `ced-model` row is the sole authority for that unit's sha256 and it is
@@ -95,9 +112,13 @@ fn format_diff_side(names: &[String]) -> String {
     }
 }
 
-pub fn verify_source_commits(identity: &SourceIdentity) -> Result<(), ProvenanceError> {
-    provenance::require_commit(CED_CPP_COMMIT, &identity.product.commit)?;
-    provenance::require_commit(GGML_COMMIT, &identity.windows_dependency.revision)?;
+pub fn verify_source_commits(
+    identity: &SourceIdentity,
+    ggml_revision: &str,
+) -> Result<(), ProvenanceError> {
+    provenance::require_repository(CED_CPP_REPOSITORY, &identity.windows_dependency.repository)?;
+    provenance::require_commit(CED_CPP_COMMIT, &identity.windows_dependency.revision)?;
+    provenance::require_commit(GGML_COMMIT, ggml_revision)?;
     Ok(())
 }
 
@@ -189,12 +210,12 @@ mod tests {
     fn pinned_source() -> SourceIdentity {
         SourceIdentity {
             product: Provenance {
-                commit: CED_CPP_COMMIT.to_owned(),
+                commit: "journal-product".to_owned(),
                 lock_sha256: String::new(),
             },
             windows_dependency: DependencySource {
-                repository: "ggml".into(),
-                revision: GGML_COMMIT.to_owned(),
+                repository: CED_CPP_REPOSITORY.into(),
+                revision: CED_CPP_COMMIT.to_owned(),
                 content_sha256: String::new(),
             },
         }
@@ -255,8 +276,9 @@ mod tests {
     #[test]
     fn verify_source_commits_rejects_wrong_ced_cpp_commit() {
         let mut identity = pinned_source();
-        identity.product.commit = "wrong-ced-cpp".into();
-        let error = verify_source_commits(&identity).expect_err("wrong ced.cpp commit");
+        identity.windows_dependency.revision = "wrong-ced-cpp".into();
+        let error =
+            verify_source_commits(&identity, GGML_COMMIT).expect_err("wrong ced.cpp commit");
         assert!(
             error
                 .to_string()
@@ -266,10 +288,23 @@ mod tests {
     }
 
     #[test]
-    fn verify_source_commits_rejects_wrong_ggml_revision() {
+    fn verify_source_commits_rejects_wrong_ced_cpp_repository() {
         let mut identity = pinned_source();
-        identity.windows_dependency.revision = "wrong-ggml".into();
-        let error = verify_source_commits(&identity).expect_err("wrong ggml revision");
+        identity.windows_dependency.repository = "https://example.invalid/ced.cpp.git".into();
+        let error =
+            verify_source_commits(&identity, GGML_COMMIT).expect_err("wrong ced.cpp repository");
+        assert!(
+            error
+                .to_string()
+                .contains("mismatched-repository https://example.invalid/ced.cpp.git"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn verify_source_commits_rejects_wrong_ggml_revision() {
+        let error =
+            verify_source_commits(&pinned_source(), "wrong-ggml").expect_err("wrong ggml revision");
         assert!(
             error.to_string().contains("mismatched-commit wrong-ggml"),
             "{error}"
@@ -278,7 +313,38 @@ mod tests {
 
     #[test]
     fn verify_source_commits_accepts_pinned_commits() {
-        verify_source_commits(&pinned_source()).expect("pinned commits");
+        verify_source_commits(&pinned_source(), GGML_COMMIT).expect("pinned commits");
+    }
+
+    #[test]
+    fn build_configuration_names_the_pinned_source_switches() {
+        assert_eq!(
+            CED_WINDOWS_BUILD_FLAGS,
+            [
+                "-DCED_SHARED=ON",
+                "-DCED_BUILD_CLI=OFF",
+                "-DCED_BUILD_TESTS=OFF",
+                "-DCED_GGML_CUDA=OFF",
+                "-DCED_GGML_METAL=OFF",
+                "-DCED_GGML_VULKAN=OFF",
+                "-DCED_GGML_HIP=OFF",
+                "-DGGML_NATIVE=OFF",
+                "-DGGML_LLAMAFILE=OFF",
+                "-DGGML_OPENCL=OFF",
+                "-DGGML_BACKEND_DL=OFF",
+                "-DGGML_OPENMP=ON",
+            ]
+        );
+    }
+
+    #[test]
+    fn export_definition_is_the_exact_reviewed_abi() {
+        let listed = CED_WINDOWS_EXPORT_DEFINITION
+            .lines()
+            .skip(2)
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        assert_eq!(listed, CED_WINDOWS_EXPORTS);
     }
 
     #[test]
