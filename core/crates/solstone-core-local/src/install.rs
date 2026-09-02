@@ -494,7 +494,7 @@ fn download_artifact_reason_code<'a>(
         archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
         archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
         archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
-        archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+        archive::ArchiveError::DigestMismatch { .. } => "download_digest_mismatch",
         archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
             "download_redirect_hop_limit_exceeded"
         }

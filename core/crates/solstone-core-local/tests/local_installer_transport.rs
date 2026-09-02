@@ -564,7 +564,7 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
             &loopback_download_policy(&format!("http://{address}")),
             |_received, _total| {},
         ),
-        Err(ArchiveError::DigestMismatch)
+        Err(ArchiveError::DigestMismatch { .. })
     ));
     server.join().unwrap();
     assert!(!destination.exists());

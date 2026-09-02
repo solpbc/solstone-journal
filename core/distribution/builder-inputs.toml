@@ -20,6 +20,16 @@ url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
 sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
 size = 55478392
 
+# This archive is fetched and verified on the driver before it is transferred
+# into the network-denied Windows CED build slot. It is intentionally not part
+# of `acquire builder-inputs`, which assembles the Linux cleanroom image.
+[cmake_windows_x86_64]
+version = "3.31.12"
+filename = "cmake-3.31.12-windows-x86_64.zip"
+url = "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip"
+sha256 = "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
+size = 46666397
+
 [rust_std_aarch64_unknown_linux_gnu]
 version = "1.97.1"
 filename = "rust-std-1.97.1-aarch64-unknown-linux-gnu.tar.xz"

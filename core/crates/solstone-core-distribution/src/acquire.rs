@@ -78,6 +78,7 @@ struct BuilderInputsFile {
     schema: String,
     ffmpeg: FetchableInput,
     zig: FetchableInput,
+    cmake_windows_x86_64: VersionedFetchableInput,
     #[serde(rename = "rust_std_aarch64_unknown_linux_gnu")]
     rust_std_aarch64_gnu: FetchableInput,
     #[serde(rename = "rust_std_aarch64_unknown_linux_musl")]
@@ -94,6 +95,13 @@ struct FetchableInput {
     size: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct VersionedFetchableInput {
+    version: String,
+    #[serde(flatten)]
+    input: FetchableInput,
+}
+
 #[derive(Debug, Default)]
 struct Flags {
     dest: Option<PathBuf>,
@@ -105,7 +113,7 @@ struct Flags {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution acquire <ffmpeg|onnx|pdfium|builder-inputs> [FLAG]"
+    "usage: solstone-distribution acquire <ffmpeg|onnx|pdfium|builder-inputs|cmake-windows> [FLAG]"
 }
 
 pub fn run(args: &[String]) -> Result<(), AcquireError> {
@@ -119,6 +127,7 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
         "onnx" => acquire_onnx(&repo, &flags)?,
         "pdfium" => acquire_pdfium(&repo, &flags)?,
         "builder-inputs" => acquire_builder_inputs(&repo, flags.dest.as_deref())?,
+        "cmake-windows" => acquire_cmake_windows(&repo, flags.dest.as_deref())?,
         other => {
             return Err(AcquireError::new(format!(
                 "unknown acquire command {other:?}\n{}",
@@ -253,6 +262,29 @@ fn acquire_builder_inputs(repo: &Path, dest: Option<&Path>) -> Result<(), Acquir
             path.display()
         );
     }
+    Ok(())
+}
+
+/// Acquire the CMake archive admitted for a Windows controlled-build slot.
+///
+/// This deliberately remains separate from `builder-inputs`: those bytes make
+/// the Linux cleanroom image, while this archive is a verified driver-side
+/// input that must be transferred into a Windows slot before its network deny
+/// boundary is armed.
+fn acquire_cmake_windows(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
+    let inputs = load_builder_inputs(repo)?;
+    let cmake = &inputs.cmake_windows_x86_64;
+    let dest = dest.map(Path::to_path_buf).unwrap_or_else(|| {
+        repo.join("target/windows-builder-inputs")
+            .join(&cmake.input.filename)
+    });
+    let fetched = fetch_input(&cmake.input, &dest)?;
+    println!(
+        "cmake {} version={} dest={}",
+        if fetched { "fetched" } else { "cached" },
+        cmake.version,
+        dest.display()
+    );
     Ok(())
 }
 
@@ -610,6 +642,20 @@ mod tests {
         assert_eq!(inputs.ffmpeg.sha256.len(), 64);
         assert!(inputs.ffmpeg.url.starts_with("https://github.com/"));
         assert!(inputs.zig.url.starts_with("https://ziglang.org/"));
+        assert_eq!(inputs.cmake_windows_x86_64.version, "3.31.12");
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.filename,
+            "cmake-3.31.12-windows-x86_64.zip"
+        );
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.url,
+            "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip"
+        );
+        assert_eq!(
+            inputs.cmake_windows_x86_64.input.sha256,
+            "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
+        );
+        assert_eq!(inputs.cmake_windows_x86_64.input.size, 46_666_397);
     }
 
     #[test]
