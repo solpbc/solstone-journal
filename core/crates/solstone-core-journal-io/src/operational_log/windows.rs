@@ -12,16 +12,18 @@ use std::os::windows::io::{AsHandle, AsRawHandle};
 
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT,
+    FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation,
+    NtSetInformationFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER,
-    ERROR_NOT_SUPPORTED, ERROR_PATH_NOT_FOUND, GENERIC_READ, HANDLE,
+    ERROR_NOT_SUPPORTED, ERROR_PATH_NOT_FOUND, GENERIC_READ, HANDLE, RtlNtStatusToDosError,
+    STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_APPEND_DATA, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO, FileRenameInfo, SYNCHRONIZE,
-    SetFileInformationByHandle,
+    DELETE, FILE_APPEND_DATA, FILE_READ_ATTRIBUTES, SYNCHRONIZE,
 };
+use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
 use super::namespace::OplogDayHealth;
 use super::reason::{NamedOccupant, OplogFileIdentity, StageError};
@@ -194,7 +196,7 @@ fn rename_open_stage_no_replace(
         .len()
         .saturating_sub(1)
         .saturating_mul(size_of::<u16>());
-    let bytes = size_of::<FILE_RENAME_INFO>()
+    let bytes = size_of::<FILE_RENAME_INFORMATION>()
         .checked_add(extra)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "rename buffer too large"))?;
     let words = bytes.div_ceil(size_of::<u64>());
@@ -203,27 +205,32 @@ fn rename_open_stage_no_replace(
     debug_assert_eq!(
         pointer
             .cast::<u8>()
-            .align_offset(align_of::<FILE_RENAME_INFO>()),
+            .align_offset(align_of::<FILE_RENAME_INFORMATION>()),
         0
     );
-    // SAFETY: `buffer` is zeroed, aligned to `FILE_RENAME_INFO` (the `Vec<u64>`
-    // allocation is at least pointer-width), sized for the fixed header plus
-    // the inline filename, and live for this synchronous call.
+    // SAFETY: `buffer` is zeroed, aligned to `FILE_RENAME_INFORMATION` (the
+    // `Vec<u64>` allocation is at least pointer-width), sized for the fixed header plus
+    // the inline filename, and live for this synchronous native request. `status` is
+    // writable output storage for that synchronous request.
     #[allow(unsafe_code)]
     unsafe {
-        let info = pointer.cast::<FILE_RENAME_INFO>();
+        let info = pointer.cast::<FILE_RENAME_INFORMATION>();
         (*info).Anonymous.ReplaceIfExists = false;
         (*info).RootDirectory = health.health().as_handle().as_raw_handle() as HANDLE;
         (*info).FileNameLength = (wide.len() * size_of::<u16>()) as u32;
         std::ptr::copy_nonoverlapping(wide.as_ptr(), (*info).FileName.as_mut_ptr(), wide.len());
-        let result = SetFileInformationByHandle(
+        let mut status = IO_STATUS_BLOCK::default();
+        let result = NtSetInformationFile(
             stage_file.as_raw_handle(),
-            FileRenameInfo,
+            &mut status,
             pointer.cast(),
             bytes as u32,
+            FileRenameInformation,
         );
-        if result == 0 {
-            Err(io::Error::last_os_error())
+        if result != STATUS_SUCCESS {
+            Err(io::Error::from_raw_os_error(
+                RtlNtStatusToDosError(result) as i32
+            ))
         } else {
             Ok(())
         }
