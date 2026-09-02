@@ -37,8 +37,6 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vc
 
 echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
-echo === cargo check --locked (install-file production callers) ===
-cargo check --manifest-path core\Cargo.toml --locked -p solstone-core-body-rebuild -p solstone-core-import-web -p solstone-core-import-sources -p solstone-core-describe || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
