@@ -49,7 +49,15 @@ impl DailyLogWriter {
             current_day,
             file,
         };
+        #[cfg(unix)]
         writer.update_symlinks()?;
+        #[cfg(not(unix))]
+        {
+            // The durable dated operational log is still valid on a platform
+            // without symlink support. Alias creation is a presentation layer,
+            // never a reason to refuse an otherwise atomically owned child.
+            let _ = writer.update_symlinks();
+        }
         Ok(writer)
     }
 

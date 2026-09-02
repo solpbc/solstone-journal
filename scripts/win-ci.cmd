@@ -78,6 +78,7 @@ call :run_platform_receipt "Windows launch path preparation" "solstone-core-syst
 call :run_platform_receipt "Windows JOB_LIST without handle inheritance" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_list_no_handle_inheritance_receipt" "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE" || exit /b 1
 call :run_platform_receipt "Windows Job process owner" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_process_owner_receipt" "JOURNAL_WIN_CI_JOB_PROCESS_OWNER" || exit /b 1
 call :run_platform_receipt "Windows Job last-handle negative" "solstone-core-system" "windows_lifecycle_receipt" "windows_job_last_handle_negative_receipt" "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE" || exit /b 1
+call :run_platform_receipt "Windows managed-process facade" "solstone-core-system" "windows_lifecycle_receipt" "windows_managed_process_facade_receipt" "JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE" || exit /b 1
 call :run_receipt "NTFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_publication_receipt" "JOURNAL_WIN_CI_NTFS_PUBLICATION" "NTFS" || exit /b 1
 call :run_receipt "ReFS publication" "solstone-core-journal-io" "windows_atomic_detailed" "refs_publication_receipt" "JOURNAL_WIN_CI_REFS_PUBLICATION" "ReFS" || exit /b 1
 call :run_receipt "NTFS Cortex-use recovery" "solstone-core-journal-io" "windows_atomic_detailed" "ntfs_cortex_use_receipt" "JOURNAL_WIN_CI_CORTEX_USE_NTFS" "NTFS" || exit /b 1

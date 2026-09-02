@@ -14,30 +14,36 @@ pub(super) type RawWindowsHandle = *mut c_void;
 /// `JobHandle` wrapper makes its kill-on-last-close behavior visible at every
 /// call site instead of treating it like an observer handle.
 pub(super) struct RawOwnedHandle {
-    raw: Option<RawWindowsHandle>,
+    // Store the handle bit pattern rather than a raw pointer.  Windows HANDLEs
+    // are opaque integer-like values with no thread affinity, while Rust raw
+    // pointers deliberately do not implement `Send`.  Keeping the bit pattern
+    // preserves sole ownership without an unsafe auto-trait assertion.
+    raw: Option<usize>,
 }
 
 impl RawOwnedHandle {
     pub(super) fn new(raw: RawWindowsHandle) -> Self {
-        Self { raw: Some(raw) }
+        Self {
+            raw: Some(raw as usize),
+        }
     }
 
     pub(super) fn raw(&self) -> RawWindowsHandle {
-        self.raw.expect("owned Windows handle is present")
+        self.raw.expect("owned Windows handle is present") as RawWindowsHandle
     }
 
     #[cfg(test)]
     pub(super) fn into_raw(mut self) -> RawWindowsHandle {
-        self.raw.take().expect("owned Windows handle is present")
+        self.raw.take().expect("owned Windows handle is present") as RawWindowsHandle
     }
 
-    #[cfg(any(test, all(windows, feature = "test-hooks")))]
+    #[cfg(any(test, windows))]
     pub(super) fn take_raw(&mut self) -> RawWindowsHandle {
-        self.raw.take().expect("owned Windows handle is present")
+        self.raw.take().expect("owned Windows handle is present") as RawWindowsHandle
     }
 
     pub(super) fn close(&mut self) -> io::Result<()> {
-        let raw = self.raw.take().expect("owned Windows handle is present");
+        let raw = self.raw.take().expect("owned Windows handle is present") as RawWindowsHandle;
         #[cfg(windows)]
         {
             use windows_sys::Win32::Foundation::CloseHandle;
@@ -46,7 +52,7 @@ impl RawOwnedHandle {
             #[allow(unsafe_code)]
             let closed = unsafe { CloseHandle(raw) };
             if closed == 0 {
-                self.raw = Some(raw);
+                self.raw = Some(raw as usize);
                 return Err(io::Error::last_os_error());
             }
         }
@@ -110,7 +116,7 @@ impl PipeEndHandle {
         self.0.close()
     }
 
-    #[cfg(all(windows, feature = "test-hooks"))]
+    #[cfg(windows)]
     pub(super) fn take_raw(&mut self) -> RawWindowsHandle {
         self.0.take_raw()
     }
