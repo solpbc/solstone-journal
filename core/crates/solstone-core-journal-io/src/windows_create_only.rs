@@ -445,7 +445,9 @@ pub(super) fn write_reader_exclusive_detailed(
     };
 
     for attempt in 1..=CREATE_ONLY_MAX_ATTEMPTS {
-        if let Err(source) = admit_before_move(&capability, &dest_name, &stage, stage_identity) {
+        if let Err(source) =
+            admit_before_move(&capability, &dest_name, &stage_name, &stage, stage_identity)
+        {
             return Err(fail_with_cleanup_detailed(
                 path,
                 "reverify before publication",
@@ -1075,7 +1077,7 @@ fn try_cleanup_stage(
         DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
     ) {
         Ok(handle) => match file_identity(handle.as_raw_handle()) {
-            Ok(identity) if identity == expected => delete_by_handle(handle),
+            Ok(identity) if identity == expected => delete_by_handle(&handle),
             Ok(_) | Err(_) => Ok(()),
         },
         Err(_) => Ok(()),
@@ -1267,7 +1269,7 @@ fn dispose_stage_name_if_still_ours(
             source: error,
         },
         Ok(handle) => match file_identity(handle.as_raw_handle()) {
-            Ok(identity) if identity == expected => match delete_by_handle(handle) {
+            Ok(identity) if identity == expected => match delete_by_handle(&handle) {
                 Ok(()) => StageCleanup::Removed,
                 Err(source) => StageCleanup::Retained {
                     stage: stage_name.to_os_string(),
