@@ -802,7 +802,15 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    match solstone_core_transcribe::run_cli(options.arguments, &journal.path) {
+    let mut on_day = |day: &Path| {
+        println!(
+            "{}",
+            day.file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
+        );
+    };
+    match solstone_core_transcribe::run_cli(options.arguments, &journal.path, &mut on_day) {
         Ok(result) => {
             if let Some(summary) = result.summary {
                 println!("{summary}");

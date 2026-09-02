@@ -102,6 +102,7 @@ impl std::fmt::Display for CliRunError {
 pub fn run_cli(
     arguments: impl IntoIterator<Item = String>,
     journal_path: &Path,
+    on_day: &mut dyn FnMut(&Path),
 ) -> Result<CliRun, CliRunError> {
     let parsed = args::parse_arguments(arguments).map_err(CliRunError::Cli)?;
     args::require_solstone(journal_path).map_err(CliRunError::Cli)?;
@@ -126,6 +127,7 @@ pub fn run_cli(
             &backend.backend,
             &config,
             &attestation_state,
+            on_day,
         );
     }
     let audio_path = args::resolve_single_audio_path(
@@ -154,17 +156,22 @@ fn run_all(
     backend: &str,
     config: &solstone_core_journal_config::JournalConfigRead,
     attestation_state: &AttestationStateStore,
+    on_day: &mut dyn FnMut(&Path),
 ) -> Result<CliRun, CliRunError> {
-    run_all_with(discover_audio_files(journal_path), redo, |audio_path| {
-        stage::process_one(
-            audio_path,
-            journal_path,
-            redo,
-            Some(backend),
-            config,
-            attestation_state,
-        )
-    })
+    run_all_with(
+        discover_audio_files(journal_path, on_day),
+        redo,
+        |audio_path| {
+            stage::process_one(
+                audio_path,
+                journal_path,
+                redo,
+                Some(backend),
+                config,
+                attestation_state,
+            )
+        },
+    )
 }
 
 fn run_all_with<I, F>(audio_paths: I, redo: bool, mut process: F) -> Result<CliRun, CliRunError>
@@ -217,16 +224,21 @@ where
     })
 }
 
-fn discover_audio_files(journal_path: &Path) -> Vec<PathBuf> {
+fn discover_audio_files(journal_path: &Path, on_day: &mut dyn FnMut(&Path)) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let Ok(days) = std::fs::read_dir(journal_path.join("chronicle")) else {
         return files;
     };
-    for day in days
+    let mut days: Vec<_> = days
         .flatten()
         .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-    {
-        let Ok(streams) = std::fs::read_dir(day.path()) else {
+        .collect();
+    days.sort_by_key(|right| std::cmp::Reverse(right.file_name()));
+    for day in days {
+        let day_path = day.path();
+        on_day(&day_path);
+        let mut day_files = Vec::new();
+        let Ok(streams) = std::fs::read_dir(&day_path) else {
             continue;
         };
         for stream in streams
@@ -255,13 +267,14 @@ fn discover_audio_files(journal_path: &Path) -> Vec<PathBuf> {
                             Some("flac" | "m4a" | "mp3" | "ogg" | "opus" | "wav")
                         )
                     {
-                        files.push(path);
+                        day_files.push(path);
                     }
                 }
             }
         }
+        day_files.sort();
+        files.extend(day_files);
     }
-    files.sort();
     files
 }
 
@@ -535,13 +548,33 @@ impl std::error::Error for TranscribeError {
 mod tests {
     use std::cell::Cell;
     use std::fs;
+    use std::path::{Path, PathBuf};
 
-    use super::{ModelAssetError, TranscribeError, run_all_with};
+    use super::{ModelAssetError, TranscribeError, discover_audio_files, run_all_with};
     use crate::speakers::SpeakerAnalyzeError;
 
     fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
         let path = temporary.path().join(name);
         fs::write(&path, b"audio").unwrap();
+        path
+    }
+
+    fn write_chronicle_file(
+        journal: &Path,
+        day: &str,
+        stream: &str,
+        segment: &str,
+        filename: &str,
+        contents: &[u8],
+    ) -> PathBuf {
+        let directory = journal
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(segment);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(filename);
+        fs::write(&path, contents).unwrap();
         path
     }
 
@@ -700,5 +733,80 @@ mod tests {
         .unwrap_err();
         assert_eq!(calls.get(), 1);
         assert_eq!(error.exit_code(), 1);
+    }
+
+    #[test]
+    fn discover_fires_once_per_day_newest_first() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        write_chronicle_file(
+            journal,
+            "20260101",
+            "audio",
+            "120000_1",
+            "audio.wav",
+            b"audio",
+        );
+        write_chronicle_file(journal, "20260315", "audio", "110000_1", "a.wav", b"audio");
+        write_chronicle_file(journal, "20260315", "audio", "120000_1", "b.wav", b"audio");
+        write_chronicle_file(journal, "20260315", "screen", "130000_1", "c.wav", b"audio");
+        write_chronicle_file(
+            journal,
+            "20260201",
+            "audio",
+            "120000_1",
+            "audio.wav",
+            b"audio",
+        );
+        write_chronicle_file(
+            journal,
+            "20260401",
+            "audio",
+            "120000_1",
+            "notes.txt",
+            b"not audio",
+        );
+
+        let mut fired = Vec::new();
+        discover_audio_files(journal, &mut |day| fired.push(day.to_path_buf()));
+
+        let expected = ["20260401", "20260315", "20260201", "20260101"]
+            .map(|day| journal.join("chronicle").join(day));
+        assert_eq!(fired, expected);
+    }
+
+    #[test]
+    fn discover_orders_days_descending_and_files_ascending_within_day() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        let january = write_chronicle_file(
+            journal,
+            "20260101",
+            "audio",
+            "120000_1",
+            "audio.wav",
+            b"audio",
+        );
+        let march_screen =
+            write_chronicle_file(journal, "20260315", "screen", "130000_1", "c.wav", b"audio");
+        let march_early =
+            write_chronicle_file(journal, "20260315", "audio", "110000_1", "a.wav", b"audio");
+        let february = write_chronicle_file(
+            journal,
+            "20260201",
+            "audio",
+            "120000_1",
+            "audio.wav",
+            b"audio",
+        );
+        let march_late =
+            write_chronicle_file(journal, "20260315", "audio", "120000_1", "b.wav", b"audio");
+
+        let files = discover_audio_files(journal, &mut |_| {});
+
+        let mut march = vec![march_early, march_late, march_screen];
+        march.sort();
+        let expected = [march, vec![february], vec![january]].concat();
+        assert_eq!(files, expected);
     }
 }
