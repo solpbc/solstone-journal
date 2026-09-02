@@ -261,6 +261,36 @@ fn pre_move_destination_substitution_preserves_competitor_and_cleans_source() {
 }
 
 #[test]
+fn source_swap_between_probe_and_retained_open_preserves_both_files() {
+    let temporary = temporary("install-source-probe-swap-");
+    let (source, destination) = write_pair(temporary.path());
+    let source_to_move = source.clone();
+    let relocated = temporary.path().join("relocated.bin");
+    let relocated_by_barrier = relocated.clone();
+    let competitor_at = source.clone();
+    let (result, trace) = run_with_windows_install_barrier(
+        Primitive::SourceProbed,
+        1,
+        move || {
+            fs::rename(&source_to_move, &relocated_by_barrier).unwrap();
+            fs::write(&competitor_at, COMPETITOR).unwrap();
+        },
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    let error = result.expect_err("source identity swap must refuse before ownership");
+    assert!(matches!(error, AtomicWriteError::Io { .. }), "{error}");
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::SourceProbed), 1, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::SourceReady), 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Move), 0, "{trace:?}");
+    assert_eq!(fs::read(&source).unwrap(), COMPETITOR);
+    assert_eq!(fs::read(&relocated).unwrap(), PAYLOAD);
+    assert!(!destination.exists());
+}
+
+#[test]
 fn pre_move_source_substitution_preserves_competitor_and_cleans_retained_file() {
     let temporary = temporary("install-pre-move-source-substitution-");
     let (source, destination) = write_pair(temporary.path());

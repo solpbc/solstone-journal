@@ -43,10 +43,16 @@ const SOURCE_ACCESS: u32 = FILE_READ_ATTRIBUTES | GENERIC_WRITE | DELETE | SYNCH
 const SOURCE_OPTIONS: u32 =
     FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
 const PROBE_ACCESS: u32 = FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+// A classification probe must open every occupied terminal kind. Requesting
+// FILE_NON_DIRECTORY_FILE for an existing directory maps the wrong-kind status
+// to ERROR_ACCESS_DENIED before its attributes can be classified.
+const PROBE_OPTIONS: u32 = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
 
 /// Checkpoints in the Windows install_file publication protocol.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowsInstallPrimitive {
+    /// The source leaf has been classified, before its retained mutation handle is opened.
+    SourceProbed,
     /// The source leaf has been opened and its identity frozen.
     SourceReady,
     /// About to flush the retained source handle.
@@ -666,6 +672,30 @@ fn finish_published(
 fn open_source_leaf(capability: &WindowsPublicationPath) -> Result<File, PublicationPathError> {
     let name = capability.leaf_name();
     let component = name.to_string_lossy().into_owned();
+    let probed_identity =
+        match inspect_leaf(capability.terminal_parent(), name).map_err(|source| {
+            PublicationPathError::Io {
+                operation: "classify install source",
+                source,
+            }
+        })? {
+            DestObservation::Absent => {
+                return Err(PublicationPathError::Missing { component });
+            }
+            DestObservation::Directory => {
+                return Err(PublicationPathError::NotRegularFile { component });
+            }
+            DestObservation::Reparse => {
+                return Err(PublicationPathError::ReparsePoint { component });
+            }
+            DestObservation::Regular(identity) => identity,
+        };
+    checkpoint(WindowsInstallPrimitive::SourceProbed).map_err(|source| {
+        PublicationPathError::Io {
+            operation: "revalidate install source after classification",
+            source,
+        }
+    })?;
     match nt_create_relative_share_read_delete(
         capability.terminal_parent().as_raw_handle(),
         name,
@@ -674,7 +704,10 @@ fn open_source_leaf(capability: &WindowsPublicationPath) -> Result<File, Publica
         SOURCE_OPTIONS,
     ) {
         Ok(handle) => {
-            validate_regular_leaf(handle.as_raw_handle(), &component)?;
+            let retained_identity = validate_regular_leaf(handle.as_raw_handle(), &component)?;
+            if retained_identity != probed_identity {
+                return Err(PublicationPathError::IdentityMismatch { component });
+            }
             Ok(File::from(handle))
         }
         Err(source) if is_not_found(&source) => Err(PublicationPathError::Missing { component }),
@@ -764,7 +797,7 @@ fn open_probe(parent: &OwnedHandle, name: &std::ffi::OsStr) -> io::Result<OwnedH
         name,
         PROBE_ACCESS,
         FILE_OPEN,
-        SOURCE_OPTIONS,
+        PROBE_OPTIONS,
     )
 }
 
