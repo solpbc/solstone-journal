@@ -50,6 +50,7 @@ const PROCESS_WINDOWS_USER_PATH: &str = include_str!("../src/process/windows/use
 const PROCESS_WINDOWS_COMMAND_LINE: &str = include_str!("../src/process/windows/command_line.rs");
 const PROCESS_WINDOWS_ENVIRONMENT: &str = include_str!("../src/process/windows/environment.rs");
 const PROCESS_WINDOWS_LAUNCH_SPEC: &str = include_str!("../src/process/windows/launch_spec.rs");
+const PROCESS_WINDOWS_PROVIDER: &str = include_str!("../src/process/windows/provider.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
@@ -314,6 +315,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("command_line", PROCESS_WINDOWS_COMMAND_LINE),
         ("environment", PROCESS_WINDOWS_ENVIRONMENT),
         ("launch_spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+        ("provider", PROCESS_WINDOWS_PROVIDER),
     ];
     assert_eq!(
         declared_modules(PROCESS_WINDOWS),
@@ -488,6 +490,11 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         ("windows command line", PROCESS_WINDOWS_COMMAND_LINE),
         ("windows environment", PROCESS_WINDOWS_ENVIRONMENT),
         ("windows launch spec", PROCESS_WINDOWS_LAUNCH_SPEC),
+        // ⚠ `bounded` and `provider` were absent here while being present in the
+        // declared-module roster above, so the two newest Windows modules were
+        // the only ones exempt from the nix/Unix scan this loop exists to apply.
+        ("windows bounded", PROCESS_WINDOWS_BOUNDED),
+        ("windows provider", PROCESS_WINDOWS_PROVIDER),
     ] {
         assert!(!source.contains("nix::"), "{name} must not name nix");
         assert!(

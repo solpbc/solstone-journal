@@ -1296,17 +1296,22 @@ mod tests {
     /// for roughly two minutes in every ten with the journal process healthy.
     #[test]
     fn the_accept_window_strictly_contains_the_bridge_send_window() {
-        assert!(
-            RENEW_CHALLENGE_LEAD_SECONDS > BRIDGE_RENEWAL_WINDOW_SECONDS,
-            "the journal must start accepting challenges strictly before the bridge starts sending them; \
-             equal leads leave zero tolerance for two independent wall-to-monotonic mappings"
-        );
+        // ✅ `const` blocks: these are compile-time facts, so a violation should
+        // fail the BUILD rather than wait for anyone to run the test.
+        const {
+            assert!(
+                RENEW_CHALLENGE_LEAD_SECONDS > BRIDGE_RENEWAL_WINDOW_SECONDS,
+                "the journal must start accepting challenges strictly before the bridge starts sending them; equal leads leave zero tolerance for two independent wall-to-monotonic mappings"
+            );
+        }
         // ⚠ And it may not run ahead of the successor fetch: accepting a
         // challenge this journal cannot yet answer buys nothing.
-        assert!(
-            RENEW_CHALLENGE_LEAD_SECONDS <= RENEW_FETCH_LEAD_SECONDS,
-            "the accept window may not open before a successor authority could exist"
-        );
+        const {
+            assert!(
+                RENEW_CHALLENGE_LEAD_SECONDS <= RENEW_FETCH_LEAD_SECONDS,
+                "the accept window may not open before a successor authority could exist"
+            );
+        }
     }
 
     fn frame(body: &[u8]) -> Vec<u8> {
