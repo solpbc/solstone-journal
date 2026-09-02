@@ -552,7 +552,10 @@ pub(super) fn bounded_helper_receipt_for_test() -> Result<(), String> {
     )?)
     .map_err(|error| error.to_string())?;
     if environment.stdout != b"absent\r\n" || !environment.quiescent {
-        return Err("bounded helper inherited PATH despite its exact environment".to_owned());
+        return Err(format!(
+            "bounded helper inherited PATH despite its exact environment: stdout={:?}, quiescent={}",
+            environment.stdout, environment.quiescent
+        ));
     }
 
     let mut output_budget = budget;
