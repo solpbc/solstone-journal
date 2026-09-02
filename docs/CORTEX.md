@@ -283,7 +283,8 @@ Agents define specialized behaviors and facet expertise. Available agents can be
 The JSON frontmatter for an agent can include:
 - `max_tokens`: Maximum response token limit
 - `schedule`: Scheduling configuration for automated execution
-  - `"daily"`: Run automatically at midnight each day
+  - `"daily"`: Run automatically at the configured daily scheduler time
+    (`00:15` for a newly initialized schedule configuration)
 - `priority`: Execution order for scheduled prompts (integer, **required** for scheduled prompts)
   - Lower numbers run first (e.g., priority 10 runs before priority 40)
   - See [THINK.md](THINK.md#unified-priority-execution) for priority bands
