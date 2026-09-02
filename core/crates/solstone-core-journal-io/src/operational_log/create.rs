@@ -3075,6 +3075,12 @@ mod tests {
         let ids = ids_from(0xd0);
         occupy(&root, ids.iter().copied());
         let first = dest_for(ids[0]);
+        // Keep this replacement inode alive while the original collision is
+        // present. Writing a new file only after unlinking the original allows
+        // filesystems to reuse its inode and defeats this identity-transition
+        // fixture.
+        let replacement = root.join("replacement");
+        fs::write(&replacement, b"replaced-later").unwrap();
         let error = with_trace(
             OplogCreateTraceState {
                 file_ids: ids.into(),
@@ -3083,9 +3089,10 @@ mod tests {
                     Box::new({
                         let dir = health_dir(&root);
                         let first = first.clone();
+                        let replacement = replacement.clone();
                         move || {
                             fs::remove_file(dir.join(&first)).unwrap();
-                            fs::write(dir.join(&first), b"replaced-later").unwrap();
+                            fs::rename(&replacement, dir.join(&first)).unwrap();
                         }
                     }),
                 )],
