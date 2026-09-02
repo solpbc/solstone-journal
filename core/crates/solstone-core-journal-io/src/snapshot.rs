@@ -133,7 +133,11 @@ fn validate_snapshot(
     parent: Option<&str>,
 ) -> Result<(), SnapshotError> {
     let path = snapshot_path(snapshot);
-    contained_path(journal, path).map_err(SnapshotError::Path)?;
+    // Validate the supplied path lexically here. Symlink-aware inspection of
+    // the observed tree happens before removal below, but resolving every
+    // desired descendant against the observed tree would reject a valid
+    // directory snapshot whenever the directory is currently a regular file.
+    resolve_journal_path(journal, path).map_err(SnapshotError::Path)?;
     if let Some(parent) = parent
         && !is_child_path(parent, path)
     {
@@ -505,21 +509,6 @@ mod tests {
                     Desired::File => &desired_file,
                     Desired::Directory => &desired_directory,
                 };
-
-                // A directory snapshot with descendants cannot replace a file at
-                // the same path: validate_snapshot realpaths each child before
-                // remove_existing, and `target/child.txt` is ENOTDIR when
-                // `target` is a file. The observed file must stay.
-                if matches!((desired, observed), (Desired::Directory, Observed::File)) {
-                    assert!(matches!(
-                        restore_snapshot(&journal, snapshot),
-                        Err(SnapshotError::Path(_))
-                    ));
-                    assert_eq!(fs::read(journal.join("target")).unwrap(), b"observed");
-                    assert_eq!(capture_tree(&journal.join("keep")), keep_before);
-                    continue;
-                }
-
                 restore_snapshot(&journal, snapshot).unwrap();
 
                 match desired {
@@ -538,6 +527,28 @@ mod tests {
                     }
                 }
                 assert_eq!(capture_tree(&journal.join("keep")), keep_before);
+
+                let mut expected = BTreeMap::from([
+                    ("keep".to_owned(), TreeNode::Directory),
+                    (
+                        "keep/sentinel.txt".to_owned(),
+                        TreeNode::File(b"keep".to_vec()),
+                    ),
+                ]);
+                match desired {
+                    Desired::Missing => {}
+                    Desired::File => {
+                        expected.insert("target".to_owned(), TreeNode::File(b"captured".to_vec()));
+                    }
+                    Desired::Directory => {
+                        expected.insert("target".to_owned(), TreeNode::Directory);
+                        expected.insert(
+                            "target/child.txt".to_owned(),
+                            TreeNode::File(b"child".to_vec()),
+                        );
+                    }
+                }
+                assert_eq!(capture_tree(&journal), expected);
             }
         }
     }

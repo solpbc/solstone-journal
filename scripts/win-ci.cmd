@@ -96,6 +96,14 @@ powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_
 if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1 & echo ERROR: journal-io health-marker protocol did not emit exactly one source-originated pass marker & exit /b 1 )
 type "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%"
 del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1
+echo === cargo test --locked (journal-io snapshot protocol) ===
+set "JOURNAL_WIN_CI_SNAPSHOT_LOG=core\target\journal-win-ci-snapshot-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_snapshot_protocol -- --nocapture > "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1 & echo ERROR: journal-io snapshot protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_SNAPSHOT_LOG); $marker = 'JOURNAL_WIN_CI_SNAPSHOT'; $pass = [regex]::Escape($marker + '=capture/restore/reparse/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1 & echo ERROR: journal-io snapshot protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_SNAPSHOT_LOG%"
+del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
