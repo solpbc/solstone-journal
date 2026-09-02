@@ -50,7 +50,7 @@ pub use create::{
 #[cfg(any(test, feature = "test-hooks"))]
 pub use create::{
     OplogCreatePrimitive, create_oplog_with_test_timing, run_with_oplog_create_barrier,
-    run_with_oplog_create_barriers, run_with_oplog_create_fault, run_with_oplog_create_fault_at,
+    run_with_oplog_create_fault, run_with_oplog_create_fault_at,
     run_with_oplog_entropy_source_fault, run_with_oplog_entropy_source_fault_at,
     run_with_oplog_file_ids, run_with_oplog_probe_indeterminate, run_with_oplog_sampled_instant,
     run_with_oplog_sampler_fault, run_with_oplog_sync_fail,

@@ -19,7 +19,7 @@ use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogCreatePrimitive, OplogFormat, OplogWriter, admit_day_health_directory,
     create_oplog_with_test_timing, probe_oplog_identity, probe_oplog_lease,
     run_with_oplog_capture_stderr_fault, run_with_oplog_capture_stdout_fault,
-    run_with_oplog_create_barriers,
+    run_with_oplog_create_barrier,
 };
 use windows_sys::Win32::Foundation::{
     CloseHandle, DuplicateHandle, GENERIC_READ, INVALID_HANDLE_VALUE,
@@ -275,10 +275,10 @@ fn delete_pending_never_promotes_to_released() {
     let identity = writer.identity();
 
     let pending = mark_delete_pending(&published).expect("mark the live oplog delete-pending");
-    assert_ne!(
+    assert_eq!(
         probe_oplog_identity(&health, identity),
-        LeaseProbe::Released,
-        "delete-pending must never be promoted to Released while the writer is live"
+        LeaseProbe::Indeterminate,
+        "delete-pending is not a trustworthy share-mode liveness observation even while the writer is live"
     );
 
     drop(writer);
@@ -297,9 +297,10 @@ fn delete_pending_never_promotes_to_released() {
 fn foreign_write_sharing_withheld_handle_is_conservatively_active() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let (writer, health, published) = create_and_publish(temporary.path());
+    let leaf = writer.leaf_name().to_owned();
     let identity = writer.identity();
     drop(writer);
-    assert_released_eventually(&health, OsStr::new("unused"), identity);
+    assert_released_eventually(&health, OsStr::new(&leaf), identity);
 
     let foreign = open_withholding_write_share(&published)
         .expect("open a foreign handle that withholds write sharing");
@@ -535,35 +536,20 @@ fn two_independent_captures_stay_active_until_both_children_exit() {
 
 #[test]
 fn after_admission_before_publish_is_reachable_lease_phase_primitives_are_not() {
-    let after_admission = Arc::new(AtomicBool::new(false));
-    let after_stage_before_lease = Arc::new(AtomicBool::new(false));
-    let lease = Arc::new(AtomicBool::new(false));
-    let after_lease_before_publish = Arc::new(AtomicBool::new(false));
-
-    let temporary = tempfile::tempdir().expect("temporary directory");
-    let journal = temporary.path().to_path_buf();
-
-    {
-        let after_admission = Arc::clone(&after_admission);
-        run_with_oplog_create_barriers(
-            vec![
-                (
-                    OplogCreatePrimitive::AfterAdmissionBeforePublish,
-                    Box::new(move || after_admission.store(true, Ordering::SeqCst)),
-                ),
-                (
-                    OplogCreatePrimitive::AfterStageBeforeLease,
-                    Box::new(move || after_stage_before_lease.store(true, Ordering::SeqCst)),
-                ),
-                (
-                    OplogCreatePrimitive::Lease,
-                    Box::new(move || lease.store(true, Ordering::SeqCst)),
-                ),
-                (
-                    OplogCreatePrimitive::AfterLeaseBeforePublish,
-                    Box::new(move || after_lease_before_publish.store(true, Ordering::SeqCst)),
-                ),
-            ],
+    let cases = [
+        (OplogCreatePrimitive::AfterAdmissionBeforePublish, true),
+        (OplogCreatePrimitive::AfterStageBeforeLease, false),
+        (OplogCreatePrimitive::Lease, false),
+        (OplogCreatePrimitive::AfterLeaseBeforePublish, false),
+    ];
+    for (primitive, expected) in cases {
+        let observed = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&observed);
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let journal = temporary.path().to_path_buf();
+        let writer = run_with_oplog_create_barrier(
+            primitive,
+            move || signal.store(true, Ordering::SeqCst),
             || {
                 create_oplog_with_test_timing(
                     JournalRoot::open(&journal).expect("admit trace-barrier root"),
@@ -577,24 +563,13 @@ fn after_admission_before_publish_is_reachable_lease_phase_primitives_are_not() 
                 .expect("create succeeds without the unix lease phase")
             },
         );
+        drop(writer);
+        assert_eq!(
+            observed.load(Ordering::SeqCst),
+            expected,
+            "Windows checkpoint reachability changed for {primitive:?}"
+        );
     }
-
-    assert!(
-        after_admission.load(Ordering::SeqCst),
-        "AfterAdmissionBeforePublish must be reached on Windows"
-    );
-    assert!(
-        !after_stage_before_lease.load(Ordering::SeqCst),
-        "AfterStageBeforeLease is a Unix-only lease-phase barrier"
-    );
-    assert!(
-        !lease.load(Ordering::SeqCst),
-        "Lease is a Unix-only checkpoint"
-    );
-    assert!(
-        !after_lease_before_publish.load(Ordering::SeqCst),
-        "AfterLeaseBeforePublish is a Unix-only lease-phase barrier"
-    );
 }
 
 // `ERROR_LOCK_VIOLATION` classification (a competing byte-range `LockFileEx` lock
