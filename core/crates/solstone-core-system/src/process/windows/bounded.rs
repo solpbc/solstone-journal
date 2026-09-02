@@ -39,7 +39,9 @@ pub struct BoundedHelperBudget {
 ///
 /// `environment` is the complete child environment: the launch never copies
 /// the parent's variables. It must carry a nonempty `SystemRoot` entry, while
-/// `PATH` is refused so it cannot choose executable or DLL code.
+/// `PATH` is refused so it cannot choose executable or DLL code. The launcher
+/// writes one empty `PATH` entry itself: Windows otherwise supplies a process
+/// `PATH` when that key is omitted from a custom block.
 #[derive(Debug)]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub struct BoundedHelperRequest {
@@ -294,13 +296,18 @@ pub fn run_bounded_helper(
     let mut command = Vec::with_capacity(request.arguments.len() + 1);
     command.push(canonical.executable);
     command.extend(request.arguments.iter().cloned());
+    // A request may never choose PATH, but Windows exposes one when it is
+    // omitted from a custom block. An explicit empty value makes the absence
+    // of caller-controlled search directories observable to the child too.
+    let mut environment = request.environment;
+    environment.insert(OsString::from("PATH"), OsString::new());
     let resource_limits = request.resource_limits.map(|limits| JobResourceLimits {
         cpu_rate_per_10_000: limits.cpu_rate_per_10_000,
         committed_memory_bytes: limits.committed_memory_bytes,
     });
     let mut owner = launch_windows_job_process_with_options(
         &command,
-        &request.environment,
+        &environment,
         WindowsJobLaunchOptions {
             current_directory: Some(&canonical.current_directory),
             resource_limits,
@@ -545,15 +552,15 @@ pub(super) fn bounded_helper_receipt_for_test() -> Result<(), String> {
 
     let environment = run_bounded_helper(receipt_request(
         &fixture,
-        "environment-present",
+        "environment-empty",
         &["PATH"],
         Vec::new(),
         budget,
     )?)
     .map_err(|error| error.to_string())?;
-    if environment.stdout != b"absent\r\n" || !environment.quiescent {
+    if environment.stdout != b"empty\n" || !environment.quiescent {
         return Err(format!(
-            "bounded helper inherited PATH despite its exact environment: stdout={:?}, quiescent={}",
+            "bounded helper did not receive its empty PATH boundary: stdout={:?}, quiescent={}",
             environment.stdout, environment.quiescent
         ));
     }
