@@ -344,15 +344,17 @@ fn open_by_extended_id_without_write_share(
 }
 
 fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
+    let journal = root.join("opid");
+    fs::create_dir(&journal).expect("create oplog share-probe journal root");
     let instant = FixedOffset::east_opt(0)
         .expect("UTC offset")
         .with_ymd_and_hms(2026, 9, 2, 16, 0, 0)
         .single()
         .expect("fixed receipt instant");
     let mut writer = create_oplog_with_test_timing(
-        JournalRoot::open(root).expect("admit oplog share-probe root"),
-        "p",
-        "r",
+        JournalRoot::open(&journal).expect("admit oplog share-probe root"),
+        "id",
+        "probe",
         OplogFormat::Log,
         instant,
         Duration::ZERO,
@@ -366,11 +368,11 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         .flush()
         .expect("flush retained product operational log");
     let health = admit_day_health_directory(
-        JournalRoot::open(root).expect("readmit oplog share-probe root"),
+        JournalRoot::open(&journal).expect("readmit oplog share-probe root"),
         "20260902",
     )
     .expect("admit oplog share-probe day health");
-    let published = root
+    let published = journal
         .join("chronicle")
         .join("20260902")
         .join("health")
