@@ -9,7 +9,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use sha2::{Digest, Sha256};
 
 use crate::name_admission::check_portable_component;
@@ -414,7 +414,7 @@ fn is_valid_slug(slug: &str) -> bool {
         && !slug.contains("--")
 }
 
-fn is_opened_field(value: &str) -> bool {
+pub(super) fn is_opened_field(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == OPENED_FIELD_LEN
         && bytes[8] == b'T'
@@ -423,6 +423,7 @@ fn is_opened_field(value: &str) -> bool {
         && bytes[..8].iter().all(u8::is_ascii_digit)
         && bytes[9..15].iter().all(u8::is_ascii_digit)
         && bytes[16..22].iter().all(u8::is_ascii_digit)
+        && NaiveDateTime::parse_from_str(&value[..22], "%Y%m%dT%H%M%S%.6f").is_ok()
 }
 
 fn is_hex_field(value: &str, len: usize) -> bool {
@@ -686,6 +687,18 @@ mod tests {
                 "oplog_name_malformed_utc",
             ),
             (
+                format!("oplog--cortex~{tag}--20260231T250099.000000Z--{id}--{run}.log"),
+                "oplog_name_malformed_utc",
+            ),
+            (
+                format!("oplog--cortex~{tag}--20260231T000000.000000Z--{id}--{run}.log"),
+                "oplog_name_malformed_utc",
+            ),
+            (
+                format!("oplog--cortex~{tag}--20250229T120000.000000Z--{id}--{run}.log"),
+                "oplog_name_malformed_utc",
+            ),
+            (
                 format!("oplog--cortex~{tag}--{utc}--ABCD--{run}.log"),
                 "oplog_name_malformed_file_id",
             ),
@@ -723,6 +736,21 @@ mod tests {
         for (leaf, token) in cases {
             expect_token(classify_err(&leaf), token);
         }
+    }
+
+    #[test]
+    fn opened_field_rejects_calendar_invalid_and_accepts_leap_day() {
+        assert!(!is_opened_field("20260231T250099.000000Z"));
+        assert!(!is_opened_field("20260231T000000.000000Z"));
+        assert!(!is_opened_field("20250229T120000.000000Z"));
+        assert!(is_opened_field("20240229T120000.000000Z"));
+        assert!(is_opened_field("20260901T164233.381904Z"));
+        classify_ok(&format!(
+            "oplog--cortex~{tag}--20240229T120000.000000Z--{id}--{run}.log",
+            tag = "1ee11af4ed5d63caf142a30a96ba124b",
+            id = "8f03cabead7e441d83f6c92b2d89a021",
+            run = "daily-think~7df259e6285645a5f9ea769caa484e07"
+        ));
     }
 
     #[test]
