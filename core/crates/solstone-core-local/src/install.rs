@@ -24,6 +24,7 @@ pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
 pub mod onnx_readiness;
+pub mod parakeet_readiness;
 pub mod pdfium_readiness;
 pub mod pins;
 pub mod readiness;

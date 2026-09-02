@@ -46,6 +46,11 @@ pub const WINDOWS_PYANNOTE_MODEL: &str =
     "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx";
 /// The VAD model is a signed package member.
 pub const WINDOWS_SILERO_VAD_MODEL: &str = "lib/solstone_journal_models/assets/silero_vad_v6.onnx";
+/// The Parakeet server is a signed package executable, never an owner-installed service.
+pub const WINDOWS_PARAKEET_SERVER: &str = "bin/parakeet-server.exe";
+/// The Parakeet model is a signed package member, never copied into journal state.
+pub const WINDOWS_PARAKEET_MODEL: &str =
+    "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -188,6 +193,23 @@ impl VerifiedWindowsPayload {
                 WindowsPayloadRefusal::MissingMember,
                 WINDOWS_SILERO_VAD_MODEL,
             )
+        })
+    }
+
+    /// Return the Parakeet server only when the verified package declared it.
+    pub fn parakeet_server_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_PARAKEET_SERVER).ok_or_else(|| {
+            WindowsPayloadError::new(
+                WindowsPayloadRefusal::MissingMember,
+                WINDOWS_PARAKEET_SERVER,
+            )
+        })
+    }
+
+    /// Return the Parakeet model only when the verified package declared it.
+    pub fn parakeet_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_PARAKEET_MODEL).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PARAKEET_MODEL)
         })
     }
 }
